@@ -3,6 +3,7 @@ import {
   buildResponseHeaders,
   type RequestContext,
 } from "@/lib/http/requestContext";
+import type { CanonicalApiErrorBase, CanonicalApiErrorInput } from "@/lib/api/errors";
 
 export type EnvelopeSuccess<T> = {
   ok: true;
@@ -15,9 +16,9 @@ export type EnvelopeError = {
   ok: false;
   requestId: string;
   correlationId: string;
-  errorCode: string;
-  message: string;
-  retryable: boolean;
+  errorCode: CanonicalApiErrorBase["errorCode"];
+  message: CanonicalApiErrorBase["message"];
+  retryable: CanonicalApiErrorBase["retryable"];
   nextAction?: string | null;
   details?: Record<string, unknown> | null;
   data?: unknown;
@@ -27,12 +28,7 @@ export type EnvelopeError = {
 
 export type Envelope<T = unknown> = EnvelopeSuccess<T> | EnvelopeError;
 
-export type EnvelopeErrorInput = {
-  errorCode: string;
-  message: string;
-  retryable?: boolean;
-  nextAction?: string | null;
-  details?: Record<string, unknown> | null;
+export type EnvelopeErrorInput = CanonicalApiErrorInput & {
   data?: unknown;
 };
 

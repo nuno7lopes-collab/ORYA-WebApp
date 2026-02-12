@@ -70,6 +70,10 @@ export type BookingPricingSnapshot = {
   baseCents: number;
   discountCents: number;
   feeCents: number;
+  platformFeeCents: number;
+  combinedFeeCents: number;
+  processorFeesStatus: "PENDING" | "FINAL";
+  processorFeesActualCents: number | null;
   taxCents: number;
   totalCents: number;
   feeMode: FeeMode;
@@ -77,9 +81,7 @@ export type BookingPricingSnapshot = {
   platformFeeFixedCents: number;
   stripeFeeBps: number;
   stripeFeeFixedCents: number;
-  stripeFeeEstimateCents: number;
   cardPlatformFeeCents: number;
-  combinedFeeEstimateCents: number;
 };
 
 export type BookingAddonSnapshotItem = {
@@ -117,7 +119,6 @@ export type BookingConfirmationSnapshot = {
 export type BookingConfirmationPaymentMeta = {
   grossAmountCents?: number | string | null;
   cardPlatformFeeCents?: number | string | null;
-  stripeFeeEstimateCents?: number | string | null;
 };
 
 type BuildSnapshotParams = {
@@ -139,7 +140,7 @@ const toInt = (value: unknown) => {
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
 };
 
-const normalizeFeeMode = (mode: FeeMode) => (mode === FeeMode.ON_TOP ? FeeMode.ADDED : mode);
+const normalizeFeeMode = (mode: FeeMode) => mode;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const clampNonNegative = (value: unknown, fallback = 0) => {
@@ -320,12 +321,16 @@ async function buildPricingSnapshot(params: {
 
   // Fee cents represent only what is added on top of the base price.
   const feeCents = feeMode === FeeMode.ADDED ? Math.max(0, totalCents - baseCents) : 0;
-  const stripeFeeEstimateCents = 0;
+  const combinedFeeCents = combinedFees.combinedFeeCents + cardPlatformFeeCents;
 
   return {
     baseCents,
     discountCents: 0,
     feeCents,
+    platformFeeCents: combinedFees.oryaFeeCents,
+    combinedFeeCents,
+    processorFeesStatus: "PENDING",
+    processorFeesActualCents: null,
     taxCents: 0,
     totalCents,
     feeMode,
@@ -333,9 +338,7 @@ async function buildPricingSnapshot(params: {
     platformFeeFixedCents: pricing.feeFixedApplied,
     stripeFeeBps: 0,
     stripeFeeFixedCents: 0,
-    stripeFeeEstimateCents,
     cardPlatformFeeCents,
-    combinedFeeEstimateCents: combinedFees.combinedFeeCents + cardPlatformFeeCents,
   };
 }
 
@@ -430,7 +433,7 @@ function parsePricingSnapshot(raw: unknown): BookingPricingSnapshot | null {
   if (totalCents < 0) return null;
   const feeModeRaw = raw.feeMode;
   const feeMode =
-    feeModeRaw === FeeMode.INCLUDED || feeModeRaw === FeeMode.ADDED || feeModeRaw === FeeMode.ON_TOP
+    feeModeRaw === FeeMode.INCLUDED || feeModeRaw === FeeMode.ADDED
       ? normalizeFeeMode(feeModeRaw)
       : FeeMode.INCLUDED;
 
@@ -438,6 +441,13 @@ function parsePricingSnapshot(raw: unknown): BookingPricingSnapshot | null {
     baseCents: clampNonNegative(raw.baseCents),
     discountCents: clampNonNegative(raw.discountCents),
     feeCents: clampNonNegative(raw.feeCents),
+    platformFeeCents: clampNonNegative(raw.platformFeeCents),
+    combinedFeeCents: clampNonNegative(raw.combinedFeeCents),
+    processorFeesStatus: raw.processorFeesStatus === "FINAL" ? "FINAL" : "PENDING",
+    processorFeesActualCents:
+      raw.processorFeesActualCents == null && raw.processorFeesActual == null
+        ? null
+        : clampNonNegative(raw.processorFeesActualCents ?? raw.processorFeesActual),
     taxCents: clampNonNegative(raw.taxCents),
     totalCents,
     feeMode,
@@ -445,9 +455,7 @@ function parsePricingSnapshot(raw: unknown): BookingPricingSnapshot | null {
     platformFeeFixedCents: clampNonNegative(raw.platformFeeFixedCents),
     stripeFeeBps: clampNonNegative(raw.stripeFeeBps),
     stripeFeeFixedCents: clampNonNegative(raw.stripeFeeFixedCents),
-    stripeFeeEstimateCents: clampNonNegative(raw.stripeFeeEstimateCents),
     cardPlatformFeeCents: clampNonNegative(raw.cardPlatformFeeCents),
-    combinedFeeEstimateCents: clampNonNegative(raw.combinedFeeEstimateCents),
   };
 }
 
@@ -590,13 +598,12 @@ export function computeCancellationRefundFromSnapshot(
 
   const baseCents = snapshot.pricingSnapshot.baseCents;
   const cardPlatformFeeCents = snapshot.pricingSnapshot.cardPlatformFeeCents;
-  const stripeFeeCentsEstimate = snapshot.pricingSnapshot.stripeFeeEstimateCents;
-  const oryaFeeEstimateCents = Math.max(
+  const oryaFeeCents = Math.max(0, snapshot.pricingSnapshot.combinedFeeCents - cardPlatformFeeCents);
+  const stripeFeeCents = Math.max(
     0,
-    snapshot.pricingSnapshot.combinedFeeEstimateCents - stripeFeeCentsEstimate - cardPlatformFeeCents,
+    params?.stripeFeeCentsActual ?? snapshot.pricingSnapshot.processorFeesActualCents ?? 0,
   );
-  const stripeFeeCents = Math.max(0, params?.stripeFeeCentsActual ?? stripeFeeCentsEstimate);
-  const feesRetainedCents = Math.max(0, oryaFeeEstimateCents + stripeFeeCents + cardPlatformFeeCents);
+  const feesRetainedCents = Math.max(0, oryaFeeCents + stripeFeeCents + cardPlatformFeeCents);
   const penaltyBps = Math.max(0, Math.min(10_000, snapshot.policySnapshot.cancellationPenaltyBps ?? 0));
   const penaltyCents = Math.max(0, Math.round((Math.max(0, baseCents) * penaltyBps) / 10_000));
 

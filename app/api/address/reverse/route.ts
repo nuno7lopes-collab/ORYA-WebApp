@@ -6,6 +6,7 @@ import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 
@@ -79,7 +80,7 @@ async function _GET(req: NextRequest) {
     setCache(cacheKey, payload, CACHE_TTL_MS);
     return jsonWrap({ ok: true, item: payload }, { headers: { "Cache-Control": "public, max-age=600" } });
   } catch (err) {
-    console.error("[address/reverse] erro", err);
+    logError("api.address.reverse", err, { lat, lng, lang });
     const { status, message } = mapGeoError(err, "Falha no reverse geocode.");
     return jsonWrap({ ok: false, error: message }, { status });
   }

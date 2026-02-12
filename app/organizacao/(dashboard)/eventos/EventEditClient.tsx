@@ -13,6 +13,7 @@ import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
+import { useToast } from "@/components/ui/toast-provider";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import {
@@ -36,8 +37,6 @@ const TicketTypeStatus = {
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
 
 type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
-type ToastTone = "success" | "error";
-type Toast = { id: number; message: string; tone: ToastTone };
 
 type TicketTypeUI = {
   id: number;
@@ -167,6 +166,7 @@ const normalizeIntegerInput = (value: string) => {
 };
 
 export function EventEditClient({ event, tickets }: EventEditClientProps) {
+  const { pushToast: publishToast } = useToast();
   const { user, profile } = useUser();
   const organizationId = event.organizationId ?? null;
   const orgMeUrl =
@@ -332,12 +332,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const locationDetailsSeq = useRef(0);
   const activeProviderRef = useRef<string | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const pushToast = (message: string, tone: ToastTone = "error") => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, tone }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4200);
+  const pushToast = (message: string, tone: "success" | "error" = "error") => {
+    publishToast(message, { variant: tone === "success" ? "success" : "error" });
   };
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
@@ -2023,22 +2019,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         onCancel={handleCoverCropCancel}
         onConfirm={handleCoverCropConfirm}
       />
-      {toasts.length > 0 && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-40 flex flex-col gap-2">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className={`pointer-events-auto min-w-[240px] rounded-lg border px-4 py-3 text-sm shadow-lg ${
-                toast.tone === "success"
-                  ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
-                  : "border-red-400/50 bg-red-500/15 text-red-50"
-              }`}
-            >
-              {toast.message}
-            </div>
-          ))}
-        </div>
-      )}
     </>
   );
 }

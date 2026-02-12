@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { StoreStatus } from "@prisma/client";
-import { canCheckoutStore, isStorePublic, resolveStoreState } from "@/lib/storeAccess";
+import { canCheckout, isPublicStore, resolveStoreState } from "@/lib/storeAccess";
 
 describe("storeAccess resolveStoreState", () => {
   const activeBase = {
@@ -20,10 +20,10 @@ describe("storeAccess resolveStoreState", () => {
   });
 
   it("keeps public/checkout helpers aligned to resolved state", () => {
-    expect(isStorePublic({ ...activeBase, catalogLocked: true })).toBe(true);
-    expect(isStorePublic({ ...activeBase, checkoutEnabled: false })).toBe(true);
-    expect(isStorePublic({ ...activeBase, showOnProfile: false })).toBe(false);
-    expect(canCheckoutStore({ ...activeBase, checkoutEnabled: false })).toBe(false);
-    expect(canCheckoutStore(activeBase)).toBe(true);
+    expect(isPublicStore({ ...activeBase, catalogLocked: true })).toBe(true);
+    expect(isPublicStore({ ...activeBase, checkoutEnabled: false })).toBe(true);
+    expect(isPublicStore({ ...activeBase, showOnProfile: false })).toBe(false);
+    expect(canCheckout({ ...activeBase, checkoutEnabled: false })).toBe(false);
+    expect(canCheckout(activeBase)).toBe(true);
   });
 });

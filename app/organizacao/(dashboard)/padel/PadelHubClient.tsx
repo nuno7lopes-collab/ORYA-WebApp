@@ -11,6 +11,10 @@ import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import { computeMatchSlots } from "@/lib/padel/capacityRecommendation";
 import { Avatar } from "@/components/ui/avatar";
+import { ActionBar } from "@/components/ui/action-bar";
+import { CommandPalette } from "@/components/ui/command-palette";
+import { ContextDrawer } from "@/components/ui/context-drawer";
+import { useToast } from "@/components/ui/toast-provider";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import {
   buildPadelCategoryKey,
@@ -482,24 +486,6 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
         ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
         : "border-white/15 bg-white/10 text-white/70"
   }`;
-const toast = (msg: string, tone: "ok" | "err" | "warn" = "ok") => {
-  if (typeof window === "undefined") return;
-  const el = document.createElement("div");
-  el.textContent = msg;
-  el.className = `fixed right-4 top-4 z-[9999] rounded-full px-4 py-2 text-sm font-semibold shadow-lg transition ${
-    tone === "ok"
-      ? "bg-emerald-500 text-black"
-      : tone === "warn"
-        ? "bg-amber-400 text-black"
-        : "bg-red-500 text-white"
-  }`;
-  document.body.appendChild(el);
-  setTimeout(() => {
-    el.style.opacity = "0";
-    el.style.transform = "translateY(-6px)";
-    setTimeout(() => el.remove(), 180);
-  }, 1800);
-};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -1006,6 +992,7 @@ export default function PadelHubClient({
   initialClubs,
   initialPlayers,
 }: Props) {
+  const { pushToast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1025,6 +1012,11 @@ export default function PadelHubClient({
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
   const commandInputRef = useRef<HTMLInputElement | null>(null);
+  const toast = (msg: string, tone: "ok" | "err" | "warn" = "ok") => {
+    pushToast(msg, {
+      variant: tone === "ok" ? "success" : tone === "warn" ? "warning" : "error",
+    });
+  };
   const [clubs, setClubs] = useState<PadelClub[]>(initialClubs);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -1252,7 +1244,7 @@ export default function PadelHubClient({
   );
   const { data: padelOverviewRes } = useSWR<PadelOverviewResponse>(
     organizationId
-      ? `/api/organizacao/estatisticas/overview?range=30d&templateType=PADEL&organizationId=${organizationId}`
+      ? `/api/organizacao/analytics/overview?range=30d&templateType=PADEL&organizationId=${organizationId}`
       : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -1332,12 +1324,6 @@ export default function PadelHubClient({
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!showCommandPalette) return;
-    const timer = setTimeout(() => commandInputRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
-  }, [showCommandPalette]);
 
   useEffect(() => {
     if (showCommandPalette) {
@@ -1640,7 +1626,11 @@ export default function PadelHubClient({
       return [
         { label: "Torneios", href: "/organizacao/padel/torneios", desc: "Lista, estados e operação live." },
         { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
-        { label: "Inscrições", href: "/organizacao/inscricoes", desc: "Duplas, pagamentos e status." },
+        {
+          label: "Inscrições",
+          href: organizationId ? `/org/${organizationId}/inscricoes` : "/organizacao/organizations",
+          desc: "Duplas, pagamentos e status.",
+        },
         { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
       ];
     }
@@ -3757,7 +3747,7 @@ export default function PadelHubClient({
           <h1 className="text-3xl font-semibold text-white drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">{toolTitle}</h1>
           <p className="text-sm text-white/70">{toolSubtitle}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <ActionBar className="border-white/15 bg-white/6">
           <Link
             href={toolSwitchHref}
             className={CTA_PAD_SECONDARY_SM}
@@ -3768,6 +3758,7 @@ export default function PadelHubClient({
             type="button"
             onClick={() => setShowCommandPalette(true)}
             className={CTA_PAD_SECONDARY_SM}
+            aria-label="Abrir command palette"
           >
             Comandos ⌘K
           </button>
@@ -3776,6 +3767,7 @@ export default function PadelHubClient({
               type="button"
               onClick={() => setShowOpsDrawer(true)}
               className={CTA_PAD_SECONDARY_SM}
+              aria-label="Abrir painel operacional"
             >
               Ops hoje
             </button>
@@ -3785,7 +3777,7 @@ export default function PadelHubClient({
               Criar torneio
             </Link>
           )}
-        </div>
+        </ActionBar>
       </header>
 
       {isClubTool ? (
@@ -7064,84 +7056,50 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {showCommandPalette && (
-        <div
-          className="fixed inset-0 z-[120] flex items-start justify-center bg-black/60 px-4 py-10"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowCommandPalette(false);
-          }}
-        >
-          <div className="w-full max-w-xl rounded-2xl border border-white/15 bg-gradient-to-br from-[#0b1226]/90 via-[#0b1124]/85 to-[#050912]/95 p-4 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
-            <div className="flex items-center gap-2">
-              <input
-                ref={commandInputRef}
-                value={commandQuery}
-                onChange={(e) => setCommandQuery(e.target.value)}
-                placeholder="Pesquisar comando…"
-                className="flex-1 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowCommandPalette(false)}
-                className="rounded-full border border-white/20 px-3 py-2 text-[12px] text-white/70 hover:border-white/40"
-              >
-                Fechar
-              </button>
-            </div>
-            <div className="mt-3 max-h-80 space-y-2 overflow-auto">
-              {filteredCommands.length === 0 && (
-                <p className="text-[12px] text-white/60">Sem comandos disponíveis para este contexto.</p>
-              )}
-              {filteredCommands.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => {
-                    action.run();
-                    setShowCommandPalette(false);
-                  }}
-                  className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 text-left transition hover:border-white/30 hover:bg-white/5"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{action.label}</p>
-                      <p className="text-[11px] text-white/60">{action.description}</p>
-                    </div>
-                    {action.shortcut && (
-                      <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] text-white/70">
-                        {action.shortcut}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showOpsDrawer && (
-        <div
-          className="fixed inset-0 z-[110] bg-black/50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowOpsDrawer(false);
-          }}
-        >
-          <div className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-white/15 bg-gradient-to-br from-[#0b1226]/95 via-[#0b1124]/90 to-[#050912]/95 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.7)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.28em] text-white/60">Operacional</p>
-                <p className="text-xl font-semibold text-white">Hoje</p>
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => setShowCommandPalette(false)}
+        query={commandQuery}
+        onQueryChange={setCommandQuery}
+        inputRef={commandInputRef}
+        placeholder="Pesquisar comando…"
+      >
+        {filteredCommands.length === 0 ? (
+          <p className="text-[12px] text-white/60">Sem comandos disponíveis para este contexto.</p>
+        ) : (
+          filteredCommands.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => {
+                action.run();
+                setShowCommandPalette(false);
+              }}
+              className="w-full rounded-xl border border-white/12 bg-black/35 px-3 py-3 text-left transition hover:border-white/30 hover:bg-white/5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">{action.label}</p>
+                  <p className="text-[11px] text-white/60">{action.description}</p>
+                </div>
+                {action.shortcut && (
+                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[10px] text-white/70">
+                    {action.shortcut}
+                  </span>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setShowOpsDrawer(false)}
-                className="rounded-full border border-white/20 px-3 py-2 text-[12px] text-white/70 hover:border-white/40"
-              >
-                Fechar
-              </button>
-            </div>
-            <div className="mt-4 space-y-3 text-white/80">
+            </button>
+          ))
+        )}
+      </CommandPalette>
+
+      <ContextDrawer
+        open={showOpsDrawer}
+        onClose={() => setShowOpsDrawer(false)}
+        eyebrow="Operacional"
+        title="Hoje"
+      >
+        <div className="space-y-3 text-white/80">
               <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
                 <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Torneio ativo</p>
                 <p className="text-sm font-semibold text-white">{selectedEvent?.title || "Seleciona um torneio"}</p>
@@ -7233,10 +7191,8 @@ export default function PadelHubClient({
                   </div>
                 </div>
               )}
-            </div>
-          </div>
         </div>
-      )}
+      </ContextDrawer>
 
       {clubDialog && (
         <ConfirmDestructiveActionDialog

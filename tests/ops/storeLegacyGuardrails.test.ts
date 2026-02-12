@@ -1,11 +1,6 @@
 import { describe, it } from "vitest";
 import { execSync } from "node:child_process";
 
-const TOMBSTONE_ALLOWLIST = [
-  "app/api/me/store/",
-  "app/api/organizacao/loja/",
-];
-
 const STORE_DOMAIN_PATHS = [
   "app/api/org/[orgId]/store",
   "app/api/public/store",
@@ -30,18 +25,11 @@ function runRg(command: string, shell = "/bin/zsh") {
 }
 
 describe("store legacy guardrails", () => {
-  it("blocks legacy API namespace usage outside tombstones", () => {
+  it("blocks legacy API namespace usage across runtime", () => {
     const output = runRg('rg -n "/api/me/store|/api/organizacao/loja|/api/store/" app components lib apps/mobile -S');
 
-    if (!output) return;
-
-    const offenders = output
-      .split("\n")
-      .map((line) => line.split(":")[0])
-      .filter((file) => !TOMBSTONE_ALLOWLIST.some((allowed) => file.startsWith(allowed)));
-
-    if (offenders.length > 0) {
-      throw new Error(`Legacy API namespaces outside tombstones:\n${[...new Set(offenders)].join("\n")}`);
+    if (output) {
+      throw new Error(`Legacy API namespaces found:\n${output}`);
     }
   });
 
@@ -63,6 +51,14 @@ describe("store legacy guardrails", () => {
 
     if (output) {
       throw new Error(`Direct store flag checks found outside storeAccess:\n${output}`);
+    }
+  });
+
+  it("blocks legacy helper aliases in runtime", () => {
+    const output = runRg('rg -n "\\bisStorePublic\\b|\\bcanCheckoutStore\\b" app components lib domain -S');
+
+    if (output) {
+      throw new Error(`Legacy store helper aliases found:\n${output}`);
     }
   });
 });

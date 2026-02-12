@@ -2795,7 +2795,7 @@ model PadelClubStaff {
   padelClubId     Int       @map("padel_club_id")
   userId          String?   @map("user_id") @db.Uuid
   email           String?   @db.Citext
-  role            String
+  role            PadelClubStaffRole
   inheritToEvents Boolean   @default(true) @map("inherit_to_events")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -3678,7 +3678,7 @@ model Entitlement {
   snapshotVenueName String?              @map("snapshot_venue_name")
   snapshotStartAt  DateTime              @map("snapshot_start_at") @db.Timestamptz(6)
   snapshotTimezone String                @map("snapshot_timezone")
-  policyVersionApplied Int               @default(0) @map("policy_version_applied")
+  policyVersionApplied Int?              @map("policy_version_applied")
   createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   saleLine         SaleLine?             @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
@@ -5267,7 +5267,6 @@ enum OrganizationMemberRole {
   STAFF
   TRAINER
   PROMOTER
-  VIEWER
 
   @@schema("app_v3")
 }
@@ -5713,7 +5712,7 @@ enum PadelPaymentMode {
   @@schema("app_v3")
 }
 
-// Enum legacy removido (SSOT = PadelRegistration.status)
+// SSOT = PadelRegistration.status
 
 enum PadelPairingJoinMode {
   INVITE_PARTNER
@@ -5747,6 +5746,14 @@ enum PadelTournamentRole {
   REFEREE
   SCOREKEEPER
   STREAMER
+
+  @@schema("app_v3")
+}
+
+enum PadelClubStaffRole {
+  ADMIN_CLUBE
+  DIRETOR_PROVA
+  STAFF
 
   @@schema("app_v3")
 }
@@ -5899,7 +5906,6 @@ enum PadelPairingSlotRole {
 enum FeeMode {
   INCLUDED
   ADDED
-  ON_TOP
 
   @@schema("app_v3")
 }

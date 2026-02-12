@@ -16,7 +16,6 @@ export type CombinedFeesResult = {
   subtotalCents: number;
   feeMode: FeeMode;
   oryaFeeCents: number;
-  stripeFeeCentsEstimate: number;
   combinedFeeCents: number;
   totalCents: number;
 };
@@ -38,7 +37,7 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
   } = params;
 
   const netSubtotal = Math.max(0, Math.round(amountCents) - Math.max(0, Math.round(discountCents)));
-  const feeMode = rawFeeMode === FeeMode.ON_TOP ? FeeMode.ADDED : (rawFeeMode as FeeMode);
+  const feeMode = rawFeeMode;
 
   const oryaFeeCents =
     netSubtotal === 0
@@ -50,7 +49,6 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
       subtotalCents: netSubtotal,
       feeMode,
       oryaFeeCents,
-      stripeFeeCentsEstimate: 0,
       combinedFeeCents: 0,
       totalCents: 0,
     };
@@ -63,7 +61,6 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
       subtotalCents: netSubtotal,
       feeMode,
       oryaFeeCents,
-      stripeFeeCentsEstimate: 0,
       combinedFeeCents,
       totalCents,
     };
@@ -77,7 +74,6 @@ export function computeCombinedFees(params: ComputeCombinedFeesParams): Combined
     subtotalCents: netSubtotal,
     feeMode,
     oryaFeeCents,
-    stripeFeeCentsEstimate: 0,
     combinedFeeCents,
     totalCents,
   };

@@ -109,6 +109,10 @@ const snapshot = {
     baseCents: 10_000,
     discountCents: 0,
     feeCents: 0,
+    platformFeeCents: 0,
+    combinedFeeCents: 0,
+    processorFeesStatus: "PENDING",
+    processorFeesActualCents: null,
     taxCents: 0,
     totalCents: 10_000,
     feeMode: "INCLUDED",
@@ -116,9 +120,7 @@ const snapshot = {
     platformFeeFixedCents: 30,
     stripeFeeBps: 0,
     stripeFeeFixedCents: 0,
-    stripeFeeEstimateCents: 0,
     cardPlatformFeeCents: 0,
-    combinedFeeEstimateCents: 0,
   },
 };
 

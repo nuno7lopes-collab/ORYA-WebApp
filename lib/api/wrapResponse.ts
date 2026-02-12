@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildResponseHeaders, getRequestContext, type RequestContext } from "@/lib/http/requestContext";
+import type { CanonicalApiErrorBase } from "@/lib/api/errors";
 
 type EnvelopeSuccess = {
   ok: true;
@@ -11,9 +12,9 @@ type EnvelopeSuccess = {
 };
 type EnvelopeError = {
   ok: false;
-  errorCode: string;
-  message: string;
-  retryable?: boolean;
+  errorCode: CanonicalApiErrorBase["errorCode"];
+  message: CanonicalApiErrorBase["message"];
+  retryable?: CanonicalApiErrorBase["retryable"];
   nextAction?: string | null;
   details?: Record<string, unknown>;
   data?: unknown;

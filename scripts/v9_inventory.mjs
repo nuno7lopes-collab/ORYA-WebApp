@@ -6,11 +6,11 @@ const API_ROOT = path.join(ROOT, "app", "api");
 const APP_ROOT = path.join(ROOT, "app");
 
 const OUTPUTS = {
-  api: path.join(ROOT, "reports", "v9_inventory_api.md"),
-  pages: path.join(ROOT, "reports", "v9_inventory_pages.md"),
-  features: path.join(ROOT, "reports", "v9_inventory_features.md"),
-  frontendApi: path.join(ROOT, "reports", "v9_inventory_frontend_api_usage.md"),
-  parity: path.join(ROOT, "reports", "v9_parity_report.md"),
+  api: path.join(ROOT, "reports", "v9_inventory_api_v1.md"),
+  pages: path.join(ROOT, "reports", "v9_inventory_pages_v1.md"),
+  features: path.join(ROOT, "reports", "v9_inventory_features_v1.md"),
+  frontendApi: path.join(ROOT, "reports", "v9_inventory_frontend_api_usage_v1.md"),
+  parity: path.join(ROOT, "reports", "v9_parity_report_v1.md"),
 };
 
 const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -103,10 +103,17 @@ function detectStatusCodes(content) {
   return Array.from(codes).sort();
 }
 
+function isLegacyTombstoneRoute(content) {
+  const hasLegacyGoneHandler = /function\s+legacyGone\s*\(/.test(content);
+  const hasRemovedMessage = /Endpoint legado removido\./.test(content);
+  const hasGoneStatus = /\{\s*status:\s*410\s*\}/.test(content);
+  return hasLegacyGoneHandler && hasRemovedMessage && hasGoneStatus;
+}
+
 function detectLegacy(content) {
   const legacy = [];
   if (/@deprecated/i.test(content)) legacy.push("@deprecated");
-  if (/LEGACY_/i.test(content)) legacy.push("LEGACY_");
+  if (isLegacyTombstoneRoute(content)) legacy.push("410-tombstone");
   return legacy;
 }
 

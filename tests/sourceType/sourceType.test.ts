@@ -25,21 +25,24 @@ describe("sourceType allowlists", () => {
     expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.EVENT)).toBe(true);
     expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.TOURNAMENT)).toBe(true);
     expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.MATCH)).toBe(true);
+    expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.BOOKING)).toBe(true);
+    expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.CLASS_SESSION)).toBe(true);
     expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.SOFT_BLOCK)).toBe(true);
     expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.HARD_BLOCK)).toBe(true);
-    expect(AGENDA_SOURCE_TYPE_ALLOWLIST.has(SourceType.BOOKING)).toBe(false);
   });
 });
 
 describe("normalize sourceType", () => {
-  it("normaliza legados (RESERVATION -> BOOKING) no finance scope", () => {
-    expect(normalizeFinanceSourceType("reservation")).toBe(SourceType.BOOKING);
-    expect(normalizeSourceType("reservation")).toBe(SourceType.BOOKING);
+  it("aceita apenas valores canónicos no finance scope", () => {
+    expect(normalizeFinanceSourceType("BOOKING")).toBe(SourceType.BOOKING);
+    expect(normalizeSourceType("BOOKING")).toBe(SourceType.BOOKING);
   });
 
-  it("rejecta tipos fora do scope", () => {
+  it("rejeita legados e tipos fora do scope", () => {
+    expect(normalizeFinanceSourceType("reservation")).toBeNull();
     expect(normalizeFinanceSourceType("EVENT")).toBeNull();
-    expect(normalizeAgendaSourceType("BOOKING")).toBeNull();
+    expect(normalizeAgendaSourceType("BOOKING")).toBe(SourceType.BOOKING);
+    expect(normalizeAgendaSourceType("CLASS_SESSION")).toBe(SourceType.CLASS_SESSION);
   });
 });
 

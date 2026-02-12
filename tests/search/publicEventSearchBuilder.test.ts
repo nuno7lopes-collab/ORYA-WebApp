@@ -72,4 +72,25 @@ describe("publicEventSearch", () => {
     expect(res.items).toHaveLength(1);
     expect(res.nextCursor).toBe("idx-2");
   });
+
+  it("aplica filtro upcoming", async () => {
+    mocks.findMany.mockResolvedValue([]);
+    mocks.eventFindMany.mockResolvedValue([]);
+
+    await searchPublicEvents({ date: "upcoming" });
+
+    const call = mocks.findMany.mock.calls[0]?.[0];
+    expect(call.where.startsAt?.gte).toBeInstanceOf(Date);
+  });
+
+  it("aplica filtro day custom", async () => {
+    mocks.findMany.mockResolvedValue([]);
+    mocks.eventFindMany.mockResolvedValue([]);
+
+    await searchPublicEvents({ date: "day", day: "2099-01-05" });
+
+    const call = mocks.findMany.mock.calls[0]?.[0];
+    expect(call.where.startsAt?.gte).toBeInstanceOf(Date);
+    expect(call.where.startsAt?.lte).toBeInstanceOf(Date);
+  });
 });

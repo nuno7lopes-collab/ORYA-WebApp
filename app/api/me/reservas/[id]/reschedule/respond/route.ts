@@ -238,8 +238,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         feeFixed: pricing.feeFixedApplied,
       });
       const resolvedSnapshot = {
-        organizationId: booking.organizationId,
-        buyerIdentityId: booking.userId ?? null,
+        orgId: booking.organizationId,
+        customerIdentityId: booking.userId ?? null,
         snapshot: {
           currency,
           gross: totalCents,
@@ -272,6 +272,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
       const ensured = await ensurePaymentIntent({
         purchaseId,
+        orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
         amountCents: totalCents,
@@ -284,7 +285,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           paymentScenario: "BOOKING_CHANGE",
           bookingChangeRequestId: String(request.id),
           bookingId: String(booking.id),
-          organizationId: String(booking.organizationId),
+          orgId: String(booking.organizationId),
           userId: booking.userId ?? "",
           guestEmail: booking.guestEmail ?? "",
           priceDeltaCents: String(priceDeltaCents),
@@ -300,7 +301,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         },
         requireStripe: !isPlatformOrg,
         resolvedSnapshot,
-        buyerIdentityRef: booking.userId ?? null,
+        customerIdentityId: booking.userId ?? null,
         paymentEvent: {
           userId: booking.userId ?? null,
           amountCents: totalCents,

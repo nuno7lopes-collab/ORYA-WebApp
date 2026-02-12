@@ -26,7 +26,7 @@ const INCLUDE_FILES = [
   "next.config.js",
   "next.config.mjs",
   "proxy.ts",
-  "README.md",
+  "README_v1.md",
   ".env.example",
 ];
 

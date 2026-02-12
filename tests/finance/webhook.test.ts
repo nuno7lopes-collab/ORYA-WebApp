@@ -67,10 +67,10 @@ describe("handleStripeWebhook", () => {
     prismaMock.ticket.updateMany.mockClear();
   });
 
-  it("marca pagamento como DISPUTED em dispute.created", async () => {
+  it("marca pagamento como DISPUTED em payment.dispute_opened", async () => {
     const result = await handleStripeWebhook({
       id: "evt_1",
-      type: "dispute.created",
+      type: "payment.dispute_opened",
       data: { object: { id: "dp_1", metadata: { paymentId: "pay_1" } } },
     });
 
@@ -86,11 +86,11 @@ describe("handleStripeWebhook", () => {
     expect(recordOutboxEvent).toHaveBeenCalled();
   });
 
-  it("marca pagamento como CHARGEBACK_WON em dispute.won", async () => {
+  it("marca pagamento como CHARGEBACK_WON em payment.dispute_closed (WON)", async () => {
     const result = await handleStripeWebhook({
       id: "evt_2",
-      type: "dispute.won",
-      data: { object: { id: "dp_2", metadata: { paymentId: "pay_1" } } },
+      type: "payment.dispute_closed",
+      data: { object: { id: "dp_2", metadata: { paymentId: "pay_1" }, outcome: "WON" } },
     });
 
     expect(result.handled).toBe(true);
@@ -104,11 +104,11 @@ describe("handleStripeWebhook", () => {
     expect(recordOutboxEvent).toHaveBeenCalled();
   });
 
-  it("marca pagamento como CHARGEBACK_LOST em dispute.lost", async () => {
+  it("marca pagamento como CHARGEBACK_LOST em payment.dispute_closed (LOST)", async () => {
     const result = await handleStripeWebhook({
       id: "evt_3",
-      type: "dispute.lost",
-      data: { object: { id: "dp_3", metadata: { paymentId: "pay_1" } } },
+      type: "payment.dispute_closed",
+      data: { object: { id: "dp_3", metadata: { paymentId: "pay_1" }, outcome: "LOST" } },
     });
 
     expect(result.handled).toBe(true);
@@ -120,5 +120,16 @@ describe("handleStripeWebhook", () => {
       expect.objectContaining({ data: { status: "CHARGEBACK_LOST" } })
     );
     expect(recordOutboxEvent).toHaveBeenCalled();
+  });
+
+  it("rejeita payment.dispute_closed sem outcome válido", async () => {
+    const result = await handleStripeWebhook({
+      id: "evt_4",
+      type: "payment.dispute_closed",
+      data: { object: { id: "dp_4", metadata: { paymentId: "pay_1" }, outcome: "UNKNOWN" } },
+    });
+
+    expect(result.handled).toBe(false);
+    expect(result.reason).toBe("DISPUTE_OUTCOME_INVALID");
   });
 });

@@ -1,25 +1,19 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { Prisma, padel_format, PadelEligibilityType } from "@prisma/client";
+import { Prisma, PadelEligibilityType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
+import { PORTUGAL_CITIES } from "@/config/cities";
+import { logError } from "@/lib/observability/logger";
 
 const DEFAULT_LIMIT = 12;
-const SUPPORTED_FORMATS = new Set<padel_format>([
-  padel_format.TODOS_CONTRA_TODOS,
-  padel_format.QUADRO_ELIMINATORIO,
-  padel_format.GRUPOS_ELIMINATORIAS,
-  padel_format.QUADRO_AB,
-  padel_format.DUPLA_ELIMINACAO,
-  padel_format.NON_STOP,
-  padel_format.CAMPEONATO_LIGA,
-]);
 
 function clampLimit(raw: string | null) {
   const parsed = raw ? Number(raw) : NaN;
@@ -84,6 +78,11 @@ async function _GET(req: NextRequest) {
     const formatParam = params.get("format");
     const eligibilityParam = params.get("eligibility");
     const levelParam = params.get("level");
+    const cityParamRaw = params.get("city")?.trim() ?? "";
+    const cityParam =
+      cityParamRaw && cityParamRaw.toLowerCase() !== "portugal"
+        ? PORTUGAL_CITIES.find((entry) => entry.toLowerCase() === cityParamRaw.toLowerCase()) ?? cityParamRaw
+        : null;
 
     const priceMin = priceMinParam ? Math.max(0, parseFloat(priceMinParam)) : 0;
     const priceMaxRaw = priceMaxParam ? parseFloat(priceMaxParam) : null;
@@ -107,6 +106,13 @@ async function _GET(req: NextRequest) {
       ];
     }
 
+    if (cityParam) {
+      const cityFilter: Prisma.EventWhereInput = {
+        addressRef: { formattedAddress: { contains: cityParam, mode: "insensitive" } },
+      };
+      where.AND = Array.isArray(where.AND) ? [...where.AND, cityFilter] : [cityFilter];
+    }
+
     const startsAtFilter = buildDateFilter(dateParam, dayParam);
     if (startsAtFilter) {
       where.startsAt = startsAtFilter;
@@ -114,8 +120,9 @@ async function _GET(req: NextRequest) {
 
     const andFilters: Prisma.EventWhereInput[] = [];
 
-    if (formatParam && SUPPORTED_FORMATS.has(formatParam as padel_format)) {
-      andFilters.push({ padelTournamentConfig: { is: { format: formatParam as padel_format } } });
+    const formatFilter = parsePadelFormat(formatParam);
+    if (formatFilter) {
+      andFilters.push({ padelTournamentConfig: { is: { format: formatFilter } } });
     }
 
     if (
@@ -258,7 +265,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[padel/discover] error", err);
+    logError("api.padel.discover", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

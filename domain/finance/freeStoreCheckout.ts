@@ -28,7 +28,6 @@ function buildFreeIntent(params: FinalizeFreeStoreCheckoutParams): Stripe.Paymen
       grossAmountCents: "0",
       platformFeeCents: "0",
       payoutAmountCents: "0",
-      stripeFeeEstimateCents: "0",
       sourceType: "STORE_ORDER",
       sourceId: String(params.orderId),
     },

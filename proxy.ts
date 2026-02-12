@@ -30,6 +30,7 @@ const SENSITIVE_PATH_PREFIXES = [
   "/admin",
   "/api/admin",
   "/me",
+  "/org",
   "/organizacao",
   "/login",
   "/signup",
@@ -148,10 +149,175 @@ function isSensitivePath(pathname: string) {
 function shouldRefreshSupabaseSession(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   if (pathname.startsWith("/me")) return true;
+  if (pathname.startsWith("/org")) return true;
   if (pathname.startsWith("/organizacao")) return true;
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return true;
   // Também refresca quando já existem cookies sb-* (evita estado preso em navegação normal)
   return req.cookies.getAll().some((c) => c.name.startsWith("sb-"));
+}
+
+function parsePositiveOrgId(raw: string | null | undefined) {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  if (!Number.isInteger(parsed)) return null;
+  return parsed;
+}
+
+function mapLegacyOrganizationAlias(
+  req: NextRequest,
+  cookieOrgRaw: string | undefined,
+): URL | null {
+  const pathname = req.nextUrl.pathname;
+  if (!pathname.startsWith("/organizacao")) return null;
+
+  const params = new URLSearchParams(req.nextUrl.searchParams);
+  const orgId =
+    parsePositiveOrgId(params.get("organizationId")) ??
+    parsePositiveOrgId(params.get("org")) ??
+    parsePositiveOrgId(cookieOrgRaw);
+  if (!orgId) return null;
+
+  params.delete("organizationId");
+  params.delete("org");
+  const suffix = pathname.slice("/organizacao".length);
+  let canonicalPath: string | null = null;
+
+  if (suffix === "" || suffix === "/" || suffix === "/overview") {
+    const tab = params.get("tab");
+    const section = params.get("section");
+    params.delete("tab");
+    params.delete("section");
+    if (tab === "manage") {
+      canonicalPath = `/org/${orgId}/manage`;
+    } else if (tab === "promote") {
+      canonicalPath = `/org/${orgId}/promote`;
+    } else if (tab === "profile") {
+      canonicalPath = `/org/${orgId}/profile`;
+    } else if (tab === "analyze") {
+      if (section === "financas" || section === "invoices") {
+        canonicalPath = `/org/${orgId}/financas`;
+        if (section === "invoices") params.set("tab", "invoices");
+      } else {
+        canonicalPath = `/org/${orgId}/analytics`;
+        if (section === "ops" || section === "vendas") {
+          params.set("tab", section);
+        } else {
+          params.set("tab", "overview");
+        }
+      }
+    } else {
+      canonicalPath = `/org/${orgId}/overview`;
+    }
+  } else if (suffix === "/manage") {
+    canonicalPath = `/org/${orgId}/manage`;
+  } else if (suffix === "/promote") {
+    canonicalPath = `/org/${orgId}/promote`;
+  } else if (suffix === "/profile") {
+    const section = params.get("section");
+    if (section === "followers") {
+      params.delete("section");
+      canonicalPath = `/org/${orgId}/perfil/seguidores`;
+    } else {
+      canonicalPath = `/org/${orgId}/profile`;
+    }
+  } else if (suffix === "/profile/seguidores") {
+    canonicalPath = `/org/${orgId}/perfil/seguidores`;
+  } else if (suffix === "/scan") {
+    canonicalPath = `/org/${orgId}/checkin`;
+    if (!params.get("tab")) params.set("tab", "scanner");
+  } else if (suffix === "/reservas" || suffix === "/reservas/") {
+    canonicalPath = `/org/${orgId}/servicos`;
+  } else if (suffix === "/settings") {
+    canonicalPath = `/org/${orgId}/settings`;
+  } else if (suffix.startsWith("/settings/")) {
+    canonicalPath = `/org/${orgId}${suffix}`;
+  } else if (suffix.startsWith("/owner/confirm")) {
+    canonicalPath = `/org/${orgId}/settings`;
+  } else if (suffix === "/pagamentos" || suffix.startsWith("/pagamentos/") || suffix === "/faturacao") {
+    canonicalPath = `/org/${orgId}/financas`;
+    if (suffix.includes("/invoices")) params.set("tab", "invoices");
+  } else if (suffix === "/estatisticas" || suffix === "/analyze") {
+    const section = params.get("section");
+    params.delete("section");
+    if (section === "financas" || section === "invoices") {
+      canonicalPath = `/org/${orgId}/financas`;
+      if (section === "invoices") params.set("tab", "invoices");
+    } else {
+      canonicalPath = `/org/${orgId}/analytics`;
+      if (section === "ops" || section === "vendas") {
+        params.set("tab", section);
+      } else if (!params.get("tab")) {
+        params.set("tab", "overview");
+      }
+    }
+  } else if (suffix === "/loja") {
+    canonicalPath = `/org/${orgId}/loja`;
+  }
+
+  if (!canonicalPath) return null;
+  const target = req.nextUrl.clone();
+  target.pathname = canonicalPath;
+  target.search = params.toString() ? `?${params.toString()}` : "";
+  if (target.pathname === req.nextUrl.pathname && target.search === req.nextUrl.search) return null;
+  return target;
+}
+
+function mapCanonicalOrgAliasRewrite(req: NextRequest): URL | null {
+  const pathname = req.nextUrl.pathname;
+  const match = pathname.match(/^\/org\/(\d+)(?:\/(.*))?$/i);
+  if (!match) return null;
+
+  const orgId = parsePositiveOrgId(match[1]);
+  if (!orgId) return null;
+
+  const rest = `/${match[2] ?? ""}`.replace(/\/+$/, "") || "/";
+  if (rest === "/loja" || rest.startsWith("/loja/")) return null;
+
+  const params = new URLSearchParams(req.nextUrl.searchParams);
+  params.set("organizationId", String(orgId));
+  let legacyPath: string | null = null;
+
+  if (rest === "/" || rest === "/overview") {
+    legacyPath = "/organizacao/overview";
+  } else if (rest === "/manage") {
+    legacyPath = "/organizacao/manage";
+  } else if (rest === "/promote") {
+    legacyPath = "/organizacao/promote";
+  } else if (rest === "/profile") {
+    legacyPath = "/organizacao/profile";
+  } else if (rest === "/perfil/seguidores") {
+    legacyPath = "/organizacao/profile";
+    params.set("section", "followers");
+  } else if (rest === "/analytics") {
+    legacyPath = "/organizacao/analyze";
+    const tab = params.get("tab");
+    params.delete("tab");
+    if (tab === "vendas" || tab === "ops") {
+      params.set("section", tab);
+    } else {
+      params.set("section", "overview");
+    }
+  } else if (rest === "/financas") {
+    legacyPath = "/organizacao/analyze";
+    const tab = params.get("tab");
+    params.delete("tab");
+    params.set("section", tab === "invoices" ? "invoices" : "financas");
+  } else if (rest === "/checkin") {
+    legacyPath = "/organizacao/scan";
+    if (!params.get("tab")) params.set("tab", "scanner");
+  } else if (rest === "/servicos") {
+    legacyPath = "/organizacao/reservas";
+  } else if (rest === "/settings" || rest.startsWith("/settings/")) {
+    legacyPath = `/organizacao${rest}`;
+  }
+
+  if (!legacyPath) return null;
+
+  const rewritten = req.nextUrl.clone();
+  rewritten.pathname = legacyPath;
+  rewritten.search = params.toString() ? `?${params.toString()}` : "";
+  return rewritten;
 }
 
 function buildRedirectUrl(req: NextRequest, protocol: string, host: string) {
@@ -214,7 +380,16 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  const url = req.nextUrl.clone();
+  const legacyAliasRedirect = mapLegacyOrganizationAlias(req, req.cookies.get("orya_organization")?.value);
+  if (legacyAliasRedirect) {
+    const res = NextResponse.redirect(legacyAliasRedirect, 301);
+    applyRequestContextHeaders(res.headers, requestContext);
+    return res;
+  }
+
+  const canonicalAliasRewrite = mapCanonicalOrgAliasRewrite(req);
+
+  const url = canonicalAliasRewrite ?? req.nextUrl.clone();
   const shouldRewriteRoot = adminHost && url.pathname === "/";
   if (shouldRewriteRoot) {
     url.pathname = "/admin";
@@ -240,7 +415,7 @@ export async function proxy(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const res = shouldRewriteRoot
+  const res = shouldRewriteRoot || Boolean(canonicalAliasRewrite)
     ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   applyRequestContextHeaders(res.headers, requestContext);
@@ -258,6 +433,8 @@ export async function proxy(req: NextRequest) {
     return res;
   }
   const orgParam =
+    url.searchParams.get("org") ??
+    url.searchParams.get("organizationId") ??
     req.nextUrl.searchParams.get("org") ??
     req.nextUrl.searchParams.get("organizationId");
   if (orgParam && /^\d+$/.test(orgParam)) {

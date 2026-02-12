@@ -6,7 +6,6 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   OrganizationMemberRole,
   OrganizationModule,
-  padel_format,
   PadelPairingSlotStatus,
   PadelPairingStatus,
   PadelRegistrationStatus,
@@ -19,6 +18,7 @@ import { enqueueOperation } from "@/lib/operations/enqueue";
 import { refundKey } from "@/lib/stripe/idempotency";
 import { transitionPadelRegistrationStatus } from "@/domain/padelRegistration";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -268,14 +268,12 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const allowedFormats = new Set<string>(Object.values(padel_format));
-
   const updates = linksInput.map((link) => {
     const padelCategoryId = typeof link.padelCategoryId === "number" ? link.padelCategoryId : null;
     if (!padelCategoryId || !validCategoryIds.has(padelCategoryId)) {
       throw new Error("INVALID_CATEGORY");
     }
-    const format = typeof link.format === "string" && allowedFormats.has(link.format) ? (link.format as any) : undefined;
+    const format = parsePadelFormat(link.format) ?? undefined;
     const capacityTeams =
       typeof link.capacityTeams === "number" && Number.isFinite(link.capacityTeams) && link.capacityTeams > 0
         ? Math.floor(link.capacityTeams)

@@ -125,7 +125,7 @@ const jobs = [
     name: "operations",
     method: "POST",
     path: "/api/cron/operations",
-    intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 3000),
+    intervalMs: getInterval("CRON_OPERATIONS_INTERVAL_MS", 1000),
   },
   {
     name: "bookings-cleanup",
@@ -152,16 +152,16 @@ const jobs = [
     intervalMs: getInterval("CRON_PADEL_EXPIRE_INTERVAL_MS", 300000),
   },
   {
-    name: "padel-split-reminders",
-    method: "POST",
-    path: "/api/cron/padel/split-reminders",
-    intervalMs: getInterval("CRON_PADEL_SPLIT_REMINDERS_INTERVAL_MS", 300000),
-  },
-  {
     name: "padel-matchmaking",
     method: "POST",
     path: "/api/cron/padel/matchmaking",
     intervalMs: getInterval("CRON_PADEL_MATCHMAKING_INTERVAL_MS", 300000),
+  },
+  {
+    name: "padel-split-reminders",
+    method: "POST",
+    path: "/api/cron/padel/split-reminders",
+    intervalMs: getInterval("CRON_PADEL_SPLIT_REMINDERS_INTERVAL_MS", 300000),
   },
   {
     name: "padel-waitlist",
@@ -182,10 +182,10 @@ const jobs = [
     intervalMs: getInterval("CRON_PADEL_TOURNAMENT_EVE_INTERVAL_MS", 3600000),
   },
   {
-    name: "payouts-release",
-    method: "POST",
-    path: "/api/cron/payouts/release",
-    intervalMs: getInterval("CRON_PAYOUTS_INTERVAL_MS", 300000),
+    name: "entitlements-qr-cleanup",
+    method: "GET",
+    path: "/api/cron/entitlements/qr-cleanup",
+    intervalMs: getInterval("CRON_ENTITLEMENTS_QR_CLEANUP_INTERVAL_MS", 3600000),
   },
   {
     name: "crm-rebuild",
@@ -194,16 +194,22 @@ const jobs = [
     intervalMs: getInterval("CRON_CRM_REBUILD_INTERVAL_MS", 86400000),
   },
   {
-    name: "analytics-rollup",
-    method: "POST",
-    path: "/api/internal/analytics/rollup",
-    intervalMs: getInterval("CRON_ANALYTICS_INTERVAL_MS", 86400000),
-  },
-  {
     name: "crm-campanhas",
     method: "POST",
     path: "/api/cron/crm/campanhas",
     intervalMs: getInterval("CRON_CRM_CAMPAIGNS_INTERVAL_MS", 60000),
+  },
+  {
+    name: "repair-usernames",
+    method: "POST",
+    path: "/api/cron/repair-usernames",
+    intervalMs: getInterval("CRON_REPAIR_USERNAMES_INTERVAL_MS", 604800000),
+  },
+  {
+    name: "analytics-rollup",
+    method: "POST",
+    path: "/api/cron/analytics/rollup",
+    intervalMs: getInterval("CRON_ANALYTICS_INTERVAL_MS", 86400000),
   },
   {
     name: "loyalty-expire",

@@ -6,6 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { UserEventSignalType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 const SIGNAL_TYPES = new Set<string>(Object.values(UserEventSignalType));
 
@@ -112,7 +113,7 @@ async function _POST(req: NextRequest) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
-    console.error("POST /api/me/events/signals error:", err);
+    logError("api.me.events.signals", err);
     return jsonWrap({ ok: false, error: "Erro ao registar sinal." }, { status: 500 });
   }
 }

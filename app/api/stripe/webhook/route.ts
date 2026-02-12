@@ -103,7 +103,7 @@ async function resolveOrganizationIdFromStripeEvent(
   tx = prisma,
 ): Promise<number | null> {
   const metadata = extractStripeMetadata(event);
-  const orgId = parseNumber(metadata.organizationId);
+  const orgId = parseNumber(metadata.orgId);
   if (orgId) return orgId;
 
   const paymentId = typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" ? metadata.paymentId.trim() : null;
@@ -142,6 +142,49 @@ async function resolveOrganizationIdFromStripeEvent(
   return null;
 }
 
+async function deadLetterUnresolvedOrgStripeEvent(params: {
+  event: Stripe.Event;
+  correlationId: string;
+  paymentId: string | null;
+}) {
+  const { event, correlationId, paymentId } = params;
+  const now = new Date();
+  const safeStripeEvent = JSON.parse(JSON.stringify(event));
+  const outbox = await recordOutboxEvent({
+    eventType: STRIPE_OUTBOX_TYPE,
+    dedupeKey: makeOutboxDedupeKey(STRIPE_OUTBOX_TYPE, event.id),
+    payload: {
+      stripeEvent: safeStripeEvent,
+      stripeEventId: event.id,
+      stripeEventType: event.type,
+      reasonCode: "ORG_NOT_RESOLVED",
+    },
+    causationId: event.id,
+    correlationId,
+  });
+  await prisma.outboxEvent.update({
+    where: { eventId: outbox.eventId },
+    data: {
+      deadLetteredAt: now,
+      attempts: Math.max(1, outbox.attempts ?? 0),
+      nextAttemptAt: null,
+      reasonCode: "ORG_NOT_RESOLVED",
+      errorClass: "StripeWebhookOrgResolution",
+      errorStack: null,
+      firstSeenAt: outbox.firstSeenAt ?? now,
+      lastSeenAt: now,
+    },
+  });
+  logWebhookError("organization_id_missing_dead_lettered", new Error("ORG_NOT_RESOLVED"), {
+    stripeEventId: event.id,
+    stripeEventType: event.type,
+    stripeAccountId: event.account ?? null,
+    orgId: null,
+    paymentId,
+    correlationId,
+  });
+}
+
 async function recordStripeWebhookOutbox(event: Stripe.Event) {
   const metadata = extractStripeMetadata(event);
   const correlationId =
@@ -149,19 +192,23 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
     (typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" && metadata.paymentId.trim()) ||
     resolvePaymentIntentId(event) ||
     event.id;
+  const paymentId =
+    (typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" && metadata.paymentId.trim()) ||
+    (typeof metadata.purchaseId === "string" && metadata.purchaseId.trim() !== "" && metadata.purchaseId.trim()) ||
+    null;
   const organizationId = await resolveOrganizationIdFromStripeEvent(event);
   if (!organizationId) {
-    logWebhookWarn("organization_id_missing", {
-      eventId: event.id,
-      eventType: event.type,
+    await deadLetterUnresolvedOrgStripeEvent({
+      event,
+      correlationId: correlationId ?? event.id,
+      paymentId,
     });
-    return { ok: false, reason: "ORG_NOT_RESOLVED" } as const;
+    return { ok: true, deduped: false, deadLettered: true } as const;
   }
   const sourceType = typeof metadata.sourceType === "string" && metadata.sourceType.trim() !== "" ? metadata.sourceType : null;
   const sourceId = typeof metadata.sourceId === "string" && metadata.sourceId.trim() !== "" ? metadata.sourceId : null;
   const paymentIntentId = resolvePaymentIntentId(event);
   const purchaseId = typeof metadata.purchaseId === "string" && metadata.purchaseId.trim() !== "" ? metadata.purchaseId.trim() : null;
-  const paymentId = typeof metadata.paymentId === "string" && metadata.paymentId.trim() !== "" ? metadata.paymentId.trim() : null;
 
   const eventLogId = crypto.randomUUID();
   return prisma.$transaction(async (tx) => {
@@ -183,7 +230,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
       },
       tx,
     );
-    if (!log) return { ok: true, deduped: true };
+    if (!log) return { ok: true, deduped: true, deadLettered: false };
     const safeStripeEvent = JSON.parse(JSON.stringify(event));
     await recordOutboxEvent(
       {
@@ -196,7 +243,7 @@ async function recordStripeWebhookOutbox(event: Stripe.Event) {
       },
       tx,
     );
-    return { ok: true, deduped: false };
+    return { ok: true, deduped: false, deadLettered: false };
   });
 }
 
@@ -234,13 +281,18 @@ async function _POST(req: NextRequest) {
 
   try {
     const outbox = await recordStripeWebhookOutbox(event);
-    if (!outbox.ok) {
-      return respondPlainText(ctx, "ORG_NOT_RESOLVED", { status: 422 });
-    }
     if (outbox.deduped) {
       logWebhookWarn("duplicate_event_ignored", {
         id: event.id,
         type: event.type,
+        ...logCtx,
+      });
+    }
+    if (outbox.deadLettered) {
+      logWebhookWarn("event_dead_lettered", {
+        id: event.id,
+        type: event.type,
+        reasonCode: "ORG_NOT_RESOLVED",
         ...logCtx,
       });
     }

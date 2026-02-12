@@ -593,14 +593,15 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   }));
 
   await createCheckout({
+    orgId: pairing.organizationId,
     sourceType: SourceType.PADEL_REGISTRATION,
     sourceId: registration.id,
     idempotencyKey: checkoutIdempotencyKey,
     paymentId: purchaseId,
-    buyerIdentityRef: buyerIdentityId,
+    customerIdentityId: buyerIdentityId,
     resolvedSnapshot: {
-      organizationId: pairing.organizationId,
-      buyerIdentityId: buyerIdentityId ?? null,
+      orgId: pairing.organizationId,
+      customerIdentityId: buyerIdentityId ?? null,
       eventId: pairing.eventId,
       snapshot: {
         currency,
@@ -684,6 +685,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
 
   const { paymentIntent } = await ensurePaymentIntent({
     purchaseId,
+    orgId: pairing.organizationId,
     sourceType: SourceType.PADEL_REGISTRATION,
     sourceId: registration.id,
     amountCents: pricing.totalCents,
@@ -710,9 +712,10 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
     },
     requireStripe: true,
     clientIdempotencyKey: clientIdempotencyKey ?? undefined,
+    customerIdentityId: buyerIdentityId ?? null,
     resolvedSnapshot: {
-      organizationId: pairing.organizationId,
-      buyerIdentityId: buyerIdentityId ?? null,
+      orgId: pairing.organizationId,
+      customerIdentityId: buyerIdentityId ?? null,
       eventId: pairing.eventId,
       snapshot: {
         currency,
@@ -1708,7 +1711,6 @@ async function _POST(req: NextRequest) {
     const recipientConnectAccountId = requiresOrganizationStripe ? stripeAccountId : null;
 
     const totalAmountInCents = combinedFees.totalCents + cardPlatformFeeCents;
-    const stripeFeeEstimateCents = 0;
     const platformFeeCombinedCents = platformFeeTotalCents;
     const payoutAmountCents = Math.max(0, totalAmountInCents - platformFeeTotalCents);
 
@@ -2117,7 +2119,6 @@ async function _POST(req: NextRequest) {
           currency: currency.toLowerCase(),
           platformFeeCents: platformFeeCents,
           platformFeeCombinedCents,
-          stripeFeeEstimateCents,
         }),
       )
       .digest("hex")
@@ -2158,15 +2159,16 @@ async function _POST(req: NextRequest) {
     });
 
     await createCheckout({
+      orgId: eventOrganizationId,
       sourceType: SourceType.TICKET_ORDER,
       sourceId: String(event.id),
       idempotencyKey: checkoutIdempotencyKey,
       paymentId: purchaseId,
-      buyerIdentityRef: ownerResolved.ownerIdentityId ?? null,
+      customerIdentityId: ownerResolved.ownerIdentityId ?? null,
       inviteToken,
       resolvedSnapshot: {
-        organizationId: eventOrganizationId,
-        buyerIdentityId: ownerResolved.ownerIdentityId ?? null,
+        orgId: eventOrganizationId,
+        customerIdentityId: ownerResolved.ownerIdentityId ?? null,
         eventId: event.id,
         ticketTypeIds: lines.map((line) => line.ticketTypeId),
         snapshot: {
@@ -2572,7 +2574,6 @@ async function _POST(req: NextRequest) {
       cardPlatformFeeCents: String(cardPlatformFeeCents),
       cardPlatformFeeBps: String(ORYA_CARD_FEE_BPS),
       platformFeeCombinedCents: String(platformFeeCombinedCents),
-      stripeFeeEstimateCents: String(stripeFeeEstimateCents),
       grossAmountCents: String(totalAmountInCents),
       payoutAmountCents: String(payoutAmountCents),
       recipientConnectAccountId: recipientConnectAccountId ?? "",
@@ -2595,7 +2596,6 @@ async function _POST(req: NextRequest) {
         cardPlatformFeeBps: ORYA_CARD_FEE_BPS,
         paymentMethod,
         platformFeeCombinedCents,
-        stripeFeeEstimateCents,
         totalCents: totalAmountInCents,
         currency: currency.toUpperCase(),
       }),

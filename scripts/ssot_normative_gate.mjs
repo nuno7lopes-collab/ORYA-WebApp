@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = process.cwd();
-const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry_v1.md");
 
 function fail(lines) {
   console.error("SSOT normative gate failed:");
@@ -30,7 +30,7 @@ const ambiguousPatterns = [
 lines.forEach((line, idx) => {
   const lineNo = idx + 1;
   const hasNonNormative = /n[aã]o[- ]?normativ/i.test(line);
-  if (hasNonNormative && !line.includes("docs/planning_registry.md")) {
+  if (hasNonNormative && !line.includes("docs/planning_registry_v1.md")) {
     violations.push(`L${lineNo}: non-normative marker outside explicit planning reference.`);
   }
 

@@ -29,6 +29,7 @@ import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
+import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
@@ -250,6 +251,34 @@ type PayoutAlerts = {
   nextAttemptAt: string | null;
   actionRequired: boolean;
 };
+type OpsFeedItem = {
+  id: string;
+  eventType: string;
+  createdAt: string;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  correlationId?: string | null;
+};
+type OpsFeedResponse = { ok: boolean; items?: OpsFeedItem[]; error?: string };
+type FinanceInvoicingResponse =
+  | {
+      ok: true;
+      settings: {
+        invoicingMode: "EXTERNAL_SOFTWARE" | "MANUAL_OUTSIDE_ORYA";
+        invoicingSoftwareName: string | null;
+        invoicingNotes: string | null;
+        invoicingAcknowledgedAt: string | null;
+      } | null;
+    }
+  | { ok: false; error?: string };
+type AnalyticsDimensionsResponse =
+  | {
+      ok: true;
+      dimensionKey: string;
+      bucketDate: string | null;
+      items: Record<string, Record<string, number>>;
+    }
+  | { ok: false; error?: string };
 type MarketingOverviewResponse = {
   ok: boolean;
   totalTickets: number;
@@ -283,6 +312,9 @@ type OrganizationLite = {
   publicName?: string | null;
   businessName?: string | null;
   payoutIban?: string | null;
+  feeMode?: string | null;
+  platformFeeBps?: number | null;
+  platformFeeFixedCents?: number | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: string | null;
   stripeAccountId?: string | null;
@@ -473,7 +505,7 @@ function OrganizacaoPageInner({
     sectionParamRaw === PADEL_CLUB_SECTION || sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
 
   useEffect(() => {
-    if (!pathname || pathname.startsWith("/organizacao/padel")) return;
+    if (!pathname || pathname.startsWith("/organizacao/padel") || pathname.startsWith("/org/")) return;
     if (activeObjective !== "manage") return;
     if (normalizedSection !== PADEL_CLUB_SECTION && normalizedSection !== PADEL_TOURNAMENTS_SECTION) return;
     const params = new URLSearchParams(searchParams?.toString() || "");
@@ -548,7 +580,12 @@ function OrganizacaoPageInner({
   }, [toolsModalOpen]);
 
   const organizationIdParam = searchParams?.get("organizationId");
-  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId =
+    organizationIdFromQuery && !Number.isNaN(organizationIdFromQuery)
+      ? organizationIdFromQuery
+      : organizationIdFromPath;
   const orgMeUrl = useMemo(() => {
     if (!organizationId || Number.isNaN(organizationId)) return null;
     return `/api/organizacao/me?organizationId=${organizationId}`;
@@ -607,11 +644,15 @@ function OrganizacaoPageInner({
   const isReservasOrg = primaryOperation === "RESERVAS";
   const isTorneiosOrg = primaryOperation === "TORNEIOS";
   const hasTorneiosModule = activeModules.includes("TORNEIOS");
+  const isOrgCanonicalPath = pathname?.startsWith("/org/");
   const isTorneiosRoute =
     pathname?.startsWith("/organizacao/torneios") ||
     pathname?.startsWith("/organizacao/padel") ||
-    pathname?.startsWith("/organizacao/tournaments");
-  const isEventosRoute = pathname?.startsWith("/organizacao/eventos");
+    pathname?.startsWith("/organizacao/tournaments") ||
+    Boolean(isOrgCanonicalPath && pathname?.includes("/torneios"));
+  const isEventosRoute =
+    pathname?.startsWith("/organizacao/eventos") ||
+    Boolean(isOrgCanonicalPath && pathname?.includes("/eventos"));
   const isPadelContext =
     hasTorneiosModule &&
     !isEventosRoute &&
@@ -619,6 +660,7 @@ function OrganizacaoPageInner({
       pathname?.startsWith("/organizacao/torneios") ||
       pathname?.startsWith("/organizacao/padel") ||
       pathname?.startsWith("/organizacao/tournaments") ||
+      isOrgCanonicalPath ||
       isPadelManageSection);
   const eventsScope = useMemo<"PADEL" | "EVENTOS">(() => {
     if (isTorneiosRoute || isPadelManageSection) return "PADEL";
@@ -853,6 +895,9 @@ function OrganizacaoPageInner({
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
   const [stripeSuccessMessage, setStripeSuccessMessage] = useState<string | null>(null);
+  const [financeActionSaving, setFinanceActionSaving] = useState<"invoicing" | "payout-settings" | null>(null);
+  const [financeActionMessage, setFinanceActionMessage] = useState<string | null>(null);
+  const [financeActionError, setFinanceActionError] = useState<string | null>(null);
   const [checklistDismissed, setChecklistDismissed] = useState(false);
   const [checklistCollapsed, setChecklistCollapsed] = useState(true);
 
@@ -870,8 +915,8 @@ function OrganizacaoPageInner({
       ],
       promote: ["marketing"],
       analyze: canViewFinance
-        ? ["overview", "vendas", "financas", "invoices"]
-        : ["financas", "invoices"],
+        ? ["overview", "vendas", "financas", "invoices", "ops"]
+        : ["financas", "invoices", "ops"],
       profile: ["perfil"],
     };
 
@@ -940,8 +985,8 @@ function OrganizacaoPageInner({
       ...(hasInscricoesModule ? ["inscricoes"] : []),
     ];
     const analyzeSections = canViewFinance
-      ? ["overview", "vendas", "financas", "invoices"]
-      : ["financas", "invoices"];
+      ? ["overview", "vendas", "financas", "invoices", "ops"]
+      : ["financas", "invoices", "ops"];
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
       manage: manageSections,
@@ -974,7 +1019,7 @@ function OrganizacaoPageInner({
     (activeObjective === "create" || (activeObjective === "analyze" && normalizedSection === "overview"));
   const { data: overview } = useSWR<OverviewResponse>(
     shouldLoadOverview
-      ? `/api/organizacao/estatisticas/overview?range=30d${eventsScopeAmp}`
+      ? `/api/organizacao/analytics/overview?range=30d${eventsScopeAmp}`
       : null,
     fetcher,
     swrOptions
@@ -989,7 +1034,7 @@ function OrganizacaoPageInner({
   type TimeSeriesResponse = { ok: boolean; points: TimeSeriesPoint[]; range: { from: string | null; to: string | null } };
   const { data: timeSeries } = useSWR<TimeSeriesResponse>(
     shouldLoadOverviewSeries
-      ? `/api/organizacao/estatisticas/time-series?range=30d${eventsScopeAmp}`
+      ? `/api/organizacao/analytics/time-series?range=30d${eventsScopeAmp}`
       : null,
     fetcher,
     swrOptions
@@ -1071,6 +1116,49 @@ function OrganizacaoPageInner({
     fetcher,
     swrOptions
   );
+  const shouldLoadFinanceControls =
+    organization?.status === "ACTIVE" &&
+    canViewFinance &&
+    activeObjective === "analyze" &&
+    (activeSection === "financas" || activeSection === "invoices");
+  const { data: financeInvoicingSettings, mutate: mutateFinanceInvoicingSettings } = useSWR<FinanceInvoicingResponse>(
+    shouldLoadFinanceControls ? "/api/organizacao/finance/invoicing" : null,
+    fetcher,
+    swrOptions,
+  );
+  const shouldLoadOpsFeed =
+    organization?.status === "ACTIVE" &&
+    canViewFinance &&
+    activeObjective === "analyze" &&
+    activeSection === "ops";
+  const { data: opsFeed } = useSWR<OpsFeedResponse>(
+    shouldLoadOpsFeed ? "/api/organizacao/ops/feed?limit=25" : null,
+    fetcher,
+    swrOptions,
+  );
+
+  const financeExportRange = useMemo(() => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 30);
+    const toIso = to.toISOString().slice(0, 10);
+    const fromIso = from.toISOString().slice(0, 10);
+    return { from: fromIso, to: toIso };
+  }, []);
+
+  const buildFinanceExportHref = useCallback(
+    (kind: "fees" | "ledger" | "payouts") => {
+      const params = new URLSearchParams({
+        from: financeExportRange.from,
+        to: financeExportRange.to,
+      });
+      if (organization?.id) {
+        params.set("organizationId", String(organization.id));
+      }
+      return `/api/organizacao/finance/exports/${kind}?${params.toString()}`;
+    },
+    [financeExportRange.from, financeExportRange.to, organization?.id],
+  );
 
   const oneYearAgoIso = useMemo(() => {
     const d = new Date();
@@ -1083,12 +1171,12 @@ function OrganizacaoPageInner({
     if (!shouldLoadSales || !salesEventId) return null;
     const templateQuery = eventsScopeAmp;
     if (salesRange === "7d" || salesRange === "30d" || salesRange === "90d") {
-      return `/api/organizacao/estatisticas/time-series?range=${salesRange}&eventId=${salesEventId}${templateQuery}`;
+      return `/api/organizacao/analytics/time-series?range=${salesRange}&eventId=${salesEventId}${templateQuery}`;
     }
     if (salesRange === "365d") {
-      return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}${templateQuery}`;
+      return `/api/organizacao/analytics/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}${templateQuery}`;
     }
-    return `/api/organizacao/estatisticas/time-series?eventId=${salesEventId}${templateQuery}`;
+    return `/api/organizacao/analytics/time-series?eventId=${salesEventId}${templateQuery}`;
   }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales, eventsScopeAmp]);
 
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
@@ -1096,9 +1184,19 @@ function OrganizacaoPageInner({
     fetcher,
     swrOptions
   );
+  const { data: analyticsDimensions } = useSWR<AnalyticsDimensionsResponse>(
+    organization?.status === "ACTIVE" &&
+      canViewFinance &&
+      activeObjective === "analyze" &&
+      activeSection === "overview"
+      ? "/api/organizacao/analytics/dimensoes?dimensionKey=MODULE"
+      : null,
+    fetcher,
+    swrOptions,
+  );
 
   const { data: buyers } = useSWR<BuyersResponse>(
-    shouldLoadSales && salesEventId ? `/api/organizacao/estatisticas/buyers?eventId=${salesEventId}` : null,
+    shouldLoadSales && salesEventId ? `/api/organizacao/analytics/buyers?eventId=${salesEventId}` : null,
     fetcher,
     swrOptions
   );
@@ -1182,6 +1280,66 @@ function OrganizacaoPageInner({
       console.error(err);
       setStripeCtaError("Erro inesperado ao gerar link de onboarding.");
       setStripeCtaLoading(false);
+    }
+  }
+
+  async function handleUpdateInvoicing(mode: "EXTERNAL_SOFTWARE" | "MANUAL_OUTSIDE_ORYA") {
+    setFinanceActionError(null);
+    setFinanceActionMessage(null);
+    setFinanceActionSaving("invoicing");
+    try {
+      const payload: Record<string, unknown> = {
+        invoicingMode: mode,
+        acknowledged: true,
+      };
+      if (mode === "EXTERNAL_SOFTWARE") {
+        payload.invoicingSoftwareName =
+          financeInvoicingSettings?.ok && financeInvoicingSettings.settings?.invoicingSoftwareName
+            ? financeInvoicingSettings.settings.invoicingSoftwareName
+            : "Software externo";
+      }
+      const res = await fetch("/api/organizacao/finance/invoicing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error || json?.message || "Não foi possível atualizar a faturação.");
+      }
+      setFinanceActionMessage("Faturação atualizada.");
+      mutateFinanceInvoicingSettings();
+    } catch (err) {
+      setFinanceActionError(err instanceof Error ? err.message : "Erro ao atualizar faturação.");
+    } finally {
+      setFinanceActionSaving(null);
+    }
+  }
+
+  async function handlePayoutSettingsHardcut() {
+    setFinanceActionError(null);
+    setFinanceActionMessage(null);
+    setFinanceActionSaving("payout-settings");
+    try {
+      const res = await fetch("/api/organizacao/payouts/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          feeMode: "INCLUDED",
+          platformFeeBps: Number(organization?.platformFeeBps ?? 0),
+          platformFeeFixedCents: Number(organization?.platformFeeFixedCents ?? 0),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error || json?.message || "Não foi possível guardar payout settings.");
+      }
+      setFinanceActionMessage("Payout settings guardados.");
+      mutateOrganization();
+    } catch (err) {
+      setFinanceActionError(err instanceof Error ? err.message : "Erro ao guardar payout settings.");
+    } finally {
+      setFinanceActionSaving(null);
     }
   }
 
@@ -3613,7 +3771,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
               <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
-                href="/organizacao/analyze?section=invoices"
+                href={organization?.id ? `/org/${organization.id}/financas?tab=invoices` : "/organizacao/analyze?section=invoices"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
@@ -3624,13 +3782,20 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
               <p className="text-[12px] text-white/65">Detalhe de reservas e releases.</p>
               <Link
-                href="/organizacao/analyze?section=financas"
+                href={organization?.id ? `/org/${organization.id}/financas` : "/organizacao/analyze?section=financas"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Ver detalhe
               </Link>
             </div>
           </div>
+
+          {analyticsDimensions?.ok && (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-3 text-[12px] text-white/70">
+              Dimensões macro/micro ativas:{" "}
+              <span className="font-semibold text-white">{Object.keys(analyticsDimensions.items ?? {}).length}</span>
+            </div>
+          )}
 
           <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0a1226]/75 to-[#050a13]/90 p-4 space-y-3">
             <div className="relative flex items-center justify-between">
@@ -4052,6 +4217,71 @@ function OrganizacaoPageInner({
             </div>
           )}
 
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Controlos Financeiros</h3>
+                <p className="text-[12px] text-white/65">Invoicing, exports e payout settings canónicos.</p>
+              </div>
+              <div className="text-[11px] text-white/60">
+                Intervalo export: {financeExportRange.from} → {financeExportRange.to}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleUpdateInvoicing("MANUAL_OUTSIDE_ORYA")}
+                disabled={financeActionSaving !== null}
+                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+              >
+                Invoicing manual
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUpdateInvoicing("EXTERNAL_SOFTWARE")}
+                disabled={financeActionSaving !== null}
+                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+              >
+                Invoicing externo
+              </button>
+              <button
+                type="button"
+                onClick={handlePayoutSettingsHardcut}
+                disabled={financeActionSaving !== null}
+                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+              >
+                Guardar payout settings
+              </button>
+              <a href={buildFinanceExportHref("fees")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                Export fees CSV
+              </a>
+              <a href={buildFinanceExportHref("ledger")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                Export ledger CSV
+              </a>
+              <a href={buildFinanceExportHref("payouts")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                Export payouts CSV
+              </a>
+            </div>
+            <div className="text-[12px] text-white/70">
+              Modo de faturação:{" "}
+              <span className="font-semibold text-white">
+                {financeInvoicingSettings?.ok
+                  ? financeInvoicingSettings.settings?.invoicingMode ?? "Não configurado"
+                  : "Sem acesso"}
+              </span>
+            </div>
+            {financeActionMessage && (
+              <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+                {financeActionMessage}
+              </div>
+            )}
+            {financeActionError && (
+              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                {financeActionError}
+              </div>
+            )}
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             {[
               {
@@ -4312,7 +4542,63 @@ function OrganizacaoPageInner({
 
       {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
-          <InvoicesClient basePath="/organizacao/analyze?section=invoices" fullWidth organizationId={organization?.id ?? null} />
+          <InvoicesClient
+            basePath={organization?.id ? `/org/${organization.id}/financas?tab=invoices` : "/organizacao/analyze?section=invoices"}
+            fullWidth
+            organizationId={organization?.id ?? null}
+          />
+        </section>
+      )}
+
+      {activeObjective === "analyze" && activeSection === "ops" && (
+        <section className={cn("space-y-4", fadeClass)} id="ops">
+          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 backdrop-blur-3xl">
+            <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Ops Feed</h2>
+            <p className="text-sm text-white/70">Atividade operacional recente com correlação.</p>
+          </div>
+          {!opsFeed && (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
+              A carregar feed operacional...
+            </div>
+          )}
+          {opsFeed?.ok && (opsFeed.items?.length ?? 0) === 0 && (
+            <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
+              Sem eventos no feed operacional.
+            </div>
+          )}
+          {opsFeed?.ok && (opsFeed.items?.length ?? 0) > 0 && (
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm text-white/80">
+                  <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
+                    <tr>
+                      <th className="px-3 py-2">Data</th>
+                      <th className="px-3 py-2">Evento</th>
+                      <th className="px-3 py-2">Source</th>
+                      <th className="px-3 py-2">Correlation</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {(opsFeed.items ?? []).map((item) => (
+                      <tr key={item.id}>
+                        <td className="px-3 py-2 text-white/75">{formatDateTime(new Date(item.createdAt))}</td>
+                        <td className="px-3 py-2 text-white">{item.eventType}</td>
+                        <td className="px-3 py-2 text-white/70">
+                          {item.sourceType ?? "—"} {item.sourceId ? `#${item.sourceId}` : ""}
+                        </td>
+                        <td className="px-3 py-2 text-white/60">{item.correlationId ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {opsFeed && !opsFeed.ok && (
+            <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
+              Não foi possível carregar o Ops Feed.
+            </div>
+          )}
         </section>
       )}
 

@@ -5,6 +5,7 @@ import { mapGeoError } from "@/lib/geo/errors";
 import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 
@@ -73,7 +74,12 @@ async function _GET(req: NextRequest) {
       { headers: { "Cache-Control": "public, max-age=300" } },
     );
   } catch (err) {
-    console.error("[address/autocomplete] erro", err);
+    logError("api.address.autocomplete", err, {
+      query,
+      lat: Number.isFinite(lat ?? NaN) ? lat : null,
+      lng: Number.isFinite(lng ?? NaN) ? lng : null,
+      lang,
+    });
     const { status, message } = mapGeoError(err, "Falha ao obter sugestões.");
     return jsonWrap({ ok: false, error: message }, { status });
   }

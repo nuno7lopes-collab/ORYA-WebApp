@@ -9,7 +9,6 @@ import {
   PadelRegistrationStatus,
   Prisma,
   TournamentFormat,
-  padel_format,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -18,6 +17,7 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { normalizePadelScoreRules, type PadelScoreRules } from "@/domain/padel/score";
 import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
+import { filterPadelFormats, parsePadelFormat, PADEL_FORMAT_SET } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 
@@ -217,10 +217,10 @@ async function _POST(req: NextRequest) {
   if (hasTeamSize && (!teamSizeParsed || teamSizeParsed < 2)) {
     return jsonWrap({ ok: false, error: "INVALID_TEAM_SIZE" }, { status: 400 });
   }
-  const format =
-    hasFormat && typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
-      ? (body.format as padel_format)
-      : null;
+  const format = hasFormat ? parsePadelFormat(body.format) : null;
+  if (hasFormat && !format) {
+    return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
+  }
   const confirmFormatChange = body?.confirmFormatChange === true;
   const hasNumberOfCourts = Object.prototype.hasOwnProperty.call(body, "numberOfCourts");
   const numberOfCourtsRaw =
@@ -263,9 +263,7 @@ async function _POST(req: NextRequest) {
       ? Math.max(48, Math.min(168, Math.floor(body.splitDeadlineHours)))
       : null;
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
-  const enabledFormats = hasEnabledFormats && Array.isArray(body.enabledFormats)
-    ? (body.enabledFormats as unknown[]).map((f) => String(f))
-    : null;
+  const enabledFormats = hasEnabledFormats ? filterPadelFormats(body.enabledFormats) : null;
   const groupsBody = body.groups && typeof body.groups === "object" ? (body.groups as Record<string, unknown>) : null;
   const hasManualAssignments =
     groupsBody && Object.prototype.hasOwnProperty.call(groupsBody, "manualAssignments");
@@ -600,17 +598,7 @@ async function _POST(req: NextRequest) {
       }
       const normalizedTeamSize = resolvedIsInterclub ? resolvedTeamSize : null;
 
-      // Formatos suportados (alinhados com geração de jogos)
-      const allowedFormats = new Set<padel_format>([
-        padel_format.TODOS_CONTRA_TODOS,
-        padel_format.QUADRO_ELIMINATORIO,
-        padel_format.GRUPOS_ELIMINATORIAS,
-        padel_format.QUADRO_AB,
-        padel_format.DUPLA_ELIMINACAO,
-        padel_format.NON_STOP,
-        padel_format.CAMPEONATO_LIGA,
-      ]);
-      if (!allowedFormats.has(formatEffective)) {
+      if (!PADEL_FORMAT_SET.has(formatEffective)) {
         throw new Error("FORMAT_NOT_SUPPORTED");
       }
 
@@ -636,11 +624,7 @@ async function _POST(req: NextRequest) {
         generationVersion: "v1-groups-ko",
       };
 
-      const normalizedFormats = hasEnabledFormats
-        ? (enabledFormats?.filter((f) => allowedFormats.has(f as padel_format)) ?? []).map(
-            (f) => f as padel_format,
-          )
-        : undefined;
+      const normalizedFormats = hasEnabledFormats ? enabledFormats ?? [] : undefined;
 
       const effectiveRuleSetId = hasRuleSetId ? ruleSetId ?? null : existing?.ruleSetId ?? null;
 

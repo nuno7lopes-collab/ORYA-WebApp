@@ -123,7 +123,6 @@ async function _POST(
 
     const totalCents = combinedFees.totalCents;
     const platformFeeCents = Math.min(pricing.platformFeeCents, totalCents);
-    const stripeFeeEstimateCents = 0;
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
 
     const sourceId = parseChargeSourceId(charge.id);
@@ -151,8 +150,8 @@ async function _POST(
     });
 
     const resolvedSnapshot = {
-      organizationId: charge.booking.organization.id,
-      buyerIdentityId: charge.booking.userId ?? null,
+      orgId: charge.booking.organization.id,
+      customerIdentityId: charge.booking.userId ?? null,
       snapshot: {
         currency,
         gross: totalCents,
@@ -185,6 +184,7 @@ async function _POST(
 
     const ensured = await ensurePaymentIntent({
       purchaseId,
+      orgId: charge.booking.organization.id,
       sourceType: SourceType.BOOKING,
       sourceId,
       amountCents: totalCents,
@@ -196,7 +196,7 @@ async function _POST(
       metadata: {
         bookingChargeId: String(charge.id),
         bookingId: String(charge.booking.id),
-        organizationId: String(charge.booking.organization.id),
+        orgId: String(charge.booking.organization.id),
         userId: charge.booking.userId ?? "",
         platformFeeCents: String(platformFeeCents),
         feeMode: pricing.feeMode,
@@ -206,7 +206,6 @@ async function _POST(
         sourceType: SourceType.BOOKING,
         sourceId,
         currency,
-        stripeFeeEstimateCents: String(stripeFeeEstimateCents),
         bookingChargeKind: charge.kind,
       },
       orgContext: {
@@ -217,7 +216,7 @@ async function _POST(
       },
       requireStripe: !isPlatformOrg,
       resolvedSnapshot,
-      buyerIdentityRef: charge.booking.userId ?? null,
+      customerIdentityId: charge.booking.userId ?? null,
       paymentEvent: {
         userId: charge.booking.userId ?? null,
         amountCents: totalCents,

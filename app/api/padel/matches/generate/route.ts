@@ -2,12 +2,13 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, OrganizationModule, padel_format } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
+import { resolvePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -26,10 +27,7 @@ async function _POST(req: NextRequest) {
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
   const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
-  const format: padel_format =
-    typeof body.format === "string" && Object.values(padel_format).includes(body.format as padel_format)
-      ? (body.format as padel_format)
-      : padel_format.TODOS_CONTRA_TODOS;
+  const format = resolvePadelFormat(body.format);
   const allowIncomplete = body.allowIncomplete === true;
 
   if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
@@ -90,6 +88,9 @@ async function _POST(req: NextRequest) {
   });
 
   if (!result.ok) {
+    if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED") {
+      return jsonWrap({ ok: false, error: result.error }, { status: 409 });
+    }
     return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });
   }
 

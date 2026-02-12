@@ -8,7 +8,6 @@ vi.mock("@/domain/eventLog/append", () => ({
 }));
 import { PadelPairingJoinMode, PadelPaymentMode, PadelRegistrationStatus } from "@prisma/client";
 import {
-  deriveRegistrationStatusFromPairing,
   mapRegistrationToPairingLifecycle,
   resolveInitialPadelRegistrationStatus,
   resolvePartnerActionStatus,
@@ -64,29 +63,4 @@ describe("padel registration status (D12)", () => {
     );
   });
 
-  it("derives registration status from pairing lifecycle (legacy)", () => {
-    expect(
-      deriveRegistrationStatusFromPairing({
-        pairingJoinMode: PadelPairingJoinMode.INVITE_PARTNER,
-        lifecycleStatus: "CANCELLED_INCOMPLETE",
-        paymentMode: PadelPaymentMode.SPLIT,
-      }),
-    ).toBe(PadelRegistrationStatus.CANCELLED);
-
-    expect(
-      deriveRegistrationStatusFromPairing({
-        pairingJoinMode: PadelPairingJoinMode.INVITE_PARTNER,
-        lifecycleStatus: "PENDING_PARTNER_PAYMENT",
-        paymentMode: PadelPaymentMode.SPLIT,
-      }),
-    ).toBe(PadelRegistrationStatus.PENDING_PAYMENT);
-
-    expect(
-      deriveRegistrationStatusFromPairing({
-        pairingJoinMode: PadelPairingJoinMode.LOOKING_FOR_PARTNER,
-        lifecycleStatus: "PENDING_ONE_PAID",
-        paymentMode: PadelPaymentMode.SPLIT,
-      }),
-    ).toBe(PadelRegistrationStatus.MATCHMAKING);
-  });
 });

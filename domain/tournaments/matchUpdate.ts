@@ -38,10 +38,18 @@ export async function updateMatchResult({
         pairing2Id: true,
         nextMatchId: true,
         nextSlot: true,
-        stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+        stage: {
+          select: {
+            tournamentId: true,
+            tournament: { select: { eventId: true, event: { select: { templateType: true } } } },
+          },
+        },
       },
     });
     if (!current) throw new Error("MATCH_NOT_FOUND");
+    if (current.stage.tournament.event?.templateType === "PADEL") {
+      throw new Error("PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN");
+    }
 
     if (!canEditMatch(current.status, force)) {
       throw new Error("MATCH_LOCKED");

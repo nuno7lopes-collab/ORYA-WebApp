@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = process.cwd();
-const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry.md");
+const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry_v1.md");
 const MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
 const START_MARKER = "<!-- P0_ENDPOINTS_START -->";
 const END_MARKER = "<!-- P0_ENDPOINTS_END -->";

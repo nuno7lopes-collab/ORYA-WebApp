@@ -10,10 +10,13 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/organizacao/dashboardUi";
+import { ActionBar } from "@/components/ui/action-bar";
 import { Avatar } from "@/components/ui/avatar";
+import { ViewState } from "@/components/ui/view-state";
+import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLevel } from "@/lib/organizationRbac";
-import type { OrganizationModule } from "@prisma/client";
+import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
 type StaffTabKey = "membros" | "convidados" | "permissoes" | "auditoria";
@@ -21,6 +24,7 @@ type StaffTabKey = "membros" | "convidados" | "permissoes" | "auditoria";
 type Member = {
   userId: string;
   role: MemberRole;
+  rolePack?: OrganizationRolePack | null;
   invitedByUserId: string | null;
   createdAt: string;
   fullName: string | null;
@@ -41,6 +45,7 @@ type Invite = {
   id: string;
   organizationId: number;
   role: MemberRole;
+  rolePack?: OrganizationRolePack | null;
   targetIdentifier: string;
   targetUserId: string | null;
   status: InviteStatus;
@@ -124,6 +129,24 @@ const roleOrder: Record<MemberRole, number> = {
   PROMOTER: 5,
 };
 
+const rolePackLabels: Record<OrganizationRolePack, string> = {
+  CLUB_MANAGER: "Gestor de Clube",
+  TOURNAMENT_DIRECTOR: "Diretor de Torneio",
+  FRONT_DESK: "Front Desk",
+  COACH: "Treinador",
+  REFEREE: "Árbitro",
+};
+
+const rolePackOptionsByRole: Partial<Record<MemberRole, OrganizationRolePack[]>> = {
+  STAFF: ["CLUB_MANAGER", "TOURNAMENT_DIRECTOR", "FRONT_DESK", "REFEREE"],
+  TRAINER: ["COACH"],
+};
+
+const defaultRolePackByRole: Partial<Record<MemberRole, OrganizationRolePack>> = {
+  STAFF: "FRONT_DESK",
+  TRAINER: "COACH",
+};
+
 const moduleOrder: OrganizationModule[] = [
   "EVENTOS",
   "RESERVAS",
@@ -203,6 +226,20 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
   return false;
 }
 
+function getRolePackOptions(role: MemberRole) {
+  return rolePackOptionsByRole[role] ?? [];
+}
+
+function resolveRolePackForRole(
+  role: MemberRole,
+  rolePack: OrganizationRolePack | null | undefined,
+): OrganizationRolePack | null {
+  const options = getRolePackOptions(role);
+  if (options.length === 0) return null;
+  if (rolePack && options.includes(rolePack)) return rolePack;
+  return defaultRolePackByRole[role] ?? options[0] ?? null;
+}
+
 function resolveUserLabel(
   user: { fullName?: string | null; username?: string | null } | null | undefined,
   fallback: string,
@@ -232,6 +269,23 @@ function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
   } else if (newRole) {
     const newLabel = roleLabels[newRole as MemberRole] ?? newRole;
     parts.push(`Role: ${newLabel}`);
+  }
+  const fromRolePack = typeof metadata.fromRolePack === "string" ? metadata.fromRolePack : null;
+  const toRolePack = typeof metadata.toRolePack === "string" ? metadata.toRolePack : null;
+  const rolePack = typeof metadata.rolePack === "string" ? metadata.rolePack : null;
+  if (fromRolePack || toRolePack) {
+    const fromPackLabel = fromRolePack
+      ? rolePackLabels[fromRolePack as OrganizationRolePack] ?? fromRolePack
+      : "";
+    const toPackLabel = toRolePack ? rolePackLabels[toRolePack as OrganizationRolePack] ?? toRolePack : "";
+    if (fromPackLabel && toPackLabel) {
+      parts.push(`Pack: ${fromPackLabel} → ${toPackLabel}`);
+    } else if (fromPackLabel || toPackLabel) {
+      parts.push(`Pack: ${fromPackLabel || toPackLabel}`);
+    }
+  } else if (rolePack) {
+    const rolePackLabel = rolePackLabels[rolePack as OrganizationRolePack] ?? rolePack;
+    parts.push(`Pack: ${rolePackLabel}`);
   }
   const moduleKey = typeof metadata.moduleKey === "string" ? metadata.moduleKey : null;
   if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
@@ -268,13 +322,12 @@ const dangerPill = CTA_DANGER;
 const neutralPill = CTA_NEUTRAL;
 const acceptPill = CTA_SUCCESS;
 
-type Toast = { id: number; message: string; type: "error" | "success" };
-
 type OrganizationStaffPageProps = {
   embedded?: boolean;
 };
 
 export default function OrganizationStaffPage({ embedded }: OrganizationStaffPageProps) {
+  const { pushToast: publishToast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -284,6 +337,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteIdentifier, setInviteIdentifier] = useState("");
   const [inviteRole, setInviteRole] = useState<MemberRole>("STAFF");
+  const [inviteRolePack, setInviteRolePack] = useState<OrganizationRolePack | null>("FRONT_DESK");
   const [inviteLoading, setInviteLoading] = useState(false);
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -296,9 +350,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
   const [memberActionLoading, setMemberActionLoading] = useState<string | null>(null);
   const [inviteActionLoading, setInviteActionLoading] = useState<string | null>(null);
-  const [roleConfirm, setRoleConfirm] = useState<{ userId: string; newRole: MemberRole; currentRole: MemberRole; label: string }>({
+  const [roleConfirm, setRoleConfirm] = useState<{ userId: string; newRole: MemberRole; newRolePack: OrganizationRolePack | null; currentRole: MemberRole; label: string }>({
     userId: "",
     newRole: "STAFF",
+    newRolePack: "FRONT_DESK",
     currentRole: "STAFF",
     label: "",
   });
@@ -314,8 +369,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const [scopeDraftType, setScopeDraftType] = useState<string>("COURT");
   const [scopeDraftId, setScopeDraftId] = useState<string>("");
   const [scopeDraftLevel, setScopeDraftLevel] = useState<string>("VIEW");
-
-  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const eventIdParam = searchParams?.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : null;
@@ -433,6 +486,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setScopeDraftLevel("VIEW");
   }, [selectedMember?.userId]);
 
+  useEffect(() => {
+    setInviteRolePack(resolveRolePackForRole(inviteRole, inviteRolePack));
+  }, [inviteRole, inviteRolePack]);
+
   const permissionsByUser = useMemo(() => {
     const map = new Map<string, MemberPermission[]>();
     permissions.forEach((perm) => {
@@ -462,11 +519,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const hasMembership = !!viewerRole;
 
   const pushToast = (message: string, type: "error" | "success" = "error") => {
-    const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4200);
+    publishToast(message, { variant: type === "success" ? "success" : "error" });
   };
 
   const handlePermissionUpdate = async (
@@ -587,6 +640,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       pushToast("Não tens permissão para enviar este convite.");
       return;
     }
+    const normalizedInviteRolePack = resolveRolePackForRole(inviteRole, inviteRolePack);
+    if (getRolePackOptions(inviteRole).length > 0 && !normalizedInviteRolePack) {
+      pushToast("Seleciona um pack para este papel.");
+      return;
+    }
     setInviteLoading(true);
     try {
       const res = await fetch("/api/organizacao/organizations/members/invites", {
@@ -596,6 +654,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           organizationId: resolvedOrganizationId,
           identifier: inviteIdentifier.trim(),
           role: inviteRole,
+          rolePack: normalizedInviteRolePack,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -603,8 +662,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         pushToast(json?.error || "Não foi possível enviar o convite.");
       } else {
         pushToast("Convite enviado.", "success");
-        trackEvent("organization_staff_invited", { organizationId: resolvedOrganizationId, role: inviteRole });
+        trackEvent("organization_staff_invited", {
+          organizationId: resolvedOrganizationId,
+          role: inviteRole,
+          rolePack: normalizedInviteRolePack,
+        });
         setInviteIdentifier("");
+        setInviteRole("STAFF");
+        setInviteRolePack("FRONT_DESK");
         setInviteModalOpen(false);
         mutateInvites();
       }
@@ -616,21 +681,35 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
   };
 
-  const applyRoleChange = async (userId: string, newRole: MemberRole) => {
+  const applyRoleChange = async (
+    userId: string,
+    newRole: MemberRole,
+    newRolePack: OrganizationRolePack | null,
+  ) => {
     if (!resolvedOrganizationId) return;
     setMemberActionLoading(userId);
     try {
       const res = await fetch("/api/organizacao/organizations/members", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: resolvedOrganizationId, userId, role: newRole }),
+        body: JSON.stringify({
+          organizationId: resolvedOrganizationId,
+          userId,
+          role: newRole,
+          rolePack: newRolePack,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         pushToast(json?.error || "Não foi possível alterar o papel.");
       } else {
         pushToast("Role atualizado.", "success");
-        trackEvent("organization_staff_role_changed", { organizationId: resolvedOrganizationId, userId, newRole });
+        trackEvent("organization_staff_role_changed", {
+          organizationId: resolvedOrganizationId,
+          userId,
+          newRole,
+          rolePack: newRolePack,
+        });
         mutateMembers();
       }
     } catch (err) {
@@ -647,18 +726,24 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       pushToast("Não tens permissão para definir este papel.");
       return;
     }
+    const normalizedRolePack = resolveRolePackForRole(newRole, member.rolePack);
+    if (getRolePackOptions(newRole).length > 0 && !normalizedRolePack) {
+      pushToast("Seleciona um pack válido para esse papel.");
+      return;
+    }
 
     if (member.role === "OWNER" && newRole !== "OWNER") {
       setRoleConfirm({
         userId: member.userId,
         newRole,
+        newRolePack: normalizedRolePack,
         currentRole: member.role,
         label: member.fullName || member.username || member.email || "Owner",
       });
       setRoleConfirmOpen(true);
       return;
     }
-    applyRoleChange(member.userId, newRole);
+    applyRoleChange(member.userId, newRole, normalizedRolePack);
   };
 
   const confirmRemove = async (member: Member) => {
@@ -791,9 +876,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   if (isUserLoading) {
     return (
       <div className={cn("w-full py-8")}>
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 text-sm text-white/70 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          A carregar a tua conta…
-        </div>
+        <ViewState kind="loading" title="A carregar a tua conta…" />
       </div>
     );
   }
@@ -801,17 +884,20 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   if (!user) {
     return (
       <div className={cn("w-full py-8")}>
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3 text-white">
-          <h1 className="text-2xl font-semibold">Equipa</h1>
-          <p className="text-white/70">Inicia sessão para gerir o staff.</p>
-          <button
-            type="button"
-            onClick={handleRequireLogin}
-            className={primaryCta}
-          >
-            Entrar
-          </button>
-        </div>
+        <ViewState
+          kind="empty"
+          title="Equipa"
+          description="Inicia sessão para gerir o staff."
+          action={
+            <button
+              type="button"
+              onClick={handleRequireLogin}
+              className={primaryCta}
+            >
+              Entrar
+            </button>
+          }
+        />
       </div>
     );
   }
@@ -842,10 +928,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   if (!isOrganizationProfile && !hasMembership) {
     return (
       <div className={emptyClass}>
-        <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-2">
-          <h1 className="text-2xl font-semibold">Equipa</h1>
-          <p className="text-sm text-white/70">Ativa o perfil ou aceita convite.</p>
-        </div>
+        <ViewState kind="empty" title="Equipa" description="Ativa o perfil ou aceita convite." />
       </div>
     );
   }
@@ -900,12 +983,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-white/12 bg-white/5 px-2 py-2 text-sm shadow-[0_16px_50px_rgba(0,0,0,0.4)]">
+      <ActionBar role="tablist" aria-label="Navegação de staff" className="text-sm">
         {staffTabs.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setStaffTab(tab.key)}
+            role="tab"
+            aria-selected={activeStaffTab === tab.key}
             className={`rounded-xl px-3 py-2 font-semibold transition ${
               activeStaffTab === tab.key
                 ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
@@ -915,7 +1000,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             {tab.label}
           </button>
         ))}
-      </div>
+      </ActionBar>
 
       {viewerRole === "TRAINER" && (
         <div className="rounded-3xl border border-cyan-300/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-50">
@@ -1452,7 +1537,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 const isOwnerRow = m.role === "OWNER";
                 const isOnlyOwner = isOwnerRow && ownerCount <= 1;
                 const canManageMemberRow = canManageMember(viewerRole, m.role);
+                const rolePackOptions = getRolePackOptions(m.role);
+                const hasRolePackOptions = rolePackOptions.length > 0;
                 const roleDisabled = !canManageMemberRow || memberActionLoading === m.userId;
+                const rolePackDisabled = !canManageMemberRow || memberActionLoading === m.userId;
                 const removeDisabled = memberActionLoading === m.userId || !canManageMemberRow || isOnlyOwner;
                 const displayName = m.fullName || m.username || "Utilizador";
                 return (
@@ -1472,6 +1560,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-white">{displayName}</span>
                           <RoleBadge role={m.role} />
+                          {m.rolePack && (
+                            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.15em] text-cyan-100">
+                              {rolePackLabels[m.rolePack]}
+                            </span>
+                          )}
                           <span className="text-[11px] text-white/50">
                             {new Date(m.createdAt).toLocaleDateString("pt-PT")}
                           </span>
@@ -1509,6 +1602,27 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           Promoter
                         </option>
                       </select>
+                      {hasRolePackOptions && (
+                        <select
+                          value={m.rolePack ?? ""}
+                          disabled={rolePackDisabled}
+                          onChange={(e) => {
+                            const value = e.target.value.trim();
+                            const nextPack = value ? (value as OrganizationRolePack) : null;
+                            applyRoleChange(m.userId, m.role, nextPack);
+                          }}
+                          className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
+                        >
+                          <option value="" disabled>
+                            Selecionar pack
+                          </option>
+                          {rolePackOptions.map((pack) => (
+                            <option key={pack} value={pack}>
+                              {rolePackLabels[pack]}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <button
                         type="button"
                         onClick={() => setRemoveTarget(m)}
@@ -1577,6 +1691,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-white">{targetLabel}</span>
                           <RoleBadge role={inv.role} />
+                          {inv.rolePack && (
+                            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2 py-[2px] text-[10px] uppercase tracking-[0.15em] text-cyan-100">
+                              {rolePackLabels[inv.rolePack]}
+                            </span>
+                          )}
                           <InviteBadge status={inv.status} />
                         </div>
                         <div className="text-[12px] text-white/60 space-x-2">
@@ -1692,7 +1811,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               </button>
               <button
                 type="button"
-                onClick={() => applyRoleChange(roleConfirm.userId, roleConfirm.newRole)}
+                onClick={() => applyRoleChange(roleConfirm.userId, roleConfirm.newRole, roleConfirm.newRolePack)}
                 className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black shadow"
               >
                 Confirmar
@@ -1793,6 +1912,25 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                   </option>
                 </select>
               </div>
+              {getRolePackOptions(inviteRole).length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[12px] text-white/70">Pack</label>
+                  <select
+                    value={inviteRolePack ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value.trim();
+                      setInviteRolePack(value ? (value as OrganizationRolePack) : null);
+                    }}
+                    className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                  >
+                    {getRolePackOptions(inviteRole).map((pack) => (
+                      <option key={pack} value={pack}>
+                        {rolePackLabels[pack]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2">
               <button
@@ -1869,21 +2007,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       )}
 
-      {/* Toasts */}
-      <div className="pointer-events-none fixed top-4 right-4 z-50 space-y-2">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow ${
-              toast.type === "success"
-                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-50"
-                : "border-red-400/40 bg-red-500/15 text-red-50"
-            }`}
-          >
-            {toast.message}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

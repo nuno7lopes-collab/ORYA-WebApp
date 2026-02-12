@@ -9,13 +9,15 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
+import { FINANCE_SOURCE_TYPE_ALLOWLIST, type FinanceSourceType } from "@/domain/sourceType";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { logWarn } from "@/lib/observability/logger";
 
 export type CreateCheckoutInput = {
-  sourceType: SourceType;
+  orgId: number;
+  sourceType: FinanceSourceType;
   sourceId: string;
-  buyerIdentityRef?: string | null;
+  customerIdentityId?: string | null;
   inviteToken?: string | null;
   pricingSnapshotHash?: string | null;
   idempotencyKey: string;
@@ -63,31 +65,34 @@ export type PricingSnapshot = {
 };
 
 type ResolvedSnapshot = {
-  organizationId: number;
-  buyerIdentityId: string | null;
+  orgId: number;
+  customerIdentityId: string | null;
   snapshot: PricingSnapshot;
   eventId?: number;
   ticketTypeIds?: number[];
 };
 
 export type ResolvedSnapshotOverride = {
-  organizationId: number;
-  buyerIdentityId?: string | null;
+  orgId: number;
+  customerIdentityId?: string | null;
   snapshot: PricingSnapshot;
   eventId?: number;
   ticketTypeIds?: number[];
 };
 
-const MVP_ALLOWED_SOURCE_TYPES = new Set<SourceType>([
+const MVP_ALLOWED_SOURCE_TYPES = new Set<FinanceSourceType>([
   SourceType.TICKET_ORDER,
   SourceType.BOOKING,
   SourceType.PADEL_REGISTRATION,
   SourceType.STORE_ORDER,
 ]);
 
-function ensureMvpSourceType(sourceType: SourceType) {
+function ensureMvpSourceType(sourceType: FinanceSourceType) {
   if (sourceType === SourceType.SUBSCRIPTION || sourceType === SourceType.MEMBERSHIP) {
     throw new Error("SOURCE_TYPE_NOT_ALLOWED_IN_MVP");
+  }
+  if (!FINANCE_SOURCE_TYPE_ALLOWLIST.has(sourceType)) {
+    throw new Error("SOURCE_TYPE_INVALID");
   }
   if (!MVP_ALLOWED_SOURCE_TYPES.has(sourceType)) {
     throw new Error("SOURCE_TYPE_NOT_SUPPORTED");
@@ -177,8 +182,8 @@ async function resolveBookingSnapshot(sourceId: string): Promise<ResolvedSnapsho
   const netToOrgPending = Math.max(0, gross - pricing.platformFeeCents);
 
   return {
-    organizationId: booking.organizationId,
-    buyerIdentityId: booking.userId ?? null,
+    orgId: booking.organizationId,
+    customerIdentityId: booking.userId ?? null,
     snapshot: {
       currency: booking.currency,
       gross,
@@ -278,8 +283,8 @@ async function resolveStoreOrderSnapshot(sourceId: string): Promise<ResolvedSnap
   const netToOrgPending = Math.max(0, gross - pricing.platformFeeCents);
 
   return {
-    organizationId: order.store.ownerOrganizationId,
-    buyerIdentityId: order.userId ?? null,
+    orgId: order.store.ownerOrganizationId,
+    customerIdentityId: order.userId ?? null,
     snapshot: {
       currency: order.currency,
       gross,
@@ -372,8 +377,8 @@ async function resolveTicketOrderSnapshot(sourceId: string): Promise<ResolvedSna
   const ticketTypeIds = order.lines.map((line) => line.ticketTypeId);
 
   return {
-    organizationId: order.organizationId,
-    buyerIdentityId: order.buyerIdentityId ?? null,
+    orgId: order.organizationId,
+    customerIdentityId: order.buyerIdentityId ?? null,
     eventId: order.eventId,
     ticketTypeIds,
     snapshot: {
@@ -467,8 +472,8 @@ async function resolvePadelRegistrationSnapshot(sourceId: string): Promise<Resol
   const netToOrgPending = Math.max(0, gross - pricing.platformFeeCents);
 
   return {
-    organizationId: registration.organizationId,
-    buyerIdentityId: registration.buyerIdentityId ?? null,
+    orgId: registration.organizationId,
+    customerIdentityId: registration.buyerIdentityId ?? null,
     eventId: registration.eventId,
     snapshot: {
       currency: registration.currency,
@@ -564,6 +569,9 @@ async function ensureLedgerEntriesForExistingPayment(payment: {
 export async function createCheckout(input: CreateCheckoutInput): Promise<CreateCheckoutOutput> {
   ensureMvpSourceType(input.sourceType);
 
+  if (!Number.isFinite(input.orgId) || input.orgId <= 0) {
+    throw new Error("ORG_ID_REQUIRED");
+  }
   if (!input.idempotencyKey || input.idempotencyKey.trim() === "") {
     throw new Error("IDEMPOTENCY_KEY_REQUIRED");
   }
@@ -633,13 +641,16 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
   const resolved =
     input.resolvedSnapshot != null
       ? {
-          organizationId: input.resolvedSnapshot.organizationId,
-          buyerIdentityId: input.resolvedSnapshot.buyerIdentityId ?? null,
+          orgId: input.resolvedSnapshot.orgId,
+          customerIdentityId: input.resolvedSnapshot.customerIdentityId ?? null,
           snapshot: input.resolvedSnapshot.snapshot,
           eventId: input.resolvedSnapshot.eventId,
           ticketTypeIds: input.resolvedSnapshot.ticketTypeIds,
         }
       : await resolvePricingSnapshot(input);
+  if (resolved.orgId !== input.orgId) {
+    throw new Error("ORG_ID_MISMATCH");
+  }
   const paymentId = desiredPaymentId ?? crypto.randomUUID();
   const pricingSnapshot = resolved.snapshot;
   if (pricingSnapshot.sourceType !== input.sourceType) {
@@ -666,12 +677,12 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
         if (policy.inviteIdentityMatch === "USERNAME") {
           throw new Error("INVITE_TOKEN_REQUIRES_EMAIL");
         }
-        if (!input.buyerIdentityRef && !policy.guestCheckoutAllowed) {
+        if (!input.customerIdentityId && !policy.guestCheckoutAllowed) {
           throw new Error("GUEST_CHECKOUT_NOT_ALLOWED");
         }
-        const identity = input.buyerIdentityRef
+        const identity = input.customerIdentityId
           ? await tx.emailIdentity.findUnique({
-              where: { id: input.buyerIdentityRef },
+              where: { id: input.customerIdentityId },
               select: { emailNormalized: true, userId: true },
             })
           : null;
@@ -687,7 +698,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
               : accessDecision.reasonCode || "ACCESS_DENIED";
           throw new Error(mapped);
         }
-        if (input.buyerIdentityRef) {
+        if (input.customerIdentityId) {
           if (!identity) {
             throw new Error("INVITE_TOKEN_INVALID");
           }
@@ -702,7 +713,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
                 token: input.inviteToken,
                 emailNormalized: identity.emailNormalized,
                 ticketTypeIds: resolved.ticketTypeIds ?? [],
-                usedByIdentityId: input.buyerIdentityRef ?? null,
+                usedByIdentityId: input.customerIdentityId ?? null,
               },
               tx,
             );
@@ -718,10 +729,10 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     await tx.payment.create({
       data: {
         id: paymentId,
-        organizationId: resolved.organizationId,
+        organizationId: resolved.orgId,
         sourceType: pricingSnapshot.sourceType,
         sourceId: pricingSnapshot.sourceId,
-        customerIdentityId: input.buyerIdentityRef ?? resolved.buyerIdentityId ?? null,
+        customerIdentityId: input.customerIdentityId ?? resolved.customerIdentityId ?? null,
         status: PaymentStatus.CREATED,
         feePolicyVersion: pricingSnapshot.feePolicyVersion,
         pricingSnapshotJson: pricingSnapshot,
@@ -744,7 +755,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     const payload = {
       eventLogId,
       paymentId,
-      organizationId: resolved.organizationId,
+      orgId: resolved.orgId,
       eventId: resolved.eventId ?? null,
       sourceType: pricingSnapshot.sourceType,
       sourceId: pricingSnapshot.sourceId,
@@ -759,7 +770,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
     const log = await appendEventLog(
       {
         eventId: eventLogId,
-        organizationId: resolved.organizationId,
+        organizationId: resolved.orgId,
         eventType: FINANCE_OUTBOX_EVENTS.PAYMENT_CREATED,
         idempotencyKey: input.idempotencyKey,
         sourceType: pricingSnapshot.sourceType,

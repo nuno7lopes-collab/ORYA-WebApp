@@ -1,12 +1,13 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -21,7 +22,20 @@ async function _GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: readRoles });
+  const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: readRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const viewPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -58,7 +72,24 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  const orgResolution = resolveOrganizationIdStrict({
+    req,
+    body,
+    allowFallback: false,
+  });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: writeRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const editPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -133,7 +164,20 @@ async function _DELETE(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: writeRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const editPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,

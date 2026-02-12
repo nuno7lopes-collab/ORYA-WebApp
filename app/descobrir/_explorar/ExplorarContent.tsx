@@ -1,23 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
-import { defaultBlurDataURL } from "@/lib/image";
-import { getEventCoverUrl } from "@/lib/eventCover";
 import { PORTUGAL_CITIES } from "@/config/cities";
-import { clampWithGap } from "@/lib/filters";
 import { trackEvent } from "@/lib/analytics";
 import { useUser } from "@/app/hooks/useUser";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import {
   CalendarIcon,
-  CategoryIcon,
   CloseIcon,
   PadelIcon,
   PinIcon,
@@ -25,150 +19,36 @@ import {
   PuzzleIcon,
   TicketIcon,
 } from "./WorldIcons";
-import { formatEventLocationLabel } from "@/lib/location/eventLocation";
-
-type ExploreItem = {
-  id: number;
-  type: "EVENT";
-  slug: string;
-  title: string;
-  shortDescription: string | null;
-  startsAt: string;
-  endsAt: string;
-  location: {
-    name: string | null;
-    city: string | null;
-    address: string | null;
-    lat: number | null;
-    lng: number | null;
-    formattedAddress: string | null;
-    source: "APPLE_MAPS" | "MANUAL" | null;
-    components: Record<string, unknown> | null;
-    overrides: Record<string, unknown> | null;
-  };
-  coverImageUrl: string | null;
-  isGratis: boolean;
-  priceFrom: number | null;
-  categories: string[];
-  hostName: string | null;
-  hostUsername: string | null;
-  status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
-  isHighlighted: boolean;
-};
-
-type ServiceItem = {
-  id: number;
-  title: string;
-  description: string | null;
-  durationMinutes: number;
-  unitPriceCents: number;
-  currency: string;
-  addressRef?: {
-    formattedAddress?: string | null;
-    canonical?: Record<string, unknown> | null;
-  } | null;
-  organization: {
-    id: number;
-    publicName: string | null;
-    businessName: string | null;
-    username: string | null;
-    brandingAvatarUrl: string | null;
-    addressRef?: {
-      formattedAddress?: string | null;
-      canonical?: Record<string, unknown> | null;
-    } | null;
-  };
-  nextAvailability: string | null;
-};
-
-type ApiResponse = {
-  items: ExploreItem[];
-  pagination: {
-    nextCursor: number | null;
-    hasMore: boolean;
-  };
-};
-
-type ServiceApiResponse = {
-  ok: boolean;
-  items: ServiceItem[];
-  pagination: {
-    nextCursor: number | null;
-    hasMore: boolean;
-  };
-  error?: string;
-  debug?: string;
-};
-
-type PadelTournamentItem = {
-  id: number;
-  slug: string;
-  title: string;
-  startsAt: string | null;
-  endsAt: string | null;
-  coverImageUrl: string | null;
-  locationFormattedAddress: string | null;
-  priceFrom: number | null;
-  organizationName: string | null;
-  format: string | null;
-  eligibility: string | null;
-  levels: Array<{ id: number; label: string }>;
-};
-
-type PadelClubItem = {
-  id: number;
-  name: string;
-  shortName: string;
-  city: string | null;
-  address: string | null;
-  courtsCount: number;
-  slug: string | null;
-  organizationName: string | null;
-  organizationUsername: string | null;
-  courts: Array<{ id: number; name: string; indoor: boolean; surface: string | null }>;
-};
-
-type PadelOpenPairingItem = {
-  id: number;
-  paymentMode: string;
-  deadlineAt: string | null;
-  isExpired: boolean;
-  category: { id: number; label: string } | null;
-  openSlots: number;
-  event: {
-    id: number;
-    slug: string;
-    title: string;
-    startsAt: string | null;
-    locationFormattedAddress: string | null;
-    coverImageUrl: string | null;
-  };
-};
-
-type PadelDiscoverResponse = {
-  ok: boolean;
-  items: PadelTournamentItem[];
-  levels?: Array<{ id: number; label: string }>;
-  error?: string;
-};
-
-type PadelClubResponse = { ok: boolean; items: PadelClubItem[]; error?: string };
-type PadelOpenPairingsResponse = { ok: boolean; items: PadelOpenPairingItem[]; error?: string };
-
-type DateFilter = "all" | "today" | "weekend" | "custom";
-type TypeFilter = "all" | "event";
-type ExploreWorld = "EVENTOS" | "PADEL" | "RESERVAS";
+import type {
+  ApiResponse,
+  DateFilter,
+  ExploreItem,
+  ExploreWorld,
+  PadelClubItem,
+  PadelClubResponse,
+  PadelDiscoverResponse,
+  PadelOpenPairingItem,
+  PadelOpenPairingsResponse,
+  PadelTournamentItem,
+  ServiceApiResponse,
+  ServiceItem,
+} from "./discoverTypes";
+import {
+  EventCard,
+  PadelClubCard,
+  PadelOpenPairingCard,
+  PadelTournamentCard,
+  ServiceCard,
+} from "./DiscoverCards";
+import { DoubleRange } from "./DoubleRange";
+import { sendDiscoverEventSignal } from "./eventSignals";
 
 const DATE_FILTER_OPTIONS = [
   { value: "all", label: "Todas as datas" },
   { value: "today", label: "Hoje" },
   { value: "weekend", label: "Este fim de semana" },
+  { value: "upcoming", label: "Próximos dias" },
 ] as const;
-
-const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
-  { value: "all", label: "Tudo" },
-  { value: "event", label: "Eventos" },
-];
 
 const WORLD_OPTIONS: { value: ExploreWorld; label: string; accent: string }[] = [
   { value: "EVENTOS", label: "Eventos", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
@@ -204,11 +84,6 @@ const WORLD_META: Record<
   },
 };
 
-const CATEGORY_OPTIONS = [
-  { value: "PADEL", label: "Padel", accent: "from-[#6BFFFF] to-[#4ADE80]" },
-  { value: "GERAL", label: "Eventos gerais", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
-] as const;
-
 const PADEL_FORMAT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "all", label: "Todos os formatos" },
   { value: "TODOS_CONTRA_TODOS", label: "Todos contra todos" },
@@ -228,102 +103,8 @@ const PADEL_ELIGIBILITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "MIXED", label: "Misto" },
 ];
 
-const resolveCover = (
-  coverImageUrl: string | null | undefined,
-  seed: string | number,
-  width = 720,
-) => getEventCoverUrl(coverImageUrl, { seed, width, quality: 65, format: "webp" });
-
-function formatDateRange(start: string, end: string) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-
-  const sameDay = startDate.toDateString() === endDate.toDateString();
-
-  const baseOpts: Intl.DateTimeFormatOptions = {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  };
-
-  const startStr = startDate.toLocaleString("pt-PT", baseOpts);
-
-  if (sameDay) {
-    const endTime = endDate.toLocaleTimeString("pt-PT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return `${startStr} · ${endTime}`;
-  }
-
-  const endStr = endDate.toLocaleString("pt-PT", baseOpts);
-  return `${startStr} → ${endStr}`;
-}
-
-function formatServiceAvailability(value: string | null) {
-  if (!value) return "Sem horários";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Sem horários";
-  return parsed.toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" });
-}
-
-function formatPadelDate(start: string | null, end: string | null) {
-  if (!start) return null;
-  const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) return null;
-  if (end) {
-    const endDate = new Date(end);
-    if (!Number.isNaN(endDate.getTime())) {
-      return formatDateRange(start, end);
-    }
-  }
-  return startDate.toLocaleString("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatPadelFormat(value: string | null) {
-  if (!value) return null;
-  return PADEL_FORMAT_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
-}
-
-function formatPadelEligibility(value: string | null) {
-  if (!value) return "Elegibilidade aberta";
-  return PADEL_ELIGIBILITY_OPTIONS.find((opt) => opt.value === value)?.label ?? value;
-}
-
-function formatPadelPaymentMode(value: string) {
-  if (value === "SPLIT") return "Pagamento dividido";
-  if (value === "FULL") return "Pago pelo capitão";
-  return "Pagamento";
-}
-
-function formatPadelDeadline(value: string | null) {
-  if (!value) return "Sem prazo definido";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Sem prazo definido";
-  return parsed.toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 function formatCount(count: number, singular: string, plural: string) {
   return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
-}
-
-function statusTag(status: ExploreItem["status"]) {
-  if (status === "CANCELLED") return { text: "Cancelado", className: "text-red-200" };
-  if (status === "PAST") return { text: "Já aconteceu", className: "text-white/55" };
-  if (status === "DRAFT") return { text: "Rascunho", className: "text-white/60" };
-  return { text: "Em breve", className: "text-[#6BFFFF]" };
-}
-
-function buildSlug(_type: ExploreItem["type"], slug: string) {
-  return `/eventos/${slug}`;
 }
 
 const exploreMainClass = "min-h-screen w-full text-white";
@@ -399,8 +180,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [customDate, setCustomDate] = useState("");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [cityInput, setCityInput] = useState("");
   const [city, setCity] = useState("");
   const [citySearch, setCitySearch] = useState("");
@@ -421,18 +200,16 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const [isCityOpen, setIsCityOpen] = useState(false);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isPriceOpen, setIsPriceOpen] = useState(false);
-  const [isCategoryOpen, setIsCategoryOpen] = useState(false);
   const cityRef = useRef<HTMLDivElement | null>(null);
   const dateRef = useRef<HTMLDivElement | null>(null);
   const priceRef = useRef<HTMLDivElement | null>(null);
-  const categoryRef = useRef<HTMLDivElement | null>(null);
 
   const [likedItems, setLikedItems] = useState<number[]>([]);
+  const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
   const searchParams = useSearchParams();
   const requestController = useRef<AbortController | null>(null);
   const serviceRequestController = useRef<AbortController | null>(null);
   const padelRequestController = useRef<AbortController | null>(null);
-  const lastEventCategories = useRef<string[]>([]);
   const [hydratedFromParams, setHydratedFromParams] = useState(false);
 
   // City via geolocation (opcional)
@@ -447,8 +224,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
 
   const hasActiveFilters = useMemo(
     () => {
-      const typeActive = world === "EVENTOS" ? typeFilter !== "all" : false;
-      const categoryActive = world === "EVENTOS" ? selectedCategories.length > 0 : false;
       const padelFormatActive = world === "PADEL" ? padelFormatFilter !== "all" : false;
       const padelEligibilityActive = world === "PADEL" ? padelEligibilityFilter !== "all" : false;
       const padelLevelActive = world === "PADEL" ? padelLevelFilter !== "all" : false;
@@ -458,8 +233,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
         search.trim().length > 0 ||
         dateFilter !== "all" ||
         hasCustomDate ||
-        typeActive ||
-        categoryActive ||
         padelFormatActive ||
         padelEligibilityActive ||
         padelLevelActive ||
@@ -478,8 +251,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       padelFormatFilter,
       padelLevelFilter,
       search,
-      selectedCategories.length,
-      typeFilter,
       world,
     ],
   );
@@ -489,10 +260,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     if (city.trim().length > 0) count += 1;
     if (dateFilter !== "all") count += 1;
     if (priceMin > 0 || effectiveMaxParam !== null) count += 1;
-    if (world === "EVENTOS") {
-      if (typeFilter !== "all") count += 1;
-      if (selectedCategories.length > 0) count += 1;
-    }
     if (world === "PADEL") {
       if (padelFormatFilter !== "all") count += 1;
       if (padelEligibilityFilter !== "all") count += 1;
@@ -508,47 +275,28 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     padelLevelFilter,
     priceMin,
     search,
-    selectedCategories.length,
-    typeFilter,
     world,
   ]);
 
   const isReservasWorld = world === "RESERVAS";
   const isPadelWorld = world === "PADEL";
   const isEventosWorld = world === "EVENTOS";
+  const isAuthenticated = Boolean(user?.id);
+
+  const sendSignal = useCallback(
+    (payload: Parameters<typeof sendDiscoverEventSignal>[0]) => {
+      void sendDiscoverEventSignal(payload, isAuthenticated);
+    },
+    [isAuthenticated],
+  );
 
   function toggleLike(id: number) {
     setLikedItems((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]));
   }
 
-  useEffect(() => {
-    if (world === "PADEL") {
-      if (selectedCategories.length !== 1 || selectedCategories[0] !== "PADEL") {
-        lastEventCategories.current = selectedCategories.filter((c) => c !== "PADEL");
-        setSelectedCategories(["PADEL"]);
-      }
-      if (typeFilter !== "all") {
-        setTypeFilter("all");
-      }
-      return;
-    }
-
-    if (world === "RESERVAS") {
-      if (selectedCategories.length > 0) {
-        setSelectedCategories([]);
-      }
-      if (typeFilter !== "all") {
-        setTypeFilter("all");
-      }
-      return;
-    }
-
-    if (world === "EVENTOS") {
-      if (selectedCategories.length === 1 && selectedCategories[0] === "PADEL") {
-        setSelectedCategories(lastEventCategories.current);
-      }
-    }
-  }, [selectedCategories, typeFilter, world]);
+  function hideEvent(id: number) {
+    setHiddenEventIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
 
   const CityPanel = () => (
     <>
@@ -753,55 +501,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     );
   };
 
-  const CategoryPanel = () => (
-    <>
-      <div className={panelHeaderClass}>
-        <div className={panelTitleClass}>
-          <CategoryIcon className="h-4 w-4" />
-          <span>Categorias</span>
-        </div>
-        <button type="button" onClick={() => setSelectedCategories([])} className={panelActionClass}>
-          Limpar
-        </button>
-      </div>
-      <div className="grid gap-2">
-        {CATEGORY_OPTIONS.map((cat) => {
-          const isActive = selectedCategories.includes(cat.value);
-          return (
-            <button
-              key={cat.value}
-              type="button"
-              onClick={() => {
-                setSelectedCategories((prev) =>
-                  prev.includes(cat.value)
-                    ? prev.filter((c) => c !== cat.value)
-                    : [...prev, cat.value],
-                );
-              }}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] transition ${
-                isActive
-                  ? "bg-[#6BFFFF]/20 border-[#6BFFFF]/70 text-[#E5FFFF] shadow-[0_0_16px_rgba(107,255,255,0.35)]"
-                  : "bg-white/5 border-white/18 text-white/80 hover:bg-white/10"
-              }`}
-              aria-pressed={isActive}
-            >
-              <span
-                className={`h-2.5 w-2.5 rounded-full bg-gradient-to-r ${cat.accent} shadow-[0_0_10px_rgba(255,255,255,0.45)]`}
-              />
-              <span>{cat.label}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex items-center justify-between pt-2 text-[11px] text-white/60">
-        <button type="button" onClick={() => setIsCategoryOpen(false)} className={panelActionLinkClass}>
-          Fechar
-        </button>
-        <span className="text-[10px] text-white/45">Seleciona uma ou mais</span>
-      </div>
-    </>
-  );
-
   const PricePanel = () => (
     <>
       <div className={panelHeaderClass}>
@@ -887,8 +586,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       } else if (dateFilter !== "all") {
         params.set("date", dateFilter);
       }
-      if (typeFilter !== "all") params.set("type", typeFilter);
-      if (selectedCategories.length > 0) params.set("categories", selectedCategories.join(","));
       if (city.trim()) params.set("city", city.trim());
       if (priceMin > 0) params.set("priceMin", String(priceMin));
       if (effectiveMaxParam !== null) params.set("priceMax", String(effectiveMaxParam));
@@ -1214,8 +911,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     search,
     dateFilter,
     customDate,
-    typeFilter,
-    selectedCategories,
     city,
     priceMin,
     effectiveMaxParam,
@@ -1304,8 +999,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     const priceMaxQ = searchParams.get("priceMax");
     const dateQ = searchParams.get("date");
     const dayQ = searchParams.get("day");
-    const typeQ = searchParams.get("type") as TypeFilter | null;
-    const catsQ = searchParams.get("categories");
     const worldQ = searchParams.get("world") ?? searchParams.get("mundo");
     const padelFormatQ = searchParams.get("format");
     const padelEligibilityQ = searchParams.get("eligibility");
@@ -1324,16 +1017,11 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       const maxVal = Math.max(0, Number(priceMaxQ));
       setPriceMax(Number.isFinite(maxVal) ? maxVal : 100);
     }
-    if (dateQ === "today" || dateQ === "weekend") {
+    if (dateQ === "today" || dateQ === "weekend" || dateQ === "upcoming") {
       setDateFilter(dateQ);
-    } else if (dateQ === "upcoming") {
-      setDateFilter("all");
     } else if (dateQ === "day" && dayQ) {
       setDateFilter("custom");
       setCustomDate(dayQ);
-    }
-    if (typeQ === "event") {
-      setTypeFilter(typeQ);
     }
     if (!initialWorld) {
       if (worldQ === "padel") {
@@ -1344,14 +1032,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
         setWorld("EVENTOS");
       }
     }
-    if (catsQ) {
-      const arr = catsQ
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-      setSelectedCategories(arr);
-    }
-
     if (padelFormatQ && PADEL_FORMAT_OPTIONS.some((opt) => opt.value === padelFormatQ)) {
       setPadelFormatFilter(padelFormatQ);
     }
@@ -1377,9 +1057,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       if (isPriceOpen && priceRef.current && !priceRef.current.contains(target)) {
         setIsPriceOpen(false);
       }
-      if (isCategoryOpen && categoryRef.current && !categoryRef.current.contains(target)) {
-        setIsCategoryOpen(false);
-      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("touchstart", handleClickOutside);
@@ -1387,13 +1064,21 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("touchstart", handleClickOutside);
     };
-  }, [isCityOpen, isDateOpen, isPriceOpen, isCategoryOpen]);
+  }, [isCityOpen, isDateOpen, isPriceOpen]);
 
   const headingCity = city.trim() || "Portugal";
   const dateLabel =
     dateFilter === "custom" && customDate
       ? new Date(customDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
       : DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label;
+  const visibleEventItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (hiddenEventIds.includes(item.id)) return false;
+        return true;
+      }),
+    [hiddenEventIds, items],
+  );
   const visibleOpenPairings = padelOpenPairings.filter((pairing) => pairing.openSlots > 0);
   const padelHasContent =
     padelTournaments.length > 0 || padelClubs.length > 0 || visibleOpenPairings.length > 0;
@@ -1401,7 +1086,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     ? serviceItems.length
     : isPadelWorld
       ? padelTournaments.length
-      : items.length;
+      : visibleEventItems.length;
   const resultsLabel = isPadelWorld
     ? `${formatCount(padelTournaments.length, "torneio", "torneios")} · ${formatCount(
         padelClubs.length,
@@ -1415,14 +1100,87 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     ? serviceLoading || (serviceError && serviceItems.length === 0)
     : isPadelWorld
       ? padelLoading || (padelError && !padelHasContent)
-      : loading || (error && items.length === 0);
+      : loading || (error && visibleEventItems.length === 0);
   const worldSummaryLabel = isReservasWorld ? "Reservas" : isPadelWorld ? "Torneios" : "Eventos";
-  const activeItems = isReservasWorld ? serviceItems : isPadelWorld ? padelTournaments : items;
+  const activeItems = isReservasWorld
+    ? serviceItems
+    : isPadelWorld
+      ? padelTournaments
+      : visibleEventItems;
   const activeError = isReservasWorld ? serviceError : isPadelWorld ? padelError : error;
   const activeLoading = isReservasWorld ? serviceLoading : isPadelWorld ? padelLoading : loading;
   const activeHasMore = isReservasWorld ? serviceHasMore : isPadelWorld ? false : hasMore;
   const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isPadelWorld ? false : isLoadingMore;
   const activeNextCursor = isReservasWorld ? serviceNextCursor : isPadelWorld ? null : nextCursor;
+  const emptyStateSuggestions = useMemo(() => {
+    const suggestions: Array<{ key: string; label: string; apply: () => void }> = [];
+
+    if (city.trim()) {
+      suggestions.push({
+        key: "city",
+        label: "Ver em todo o país",
+        apply: () => {
+          setCity("");
+          setCityInput("");
+        },
+      });
+    }
+    if (dateFilter !== "all" || customDate) {
+      suggestions.push({
+        key: "date",
+        label: "Remover filtro de data",
+        apply: () => {
+          setCustomDate("");
+          setDateFilter("all");
+        },
+      });
+    }
+    if (search.trim()) {
+      suggestions.push({
+        key: "search",
+        label: "Limpar pesquisa textual",
+        apply: () => {
+          setSearch("");
+          setSearchInput("");
+        },
+      });
+    }
+    if (priceMin > 0 || effectiveMaxParam !== null) {
+      suggestions.push({
+        key: "price",
+        label: "Voltar a qualquer preço",
+        apply: () => {
+          setPriceMin(0);
+          setPriceMax(100);
+        },
+      });
+    }
+    if (hiddenEventIds.length > 0 && world === "EVENTOS") {
+      suggestions.push({
+        key: "hidden",
+        label: "Repor ocultações desta sessão",
+        apply: () => setHiddenEventIds([]),
+      });
+    }
+    if (world !== "EVENTOS") {
+      suggestions.push({
+        key: "world-eventos",
+        label: "Experimentar mundo Eventos",
+        apply: () => setWorld("EVENTOS"),
+      });
+    }
+
+    return suggestions.slice(0, 4);
+  }, [
+    city,
+    customDate,
+    dateFilter,
+    effectiveMaxParam,
+    hiddenEventIds.length,
+    priceMin,
+    search,
+    world,
+  ]);
 
   return (
     <main className={exploreMainClass}>
@@ -1479,7 +1237,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   setIsCityOpen((v) => !v);
                   setIsDateOpen(false);
                   setIsPriceOpen(false);
-                  setIsCategoryOpen(false);
                 }}
                 className={`${filterPillClass} ${isCityOpen ? filterPillActiveClass : ""}`}
               >
@@ -1523,7 +1280,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   setIsDateOpen((v) => !v);
                   setIsCityOpen(false);
                   setIsPriceOpen(false);
-                  setIsCategoryOpen(false);
                 }}
                 className={`${filterPillClass} ${isDateOpen ? filterPillActiveClass : ""}`}
               >
@@ -1556,7 +1312,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   setIsPriceOpen((v) => !v);
                   setIsCityOpen(false);
                   setIsDateOpen(false);
-                  setIsCategoryOpen(false);
                 }}
                 className={`${filterPillClass} ${isPriceOpen ? filterPillActiveClass : ""}`}
               >
@@ -1585,77 +1340,8 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
               )}
             </div>
 
-            {(isEventosWorld || isPadelWorld) && (
+            {isPadelWorld && (
               <div className="hidden lg:block h-8 w-px bg-white/10" />
-            )}
-
-            {isEventosWorld && (
-              <div className="relative" ref={categoryRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCategoryOpen((v) => !v);
-                    setIsCityOpen(false);
-                    setIsDateOpen(false);
-                    setIsPriceOpen(false);
-                  }}
-                  className={`${filterPillClass} ${isCategoryOpen ? filterPillActiveClass : ""}`}
-                >
-                  <CategoryIcon className="h-4 w-4" />
-                  <span className="font-medium">
-                    Categorias{selectedCategories.length > 0 ? ` (${selectedCategories.length})` : ""}
-                  </span>
-                </button>
-                {isCategoryOpen && (
-                  <>
-                    {isMobile && (
-                      <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-center p-4">
-                        <div className={panelModalClass}>
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-sm font-semibold text-white">Categorias</h3>
-                          <button
-                            type="button"
-                            onClick={() => setIsCategoryOpen(false)}
-                            className="text-white/60 hover:text-white"
-                            aria-label="Fechar"
-                          >
-                            <CloseIcon className="h-4 w-4" />
-                          </button>
-                          </div>
-                          <CategoryPanel />
-                        </div>
-                      </div>
-                    )}
-                    {!isMobile && (
-                      <div className={`${panelPopoverBaseClass} md:absolute md:w-72 md:z-50`}>
-                        <CategoryPanel />
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {isEventosWorld && (
-              <div className="flex items-center gap-1 rounded-full border border-white/15 bg-white/5 p-1 text-[11px] transition-colors duration-200 ease-out">
-                {TYPE_OPTIONS.map((opt) => {
-                  const isActive = typeFilter === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setTypeFilter(opt.value)}
-                      className={`px-3 py-1 rounded-full transition ${
-                        isActive
-                          ? "bg-white text-black shadow-[0_0_14px_rgba(255,255,255,0.35)]"
-                          : "text-white/75 hover:bg-white/10"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
             )}
 
             {isPadelWorld && (
@@ -1716,8 +1402,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                     setSearch("");
                     setSearchInput("");
                     setDateFilter("all");
-                    setTypeFilter("all");
-                    setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                     setCity("");
                     setCityInput("");
                     setPriceMin(0);
@@ -1726,6 +1410,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                     setPadelFormatFilter("all");
                     setPadelEligibilityFilter("all");
                     setPadelLevelFilter("all");
+                    setHiddenEventIds([]);
                   }}
                   className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:border-white/40 hover:bg-white/10 transition"
                 >
@@ -1792,8 +1477,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   setSearch("");
                   setSearchInput("");
                   setDateFilter("all");
-                  setTypeFilter("all");
-                  setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                   setCity("");
                   setCityInput("");
                   setPriceMin(0);
@@ -1802,6 +1485,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   setPadelFormatFilter("all");
                   setPadelEligibilityFilter("all");
                   setPadelLevelFilter("all");
+                  setHiddenEventIds([]);
                   if (isReservasWorld) {
                     fetchServices({ append: false, cursor: null });
                   } else if (isPadelWorld) {
@@ -1831,14 +1515,26 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
             <p className="text-xs text-white/40 max-w-sm">
               Ajusta a cidade, data ou preço — ou volta mais tarde. A cidade está sempre a mexer.
             </p>
+            {emptyStateSuggestions.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2 max-w-xl">
+                {emptyStateSuggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.key}
+                    type="button"
+                    onClick={suggestion.apply}
+                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => {
                 setSearch("");
                 setSearchInput("");
                 setDateFilter("all");
-                setTypeFilter("all");
-                setSelectedCategories(world === "PADEL" ? ["PADEL"] : []);
                 setCity("");
                 setCityInput("");
                 setPriceMin(0);
@@ -1847,6 +1543,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                 setPadelFormatFilter("all");
                 setPadelEligibilityFilter("all");
                 setPadelLevelFilter("all");
+                setHiddenEventIds([]);
               }}
               className="mt-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/20 text-xs text-white/80 hover:bg-white/10"
             >
@@ -1938,11 +1635,13 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
               </div>
             ) : (
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-                {items.map((item, idx) => (
+                {visibleEventItems.map((item, idx) => (
                   <EventCard
                     key={`${item.type}-${item.id}`}
                     item={item}
                     onLike={toggleLike}
+                    onHide={hideEvent}
+                    onSignal={sendSignal}
                     liked={likedItems.includes(item.id)}
                     imagePriority={idx < 2}
                   />
@@ -1970,683 +1669,5 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
         )}
       </section>
     </main>
-  );
-}
-
-type CardProps = {
-  item: ExploreItem;
-  liked: boolean;
-  onLike: (id: number) => void;
-  neonClass?: string;
-  imagePriority?: boolean;
-};
-
-type ServiceCardProps = {
-  item: ServiceItem;
-  imagePriority?: boolean;
-};
-
-type PadelTournamentCardProps = {
-  item: PadelTournamentItem;
-  imagePriority?: boolean;
-};
-
-type PadelClubCardProps = {
-  item: PadelClubItem;
-};
-
-type PadelOpenPairingCardProps = {
-  item: PadelOpenPairingItem;
-  onJoin: () => void;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  imagePriority?: boolean;
-};
-
-function PriceBadge({ item }: { item: ExploreItem }) {
-  if (item.isGratis) {
-    return (
-      <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10 text-emerald-200">
-        Grátis
-      </span>
-    );
-  }
-  if (item.priceFrom !== null) {
-    return (
-      <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-        Desde {item.priceFrom.toFixed(2)} €
-      </span>
-    );
-  }
-  return null;
-}
-
-type DoubleRangeProps = {
-  min: number;
-  max: number;
-  step: number;
-  valueMin: number;
-  valueMax: number;
-  onCommit: (min: number, max: number) => void;
-};
-
- 
-
-function DoubleRange({ min, max, step, valueMin, valueMax, onCommit }: DoubleRangeProps) {
-  const gap = 1;
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const [dragging, setDragging] = useState<0 | 1 | null>(null);
-  const draggingRef = useRef<0 | 1 | null>(null);
-  const [localMin, setLocalMin] = useState(valueMin);
-  const [localMax, setLocalMax] = useState(valueMax);
-  const localMinRef = useRef(valueMin);
-  const localMaxRef = useRef(valueMax);
-
-  useEffect(() => {
-    if (draggingRef.current !== null) return;
-    localMinRef.current = valueMin;
-    localMaxRef.current = valueMax;
-    setLocalMin(valueMin);
-    setLocalMax(valueMax);
-  }, [valueMin, valueMax]);
-
-  const clampValue = (value: number) => Math.min(max, Math.max(min, value));
-  const snapValue = (value: number) => {
-    const snapped = Math.round(value / step) * step;
-    return clampValue(snapped);
-  };
-  const valueFromClientX = (clientX: number) => {
-    const rect = trackRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return min;
-    const percent = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return snapValue(min + percent * (max - min));
-  };
-  const applyValue = (next: number, thumb: 0 | 1) => {
-    const currentMin = localMinRef.current;
-    const currentMax = localMaxRef.current;
-    if (thumb === 0) {
-      const clamped = Math.min(next, currentMax - gap);
-      const nextMin = clampValue(clamped);
-      localMinRef.current = nextMin;
-      localMaxRef.current = currentMax;
-      setLocalMin(nextMin);
-      setLocalMax(currentMax);
-    } else {
-      const clamped = Math.max(next, currentMin + gap);
-      const nextMax = clampValue(clamped);
-      localMinRef.current = currentMin;
-      localMaxRef.current = nextMax;
-      setLocalMin(currentMin);
-      setLocalMax(nextMax);
-    }
-  };
-
-  const startDrag = (thumb: 0 | 1, clientX: number) => {
-    setDragging(thumb);
-    draggingRef.current = thumb;
-    applyValue(valueFromClientX(clientX), thumb);
-  };
-
-  const stopDrag = () => {
-    if (draggingRef.current === null) return;
-    draggingRef.current = null;
-    setDragging(null);
-    onCommit(localMinRef.current, localMaxRef.current);
-  };
-
-  const handleThumbMouseDown = (thumb: 0 | 1) => (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    startDrag(thumb, event.clientX);
-  };
-
-  const handleThumbTouchStart = (thumb: 0 | 1) => (event: React.TouchEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const touch = event.touches[0];
-    if (!touch) return;
-    startDrag(thumb, touch.clientX);
-  };
-
-  const handleTrackMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const next = valueFromClientX(event.clientX);
-    const distToMin = Math.abs(next - localMinRef.current);
-    const distToMax = Math.abs(next - localMaxRef.current);
-    const targetThumb: 0 | 1 = distToMin <= distToMax ? 0 : 1;
-    startDrag(targetThumb, event.clientX);
-  };
-
-  const handleTrackTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const touch = event.touches[0];
-    if (!touch) return;
-    const next = valueFromClientX(touch.clientX);
-    const distToMin = Math.abs(next - localMinRef.current);
-    const distToMax = Math.abs(next - localMaxRef.current);
-    const targetThumb: 0 | 1 = distToMin <= distToMax ? 0 : 1;
-    startDrag(targetThumb, touch.clientX);
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
-      if (draggingRef.current === null) return;
-      applyValue(valueFromClientX(event.clientX), draggingRef.current);
-    };
-    const handleMouseUp = () => stopDrag();
-    const handleTouchMove = (event: TouchEvent) => {
-      if (draggingRef.current === null) return;
-      const touch = event.touches[0];
-      if (!touch) return;
-      event.preventDefault();
-      applyValue(valueFromClientX(touch.clientX), draggingRef.current);
-    };
-    const handleTouchEnd = () => stopDrag();
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    window.addEventListener("touchmove", handleTouchMove, { passive: false });
-    window.addEventListener("touchend", handleTouchEnd);
-    window.addEventListener("touchcancel", handleTouchEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-      window.removeEventListener("touchcancel", handleTouchEnd);
-    };
-  }, [min, max, step]);
-
-  const minPercent = ((localMin - min) / (max - min)) * 100;
-  const maxPercent = ((localMax - min) / (max - min)) * 100;
-
-  return (
-    <div className="space-y-3">
-      <div
-        ref={trackRef}
-        onMouseDown={handleTrackMouseDown}
-        onTouchStart={handleTrackTouchStart}
-        className="relative h-3 rounded-full border border-white/12 bg-white/8 cursor-pointer select-none"
-        style={{ touchAction: "none" }}
-      >
-        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
-        <div
-          className="absolute h-full rounded-full bg-gradient-to-r from-[#6BFFFF] via-[#8B8CFF] to-[#FF5EDB] shadow-[0_0_14px_rgba(107,255,255,0.35)]"
-          style={{ left: `${minPercent}%`, width: `${maxPercent - minPercent}%` }}
-        />
-        <button
-          type="button"
-          role="slider"
-          aria-valuemin={min}
-          aria-valuemax={max}
-          aria-valuenow={valueMin}
-          onMouseDown={handleThumbMouseDown(0)}
-          onTouchStart={handleThumbTouchStart(0)}
-          className="absolute top-1/2 h-7 w-7 -translate-y-1/2 -translate-x-1/2 rounded-full border border-white/60 bg-[radial-gradient(circle_at_30%_30%,#F8FFFF,#8FE9FF_55%,#315CFF_100%)] shadow-[0_0_16px_rgba(107,255,255,0.55),inset_0_0_8px_rgba(255,255,255,0.5)]"
-          style={{ left: `${minPercent}%`, zIndex: dragging === 0 ? 30 : 20, touchAction: "none" }}
-        />
-        {dragging !== null && (
-          <div
-            className="absolute -top-8 px-2 py-1 rounded-full border border-white/15 bg-black/70 text-[10px] text-white/85 shadow-[0_8px_20px_rgba(0,0,0,0.45)]"
-            style={{ left: `${minPercent}%`, transform: "translateX(-50%)", pointerEvents: "none" }}
-          >
-            € {localMin}
-          </div>
-        )}
-        <button
-          type="button"
-          role="slider"
-          aria-valuemin={min}
-          aria-valuemax={max}
-          aria-valuenow={valueMax}
-          onMouseDown={handleThumbMouseDown(1)}
-          onTouchStart={handleThumbTouchStart(1)}
-          className="absolute top-1/2 h-7 w-7 -translate-y-1/2 -translate-x-1/2 rounded-full border border-white/60 bg-[radial-gradient(circle_at_30%_30%,#F8FFFF,#8FE9FF_55%,#315CFF_100%)] shadow-[0_0_16px_rgba(107,255,255,0.55),inset_0_0_8px_rgba(255,255,255,0.5)]"
-          style={{ left: `${maxPercent}%`, zIndex: dragging === 1 ? 30 : 20, touchAction: "none" }}
-        />
-        {dragging !== null && (
-          <div
-            className="absolute -top-8 px-2 py-1 rounded-full border border-white/15 bg-black/70 text-[10px] text-white/85 shadow-[0_8px_20px_rgba(0,0,0,0.45)]"
-            style={{ left: `${maxPercent}%`, transform: "translateX(-50%)", pointerEvents: "none" }}
-          >
-            {localMax >= max ? "100+" : `€ ${localMax}`}
-          </div>
-        )}
-      </div>
-      <div className="flex justify-between text-[10px] text-white/60">
-        <span>{min}€</span>
-        <span>{max}+€</span>
-      </div>
-    </div>
-  );
-}
-
-function BaseCard({
-  item,
-  liked,
-  onLike,
-  badge,
-  neonClass,
-  imagePriority,
-}: CardProps & { badge: string }) {
-  const router = useRouter();
-  const status = statusTag(item.status);
-  const dateLabel = formatDateRange(item.startsAt, item.endsAt);
-  const venueLabel = formatEventLocationLabel(
-    {
-      addressRef: {
-        formattedAddress: item.location.formattedAddress ?? null,
-        latitude: item.location.lat ?? null,
-        longitude: item.location.lng ?? null,
-      },
-    },
-    "",
-  );
-  const hasVenue = Boolean(venueLabel && venueLabel.trim());
-  const isEvent = badge === "Evento";
-  const badgeGrad = isEvent
-    ? "from-white/12 via-white/9 to-white/6"
-    : "from-white/10 via-white/8 to-white/5";
-  const badgeDot = isEvent
-    ? "from-[#FF66E0]/70 via-[#8DEFFF]/70 to-[#5270FF]/70"
-    : "from-[#6EE7FF]/70 via-[#34d399]/70 to-[#3b82f6]/70";
-  const badgeIcon = isEvent ? <TicketIcon className="h-4 w-4" /> : null;
-
-  return (
-    <Link
-      href={buildSlug(item.type, item.slug)}
-      className={`group w-full rounded-2xl border border-white/12 bg-black/30 overflow-hidden flex flex-col transition-all hover:border-white/20 hover:-translate-y-[4px] ${neonClass ?? ""}`}
-    >
-      <div className="relative overflow-hidden">
-        <div className="aspect-square w-full">
-          <Image
-            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 720)}
-            alt={item.title}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
-            placeholder="blur"
-            blurDataURL={defaultBlurDataURL}
-            priority={imagePriority}
-            fetchPriority={imagePriority ? "high" : "auto"}
-          />
-        </div>
-
-        <div
-          className={`absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r ${badgeGrad}`}
-        >
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
-            {badgeIcon}
-          </span>
-          <span
-            className={`h-1.5 w-6 rounded-full bg-gradient-to-r ${badgeDot}`}
-          />
-          <span className="tracking-wide leading-none">{badge}</span>
-        </div>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onLike(item.id);
-          }}
-          className="absolute top-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 border border-white/30 shadow-[0_0_15px_rgba(0,0,0,0.6)] text-base opacity-0 group-hover:opacity-100 group-hover:scale-105 transition-all hover:bg-black/80"
-          aria-label={liked ? "Remover interesse" : "Marcar interesse"}
-        >
-          <span
-            className={`transition-transform duration-150 ${
-              liked ? "scale-110 text-[#FF00C8]" : "scale-100 text-white"
-            }`}
-          >
-            {liked ? "♥" : "♡"}
-          </span>
-        </button>
-
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      </div>
-
-      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/4 via-transparent to-white/2">
-        <div className="flex items-center justify-between text-[11px] text-white/75">
-          {item.hostUsername ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                router.push(`/${item.hostUsername}`);
-              }}
-              className="truncate text-left hover:text-[#6BFFFF]"
-            >
-              {item.hostName || `@${item.hostUsername}`}
-            </button>
-          ) : (
-            <span className="truncate">{item.hostName || "Organização ORYA"}</span>
-          )}
-          <PriceBadge item={item} />
-        </div>
-
-        <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
-          {item.title}
-        </h2>
-
-        <p className="text-[11px] text-white/80 line-clamp-2">{dateLabel}</p>
-        {hasVenue ? <p className="text-[11px] text-white/70">{venueLabel}</p> : null}
-
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {item.categories.map((c) => {
-            const catLabel = CATEGORY_OPTIONS.find((opt) => opt.value === c)?.label ?? c;
-            return (
-              <span
-                key={c}
-                className="text-[10px] rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-white/75"
-              >
-                {catLabel}
-              </span>
-            );
-          })}
-        </div>
-
-        <div className="mt-2 flex items-center justify-between text-[11px]">
-          <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
-            {item.isGratis ? "Entrada gratuita" : "Bilhetes disponíveis"}
-          </span>
-          <span className={status.className}>{status.text}</span>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function EventCard(props: CardProps) {
-  return (
-    <BaseCard
-      {...props}
-      badge="Evento"
-      neonClass="shadow-[0_14px_32px_rgba(0,0,0,0.45)]"
-    />
-  );
-}
-
-function ServiceCard({ item, imagePriority }: ServiceCardProps) {
-  const organizationName = item.organization.publicName || item.organization.businessName || "Organização";
-  const availabilityLabel = formatServiceAvailability(item.nextAvailability);
-  const priceLabel = `${(item.unitPriceCents / 100).toFixed(2)} ${item.currency}`;
-
-  return (
-    <Link
-      href={
-        item.organization.username
-          ? `/${item.organization.username}?serviceId=${item.id}`
-          : `/servicos/${item.id}`
-      }
-      className="group w-full rounded-2xl border border-white/12 bg-black/30 overflow-hidden flex flex-col transition-all hover:border-white/20 hover:-translate-y-[4px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
-    >
-      <div className="relative overflow-hidden">
-        <div className="aspect-square w-full">
-          <Image
-            src={resolveCover(null, `service-${item.id}`, 720)}
-            alt={item.title}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
-            placeholder="blur"
-            blurDataURL={defaultBlurDataURL}
-            priority={imagePriority}
-            fetchPriority={imagePriority ? "high" : "auto"}
-          />
-        </div>
-
-        <div className="absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r from-white/10 via-white/7 to-white/5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
-            <PuzzleIcon className="h-4 w-4" />
-          </span>
-          <span className="h-1.5 w-6 rounded-full bg-gradient-to-r from-[#FCD34D] via-[#FB923C] to-[#F97316]" />
-          <span className="tracking-wide leading-none">Reserva</span>
-        </div>
-
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      </div>
-
-      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/4 via-transparent to-white/2">
-        <div className="flex items-center justify-between text-[11px] text-white/75">
-          <span className="truncate">{organizationName}</span>
-          {item.addressRef?.formattedAddress || item.organization.addressRef?.formattedAddress ? (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">
-              {item.addressRef?.formattedAddress || item.organization.addressRef?.formattedAddress}
-            </span>
-          ) : null}
-        </div>
-
-        <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
-          {item.title}
-        </h2>
-
-        {item.description ? (
-          <p className="text-[11px] text-white/80 line-clamp-2">
-            {item.description}
-          </p>
-        ) : null}
-
-        <div className="mt-2 flex items-center justify-between text-[11px]">
-          <span className="px-2 py-0.5 rounded-full bg-black/75 border border-white/22 text-white font-medium">
-            {item.durationMinutes} min · {priceLabel}
-          </span>
-          <span className="text-white/70">{availabilityLabel}</span>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function PadelTournamentCard({ item, imagePriority }: PadelTournamentCardProps) {
-  const dateLabel = formatPadelDate(item.startsAt, item.endsAt);
-  const locationLabel = item.locationFormattedAddress || null;
-  const priceLabel =
-    item.priceFrom == null ? null : item.priceFrom === 0 ? "Grátis" : `Desde ${item.priceFrom.toFixed(2)} €`;
-  const formatLabel = formatPadelFormat(item.format);
-  const eligibilityLabel = formatPadelEligibility(item.eligibility);
-
-  return (
-    <Link
-      href={`/eventos/${item.slug}`}
-      className="group w-full rounded-2xl border border-white/12 bg-black/30 overflow-hidden flex flex-col transition-all hover:border-white/20 hover:-translate-y-[4px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
-    >
-      <div className="relative overflow-hidden">
-        <div className="aspect-square w-full">
-          <Image
-            src={resolveCover(item.coverImageUrl, item.slug ?? item.id, 720)}
-            alt={item.title}
-            fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transform transition-transform duration-300 group-hover:scale-[1.04]"
-            placeholder="blur"
-            blurDataURL={defaultBlurDataURL}
-            priority={imagePriority}
-            fetchPriority={imagePriority ? "high" : "auto"}
-          />
-        </div>
-        <div className="absolute top-2 left-2 flex items-center gap-2 rounded-2xl border border-white/16 px-3 py-1 text-[11px] font-semibold text-white/90 backdrop-blur-lg bg-gradient-to-r from-white/10 via-white/7 to-white/5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
-            <PadelIcon className="h-4 w-4" />
-          </span>
-          <span className="h-1.5 w-6 rounded-full bg-gradient-to-r from-[#6BFFFF] via-[#4ADE80] to-[#1E40AF]" />
-          <span className="tracking-wide leading-none">Torneio</span>
-        </div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      </div>
-
-      <div className="p-3 flex flex-col gap-1.5 bg-gradient-to-b from-white/4 via-transparent to-white/2">
-        <div className="flex items-center justify-between text-[11px] text-white/75">
-          <span className="truncate">{item.organizationName || "Clube ORYA"}</span>
-          {priceLabel ? (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 border border-white/10">{priceLabel}</span>
-          ) : null}
-        </div>
-
-        <h2 className="text-[14px] md:text-[15px] font-semibold leading-snug text-white line-clamp-2">
-          {item.title}
-        </h2>
-
-        {dateLabel ? <p className="text-[11px] text-white/80">{dateLabel}</p> : null}
-        {locationLabel ? <p className="text-[11px] text-white/70">{locationLabel}</p> : null}
-
-        <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-white/75">
-          {formatLabel ? (
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-              {formatLabel}
-            </span>
-          ) : null}
-          <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-            {eligibilityLabel}
-          </span>
-          {item.levels.length === 0 && (
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-              Nível aberto
-            </span>
-          )}
-          {item.levels.slice(0, 3).map((level) => (
-            <span
-              key={level.id}
-              className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5"
-            >
-              {level.label}
-            </span>
-          ))}
-          {item.levels.length > 3 && (
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-              +{item.levels.length - 3}
-            </span>
-          )}
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function PadelClubCard({ item }: PadelClubCardProps) {
-  const clubHref = item.organizationUsername ? `/${item.organizationUsername}` : null;
-  const header = (
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Clube</p>
-        <h3 className="text-lg font-semibold text-white">{item.shortName || item.name}</h3>
-        <p className="text-xs text-white/55">
-          {item.city || "Cidade"} · {item.courtsCount} courts
-        </p>
-      </div>
-      <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] text-white/75">
-        {item.address || "Endereço a anunciar"}
-      </span>
-    </div>
-  );
-
-  const courts = item.courts ?? [];
-  const content = (
-    <div className="group rounded-3xl border border-white/10 bg-white/[0.02] p-4 shadow-[0_14px_32px_rgba(0,0,0,0.4)] transition-all hover:border-white/16 hover:-translate-y-[4px]">
-      {header}
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {courts.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white/60">
-            Courts a anunciar.
-          </div>
-        ) : (
-          courts.slice(0, 4).map((court) => (
-            <div
-              key={court.id}
-              className="rounded-2xl border border-white/12 bg-black/35 px-3 py-2 text-[11px] text-white/75"
-            >
-              <p className="font-semibold text-white/90">{court.name}</p>
-              <p className="text-[10px] text-white/55">
-                {court.indoor ? "Indoor" : "Outdoor"}
-                {court.surface ? ` · ${court.surface}` : ""}
-              </p>
-            </div>
-          ))
-        )}
-      </div>
-      {clubHref && (
-        <div className="mt-4 text-[11px] text-white/70 group-hover:text-white/90">
-          Ver perfil do clube →
-        </div>
-      )}
-    </div>
-  );
-
-  if (clubHref) {
-    return (
-      <Link href={clubHref} className="block">
-        {content}
-      </Link>
-    );
-  }
-  return content;
-}
-
-function PadelOpenPairingCard({
-  item,
-  onJoin,
-  isLoading,
-  isAuthenticated,
-  imagePriority,
-}: PadelOpenPairingCardProps) {
-  const dateLabel = formatPadelDate(item.event.startsAt, item.event.startsAt);
-  const locationLabel = item.event.locationFormattedAddress || null;
-  const deadlineLabel = item.isExpired ? "Expirado" : formatPadelDeadline(item.deadlineAt);
-  const paymentLabel = formatPadelPaymentMode(item.paymentMode);
-  const slotsLabel = item.openSlots === 1 ? "1 vaga" : `${item.openSlots} vagas`;
-  const joinLabel = item.isExpired ? "Expirado" : isAuthenticated ? "Juntar-me" : "Iniciar sessão";
-
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-4 shadow-[0_14px_32px_rgba(0,0,0,0.4)]">
-      <div className="flex items-start gap-4">
-        <div className="relative h-20 w-20 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-          <Image
-            src={resolveCover(item.event.coverImageUrl, item.event.slug ?? item.event.id, 240)}
-            alt={item.event.title}
-            fill
-            sizes="80px"
-            className="object-cover"
-            placeholder="blur"
-            blurDataURL={defaultBlurDataURL}
-            priority={imagePriority}
-            fetchPriority={imagePriority ? "high" : "auto"}
-          />
-        </div>
-        <div className="flex-1 space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Dupla aberta</p>
-          <Link href={`/eventos/${item.event.slug}`} className="text-base font-semibold text-white hover:text-white/90">
-            {item.event.title}
-          </Link>
-          {dateLabel ? <p className="text-[11px] text-white/65">{dateLabel}</p> : null}
-          {locationLabel ? <p className="text-[11px] text-white/55">{locationLabel}</p> : null}
-          <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-white/75">
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">
-              {item.category?.label || "Nível aberto"}
-            </span>
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">{slotsLabel}</span>
-            <span className="rounded-full border border-white/12 bg-white/5 px-2 py-0.5">{paymentLabel}</span>
-            {item.isExpired && (
-              <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-amber-100">
-                Expirado
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="text-[11px] text-white/55">Prazo: {deadlineLabel}</p>
-        <button
-          type="button"
-          onClick={onJoin}
-          disabled={isLoading || item.isExpired}
-          className="rounded-full bg-white text-black px-4 py-1.5 text-[11px] font-semibold hover:bg-white/90 disabled:opacity-60"
-        >
-          {isLoading ? "A entrar..." : joinLabel}
-        </button>
-      </div>
-    </div>
   );
 }

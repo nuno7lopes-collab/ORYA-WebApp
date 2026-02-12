@@ -51,7 +51,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     select: {
       id: true,
       status: true,
-      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+      stage: {
+        select: {
+          tournamentId: true,
+          tournament: { select: { eventId: true, event: { select: { templateType: true } } } },
+        },
+      },
     },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
@@ -78,6 +83,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   ];
   if (!organizationRole || !liveOperatorRoles.includes(organizationRole)) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  if (match.stage.tournament.event?.templateType === "PADEL") {
+    return jsonWrap({ ok: false, error: "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN" }, { status: 409 });
   }
   const isAdmin =
     organizationRole === OrganizationMemberRole.OWNER ||
@@ -151,6 +159,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
     if (err instanceof Error && err.message === "MATCH_NOT_FOUND") {
       return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+    }
+    if (err instanceof Error && err.message === "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN") {
+      return jsonWrap({ ok: false, error: "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN" }, { status: 409 });
     }
     console.error("[match_result] erro", err);
     return jsonWrap({ ok: false, error: "UPDATE_FAILED" }, { status: 500 });

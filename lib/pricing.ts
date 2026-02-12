@@ -65,7 +65,7 @@ export function computePricing(
   ctx: FeeContext,
 ): PricingResult {
   const resolvedFeeMode = resolveFeeMode(ctx);
-  const feeMode = resolvedFeeMode === FeeMode.ON_TOP ? FeeMode.ADDED : resolvedFeeMode;
+  const feeMode = resolvedFeeMode;
   const { feeBps, feeFixedCents } = resolvePlatformFees(ctx);
 
   const netSubtotal = Math.max(0, subtotalCents - Math.max(0, discountCents));

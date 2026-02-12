@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { OrganizationMemberRole } from "@prisma/client";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -25,8 +26,19 @@ async function _GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+      return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+    }
+    if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+      return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+    }
+    const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       roles: [...ROLE_ALLOWLIST],
+      organizationId: explicitOrganizationId,
+      allowFallback: !explicitOrganizationId,
     });
     if (!organization || !membership) {
       return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });

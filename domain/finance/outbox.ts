@@ -189,6 +189,7 @@ type PaymentCreatedPayload = {
   grossCents?: number;
   netToOrgCents?: number;
   currency?: string;
+  orgId?: number;
   organizationId?: number;
   sourceType?: string;
   sourceId?: string;
@@ -210,7 +211,7 @@ async function handlePaymentCreatedOutbox(payload: Record<string, unknown>) {
   const netToOrgCents = readNumber(data.netToOrgCents);
   const currency = readString(data.currency);
   const eventId = readNumber(data.eventId);
-  const organizationId = readNumber(data.organizationId);
+  const organizationId = readNumber(data.orgId ?? data.organizationId);
   const sourceType = readString(data.sourceType);
   const sourceId = readString(data.sourceId);
 
@@ -624,9 +625,9 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
         dedupeKey: event.id,
         correlations: { stripeEventId: event.id },
         payload: {
-          stripeEventType: event.type,
+          stripeEventType: "payment.dispute_opened",
           stripeEventId: event.id,
-          stripeEventObject: dispute,
+          stripeEventObject: { ...dispute, outcome: null },
         },
       });
       break;
@@ -639,17 +640,17 @@ export async function consumeStripeWebhookEvent(event: Stripe.Event) {
           ? dispute.payment_intent
           : dispute.payment_intent?.id ?? null;
       void paymentIntentId;
-      const disputeEventType =
-        dispute.status === "won" ? "dispute.won" : dispute.status === "lost" ? "dispute.lost" : null;
-      if (disputeEventType) {
+      const disputeOutcome =
+        dispute.status === "won" ? "WON" : dispute.status === "lost" ? "LOST" : null;
+      if (disputeOutcome) {
         await enqueueOperation({
           operationType: "PROCESS_STRIPE_EVENT",
           dedupeKey: event.id,
           correlations: { stripeEventId: event.id, paymentIntentId },
           payload: {
-            stripeEventType: disputeEventType,
+            stripeEventType: "payment.dispute_closed",
             stripeEventId: event.id,
-            stripeEventObject: dispute,
+            stripeEventObject: { ...dispute, outcome: disputeOutcome },
           },
         });
       }

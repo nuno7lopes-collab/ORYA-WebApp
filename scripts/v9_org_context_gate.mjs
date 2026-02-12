@@ -27,6 +27,13 @@ const REQUIRED_MARKERS = [
   "requireAdminUser",
 ];
 
+function isLegacyTombstoneRoute(content) {
+  const hasLegacyGoneHandler = /function\s+legacyGone\s*\(/.test(content);
+  const hasRemovedMessage = /Endpoint legado removido\./.test(content);
+  const hasGoneStatus = /\{\s*status:\s*410\s*\}/.test(content);
+  return hasLegacyGoneHandler && hasRemovedMessage && hasGoneStatus;
+}
+
 function listFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   const files = [];
@@ -49,6 +56,7 @@ for (const file of files) {
   const rel = path.relative(ROOT, file);
   if (ALLOWLIST.has(rel)) continue;
   const content = fs.readFileSync(file, "utf8");
+  if (isLegacyTombstoneRoute(content)) continue;
   const hasMarker = REQUIRED_MARKERS.some((marker) => content.includes(marker));
   if (!hasMarker) {
     violations.push(rel);

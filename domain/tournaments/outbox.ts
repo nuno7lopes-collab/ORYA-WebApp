@@ -33,15 +33,22 @@ export async function handleTournamentOutboxEvent(input: {
     if (!data?.matchId) {
       throw new Error("TOURNAMENT_MATCH_RESULT_INVALID_PAYLOAD");
     }
-    await updateMatchResult({
-      matchId: Number(data.matchId),
-      score: data.score as any,
-      status: data.status as any,
-      explicitWinnerPairingId: data.winnerPairingId ?? null,
-      expectedUpdatedAt: data.expectedUpdatedAt ? new Date(data.expectedUpdatedAt) : undefined,
-      userId: data.userId ?? null,
-      force: Boolean(data.force),
-    });
+    try {
+      await updateMatchResult({
+        matchId: Number(data.matchId),
+        score: data.score as any,
+        status: data.status as any,
+        explicitWinnerPairingId: data.winnerPairingId ?? null,
+        expectedUpdatedAt: data.expectedUpdatedAt ? new Date(data.expectedUpdatedAt) : undefined,
+        userId: data.userId ?? null,
+        force: Boolean(data.force),
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN") {
+        return { ok: true, skipped: true };
+      }
+      throw err;
+    }
     return { ok: true };
   }
 
@@ -60,17 +67,24 @@ export async function handleTournamentOutboxEvent(input: {
     return { ok: true, skipped: true };
   }
 
-  await generateAndPersistTournamentStructure({
-    tournamentId: data.tournamentId,
-    format: data.format,
-    pairings: data.pairings ?? [],
-    seed: data.seed ?? null,
-    inscriptionDeadlineAt: data.inscriptionDeadlineAt ? new Date(data.inscriptionDeadlineAt) : null,
-    forceGenerate: Boolean(data.forceGenerate),
-    userId: data.userId,
-    targetSize: data.targetSize ?? null,
-    preserveOrder: Boolean(data.preserveOrder),
-  });
+  try {
+    await generateAndPersistTournamentStructure({
+      tournamentId: data.tournamentId,
+      format: data.format,
+      pairings: data.pairings ?? [],
+      seed: data.seed ?? null,
+      inscriptionDeadlineAt: data.inscriptionDeadlineAt ? new Date(data.inscriptionDeadlineAt) : null,
+      forceGenerate: Boolean(data.forceGenerate),
+      userId: data.userId,
+      targetSize: data.targetSize ?? null,
+      preserveOrder: Boolean(data.preserveOrder),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN") {
+      return { ok: true, skipped: true };
+    }
+    throw err;
+  }
 
   return { ok: true };
 }

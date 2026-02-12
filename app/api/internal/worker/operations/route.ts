@@ -12,7 +12,6 @@ import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
 import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode } from "@prisma/client";
-import { EntitlementV7Status, mapV7StatusToLegacy } from "@/lib/entitlements/status";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
@@ -257,11 +256,10 @@ function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: 
   return "unknown";
 }
 
-async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementV7Status) {
-  const legacyStatus = mapV7StatusToLegacy(status);
+async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementStatus) {
   await prisma.entitlement.updateMany({
     where: { purchaseId },
-    data: { status: legacyStatus },
+    data: { status },
   });
 }
 
@@ -1116,12 +1114,7 @@ async function processStripeEvent(op: OperationRecord) {
     const charge = await retrieveCharge(chargeId);
     return handleRefund(charge as Stripe.Charge, { stripeEventId: op.stripeEventId ?? null });
   }
-  if (
-    eventType === "dispute.created" ||
-    eventType === "dispute.won" ||
-    eventType === "dispute.lost" ||
-    eventType === "charge.dispute.created"
-  ) {
+  if (eventType === "payment.dispute_opened" || eventType === "payment.dispute_closed") {
     const stripeEventObject =
       typeof payload.stripeEventObject === "object" && payload.stripeEventObject
         ? (payload.stripeEventObject as Record<string, any>)
@@ -1133,15 +1126,24 @@ async function processStripeEvent(op: OperationRecord) {
       stripeEventObject.metadata && typeof stripeEventObject.metadata === "object"
         ? (stripeEventObject.metadata as Record<string, string | undefined>)
         : null;
+    const disputeOutcomeRaw =
+      typeof stripeEventObject.outcome === "string"
+        ? stripeEventObject.outcome.trim().toUpperCase()
+        : null;
+    const disputeOutcome =
+      disputeOutcomeRaw === "WON" || disputeOutcomeRaw === "LOST" ? disputeOutcomeRaw : null;
+    if (eventType === "payment.dispute_closed" && !disputeOutcome) {
+      throw new Error("Missing dispute outcome");
+    }
     const result = await handleStripeWebhook({
       id: typeof payload.stripeEventId === "string" ? payload.stripeEventId : op.stripeEventId ?? "unknown",
       type: eventType as any,
-      data: { object: { id: objectId, metadata } },
+      data: { object: { id: objectId, metadata, outcome: disputeOutcome } },
     });
     const paymentId = result.paymentId ?? null;
-    if (paymentId && (eventType === "dispute.lost" || eventType === "dispute.won")) {
+    if (paymentId && eventType === "payment.dispute_closed" && disputeOutcome) {
       const disputeFeeCents = extractDisputeFeeCents(stripeEventObject);
-      if (eventType === "dispute.lost") {
+      if (disputeOutcome === "LOST") {
         await appendChargebackLedgerEntries({
           paymentId,
           causationId:
@@ -1151,7 +1153,7 @@ async function processStripeEvent(op: OperationRecord) {
           correlationId: paymentId,
           disputeFeeCents,
         });
-      } else if (eventType === "dispute.won") {
+      } else if (disputeOutcome === "WON") {
         await appendDisputeFeeReversal({
           paymentId,
           causationId:
@@ -1597,7 +1599,7 @@ async function processRefundSingle(op: OperationRecord) {
     },
   });
 
-  await markEntitlementsStatusByPurchase(purchaseId, "REVOKED");
+  await markEntitlementsStatusByPurchase(purchaseId, EntitlementStatus.REVOKED);
   await prisma.ticket.updateMany({
     where: {
       OR: [{ purchaseId }, { stripePaymentIntentId: paymentIntentId ?? purchaseId }],
@@ -1788,7 +1790,7 @@ async function processMarkDispute(op: OperationRecord) {
   });
 
   if (purchaseId) {
-    await markEntitlementsStatusByPurchase(purchaseId, "SUSPENDED");
+    await markEntitlementsStatusByPurchase(purchaseId, EntitlementStatus.SUSPENDED);
   }
 
   const paymentId = await resolvePaymentIdForOperation({ purchaseId, paymentIntentId });

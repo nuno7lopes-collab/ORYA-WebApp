@@ -1,12 +1,14 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { checkPadelRegistrationWindow, INACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { PORTUGAL_CITIES } from "@/config/cities";
+import { logError } from "@/lib/observability/logger";
 
 const DEFAULT_LIMIT = 12;
 
@@ -28,6 +30,11 @@ async function _GET(req: NextRequest) {
     const q = params.get("q")?.trim() ?? "";
     const eventIdParam = params.get("eventId");
     const categoryIdParam = params.get("categoryId");
+    const cityParamRaw = params.get("city")?.trim() ?? "";
+    const cityParam =
+      cityParamRaw && cityParamRaw.toLowerCase() !== "portugal"
+        ? PORTUGAL_CITIES.find((entry) => entry.toLowerCase() === cityParamRaw.toLowerCase()) ?? cityParamRaw
+        : null;
     const eventId = eventIdParam ? Number(eventIdParam) : null;
     const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
     if (eventIdParam && !Number.isFinite(eventId)) {
@@ -63,6 +70,13 @@ async function _GET(req: NextRequest) {
       event: {
         isDeleted: false,
         startsAt: { gte: now },
+        ...(cityParam
+          ? {
+              addressRef: {
+                formattedAddress: { contains: cityParam, mode: Prisma.QueryMode.insensitive },
+              },
+            }
+          : {}),
         ...(q
           ? {
               OR: [
@@ -152,7 +166,7 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
-    console.error("[padel/public/open-pairings] error", err);
+    logError("api.padel.public.open_pairings", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

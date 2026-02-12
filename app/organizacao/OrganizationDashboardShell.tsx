@@ -8,7 +8,13 @@ import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import OrganizationTopBar from "@/app/organizacao/OrganizationTopBar";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import OrganizationLinkInterceptor from "@/app/organizacao/OrganizationLinkInterceptor";
-import { appendOrganizationIdToHref, parseOrganizationId, setOrganizationIdInHref } from "@/lib/organizationIdUtils";
+import { ToastProvider } from "@/components/ui/toast-provider";
+import {
+  appendOrganizationIdToHref,
+  parseOrganizationId,
+  parseOrganizationIdFromPathname,
+  setOrganizationIdInHref,
+} from "@/lib/organizationIdUtils";
 
 export type OrganizationShellOrgOption = {
   organizationId: number;
@@ -100,8 +106,10 @@ export default function OrganizationDashboardShell({
   const router = useRouter();
   const searchParams = useSearchParams();
   const isSettingsRoute =
-    pathname?.startsWith("/organizacao/settings") || pathname?.startsWith("/organizacao/owner/confirm");
-  const isChatRoute = pathname?.startsWith("/organizacao/chat");
+    pathname?.startsWith("/organizacao/settings") ||
+    pathname?.startsWith("/organizacao/owner/confirm") ||
+    pathname?.includes("/settings");
+  const isChatRoute = pathname?.startsWith("/organizacao/chat") || pathname?.includes("/chat");
   const emailGateActive = Boolean(emailVerification && !emailVerification.isVerified);
   const [emailGateDismissed, setEmailGateDismissed] = useState(false);
   const [emailGateToast, setEmailGateToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
@@ -154,7 +162,8 @@ export default function OrganizationDashboardShell({
   }, [activeOrg?.id, emailGateActive, emailGateDismissed, isSettingsRoute, router]);
 
   useEffect(() => {
-    const requestedOrgId = parseOrganizationId(searchParams?.get("organizationId"));
+    const requestedOrgId =
+      parseOrganizationId(searchParams?.get("organizationId")) ?? parseOrganizationIdFromPathname(pathname);
     if (!requestedOrgId) return;
     if (activeOrg?.id === requestedOrgId) return;
     if (syncInFlightRef.current) return;
@@ -250,86 +259,88 @@ export default function OrganizationDashboardShell({
           {emailGateToast.message}
         </div>
       ) : null}
-      <main
-        className={cn(
-          "relative z-0 min-h-0 w-full flex-1 pb-0 pt-[var(--org-topbar-height)]",
-          isChatRoute ? "overflow-hidden" : "overflow-y-auto",
-        )}
-        data-org-scroll
-      >
-        <div
+      <ToastProvider>
+        <main
           className={cn(
-            isChatRoute ? "h-[calc(100vh-var(--org-topbar-height))] min-h-0 py-0" : "py-4 md:py-6",
-            ORG_SHELL_GUTTER,
+            "relative z-0 min-h-0 w-full flex-1 pb-0 pt-[var(--org-topbar-height)]",
+            isChatRoute ? "overflow-hidden" : "overflow-y-auto",
           )}
+          data-org-scroll
         >
-          {isSuspended ? (
-            <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="space-y-1">
-                  <p className="font-semibold">Organizacao suspensa.</p>
-                  <p className="text-[12px] text-amber-100/80">
-                    Apenas leitura. Se precisares de ajuda,{" "}
-                    {platformOfficialEmail ? (
-                      <>
-                        contacta{" "}
-                        <a
-                          href={`mailto:${platformOfficialEmail}`}
-                          className="underline decoration-amber-200/70 underline-offset-4"
-                        >
-                          {platformOfficialEmail}
-                        </a>
-                        .
-                      </>
-                    ) : (
-                      "contacta o suporte."
-                    )}
-                  </p>
+          <div
+            className={cn(
+              isChatRoute ? "h-[calc(100vh-var(--org-topbar-height))] min-h-0 py-0" : "py-4 md:py-6",
+              ORG_SHELL_GUTTER,
+            )}
+          >
+            {isSuspended ? (
+              <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="space-y-1">
+                    <p className="font-semibold">Organizacao suspensa.</p>
+                    <p className="text-[12px] text-amber-100/80">
+                      Apenas leitura. Se precisares de ajuda,{" "}
+                      {platformOfficialEmail ? (
+                        <>
+                          contacta{" "}
+                          <a
+                            href={`mailto:${platformOfficialEmail}`}
+                            className="underline decoration-amber-200/70 underline-offset-4"
+                          >
+                            {platformOfficialEmail}
+                          </a>
+                          .
+                        </>
+                      ) : (
+                        "contacta o suporte."
+                      )}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : null}
-          {showEmailGate ? (
-            <div className="rounded-3xl border border-amber-400/40 bg-amber-500/10 p-6 text-amber-50 shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Email oficial obrigatório</p>
-              <h2 className="mt-3 text-xl font-semibold">Confirma o email da organização</h2>
-              <p className="mt-2 text-sm text-amber-100/80">
-                Para desbloquear pagamentos, convites e checkout, precisamos confirmar o email oficial.
-                Enviamos um link de verificação para a caixa de entrada da organização.
-              </p>
-              {emailVerification?.email && (
-                <p className="mt-2 text-[12px] text-amber-100/70">Email atual: {emailVerification.email}</p>
-              )}
-              <div className="mt-5 flex flex-wrap items-center gap-3">
-                <Link
-                  href={settingsHref}
-                  className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 shadow-[0_10px_26px_rgba(245,158,11,0.25)] hover:bg-amber-200/25"
+            ) : null}
+            {showEmailGate ? (
+              <div className="rounded-3xl border border-amber-400/40 bg-amber-500/10 p-6 text-amber-50 shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-amber-100/80">Email oficial obrigatório</p>
+                <h2 className="mt-3 text-xl font-semibold">Confirma o email da organização</h2>
+                <p className="mt-2 text-sm text-amber-100/80">
+                  Para desbloquear pagamentos, convites e checkout, precisamos confirmar o email oficial.
+                  Enviamos um link de verificação para a caixa de entrada da organização.
+                </p>
+                {emailVerification?.email && (
+                  <p className="mt-2 text-[12px] text-amber-100/70">Email atual: {emailVerification.email}</p>
+                )}
+                <div className="mt-5 flex flex-wrap items-center gap-3">
+                  <Link
+                    href={settingsHref}
+                    className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 shadow-[0_10px_26px_rgba(245,158,11,0.25)] hover:bg-amber-200/25"
+                  >
+                    Ir para definições
+                  </Link>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleEmailVerificationInfo}
+                  className="mt-3 text-[12px] text-amber-100/80 hover:text-amber-100"
                 >
-                  Ir para definições
-                </Link>
+                  Precisas de ajuda? Confirma a caixa de entrada e o spam.
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleEmailVerificationInfo}
-                className="mt-3 text-[12px] text-amber-100/80 hover:text-amber-100"
+            ) : (
+              <div
+                className={cn(
+                  "relative isolate overflow-hidden",
+                  isChatRoute && "h-full min-h-0",
+                  isSuspended && "pointer-events-none select-none opacity-80",
+                )}
+                aria-disabled={isSuspended || undefined}
               >
-                Precisas de ajuda? Confirma a caixa de entrada e o spam.
-              </button>
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "relative isolate overflow-hidden",
-                isChatRoute && "h-full min-h-0",
-                isSuspended && "pointer-events-none select-none opacity-80",
-              )}
-              aria-disabled={isSuspended || undefined}
-            >
-              <Suspense fallback={<DashboardShellSkeleton />}>{children}</Suspense>
-            </div>
-          )}
-        </div>
-      </main>
+                <Suspense fallback={<DashboardShellSkeleton />}>{children}</Suspense>
+              </div>
+            )}
+          </div>
+        </main>
+      </ToastProvider>
     </div>
   );
 }

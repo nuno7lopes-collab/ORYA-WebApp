@@ -1,8 +1,8 @@
 import fs from "node:fs";
 
 const sources = [
-  { path: "docs/ssot_registry.md", label: "ssot_registry" },
-  { path: "docs/planning_registry.md", label: "planning_registry" },
+  { path: "docs/ssot_registry_v1.md", label: "ssot_registry" },
+  { path: "docs/planning_registry_v1.md", label: "planning_registry" },
 ];
 
 function detectStatus(line) {

@@ -91,11 +91,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId: match.eventId },
-    select: { advancedSettings: true },
+    select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
   });
   const scoreRules = normalizePadelScoreRules(
     (config?.advancedSettings as Record<string, unknown> | null)?.scoreRules,
   );
+  const ruleSnapshot = {
+    source:
+      config?.ruleSetVersionId != null
+        ? "VERSION"
+        : config?.ruleSetId != null
+          ? "RULESET"
+          : "DEFAULT",
+    ruleSetId: config?.ruleSetId ?? null,
+    ruleSetVersionId: config?.ruleSetVersionId ?? null,
+    capturedAt: new Date().toISOString(),
+  };
 
   const updated = await prisma.$transaction(async (tx) => {
     const { match: updatedMatch } = await updatePadelMatch({
@@ -108,7 +119,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       data: {
         status: padel_match_status.DONE,
         winnerPairingId,
-        score: { walkover: true, resultType: "WALKOVER", winnerSide: winner },
+        score: { walkover: true, resultType: "WALKOVER", winnerSide: winner, ruleSnapshot },
         scoreSets: buildWalkoverSets(winner, scoreRules ?? undefined),
       },
     });

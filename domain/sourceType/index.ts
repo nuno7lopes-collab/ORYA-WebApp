@@ -18,6 +18,7 @@ const AGENDA_SOURCE_TYPES = [
   SourceType.EVENT,
   SourceType.TOURNAMENT,
   SourceType.MATCH,
+  SourceType.BOOKING,
   SourceType.CLASS_SESSION,
   SourceType.SOFT_BLOCK,
   SourceType.HARD_BLOCK,
@@ -33,18 +34,10 @@ const AUX_SOURCE_TYPE_ALLOWLIST = new Set<SourceType>([
   SourceType.LOYALTY_TX,
 ]);
 
-const LEGACY_SOURCE_TYPE_MAP: Record<string, SourceType> = {
-  EVENT_TICKET: SourceType.TICKET_ORDER,
-  SERVICE_BOOKING: SourceType.BOOKING,
-  SERVICE_CREDITS: SourceType.STORE_ORDER,
-  PADEL_PAIRING: SourceType.PADEL_REGISTRATION,
-  RESERVATION: SourceType.BOOKING,
-};
-
 export function normalizeFinanceSourceType(value?: string | null): SourceType | null {
   if (!value) return null;
   const raw = String(value).trim().toUpperCase();
-  const mapped = LEGACY_SOURCE_TYPE_MAP[raw] ?? (raw as SourceType);
+  const mapped = raw as SourceType;
   if (!FINANCE_SOURCE_TYPE_ALLOWLIST.has(mapped)) return null;
   return mapped;
 }

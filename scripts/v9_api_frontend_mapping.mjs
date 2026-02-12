@@ -3,10 +3,10 @@ import path from "path";
 
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
-const USAGE_PATH = path.join(ROOT, "reports", "v9_inventory_frontend_api_usage.md");
+const USAGE_PATH = path.join(ROOT, "reports", "v9_inventory_frontend_api_usage_v1.md");
 const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
-const OUT_CSV = path.join(ROOT, "reports", "v9_api_frontend_mapping.csv");
-const OUT_REPORT = path.join(ROOT, "reports", "v9_api_frontend_mapping_report.md");
+const OUT_CSV = path.join(ROOT, "reports", "v9_api_frontend_mapping_v1.csv");
+const OUT_REPORT = path.join(ROOT, "reports", "v9_api_frontend_mapping_report_v1.md");
 
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 

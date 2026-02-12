@@ -1,9 +1,8 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { parseOrganizationId } from "@/lib/organizationId";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { countEffectiveOrganizationMembersByRole } from "@/lib/organizationMembers";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -44,29 +43,23 @@ async function _POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
-    if (!organizationId) {
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
+    const organizationId = orgResolution.organizationId;
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
     if (!membership) {
       return fail(403, "NOT_MEMBER");
-    }
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { officialEmail: true, officialEmailVerifiedAt: true },
-    });
-    if (!organization) {
-      return fail(404, "ORGANIZATION_NOT_FOUND");
-    }
-    const emailGate = ensureOrganizationEmailVerified(organization, {
-      reasonCode: "ORG_LEAVE",
-      organizationId,
-    });
-    if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
     if (membership.role === "OWNER") {

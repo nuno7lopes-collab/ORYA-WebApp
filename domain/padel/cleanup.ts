@@ -157,7 +157,7 @@ export async function runPadelCleanup(params: PadelCleanupParams = {}): Promise<
       where: {
         type: EntitlementType.PADEL_ENTRY,
         eventId: { not: null },
-        policyVersionApplied: 0,
+        OR: [{ policyVersionApplied: null }, { policyVersionApplied: { lte: 0 } }],
       },
       select: { id: true, eventId: true },
       take: limit,
@@ -170,8 +170,8 @@ export async function runPadelCleanup(params: PadelCleanupParams = {}): Promise<
         const updated = await prisma.entitlement.updateMany({
           where: {
             eventId: eId,
-            policyVersionApplied: 0,
             type: EntitlementType.PADEL_ENTRY,
+            OR: [{ policyVersionApplied: null }, { policyVersionApplied: { lte: 0 } }],
           },
           data: { policyVersionApplied: policyVersion },
         });

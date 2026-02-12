@@ -12,7 +12,7 @@ import { resolveGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organi
 import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { sendEmail } from "@/lib/emailClient";
-import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -20,6 +20,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { resolveUserIdentifier } from "@/lib/userResolver";
+import { resolveRolePackForRole } from "@/lib/organizationRolePackPolicy";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const resolveIp = (req: NextRequest) => {
@@ -39,6 +40,7 @@ const serializeInvite = (
     targetIdentifier: string;
     targetUserId: string | null;
     role: string;
+    rolePack: string | null;
     token: string;
     expiresAt: Date;
     acceptedAt: Date | null;
@@ -87,6 +89,7 @@ const serializeInvite = (
     id: invite.id,
     organizationId: invite.organizationId,
     role: invite.role,
+    rolePack: invite.rolePack ?? null,
     targetIdentifier: invite.targetIdentifier,
     targetUserId: invite.targetUserId,
     status,
@@ -179,9 +182,11 @@ async function _GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const eventIdRaw = url.searchParams.get("eventId");
-    let organizationId = resolveOrganizationIdFromParams(url.searchParams);
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    const orgResolutionReason = orgResolution.ok ? null : orgResolution.reason;
+    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
-    if (!organizationId && eventIdRaw) {
+    if (!organizationId && orgResolutionReason === "MISSING" && eventIdRaw) {
       const eventId = Number(eventIdRaw);
       if (eventId && !Number.isNaN(eventId)) {
         const ev = await prisma.event.findUnique({
@@ -192,6 +197,12 @@ async function _GET(req: NextRequest) {
       }
     }
     if (!organizationId) {
+      if (orgResolutionReason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolutionReason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
@@ -305,9 +316,29 @@ async function _POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolution.reason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    const organizationId = orgResolution.organizationId;
     const identifier = typeof body?.identifier === "string" ? body.identifier.trim() : null;
     const roleRaw = typeof body?.role === "string" ? body.role.toUpperCase() : null;
+    const rolePackProvided =
+      body && typeof body === "object" && Object.prototype.hasOwnProperty.call(body, "rolePack");
+    const rolePackRaw =
+      rolePackProvided && body && typeof body === "object"
+        ? (body as Record<string, unknown>).rolePack
+        : undefined;
 
     if (!organizationId || !identifier || !roleRaw) {
       return fail(400, "INVALID_PAYLOAD");
@@ -316,9 +347,15 @@ async function _POST(req: NextRequest) {
     if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
       return fail(400, "INVALID_ROLE");
     }
-    if (roleRaw === "VIEWER") {
-      return fail(400, "ROLE_NOT_ALLOWED");
+    const rolePackPolicy = resolveRolePackForRole({
+      role: roleRaw as OrganizationMemberRole,
+      rolePackRaw,
+      rolePackProvided,
+    });
+    if (!rolePackPolicy.ok) {
+      return fail(400, rolePackPolicy.errorCode);
     }
+    const normalizedRolePack = rolePackPolicy.rolePack;
 
     const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!membership) {
@@ -397,6 +434,7 @@ async function _POST(req: NextRequest) {
           targetIdentifier: identifier,
           targetUserId,
           role: roleRaw as OrganizationMemberRole,
+          rolePack: normalizedRolePack,
           token: crypto.randomUUID(),
           expiresAt,
         },
@@ -424,7 +462,12 @@ async function _POST(req: NextRequest) {
         entityId: created.id,
         correlationId: created.id,
         toUserId: targetUserId,
-        metadata: { inviteId: created.id, role: created.role, target: created.targetIdentifier },
+        metadata: {
+          inviteId: created.id,
+          role: created.role,
+          rolePack: created.rolePack ?? null,
+          target: created.targetIdentifier,
+        },
         ip: resolveIp(req),
         userAgent: req.headers.get("user-agent"),
       });
@@ -437,6 +480,7 @@ async function _POST(req: NextRequest) {
             inviteId: created.id,
             organizationId,
             role: created.role,
+            rolePack: created.rolePack ?? null,
             targetUserId: created.targetUserId,
           },
           correlationId: created.id,
@@ -453,6 +497,7 @@ async function _POST(req: NextRequest) {
           payload: {
             inviteId: created.id,
             role: created.role,
+            rolePack: created.rolePack ?? null,
             target: created.targetIdentifier,
           },
           actorUserId: user.id,
@@ -534,7 +579,18 @@ async function _PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    let organizationId = parseOrganizationId(body?.organizationId);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+      return fail(400, "ORGANIZATION_ID_CONFLICT");
+    }
+    if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
     const inviteId = typeof body?.inviteId === "string" ? body.inviteId : null;
     const tokenFromBody = typeof body?.token === "string" ? body.token : null;
     const action = typeof body?.action === "string" ? body.action.toUpperCase() : null;
@@ -595,16 +651,19 @@ async function _PATCH(req: NextRequest) {
         })
       : { ok: false };
     const isManager = managerAccess.ok;
-    const organization = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { officialEmail: true, officialEmailVerifiedAt: true },
-    });
-    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
-      reasonCode: "ORG_MEMBER_INVITES",
-      organizationId,
-    });
-    if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+
+    if (action === "CANCEL") {
+      const organization = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { officialEmail: true, officialEmailVerifiedAt: true },
+      });
+      const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
+        reasonCode: "ORG_MEMBER_INVITES",
+        organizationId,
+      });
+      if (!emailGate.ok) {
+        return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      }
     }
 
     const viewerProfile = await prisma.profile.findUnique({
@@ -650,6 +709,16 @@ async function _PATCH(req: NextRequest) {
         }
 
         const role = invite.role as OrganizationMemberRole;
+        const rolePackPolicy = resolveRolePackForRole({
+          role,
+          rolePackRaw: invite.rolePack ?? null,
+          rolePackProvided: invite.rolePack !== null,
+          allowDefaultForLegacy: true,
+        });
+        if (!rolePackPolicy.ok) {
+          throw new Error(rolePackPolicy.errorCode);
+        }
+        const normalizedRolePack = rolePackPolicy.rolePack;
         const currentMember = await getEffectiveOrganizationMember({
           organizationId,
           userId: user.id,
@@ -698,6 +767,7 @@ async function _PATCH(req: NextRequest) {
               organizationId,
               userId: user.id,
               role,
+              rolePack: normalizedRolePack,
               client: tx,
             });
           }
@@ -760,6 +830,7 @@ async function _PATCH(req: NextRequest) {
           id: true,
           organizationId: true,
           role: true,
+          rolePack: true,
           token: true,
           targetIdentifier: true,
           targetUserId: true,
@@ -800,7 +871,12 @@ async function _PATCH(req: NextRequest) {
         entityId: updatedInvite.id,
         correlationId: updatedInvite.id,
         toUserId: updatedInvite.targetUserId ?? null,
-        metadata: { inviteId: updatedInvite.id, role: updatedInvite.role, target: updatedInvite.targetIdentifier },
+        metadata: {
+          inviteId: updatedInvite.id,
+          role: updatedInvite.role,
+          rolePack: updatedInvite.rolePack ?? null,
+          target: updatedInvite.targetIdentifier,
+        },
         ip: resolveIp(req),
         userAgent: req.headers.get("user-agent"),
       });
@@ -813,6 +889,8 @@ async function _PATCH(req: NextRequest) {
             inviteId: updatedInvite.id,
             organizationId,
             action: auditAction,
+            role: updatedInvite.role,
+            rolePack: updatedInvite.rolePack ?? null,
           },
           correlationId: updatedInvite.id,
         },
@@ -829,6 +907,7 @@ async function _PATCH(req: NextRequest) {
             inviteId: updatedInvite.id,
             action: auditAction,
             role: updatedInvite.role,
+            rolePack: updatedInvite.rolePack ?? null,
             target: updatedInvite.targetIdentifier,
           },
           actorUserId: user.id,
@@ -846,7 +925,7 @@ async function _PATCH(req: NextRequest) {
       if (err instanceof Error && err.message === "FORBIDDEN") {
         throw err;
       }
-      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE"].includes(err.message)) {
+      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE", "INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
         throw err;
       }
       throw err;
@@ -878,6 +957,9 @@ async function _PATCH(req: NextRequest) {
         return fail(404, "INVITE_NOT_FOUND");
       }
       if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
+        return fail(400, err.message);
+      }
+      if (["INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
         return fail(400, err.message);
       }
       if (err.message === "UNKNOWN_ACTION") {

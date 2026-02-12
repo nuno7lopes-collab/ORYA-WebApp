@@ -177,6 +177,7 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
 
   const { paymentIntent: intent } = await ensurePaymentIntent({
     purchaseId,
+    orgId: registration.organizationId,
     sourceType: SourceType.PADEL_REGISTRATION,
     sourceId: registration.id,
     amountCents: pricing.totalCents,
@@ -202,10 +203,10 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
       orgType: event.organization?.orgType ?? null,
     },
     requireStripe: true,
-    buyerIdentityRef: registration.buyerIdentityId ?? null,
+    customerIdentityId: registration.buyerIdentityId ?? null,
     resolvedSnapshot: {
-      organizationId: registration.organizationId,
-      buyerIdentityId: registration.buyerIdentityId ?? null,
+      orgId: registration.organizationId,
+      customerIdentityId: registration.buyerIdentityId ?? null,
       eventId: pairing.eventId,
       snapshot: {
         currency,

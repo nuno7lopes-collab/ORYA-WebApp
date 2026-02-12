@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -27,7 +27,7 @@ async function resolveStore(storeId: number) {
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
   }
-  if (!isStorePublic(store)) {
+  if (!isPublicStore(store)) {
     return { ok: false as const, error: "Loja fechada." };
   }
   if (store.catalogLocked) {

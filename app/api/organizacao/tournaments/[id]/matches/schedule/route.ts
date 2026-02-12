@@ -72,7 +72,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     where: { id: items[0]?.matchId ?? -1 },
     select: {
       id: true,
-      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+      stage: {
+        select: {
+          tournamentId: true,
+          tournament: { select: { eventId: true, event: { select: { templateType: true } } } },
+        },
+      },
     },
   });
   if (!firstMatch || firstMatch.stage.tournamentId !== tournamentId) {
@@ -94,6 +99,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       );
     }
     return fail(403, "FORBIDDEN");
+  }
+  if (firstMatch.stage.tournament.event?.templateType === "PADEL") {
+    return fail(409, "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN");
   }
 
   const changes: Array<{ matchId: number; before: any; after: any }> = [];

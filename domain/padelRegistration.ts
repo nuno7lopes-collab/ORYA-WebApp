@@ -137,27 +137,6 @@ export function mapRegistrationToPairingLifecycle(
   }
 }
 
-export function deriveRegistrationStatusFromPairing(params: {
-  pairingJoinMode: PadelPairingJoinMode;
-  lifecycleStatus: DerivedPairingLifecycleStatus;
-  paymentMode: PadelPaymentMode;
-}): PadelRegistrationStatus {
-  const { pairingJoinMode, lifecycleStatus } = params;
-  if (lifecycleStatus === "CONFIRMED_BOTH_PAID" || lifecycleStatus === "CONFIRMED_CAPTAIN_FULL") {
-    return PadelRegistrationStatus.CONFIRMED;
-  }
-  if (lifecycleStatus === "CANCELLED_INCOMPLETE") {
-    return PadelRegistrationStatus.CANCELLED;
-  }
-  if (lifecycleStatus === "PENDING_PARTNER_PAYMENT") {
-    return PadelRegistrationStatus.PENDING_PAYMENT;
-  }
-  if (pairingJoinMode === PadelPairingJoinMode.LOOKING_FOR_PARTNER) {
-    return PadelRegistrationStatus.MATCHMAKING;
-  }
-  return PadelRegistrationStatus.PENDING_PARTNER;
-}
-
 export function resolveInitialPadelRegistrationStatus(params: {
   pairingJoinMode: PadelPairingJoinMode;
   paymentMode: PadelPaymentMode;

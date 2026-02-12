@@ -103,7 +103,7 @@ export async function ensureGroupMemberForOrg(params: {
       where: { id: existing.id },
       data: {
         role,
-        rolePack: rolePack ?? undefined,
+        rolePack: rolePack !== undefined ? rolePack : undefined,
         scopeAllOrgs: existing.scopeAllOrgs ?? scopeAllOrgs,
         scopeOrgIds,
       },
@@ -115,7 +115,7 @@ export async function ensureGroupMemberForOrg(params: {
       groupId: org.groupId,
       userId,
       role,
-      rolePack: rolePack ?? undefined,
+      rolePack: rolePack !== undefined ? rolePack : undefined,
       scopeAllOrgs,
       scopeOrgIds: [organizationId],
     },

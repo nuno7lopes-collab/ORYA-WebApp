@@ -195,7 +195,7 @@ async function _POST(req: NextRequest) {
   if (existingScore.disputeStatus === "OPEN" && !isAdmin) {
     return fail(ctx, 423, "MATCH_DISPUTED");
   }
-  const mergedScore =
+  let mergedScore =
     scoreObj && typeof scoreObj === "object"
       ? ({ ...existingScore, ...scoreObj } as Record<string, unknown>)
       : (existingScore as Record<string, unknown>);
@@ -218,7 +218,7 @@ async function _POST(req: NextRequest) {
   const configForScore = shouldApplyScoreRules
     ? await prisma.padelTournamentConfig.findUnique({
         where: { eventId: match.eventId },
-        select: { advancedSettings: true },
+        select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
       })
     : null;
   const scoreRules = shouldApplyScoreRules
@@ -228,6 +228,23 @@ async function _POST(req: NextRequest) {
 
   if (Array.isArray(rawSets) && rawSets.length > 0 && nextStatus === "DONE" && !stats) {
     return fail(ctx, 400, "INVALID_SCORE");
+  }
+
+  if (shouldApplyScoreRules) {
+    mergedScore = {
+      ...mergedScore,
+      ruleSnapshot: {
+        source:
+          configForScore?.ruleSetVersionId != null
+            ? "VERSION"
+            : configForScore?.ruleSetId != null
+              ? "RULESET"
+              : "DEFAULT",
+        ruleSetId: configForScore?.ruleSetId ?? null,
+        ruleSetVersionId: configForScore?.ruleSetVersionId ?? null,
+        capturedAt: new Date().toISOString(),
+      },
+    };
   }
 
   let winnerPairingId: number | null = null;
@@ -265,8 +282,7 @@ async function _POST(req: NextRequest) {
     if (courtExists) {
       courtIdValue = courtIdCandidate;
     } else {
-      // Backwards compatibility: treat non-matching courtId as display number.
-      courtNumberValue = courtIdCandidate;
+      return fail(ctx, 400, "INVALID_COURT_ID");
     }
   }
   if (Number.isFinite(courtNumberRaw)) {

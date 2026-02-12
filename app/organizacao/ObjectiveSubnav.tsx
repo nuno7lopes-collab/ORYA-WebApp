@@ -6,7 +6,11 @@ import Link from "next/link";
 import useSWR from "swr";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import {
+  appendOrganizationIdToHref,
+  parseOrganizationId,
+  parseOrganizationIdFromPathname,
+} from "@/lib/organizationIdUtils";
 import {
   CORE_ORGANIZATION_MODULES,
   OPERATION_MODULES,
@@ -68,31 +72,44 @@ export default function ObjectiveSubnav({
     hasDragged: false,
   });
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const organizationIdParam = parseOrganizationId(searchParams?.get("organizationId"));
-  const organizationId = organizationIdProp ?? organizationIdParam ?? null;
+  const organizationIdPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId = organizationIdProp ?? organizationIdParam ?? organizationIdPath ?? null;
   const orgMeUrl = organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
   const { data } = useSWR(primaryModule || modules ? null : orgMeUrl, fetcher);
   const organization = data?.organization ?? null;
-  const pathname = usePathname();
   const inscricoesBasePath = (() => {
-    if (!pathname?.startsWith("/organizacao/inscricoes/")) return null;
-    const match = pathname.match(/^\/organizacao\/inscricoes\/(\d+)/);
-    return match ? `/organizacao/inscricoes/${match[1]}` : null;
+    if (!pathname) return null;
+    const canonicalMatch = pathname.match(/^\/org\/(\d+)\/inscricoes\/(\d+)/);
+    if (!canonicalMatch) return null;
+    const orgId = organizationId ?? Number(canonicalMatch[1]);
+    if (!Number.isFinite(orgId)) return null;
+    return `/org/${orgId}/inscricoes/${canonicalMatch[2]}`;
   })();
   const moduleBasePath =
     pathname?.startsWith("/organizacao/eventos")
       ? "/organizacao/eventos"
+      : pathname?.startsWith("/org/") && pathname?.includes("/eventos")
+        ? organizationId
+          ? `/org/${organizationId}/eventos`
+          : "/organizacao/eventos"
       : pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel")
         ? "/organizacao/padel/torneios"
+        : pathname?.startsWith("/org/") && (pathname?.includes("/torneios") || pathname?.includes("/padel"))
+          ? organizationId
+            ? `/org/${organizationId}/padel/torneios`
+            : "/organizacao/padel/torneios"
         : null;
   const operationOverride =
-    pathname?.startsWith("/organizacao/reservas")
+    pathname?.startsWith("/organizacao/reservas") || (pathname?.startsWith("/org/") && pathname?.includes("/servicos"))
       ? "RESERVAS"
-      : pathname?.startsWith("/organizacao/eventos")
+      : pathname?.startsWith("/organizacao/eventos") || (pathname?.startsWith("/org/") && pathname?.includes("/eventos"))
         ? "EVENTOS"
         : pathname?.startsWith("/organizacao/torneios") ||
             pathname?.startsWith("/organizacao/padel") ||
-            pathname?.startsWith("/organizacao/tournaments")
+            pathname?.startsWith("/organizacao/tournaments") ||
+            (pathname?.startsWith("/org/") && (pathname?.includes("/torneios") || pathname?.includes("/padel")))
           ? "TORNEIOS"
           : null;
 

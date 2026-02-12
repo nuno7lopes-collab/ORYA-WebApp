@@ -83,7 +83,7 @@ const SCORE_RULE_PRESETS: ScoreRulesPreset[] = [
   {
     id: "NO_VALIDATION",
     label: "Sem validação",
-    description: "Aceita qualquer score (modo legacy)",
+    description: "Aceita qualquer score (sem validação automática)",
     rules: null,
   },
 ];

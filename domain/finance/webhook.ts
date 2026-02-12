@@ -9,20 +9,14 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 
 export type StripeDisputeEvent = {
   id: string;
-  type: "dispute.created" | "dispute.won" | "dispute.lost" | "charge.dispute.created";
+  type: "payment.dispute_opened" | "payment.dispute_closed";
   data: {
     object: {
       id: string;
       metadata?: Record<string, string | undefined> | null;
+      outcome?: "WON" | "LOST" | string | null;
     };
   };
-};
-
-const EVENT_STATUS_MAP: Record<StripeDisputeEvent["type"], PaymentStatus> = {
-  "dispute.created": PaymentStatus.DISPUTED,
-  "charge.dispute.created": PaymentStatus.DISPUTED,
-  "dispute.won": PaymentStatus.CHARGEBACK_WON,
-  "dispute.lost": PaymentStatus.CHARGEBACK_LOST,
 };
 
 function resolvePaymentId(event: StripeDisputeEvent): string | null {
@@ -38,13 +32,25 @@ export async function handleStripeWebhook(event: StripeDisputeEvent): Promise<{
   updated?: boolean;
   reason?: string;
 }> {
-  if (!(event.type in EVENT_STATUS_MAP)) {
-    return { handled: false, reason: "EVENT_NOT_SUPPORTED" };
-  }
-
   const paymentId = resolvePaymentId(event);
   if (!paymentId) {
     return { handled: false, reason: "PAYMENT_ID_MISSING" };
+  }
+
+  let nextStatus: PaymentStatus;
+  if (event.type === "payment.dispute_opened") {
+    nextStatus = PaymentStatus.DISPUTED;
+  } else if (event.type === "payment.dispute_closed") {
+    const outcomeRaw = String(event.data?.object?.outcome ?? "").trim().toUpperCase();
+    if (outcomeRaw === "WON") {
+      nextStatus = PaymentStatus.CHARGEBACK_WON;
+    } else if (outcomeRaw === "LOST") {
+      nextStatus = PaymentStatus.CHARGEBACK_LOST;
+    } else {
+      return { handled: false, reason: "DISPUTE_OUTCOME_INVALID", paymentId };
+    }
+  } else {
+    return { handled: false, reason: "EVENT_NOT_SUPPORTED", paymentId };
   }
 
   const payment = await prisma.payment.findUnique({
@@ -55,7 +61,6 @@ export async function handleStripeWebhook(event: StripeDisputeEvent): Promise<{
     return { handled: false, reason: "PAYMENT_NOT_FOUND", paymentId };
   }
 
-  const nextStatus = EVENT_STATUS_MAP[event.type];
   if (payment.status === nextStatus) {
     return { handled: true, updated: false, paymentId, status: nextStatus };
   }

@@ -8,7 +8,6 @@ const PRODUCT_LINKS: FooterLink[] = [
   { label: "Eventos", href: "/eventos" },
   { label: "Padel", href: "/padel" },
   { label: "Loja", href: "/loja" },
-  { label: "Mapa", href: "/mapa" },
   { label: "Agora", href: "/agora" },
   { label: "Rede", href: "/rede" },
 ];

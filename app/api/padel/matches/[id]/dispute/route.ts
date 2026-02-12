@@ -20,6 +20,18 @@ const asScoreObject = (value: unknown) =>
 
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
+const buildRuleSnapshot = (config: { ruleSetId: number | null; ruleSetVersionId: number | null } | null) => ({
+  source:
+    config?.ruleSetVersionId != null
+      ? "VERSION"
+      : config?.ruleSetId != null
+        ? "RULESET"
+        : "DEFAULT",
+  ruleSetId: config?.ruleSetId ?? null,
+  ruleSetVersionId: config?.ruleSetVersionId ?? null,
+  capturedAt: new Date().toISOString(),
+});
+
 const isParticipant = (match: {
   pairingA?: { slots?: Array<{ profileId: string | null }> | null } | null;
   pairingB?: { slots?: Array<{ profileId: string | null }> | null } | null;
@@ -89,6 +101,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (score.disputeStatus === "OPEN") {
     return jsonWrap({ ok: false, error: "DISPUTE_ALREADY_OPEN" }, { status: 409 });
   }
+  const config = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId: match.event.id },
+    select: { ruleSetId: true, ruleSetVersionId: true },
+  });
+  const ruleSnapshot =
+    score.ruleSnapshot && typeof score.ruleSnapshot === "object"
+      ? score.ruleSnapshot
+      : buildRuleSnapshot(config ? { ruleSetId: config.ruleSetId ?? null, ruleSetVersionId: config.ruleSetVersionId ?? null } : null);
 
   const nowIso = new Date().toISOString();
   const { match: updated } = await updatePadelMatch({
@@ -101,6 +121,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     data: {
       score: {
         ...score,
+        ruleSnapshot,
         disputeStatus: "OPEN",
         disputeReason: reason,
         disputedAt: nowIso,
@@ -174,6 +195,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   if (score.disputeStatus !== "OPEN") {
     return jsonWrap({ ok: false, error: "DISPUTE_NOT_OPEN" }, { status: 409 });
   }
+  const config = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId: match.event.id },
+    select: { ruleSetId: true, ruleSetVersionId: true },
+  });
+  const ruleSnapshot =
+    score.ruleSnapshot && typeof score.ruleSnapshot === "object"
+      ? score.ruleSnapshot
+      : buildRuleSnapshot(config ? { ruleSetId: config.ruleSetId ?? null, ruleSetVersionId: config.ruleSetVersionId ?? null } : null);
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const resolutionNote = normalizeReason(body?.resolutionNote ?? body?.note);
@@ -189,6 +218,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     data: {
       score: {
         ...score,
+        ruleSnapshot,
         disputeStatus: "RESOLVED",
         disputeResolvedAt: nowIso,
         disputeResolvedBy: user.id,

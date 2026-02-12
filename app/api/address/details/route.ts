@@ -6,6 +6,7 @@ import { getGeoResolver } from "@/lib/geo/provider";
 import { checkRateLimit } from "@/lib/geo/rateLimit";
 import { upsertAddressFromGeoDetails } from "@/lib/address/service";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { logError } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 
@@ -90,7 +91,12 @@ async function _GET(req: NextRequest) {
     setCache(cacheKey, payload, CACHE_TTL_MS);
     return jsonWrap({ ok: true, item: payload }, { headers: { "Cache-Control": "public, max-age=600" } });
   } catch (err) {
-    console.error("[address/details] erro", err);
+    logError("api.address.details", err, {
+      providerId,
+      lang,
+      lat: Number.isFinite(lat ?? NaN) ? lat : null,
+      lng: Number.isFinite(lng ?? NaN) ? lng : null,
+    });
     const { status, message } = mapGeoError(err, "Falha ao normalizar localização.");
     return jsonWrap({ ok: false, error: message }, { status });
   }

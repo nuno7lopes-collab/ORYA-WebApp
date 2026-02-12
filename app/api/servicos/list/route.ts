@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { OrgType, Prisma } from "@prisma/client";
@@ -8,6 +8,8 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
+import { PORTUGAL_CITIES } from "@/config/cities";
+import { logError } from "@/lib/observability/logger";
 
 const DEFAULT_PAGE_SIZE = 12;
 const LOOKAHEAD_DAYS = 21;
@@ -60,6 +62,14 @@ function buildAvailabilityRange(dateParam: string | null, dayParam: string | nul
   return null;
 }
 
+function normalizeCityFilter(raw: string | null) {
+  const city = raw?.trim() ?? "";
+  if (!city) return null;
+  if (city.toLowerCase() === "portugal") return null;
+  const matchedCity = PORTUGAL_CITIES.find((entry) => entry.toLowerCase() === city.toLowerCase());
+  return matchedCity ?? city;
+}
+
 async function _GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -72,6 +82,7 @@ async function _GET(req: NextRequest) {
     const dayParam = searchParams.get("day");
     const kindParam = searchParams.get("kind");
     const tagParam = searchParams.get("tag");
+    const cityParam = normalizeCityFilter(searchParams.get("city"));
 
     const take = clampTake(limitParam ? parseInt(limitParam, 10) : DEFAULT_PAGE_SIZE);
     const cursorId = cursorParam ? Number(cursorParam) : null;
@@ -92,6 +103,7 @@ async function _GET(req: NextRequest) {
       dayParam ?? "",
       kindParam ?? "",
       tagParam ?? "",
+      cityParam ?? "",
     ]);
     const cached = getCache<Record<string, unknown>>(cacheKey);
     if (cached) {
@@ -133,6 +145,24 @@ async function _GET(req: NextRequest) {
 
     if (tagParam && tagParam.trim()) {
       where.categoryTag = { contains: tagParam.trim(), mode: "insensitive" };
+    }
+
+    if (cityParam) {
+      const cityFilter: Prisma.ServiceWhereInput = {
+        OR: [
+          { addressRef: { formattedAddress: { contains: cityParam, mode: "insensitive" } } },
+          {
+            organization: {
+              addressRef: { formattedAddress: { contains: cityParam, mode: "insensitive" } },
+            },
+          },
+        ],
+      };
+      if (Array.isArray(where.AND)) {
+        where.AND.push(cityFilter);
+      } else {
+        where.AND = [cityFilter];
+      }
     }
 
     if (range) {
@@ -359,7 +389,7 @@ async function _GET(req: NextRequest) {
 
     return jsonWrap(payload);
   } catch (err) {
-    console.error("GET /api/servicos/list error:", err);
+    logError("api.servicos.list", err);
     const debug =
       process.env.NODE_ENV !== "production"
         ? err instanceof Error

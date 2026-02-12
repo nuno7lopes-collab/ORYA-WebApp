@@ -20,6 +20,7 @@ export async function setSoleOwner(
     organizationId,
     userId,
     role: OrganizationMemberRole.OWNER,
+    rolePack: null,
     client,
   });
 
@@ -34,6 +35,7 @@ export async function setSoleOwner(
       organizationId,
       userId: owner.userId,
       role: OrganizationMemberRole.CO_OWNER,
+      rolePack: null,
       client,
     });
   }

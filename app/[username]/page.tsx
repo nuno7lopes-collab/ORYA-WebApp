@@ -798,9 +798,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const showServicesModule = hasReservasModule && services.length > 0;
     const showAgendaModule = showAgenda && agendaTotal > 0;
     const showFormsModule = hasInscricoes && publicForms.length > 0;
-    const showReviewsModule = reviews.length > 0;
+    const showGalleryModule = reviews.length > 0;
     const showAboutModule = Boolean(publicDescription?.trim());
-    const servicesLayoutModule = profileLayout.modules.find((module) => module.type === "SERVICOS");
+    const servicesLayoutModule = profileLayout.modules.find((module) => module.type === "SERVICES");
     const servicesSettings = servicesLayoutModule?.settings ?? {};
     const featuredServiceIds = Array.isArray(servicesSettings.featuredServiceIds)
       ? servicesSettings.featuredServiceIds
@@ -817,16 +817,16 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? servicesSettings.ctaHref.trim()
         : "#reservar";
     const servicesShowStats = servicesSettings.showStats !== false;
-    const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "AGENDA");
+    const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "EVENTS_AGENDA");
     const agendaSettings = agendaLayoutModule?.settings ?? {};
     const agendaShowSpotlight = agendaSettings.showSpotlight !== false;
-    const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMULARIOS");
+    const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMS");
     const formsSettings = formsLayoutModule?.settings ?? {};
     const formsCtaLabel =
       typeof formsSettings.ctaLabel === "string" && formsSettings.ctaLabel.trim().length > 0
         ? formsSettings.ctaLabel.trim()
         : "Responder";
-    const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "AVALIACOES");
+    const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "GALLERY");
     const reviewsSettings = reviewsLayoutModule?.settings ?? {};
     const reviewsMaxItems =
       typeof reviewsSettings.maxItems === "number" && Number.isFinite(reviewsSettings.maxItems)
@@ -956,9 +956,9 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       </div>
     ) : null;
 
-    const reviewsModuleContent = showReviewsModule ? (
+    const galleryModuleContent = showGalleryModule ? (
       <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Avaliações</p>
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Galeria</p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {displayReviews.map((review) => (
             <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -972,6 +972,29 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         </div>
       </div>
     ) : null;
+
+    const heroModuleContent = (
+      <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1529]/85 via-[#141c38]/75 to-[#060b14]/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Hero</p>
+        <h2 className="mt-2 text-2xl font-semibold text-white">{orgDisplayName}</h2>
+        <p className="mt-2 max-w-2xl text-sm text-white/70">
+          {publicDescription?.trim() || "Perfil oficial ORYA."}
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-white/70">
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+            {followersTotal} seguidores
+          </span>
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+            {operationMeta.label}
+          </span>
+          {organizationCity ? (
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+              {organizationCity}
+            </span>
+          ) : null}
+        </div>
+      </section>
+    );
 
     const agendaModuleContent = showAgendaModule ? (
       <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
@@ -1226,13 +1249,52 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       </section>
     ) : null;
 
+    const infoFaqRaw = (organizationProfile as { infoFaq?: string | null }).infoFaq ?? null;
+    const faqText = typeof infoFaqRaw === "string" ? infoFaqRaw.trim() : "";
+    const showFaqModule = faqText.length > 0;
+    const faqModuleContent = showFaqModule ? (
+      <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">FAQ</p>
+        <p className="mt-2 whitespace-pre-wrap text-[13px] text-white/70 sm:text-sm">{faqText}</p>
+      </section>
+    ) : null;
+
+    const contactItems = [
+      publicWebsiteHref ? { label: "Website", value: publicWebsiteHref, href: publicWebsiteHref } : null,
+      publicInstagram ? { label: "Instagram", value: publicInstagram, href: publicInstagram } : null,
+      publicYoutube ? { label: "YouTube", value: publicYoutube, href: publicYoutube } : null,
+      contactEmail ? { label: "Email", value: contactEmail, href: `mailto:${contactEmail}` } : null,
+    ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
+    const secondaryContacts = contactItems.filter((item) => item.label !== "Email");
+    const showContactModule = contactItems.length > 0;
+    const contactModuleContent = showContactModule ? (
+      <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Contacto</p>
+        <div className="mt-3 space-y-2 text-[12px] text-white/75">
+          {contactItems.map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/25"
+            >
+              <span className="text-white/60">{item.label}</span>
+              <span className="text-white">{item.value}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    ) : null;
+
     const moduleContentByType: Record<PublicProfileModuleType, ReactNode> = {
-      SERVICOS: servicesModuleContent,
-      AGENDA: agendaModuleContent,
-      FORMULARIOS: formsModuleContent,
-      AVALIACOES: reviewsModuleContent,
-      SOBRE: aboutModuleContent,
-      LOJA: storeModuleContent,
+      HERO: heroModuleContent,
+      ABOUT: aboutModuleContent,
+      EVENTS_AGENDA: agendaModuleContent,
+      STORE: storeModuleContent,
+      SERVICES: servicesModuleContent,
+      FORMS: formsModuleContent,
+      GALLERY: galleryModuleContent,
+      FAQ: faqModuleContent,
+      CONTACT: contactModuleContent,
     };
 
     const modulesToRender = profileLayout.modules.filter(
@@ -1241,13 +1303,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const showPadelSection =
       hasTorneiosModule && (padelPlayersCount > 0 || padelTopPlayers.length > 0);
     const showTrainerSection = hasTorneiosModule && trainerProfiles.length > 0;
-    const contactItems = [
-      publicWebsiteHref ? { label: "Website", value: publicWebsiteHref, href: publicWebsiteHref } : null,
-      publicInstagram ? { label: "Instagram", value: publicInstagram, href: publicInstagram } : null,
-      publicYoutube ? { label: "YouTube", value: publicYoutube, href: publicYoutube } : null,
-      contactEmail ? { label: "Email", value: contactEmail, href: `mailto:${contactEmail}` } : null,
-    ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
-    const secondaryContacts = contactItems.filter((item) => item.label !== "Email");
     const showEmptyModulesFallback =
       modulesToRender.length === 0 && !showPadelSection && !showTrainerSection;
     const emptyModulesFallback = (

@@ -55,6 +55,17 @@ export async function generateAndPersistTournamentStructure(opts: PersistOptions
       throw new Error("INSCRIPTION_NOT_CLOSED");
     }
 
+    const tournament = await tx.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { id: true, event: { select: { templateType: true } } },
+    });
+    if (!tournament) {
+      throw new Error("TOURNAMENT_NOT_FOUND");
+    }
+    if (tournament.event?.templateType === "PADEL") {
+      throw new Error("PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN");
+    }
+
     const started = await tx.tournamentMatch.count({
       where: { stage: { tournamentId }, status: { in: ["IN_PROGRESS", "DONE", "SCHEDULED"] as TournamentMatchStatus[] } },
     });

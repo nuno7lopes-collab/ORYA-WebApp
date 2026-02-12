@@ -48,12 +48,15 @@ const MODULE_LABELS: Record<
   PublicProfileModuleType,
   { title: string; description: string }
 > = {
-  SERVICOS: { title: "Serviços", description: "Reservas e CTA principal." },
-  AGENDA: { title: "Agenda pública", description: "Eventos e agenda visível." },
-  FORMULARIOS: { title: "Formulários", description: "Inscrições e contacto." },
-  AVALIACOES: { title: "Avaliações", description: "Prova social e ratings." },
-  SOBRE: { title: "Sobre", description: "Descrição e links úteis." },
-  LOJA: { title: "Loja", description: "Produtos e checkout da organização." },
+  HERO: { title: "Hero", description: "Abertura principal do perfil." },
+  ABOUT: { title: "Sobre", description: "Descrição e contexto da organização." },
+  EVENTS_AGENDA: { title: "Eventos & agenda", description: "Eventos e agenda pública." },
+  STORE: { title: "Loja", description: "Produtos e checkout da organização." },
+  SERVICES: { title: "Serviços", description: "Reservas e CTA principal." },
+  FORMS: { title: "Formulários", description: "Inscrições e contacto." },
+  GALLERY: { title: "Galeria", description: "Prova social e destaques visuais." },
+  FAQ: { title: "FAQ", description: "Perguntas frequentes e regras rápidas." },
+  CONTACT: { title: "Contacto", description: "Canais de contacto público." },
 };
 
 const OPERATION_META: Record<
@@ -236,6 +239,7 @@ type OrganizationProfileInfo = {
   publicInstagram?: string | null;
   publicYoutube?: string | null;
   publicHours?: string | null;
+  infoFaq?: string | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: string | Date | null;
   stripeAccountId?: string | null;
@@ -554,20 +558,23 @@ export default function OrganizationPublicProfilePanel({
   const operationTemplate = OPERATION_TEMPLATE[primaryOperation];
   const moduleAvailability = useMemo(
     () => ({
-      SERVICOS: hasReservasTool,
-      AGENDA: hasEventosTool || hasTorneiosTool,
-      FORMULARIOS: hasInscricoesTool,
-      AVALIACOES: hasReservasTool,
-      SOBRE: true,
-      LOJA: hasLojaTool,
+      HERO: true,
+      ABOUT: true,
+      EVENTS_AGENDA: hasEventosTool || hasTorneiosTool,
+      STORE: hasLojaTool,
+      SERVICES: hasReservasTool,
+      FORMS: hasInscricoesTool,
+      GALLERY: hasReservasTool,
+      FAQ: true,
+      CONTACT: true,
     }),
     [hasReservasTool, hasEventosTool, hasInscricoesTool, hasLojaTool, hasTorneiosTool],
   );
-  const shouldLoadForms = Boolean(user && moduleAvailability.FORMULARIOS);
-  const shouldLoadProfessionals = Boolean(user && moduleAvailability.SERVICOS);
-  const shouldLoadResources = Boolean(user && moduleAvailability.SERVICOS);
-  const shouldLoadReviews = Boolean(user && moduleAvailability.AVALIACOES);
-  const shouldLoadStore = Boolean(user && moduleAvailability.LOJA);
+  const shouldLoadForms = Boolean(user && moduleAvailability.FORMS);
+  const shouldLoadProfessionals = Boolean(user && moduleAvailability.SERVICES);
+  const shouldLoadResources = Boolean(user && moduleAvailability.SERVICES);
+  const shouldLoadReviews = Boolean(user && moduleAvailability.GALLERY);
+  const shouldLoadStore = Boolean(user && moduleAvailability.STORE);
   const { data: formsData } = useSWR<{ ok: boolean; items: FormPreviewItem[] }>(
     shouldLoadForms ? "/api/organizacao/inscricoes" : null,
     fetcher,
@@ -836,10 +843,10 @@ export default function OrganizationPublicProfilePanel({
   }, [isResizingEditor]);
 
   const servicesModule = useMemo(
-    () => profileLayout.modules.find((module) => module.type === "SERVICOS") ?? null,
+    () => profileLayout.modules.find((module) => module.type === "SERVICES") ?? null,
     [profileLayout.modules],
   );
-  const servicesModuleEnabled = Boolean(servicesModule?.enabled && moduleAvailability.SERVICOS);
+  const servicesModuleEnabled = Boolean(servicesModule?.enabled && moduleAvailability.SERVICES);
   const featuredServiceIds = useMemo(() => {
     const raw = servicesModule?.settings?.featuredServiceIds;
     if (!Array.isArray(raw)) return [];
@@ -867,7 +874,7 @@ export default function OrganizationPublicProfilePanel({
 
   const setFeaturedServiceIds = useCallback(
     (nextIds: number[]) => {
-      updateModuleByType("SERVICOS", (module) => ({
+      updateModuleByType("SERVICES", (module) => ({
         ...module,
         settings: {
           ...(module.settings ?? {}),
@@ -1105,18 +1112,18 @@ export default function OrganizationPublicProfilePanel({
       : "#reservar";
   const servicesShowStats = servicesSettings.showStats !== false;
 
-  const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "AGENDA");
+  const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "EVENTS_AGENDA");
   const agendaSettings = agendaLayoutModule?.settings ?? {};
   const agendaShowSpotlight = agendaSettings.showSpotlight !== false;
 
-  const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMULARIOS");
+  const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMS");
   const formsSettings = formsLayoutModule?.settings ?? {};
   const formsCtaLabel =
     typeof formsSettings.ctaLabel === "string" && formsSettings.ctaLabel.trim().length > 0
       ? formsSettings.ctaLabel.trim()
       : "Responder";
 
-  const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "AVALIACOES");
+  const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "GALLERY");
   const reviewsSettings = reviewsLayoutModule?.settings ?? {};
   const reviewsMaxItems =
     typeof reviewsSettings.maxItems === "number" && Number.isFinite(reviewsSettings.maxItems)
@@ -1529,13 +1536,72 @@ export default function OrganizationPublicProfilePanel({
     </section>
   ) : null;
 
+  const heroModuleContent = (
+    <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1529]/85 via-[#141c38]/75 to-[#060b14]/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Hero</p>
+      <h2 className="mt-2 text-2xl font-semibold text-white">{displayName}</h2>
+      <p className="mt-2 text-sm text-white/70">{displayBio || "Perfil oficial ORYA."}</p>
+      <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-white/70">
+        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+          {agendaTotal} itens na agenda
+        </span>
+        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+          {operationMeta.label}
+        </span>
+      </div>
+    </section>
+  );
+
+  const faqRaw = (organization?.infoFaq ?? "").trim();
+  const faqModuleContent = faqRaw ? (
+    <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">FAQ</p>
+      <p className="mt-2 whitespace-pre-wrap text-[13px] text-white/70 sm:text-sm">{faqRaw}</p>
+    </section>
+  ) : null;
+
+  const contactLinks = [
+    organization?.publicWebsite
+      ? { label: "Website", value: organization.publicWebsite, href: organization.publicWebsite }
+      : null,
+    organization?.publicInstagram
+      ? { label: "Instagram", value: organization.publicInstagram, href: organization.publicInstagram }
+      : null,
+    organization?.publicYoutube
+      ? { label: "YouTube", value: organization.publicYoutube, href: organization.publicYoutube }
+      : null,
+    organization?.officialEmail
+      ? { label: "Email", value: organization.officialEmail, href: `mailto:${organization.officialEmail}` }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
+  const contactModuleContent = contactLinks.length > 0 ? (
+    <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Contacto</p>
+      <div className="mt-3 space-y-2 text-[12px] text-white/75">
+        {contactLinks.map((item) => (
+          <a
+            key={item.label}
+            href={item.href}
+            className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/25"
+          >
+            <span className="text-white/60">{item.label}</span>
+            <span className="text-white">{item.value}</span>
+          </a>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
   const moduleContentByType: Record<PublicProfileModuleType, ReactNode> = {
-    SERVICOS: servicesModuleContent,
-    AGENDA: agendaModuleContent,
-    FORMULARIOS: formsModuleContent,
-    AVALIACOES: reviewsModuleContent,
-    SOBRE: aboutModuleContent,
-    LOJA: storeModuleContent,
+    HERO: heroModuleContent,
+    ABOUT: aboutModuleContent,
+    EVENTS_AGENDA: agendaModuleContent,
+    STORE: storeModuleContent,
+    SERVICES: servicesModuleContent,
+    FORMS: formsModuleContent,
+    GALLERY: reviewsModuleContent,
+    FAQ: faqModuleContent,
+    CONTACT: contactModuleContent,
   };
 
   const visibleModules = useMemo(
@@ -1545,12 +1611,15 @@ export default function OrganizationPublicProfilePanel({
   const moduleStats = useMemo(
     () =>
       ({
-        SERVICOS: activeServices.length,
-        AGENDA: agendaTotal,
-        FORMULARIOS: publicForms.length,
-        AVALIACOES: reviewsCount,
-        SOBRE: showAboutModule ? 1 : 0,
-        LOJA: storePublicCount,
+        HERO: 1,
+        ABOUT: showAboutModule ? 1 : 0,
+        EVENTS_AGENDA: agendaTotal,
+        STORE: storePublicCount,
+        SERVICES: activeServices.length,
+        FORMS: publicForms.length,
+        GALLERY: reviewsCount,
+        FAQ: faqRaw.length > 0 ? 1 : 0,
+        CONTACT: contactLinks.length,
       }) as Record<PublicProfileModuleType, number>,
     [
       activeServices.length,
@@ -1558,6 +1627,8 @@ export default function OrganizationPublicProfilePanel({
       publicForms.length,
       reviewsCount,
       showAboutModule,
+      faqRaw.length,
+      contactLinks.length,
       storePublicCount,
     ],
   );
@@ -2352,7 +2423,7 @@ export default function OrganizationPublicProfilePanel({
                       const labels = MODULE_LABELS[type] ?? { title: type, description: "" };
                       const config = profileLayout.modules.find((module) => module.type === type);
                       const isEnabled = config?.enabled ?? false;
-                      const isStoreModule = type === "LOJA";
+                      const isStoreModule = type === "STORE";
                       const itemsCount = moduleStats[type] ?? 0;
                       const hasContent = itemsCount > 0;
                       const draftCount = isStoreModule ? storeDraftCount : 0;
@@ -2496,7 +2567,7 @@ export default function OrganizationPublicProfilePanel({
                               Ativa a ferramenta correspondente para usar este módulo.
                             </p>
                           )}
-                          {selected.type === "SERVICOS" && (
+                          {selected.type === "SERVICES" && (
                             <div className="space-y-3">
                               <label className="space-y-1">
                                 <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">
@@ -2506,7 +2577,7 @@ export default function OrganizationPublicProfilePanel({
                                   type="text"
                                   value={ctaLabel}
                                   onChange={(event) =>
-                                    updateModuleSettings("SERVICOS", { ctaLabel: event.target.value })
+                                    updateModuleSettings("SERVICES", { ctaLabel: event.target.value })
                                   }
                                   disabled={inputsDisabled}
                                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
@@ -2521,7 +2592,7 @@ export default function OrganizationPublicProfilePanel({
                                   type="text"
                                   value={ctaHref}
                                   onChange={(event) =>
-                                    updateModuleSettings("SERVICOS", { ctaHref: event.target.value })
+                                    updateModuleSettings("SERVICES", { ctaHref: event.target.value })
                                   }
                                   disabled={inputsDisabled}
                                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
@@ -2533,7 +2604,7 @@ export default function OrganizationPublicProfilePanel({
                                   type="checkbox"
                                   checked={showStats}
                                   onChange={(event) =>
-                                    updateModuleSettings("SERVICOS", { showStats: event.target.checked })
+                                    updateModuleSettings("SERVICES", { showStats: event.target.checked })
                                   }
                                   disabled={inputsDisabled}
                                   className="h-4 w-4 rounded border-white/40 bg-black/40"
@@ -2545,7 +2616,7 @@ export default function OrganizationPublicProfilePanel({
                                   type="checkbox"
                                   checked={carouselEnabled}
                                   onChange={(event) =>
-                                    updateModuleSettings("SERVICOS", { carouselEnabled: event.target.checked })
+                                    updateModuleSettings("SERVICES", { carouselEnabled: event.target.checked })
                                   }
                                   disabled={inputsDisabled}
                                   className="h-4 w-4 rounded border-white/40 bg-black/40"
@@ -2623,13 +2694,13 @@ export default function OrganizationPublicProfilePanel({
                               </div>
                             </div>
                           )}
-                          {selected.type === "AGENDA" && (
+                          {selected.type === "EVENTS_AGENDA" && (
                             <label className="flex items-center gap-2">
                               <input
                                 type="checkbox"
                                 checked={showSpotlight}
                                 onChange={(event) =>
-                                  updateModuleSettings("AGENDA", { showSpotlight: event.target.checked })
+                                  updateModuleSettings("EVENTS_AGENDA", { showSpotlight: event.target.checked })
                                 }
                                 disabled={inputsDisabled}
                                 className="h-4 w-4 rounded border-white/40 bg-black/40"
@@ -2637,7 +2708,7 @@ export default function OrganizationPublicProfilePanel({
                               Mostrar destaque no topo
                             </label>
                           )}
-                          {selected.type === "FORMULARIOS" && (
+                          {selected.type === "FORMS" && (
                             <label className="space-y-1">
                               <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">
                                 Texto do CTA
@@ -2646,7 +2717,7 @@ export default function OrganizationPublicProfilePanel({
                                 type="text"
                                 value={ctaLabel}
                                 onChange={(event) =>
-                                  updateModuleSettings("FORMULARIOS", { ctaLabel: event.target.value })
+                                  updateModuleSettings("FORMS", { ctaLabel: event.target.value })
                                 }
                                 disabled={inputsDisabled}
                                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
@@ -2654,7 +2725,7 @@ export default function OrganizationPublicProfilePanel({
                               />
                             </label>
                           )}
-                          {selected.type === "AVALIACOES" && (
+                          {selected.type === "GALLERY" && (
                             <label className="space-y-1">
                               <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">
                                 Máximo de cartões
@@ -2665,17 +2736,17 @@ export default function OrganizationPublicProfilePanel({
                                 max={12}
                                 value={reviewsMaxItems}
                                 onChange={(event) =>
-                                  updateModuleSettings("AVALIACOES", { maxItems: Number(event.target.value) })
+                                  updateModuleSettings("GALLERY", { maxItems: Number(event.target.value) })
                                 }
                                 disabled={inputsDisabled}
                                 className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
                               />
                             </label>
                           )}
-                          {selected.type === "SOBRE" && (
+                          {selected.type === "ABOUT" && (
                             <p className="text-[12px] text-white/60">Sem definições extra por agora.</p>
                           )}
-                          {selected.type === "LOJA" && (
+                          {selected.type === "STORE" && (
                             <p className="text-[12px] text-white/60">
                               A Loja aparece no perfil quando estiver aberta e com produtos publicados.
                             </p>

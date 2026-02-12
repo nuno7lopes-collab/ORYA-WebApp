@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
@@ -10,6 +10,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { OrganizationModule, OrganizationPermissionLevel } from "@prisma/client";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { canManageMembers } from "@/lib/organizationPermissions";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -68,13 +69,14 @@ async function _GET(req: NextRequest) {
       return fail(401, "UNAUTHENTICATED");
     }
 
-    const organizationId =
-      resolveOrganizationIdFromParams(req.nextUrl.searchParams) ??
-      resolveOrganizationIdFromRequest(req);
-
-    if (!organizationId) {
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
+    const organizationId = orgResolution.organizationId;
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
 
@@ -143,7 +145,18 @@ async function _PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId) ?? resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    const organizationId = orgResolution.organizationId;
     const targetUserId = typeof body?.userId === "string" ? body.userId : null;
     const moduleKey = typeof body?.moduleKey === "string" ? body.moduleKey : null;
     const accessLevelRaw = body?.accessLevel ?? null;
@@ -188,6 +201,17 @@ async function _PATCH(req: NextRequest) {
     });
     if (!targetMembership) {
       return fail(404, "NOT_MEMBER");
+    }
+    if (targetUserId === user.id) {
+      return fail(403, "CANNOT_EDIT_SELF_PERMISSIONS");
+    }
+    const manageAllowed = canManageMembers(
+      callerMembership.role,
+      targetMembership.role,
+      targetMembership.role,
+    );
+    if (!manageAllowed) {
+      return fail(403, "FORBIDDEN");
     }
 
     const access = await ensureMemberModuleAccess({

@@ -22,6 +22,10 @@ describe("booking cancellation refund", () => {
         baseCents: 10_000,
         discountCents: 0,
         feeCents: 1000,
+        platformFeeCents: 830,
+        combinedFeeCents: 830,
+        processorFeesStatus: "PENDING",
+        processorFeesActualCents: null,
         taxCents: 0,
         totalCents: 11_000,
         feeMode: "ADDED",
@@ -29,9 +33,8 @@ describe("booking cancellation refund", () => {
         platformFeeFixedCents: 30,
         stripeFeeBps: 0,
         stripeFeeFixedCents: 0,
-        stripeFeeEstimateCents: 0,
         cardPlatformFeeCents: 0,
-        combinedFeeEstimateCents: 830, // orya(800) + fixo(30)
+        // orya(800) + fixo(30)
       },
     };
 
@@ -63,6 +66,10 @@ describe("booking cancellation refund", () => {
         baseCents: 10_000,
         discountCents: 0,
         feeCents: 0,
+        platformFeeCents: 830,
+        combinedFeeCents: 830,
+        processorFeesStatus: "PENDING",
+        processorFeesActualCents: null,
         taxCents: 0,
         totalCents: 10_000,
         feeMode: "INCLUDED",
@@ -70,9 +77,7 @@ describe("booking cancellation refund", () => {
         platformFeeFixedCents: 30,
         stripeFeeBps: 0,
         stripeFeeFixedCents: 0,
-        stripeFeeEstimateCents: 0,
         cardPlatformFeeCents: 0,
-        combinedFeeEstimateCents: 830,
       },
     };
 

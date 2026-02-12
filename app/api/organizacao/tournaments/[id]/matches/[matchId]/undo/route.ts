@@ -50,7 +50,12 @@ async function _POST(_req: NextRequest, { params }: { params: Promise<{ id: stri
     where: { id: matchId },
     select: {
       id: true,
-      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+      stage: {
+        select: {
+          tournamentId: true,
+          tournament: { select: { eventId: true, event: { select: { templateType: true } } } },
+        },
+      },
     },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
@@ -69,6 +74,9 @@ async function _POST(_req: NextRequest, { params }: { params: Promise<{ id: stri
   ];
   if (!organizationRole || !liveOperatorRoles.includes(organizationRole)) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  if (match.stage.tournament.event?.templateType === "PADEL") {
+    return jsonWrap({ ok: false, error: "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN" }, { status: 409 });
   }
 
   const recentLogs = await prisma.tournamentAuditLog.findMany({

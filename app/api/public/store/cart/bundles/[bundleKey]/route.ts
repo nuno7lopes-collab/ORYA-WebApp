@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -32,7 +32,7 @@ async function resolveStore(storeId: number) {
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
   }
-  if (!isStorePublic(store)) {
+  if (!isPublicStore(store)) {
     return { ok: false as const, error: "Loja fechada." };
   }
   if (store.catalogLocked) {

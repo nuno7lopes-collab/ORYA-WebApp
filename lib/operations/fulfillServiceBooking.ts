@@ -561,7 +561,7 @@ async function upsertBookingEntitlement(params: {
       snapshotVenueName,
       snapshotStartAt: booking.startsAt,
       snapshotTimezone,
-      policyVersionApplied: 0,
+      policyVersionApplied: null,
     },
     create: {
       type: EntitlementType.SERVICE_BOOKING,
@@ -577,7 +577,7 @@ async function upsertBookingEntitlement(params: {
       snapshotVenueName,
       snapshotStartAt: booking.startsAt,
       snapshotTimezone,
-      policyVersionApplied: 0,
+      policyVersionApplied: null,
     },
   });
 }
@@ -719,7 +719,6 @@ export async function fulfillServiceBookingIntent(
   const paymentMeta: BookingConfirmationPaymentMeta = {
     grossAmountCents: meta.grossAmountCents ?? null,
     cardPlatformFeeCents: meta.cardPlatformFeeCents ?? null,
-    stripeFeeEstimateCents: 0,
   };
 
   const paymentIntentId = intent.id;

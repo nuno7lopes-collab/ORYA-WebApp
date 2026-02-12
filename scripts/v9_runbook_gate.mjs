@@ -1,7 +1,7 @@
 import { execSync } from "child_process";
 
 const WATCH_DIRS = ["domain/outbox/", "app/api/internal/"];
-const REQUIRED_DOCS = ["docs/ssot_registry.md", "docs/planning_registry.md"];
+const REQUIRED_DOCS = ["docs/ssot_registry_v1.md", "docs/planning_registry_v1.md"];
 
 function runGit(cmd) {
   return execSync(cmd, { encoding: "utf8" }).trim();
@@ -68,7 +68,29 @@ function listChangedFiles() {
   return [];
 }
 
-const changedFiles = listChangedFiles();
+function listWorkingTreeFiles() {
+  try {
+    const output = runGit("git status --porcelain");
+    if (!output) return [];
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .flatMap((line) => {
+        const entry = line.slice(3).trim();
+        if (!entry) return [];
+        if (entry.includes(" -> ")) {
+          const [, toPath] = entry.split(" -> ");
+          return [toPath.replace(/\\/g, "/")];
+        }
+        return [entry.replace(/\\/g, "/")];
+      });
+  } catch {
+    return [];
+  }
+}
+
+const changedFiles = Array.from(new Set([...listChangedFiles(), ...listWorkingTreeFiles()]));
 if (changedFiles.length === 0) {
   console.log("V9 runbook gate: OK (no diff)");
   process.exit(0);

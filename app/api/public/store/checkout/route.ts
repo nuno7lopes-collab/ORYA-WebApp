@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, canCheckoutStore } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, canCheckout } from "@/lib/storeAccess";
 import { AddressSourceProvider, ProcessorFeesStatus, SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -152,7 +152,7 @@ async function _POST(req: NextRequest) {
     if (!store) {
       return fail("STORE_NOT_FOUND", "Store nao encontrada.", 404);
     }
-    if (!canCheckoutStore(store)) {
+    if (!canCheckout(store)) {
       return fail("CHECKOUT_UNAVAILABLE", "Checkout indisponivel.", 403);
     }
     if (store.catalogLocked) {
@@ -689,7 +689,6 @@ async function _POST(req: NextRequest) {
       stripeFeeFixedCents: 0,
     });
     const totalCents = combinedFees.totalCents;
-    const stripeFeeEstimateCents = 0;
     const payoutAmountCents = Math.max(0, totalCents - pricing.platformFeeCents);
 
     const order = await prisma.$transaction(async (tx) => {
@@ -798,8 +797,8 @@ async function _POST(req: NextRequest) {
       feeFixed: pricing.feeFixedApplied,
     });
     const resolvedSnapshot = {
-      organizationId,
-      buyerIdentityId: userId ?? null,
+      orgId: organizationId,
+      customerIdentityId: userId ?? null,
       snapshot: {
         currency: store.currency,
         gross: totalCents,
@@ -869,6 +868,7 @@ async function _POST(req: NextRequest) {
     try {
       const ensured = await ensurePaymentIntent({
         purchaseId,
+        orgId: organizationId,
         sourceType: SourceType.STORE_ORDER,
         sourceId: String(order.id),
         amountCents: totalCents,
@@ -895,7 +895,6 @@ async function _POST(req: NextRequest) {
           sourceType: SourceType.STORE_ORDER,
           sourceId: String(order.id),
           currency: store.currency,
-          stripeFeeEstimateCents: String(stripeFeeEstimateCents),
           shippingCents: String(shippingCents),
           shippingMethodId: shippingMethodId ? String(shippingMethodId) : "",
           shippingZoneId: shippingZoneId ? String(shippingZoneId) : "",
@@ -909,7 +908,7 @@ async function _POST(req: NextRequest) {
         requireStripe: !isPlatformOrg,
         clientIdempotencyKey: idempotencyKey,
         resolvedSnapshot,
-        buyerIdentityRef: userId ?? null,
+        customerIdentityId: userId ?? null,
         paymentEvent: {
           userId: userId ?? null,
           amountCents: totalCents,

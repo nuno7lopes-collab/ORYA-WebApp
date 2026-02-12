@@ -20,6 +20,7 @@ import { canScanTickets } from "@/lib/organizationAccess";
 import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
+import { ACTIVE_REGISTRATION_STATUSES } from "@/domain/padelRegistration";
 
 function slugify(input: string): string {
   return input
@@ -214,14 +215,24 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
     event.templateType === "PADEL" && userId
       ? await hasActiveEntitlementForEvent({ eventId: event.id, userId, type: EntitlementType.PADEL_ENTRY })
       : false;
-  const hasInscription = Boolean(
-    userId &&
-      (await prisma.tournamentEntry.findFirst({ where: { eventId: event.id, userId }, select: { id: true } })),
+  const hasPadelActiveRegistration = Boolean(
+    event.templateType === "PADEL" &&
+      userId &&
+      (await prisma.padelRegistration.findFirst({
+        where: {
+          eventId: event.id,
+          status: { in: ACTIVE_REGISTRATION_STATUSES },
+          pairing: {
+            OR: [{ player1UserId: userId }, { player2UserId: userId }],
+          },
+        },
+        select: { id: true },
+      })),
   );
 
   const isParticipant =
     event.templateType === "PADEL"
-      ? hasPadelEntitlement || hasInscription || isParticipantInvited
+      ? hasPadelEntitlement || hasPadelActiveRegistration || isParticipantInvited
       : hasAnyTicket || isParticipantInvited;
 
   const viewerRole = isOrganization ? "ORGANIZATION" : isParticipant ? "PARTICIPANT" : "PUBLIC";

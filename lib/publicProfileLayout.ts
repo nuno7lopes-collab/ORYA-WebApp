@@ -1,21 +1,27 @@
 export const PUBLIC_PROFILE_MODULES = [
-  "SERVICOS",
-  "AGENDA",
-  "FORMULARIOS",
-  "AVALIACOES",
-  "SOBRE",
-  "LOJA",
+  "HERO",
+  "ABOUT",
+  "EVENTS_AGENDA",
+  "STORE",
+  "SERVICES",
+  "FORMS",
+  "GALLERY",
+  "FAQ",
+  "CONTACT",
 ] as const;
 
 export type PublicProfileModuleType = (typeof PUBLIC_PROFILE_MODULES)[number];
 
 export const PUBLIC_PROFILE_DEFAULT_ORDER: PublicProfileModuleType[] = [
-  "SERVICOS",
-  "AGENDA",
-  "FORMULARIOS",
-  "AVALIACOES",
-  "SOBRE",
-  "LOJA",
+  "HERO",
+  "ABOUT",
+  "EVENTS_AGENDA",
+  "STORE",
+  "SERVICES",
+  "FORMS",
+  "GALLERY",
+  "FAQ",
+  "CONTACT",
 ];
 
 export type PublicProfileModuleWidth = "half" | "full";
@@ -29,16 +35,35 @@ export type PublicProfileModuleConfig = {
 };
 
 export type PublicProfileLayout = {
-  version: 1;
+  version: 2;
   modules: PublicProfileModuleConfig[];
 };
 
+const LEGACY_TO_CANONICAL: Record<string, PublicProfileModuleType> = {
+  SERVICOS: "SERVICES",
+  AGENDA: "EVENTS_AGENDA",
+  FORMULARIOS: "FORMS",
+  AVALIACOES: "GALLERY",
+  SOBRE: "ABOUT",
+  LOJA: "STORE",
+};
+
 const DEFAULT_LAYOUT: PublicProfileLayout = {
-  version: 1,
+  version: 2,
   modules: [
+    { id: "HERO", type: "HERO", enabled: true, width: "full" },
+    { id: "ABOUT", type: "ABOUT", enabled: true, width: "full" },
     {
-      id: "SERVICOS",
-      type: "SERVICOS",
+      id: "EVENTS_AGENDA",
+      type: "EVENTS_AGENDA",
+      enabled: true,
+      width: "full",
+      settings: { showSpotlight: true },
+    },
+    { id: "STORE", type: "STORE", enabled: false, width: "full" },
+    {
+      id: "SERVICES",
+      type: "SERVICES",
       enabled: true,
       width: "full",
       settings: {
@@ -50,50 +75,43 @@ const DEFAULT_LAYOUT: PublicProfileLayout = {
       },
     },
     {
-      id: "AGENDA",
-      type: "AGENDA",
-      enabled: true,
-      width: "full",
-      settings: { showSpotlight: true },
-    },
-    {
-      id: "FORMULARIOS",
-      type: "FORMULARIOS",
+      id: "FORMS",
+      type: "FORMS",
       enabled: true,
       width: "half",
       settings: { ctaLabel: "Responder" },
     },
     {
-      id: "AVALIACOES",
-      type: "AVALIACOES",
+      id: "GALLERY",
+      type: "GALLERY",
       enabled: true,
       width: "half",
       settings: { maxItems: 8 },
     },
-    { id: "SOBRE", type: "SOBRE", enabled: true, width: "half" },
-    { id: "LOJA", type: "LOJA", enabled: false, width: "half" },
+    { id: "FAQ", type: "FAQ", enabled: true, width: "half" },
+    { id: "CONTACT", type: "CONTACT", enabled: true, width: "half" },
   ],
 };
 
 const moduleSet = new Set<PublicProfileModuleType>(PUBLIC_PROFILE_MODULES);
 const defaultModuleByType = new Map<PublicProfileModuleType, PublicProfileModuleConfig>(
-  DEFAULT_LAYOUT.modules.map((module) => [module.type, module]),
+  DEFAULT_LAYOUT.modules.map((moduleItem) => [moduleItem.type, moduleItem]),
 );
 
-function cloneModule(module: PublicProfileModuleConfig): PublicProfileModuleConfig {
+function cloneModule(moduleItem: PublicProfileModuleConfig): PublicProfileModuleConfig {
   return {
-    id: module.id,
-    type: module.type,
-    enabled: module.enabled,
-    width: module.width,
-    settings: module.settings ? { ...module.settings } : undefined,
+    id: moduleItem.id,
+    type: moduleItem.type,
+    enabled: moduleItem.enabled,
+    width: moduleItem.width,
+    settings: moduleItem.settings ? { ...moduleItem.settings } : undefined,
   };
 }
 
 export function getDefaultPublicProfileLayout(): PublicProfileLayout {
   return {
-    version: 1,
-    modules: DEFAULT_LAYOUT.modules.map((module) => cloneModule(module)),
+    version: 2,
+    modules: DEFAULT_LAYOUT.modules.map((moduleItem) => cloneModule(moduleItem)),
   };
 }
 
@@ -115,55 +133,51 @@ const TEMPLATE_SPECS: Array<{
   }>;
 }> = [
   {
-    id: "reservas",
-    title: "Reservas primeiro",
-    description: "Servicos em destaque, agenda logo a seguir.",
-    modules: [
-      { type: "SERVICOS", width: "full" },
-      { type: "AGENDA", width: "full" },
-      { type: "FORMULARIOS", width: "half" },
-      { type: "AVALIACOES", width: "half" },
-      { type: "SOBRE", width: "half" },
-      { type: "LOJA", width: "half", enabled: false },
-    ],
-  },
-  {
-    id: "eventos",
+    id: "events-first",
     title: "Eventos primeiro",
-    description: "Agenda em primeiro lugar para organizadores.",
+    description: "Destaca agenda, hero e informacao publica.",
     modules: [
-      { type: "AGENDA", width: "full" },
-      { type: "SERVICOS", width: "full" },
-      { type: "FORMULARIOS", width: "half" },
-      { type: "AVALIACOES", width: "half" },
-      { type: "SOBRE", width: "half" },
-      { type: "LOJA", width: "half", enabled: false },
+      { type: "HERO", width: "full" },
+      { type: "EVENTS_AGENDA", width: "full" },
+      { type: "ABOUT", width: "full" },
+      { type: "SERVICES", width: "full" },
+      { type: "FORMS", width: "half" },
+      { type: "GALLERY", width: "half" },
+      { type: "STORE", width: "full", enabled: false },
+      { type: "FAQ", width: "half" },
+      { type: "CONTACT", width: "half" },
     ],
   },
   {
-    id: "comunidade",
-    title: "Comunidade",
-    description: "Foco em avaliacoes e prova social.",
+    id: "services-first",
+    title: "Servicos primeiro",
+    description: "Foco em reservas e conversao.",
     modules: [
-      { type: "AVALIACOES", width: "full" },
-      { type: "SERVICOS", width: "full" },
-      { type: "AGENDA", width: "full" },
-      { type: "SOBRE", width: "half" },
-      { type: "FORMULARIOS", width: "half" },
-      { type: "LOJA", width: "half", enabled: false },
+      { type: "HERO", width: "full" },
+      { type: "SERVICES", width: "full" },
+      { type: "EVENTS_AGENDA", width: "full" },
+      { type: "STORE", width: "full", enabled: false },
+      { type: "ABOUT", width: "full" },
+      { type: "FORMS", width: "half" },
+      { type: "GALLERY", width: "half" },
+      { type: "FAQ", width: "half" },
+      { type: "CONTACT", width: "half" },
     ],
   },
   {
-    id: "premium",
-    title: "Premium",
-    description: "Layout completo com destaque para servicos e agenda.",
+    id: "store-first",
+    title: "Loja primeiro",
+    description: "Destaca catalogo e CTA comercial.",
     modules: [
-      { type: "SERVICOS", width: "full" },
-      { type: "AGENDA", width: "full" },
-      { type: "AVALIACOES", width: "full" },
-      { type: "FORMULARIOS", width: "half" },
-      { type: "SOBRE", width: "half" },
-      { type: "LOJA", width: "half", enabled: false },
+      { type: "HERO", width: "full" },
+      { type: "STORE", width: "full", enabled: true },
+      { type: "ABOUT", width: "full" },
+      { type: "SERVICES", width: "full" },
+      { type: "EVENTS_AGENDA", width: "full" },
+      { type: "FORMS", width: "half" },
+      { type: "GALLERY", width: "half" },
+      { type: "FAQ", width: "half" },
+      { type: "CONTACT", width: "half" },
     ],
   },
 ];
@@ -175,7 +189,7 @@ export const PUBLIC_PROFILE_TEMPLATES: PublicProfileTemplate[] = TEMPLATE_SPECS.
   modules: template.modules.map((entry) => {
     const base = defaultModuleByType.get(entry.type);
     if (!base) {
-      throw new Error(`Template inválido: ${entry.type}`);
+      throw new Error(`Template invalido: ${entry.type}`);
     }
     return {
       ...cloneModule(base),
@@ -202,7 +216,7 @@ function sanitizeNumber(raw: unknown, fallback: number, min: number, max: number
   return Math.min(max, Math.max(min, Math.floor(num)));
 }
 
-function sanitizeServiceSettings(
+function sanitizeServicesSettings(
   raw: unknown,
   fallback?: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -242,7 +256,7 @@ function sanitizeServiceSettings(
   };
 }
 
-function sanitizeAgendaSettings(
+function sanitizeEventsAgendaSettings(
   raw: unknown,
   fallback?: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -264,7 +278,7 @@ function sanitizeFormsSettings(
   return { ctaLabel };
 }
 
-function sanitizeReviewsSettings(
+function sanitizeGallerySettings(
   raw: unknown,
   fallback?: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -279,27 +293,36 @@ function sanitizeModuleSettings(
   raw: unknown,
   fallback?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
-  if (type === "SERVICOS") {
-    return sanitizeServiceSettings(raw, fallback);
+  if (type === "SERVICES") {
+    return sanitizeServicesSettings(raw, fallback);
   }
-  if (type === "AGENDA") {
-    return sanitizeAgendaSettings(raw, fallback);
+  if (type === "EVENTS_AGENDA") {
+    return sanitizeEventsAgendaSettings(raw, fallback);
   }
-  if (type === "FORMULARIOS") {
+  if (type === "FORMS") {
     return sanitizeFormsSettings(raw, fallback);
   }
-  if (type === "AVALIACOES") {
-    return sanitizeReviewsSettings(raw, fallback);
+  if (type === "GALLERY") {
+    return sanitizeGallerySettings(raw, fallback);
   }
   return fallback ? { ...fallback } : undefined;
+}
+
+function normalizeModuleType(rawType: unknown): PublicProfileModuleType | null {
+  if (typeof rawType !== "string") return null;
+  const normalized = rawType.trim().toUpperCase();
+  if (!normalized) return null;
+  const canonical = LEGACY_TO_CANONICAL[normalized] ?? normalized;
+  if (!moduleSet.has(canonical as PublicProfileModuleType)) return null;
+  return canonical as PublicProfileModuleType;
 }
 
 function normalizeModule(raw: unknown): PublicProfileModuleConfig | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
-  const typeRaw = typeof record.type === "string" ? record.type.trim().toUpperCase() : "";
-  if (!typeRaw || !moduleSet.has(typeRaw as PublicProfileModuleType)) return null;
-  const type = typeRaw as PublicProfileModuleType;
+  const type = normalizeModuleType(record.type);
+  if (!type) return null;
+
   const defaults = defaultModuleByType.get(type);
   const enabled = typeof record.enabled === "boolean" ? record.enabled : defaults?.enabled ?? true;
   const widthRaw = record.width;
@@ -333,7 +356,7 @@ export function sanitizePublicProfileLayout(value: unknown): PublicProfileLayout
   }
 
   if (normalized.length === 0) return null;
-  return { version: 1, modules: normalized };
+  return { version: 2, modules: normalized };
 }
 
 export function mergeLayoutWithDefaults(layout: PublicProfileLayout): PublicProfileLayout {
@@ -353,7 +376,7 @@ export function mergeLayoutWithDefaults(layout: PublicProfileLayout): PublicProf
   const missingDefaults = DEFAULT_LAYOUT.modules.filter((moduleItem) => !existingTypes.has(moduleItem.type));
 
   return {
-    version: 1,
+    version: 2,
     modules: [...normalized, ...missingDefaults.map((moduleItem) => cloneModule(moduleItem))],
   };
 }

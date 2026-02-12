@@ -374,6 +374,11 @@ export function getObjectiveSections(
         label: "Faturação",
         href: "/organizacao/analyze?section=invoices",
       },
+      {
+        id: "ops",
+        label: "Ops Feed",
+        href: "/organizacao/analyze?section=ops",
+      },
     );
     const focusId = options?.focusSectionId ?? null;
     if (focusId) {

@@ -22,7 +22,7 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
       categoryId: true,
       player1UserId: true,
       player2UserId: true,
-      event: { select: { title: true, slug: true, organizationId: true } },
+      event: { select: { title: true, slug: true, organizationId: true, templateType: true } },
     },
   });
   if (!pairing) return;
@@ -162,9 +162,10 @@ export async function ensureEntriesForConfirmedPairing(pairingId: number) {
     if (!canAutoGenerate) return;
 
     const hasPadelCategories = Array.isArray(categoryLinks) && categoryLinks.length > 0;
-    if (hasPadelCategories) {
+    const isPadelEvent = pairing.event?.templateType === "PADEL";
+    if (isPadelEvent) {
       const categoryId = pairing.categoryId ?? null;
-      if (categoryId === null) return;
+      if (hasPadelCategories && categoryId === null) return;
       const linkFormat = categoryId
         ? categoryLinks.find((l) => l.padelCategoryId === categoryId)?.format ?? null
         : null;

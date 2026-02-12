@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
@@ -10,7 +10,6 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
-const HOLD_MINUTES = 10;
 const COMPLETION_GRACE_HOURS = 2;
 
 async function _GET(req: NextRequest) {
@@ -20,30 +19,18 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Unauthorized cron call." }, { status: 401 });
     }
 
-    const cutoff = new Date(Date.now() - HOLD_MINUTES * 60 * 1000);
     const now = new Date();
 
-    const [stale, legacyStale] = await Promise.all([
-      prisma.booking.findMany({
-        where: {
-          status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
-          pendingExpiresAt: { lt: now },
-          paymentIntentId: null,
-        },
-        select: { id: true, organizationId: true, serviceId: true, userId: true },
-      }),
-      prisma.booking.findMany({
-        where: {
-          status: "PENDING",
-          pendingExpiresAt: null,
-          createdAt: { lt: cutoff },
-          paymentIntentId: null,
-        },
-        select: { id: true, organizationId: true, serviceId: true, userId: true },
-      }),
-    ]);
+    const stale = await prisma.booking.findMany({
+      where: {
+        status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+        pendingExpiresAt: { lt: now },
+        paymentIntentId: null,
+      },
+      select: { id: true, organizationId: true, serviceId: true, userId: true },
+    });
 
-    const expired = [...stale, ...legacyStale];
+    const expired = stale;
     const bookingIds = expired.map((b) => b.id);
 
     await prisma.$transaction(async (tx) => {

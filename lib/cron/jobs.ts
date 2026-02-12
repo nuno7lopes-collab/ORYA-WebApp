@@ -78,11 +78,11 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/padel/tournament-eve",
   },
   {
-    key: "payouts-release",
-    envIntervalMs: "CRON_PAYOUTS_INTERVAL_MS",
-    defaultIntervalMs: 300_000,
-    method: "POST",
-    endpoint: "/api/cron/payouts/release",
+    key: "entitlements-qr-cleanup",
+    envIntervalMs: "CRON_ENTITLEMENTS_QR_CLEANUP_INTERVAL_MS",
+    defaultIntervalMs: 3_600_000,
+    method: "GET",
+    endpoint: "/api/cron/entitlements/qr-cleanup",
   },
   {
     key: "crm-rebuild",
@@ -97,6 +97,20 @@ export const CRON_JOBS: CronJobDefinition[] = [
     defaultIntervalMs: 60_000,
     method: "POST",
     endpoint: "/api/cron/crm/campanhas",
+  },
+  {
+    key: "repair-usernames",
+    envIntervalMs: "CRON_REPAIR_USERNAMES_INTERVAL_MS",
+    defaultIntervalMs: 604_800_000,
+    method: "POST",
+    endpoint: "/api/cron/repair-usernames",
+  },
+  {
+    key: "analytics-rollup",
+    envIntervalMs: "CRON_ANALYTICS_INTERVAL_MS",
+    defaultIntervalMs: 86_400_000,
+    method: "POST",
+    endpoint: "/api/cron/analytics/rollup",
   },
   {
     key: "loyalty-expire",

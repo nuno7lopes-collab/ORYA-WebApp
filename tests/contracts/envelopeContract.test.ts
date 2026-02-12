@@ -67,7 +67,6 @@ describe("p0 guardrails", () => {
     "app/api/internal/checkout/timeline/route.ts",
     "app/api/internal/checkin/consume/route.ts",
     "app/api/cron/operations/route.ts",
-    "app/api/cron/payouts/release/route.ts",
     "app/api/stripe/webhook/route.ts",
     "app/api/webhooks/stripe/route.ts",
   ];

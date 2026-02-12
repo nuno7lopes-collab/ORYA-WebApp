@@ -109,6 +109,10 @@ const snapshot = {
     baseCents: 10_000,
     discountCents: 0,
     feeCents: 1_000,
+    platformFeeCents: 830,
+    combinedFeeCents: 830,
+    processorFeesStatus: "PENDING",
+    processorFeesActualCents: null,
     taxCents: 0,
     totalCents: 11_000,
     feeMode: "ADDED",
@@ -116,9 +120,7 @@ const snapshot = {
     platformFeeFixedCents: 30,
     stripeFeeBps: 0,
     stripeFeeFixedCents: 0,
-    stripeFeeEstimateCents: 0,
     cardPlatformFeeCents: 0,
-    combinedFeeEstimateCents: 830,
   },
 };
 
@@ -168,7 +170,7 @@ describe("booking cancel snapshot route", () => {
       expect.objectContaining({
         bookingId: 1,
         paymentIntentId: "pi_1",
-        amountCents: snapshot.pricingSnapshot.totalCents - snapshot.pricingSnapshot.combinedFeeEstimateCents,
+        amountCents: snapshot.pricingSnapshot.totalCents - snapshot.pricingSnapshot.combinedFeeCents,
       }),
     );
   });

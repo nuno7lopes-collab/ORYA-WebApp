@@ -8,8 +8,6 @@ vi.mock("@prisma/client", async () => {
     FeeMode: {
       ADDED: "ADDED",
       INCLUDED: "INCLUDED",
-      ABSORBED: "ABSORBED",
-      ON_TOP: "ON_TOP",
     },
     ProcessorFeesStatus: { PENDING: "PENDING", FINAL: "FINAL" },
     SourceType: {
@@ -54,6 +52,8 @@ const REG_ID = "reg-1";
 
 let ticketOrderState: any = null;
 let padelRegistrationState: any = null;
+let bookingState: any = null;
+let storeOrderState: any = null;
 let createdPayment: any = null;
 let createdLedgerEntries: any[] = [];
 
@@ -63,6 +63,12 @@ vi.mock("@/lib/prisma", () => {
   };
   const padelRegistration = {
     findUnique: vi.fn(() => padelRegistrationState),
+  };
+  const booking = {
+    findUnique: vi.fn(() => bookingState),
+  };
+  const storeOrder = {
+    findUnique: vi.fn(() => storeOrderState),
   };
   const organization = {
     findUnique: vi.fn(({ where }: any) => {
@@ -104,6 +110,8 @@ vi.mock("@/lib/prisma", () => {
   const prisma = {
     ticketOrder,
     padelRegistration,
+    booking,
+    storeOrder,
     organization,
     eventAccessPolicy,
     emailIdentity,
@@ -162,6 +170,37 @@ describe("createCheckout", () => {
         { id: 1, qty: 1, unitAmount: 1200, totalAmount: 1200, label: "Inscrição" },
       ],
     };
+    bookingState = {
+      id: 123,
+      price: 1200,
+      currency: "EUR",
+      organizationId: 20,
+      userId: "user-booking",
+      organization: {
+        feeMode: null,
+        platformFeeBps: null,
+        platformFeeFixedCents: null,
+        orgType: "EXTERNAL",
+      },
+    };
+    storeOrderState = {
+      id: 456,
+      subtotalCents: 2000,
+      shippingCents: 100,
+      discountCents: 100,
+      currency: "EUR",
+      userId: "user-store",
+      store: {
+        ownerOrganizationId: 30,
+        organization: {
+          feeMode: null,
+          platformFeeBps: null,
+          platformFeeFixedCents: null,
+          orgType: "EXTERNAL",
+        },
+      },
+      lines: [{ id: 1, quantity: 2, unitPriceCents: 1000 }],
+    };
     createdPayment = null;
     createdLedgerEntries = [];
     evaluateEventAccess.mockReset();
@@ -189,6 +228,7 @@ describe("createCheckout", () => {
 
   it("cria snapshot e ledger entries para TICKET_ORDER", async () => {
     const output = await createCheckout({
+      orgId: 10,
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
@@ -217,12 +257,14 @@ describe("createCheckout", () => {
       .mockReturnValueOnce({ id: "payment-1", status: "CREATED", pricingSnapshotHash: "hash" } as any);
 
     await createCheckout({
+      orgId: 10,
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
     });
 
     await createCheckout({
+      orgId: 10,
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-1",
@@ -234,6 +276,7 @@ describe("createCheckout", () => {
 
   it("cria snapshot para PADEL_REGISTRATION", async () => {
     const output = await createCheckout({
+      orgId: 11,
       sourceType: SourceType.PADEL_REGISTRATION,
       sourceId: REG_ID,
       idempotencyKey: "idem-2",
@@ -252,6 +295,7 @@ describe("createCheckout", () => {
     } as any);
 
     const output = await createCheckout({
+      orgId: 10,
       sourceType: SourceType.TICKET_ORDER,
       sourceId: ORDER_ID,
       idempotencyKey: "idem-3",
@@ -275,9 +319,10 @@ describe("createCheckout", () => {
 
     await expect(
       createCheckout({
+        orgId: 10,
         sourceType: SourceType.TICKET_ORDER,
         sourceId: ORDER_ID,
-        buyerIdentityRef: "identity-guest",
+        customerIdentityId: "identity-guest",
         idempotencyKey: "idem-guest",
       }),
     ).rejects.toThrow("GUEST_CHECKOUT_NOT_ALLOWED");
@@ -300,13 +345,41 @@ describe("createCheckout", () => {
 
     await expect(
       createCheckout({
+        orgId: 10,
         sourceType: SourceType.TICKET_ORDER,
         sourceId: ORDER_ID,
         inviteToken: "tok",
-        buyerIdentityRef: "identity-user",
+        customerIdentityId: "identity-user",
         idempotencyKey: "idem-access",
       }),
     ).rejects.toThrow("INVITE_TOKEN_REQUIRED");
     expect(evaluateEventAccess).toHaveBeenCalled();
   });
+
+  it("cria snapshot para BOOKING", async () => {
+    const output = await createCheckout({
+      orgId: 20,
+      sourceType: SourceType.BOOKING,
+      sourceId: "123",
+      idempotencyKey: "idem-booking",
+    });
+
+    expect(output.status).toBe("CREATED");
+    expect(createdPayment.organizationId).toBe(20);
+    expect(createdPayment.sourceType).toBe(SourceType.BOOKING);
+  });
+
+  it("cria snapshot para STORE_ORDER", async () => {
+    const output = await createCheckout({
+      orgId: 30,
+      sourceType: SourceType.STORE_ORDER,
+      sourceId: "456",
+      idempotencyKey: "idem-store",
+    });
+
+    expect(output.status).toBe("CREATED");
+    expect(createdPayment.organizationId).toBe(30);
+    expect(createdPayment.sourceType).toBe(SourceType.STORE_ORDER);
+  });
+
 });

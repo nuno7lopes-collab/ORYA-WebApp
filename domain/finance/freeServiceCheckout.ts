@@ -6,7 +6,7 @@ import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBook
 type FinalizeFreeServiceBookingParams = {
   bookingId: number;
   serviceId: number;
-  organizationId: number;
+  orgId: number;
   userId?: string | null;
   guestEmail?: string | null;
   currency?: string | null;
@@ -25,7 +25,7 @@ function buildFreeIntent(params: FinalizeFreeServiceBookingParams): Stripe.Payme
       serviceBooking: "1",
       bookingId: String(params.bookingId),
       serviceId: String(params.serviceId),
-      organizationId: String(params.organizationId),
+      orgId: String(params.orgId),
       userId: params.userId ?? "",
       guestEmail: params.guestEmail ?? "",
       paymentScenario: "FREE_CHECKOUT",
@@ -35,7 +35,6 @@ function buildFreeIntent(params: FinalizeFreeServiceBookingParams): Stripe.Payme
       grossAmountCents: "0",
       platformFeeCents: "0",
       payoutAmountCents: "0",
-      stripeFeeEstimateCents: "0",
       cardPlatformFeeCents: "0",
       cardPlatformFeeBps: "0",
       feeMode: "INCLUDED",

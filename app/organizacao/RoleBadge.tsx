@@ -1,6 +1,6 @@
 "use client";
 
-type Role = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER" | "VIEWER";
+type Role = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
 
 type Props = {
   role: Role;
@@ -14,7 +14,6 @@ const ROLE_STYLES: Record<Role, string> = {
   STAFF: "border-white/20 bg-white/10 text-white/80",
   TRAINER: "border-cyan-300/50 bg-cyan-400/10 text-cyan-50",
   PROMOTER: "border-lime-300/40 bg-lime-400/10 text-lime-50",
-  VIEWER: "border-white/10 bg-white/5 text-white/60",
 };
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -24,7 +23,6 @@ const ROLE_LABEL: Record<Role, string> = {
   STAFF: "Staff",
   TRAINER: "Treinador",
   PROMOTER: "Promoter",
-  VIEWER: "Viewer",
 };
 
 export function RoleBadge({ role, subtle }: Props) {

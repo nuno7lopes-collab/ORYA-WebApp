@@ -207,7 +207,15 @@ export async function autoGeneratePadelMatches({
   const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
   const config = await prisma.padelTournamentConfig.findUnique({
     where: { eventId },
-    select: { numberOfCourts: true, advancedSettings: true, format: true, ruleSetId: true, ruleSetVersionId: true },
+    select: {
+      numberOfCourts: true,
+      advancedSettings: true,
+      format: true,
+      ruleSetId: true,
+      ruleSetVersionId: true,
+      isInterclub: true,
+      teamSize: true,
+    },
   });
   const advanced = (config?.advancedSettings || {}) as {
     courtsFromClubs?: Array<{
@@ -225,6 +233,10 @@ export async function autoGeneratePadelMatches({
     scoreRules?: unknown;
   };
   const scoreRules = normalizePadelScoreRules(advanced.scoreRules);
+
+  if (config?.isInterclub) {
+    return { ok: false, error: "INTERCLUB_TEAM_ENGINE_REQUIRED" };
+  }
 
   type CourtSlot = { id: number | null; name: string; clubName: string | null; displayOrder: number };
   const courtsFromClubs = Array.isArray(advanced.courtsFromClubs)

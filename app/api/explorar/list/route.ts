@@ -213,15 +213,14 @@ async function _GET(req: NextRequest) {
         city: cityParam ?? null,
       },
     });
-    // Em caso de erro, devolve lista vazia mas não rebenta o frontend
     return jsonWrap(
       {
-        items: [],
-        pagination: { nextCursor: null, hasMore: false },
-        error: error instanceof Error ? error.message : "Erro desconhecido",
+        ok: false,
+        error: "INTERNAL_ERROR",
+        message: "Não foi possível carregar explorar.",
         ...(shouldExposeDetails() ? { details: toErrorDetails(error) } : {}),
       },
-      { status: 200 },
+      { status: 500 },
     );
   }
 }

@@ -104,7 +104,6 @@ const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<Organizati
   PROMOTER: {
     MARKETING: "EDIT",
   },
-  VIEWER: {},
 };
 
 type RolePackAccess = {
@@ -163,15 +162,16 @@ const ROLE_CHECKIN_ACCESS: Record<OrganizationMemberRole, CheckinAccessLevel> = 
   STAFF: "EDIT",
   TRAINER: "NONE",
   PROMOTER: "NONE",
-  VIEWER: "NONE",
 };
 
 const ADMIN_ROLE_SET = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
+const ROLE_PACK_ROLE_SET = new Set<OrganizationMemberRole>(["STAFF", "TRAINER"]);
 
 function shouldUseRolePack(role: OrganizationMemberRole | null | undefined, rolePack?: OrganizationRolePack | null) {
   if (!rolePack) return false;
-  if (!role) return true;
-  return !ADMIN_ROLE_SET.has(role);
+  if (!role) return false;
+  if (ADMIN_ROLE_SET.has(role)) return false;
+  return ROLE_PACK_ROLE_SET.has(role);
 }
 
 export function normalizeAccessLevel(value: string | null | undefined): ModuleAccessLevel | null {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { isStoreFeatureEnabled, isStorePublic } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -32,7 +32,7 @@ async function _GET(req: NextRequest) {
     if (!store) {
       return jsonWrap({ ok: false, error: "Store nao encontrada." }, { status: 404 });
     }
-    if (!isStorePublic(store)) {
+    if (!isPublicStore(store)) {
       return jsonWrap({ ok: false, error: "Loja fechada." }, { status: 403 });
     }
     if (store.catalogLocked) {

@@ -6,8 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { OrganizationModule, RefundReason } from "@prisma/client";
-import { mapV7StatusToLegacy } from "@/lib/entitlements/status";
+import { EntitlementStatus, OrganizationModule, RefundReason } from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -125,7 +124,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     await prisma.entitlement.updateMany({
       where: { purchaseId },
-      data: { status: mapV7StatusToLegacy("REVOKED") },
+      data: { status: EntitlementStatus.REVOKED },
     });
 
     await recordOrganizationAudit(prisma, {

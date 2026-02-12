@@ -2,11 +2,11 @@ import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
-import { canManageMembers, isOrgOwner } from "@/lib/organizationPermissions";
+import { canManageMembers } from "@/lib/organizationPermissions";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { setSoleOwner } from "@/lib/organizationRoles";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
-import { parseOrganizationId, resolveOrganizationIdFromParams, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { resolveGroupMemberForOrg, revokeGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
 import {
@@ -14,6 +14,7 @@ import {
   getEffectiveOrganizationMember,
   listEffectiveOrganizationMembers,
 } from "@/lib/organizationMembers";
+import { resolveRolePackForRole } from "@/lib/organizationRolePackPolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -60,11 +61,11 @@ async function _GET(req: NextRequest) {
 
     const url = new URL(req.url);
     const eventIdRaw = url.searchParams.get("eventId");
-    let organizationId =
-      resolveOrganizationIdFromParams(url.searchParams) ??
-      resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    const orgResolutionReason = orgResolution.ok ? null : orgResolution.reason;
+    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
 
-    if (!organizationId && eventIdRaw) {
+    if (!organizationId && orgResolutionReason === "MISSING" && eventIdRaw) {
       const eventId = Number(eventIdRaw);
       if (eventId && !Number.isNaN(eventId)) {
         const ev = await prisma.event.findUnique({
@@ -76,6 +77,12 @@ async function _GET(req: NextRequest) {
     }
 
     if (!organizationId) {
+      if (orgResolutionReason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolutionReason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
 
@@ -108,6 +115,7 @@ async function _GET(req: NextRequest) {
       return {
         userId: m.userId,
         role: m.role,
+        rolePack: m.rolePack,
         invitedByUserId: null,
         createdAt: m.createdAt,
         fullName: profile?.fullName ?? null,
@@ -151,9 +159,29 @@ async function _PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolution.reason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    const organizationId = orgResolution.organizationId;
     const targetUserId = typeof body?.userId === "string" ? body.userId : null;
     const role = typeof body?.role === "string" ? body.role.toUpperCase() : null;
+    const rolePackProvided =
+      body && typeof body === "object" && Object.prototype.hasOwnProperty.call(body, "rolePack");
+    const rolePackRaw =
+      rolePackProvided && body && typeof body === "object"
+        ? (body as Record<string, unknown>).rolePack
+        : undefined;
 
     if (!organizationId || !targetUserId || !role) {
       return fail(400, "INVALID_PAYLOAD");
@@ -161,9 +189,15 @@ async function _PATCH(req: NextRequest) {
     if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
       return fail(400, "INVALID_ROLE");
     }
-    if (role === "VIEWER") {
-      return fail(400, "ROLE_NOT_ALLOWED");
+    const rolePackPolicy = resolveRolePackForRole({
+      role: role as OrganizationMemberRole,
+      rolePackRaw,
+      rolePackProvided,
+    });
+    if (!rolePackPolicy.ok) {
+      return fail(400, rolePackPolicy.errorCode);
     }
+    const normalizedRolePack = rolePackPolicy.rolePack;
 
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
@@ -257,6 +291,7 @@ async function _PATCH(req: NextRequest) {
         organizationId,
         userId: targetUserId,
         role: role as OrganizationMemberRole,
+        rolePack: normalizedRolePack,
         client: tx,
       });
     });
@@ -286,7 +321,12 @@ async function _PATCH(req: NextRequest) {
       entityId: targetUserId,
       correlationId: targetUserId,
       toUserId: targetUserId,
-      metadata: { fromRole: targetMembership.role, toRole: role },
+      metadata: {
+        fromRole: targetMembership.role,
+        fromRolePack: targetMembership.rolePack ?? null,
+        toRole: role,
+        toRolePack: normalizedRolePack,
+      },
       ip: resolveIp(req),
       userAgent: req.headers.get("user-agent"),
     });
@@ -322,7 +362,17 @@ async function _DELETE(req: NextRequest) {
     }
 
     const url = new URL(req.url);
-    const organizationId = resolveOrganizationIdFromParams(url.searchParams);
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolution.reason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    const organizationId = orgResolution.organizationId;
     const targetUserId = url.searchParams.get("userId");
 
     if (!organizationId || !targetUserId) {

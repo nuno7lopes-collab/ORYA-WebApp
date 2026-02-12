@@ -71,7 +71,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       status: true,
       score: true,
       roundLabel: true,
-      stage: { select: { tournamentId: true, tournament: { select: { eventId: true } } } },
+      stage: {
+        select: {
+          tournamentId: true,
+          tournament: { select: { eventId: true, event: { select: { templateType: true } } } },
+        },
+      },
     },
   });
   if (!match || match.stage.tournamentId !== tournamentId) {
@@ -93,6 +98,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       );
     }
     return fail(403, "FORBIDDEN");
+  }
+  if (match.stage.tournament.event?.templateType === "PADEL") {
+    return fail(409, "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN");
   }
 
   const body = await req.json().catch(() => ({}));

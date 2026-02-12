@@ -28,14 +28,14 @@ import {
   getCheckinResultFromExisting,
   getEntitlementEffectiveStatus,
   isConsumed,
-  mapLegacyStatusToV7,
+  mapEntitlementStatusToV7,
   resolveDisputeOutcome,
 } from "@/lib/entitlements/status";
 import { resolveActions } from "@/lib/entitlements/accessResolver";
 
 describe("entitlements v7 compatibility", () => {
-  it("legacy mapper mantém ACTIVE como efetivo", () => {
-    expect(mapLegacyStatusToV7(EntitlementStatus.ACTIVE)).toBe("ACTIVE");
+  it("status mapper mantém ACTIVE como efetivo", () => {
+    expect(mapEntitlementStatusToV7(EntitlementStatus.ACTIVE)).toBe("ACTIVE");
     expect(getEntitlementEffectiveStatus({ status: EntitlementStatus.ACTIVE })).toBe("ACTIVE");
   });
 
@@ -65,16 +65,16 @@ describe("entitlements v7 compatibility", () => {
     ).toBe(true);
   });
 
-  it("dispute.created/won/lost mapeia Ticket + Entitlement conforme v7", () => {
-    expect(resolveDisputeOutcome("created")).toEqual({
+  it("payment.dispute_opened/closed mapeia Ticket + Entitlement conforme v7", () => {
+    expect(resolveDisputeOutcome("OPENED")).toEqual({
       entitlementStatus: "SUSPENDED",
       ticketStatus: "DISPUTED",
     });
-    expect(resolveDisputeOutcome("won")).toEqual({
+    expect(resolveDisputeOutcome("WON")).toEqual({
       entitlementStatus: "ACTIVE",
       ticketStatus: "ACTIVE",
     });
-    expect(resolveDisputeOutcome("lost")).toEqual({
+    expect(resolveDisputeOutcome("LOST")).toEqual({
       entitlementStatus: "REVOKED",
       ticketStatus: "CHARGEBACK_LOST",
     });

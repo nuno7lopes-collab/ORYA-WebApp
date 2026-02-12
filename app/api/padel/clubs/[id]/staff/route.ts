@@ -1,17 +1,47 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const PADEL_CLUB_STAFF_ROLES = ["ADMIN_CLUBE", "DIRETOR_PROVA", "STAFF"] as const;
+type PadelClubStaffRole = (typeof PADEL_CLUB_STAFF_ROLES)[number];
+const PADEL_CLUB_STAFF_ROLE_SET = new Set<PadelClubStaffRole>(PADEL_CLUB_STAFF_ROLES);
+
+const PADEL_CLUB_STAFF_ROLE_ALIASES: Record<string, PadelClubStaffRole> = {
+  ADMIN: "ADMIN_CLUBE",
+  ADMIN_CLUB: "ADMIN_CLUBE",
+  CLUB_ADMIN: "ADMIN_CLUBE",
+  DIRETOR: "DIRETOR_PROVA",
+  DIRECTOR: "DIRETOR_PROVA",
+  ARBITRO: "DIRETOR_PROVA",
+  ARBITRO_PROVA: "DIRETOR_PROVA",
+  REFEREE: "DIRETOR_PROVA",
+};
+
+function normalizePadelClubStaffRole(value: unknown): PadelClubStaffRole | null {
+  if (typeof value !== "string") return null;
+  const compact = value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (PADEL_CLUB_STAFF_ROLE_SET.has(compact as PadelClubStaffRole)) {
+    return compact as PadelClubStaffRole;
+  }
+  return PADEL_CLUB_STAFF_ROLE_ALIASES[compact] ?? null;
+}
 
 async function _GET(req: NextRequest) {
   const clubId = readNumericParam(undefined, req, "clubs");
@@ -21,7 +51,20 @@ async function _GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: readRoles });
+  const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: readRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const viewPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -41,7 +84,12 @@ async function _GET(req: NextRequest) {
     orderBy: [{ createdAt: "desc" }],
   });
 
-  return jsonWrap({ ok: true, items: staff }, { status: 200 });
+  const normalized = staff.map((item) => ({
+    ...item,
+    role: normalizePadelClubStaffRole(item.role) ?? item.role,
+  }));
+
+  return jsonWrap({ ok: true, items: normalized }, { status: 200 });
 }
 
 async function _POST(req: NextRequest) {
@@ -55,7 +103,24 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  const orgResolution = resolveOrganizationIdStrict({
+    req,
+    body,
+    allowFallback: false,
+  });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: writeRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const editPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,
@@ -73,15 +138,17 @@ async function _POST(req: NextRequest) {
   const staffId = typeof body.id === "number" ? body.id : null;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const userId = typeof body.userId === "string" ? body.userId : null;
-  const role = typeof body.role === "string" ? body.role.trim() : "";
   const inheritToEvents = typeof body.inheritToEvents === "boolean" ? body.inheritToEvents : true;
-  const padelRole = typeof body.padelRole === "string" ? body.padelRole.trim() : role;
+  const padelRole = normalizePadelClubStaffRole(body.padelRole ?? body.role);
 
   if (!email && !userId) {
     return jsonWrap({ ok: false, error: "Indica o email ou userId do staff." }, { status: 400 });
   }
   if (!padelRole) {
-    return jsonWrap({ ok: false, error: "Define um papel específico para Padel." }, { status: 400 });
+    return jsonWrap(
+      { ok: false, error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}` },
+      { status: 400 },
+    );
   }
 
   try {
@@ -142,7 +209,20 @@ async function _DELETE(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, { roles: writeRoles });
+  const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+  if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_ID_CONFLICT" }, { status: 400 });
+  }
+  if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+    return jsonWrap({ ok: false, error: "INVALID_ORGANIZATION_ID" }, { status: 400 });
+  }
+  const explicitOrganizationId = orgResolution.ok ? orgResolution.organizationId : null;
+
+  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+    roles: writeRoles,
+    organizationId: explicitOrganizationId,
+    allowFallback: !explicitOrganizationId,
+  });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
   const editPermission = await ensureMemberModuleAccess({
     organizationId: organization.id,

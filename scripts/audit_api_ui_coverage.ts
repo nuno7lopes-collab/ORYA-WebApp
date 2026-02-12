@@ -21,8 +21,8 @@ type StringMap = Map<string, string[]>;
 const ROOT = process.cwd();
 const API_ROOT = path.join(ROOT, "app", "api");
 const REPORT_DIR = path.join(ROOT, "reports");
-const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage.csv");
-const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans.md");
+const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage_v1.csv");
+const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans_v1.md");
 const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 const MAX_EXPR_CANDIDATES = 24;
@@ -32,9 +32,6 @@ const MISSING_API_ALLOWLIST = new Set([
 ]);
 
 const ORPHAN_API_ALLOWLIST = new Set<string>([]);
-const ORPHAN_API_ALLOWLIST_PREFIXES = [
-  "/api/organizacao/",
-];
 
 const UI_ROOTS = [
   path.join(ROOT, "app"),
@@ -120,8 +117,7 @@ function isUiExempt(route: string) {
 }
 
 function isOrphanAllowlisted(route: string) {
-  if (ORPHAN_API_ALLOWLIST.has(route)) return true;
-  return ORPHAN_API_ALLOWLIST_PREFIXES.some((prefix) => route.startsWith(prefix));
+  return ORPHAN_API_ALLOWLIST.has(route);
 }
 
 function unique(values: string[]) {

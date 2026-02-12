@@ -43,7 +43,3 @@ export function isPublicStore(store: StoreLike) {
 export function canCheckout(store: StoreLike) {
   return resolveStoreState(store) === "ACTIVE";
 }
-
-// Backwards-compatible aliases for existing imports.
-export const isStorePublic = isPublicStore;
-export const canCheckoutStore = canCheckout;

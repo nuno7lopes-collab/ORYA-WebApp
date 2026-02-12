@@ -201,7 +201,6 @@ async function _POST(
     });
     const totalCents = combinedFees.totalCents;
     const platformFeeCents = Math.min(pricing.platformFeeCents, totalCents);
-    const stripeFeeEstimateCents = 0;
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
     const sourceId = String(booking.id);
     const pendingPayment = await prisma.payment.findFirst({
@@ -223,8 +222,8 @@ async function _POST(
       feeFixed: pricing.feeFixedApplied,
     });
     const resolvedSnapshot = {
-      organizationId: booking.organizationId,
-      buyerIdentityId: booking.userId ?? null,
+      orgId: booking.organizationId,
+      customerIdentityId: booking.userId ?? null,
       snapshot: {
         currency,
         gross: totalCents,
@@ -259,7 +258,7 @@ async function _POST(
       const freeCheckout = await finalizeFreeServiceBooking({
         bookingId: booking.id,
         serviceId: booking.serviceId,
-        organizationId: booking.organizationId,
+        orgId: booking.organizationId,
         userId: booking.userId ?? profile.id,
         guestEmail: booking.guestEmail ?? null,
         currency,
@@ -281,6 +280,7 @@ async function _POST(
     try {
       const ensured = await ensurePaymentIntent({
         purchaseId,
+        orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
         amountCents: totalCents,
@@ -293,7 +293,7 @@ async function _POST(
           serviceBooking: "1",
           bookingId: String(booking.id),
           serviceId: String(booking.serviceId),
-          organizationId: String(booking.organizationId),
+          orgId: String(booking.organizationId),
           userId: booking.userId ?? "",
           policyId: booking.service.policyId ? String(booking.service.policyId) : "",
           platformFeeCents: String(platformFeeCents),
@@ -304,7 +304,6 @@ async function _POST(
           sourceType: SourceType.BOOKING,
           sourceId,
           currency,
-          stripeFeeEstimateCents: String(stripeFeeEstimateCents),
         },
         orgContext: {
           stripeAccountId: booking.service.organization.stripeAccountId ?? null,
@@ -315,7 +314,7 @@ async function _POST(
         requireStripe: !isPlatformOrg,
         clientIdempotencyKey: idempotencyKey,
         resolvedSnapshot,
-        buyerIdentityRef: booking.userId ?? null,
+        customerIdentityId: booking.userId ?? null,
         paymentEvent: {
           userId: booking.userId ?? null,
           amountCents: totalCents,

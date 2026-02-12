@@ -1,4 +1,4 @@
-import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
+import { OrganizationRolePack } from "@prisma/client";
 
 export type OrganizationUiRole =
   | "OWNER"
@@ -6,8 +6,7 @@ export type OrganizationUiRole =
   | "ADMIN"
   | "STAFF"
   | "TRAINER"
-  | "PROMOTER"
-  | "VIEWER";
+  | "PROMOTER";
 
 const ROLE_SET = new Set<OrganizationUiRole>([
   "OWNER",
@@ -16,7 +15,6 @@ const ROLE_SET = new Set<OrganizationUiRole>([
   "STAFF",
   "TRAINER",
   "PROMOTER",
-  "VIEWER",
 ]);
 
 const ROLE_PACK_SET = new Set<OrganizationRolePack>([
@@ -44,7 +42,6 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
   const isStaff = normalized === "STAFF";
   const isTrainer = normalized === "TRAINER";
   const isPromoter = normalized === "PROMOTER";
-  const isViewer = normalized === "VIEWER";
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
   const isManager = isAdminOrAbove;
   const isPromoterOnly = isPromoter && !isAdminOrAbove;
@@ -57,7 +54,6 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
     isStaff,
     isTrainer,
     isPromoter,
-    isViewer,
     isAdminOrAbove,
     isPromoterOnly,
     canViewFinance: isManager,

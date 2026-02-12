@@ -12,7 +12,8 @@ import {
 } from "@/domain/finance/gateway/stripeGateway";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
-import { PaymentEventSource, PaymentStatus, type SourceType } from "@prisma/client";
+import { PaymentEventSource, PaymentStatus } from "@prisma/client";
+import { type FinanceSourceType } from "@/domain/sourceType";
 import { logError } from "@/lib/observability/logger";
 
 const TERMINAL_INTENT_STATUSES = new Set([
@@ -35,7 +36,8 @@ function normalizePurchaseId(purchaseId: string) {
 
 export type EnsurePaymentIntentInput = {
   purchaseId: string;
-  sourceType: SourceType;
+  orgId: number;
+  sourceType: FinanceSourceType;
   sourceId: string;
   amountCents: number;
   currency: string;
@@ -45,7 +47,7 @@ export type EnsurePaymentIntentInput = {
   requireStripe: boolean;
   clientIdempotencyKey?: string | null;
   resolvedSnapshot?: ResolvedSnapshotOverride | null;
-  buyerIdentityRef?: string | null;
+  customerIdentityId?: string | null;
   inviteToken?: string | null;
   skipAccessChecks?: boolean;
   paymentEvent?: {
@@ -67,18 +69,22 @@ export type EnsurePaymentIntentResult = {
 export async function ensurePaymentIntent(
   input: EnsurePaymentIntentInput,
 ): Promise<EnsurePaymentIntentResult> {
+  if (!Number.isFinite(input.orgId) || input.orgId <= 0) {
+    throw new Error("ORG_ID_REQUIRED");
+  }
   const purchaseId = normalizePurchaseId(input.purchaseId);
   const checkoutIdempotencyKey = checkoutKey(purchaseId);
   const requestedAmount = Math.max(0, input.amountCents);
 
   // Materialize the financial SSOT (Payment + Ledger) before touching Stripe.
   await createCheckout({
+    orgId: input.orgId,
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     idempotencyKey: checkoutIdempotencyKey,
     paymentId: purchaseId,
     resolvedSnapshot: input.resolvedSnapshot ?? null,
-    buyerIdentityRef: input.buyerIdentityRef ?? null,
+    customerIdentityId: input.customerIdentityId ?? null,
     inviteToken: input.inviteToken ?? null,
     skipAccessChecks: input.skipAccessChecks ?? false,
   });
@@ -197,6 +203,7 @@ export async function ensurePaymentIntent(
     ...input.metadata,
     purchaseId,
     paymentId: purchaseId,
+    orgId: String(input.orgId),
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     idempotencyKey: checkoutIdempotencyKey,
