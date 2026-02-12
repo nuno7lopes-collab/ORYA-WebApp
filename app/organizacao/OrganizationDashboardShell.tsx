@@ -12,7 +12,6 @@ import { ToastProvider } from "@/components/ui/toast-provider";
 import {
   appendOrganizationIdToHref,
   parseOrganizationId,
-  parseOrganizationIdFromPathname,
   setOrganizationIdInHref,
 } from "@/lib/organizationIdUtils";
 
@@ -82,6 +81,15 @@ const DashboardShellSkeleton = () => (
     <SkeletonBlock className="h-40" />
   </div>
 );
+
+function parseOrganizationIdFromPathnameSafe(pathname: string | null | undefined): number | null {
+  if (!pathname) return null;
+  const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
+  if (canonicalMatch?.[1]) return parseOrganizationId(canonicalMatch[1]);
+  const legacyMatch = pathname.match(/^\/organizacao\/([^/]+)(?:\/|$)/i);
+  if (legacyMatch?.[1]) return parseOrganizationId(legacyMatch[1]);
+  return null;
+}
 
 export default function OrganizationDashboardShell({
   activeOrg,
@@ -163,7 +171,7 @@ export default function OrganizationDashboardShell({
 
   useEffect(() => {
     const requestedOrgId =
-      parseOrganizationId(searchParams?.get("organizationId")) ?? parseOrganizationIdFromPathname(pathname);
+      parseOrganizationId(searchParams?.get("organizationId")) ?? parseOrganizationIdFromPathnameSafe(pathname);
     if (!requestedOrgId) return;
     if (activeOrg?.id === requestedOrgId) return;
     if (syncInFlightRef.current) return;
