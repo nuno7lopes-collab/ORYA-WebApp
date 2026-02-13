@@ -632,13 +632,11 @@ async function _PATCH(req: NextRequest) {
             orderBy: { moduleKey: "asc" },
           })
         ).map((module) => module.moduleKey);
-    type AllowedModule = Exclude<OrganizationModule, "ANALYTICS">;
     const nextModules = Array.from(
       new Set(
         nextModulesRaw
-          .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
           .filter(
-            (module): module is AllowedModule =>
+            (module): module is OrganizationModule =>
               typeof module === "string" && module.length > 0,
           ),
       ),

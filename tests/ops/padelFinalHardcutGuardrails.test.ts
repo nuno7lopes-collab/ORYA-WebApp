@@ -68,6 +68,15 @@ describe("padel final hard-cut guardrails", () => {
     expect(assignRoute).toContain("winnerParticipantId");
   });
 
+  it("remove dependência pairing-centric no scheduling canónico de calendário", () => {
+    const calendarRoute = readLocal("app/api/padel/calendar/route.ts");
+    expect(calendarRoute).toContain("resolveMatchPlayerProfileIds");
+    expect(calendarRoute).toContain("resolveMatchUserIds");
+    expect(calendarRoute).not.toContain("pairingAId");
+    expect(calendarRoute).not.toContain("pairingBId");
+    expect(calendarRoute).not.toContain("winnerPairingId");
+  });
+
   it("mantém consistência de desempate determinístico no live canónico padel", () => {
     const liveCanonical = readLocal("app/api/live/events/[slug]/route.ts");
     const livehubDeprecated = readLocal("app/api/livehub/[slug]/route.ts");
@@ -82,6 +91,18 @@ describe("padel final hard-cut guardrails", () => {
     expect(liveClient).not.toContain("liveHubConfig");
     expect(livehubDeprecated).toContain("LIVEHUB_ROUTE_DEPRECATED");
     expect(livehubDeprecated).toContain("/api/live/events/");
+  });
+
+  it("usa naming liveVisibility no frontend organizacional sem aliases liveHub", () => {
+    const createPage = readLocal("app/organizacao/(dashboard)/eventos/novo/page.tsx");
+    const editPage = readLocal("app/organizacao/(dashboard)/eventos/EventEditClient.tsx");
+    const livePrep = readLocal("app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx");
+    const liveDashboard = readLocal("app/organizacao/(dashboard)/eventos/EventLiveDashboardClient.tsx");
+    for (const content of [createPage, editPage, livePrep, liveDashboard]) {
+      expect(content).toContain("liveVisibility");
+      expect(content).not.toContain("LiveHubVisibility");
+      expect(content).not.toContain("setLiveHubVisibility");
+    }
   });
 
   it("força rotação individual em AMERICANO/MEXICANO no gerador canónico", () => {
