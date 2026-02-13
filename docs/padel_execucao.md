@@ -28,8 +28,38 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - `3` disputas inválidas -> `SUSPENSION` automática (15 dias);
     - `5` não-validados pendentes -> `BLOCK_NEW_MATCHES` automático;
     - regularização abaixo do threshold resolve bloqueio automático e atualiza perfil.
+  - hard-cut de parceria no produto:
+    - wizard deixa de criar clube parceiro (`createPartnerClubFromDirectory` removido);
+    - seleção operacional passa a clubes parceiros já provisionados por acordo aprovado.
+  - `POST /api/padel/clubs` endurecido:
+    - `kind=PARTNER` exige acordo `APPROVED` ativo (`AGREEMENT_REQUIRED`);
+    - evita duplo vínculo (`PARTNER_CLUB_ALREADY_LINKED`);
+    - liga `partnerClubId` no acordo quando cria parceiro válido.
+  - aprovação de acordo passou a provisionar parceiro de forma canónica:
+    - auto-criação/recuperação de `PadelClub kind=PARTNER`;
+    - sync imediato de courts proxy/snapshot (`syncPartnerClubCourts`).
+  - Hub Web de clube ganhou painel operacional de parcerias:
+    - nova aba `Parcerias` com estados, ações (`approve/pause/revoke`), overrides e casos `PENDING_COMPENSATION`.
+  - `GET /api/padel/partnerships/agreements` reforçado com métricas operacionais:
+    - `windowsCount`, `activeWindowsCount`, `activeGrantsCount`.
+  - paridade adicional de contrato canónico de standings:
+    - widget/public/mobile atualizados para `entityType + rows + groups`;
+    - `EventLiveClient` remove fallback pairing-only em tabelas de standings;
+    - livehub padel usa `drawOrderSeed` determinístico por `{event,category,format}`.
+  - enforcement de sanções também em claim de convite:
+    - `POST /api/padel/pairings/claim/[token]` bloqueia ação com `RANKING_SANCTION_BLOCK`.
+  - geração `AMERICANO`/`MEXICANO` evoluída para rotação individual prática:
+    - criação de duplas sintéticas por ronda com base em `PadelPlayerProfile`;
+    - `BYE_NEUTRAL` explícito para sobras;
+    - rounds por rotação determinística (com seed) e score `TIMED_GAMES`.
+  - `MEXICANO` com recomposição por performance no live:
+    - `POST /api/padel/live/timer/next-round` agora reatribui a ronda alvo com base em standings reais da ronda anterior;
+    - penalização de repetição direta de parceiro/adversário na escolha de padrão de quarteto;
+    - limpeza de matches sem entrada e queda segura para `BYE_NEUTRAL` quando há sobras.
+  - novo domínio dedicado à recomposição Mexicano:
+    - `domain/padel/mexicanoRecomposition.ts` com relações de ronda e geração determinística de entradas.
 - Testes desta ronda:
-  - `vitest` Padel/ops: `34 files`, `99 tests`, tudo verde.
+  - `vitest` Padel/ops: `36 files`, `108 tests`, tudo verde.
 
 ## 3) Princípios de execução
 - SSOT-first: nenhuma implementação fora de contrato normativo (`docs/ssot_registry_v1.md` + `docs/padel.md`).
