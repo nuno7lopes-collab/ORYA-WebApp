@@ -96,10 +96,23 @@ describe("padel match delay route", () => {
 
     const res = await POST(req, { params: Promise.resolve({ id: "50" }) });
     expect(res.status).toBe(202);
+    expect(recordOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          delayPolicy: "CASCADE_SAME_COURT",
+        }),
+      }),
+      expect.anything(),
+    );
     expect(recordOrganizationAuditSafe).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "PADEL_MATCH_DELAY",
-        metadata: expect.objectContaining({ matchId: 50, eventId: 10, reason: "rain" }),
+        metadata: expect.objectContaining({
+          matchId: 50,
+          eventId: 10,
+          reason: "rain",
+          delayPolicy: "CASCADE_SAME_COURT",
+        }),
       }),
     );
   });

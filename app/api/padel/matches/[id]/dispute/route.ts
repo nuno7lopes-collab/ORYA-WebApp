@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -10,10 +10,16 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import {
+  listTournamentDirectorUserIds,
+  normalizeConfirmationSource,
+  resolveIncidentAuthority,
+} from "@/domain/padel/incidentGovernance";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
-const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
+const RESOLUTION_STATUSES = new Set(["CONFIRMED", "CORRECTED", "VOIDED"]);
 
 const asScoreObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -58,6 +64,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const reason = normalizeReason(body?.reason);
   if (!reason || reason.length < 5) {
     return jsonWrap({ ok: false, error: "INVALID_REASON" }, { status: 400 });
+  }
+  if (body?.confirmationSource === undefined || body?.confirmationSource === null) {
+    return jsonWrap({ ok: false, error: "MISSING_CONFIRMATION_SOURCE" }, { status: 400 });
+  }
+  const parsedOpenSource =
+    body?.confirmationSource === undefined || body?.confirmationSource === null
+      ? null
+      : normalizeConfirmationSource(body?.confirmationSource);
+  if (!parsedOpenSource) {
+    return jsonWrap({ ok: false, error: "INVALID_CONFIRMATION_SOURCE" }, { status: 400 });
   }
 
   const match = await prisma.eventMatchSlot.findUnique({
@@ -111,6 +127,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       : buildRuleSnapshot(config ? { ruleSetId: config.ruleSetId ?? null, ruleSetVersionId: config.ruleSetVersionId ?? null } : null);
 
   const nowIso = new Date().toISOString();
+  const disputeOpenedSource = parsedOpenSource ?? (participant ? "WEB_PUBLIC" : "WEB_ORGANIZATION");
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.event.id,
@@ -126,6 +143,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         disputeReason: reason,
         disputedAt: nowIso,
         disputedBy: user.id,
+        disputeOpenedSource,
         disputeResolvedAt: null,
         disputeResolvedBy: null,
         disputeResolutionNote: null,
@@ -141,6 +159,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       matchId: match.id,
       eventId: match.event.id,
       reason,
+      disputeOpenedSource,
     },
   });
 
@@ -166,6 +185,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       id: true,
       status: true,
       score: true,
+      roundType: true,
+      roundLabel: true,
       event: { select: { id: true, organizationId: true } },
     },
   });
@@ -187,9 +208,6 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     required: "EDIT",
   });
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-  if (!adminRoles.has(membership.role)) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-  }
 
   const score = asScoreObject(match.score);
   if (score.disputeStatus !== "OPEN") {
@@ -206,6 +224,32 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const resolutionNote = normalizeReason(body?.resolutionNote ?? body?.note);
+  if (body?.confirmationSource === undefined || body?.confirmationSource === null) {
+    return jsonWrap({ ok: false, error: "MISSING_CONFIRMATION_SOURCE" }, { status: 400 });
+  }
+  if (body?.resolutionStatus === undefined || body?.resolutionStatus === null) {
+    return jsonWrap({ ok: false, error: "MISSING_RESOLUTION_STATUS" }, { status: 400 });
+  }
+  const resolutionStatusRaw =
+    typeof body?.resolutionStatus === "string" ? body.resolutionStatus.trim().toUpperCase() : "";
+  const resolutionStatus = RESOLUTION_STATUSES.has(resolutionStatusRaw) ? resolutionStatusRaw : null;
+  if (!resolutionStatus) {
+    return jsonWrap({ ok: false, error: "INVALID_RESOLUTION_STATUS" }, { status: 400 });
+  }
+
+  const authority = await resolveIncidentAuthority({
+    eventId: match.event.id,
+    organizationId: match.event.organizationId,
+    actorUserId: user.id,
+    membershipRole: membership.role,
+    roundType: match.roundType,
+    roundLabel: match.roundLabel,
+    requestedConfirmedByRole: body?.confirmedByRole,
+    requestedConfirmationSource: body?.confirmationSource,
+  });
+  if (!authority.ok) {
+    return jsonWrap({ ok: false, error: authority.error }, { status: authority.status });
+  }
 
   const nowIso = new Date().toISOString();
   const { match: updated } = await updatePadelMatch({
@@ -220,8 +264,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         ...score,
         ruleSnapshot,
         disputeStatus: "RESOLVED",
+        disputeResolutionStatus: resolutionStatus,
         disputeResolvedAt: nowIso,
         disputeResolvedBy: user.id,
+        disputeResolvedRole: authority.confirmedByRole,
+        disputeResolutionSource: authority.confirmationSource,
         ...(resolutionNote ? { disputeResolutionNote: resolutionNote } : {}),
       },
     },
@@ -234,9 +281,42 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     metadata: {
       matchId: match.id,
       eventId: match.event.id,
+      resolutionStatus,
       resolutionNote: resolutionNote || null,
+      confirmedByRole: authority.confirmedByRole,
+      confirmationSource: authority.confirmationSource,
     },
   });
+
+  if (authority.confirmedByRole === "REFEREE") {
+    const directorUserIds = await listTournamentDirectorUserIds({
+      eventId: match.event.id,
+      organizationId: match.event.organizationId,
+      excludeUserId: user.id,
+    });
+    for (const directorUserId of directorUserIds) {
+      const allow = await shouldNotify(directorUserId, "SYSTEM_ANNOUNCE");
+      if (!allow) continue;
+      await createNotification({
+        userId: directorUserId,
+        type: "SYSTEM_ANNOUNCE",
+        title: "Disputa resolvida por árbitro",
+        body: `Jogo #${match.id}: disputa resolvida (${resolutionStatus}).`,
+        organizationId: match.event.organizationId,
+        eventId: match.event.id,
+        ctaUrl: `/organizacao/eventos/${match.event.id}`,
+        dedupeKey: `padel_dispute_referee_notify:${match.id}:${resolutionStatus}`,
+        payload: {
+          kind: "PADEL_DISPUTE_REFEREE_RESOLVED",
+          matchId: match.id,
+          eventId: match.event.id,
+          resolutionStatus,
+          confirmedByRole: authority.confirmedByRole,
+          confirmationSource: authority.confirmationSource,
+        },
+      });
+    }
+  }
 
   return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }

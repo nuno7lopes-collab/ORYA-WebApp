@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationMemberRole, OrganizationModule, PadelTournamentLifecycleStatus, SourceType, TournamentFormat } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, PadelTournamentLifecycleStatus, PadelTournamentRole, SourceType, TournamentFormat } from "@prisma/client";
 import {
   canTransitionLifecycle,
   getAllowedLifecycleTransitions,
@@ -160,7 +160,7 @@ async function _POST(req: NextRequest) {
   if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   if (nextStatus === PadelTournamentLifecycleStatus.PUBLISHED) {
-    const [config, categoryLinks] = await Promise.all([
+    const [config, categoryLinks, directorCount] = await Promise.all([
       prisma.padelTournamentConfig.findUnique({
         where: { eventId: event.id },
         select: {
@@ -175,6 +175,13 @@ async function _POST(req: NextRequest) {
       prisma.padelEventCategoryLink.findMany({
         where: { eventId: event.id, isEnabled: true },
         select: { id: true, pricePerPlayerCents: true, currency: true },
+      }),
+      prisma.padelTournamentRoleAssignment.count({
+        where: {
+          eventId: event.id,
+          organizationId: event.organizationId,
+          role: PadelTournamentRole.DIRETOR_PROVA,
+        },
       }),
     ]);
     const missing: string[] = [];
@@ -204,6 +211,9 @@ async function _POST(req: NextRequest) {
     }
     if (registrationEndsAt && event.startsAt && registrationEndsAt >= event.startsAt) {
       missing.push("REGISTRATION_END_AFTER_START");
+    }
+    if (directorCount < 1) {
+      missing.push("TOURNAMENT_DIRECTOR_REQUIRED");
     }
     if (missing.length > 0) {
       return jsonWrap({ ok: false, error: "TOURNAMENT_NOT_READY", missing }, { status: 409 });

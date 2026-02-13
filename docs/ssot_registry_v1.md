@@ -54,14 +54,25 @@ Atualizado: 2026-02-12
 
 ### 00.6 Registo de Decisão Normativa (NORMATIVO)
 - Decisões FECHADO NÃO dependem de drafts/ficheiros temporários para serem válidas.
-- Cada decisão FECHADO DEVE incluir no SSOT (na secção correspondente):
+- Regra `forward-only` (ciclo ativo): o requisito de metadados obrigatórios aplica-se a:
+  - novas decisões FECHADO;
+  - decisões FECHADO alteradas a partir de `2026-02-12`.
+- Cada decisão FECHADO nova/alterada DEVE incluir no SSOT (na secção correspondente):
   - `decisionId`
   - `owner`
   - `approvedAt`
   - `scope`
   - `rationale`
   - `migrationImpact`
+- Decisões FECHADO históricas sem metadados completos não bloqueiam este ciclo, desde que:
+  - constem no ledger de transição abaixo; e
+  - não sejam alteradas sem receber metadados completos.
 - `docs/planning_registry_v1.md` pode manter contexto e backlog, mas nunca é pré‑requisito de validade normativa.
+
+#### 00.6.1 Ledger de transição (forward-only)
+| decisionId | owner | approvedAt | scope | status | rationale | migrationImpact |
+| --- | --- | --- | --- | --- | --- | --- |
+| SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | web legado passa a `301`; API legado passa a `410`; consumo frontend/mobile passa para `/org` e `/api/org*` |
 ---
 
 ## 01 Global Invariants (I*)
@@ -2170,8 +2181,8 @@ Definir o gate canónico de email oficial verificado para ações sensíveis de 
   "errorCode": "OFFICIAL_EMAIL_NOT_VERIFIED",
   "message": "Email oficial por verificar para esta ação.",
   "email": "finance@org.pt",
-  "verifyUrl": "/organizacao/settings?tab=official-email",
-  "nextStepUrl": "/organizacao/settings?tab=official-email",
+  "verifyUrl": "/org/:orgId/settings?tab=official-email",
+  "nextStepUrl": "/org/:orgId/settings?tab=official-email",
   "reasonCode": "PAYOUTS_SETTINGS",
   "retryable": false
 }
@@ -2650,7 +2661,8 @@ D05.01) Resolução de organização é determinística
 	•	Cookie pode existir apenas como conveniência (redirect inicial), não como base de autorização.
 	•	RBAC avalia sempre com orgId explícito.
 	•	Qualquer fallback (cookie/lastUsedAt) é permitido apenas para redirect/UI. Nunca para autorização.
-	•	Alias legado (compatibilidade): /organizacao/* → redirect 301 para /org/:orgId/* (apenas UI).
+	•	Alias legado web (compatibilidade): `/organizacao/*` → `301` para `/org/:orgId/*` (apenas UI; orgId resolvido por query/cookie só para redirect).
+	•	Namespace legado API: `/api/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
 
 D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
 	•	Exige reautenticação/2FA recente + `reasonCode` obrigatório para:
@@ -3006,6 +3018,9 @@ D18.01) Verdade única de jogo Padel (FECHADO)
 D18.02) Agenda sem conflitos entre módulos (FECHADO)
 	•	Reservas, aulas, jogos e bloqueios partilham o mesmo motor de conflito.
 	•	Nenhuma rota que ocupa recurso/campo pode contornar a Agenda Engine.
+	•	Em ocupação multi-recurso, `first-confirmed` só é válido com commit atómico de `slot + resourceClaims[] + locks` na mesma transação.
+	•	Se qualquer claim falhar (conflito/validação), a operação deve fazer rollback total (sem estado parcial).
+	•	Write-path concorrente para o mesmo recurso/janela deve aplicar lock técnico obrigatório.
 
 D18.03) Agendamento por `tournamentMatch` em Padel (FECHADO)
 	•	Em `templateType=PADEL`, alterações de horário/campo por write direto em `TournamentMatch` são proibidas.
@@ -3042,9 +3057,13 @@ D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Autorização canónica (quem pode executar ação) é definida por RBAC organizacional (`OrganizationMemberRole` + `RolePack` + permissões de módulo/capability).
 	•	Papel operacional Padel (quem está escalado para função) é uma camada separada, com catálogo canónico e escopo explícito.
 	•	Escopo `CLUB`: valores canónicos obrigatórios `ADMIN_CLUBE`, `DIRETOR_PROVA`, `STAFF` em enum de persistência.
-	•	Escopo `TOURNAMENT`: valores canónicos obrigatórios `DIRECTOR`, `REFEREE`, `SCOREKEEPER`, `STREAMER` em enum de persistência.
+	•	Escopo `TOURNAMENT`: valores canónicos obrigatórios `DIRETOR_PROVA`, `REFEREE`, `SCOREKEEPER`, `STREAMER` em enum de persistência.
+	•	`TOURNAMENT_DIRECTOR` mantém-se apenas como `rolePack` global RBAC (não como papel operacional Padel de torneio).
 	•	Atribuição de papel operacional nunca substitui RBAC; ação crítica exige papel operacional compatível + permissão RBAC.
 	•	Roles livres sem controlo semântico não podem ser norma de autorização e devem falhar fechado.
+	•	Incidentes operacionais (`WALKOVER`, `RETIREMENT`, `INJURY`) exigem metadados canónicos `confirmedByRole` e `confirmationSource`.
+	•	Quando incidente/resolução é confirmado por `REFEREE`, a plataforma deve notificar automaticamente perfis `DIRETOR_PROVA` do torneio (trilho auditável).
+	•	Em rondas críticas KO (meias/final), confirmação operacional exige direção (`DIRETOR_PROVA` ou `Owner/Admin`).
 
 D18.10) Interclub por equipas (FECHADO)
 	•	Quando `isInterclub=true`, geração e operação de jogos devem ser por equipas.
@@ -3052,18 +3071,43 @@ D18.10) Interclub por equipas (FECHADO)
 	•	Se o motor por equipas não estiver disponível, geração automática interclub deve ser bloqueada.
 
 D18.11) Catálogo de formatos unificado (FECHADO)
-	•	Formatos de torneio devem seguir um catálogo canónico único, versionado.
-	•	Não pode existir taxonomia funcional duplicada a decidir regras de forma divergente.
-	•	Listas locais duplicadas em rotas são proibidas; validação deve usar catálogo único de domínio.
-	•	Formato oficial canónico inclui: `TODOS_CONTRA_TODOS`, `GRUPOS_ELIMINATORIAS`, `QUADRO_ELIMINATORIO`, `QUADRO_AB`, `DUPLA_ELIMINACAO`, `CAMPEONATO_LIGA`, `NON_STOP`, `AMERICANO`, `MEXICANO`.
-	•	`QUADRO_AB` e `DUPLA_ELIMINACAO` são formatos avançados oficiais (não experimentais) no catálogo canónico.
-	•	`AMERICANO` e `MEXICANO` entram no catálogo canónico oficial e devem ser tratados como formatos de primeira classe no roadmap de produto.
-	•	Enquanto um formato oficial não estiver operacional numa superfície específica, o sistema deve falhar fechado com erro explícito (sem fallback silencioso para outro formato).
+			•	Formatos de torneio devem seguir um catálogo canónico único, versionado.
+			•	Não pode existir taxonomia funcional duplicada a decidir regras de forma divergente.
+			•	Listas locais duplicadas em rotas são proibidas; validação deve usar catálogo único de domínio.
+		•	Formato oficial canónico inclui: `TODOS_CONTRA_TODOS`, `GRUPOS_ELIMINATORIAS`, `QUADRO_ELIMINATORIO`, `QUADRO_AB`, `DUPLA_ELIMINACAO`, `CAMPEONATO_LIGA`, `NON_STOP`, `AMERICANO`, `MEXICANO`.
+		•	`QUADRO_AB` e `DUPLA_ELIMINACAO` são formatos avançados oficiais (não experimentais) no catálogo canónico.
+		•	`AMERICANO` e `MEXICANO` entram no catálogo canónico oficial e devem ser tratados como formatos de primeira classe no roadmap de produto.
+		•	Contrato operacional canónico `AMERICANO`: individual rotativo, ranking individual, com prioridade a combinações inéditas antes de repetição.
+		•	Contrato operacional canónico `MEXICANO`: individual com mecânica `sobe/desce` por ronda e recomposição automática de quartetos.
+		•	Em `AMERICANO`/`MEXICANO`, unidade de jogo oficial é por tempo (`default=20` min, configurável `15..22`) com fecho sincronizado de ronda.
+			•	Pontuação oficial `AMERICANO`/`MEXICANO`: vitória `3`, empate `1`, derrota `0`; desempate por diferença de games, depois games ganhos, depois confronto direto.
+			•	`BYE` em `AMERICANO`/`MEXICANO` é neutro por norma: `1` ponto, `0` diferença de games (`gamesFor=0`, `gamesAgainst=0`) e sem vantagem em confronto direto.
+			•	Regras de desempate devem existir em matriz canónica por formato (ordem `1..n`), incluindo tratamento de `BYE` e definição explícita de confronto direto em formatos rotativos/individuais.
+			•	Quando torneio entra em `LOCKED`, formato e regras aplicadas ficam congelados até ao fim da operação.
+			•	Enquanto um formato oficial não estiver operacional numa superfície específica, o sistema deve falhar fechado com erro explícito (sem fallback silencioso para outro formato).
 
 D18.12) Snapshot de regras por torneio/jogo (FECHADO)
 	•	Tie-break, pontuação e regras de resultado devem ter versão aplicada e auditável.
 	•	Alteração de regra não pode produzir ambiguidade histórica em jogos já operados.
+	•	Separação obrigatória:
+		•	`snapshot operacional` (resiliência/sync com `ttl/version`);
+		•	`snapshot de torneio` imutável após publish/`LOCKED`.
+	•	Alterações no clube fonte após `LOCKED` não podem alterar condições do torneio em curso.
 	•	Nos writes de resultado/disputa de match, o `score` deve transportar `ruleSnapshot` com `ruleSetId` e `ruleSetVersionId`.
+	•	Resolução de disputa exige `resolutionStatus` explícito (`CONFIRMED`, `CORRECTED`, `VOIDED`) e `confirmationSource`.
+
+D18.17) Gate de direção operacional na publicação (FECHADO)
+	•	Um torneio Padel não pode transitar para `PUBLISHED` sem pelo menos 1 atribuição operacional `DIRETOR_PROVA` no torneio.
+	•	O create Padel deve auto-atribuir o criador como `DIRETOR_PROVA` (idempotente), garantindo operação sem vazio de governança.
+	•	Writes genéricos de match (`POST /matches`) não podem fechar incidentes especiais (`WALKOVER`, `RETIREMENT`, `INJURY`); nesses casos o sistema deve falhar fechado e exigir endpoint dedicado de incidente.
+	•	Override de parceria exige `reasonCode` obrigatório, trilho auditável e compensação determinística.
+	•	Sem slot alternativo de compensação, o caso deve entrar em `PENDING_COMPENSATION` com alerta operacional prioritário.
+
+D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
+	•	O motor oficial de ranking é `Glicko-2` adaptado, com contrato matemático explícito e versionado.
+	•	A conversão `rating -> nível` (escala visual) é logarítmica e parametrizada no `RankingPolicyContract`.
+	•	Coeficientes de `carry` e `underdog` são parâmetros de contrato (não heurística ad-hoc).
+	•	Qualquer alteração de fórmula/parâmetros exige nova versão de contrato (`v2+`) sem mutação retroativa de histórico.
 
 D18.13) Live unificado (FECHADO)
 	•	Superfícies live (interna e pública) devem ler do mesmo modelo canónico de estado.
@@ -3338,68 +3382,77 @@ Regras canónicas (evitar drift entre módulos):
 
 10) Sub-navegação TO-BE (rotas canónicas)
 
-Regra: todas as rotas B2B são **/org/:orgId/*** (orgId explícito).  
-Alias PT (legado/UX): /organizacao/:orgId/* faz redirect 301 para /org/:orgId/*.
+Regra de canonicidade (FECHADO):
+- Web org-scoped: **`/org/:orgId/*`**
+- API org-scoped: **`/api/org/:orgId/*`**
+- API hub/sistema: **`/api/org-hub/*`** e **`/api/org-system/*`**
+- Alias web legado: **`/organizacao/*`** responde com **`301`** para rota canónica equivalente.
+- Namespace API legado: **`/api/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
+
+Resolução de `orgId` para redirect de alias web (`/organizacao/*`):
+- prioridade 1: query `organizationId` (ou `org`);
+- prioridade 2: cookie `orya_organization`;
+- sem contexto de org: redirect `301` para `/org-hub/organizations`.
 
 10.1 Serviços
 
-/org/:orgId/servicos
-	•	?tab=overview
-	•	?tab=disponibilidade
-		•	?tab=precos (tarifários e regras)
-	•	?tab=profissionais
-	•	?tab=recursos
-	•	?tab=politicas
-	•	?tab=integracoes
+`/org/:orgId/bookings`
+	•	`?tab=overview`
+	•	`?tab=availability`
+	•	`?tab=prices` (tarifários e regras)
+	•	`?tab=professionals`
+	•	`?tab=resources`
+	•	`?tab=policies`
+	•	`?tab=integrations`
 
-Alias:
-/organizacao/:orgId/servicos → /org/:orgId/servicos
+Alias legado web:
+`/organizacao/reservas?organizationId=:orgId` → `/org/:orgId/bookings`
 
 10.2 Seguidores
 
-/org/:orgId/perfil/seguidores
-	•	?tab=followers
-	•	?tab=pedidos
+`/org/:orgId/profile/followers`
+	•	`?tab=followers`
+	•	`?tab=requests`
 
-Alias:
-/organizacao/:orgId/perfil/seguidores → /org/:orgId/perfil/seguidores
+Alias legado web:
+`/organizacao/profile/seguidores?organizationId=:orgId` → `/org/:orgId/profile/followers`
 
 10.3 Check-in
 
-/org/:orgId/checkin
-	•	?tab=scanner
-	•	?tab=lista
-	•	?tab=sessoes
-	•	?tab=logs
-	•	?tab=dispositivos (fase 2)
+`/org/:orgId/check-in`
+	•	`?tab=scanner`
+	•	`?tab=list`
+	•	`?tab=sessions`
+	•	`?tab=logs`
+	•	`?tab=devices` (fase 2)
 
-Alias:
-	•	AS-IS /organizacao/:orgId/scan → /org/:orgId/checkin?tab=scanner
+Alias legado web:
+`/organizacao/scan?organizationId=:orgId` → `/org/:orgId/check-in?tab=scanner`
 
 10.4 Finanças (macro/micro)
 
-/org/:orgId/financas
-	•	?tab=overview (bolo)
-	•	?tab=ledger (movimentos)
-	•	?tab=dimensoes (recurso/profissional/cliente/produto/filial)
-	•	?tab=payouts
-	•	?tab=refunds_disputes
-	•	?tab=assinaturas (fase 2)
+`/org/:orgId/finance`
+	•	`?tab=overview` (bolo)
+	•	`?tab=ledger` (movimentos)
+	•	`?tab=dimensions` (recurso/profissional/cliente/produto/filial)
+	•	`?tab=payouts`
+	•	`?tab=refunds_disputes`
+	•	`?tab=subscriptions` (fase 2)
 
-Alias:
-/organizacao/:orgId/financas → /org/:orgId/financas
+Alias legado web:
+`/organizacao/analyze?section=financas&organizationId=:orgId` → `/org/:orgId/finance`
 
 10.5 Analytics
 
-/org/:orgId/analytics
-	•	?tab=dashboard
-	•	?tab=ocupacao
-	•	?tab=conversao
-	•	?tab=no_show
-	•	?tab=coortes (fase 3)
+`/org/:orgId/analytics`
+	•	`?tab=overview`
+	•	`?tab=occupancy`
+	•	`?tab=conversion`
+	•	`?tab=no_show`
+	•	`?tab=cohorts` (fase 3)
 
-Alias:
-/organizacao/:orgId/analytics → /org/:orgId/analytics
+Alias legado web:
+`/organizacao/analyze?section=vendas|ops|overview&organizationId=:orgId` → `/org/:orgId/analytics`
 
 ⸻
 

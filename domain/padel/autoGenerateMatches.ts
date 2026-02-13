@@ -346,6 +346,10 @@ export async function autoGeneratePadelMatches({
   if (pairingIds.length < 2) return { ok: false, error: "NEED_PAIRINGS" };
 
   const formatEffective = format ?? config?.format ?? padel_format.TODOS_CONTRA_TODOS;
+  const nonOperationalFormats = new Set<padel_format>([padel_format.AMERICANO, padel_format.MEXICANO]);
+  if (nonOperationalFormats.has(formatEffective)) {
+    return { ok: false, error: "FORMAT_NOT_OPERATIONAL" };
+  }
   const phaseEffective = phase ?? "GROUPS";
   const seedSource = [
     eventId,

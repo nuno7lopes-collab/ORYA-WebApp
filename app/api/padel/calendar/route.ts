@@ -2,7 +2,15 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, OrganizationModule, Prisma, SoftBlockScope } from "@prisma/client";
+import {
+  AgendaResourceClaimStatus,
+  AgendaResourceClaimType,
+  OrganizationMemberRole,
+  OrganizationModule,
+  Prisma,
+  SoftBlockScope,
+  SourceType,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -281,7 +289,7 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
-  const [blocks, availabilities, matches] = await Promise.all([
+  const [blocks, availabilities, matches, resourceClaims] = await Promise.all([
     prisma.calendarBlock.findMany({
       where: {
         organizationId: organization.id,
@@ -347,6 +355,39 @@ async function _GET(req: NextRequest) {
         score: true,
       },
       orderBy: [{ plannedStartAt: "asc" }, { startTime: "asc" }],
+    }),
+    prisma.agendaResourceClaim.findMany({
+      where: {
+        organizationId: organization.id,
+        eventId,
+        status: AgendaResourceClaimStatus.CLAIMED,
+        ...(resolvedCourtId
+          ? {
+              OR: [
+                { resourceType: AgendaResourceClaimType.COURT, resourceId: String(resolvedCourtId) },
+                { resourceType: AgendaResourceClaimType.CLUB, resourceId: String(resolvedClubId ?? "") },
+              ],
+            }
+          : resolvedClubId
+            ? {
+                resourceType: AgendaResourceClaimType.CLUB,
+                resourceId: String(resolvedClubId),
+              }
+            : {}),
+      },
+      orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        sourceType: true,
+        sourceId: true,
+        resourceType: true,
+        resourceId: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        metadata: true,
+        updatedAt: true,
+      },
     }),
   ]);
 
@@ -456,6 +497,7 @@ async function _GET(req: NextRequest) {
       blocks,
       availabilities,
       matches,
+      resourceClaims,
       conflicts,
       eventStartsAt: event.startsAt,
       eventEndsAt: event.endsAt,
@@ -481,7 +523,7 @@ async function _POST(req: NextRequest) {
   const startAt = parseDate(body.startAt);
   const endAt = parseDate(body.endAt);
 
-  if (type !== "block" && type !== "availability") {
+  if (type !== "block" && type !== "availability" && type !== "resource_claim") {
     return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
   }
   if (!Number.isFinite(eventId)) {
@@ -498,6 +540,104 @@ async function _POST(req: NextRequest) {
   });
   if (!event) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+
+  if (type === "resource_claim") {
+    const resourceTypeRaw = typeof body.resourceType === "string" ? body.resourceType.trim().toUpperCase() : "";
+    const resourceType = Object.values(AgendaResourceClaimType).includes(resourceTypeRaw as AgendaResourceClaimType)
+      ? (resourceTypeRaw as AgendaResourceClaimType)
+      : null;
+    if (!resourceType) {
+      return jsonWrap({ ok: false, error: "INVALID_RESOURCE_TYPE" }, { status: 400 });
+    }
+
+    const resourceIdRaw =
+      typeof body.resourceId === "string"
+        ? body.resourceId.trim()
+        : typeof body.resourceId === "number"
+          ? String(Math.floor(body.resourceId))
+          : "";
+    if (!resourceIdRaw) {
+      return jsonWrap({ ok: false, error: "RESOURCE_ID_REQUIRED" }, { status: 400 });
+    }
+
+    const sourceTypeRaw = typeof body.sourceType === "string" ? body.sourceType.trim().toUpperCase() : "";
+    const sourceType = Object.values(SourceType).includes(sourceTypeRaw as SourceType)
+      ? (sourceTypeRaw as SourceType)
+      : SourceType.EVENT;
+    const sourceId =
+      typeof body.sourceId === "string" && body.sourceId.trim().length > 0
+        ? body.sourceId.trim()
+        : String(event.id);
+
+    const overlapping = await prisma.agendaResourceClaim.findFirst({
+      where: {
+        organizationId: organization.id,
+        eventId: event.id,
+        resourceType,
+        resourceId: resourceIdRaw,
+        status: AgendaResourceClaimStatus.CLAIMED,
+        startsAt: { lt: endAt },
+        endsAt: { gt: startAt },
+      },
+      select: { id: true, startsAt: true, endsAt: true, sourceType: true, sourceId: true },
+    });
+    if (overlapping) {
+      return jsonWrap(
+        {
+          ok: false,
+          error: "RESOURCE_CLAIM_CONFLICT",
+          conflict: overlapping,
+        },
+        { status: 409 },
+      );
+    }
+
+    const claim = await prisma.agendaResourceClaim.create({
+      data: {
+        organizationId: organization.id,
+        eventId: event.id,
+        sourceType,
+        sourceId,
+        resourceType,
+        resourceId: resourceIdRaw,
+        startsAt: startAt,
+        endsAt: endAt,
+        status: AgendaResourceClaimStatus.CLAIMED,
+        metadata:
+          body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+            ? (body.metadata as Prisma.JsonObject)
+            : {},
+      },
+      select: {
+        id: true,
+        sourceType: true,
+        sourceId: true,
+        resourceType: true,
+        resourceId: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        metadata: true,
+      },
+    });
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_CALENDAR_RESOURCE_CLAIM_CREATE",
+      metadata: {
+        claimId: claim.id,
+        eventId: event.id,
+        sourceType: claim.sourceType,
+        sourceId: claim.sourceId,
+        resourceType: claim.resourceType,
+        resourceId: claim.resourceId,
+        startsAt: claim.startsAt,
+        endsAt: claim.endsAt,
+      },
+      ...getRequestMeta(req),
+    });
+    return jsonWrap({ ok: true, claim }, { status: 201 });
   }
 
   if (type === "block") {

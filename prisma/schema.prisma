@@ -51,13 +51,13 @@ model Profile {
   notifications                                                    Notification[]
   notificationMutes                                                NotificationMute[]
   notificationPreference                                           NotificationPreference?
-  crmCustomers                                                     CrmCustomer[]
   crmContacts                                                      CrmContact[]
   crmInteractions                                                  CrmInteraction[]
-  crmCustomerNotesAuthored                                         CrmCustomerNote[]
   crmContactNotesAuthored                                          CrmContactNote[]
   crmSegmentsCreated                                               CrmSegment[]
   crmCampaignsCreated                                              CrmCampaign[]
+  crmCampaignApprovalsAuthored                                     CrmCampaignApproval[] @relation("CrmCampaignApprovalActor")
+  crmJourneysCreated                                               CrmJourney[]         @relation("CrmJourneyCreator")
   crmCampaignDeliveries                                            CrmCampaignDelivery[]
   userConsents                                                     UserConsent[]
   loyaltyLedgerEntries                                             LoyaltyLedger[]
@@ -249,6 +249,10 @@ model Organization {
   padelCommunityPosts     PadelCommunityPost[]
   padelPlayers            PadelPlayerProfile[]
   padelRankingEntries     PadelRankingEntry[]
+  padelRatingProfiles     PadelRatingProfile[]
+  padelRatingEvents       PadelRatingEvent[]
+  padelRatingSanctions    PadelRatingSanction[]
+  padelTournamentTierApprovals PadelTournamentTierApproval[]
   reservationProfessionals ReservationProfessional[]
   reservationResources    ReservationResource[]
   padelRuleSets           PadelRuleSet[]                  @relation("OrganizationPadelRuleSets")
@@ -277,15 +281,19 @@ model Organization {
   analyticsRollups        AnalyticsRollup[]
   availabilityOverrides   AvailabilityOverride[]
   serviceReviews           ServiceReview[]
-  crmCustomers            CrmCustomer[]
-  crmCustomerNotes        CrmCustomerNote[]
   crmContacts             CrmContact[]
   crmContactNotes         CrmContactNote[]
   crmContactConsents      CrmContactConsent[]
   crmContactPadel         CrmContactPadel[]
   crmInteractions         CrmInteraction[]
   crmSegments             CrmSegment[]
+  crmPolicy               CrmOrganizationPolicy?
   crmCampaigns            CrmCampaign[]
+  crmCampaignApprovals    CrmCampaignApproval[]
+  crmJourneys             CrmJourney[]
+  crmJourneySteps         CrmJourneyStep[]
+  crmJourneyEnrollments   CrmJourneyEnrollment[]
+  crmJourneyRuns          CrmJourneyRun[]
   crmCampaignDeliveries   CrmCampaignDelivery[]
   userConsents            UserConsent[]
   invoices                Invoice[]
@@ -1795,6 +1803,7 @@ model Event {
   padelPairings                     PadelPairing[]
   padelRankingEntries               PadelRankingEntry[]
   padelTournamentConfig             PadelTournamentConfig?
+  padelTournamentTierApproval       PadelTournamentTierApproval?
   padelTournamentRoleAssignments    PadelTournamentRoleAssignment[]
   padelCategoryLinks                PadelEventCategoryLink[]
   padelCourtBlocks                  CalendarBlock[]
@@ -2718,6 +2727,9 @@ model PadelPlayerProfile {
   crmContact       CrmContact?            @relation(fields: [crmContactId], references: [id], onDelete: SetNull)
   users         users?              @relation(fields: [userId], references: [id], onUpdate: NoAction)
   rankings      PadelRankingEntry[]
+  ratingProfile PadelRatingProfile?
+  ratingEvents  PadelRatingEvent[]
+  ratingSanctions PadelRatingSanction[]
   availabilities CalendarAvailability[]
   crmContactPadelLinks CrmContactPadel[]
 
@@ -3413,6 +3425,343 @@ model PadelRankingEntry {
   player      PadelPlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("padel_ranking_entries")
+  @@schema("app_v3")
+}
+
+/// Acordo de parceria entre organização dona do clube e organização parceira
+model PadelPartnershipAgreement {
+  env                   String                         @default("prod")
+  id                    Int                            @id @default(autoincrement())
+  ownerOrganizationId   Int                            @map("owner_organization_id")
+  partnerOrganizationId Int                            @map("partner_organization_id")
+  ownerClubId           Int                            @map("owner_club_id")
+  partnerClubId         Int?                           @map("partner_club_id")
+  status                PadelPartnershipStatus         @default(PENDING)
+  startsAt              DateTime?                      @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime?                      @map("ends_at") @db.Timestamptz(6)
+  requestedByUserId     String?                        @map("requested_by_user_id") @db.Uuid
+  approvedByUserId      String?                        @map("approved_by_user_id") @db.Uuid
+  approvedAt            DateTime?                      @map("approved_at") @db.Timestamptz(6)
+  revokedByUserId       String?                        @map("revoked_by_user_id") @db.Uuid
+  revokedAt             DateTime?                      @map("revoked_at") @db.Timestamptz(6)
+  notes                 String?
+  createdAt             DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([ownerOrganizationId], map: "padel_partnership_agreements_owner_org_idx")
+  @@index([partnerOrganizationId], map: "padel_partnership_agreements_partner_org_idx")
+  @@index([ownerClubId], map: "padel_partnership_agreements_owner_club_idx")
+  @@index([status], map: "padel_partnership_agreements_status_idx")
+  @@map("padel_partnership_agreements")
+  @@schema("app_v3")
+}
+
+/// Janelas de disponibilidade da parceria por clube/court/horário
+model PadelPartnershipWindow {
+  env                   String   @default("prod")
+  id                    Int      @id @default(autoincrement())
+  agreementId           Int      @map("agreement_id")
+  ownerClubId           Int      @map("owner_club_id")
+  ownerCourtId          Int?     @map("owner_court_id")
+  weekdayMask           Int      @default(127) @map("weekday_mask")
+  startMinute           Int      @map("start_minute")
+  endMinute             Int      @map("end_minute")
+  timezone              String   @default("Europe/Lisbon")
+  startsAt              DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime? @map("ends_at") @db.Timestamptz(6)
+  requiresApproval      Boolean  @default(false) @map("requires_approval")
+  capacityParallelSlots Int      @default(1) @map("capacity_parallel_slots")
+  isActive              Boolean  @default(true) @map("is_active")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([agreementId], map: "padel_partnership_windows_agreement_idx")
+  @@index([ownerClubId, ownerCourtId], map: "padel_partnership_windows_club_court_idx")
+  @@index([isActive], map: "padel_partnership_windows_active_idx")
+  @@map("padel_partnership_windows")
+  @@schema("app_v3")
+}
+
+/// Política operacional da parceria (prioridade/override/compensação)
+model PadelPartnershipBookingPolicy {
+  env                            String                       @default("prod")
+  id                             Int                          @id @default(autoincrement())
+  agreementId                    Int                          @unique(map: "padel_partnership_booking_policy_agreement_uq") @map("agreement_id")
+  priorityMode                   PadelPartnershipPriorityMode @default(FIRST_CONFIRMED_WITH_OWNER_OVERRIDE) @map("priority_mode")
+  ownerOverrideAllowed           Boolean                      @default(true) @map("owner_override_allowed")
+  ownerOverrideRequiresAudit     Boolean                      @default(true) @map("owner_override_requires_audit")
+  autoCompensationOnOverride     Boolean                      @default(true) @map("auto_compensation_on_override")
+  protectExternalReservations    Boolean                      @default(true) @map("protect_external_reservations")
+  hardStopMinutesBeforeBooking   Int                          @default(30) @map("hard_stop_minutes_before_booking")
+  createdAt                      DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                      DateTime                     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([priorityMode], map: "padel_partnership_booking_policy_priority_idx")
+  @@map("padel_partnership_booking_policies")
+  @@schema("app_v3")
+}
+
+/// Grants temporários de role operacional para staff de organização parceira
+model PadelPartnerRoleGrant {
+  env                   String              @default("prod")
+  id                    Int                 @id @default(autoincrement())
+  agreementId           Int                 @map("agreement_id")
+  partnerOrganizationId Int                 @map("partner_organization_id")
+  eventId               Int?                @map("event_id")
+  userId                String              @map("user_id") @db.Uuid
+  role                  PadelTournamentRole
+  startsAt              DateTime            @map("starts_at") @db.Timestamptz(6)
+  expiresAt             DateTime            @map("expires_at") @db.Timestamptz(6)
+  autoRevoke            Boolean             @default(true) @map("auto_revoke")
+  isActive              Boolean             @default(true) @map("is_active")
+  grantedByUserId       String?             @map("granted_by_user_id") @db.Uuid
+  revokedByUserId       String?             @map("revoked_by_user_id") @db.Uuid
+  revokedAt             DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  scope                 Json?               @default("{}")
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([agreementId], map: "padel_partner_role_grants_agreement_idx")
+  @@index([partnerOrganizationId], map: "padel_partner_role_grants_partner_org_idx")
+  @@index([eventId], map: "padel_partner_role_grants_event_idx")
+  @@index([userId], map: "padel_partner_role_grants_user_idx")
+  @@index([isActive, expiresAt], map: "padel_partner_role_grants_active_expiry_idx")
+  @@map("padel_partner_role_grants")
+  @@schema("app_v3")
+}
+
+/// Snapshot local dos courts de um clube parceiro para resiliência operacional
+model PadelPartnerCourtSnapshot {
+  env                   String    @default("prod")
+  id                    Int       @id @default(autoincrement())
+  partnerOrganizationId Int       @map("partner_organization_id")
+  partnerClubId         Int       @map("partner_club_id")
+  sourceClubId          Int       @map("source_club_id")
+  sourceCourtId         Int       @map("source_court_id")
+  localCourtId          Int?      @map("local_court_id")
+  name                  String
+  surface               String?
+  indoor                Boolean   @default(false)
+  displayOrder          Int       @default(0) @map("display_order")
+  sourceUpdatedAt       DateTime? @map("source_updated_at") @db.Timestamptz(6)
+  syncedAt              DateTime  @default(now()) @map("synced_at") @db.Timestamptz(6)
+  ttlAt                 DateTime? @map("ttl_at") @db.Timestamptz(6)
+  version               Int       @default(1)
+  isActive              Boolean   @default(true) @map("is_active")
+
+  @@unique([partnerClubId, sourceCourtId], map: "padel_partner_court_snapshots_partner_source_uq")
+  @@index([partnerOrganizationId], map: "padel_partner_court_snapshots_partner_org_idx")
+  @@index([sourceClubId], map: "padel_partner_court_snapshots_source_club_idx")
+  @@index([localCourtId], map: "padel_partner_court_snapshots_local_court_idx")
+  @@index([isActive, ttlAt], map: "padel_partner_court_snapshots_active_ttl_idx")
+  @@map("padel_partner_court_snapshots")
+  @@schema("app_v3")
+}
+
+/// Overrides auditáveis executados pela organização dona no contexto de parceria
+model PadelPartnershipOverride {
+  env                   String    @default("prod")
+  id                    Int       @id @default(autoincrement())
+  agreementId           Int       @map("agreement_id")
+  ownerOrganizationId   Int       @map("owner_organization_id")
+  partnerOrganizationId Int       @map("partner_organization_id")
+  eventId               Int?      @map("event_id")
+  targetType            String    @map("target_type")
+  targetSourceId        String?   @map("target_source_id")
+  reasonCode            String    @default("UNSPECIFIED") @map("reason_code")
+  courtId               Int?      @map("court_id")
+  startsAt              DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime? @map("ends_at") @db.Timestamptz(6)
+  reason                String
+  executedByUserId      String?   @map("executed_by_user_id") @db.Uuid
+  executedAt            DateTime? @map("executed_at") @db.Timestamptz(6)
+  executionStatus       String?   @map("execution_status")
+  impact                Json?     @default("{}")
+  createdByUserId       String?   @map("created_by_user_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([agreementId], map: "padel_partnership_overrides_agreement_idx")
+  @@index([ownerOrganizationId], map: "padel_partnership_overrides_owner_org_idx")
+  @@index([partnerOrganizationId], map: "padel_partnership_overrides_partner_org_idx")
+  @@index([eventId], map: "padel_partnership_overrides_event_idx")
+  @@map("padel_partnership_overrides")
+  @@schema("app_v3")
+}
+
+/// Casos operacionais de compensação criados por execução de overrides
+model PadelPartnershipCompensationCase {
+  env                   String                              @default("prod")
+  id                    Int                                 @id @default(autoincrement())
+  agreementId           Int                                 @map("agreement_id")
+  overrideId            Int?                                @map("override_id")
+  ownerOrganizationId   Int                                 @map("owner_organization_id")
+  partnerOrganizationId Int                                 @map("partner_organization_id")
+  eventId               Int?                                @map("event_id")
+  status                PadelPartnershipCompensationStatus  @default(OPEN)
+  reasonCode            String?                             @map("reason_code")
+  windowStart           DateTime?                           @map("window_start") @db.Timestamptz(6)
+  windowEnd             DateTime?                           @map("window_end") @db.Timestamptz(6)
+  metadata              Json?                               @default("{}")
+  createdByUserId       String?                             @map("created_by_user_id") @db.Uuid
+  resolvedByUserId      String?                             @map("resolved_by_user_id") @db.Uuid
+  resolvedAt            DateTime?                           @map("resolved_at") @db.Timestamptz(6)
+  createdAt             DateTime                            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([agreementId], map: "padel_partnership_comp_cases_agreement_idx")
+  @@index([overrideId], map: "padel_partnership_comp_cases_override_idx")
+  @@index([ownerOrganizationId], map: "padel_partnership_comp_cases_owner_org_idx")
+  @@index([partnerOrganizationId], map: "padel_partnership_comp_cases_partner_org_idx")
+  @@index([eventId], map: "padel_partnership_comp_cases_event_idx")
+  @@index([status], map: "padel_partnership_comp_cases_status_idx")
+  @@map("padel_partnership_compensation_cases")
+  @@schema("app_v3")
+}
+
+/// Claim canónico de ocupação multi-recurso para agenda operacional
+model AgendaResourceClaim {
+  env          String                  @default("prod")
+  id           String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bundleId     String?                 @map("bundle_id") @db.Uuid
+  organizationId Int                   @map("organization_id")
+  eventId      Int?                    @map("event_id")
+  sourceType   SourceType              @map("source_type")
+  sourceId     String                  @map("source_id") @db.Text
+  resourceType AgendaResourceClaimType @map("resource_type")
+  resourceId   String                  @map("resource_id") @db.Text
+  startsAt     DateTime                @map("starts_at") @db.Timestamptz(6)
+  endsAt       DateTime                @map("ends_at") @db.Timestamptz(6)
+  status       AgendaResourceClaimStatus @default(CLAIMED)
+  metadata     Json?                   @default("{}")
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([organizationId], map: "agenda_resource_claims_org_idx")
+  @@index([eventId], map: "agenda_resource_claims_event_idx")
+  @@index([resourceType, resourceId, startsAt], map: "agenda_resource_claims_resource_time_idx")
+  @@index([sourceType, sourceId], map: "agenda_resource_claims_source_idx")
+  @@index([status], map: "agenda_resource_claims_status_idx")
+  @@index([bundleId], map: "agenda_resource_claims_bundle_idx")
+  @@map("agenda_resource_claims")
+  @@schema("app_v3")
+}
+
+/// Perfil de rating canónico (Glicko-2) por jogador de padel
+model PadelRatingProfile {
+  env                 String    @default("prod")
+  id                  Int       @id @default(autoincrement())
+  organizationId      Int       @map("organization_id")
+  playerId            Int       @unique(map: "padel_rating_profiles_player_uq") @map("player_id")
+  rating              Float     @default(1200)
+  rd                  Float     @default(350)
+  sigma               Float     @default(0.06)
+  tau                 Float     @default(0.5)
+  matchesPlayed       Int       @default(0) @map("matches_played")
+  levelVisual         Decimal?  @map("level_visual") @db.Decimal(4, 2)
+  leaderboardEligible Boolean   @default(true) @map("leaderboard_eligible")
+  blockedNewMatches   Boolean   @default(false) @map("blocked_new_matches")
+  suspensionEndsAt    DateTime? @map("suspension_ends_at") @db.Timestamptz(6)
+  lastMatchAt         DateTime? @map("last_match_at") @db.Timestamptz(6)
+  lastActivityAt      DateTime? @map("last_activity_at") @db.Timestamptz(6)
+  lastRebuildAt       DateTime? @map("last_rebuild_at") @db.Timestamptz(6)
+  metadata            Json?     @default("{}")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  player              PadelPlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_rating_profiles_org_idx")
+  @@index([rating], map: "padel_rating_profiles_rating_idx")
+  @@index([leaderboardEligible], map: "padel_rating_profiles_leaderboard_idx")
+  @@map("padel_rating_profiles")
+  @@schema("app_v3")
+}
+
+/// Eventos de rating auditáveis (antes/depois) por jogador
+model PadelRatingEvent {
+  env              String    @default("prod")
+  id               Int       @id @default(autoincrement())
+  organizationId   Int       @map("organization_id")
+  eventId          Int?      @map("event_id")
+  matchId          Int?      @map("match_id")
+  playerId         Int       @map("player_id")
+  opponentAvgRating Float?   @map("opponent_avg_rating")
+  preRating        Float     @map("pre_rating")
+  preRd            Float     @map("pre_rd")
+  preSigma         Float     @map("pre_sigma")
+  postRating       Float     @map("post_rating")
+  postRd           Float     @map("post_rd")
+  postSigma        Float     @map("post_sigma")
+  expectedScore    Float?    @map("expected_score")
+  actualScore      Float?    @map("actual_score")
+  gamesFor         Int?      @map("games_for")
+  gamesAgainst     Int?      @map("games_against")
+  tierMultiplier   Float     @default(1) @map("tier_multiplier")
+  carryMultiplier  Float     @default(1) @map("carry_multiplier")
+  metadata         Json?     @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  player           PadelPlayerProfile @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_rating_events_org_idx")
+  @@index([eventId], map: "padel_rating_events_event_idx")
+  @@index([matchId], map: "padel_rating_events_match_idx")
+  @@index([playerId, createdAt], map: "padel_rating_events_player_created_idx")
+  @@map("padel_rating_events")
+  @@schema("app_v3")
+}
+
+/// Sanções aplicadas ao ranking/funcionalidades de padel
+model PadelRatingSanction {
+  env              String                  @default("prod")
+  id               Int                     @id @default(autoincrement())
+  organizationId   Int                     @map("organization_id")
+  playerId         Int                     @map("player_id")
+  type             PadelRatingSanctionType
+  status           PadelRatingSanctionStatus @default(ACTIVE)
+  reasonCode       String?                 @map("reason_code")
+  reason           String?
+  startsAt         DateTime                @default(now()) @map("starts_at") @db.Timestamptz(6)
+  endsAt           DateTime?               @map("ends_at") @db.Timestamptz(6)
+  metadata         Json?                   @default("{}")
+  createdByUserId  String?                 @map("created_by_user_id") @db.Uuid
+  resolvedByUserId String?                 @map("resolved_by_user_id") @db.Uuid
+  resolvedAt       DateTime?               @map("resolved_at") @db.Timestamptz(6)
+  createdAt        DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  player           PadelPlayerProfile      @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_rating_sanctions_org_idx")
+  @@index([playerId], map: "padel_rating_sanctions_player_idx")
+  @@index([status], map: "padel_rating_sanctions_status_idx")
+  @@index([type], map: "padel_rating_sanctions_type_idx")
+  @@map("padel_rating_sanctions")
+  @@schema("app_v3")
+}
+
+/// Aprovação de tier competitivo de torneio (governança Ouro/Major)
+model PadelTournamentTierApproval {
+  env              String                          @default("prod")
+  id               Int                             @id @default(autoincrement())
+  organizationId   Int                             @map("organization_id")
+  eventId          Int                             @unique(map: "padel_tier_approval_event_uq") @map("event_id")
+  requestedTier    String                          @map("requested_tier")
+  approvedTier     String?                         @map("approved_tier")
+  status           PadelTournamentTierApprovalStatus @default(PENDING)
+  reason           String?
+  metadata         Json?                           @default("{}")
+  requestedByUserId String?                        @map("requested_by_user_id") @db.Uuid
+  approvedByUserId String?                         @map("approved_by_user_id") @db.Uuid
+  approvedAt       DateTime?                       @map("approved_at") @db.Timestamptz(6)
+  createdAt        DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event            Event                           @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_tier_approval_org_idx")
+  @@index([status], map: "padel_tier_approval_status_idx")
+  @@map("padel_tournament_tier_approvals")
   @@schema("app_v3")
 }
 
@@ -4519,39 +4868,23 @@ model BookingPolicyRef {
   @@schema("app_v3")
 }
 
-model CrmCustomer {
-  env                     String                         @default("prod")
-  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId     Int               @map("organization_id")
-  userId             String            @map("user_id") @db.Uuid
-  status             CrmCustomerStatus @default(ACTIVE)
-  displayName        String?           @map("display_name")
-  contactEmail       String?           @map("contact_email") @db.Citext
-  contactPhone       String?           @map("contact_phone")
-  marketingOptIn     Boolean           @default(false) @map("marketing_opt_in")
-  marketingOptInAt   DateTime?         @map("marketing_opt_in_at") @db.Timestamptz(6)
-  firstInteractionAt DateTime?         @map("first_interaction_at") @db.Timestamptz(6)
-  lastActivityAt     DateTime?         @map("last_activity_at") @db.Timestamptz(6)
-  lastPurchaseAt     DateTime?         @map("last_purchase_at") @db.Timestamptz(6)
-  totalSpentCents    Int               @default(0) @map("total_spent_cents")
-  totalOrders        Int               @default(0) @map("total_orders")
-  totalBookings      Int               @default(0) @map("total_bookings")
-  totalAttendances   Int               @default(0) @map("total_attendances")
-  totalTournaments   Int               @default(0) @map("total_tournaments")
-  totalStoreOrders   Int               @default(0) @map("total_store_orders")
-  tags               String[]          @default([])
-  notesCount         Int               @default(0) @map("notes_count")
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+model CrmOrganizationPolicy {
+  env                     String @default("prod")
+  organizationId          Int    @id @map("organization_id")
+  timezone                String @default("Europe/Lisbon")
+  quietHoursStartMinute   Int    @default(1320) @map("quiet_hours_start_minute")
+  quietHoursEndMinute     Int    @default(480) @map("quiet_hours_end_minute")
+  capPerDay               Int    @default(1) @map("cap_per_day")
+  capPerWeek              Int    @default(4) @map("cap_per_week")
+  capPerMonth             Int    @default(10) @map("cap_per_month")
+  approvalEscalationHours Int    @default(24) @map("approval_escalation_hours")
+  approvalExpireHours     Int    @default(48) @map("approval_expire_hours")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  notes        CrmCustomerNote[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, userId], map: "crm_customers_org_user_unique")
-  @@index([organizationId, lastActivityAt], map: "crm_customers_org_last_activity_idx")
-  @@index([organizationId, totalSpentCents], map: "crm_customers_org_spent_idx")
-  @@map("crm_customers")
+  @@map("crm_organization_policies")
   @@schema("app_v3")
 }
 
@@ -4595,6 +4928,7 @@ model CrmContact {
   notes        CrmContactNote[]
   padelProfile CrmContactPadel?
   campaignDeliveries CrmCampaignDelivery[]
+  journeyEnrollments CrmJourneyEnrollment[]
   padelPlayerProfiles PadelPlayerProfile[]
 
   @@unique([organizationId, userId], map: "crm_contacts_org_user_unique")
@@ -4702,25 +5036,6 @@ model CrmInteraction {
   @@schema("app_v3")
 }
 
-model CrmCustomerNote {
-  env                     String                         @default("prod")
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId Int      @map("organization_id")
-  customerId     String   @map("customer_id") @db.Uuid
-  authorUserId   String   @map("author_user_id") @db.Uuid
-  body           String   @db.Text
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  customer     CrmCustomer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  author       Profile      @relation(fields: [authorUserId], references: [id], onDelete: NoAction)
-
-  @@index([organizationId, customerId, createdAt], map: "crm_customer_notes_org_customer_idx")
-  @@map("crm_customer_notes")
-  @@schema("app_v3")
-}
-
 model CrmSegment {
   env                     String                         @default("prod")
   id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -4746,31 +5061,166 @@ model CrmSegment {
 
 model CrmCampaign {
   env                     String                         @default("prod")
-  id              String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId  Int                @map("organization_id")
-  segmentId       String?            @map("segment_id") @db.Uuid
-  name            String
-  description     String?
-  channel         CrmCampaignChannel @default(IN_APP)
-  status          CrmCampaignStatus  @default(DRAFT)
-  payload         Json               @default("{}")
-  scheduledAt     DateTime?          @map("scheduled_at") @db.Timestamptz(6)
-  sentAt          DateTime?          @map("sent_at") @db.Timestamptz(6)
-  sentCount       Int                @default(0) @map("sent_count")
-  openedCount     Int                @default(0) @map("opened_count")
-  clickedCount    Int                @default(0) @map("clicked_count")
-  failedCount     Int                @default(0) @map("failed_count")
-  createdByUserId String?            @map("created_by_user_id") @db.Uuid
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      Int                      @map("organization_id")
+  segmentId           String?                  @map("segment_id") @db.Uuid
+  name                String
+  description         String?
+  channel             CrmCampaignChannel       @default(IN_APP)
+  channels            Json                     @default("{}")
+  status              CrmCampaignStatus        @default(DRAFT)
+  approvalState       CrmCampaignApprovalState @default(DRAFT) @map("approval_state")
+  approvalSubmittedAt DateTime?                @map("approval_submitted_at") @db.Timestamptz(6)
+  approvalExpiresAt   DateTime?                @map("approval_expires_at") @db.Timestamptz(6)
+  approvedByUserId    String?                  @map("approved_by_user_id") @db.Uuid
+  approvedAt          DateTime?                @map("approved_at") @db.Timestamptz(6)
+  rejectedByUserId    String?                  @map("rejected_by_user_id") @db.Uuid
+  rejectedAt          DateTime?                @map("rejected_at") @db.Timestamptz(6)
+  payload             Json                     @default("{}")
+  audienceSnapshot    Json                     @default("{}") @map("audience_snapshot")
+  scheduledAt         DateTime?                @map("scheduled_at") @db.Timestamptz(6)
+  sentAt              DateTime?                @map("sent_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?                @map("cancelled_at") @db.Timestamptz(6)
+  sentCount           Int                      @default(0) @map("sent_count")
+  openedCount         Int                      @default(0) @map("opened_count")
+  clickedCount        Int                      @default(0) @map("clicked_count")
+  failedCount         Int                      @default(0) @map("failed_count")
+  createdByUserId     String?                  @map("created_by_user_id") @db.Uuid
+  createdAt           DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   segment      CrmSegment?  @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   creator      Profile?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  approvals    CrmCampaignApproval[]
   deliveries   CrmCampaignDelivery[]
 
   @@index([organizationId, status], map: "crm_campaigns_org_status_idx")
+  @@index([organizationId, approvalState], map: "crm_campaigns_org_approval_state_idx")
   @@map("crm_campaigns")
+  @@schema("app_v3")
+}
+
+model CrmCampaignApproval {
+  env            String                    @default("prod")
+  id             String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                       @map("organization_id")
+  campaignId     String                    @map("campaign_id") @db.Uuid
+  state          CrmCampaignApprovalState
+  action         CrmCampaignApprovalAction
+  actorUserId    String?                   @map("actor_user_id") @db.Uuid
+  reason         String?
+  metadata       Json                      @default("{}")
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CrmCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  actor        Profile?     @relation("CrmCampaignApprovalActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt], map: "crm_campaign_approvals_org_created_idx")
+  @@index([campaignId, createdAt], map: "crm_campaign_approvals_campaign_created_idx")
+  @@map("crm_campaign_approvals")
+  @@schema("app_v3")
+}
+
+model CrmJourney {
+  env             String           @default("prod")
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int              @map("organization_id")
+  name            String
+  description     String?
+  status          CrmJourneyStatus @default(DRAFT)
+  definition      Json             @default("{}")
+  createdByUserId String?          @map("created_by_user_id") @db.Uuid
+  publishedAt     DateTime?        @map("published_at") @db.Timestamptz(6)
+  pausedAt        DateTime?        @map("paused_at") @db.Timestamptz(6)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      Profile?              @relation("CrmJourneyCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  steps        CrmJourneyStep[]
+  enrollments  CrmJourneyEnrollment[]
+  runs         CrmJourneyRun[]
+
+  @@index([organizationId, status], map: "crm_journeys_org_status_idx")
+  @@map("crm_journeys")
+  @@schema("app_v3")
+}
+
+model CrmJourneyStep {
+  env            String             @default("prod")
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                @map("organization_id")
+  journeyId      String             @map("journey_id") @db.Uuid
+  stepKey        String             @map("step_key")
+  position       Int
+  stepType       CrmJourneyStepType @map("step_type")
+  config         Json               @default("{}")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journey      CrmJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  runs         CrmJourneyRun[]
+
+  @@unique([journeyId, stepKey], map: "crm_journey_steps_journey_step_key_uq")
+  @@unique([journeyId, position], map: "crm_journey_steps_journey_position_uq")
+  @@index([organizationId, journeyId], map: "crm_journey_steps_org_journey_idx")
+  @@map("crm_journey_steps")
+  @@schema("app_v3")
+}
+
+model CrmJourneyEnrollment {
+  env            String                     @default("prod")
+  id             String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int                        @map("organization_id")
+  journeyId      String                     @map("journey_id") @db.Uuid
+  contactId      String                     @map("contact_id") @db.Uuid
+  triggerEventId String?                    @map("trigger_event_id") @db.Text
+  dedupeKey      String                     @map("dedupe_key") @db.Text
+  status         CrmJourneyEnrollmentStatus @default(ACTIVE)
+  currentStep    Int                        @default(0) @map("current_step")
+  lastEvaluatedAt DateTime?                 @map("last_evaluated_at") @db.Timestamptz(6)
+  completedAt    DateTime?                  @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journey      CrmJourney     @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  contact      CrmContact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  runs         CrmJourneyRun[]
+
+  @@unique([journeyId, dedupeKey], map: "crm_journey_enrollments_journey_dedupe_key_uq")
+  @@index([organizationId, status], map: "crm_journey_enrollments_org_status_idx")
+  @@index([organizationId, contactId], map: "crm_journey_enrollments_org_contact_idx")
+  @@map("crm_journey_enrollments")
+  @@schema("app_v3")
+}
+
+model CrmJourneyRun {
+  env            String            @default("prod")
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int               @map("organization_id")
+  journeyId      String            @map("journey_id") @db.Uuid
+  enrollmentId   String            @map("enrollment_id") @db.Uuid
+  stepId         String            @map("step_id") @db.Uuid
+  status         CrmJourneyRunStatus @default(PENDING)
+  scheduledFor   DateTime?         @map("scheduled_for") @db.Timestamptz(6)
+  executedAt     DateTime?         @map("executed_at") @db.Timestamptz(6)
+  errorCode      String?           @map("error_code")
+  errorMessage   String?           @map("error_message")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journey      CrmJourney         @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  enrollment   CrmJourneyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  step         CrmJourneyStep     @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status], map: "crm_journey_runs_org_status_idx")
+  @@index([enrollmentId, createdAt], map: "crm_journey_runs_enrollment_created_idx")
+  @@map("crm_journey_runs")
   @@schema("app_v3")
 }
 
@@ -4780,6 +5230,7 @@ model CrmCampaignDelivery {
   organizationId Int               @map("organization_id")
   campaignId     String            @map("campaign_id") @db.Uuid
   contactId      String            @map("contact_id") @db.Uuid
+  channel        CrmCampaignDeliveryChannel @default(IN_APP)
   userId         String?           @map("user_id") @db.Uuid
   notificationId String?           @map("notification_id") @db.Uuid
   status         CrmDeliveryStatus @default(SENT)
@@ -4795,7 +5246,7 @@ model CrmCampaignDelivery {
   user         Profile?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   notification Notification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
 
-  @@unique([campaignId, contactId], map: "crm_campaign_deliveries_campaign_contact_unique")
+  @@unique([campaignId, contactId, channel], map: "crm_campaign_deliveries_campaign_contact_channel_unique")
   @@index([organizationId, campaignId], map: "crm_campaign_deliveries_org_campaign_idx")
   @@map("crm_campaign_deliveries")
   @@schema("app_v3")
@@ -5742,7 +6193,7 @@ enum PadelTournamentLifecycleStatus {
 }
 
 enum PadelTournamentRole {
-  DIRECTOR
+  DIRETOR_PROVA
   REFEREE
   SCOREKEEPER
   STREAMER
@@ -5754,6 +6205,78 @@ enum PadelClubStaffRole {
   ADMIN_CLUBE
   DIRETOR_PROVA
   STAFF
+
+  @@schema("app_v3")
+}
+
+enum PadelPartnershipStatus {
+  PENDING
+  APPROVED
+  PAUSED
+  REVOKED
+  EXPIRED
+
+  @@schema("app_v3")
+}
+
+enum PadelPartnershipPriorityMode {
+  FIRST_CONFIRMED_WITH_OWNER_OVERRIDE
+  OWNER_PRIORITY
+  MANUAL_APPROVAL
+
+  @@schema("app_v3")
+}
+
+enum PadelPartnershipCompensationStatus {
+  OPEN
+  AUTO_RESOLVED
+  PENDING_COMPENSATION
+  MANUAL_RESOLVED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelRatingSanctionType {
+  SUSPENSION
+  BLOCK_NEW_MATCHES
+  RESET_PARTIAL
+  WARNING
+
+  @@schema("app_v3")
+}
+
+enum PadelRatingSanctionStatus {
+  ACTIVE
+  RESOLVED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelTournamentTierApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@schema("app_v3")
+}
+
+enum AgendaResourceClaimType {
+  CLUB
+  COURT
+  STAFF
+  PROFESSIONAL
+  TRAINER
+  ROOM
+
+  @@schema("app_v3")
+}
+
+enum AgendaResourceClaimStatus {
+  CLAIMED
+  RELEASED
+  CANCELLED
 
   @@schema("app_v3")
 }
@@ -5971,6 +6494,8 @@ enum padel_format {
   QUADRO_AB
   DUPLA_ELIMINACAO
   NON_STOP
+  AMERICANO
+  MEXICANO
 
   @@schema("app_v3")
 }
@@ -6332,14 +6857,6 @@ enum ServiceKind {
   @@schema("app_v3")
 }
 
-enum CrmCustomerStatus {
-  ACTIVE
-  SUPPRESSED
-  DELETED
-
-  @@schema("app_v3")
-}
-
 enum CrmContactStatus {
   ACTIVE
   SUPPRESSED
@@ -6429,6 +6946,71 @@ enum CrmCampaignStatus {
   SENT
   PAUSED
   CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum CrmCampaignApprovalState {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPIRED
+
+  @@schema("app_v3")
+}
+
+enum CrmCampaignApprovalAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  ESCALATED
+
+  @@schema("app_v3")
+}
+
+enum CrmCampaignDeliveryChannel {
+  IN_APP
+  EMAIL
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyStatus {
+  DRAFT
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyStepType {
+  TRIGGER
+  CONDITION
+  DELAY
+  ACTION
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyEnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum CrmJourneyRunStatus {
+  PENDING
+  RUNNING
+  SENT
+  SKIPPED
+  FAILED
 
   @@schema("app_v3")
 }

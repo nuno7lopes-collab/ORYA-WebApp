@@ -9,6 +9,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
+import { resolvePartnershipScheduleConstraints } from "@/domain/padel/partnershipSchedulePolicy";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
@@ -275,7 +276,7 @@ async function _POST(req: NextRequest) {
   let courts = selectedCourtIds.length
     ? await prisma.padelClubCourt.findMany({
         where: { id: { in: selectedCourtIds }, club: { organizationId: organization.id }, isActive: true },
-        select: { id: true, name: true, displayOrder: true },
+        select: { id: true, name: true, displayOrder: true, padelClubId: true },
         orderBy: [{ displayOrder: "asc" }],
       })
     : [];
@@ -287,7 +288,7 @@ async function _POST(req: NextRequest) {
     if (clubIds.length > 0) {
       courts = await prisma.padelClubCourt.findMany({
         where: { padelClubId: { in: clubIds }, isActive: true },
-        select: { id: true, name: true, displayOrder: true },
+        select: { id: true, name: true, displayOrder: true, padelClubId: true },
         orderBy: [{ displayOrder: "asc" }],
       });
     }
@@ -457,6 +458,33 @@ async function _POST(req: NextRequest) {
       select: { id: true, courtId: true, startAt: true, endAt: true },
     });
 
+    const partnershipConstraints = await resolvePartnershipScheduleConstraints({
+      organizationId: organization.id,
+      windowStart,
+      windowEnd,
+      courts: courts.map((court) => ({
+        id: court.id,
+        padelClubId: court.padelClubId ?? null,
+      })),
+    });
+    if (!partnershipConstraints.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          error: "PARTNERSHIP_CONSTRAINTS_BLOCKED",
+          details: partnershipConstraints.errors,
+        },
+        { status: 409 },
+      );
+    }
+    const partnershipBlocks = partnershipConstraints.additionalCourtBlocks.map((block, index) => ({
+      id: `partnership:${block.courtId}:${index}`,
+      courtId: block.courtId,
+      startAt: block.startAt,
+      endAt: block.endAt,
+    }));
+    const effectiveCourtBlocks = [...courtBlocks, ...partnershipBlocks];
+
     const now = new Date();
     const bookings = await prisma.booking.findMany({
       where: {
@@ -489,7 +517,7 @@ async function _POST(req: NextRequest) {
       courts,
       pairingPlayers,
       availabilities,
-      courtBlocks,
+      courtBlocks: effectiveCourtBlocks,
       config: {
         windowStart,
         windowEnd,
@@ -550,7 +578,7 @@ async function _POST(req: NextRequest) {
       bucket.push(candidate);
     };
 
-    courtBlocks.forEach((block) => {
+    effectiveCourtBlocks.forEach((block) => {
       if (!block.courtId) return;
       addExisting(block.courtId, {
         type: "HARD_BLOCK",

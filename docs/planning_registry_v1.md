@@ -18,6 +18,25 @@ Atualizado: 2026-02-12
 - `REJEITADO`: não entra no SSOT.
 - `MANTER_PLANEAMENTO`: continua apenas como planeamento.
 
+## Bloco P0 — Transição Canónica Org (Execução 2026-02-12)
+- Objetivo: fechar drift SSOT↔runtime para namespaces de organização fora de Padel.
+- Estado do bloco: `EM_EXECUCAO`
+- Escopo excluído: Padel/torneios/ranking/campos.
+
+### P0.1 Política de rotas (decisão consolidada)
+- Item: legado web `/organizacao/*` com `301` para `/org/:orgId/*`.
+  Estado: `MIGRADO_PARA_SSOT`
+- Item: legado API `/api/organizacao/*` com `410 LEGACY_ROUTE_REMOVED`.
+  Estado: `MIGRADO_PARA_SSOT`
+- Item: consumo canónico obrigatório em `/api/org/:orgId/*`, `/api/org-hub/*`, `/api/org-system/*`.
+  Estado: `MIGRADO_PARA_SSOT`
+
+### P0.2 Regra 00.6 (forward-only)
+- Item: aplicar metadata obrigatória apenas para decisões FECHADO novas/alteradas a partir de 2026-02-12.
+  Estado: `MIGRADO_PARA_SSOT`
+- Item: manter ledger de transição para FECHADO histórico sem metadados completos.
+  Estado: `MIGRADO_PARA_SSOT`
+
 ## Bloco P1 — Padel Clube (Planeamento)
 - Estado do bloco: `CONSOLIDADO_SSOT`
 - Objetivo: separar claramente o que pode virar norma no SSOT do que permanece roadmap.

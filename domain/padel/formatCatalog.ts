@@ -8,6 +8,8 @@ export const PADEL_FORMAT_CATALOG: readonly padel_format[] = [
   padel_format.DUPLA_ELIMINACAO,
   padel_format.NON_STOP,
   padel_format.CAMPEONATO_LIGA,
+  padel_format.AMERICANO,
+  padel_format.MEXICANO,
 ] as const;
 
 export const PADEL_FORMAT_SET = new Set<padel_format>(PADEL_FORMAT_CATALOG);

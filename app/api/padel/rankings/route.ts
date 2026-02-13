@@ -7,39 +7,35 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { PadelPointsTable } from "@/lib/padel/validation";
-import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
-import { resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
+import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
-import { respondError, respondOk } from "@/lib/http/envelope";
-import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
+import { jsonWrap } from "@/lib/api/wrapResponse";
+import {
+  applyInactivityToVisual,
+  computeVisualLevel,
+  rebuildPadelRatingsForEvent,
+} from "@/domain/padel/ratingEngine";
 
 const DEFAULT_LIMIT = 50;
+const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+
 const clampLimit = (raw: string | null) => {
   const parsed = raw ? Number(raw) : NaN;
   if (!Number.isFinite(parsed)) return DEFAULT_LIMIT;
   return Math.min(Math.max(1, Math.floor(parsed)), 200);
 };
 
-const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
-
-function fail(
-  ctx: RequestContext,
-  status: number,
-  message: string,
-  errorCode = errorCodeForStatus(status),
-  retryable = status >= 500,
-) {
-  const resolvedMessage = typeof message === "string" ? message : String(message);
-  const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-  return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+async function ensureUser() {
+  const supabase = await createSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
 }
 
 async function _GET(req: NextRequest) {
-  const ctx = getRequestContext(req);
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_rankings",
     max: 120,
@@ -53,11 +49,10 @@ async function _GET(req: NextRequest) {
   const periodDaysRaw = Number(req.nextUrl.searchParams.get("periodDays"));
   const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
   const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
-  const levelFilter = req.nextUrl.searchParams.get("level");
 
   if (eventId) {
     const eId = Number(eventId);
-    if (!Number.isFinite(eId)) return fail(ctx, 400, "INVALID_EVENT");
+    if (!Number.isFinite(eId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
     const event = await prisma.event.findUnique({
       where: { id: eId, isDeleted: false },
@@ -71,7 +66,8 @@ async function _GET(req: NextRequest) {
         },
       },
     });
-    if (!event) return fail(ctx, 404, "EVENT_NOT_FOUND");
+    if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+
     const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const competitionState = resolvePadelCompetitionState({
       eventStatus: event.status,
@@ -83,238 +79,165 @@ async function _GET(req: NextRequest) {
       ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
       competitionState === "PUBLIC";
     if (!isPublicEvent) {
-      return fail(ctx, 403, "FORBIDDEN");
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
+
     const entries = await prisma.padelRankingEntry.findMany({
       where: {
         eventId: eId,
         ...(since ? { createdAt: { gte: since } } : {}),
-        ...(levelFilter ? { player: { level: levelFilter } } : {}),
       },
       include: { player: true },
-      orderBy: [{ points: "desc" }],
+      orderBy: [{ points: "desc" }, { playerId: "asc" }],
+      take: limit,
     });
+
     const items = entries.map((row, idx) => ({
       position: idx + 1,
       points: row.points,
+      rating: row.points,
       player: {
         id: row.player.id,
         fullName: row.player.fullName,
-        level: row.player.level,
+        level: row.level ?? row.player.level,
       },
     }));
-    return respondOk(ctx, { items }, { status: 200 });
+
+    return jsonWrap({ ok: true, items }, { status: 200 });
   }
 
   if (scope === "organization") {
-    if (!organizationId) {
-      return fail(ctx, 400, "MISSING_ORGANIZATION");
-    }
-    const entries = await prisma.padelRankingEntry.findMany({
+    const user = await ensureUser();
+    if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+    if (!organizationId) return jsonWrap({ ok: false, error: "MISSING_ORGANIZATION" }, { status: 400 });
+
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+      organizationId,
+      roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
+    });
+    if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+    const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
+    const leaderRating = leader._max.rating ?? 1200;
+
+    const profiles = await prisma.padelRatingProfile.findMany({
       where: {
         organizationId,
-        ...(since ? { createdAt: { gte: since } } : {}),
-        ...(levelFilter ? { player: { level: levelFilter } } : {}),
+        ...(since ? { lastActivityAt: { gte: since } } : {}),
       },
-      include: { player: true },
+      include: {
+        player: {
+          select: { id: true, fullName: true, level: true },
+        },
+      },
+      orderBy: [{ rating: "desc" }, { playerId: "asc" }],
+      take: limit,
     });
 
-    const aggregated = Object.values(
-      entries.reduce<Record<number, { player: any; points: number }>>((acc, row) => {
-        const key = row.playerId;
-        if (!acc[key]) acc[key] = { player: row.player, points: 0 };
-        acc[key].points += row.points;
-        return acc;
-      }, {}),
-    ).sort((a, b) => b.points - a.points);
+    const items = profiles.map((profile, idx) => {
+      const computed = computeVisualLevel(profile.rating, leaderRating);
+      const drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+      return {
+        position: idx + 1,
+        points: Math.round(profile.rating),
+        rating: profile.rating,
+        rd: profile.rd,
+        sigma: profile.sigma,
+        player: {
+          id: profile.player.id,
+          fullName: profile.player.fullName,
+          level: drifted.toFixed(2),
+        },
+      };
+    });
 
-    const items = aggregated.slice(0, limit).map((item, idx) => ({
-      position: idx + 1,
-      points: item.points,
-      player: {
-        id: item.player.id,
-        fullName: item.player.fullName,
-        level: item.player.level,
-      },
-    }));
-
-    return respondOk(ctx, { items }, { status: 200 });
+    return jsonWrap({ ok: true, items }, { status: 200 });
   }
 
-  const entries = await prisma.padelRankingEntry.findMany({
+  const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
+  const leaderRating = leader._max.rating ?? 1200;
+
+  const profiles = await prisma.padelRatingProfile.findMany({
     where: {
-      ...(since ? { createdAt: { gte: since } } : {}),
-      ...(levelFilter ? { player: { level: levelFilter } } : {}),
+      ...(since ? { lastActivityAt: { gte: since } } : {}),
+      leaderboardEligible: true,
     },
-    include: { player: true },
+    include: {
+      player: {
+        select: { id: true, fullName: true, level: true },
+      },
+    },
+    orderBy: [{ rating: "desc" }, { playerId: "asc" }],
+    take: limit,
   });
 
-  const aggregated = Object.values(
-    entries.reduce<Record<number, { player: any; points: number }>>((acc, row) => {
-      const key = row.playerId;
-      if (!acc[key]) acc[key] = { player: row.player, points: 0 };
-      acc[key].points += row.points;
-      return acc;
-    }, {}),
-  ).sort((a, b) => b.points - a.points);
+  const items = profiles.map((profile, idx) => {
+    const computed = computeVisualLevel(profile.rating, leaderRating);
+    const drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+    return {
+      position: idx + 1,
+      points: Math.round(profile.rating),
+      rating: profile.rating,
+      rd: profile.rd,
+      sigma: profile.sigma,
+      player: {
+        id: profile.player.id,
+        fullName: profile.player.fullName,
+        level: drifted.toFixed(2),
+      },
+    };
+  });
 
-  const items = aggregated.slice(0, limit).map((item, idx) => ({
-    position: idx + 1,
-    points: item.points,
-    player: {
-      id: item.player.id,
-      fullName: item.player.fullName,
-      level: item.player.level,
-    },
-  }));
-
-  return respondOk(ctx, { items }, { status: 200 });
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
 
-export const GET = withApiEnvelope(_GET);
-
-export async function POST(req: NextRequest) {
-  const ctx = getRequestContext(req);
-  const supabase = await createSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return fail(ctx, 401, "UNAUTHENTICATED");
+async function _POST(req: NextRequest) {
+  const user = await ensureUser();
+  if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  if (!body) return fail(ctx, 400, "INVALID_BODY");
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) return fail(ctx, 400, "INVALID_EVENT");
+  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: { id: true, organizationId: true },
   });
-  if (!event || !event.organizationId) return fail(ctx, 404, "EVENT_NOT_FOUND");
+  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  const organizationId = event.organizationId;
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: event.organizationId,
+    organizationId,
     roles: ROLE_ALLOWLIST,
   });
-  if (!organization || !membership) return fail(ctx, 403, "NO_ORGANIZATION");
+  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
   const permission = await ensureMemberModuleAccess({
-    organizationId: event.organizationId,
+    organizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,
     moduleKey: OrganizationModule.TORNEIOS,
     required: "EDIT",
   });
-  if (!permission.ok) return fail(ctx, 403, "FORBIDDEN");
+  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId });
-  const pointsTable: PadelPointsTable = (ruleSnapshot.pointsTable as any) || { WIN: 3, LOSS: 0 };
+  const tier = typeof body.tier === "string" ? body.tier : null;
 
-  const matches = await prisma.eventMatchSlot.findMany({
-    where: { eventId, status: "DONE" },
-    include: {
-      pairingA: { select: { slots: { select: { playerProfileId: true, profileId: true } } } },
-      pairingB: { select: { slots: { select: { playerProfileId: true, profileId: true } } } },
-    },
-  });
-
-  const profileIds = new Set<string>();
-  matches.forEach((m) => {
-    [m.pairingA, m.pairingB].forEach((pairing) => {
-      pairing?.slots.forEach((slot) => {
-        if (!slot.playerProfileId && slot.profileId) profileIds.add(slot.profileId);
-      });
+  const result = await prisma.$transaction(async (tx) => {
+    return rebuildPadelRatingsForEvent({
+      tx,
+      organizationId,
+      eventId: event.id,
+      actorUserId: user.id,
+      tier,
     });
   });
 
-  const playerProfiles = profileIds.size
-    ? await prisma.padelPlayerProfile.findMany({
-        where: { organizationId: event.organizationId!, userId: { in: Array.from(profileIds) } },
-        select: { id: true, userId: true },
-      })
-    : [];
-  const profileToPlayerProfile = new Map<string, number>();
-  playerProfiles.forEach((row) => {
-    if (row.userId) profileToPlayerProfile.set(row.userId, row.id);
-  });
-
-  const playerPoints: Record<number, number> = {};
-  const winPts = pointsTable.WIN ?? 3;
-  const lossPts = pointsTable.LOSS ?? 0;
-
-  const resolvePlayerId = (slot: { playerProfileId: number | null; profileId: string | null }) => {
-    if (slot.playerProfileId) return slot.playerProfileId;
-    if (slot.profileId) return profileToPlayerProfile.get(slot.profileId) ?? null;
-    return null;
-  };
-
-  matches.forEach((m) => {
-    const scoreObj = m.score && typeof m.score === "object" ? (m.score as Record<string, unknown>) : null;
-    const rawSets = Array.isArray(m.scoreSets)
-      ? m.scoreSets
-      : Array.isArray((scoreObj as { sets?: unknown } | null)?.sets)
-        ? ((scoreObj as { sets?: unknown }).sets as any[])
-        : null;
-    const stats = resolvePadelMatchStats(rawSets, scoreObj);
-    const winner: "A" | "B" | null =
-      stats?.winner ??
-      (scoreObj?.winnerSide === "A" || scoreObj?.winnerSide === "B"
-        ? (scoreObj.winnerSide as "A" | "B")
-        : null);
-    if (!winner) return;
-    const winnerPairing = winner === "A" ? m.pairingA : m.pairingB;
-    const loserPairing = winner === "A" ? m.pairingB : m.pairingA;
-
-    const award = (pairing: typeof m.pairingA, pts: number) => {
-      pairing?.slots.forEach((slot) => {
-        const playerId = resolvePlayerId(slot);
-        if (!playerId) return;
-        playerPoints[playerId] = (playerPoints[playerId] ?? 0) + pts;
-      });
-    };
-
-    award(winnerPairing, winPts);
-    award(loserPairing, lossPts);
-  });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.padelRankingEntry.deleteMany({ where: { eventId } });
-    const sorted = Object.entries(playerPoints)
-      .map(([playerIdStr, points]) => ({ playerId: Number(playerIdStr), points }))
-      .sort((a, b) => b.points - a.points || a.playerId - b.playerId);
-    let lastPoints: number | null = null;
-    let lastPosition = 0;
-    const entries = sorted.map((row, idx) => {
-      if (lastPoints === null || row.points !== lastPoints) {
-        lastPosition = idx + 1;
-        lastPoints = row.points;
-      }
-      return {
-        organizationId: event.organizationId!,
-        eventId,
-        playerId: row.playerId,
-        points: row.points,
-        position: lastPosition,
-      };
-    });
-    if (entries.length > 0) {
-      await tx.padelRankingEntry.createMany({ data: entries });
-    }
-  });
-
-  return respondOk(ctx, {}, { status: 200 });
+  return jsonWrap({ ok: true, result }, { status: 200 });
 }
 
-function errorCodeForStatus(status: number) {
-  if (status === 401) return "UNAUTHENTICATED";
-  if (status === 403) return "FORBIDDEN";
-  if (status === 404) return "NOT_FOUND";
-  if (status === 409) return "CONFLICT";
-  if (status === 410) return "GONE";
-  if (status === 413) return "PAYLOAD_TOO_LARGE";
-  if (status === 422) return "VALIDATION_FAILED";
-  if (status === 400) return "BAD_REQUEST";
-  return "INTERNAL_ERROR";
-}
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);

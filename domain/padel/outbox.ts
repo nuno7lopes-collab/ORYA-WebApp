@@ -8,7 +8,11 @@ import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
 import { advancePadelKnockoutWinner, extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutAdvance";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { resolvePartnershipScheduleConstraints } from "@/domain/padel/partnershipSchedulePolicy";
 import { Prisma } from "@prisma/client";
+
+type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
+const DEFAULT_DELAY_POLICY: DelayPolicy = "CASCADE_SAME_COURT";
 
 type AutoScheduleRequestedPayload = {
   eventId: number;
@@ -32,6 +36,7 @@ type MatchDelayRequestedPayload = {
   reason?: string | null;
   clearSchedule?: boolean;
   autoReschedule?: boolean;
+  delayPolicy?: DelayPolicy | null;
   windowStart?: string | null;
   windowEnd?: string | null;
 };
@@ -47,6 +52,13 @@ type MatchUpdatedPayload = {
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const MATCH_BATCH_GENERATED = "PADEL_MATCH_GENERATED";
 const MATCH_DELETED_EVENT = "PADEL_MATCH_DELETED";
+
+function normalizeDelayPolicy(value: unknown): DelayPolicy {
+  if (value === "SINGLE_MATCH" || value === "CASCADE_SAME_COURT" || value === "GLOBAL_REPLAN") {
+    return value;
+  }
+  return DEFAULT_DELAY_POLICY;
+}
 
 export async function handlePadelOutboxEvent(params: { eventType: string; payload: Prisma.JsonValue }) {
   switch (params.eventType) {
@@ -105,6 +117,17 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
     where: { id: payload.matchId },
     select: {
       id: true,
+      status: true,
+      plannedStartAt: true,
+      plannedEndAt: true,
+      plannedDurationMinutes: true,
+      startTime: true,
+      courtId: true,
+      pairingAId: true,
+      pairingBId: true,
+      roundLabel: true,
+      roundType: true,
+      groupLabel: true,
       score: true,
       event: {
         select: {
@@ -123,6 +146,9 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
 
   const score = (match.score && typeof match.score === "object" ? match.score : {}) as Record<string, unknown>;
   const nowIso = new Date().toISOString();
+  const delayPolicy = normalizeDelayPolicy(payload.delayPolicy);
+  const delayedStartRef = match.plannedStartAt ?? match.startTime ?? null;
+  const delayedCourtId = match.courtId ?? null;
   const scoreUpdate = {
     ...score,
     delayStatus: "DELAYED",
@@ -149,6 +175,80 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
     const windowStart = payload.windowStart ? new Date(payload.windowStart) : match.event.startsAt ?? null;
     const windowEnd = payload.windowEnd ? new Date(payload.windowEnd) : match.event.endsAt ?? null;
     if (windowStart && windowEnd) {
+      const hasCascadeCourt = delayPolicy === "CASCADE_SAME_COURT" && typeof delayedCourtId === "number";
+      const affectedMatchScope =
+        delayPolicy === "SINGLE_MATCH" || (delayPolicy === "CASCADE_SAME_COURT" && !hasCascadeCourt)
+          ? { id: match.id }
+          : delayPolicy === "CASCADE_SAME_COURT"
+            ? {
+                OR: [
+                  { id: match.id },
+                  {
+                    status: "PENDING",
+                    courtId: delayedCourtId,
+                    OR: delayedStartRef
+                      ? [{ plannedStartAt: { gte: delayedStartRef } }, { startTime: { gte: delayedStartRef } }]
+                      : [{ plannedStartAt: { not: null } }, { startTime: { not: null } }],
+                  },
+                ],
+              }
+            : {
+                status: "PENDING",
+              };
+      const matchesInScope = await prisma.eventMatchSlot.findMany({
+        where: {
+          eventId: match.event.id,
+          ...(affectedMatchScope as Record<string, unknown>),
+        },
+        select: {
+          id: true,
+          status: true,
+          plannedStartAt: true,
+          plannedEndAt: true,
+          plannedDurationMinutes: true,
+          startTime: true,
+          courtId: true,
+          pairingAId: true,
+          pairingBId: true,
+          roundLabel: true,
+          roundType: true,
+          groupLabel: true,
+          score: true,
+        },
+      });
+      const affectedMatchIds = Array.from(new Set(matchesInScope.map((item) => item.id)));
+      const unscheduledMatches = matchesInScope.filter((item) => item.status === "PENDING");
+      if (unscheduledMatches.length === 0) {
+        await recordOrganizationAuditSafe({
+          organizationId: match.event.organizationId,
+          actorUserId: payload.actorUserId,
+          action: "PADEL_MATCH_DELAY_RESCHEDULE_SKIPPED",
+          metadata: {
+            matchId: match.id,
+            eventId: match.event.id,
+            delayPolicy,
+            reason: "NO_PENDING_MATCHES_IN_SCOPE",
+          },
+        });
+      }
+      for (const affected of unscheduledMatches) {
+        if (affected.id === match.id) continue;
+        await updatePadelMatch({
+          matchId: affected.id,
+          eventId: match.event.id,
+          organizationId: match.event.organizationId,
+          actorUserId: payload.actorUserId,
+          eventType: SYSTEM_MATCH_EVENT,
+          data: {
+            plannedStartAt: null,
+            plannedEndAt: null,
+            plannedDurationMinutes: null,
+            courtId: null,
+            startTime: null,
+          },
+        });
+      }
+
       const clubIds = [
         match.event.padelTournamentConfig?.padelClubId ?? null,
         ...(match.event.padelTournamentConfig?.partnerClubIds ?? []),
@@ -156,15 +256,16 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
       const courts = clubIds.length
         ? await prisma.padelClubCourt.findMany({
             where: { padelClubId: { in: clubIds }, isActive: true },
-            select: { id: true, name: true, displayOrder: true },
+            select: { id: true, name: true, displayOrder: true, padelClubId: true },
             orderBy: [{ displayOrder: "asc" }],
           })
         : [];
-      const [scheduledMatches, unscheduledMatches] = await Promise.all([
+      const [scheduledMatches] = await Promise.all([
         prisma.eventMatchSlot.findMany({
           where: {
             eventId: match.event.id,
             OR: [{ startTime: { not: null } }, { plannedStartAt: { not: null } }],
+            ...(affectedMatchIds.length > 0 ? { id: { notIn: affectedMatchIds } } : {}),
           },
           select: {
             id: true,
@@ -175,19 +276,6 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
             courtId: true,
             pairingAId: true,
             pairingBId: true,
-          },
-        }),
-        prisma.eventMatchSlot.findMany({
-          where: { id: match.id },
-          select: {
-            id: true,
-            plannedDurationMinutes: true,
-            courtId: true,
-            pairingAId: true,
-            pairingBId: true,
-            roundLabel: true,
-            roundType: true,
-            groupLabel: true,
           },
         }),
       ]);
@@ -229,6 +317,34 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
           select: { courtId: true, startAt: true, endAt: true },
         }),
       ]);
+      const partnershipConstraints = await resolvePartnershipScheduleConstraints({
+        organizationId: match.event.organizationId,
+        windowStart,
+        windowEnd,
+        courts: courts.map((court) => ({ id: court.id, padelClubId: court.padelClubId ?? null })),
+      });
+      if (!partnershipConstraints.ok) {
+        await recordOrganizationAuditSafe({
+          organizationId: match.event.organizationId,
+          actorUserId: payload.actorUserId,
+          action: "PADEL_MATCH_DELAY_RESCHEDULE_BLOCKED",
+          metadata: {
+            matchId: match.id,
+            eventId: match.event.id,
+            delayPolicy,
+            errors: partnershipConstraints.errors,
+          },
+        });
+        return { ok: true, code: "PARTNERSHIP_CONSTRAINTS_BLOCKED" } as const;
+      }
+      const effectiveCourtBlocks = [
+        ...courtBlocks,
+        ...partnershipConstraints.additionalCourtBlocks.map((block) => ({
+          courtId: block.courtId,
+          startAt: block.startAt,
+          endAt: block.endAt,
+        })),
+      ];
 
       const advanced = (match.event.padelTournamentConfig?.advancedSettings || {}) as {
         scheduleDefaults?: {
@@ -252,7 +368,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
         courts,
         pairingPlayers,
         availabilities,
-        courtBlocks,
+        courtBlocks: effectiveCourtBlocks,
         config: {
           windowStart,
           windowEnd,
@@ -264,8 +380,17 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
         },
       });
 
-      const next = scheduleResult.scheduled[0];
-      if (next) {
+      for (const next of scheduleResult.scheduled) {
+        const isDelayedMatch = next.matchId === match.id;
+        const scopedScore =
+          isDelayedMatch
+            ? ({
+                ...scoreUpdate,
+                delayStatus: "RESCHEDULED",
+                rescheduledAt: nowIso,
+                rescheduledBy: payload.actorUserId,
+              } as Prisma.InputJsonValue)
+            : undefined;
         await updatePadelMatch({
           matchId: next.matchId,
           eventId: match.event.id,
@@ -277,12 +402,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
             plannedEndAt: next.end,
             plannedDurationMinutes: next.durationMinutes,
             courtId: next.courtId,
-            score: {
-              ...scoreUpdate,
-              delayStatus: "RESCHEDULED",
-              rescheduledAt: nowIso,
-              rescheduledBy: payload.actorUserId,
-            } as Prisma.InputJsonValue,
+            ...(scopedScore ? { score: scopedScore } : {}),
           },
         });
       }
@@ -298,6 +418,7 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
       eventId: match.event.id,
       reason: payload.reason ?? null,
       autoReschedule: payload.autoReschedule !== false,
+      delayPolicy,
     },
   });
   return { ok: true } as const;

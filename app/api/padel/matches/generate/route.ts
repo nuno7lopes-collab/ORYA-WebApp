@@ -8,7 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
-import { resolvePadelFormat } from "@/domain/padel/formatCatalog";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -27,10 +27,11 @@ async function _POST(req: NextRequest) {
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
   const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
-  const format = resolvePadelFormat(body.format);
+  const format = parsePadelFormat(body.format);
   const allowIncomplete = body.allowIncomplete === true;
 
   if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!format) return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
@@ -88,7 +89,7 @@ async function _POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED") {
+    if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED" || result.error === "FORMAT_NOT_OPERATIONAL") {
       return jsonWrap({ ok: false, error: result.error }, { status: 409 });
     }
     return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });

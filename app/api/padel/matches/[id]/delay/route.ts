@@ -13,7 +13,15 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
+const DEFAULT_DELAY_POLICY: DelayPolicy = "CASCADE_SAME_COURT";
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const normalizeDelayPolicy = (value: unknown, fallback: DelayPolicy = DEFAULT_DELAY_POLICY): DelayPolicy => {
+  if (value === "SINGLE_MATCH" || value === "CASCADE_SAME_COURT" || value === "GLOBAL_REPLAN") {
+    return value;
+  }
+  return fallback;
+};
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
   const d = new Date(value);
@@ -70,6 +78,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
   const organizationId = match.event.organizationId;
+  const advanced = (match.event.padelTournamentConfig?.advancedSettings || {}) as {
+    scheduleDefaults?: { delayPolicy?: DelayPolicy };
+  };
+  const defaultDelayPolicy = normalizeDelayPolicy(advanced.scheduleDefaults?.delayPolicy, DEFAULT_DELAY_POLICY);
+  const delayPolicy = normalizeDelayPolicy(body?.delayPolicy, defaultDelayPolicy);
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId,
@@ -94,7 +107,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const outbox = await recordOutboxEvent(
       {
         eventType: "PADEL_MATCH_DELAY_REQUESTED",
-        dedupeKey: `padel_match_delay:${match.id}:${clearSchedule ? "clear" : "keep"}:${autoReschedule ? "auto" : "manual"}:${windowStartOverride ? windowStartOverride.toISOString() : "none"}:${windowEndOverride ? windowEndOverride.toISOString() : "none"}`,
+        dedupeKey: `padel_match_delay:${match.id}:${clearSchedule ? "clear" : "keep"}:${autoReschedule ? "auto" : "manual"}:${delayPolicy}:${windowStartOverride ? windowStartOverride.toISOString() : "none"}:${windowEndOverride ? windowEndOverride.toISOString() : "none"}`,
         payload: {
           matchId: match.id,
           eventId: match.event.id,
@@ -103,6 +116,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           reason: reason || null,
           clearSchedule,
           autoReschedule,
+          delayPolicy,
           windowStart: windowStartOverride ? windowStartOverride.toISOString() : null,
           windowEnd: windowEndOverride ? windowEndOverride.toISOString() : null,
         },
@@ -125,6 +139,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           reason: reason || null,
           clearSchedule,
           autoReschedule,
+          delayPolicy,
         },
       },
       tx,
@@ -142,6 +157,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       reason: reason || null,
       clearSchedule,
       autoReschedule,
+      delayPolicy,
       windowStart: windowStartOverride ? windowStartOverride.toISOString() : null,
       windowEnd: windowEndOverride ? windowEndOverride.toISOString() : null,
     },

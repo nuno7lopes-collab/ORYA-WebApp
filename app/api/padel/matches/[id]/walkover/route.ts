@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
@@ -13,8 +13,11 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { buildWalkoverSets, normalizePadelScoreRules } from "@/domain/padel/score";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { listTournamentDirectorUserIds, resolveIncidentAuthority } from "@/domain/padel/incidentGovernance";
+import { createNotification, shouldNotify } from "@/lib/notifications";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -33,6 +36,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       pairingBId: true,
       eventId: true,
       status: true,
+      roundType: true,
+      roundLabel: true,
       event: { select: { organizationId: true } },
     },
   });
@@ -45,10 +50,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "ALREADY_DONE" }, { status: 409 });
   }
 
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const winner = body?.winner as "A" | "B";
   if (winner !== "A" && winner !== "B") {
     return jsonWrap({ ok: false, error: "INVALID_WINNER" }, { status: 400 });
+  }
+  if (body?.confirmedByRole === undefined || body?.confirmedByRole === null) {
+    return jsonWrap({ ok: false, error: "MISSING_CONFIRMED_BY_ROLE" }, { status: 400 });
+  }
+  if (body?.confirmationSource === undefined || body?.confirmationSource === null) {
+    return jsonWrap({ ok: false, error: "MISSING_CONFIRMATION_SOURCE" }, { status: 400 });
+  }
+  const resultTypeRaw = typeof body?.resultType === "string" ? body.resultType.trim().toUpperCase() : "WALKOVER";
+  const resultType =
+    SPECIAL_RESULT_TYPES.has(resultTypeRaw) ? (resultTypeRaw as "WALKOVER" | "RETIREMENT" | "INJURY") : null;
+  if (!resultType) {
+    return jsonWrap({ ok: false, error: "INVALID_RESULT_TYPE" }, { status: 400 });
   }
 
   const winnerPairingId = winner === "A" ? match.pairingAId : match.pairingBId;
@@ -73,6 +90,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
   if (!permission.ok) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const authority = await resolveIncidentAuthority({
+    eventId: match.eventId,
+    organizationId,
+    actorUserId: authData.user.id,
+    membershipRole: membership.role,
+    roundType: match.roundType,
+    roundLabel: match.roundLabel,
+    requestedConfirmedByRole: body?.confirmedByRole,
+    requestedConfirmationSource: body?.confirmationSource,
+  });
+  if (!authority.ok) {
+    return jsonWrap({ ok: false, error: authority.error }, { status: authority.status });
   }
 
   const winnerPairing = await prisma.padelPairing.findUnique({
@@ -107,6 +137,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     ruleSetVersionId: config?.ruleSetVersionId ?? null,
     capturedAt: new Date().toISOString(),
   };
+  const nowIso = new Date().toISOString();
 
   const updated = await prisma.$transaction(async (tx) => {
     const { match: updatedMatch } = await updatePadelMatch({
@@ -119,7 +150,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       data: {
         status: padel_match_status.DONE,
         winnerPairingId,
-        score: { walkover: true, resultType: "WALKOVER", winnerSide: winner, ruleSnapshot },
+        score: {
+          walkover: resultType === "WALKOVER",
+          resultType,
+          winnerSide: winner,
+          ruleSnapshot,
+          incidentType: resultType,
+          incidentConfirmedByRole: authority.confirmedByRole,
+          incidentConfirmationSource: authority.confirmationSource,
+          incidentConfirmedAt: nowIso,
+          incidentConfirmedBy: authData.user.id,
+        },
         scoreSets: buildWalkoverSets(winner, scoreRules ?? undefined),
       },
     });
@@ -134,8 +175,41 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       matchId,
       eventId: match.eventId,
       winnerPairingId,
+      resultType,
+      confirmedByRole: authority.confirmedByRole,
+      confirmationSource: authority.confirmationSource,
     },
   });
+
+  if (authority.confirmedByRole === "REFEREE") {
+    const directorUserIds = await listTournamentDirectorUserIds({
+      eventId: match.eventId,
+      organizationId,
+      excludeUserId: authData.user.id,
+    });
+    for (const directorUserId of directorUserIds) {
+      const allow = await shouldNotify(directorUserId, "SYSTEM_ANNOUNCE");
+      if (!allow) continue;
+      await createNotification({
+        userId: directorUserId,
+        type: "SYSTEM_ANNOUNCE",
+        title: "Incidente confirmado por árbitro",
+        body: `Jogo #${matchId}: ${resultType} confirmado por REFEREE.`,
+        organizationId,
+        eventId: match.eventId,
+        ctaUrl: `/organizacao/eventos/${match.eventId}`,
+        dedupeKey: `padel_incident_referee_notify:${matchId}:${resultType}:${authority.confirmedByRole}`,
+        payload: {
+          kind: "PADEL_INCIDENT_REFEREE_CONFIRMED",
+          matchId,
+          eventId: match.eventId,
+          resultType,
+          confirmedByRole: authority.confirmedByRole,
+          confirmationSource: authority.confirmationSource,
+        },
+      });
+    }
+  }
 
   return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }

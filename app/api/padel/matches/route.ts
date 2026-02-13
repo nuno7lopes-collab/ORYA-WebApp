@@ -19,6 +19,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
+const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
 
 function fail(
   ctx: RequestContext,
@@ -200,6 +201,13 @@ async function _POST(req: NextRequest) {
       ? ({ ...existingScore, ...scoreObj } as Record<string, unknown>)
       : (existingScore as Record<string, unknown>);
 
+  const resultTypeRaw = typeof mergedScore?.resultType === "string" ? mergedScore.resultType.trim().toUpperCase() : null;
+  const isSpecialResult =
+    mergedScore?.walkover === true || (resultTypeRaw ? SPECIAL_RESULT_TYPES.has(resultTypeRaw) : false);
+  if (isSpecialResult) {
+    return fail(ctx, 409, "SPECIAL_RESULT_REQUIRES_INCIDENT_ENDPOINT");
+  }
+
   const hasIncomingSets = scoreObj && Object.prototype.hasOwnProperty.call(scoreObj, "sets");
   const incomingSets = hasIncomingSets ? (scoreObj as { sets?: unknown }).sets : undefined;
   const fallbackSets = Array.isArray(match.scoreSets)
@@ -208,12 +216,7 @@ async function _POST(req: NextRequest) {
       ? (existingScore as { sets?: unknown }).sets
       : null;
   const rawSets = hasIncomingSets ? incomingSets : fallbackSets;
-  const resultType = mergedScore?.resultType;
-  const isWalkover =
-    mergedScore?.walkover === true ||
-    resultType === "WALKOVER" ||
-    resultType === "RETIREMENT" ||
-    resultType === "INJURY";
+  const isWalkover = false;
   const shouldApplyScoreRules = hasIncomingSets || isWalkover;
   const configForScore = shouldApplyScoreRules
     ? await prisma.padelTournamentConfig.findUnique({

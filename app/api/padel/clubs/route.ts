@@ -15,6 +15,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -332,7 +333,32 @@ async function _POST(req: NextRequest) {
       return saved;
     });
 
-    return jsonWrap({ ok: true, club }, { status: id ? 200 : 201 });
+    let syncResult: { localCourtIds: number[]; created: number; updated: number; deactivated: number; sourceCount: number } | null = null;
+    if (club.kind === "PARTNER" && club.sourceClubId) {
+      syncResult = await syncPartnerClubCourts({
+        partnerOrganizationId: organization.id,
+        partnerClubId: club.id,
+        sourceClubId: club.sourceClubId,
+        fallbackCount: courtsCount,
+      });
+    }
+
+    return jsonWrap(
+      {
+        ok: true,
+        club,
+        partnerCourtSync: syncResult
+          ? {
+              localCourtIds: syncResult.localCourtIds,
+              created: syncResult.created,
+              updated: syncResult.updated,
+              deactivated: syncResult.deactivated,
+              sourceCount: syncResult.sourceCount,
+            }
+          : null,
+      },
+      { status: id ? 200 : 201 },
+    );
   } catch (err) {
     console.error("[padel/clubs] error", err);
     const code = (err as { code?: string })?.code;
