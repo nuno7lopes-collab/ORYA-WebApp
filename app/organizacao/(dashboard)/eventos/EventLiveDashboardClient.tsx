@@ -6,14 +6,14 @@ import EventLivePrepClient from "@/app/organizacao/(dashboard)/eventos/EventLive
 import EventLiveClient from "@/app/eventos/[slug]/EventLiveClient";
 import { TournamentLiveManager } from "@/app/organizacao/(dashboard)/tournaments/[id]/live/page";
 
-type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type Props = {
   event: {
     id: number;
     slug: string;
     title: string;
-    liveVisibility: LiveHubVisibility;
+    liveVisibility: LiveVisibility;
     liveStreamUrl: string | null;
     templateType?: string | null;
   };

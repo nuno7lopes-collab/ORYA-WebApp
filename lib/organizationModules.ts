@@ -30,7 +30,6 @@ export async function getOrganizationActiveModules(
     .map((row) => row.moduleKey)
     .filter((module): module is OrganizationModule => typeof module === "string")
     .map((module) => module.trim().toUpperCase())
-    .map((module) => (module === "ANALYTICS" ? "FINANCEIRO" : module))
     .filter((module) => module.length > 0 && moduleSet.has(module));
 
   const resolvedPrimary = resolvePrimaryModule(primaryModule ?? null, normalizedModules);

@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 
-type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type EventLivePrepClientProps = {
   event: {
     id: number;
     slug: string;
     title: string;
-    liveVisibility: LiveHubVisibility;
+    liveVisibility: LiveVisibility;
     liveStreamUrl: string | null;
   };
   tournamentId?: number | null;
@@ -22,7 +22,7 @@ export default function EventLivePrepClient({
 }: EventLivePrepClientProps) {
   const [currentTournamentId, setCurrentTournamentId] = useState<number | null>(tournamentId ?? null);
 
-  const [liveVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
+  const [liveVisibility, setLiveVisibility] = useState<LiveVisibility>(
     event.liveVisibility ?? "PUBLIC",
   );
   const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
@@ -94,7 +94,7 @@ export default function EventLivePrepClient({
             <label className="text-sm font-medium">Visibilidade</label>
             <select
               value={liveVisibility}
-              onChange={(e) => setLiveHubVisibility(e.target.value as LiveHubVisibility)}
+              onChange={(e) => setLiveVisibility(e.target.value as LiveVisibility)}
               className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
             >
               <option value="PUBLIC">Público</option>
