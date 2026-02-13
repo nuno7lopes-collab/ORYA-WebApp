@@ -221,8 +221,6 @@ export async function rebuildPadelRatingsForEvent(params: {
     where: {
       eventId,
       status: "DONE",
-      pairingAId: { not: null },
-      pairingBId: { not: null },
     },
     select: {
       id: true,
@@ -231,16 +229,15 @@ export async function rebuildPadelRatingsForEvent(params: {
       plannedEndAt: true,
       actualEndAt: true,
       updatedAt: true,
-      pairingA: {
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
         select: {
-          id: true,
-          slots: { select: { playerProfileId: true } },
-        },
-      },
-      pairingB: {
-        select: {
-          id: true,
-          slots: { select: { playerProfileId: true } },
+          side: true,
+          participant: {
+            select: {
+              playerProfileId: true,
+            },
+          },
         },
       },
     },
@@ -256,11 +253,13 @@ export async function rebuildPadelRatingsForEvent(params: {
     const stats = resolvePadelMatchStats(match.scoreSets, match.score ?? null);
     if (!stats) continue;
 
-    const sideAPlayers = (match.pairingA?.slots ?? [])
-      .map((slot) => slot.playerProfileId)
+    const sideAPlayers = (match.participants ?? [])
+      .filter((row) => row.side === "A")
+      .map((row) => row.participant?.playerProfileId)
       .filter((id): id is number => typeof id === "number");
-    const sideBPlayers = (match.pairingB?.slots ?? [])
-      .map((slot) => slot.playerProfileId)
+    const sideBPlayers = (match.participants ?? [])
+      .filter((row) => row.side === "B")
+      .map((row) => row.participant?.playerProfileId)
       .filter((id): id is number => typeof id === "number");
 
     if (sideAPlayers.length === 0 || sideBPlayers.length === 0) continue;

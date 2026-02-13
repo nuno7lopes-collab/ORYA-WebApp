@@ -92,13 +92,32 @@ async function recomposeMexicanoForNextRound(
       categoryId: true,
       roundLabel: true,
       status: true,
-      pairingAId: true,
-      pairingBId: true,
       score: true,
       scoreSets: true,
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          side: true,
+          participantId: true,
+          participant: {
+            select: {
+              playerProfileId: true,
+            },
+          },
+        },
+      },
     },
     orderBy: [{ categoryId: "asc" }, { id: "asc" }],
   });
+
+  const resolveSidePlayerIds = (
+    match: (typeof matches)[number],
+    side: "A" | "B",
+  ) =>
+    match.participants
+      .filter((row) => row.side === side)
+      .map((row) => row.participant?.playerProfileId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
 
   const matchesByCategory = new Map<number | null, typeof matches>();
   for (const match of matches) {
@@ -108,34 +127,70 @@ async function recomposeMexicanoForNextRound(
     matchesByCategory.set(key, bucket);
   }
 
-  const allPairingIds = new Set<number>();
-  matches.forEach((match) => {
-    if (typeof match.pairingAId === "number") allPairingIds.add(match.pairingAId);
-    if (typeof match.pairingBId === "number") allPairingIds.add(match.pairingBId);
+  const tournamentParticipants = await tx.padelTournamentParticipant.findMany({
+    where: { eventId: params.eventId },
+    select: { id: true, categoryId: true, playerProfileId: true },
   });
+  const participantMap = new Map<string, number>();
+  for (const participant of tournamentParticipants) {
+    const key = `${participant.categoryId ?? "null"}:${participant.playerProfileId}`;
+    participantMap.set(key, participant.id);
+  }
 
-  const pairings = allPairingIds.size
-    ? await tx.padelPairing.findMany({
-        where: { id: { in: Array.from(allPairingIds) } },
-        select: {
-          id: true,
-          slots: {
-            select: {
-              playerProfileId: true,
-            },
-          },
+  const ensureTournamentParticipant = async (categoryId: number | null, playerProfileId: number) => {
+    const key = `${categoryId ?? "null"}:${playerProfileId}`;
+    const existing = participantMap.get(key);
+    if (typeof existing === "number") return existing;
+    try {
+      const created = await tx.padelTournamentParticipant.create({
+        data: {
+          eventId: params.eventId,
+          categoryId,
+          organizationId: params.organizationId,
+          playerProfileId,
+          status: "ACTIVE",
         },
-      })
-    : [];
-  const pairingPlayers = new Map<number, number[]>();
-  pairings.forEach((pairing) => {
-    pairingPlayers.set(
-      pairing.id,
-      pairing.slots
-        .map((slot) => slot.playerProfileId)
-        .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
-    );
-  });
+        select: { id: true },
+      });
+      participantMap.set(key, created.id);
+      return created.id;
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+        throw error;
+      }
+      const recovered = await tx.padelTournamentParticipant.findFirst({
+        where: { eventId: params.eventId, categoryId, playerProfileId },
+        select: { id: true },
+      });
+      if (!recovered?.id) throw error;
+      participantMap.set(key, recovered.id);
+      return recovered.id;
+    }
+  };
+
+  const replaceMatchParticipants = async (
+    matchId: number,
+    sideAParticipantIds: number[],
+    sideBParticipantIds: number[],
+  ) => {
+    await tx.padelMatchParticipant.deleteMany({ where: { matchId } });
+    const rows = [
+      ...sideAParticipantIds.map((participantId, idx) => ({
+        matchId,
+        participantId,
+        side: "A" as const,
+        slotOrder: idx + 1,
+      })),
+      ...sideBParticipantIds.map((participantId, idx) => ({
+        matchId,
+        participantId,
+        side: "B" as const,
+        slotOrder: idx + 1,
+      })),
+    ];
+    if (rows.length === 0) return;
+    await tx.padelMatchParticipant.createMany({ data: rows });
+  };
 
   const categories: MexicanoRecompositionSummary["categories"] = [];
 
@@ -153,8 +208,10 @@ async function recomposeMexicanoForNextRound(
       })
       .map((match) => ({
         id: match.id,
-        pairingAId: match.pairingAId,
-        pairingBId: match.pairingBId,
+        pairingAId: null,
+        pairingBId: null,
+        sideAEntityIds: resolveSidePlayerIds(match, "A"),
+        sideBEntityIds: resolveSidePlayerIds(match, "B"),
         score: match.score,
         scoreSets: match.scoreSets,
         status: match.status,
@@ -163,7 +220,7 @@ async function recomposeMexicanoForNextRound(
 
     const standingsByGroup = computePadelStandingsByGroupForPlayers(
       doneBeforeRound,
-      pairingPlayers,
+      new Map<number, number[]>(),
       pointsTable,
       tieBreakRules,
       { drawOrderSeed: `mexicano:${params.eventId}:${categoryId ?? "all"}:${params.roundNumber}` },
@@ -172,12 +229,8 @@ async function recomposeMexicanoForNextRound(
     const orderedFromStandings = Object.values(standingsByGroup).flat().map((row) => row.entityId);
     const playerPool = new Set<number>();
     targetMatches.forEach((match) => {
-      if (typeof match.pairingAId === "number") {
-        (pairingPlayers.get(match.pairingAId) ?? []).forEach((playerId) => playerPool.add(playerId));
-      }
-      if (typeof match.pairingBId === "number") {
-        (pairingPlayers.get(match.pairingBId) ?? []).forEach((playerId) => playerPool.add(playerId));
-      }
+      resolveSidePlayerIds(match, "A").forEach((playerId) => playerPool.add(playerId));
+      resolveSidePlayerIds(match, "B").forEach((playerId) => playerPool.add(playerId));
     });
     const orderedPlayerIds: number[] = [];
     const orderedSeen = new Set<number>();
@@ -202,59 +255,12 @@ async function recomposeMexicanoForNextRound(
     const previousRoundMatches = categoryMatches
       .filter((match) => parseRoundNumber(match.roundLabel) === params.roundNumber - 1 && match.status === "DONE")
       .map((match) => ({
-        sideA: typeof match.pairingAId === "number" ? (pairingPlayers.get(match.pairingAId) ?? []) : [],
-        sideB: typeof match.pairingBId === "number" ? (pairingPlayers.get(match.pairingBId) ?? []) : [],
+        sideA: resolveSidePlayerIds(match, "A"),
+        sideB: resolveSidePlayerIds(match, "B"),
       }))
       .filter((entry) => entry.sideA.length === 2 && entry.sideB.length === 2);
     const previousRoundRelations = buildMexicanoRoundRelations(previousRoundMatches);
     const nextEntries = deriveMexicanoRoundEntries(orderedPlayerIds, { previousRoundRelations });
-
-    const markerPrefix = `AUTO_ROTATION:${params.eventId}:${categoryId ?? 0}:MEXICANO`;
-    const syntheticPairingCache = new Map<string, number>();
-    const ensureSyntheticPairing = async (playerIds: number[]) => {
-      const normalized = [...playerIds].sort((a, b) => a - b);
-      const key = normalized.join(":");
-      const cached = syntheticPairingCache.get(key);
-      if (cached) return cached;
-
-      const token = `${markerPrefix}:${key}`;
-      const existing = await tx.padelPairing.findFirst({
-        where: {
-          eventId: params.eventId,
-          ...(categoryId == null ? { categoryId: null } : { categoryId }),
-          partnerLinkToken: token,
-        },
-        select: { id: true },
-      });
-      if (existing?.id) {
-        syntheticPairingCache.set(key, existing.id);
-        return existing.id;
-      }
-
-      const created = await tx.padelPairing.create({
-        data: {
-          eventId: params.eventId,
-          organizationId: params.organizationId,
-          categoryId,
-          payment_mode: "FULL",
-          pairingStatus: "COMPLETE",
-          pairingJoinMode: "INVITE_PARTNER",
-          partnerLinkToken: token,
-          isPublicOpen: false,
-          slots: {
-            create: normalized.map((playerProfileId, idx) => ({
-              slot_role: idx === 0 ? "CAPTAIN" : "PARTNER",
-              slotStatus: "FILLED",
-              paymentStatus: "PAID",
-              playerProfileId,
-            })),
-          },
-        },
-        select: { id: true },
-      });
-      syntheticPairingCache.set(key, created.id);
-      return created.id;
-    };
 
     let reassignedMatches = 0;
     let byeMatches = 0;
@@ -271,24 +277,31 @@ async function recomposeMexicanoForNextRound(
             pairingAId: null,
             pairingBId: null,
             winnerPairingId: null,
+            winnerParticipantId: null,
+            winnerSide: null,
             status: "PENDING",
+            scoreMode: "TIMED_GAMES",
             score: { mode: "TIMED_GAMES" } as Prisma.InputJsonValue,
             scoreSets: Prisma.DbNull,
           },
         });
+        await replaceMatchParticipants(match.id, [], []);
         clearedMatches += 1;
         continue;
       }
 
       if (entry.kind === "BYE") {
-        const byePairingId = await ensureSyntheticPairing([entry.playerId]);
+        const byeParticipantId = await ensureTournamentParticipant(categoryId, entry.playerId);
         await tx.eventMatchSlot.update({
           where: { id: match.id },
           data: {
-            pairingAId: byePairingId,
+            pairingAId: null,
             pairingBId: null,
             winnerPairingId: null,
+            winnerParticipantId: null,
+            winnerSide: null,
             status: "DONE",
+            scoreMode: "TIMED_GAMES",
             score: {
               mode: "TIMED_GAMES",
               resultType: "BYE_NEUTRAL",
@@ -300,23 +313,32 @@ async function recomposeMexicanoForNextRound(
             scoreSets: [] as Prisma.InputJsonValue,
           },
         });
+        await replaceMatchParticipants(match.id, [byeParticipantId], []);
         byeMatches += 1;
         continue;
       }
 
-      const pairingAId = await ensureSyntheticPairing(entry.sideA);
-      const pairingBId = await ensureSyntheticPairing(entry.sideB);
+      const sideAParticipantIds = await Promise.all(
+        entry.sideA.map((playerProfileId) => ensureTournamentParticipant(categoryId, playerProfileId)),
+      );
+      const sideBParticipantIds = await Promise.all(
+        entry.sideB.map((playerProfileId) => ensureTournamentParticipant(categoryId, playerProfileId)),
+      );
       await tx.eventMatchSlot.update({
         where: { id: match.id },
         data: {
-          pairingAId,
-          pairingBId,
+          pairingAId: null,
+          pairingBId: null,
           winnerPairingId: null,
+          winnerParticipantId: null,
+          winnerSide: null,
           status: "PENDING",
+          scoreMode: "TIMED_GAMES",
           score: { mode: "TIMED_GAMES" } as Prisma.InputJsonValue,
           scoreSets: Prisma.DbNull,
         },
       });
+      await replaceMatchParticipants(match.id, sideAParticipantIds, sideBParticipantIds);
       reassignedMatches += 1;
     }
 

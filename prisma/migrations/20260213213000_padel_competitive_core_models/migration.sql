@@ -403,8 +403,7 @@ JOIN app_v3.padel_tournament_participants tp
 ON CONFLICT (match_id, participant_id) DO NOTHING;
 
 UPDATE app_v3.padel_matches m
-SET winner_participant_id = pick.participant_id
-FROM LATERAL (
+SET winner_participant_id = (
   SELECT mp.participant_id
   FROM app_v3.padel_match_participants mp
   WHERE mp.match_id = m.id
@@ -415,7 +414,7 @@ FROM LATERAL (
     )
   ORDER BY mp.slot_order ASC
   LIMIT 1
-) AS pick
+)
 WHERE m.winner_pairing_id IS NOT NULL;
 
 COMMIT;

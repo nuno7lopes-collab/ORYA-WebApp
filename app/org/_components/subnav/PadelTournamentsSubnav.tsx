@@ -10,12 +10,12 @@ export default function PadelTournamentsSubnav({ orgId, className }: { orgId: nu
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "tournaments", label: "Tournaments", href: buildOrgHref(orgId, "/padel/tournaments") },
-        { id: "create", label: "Create", href: buildOrgHref(orgId, "/padel/tournaments/create") },
-        { id: "calendar", label: "Calendar", href: buildOrgHref(orgId, "/padel/tournaments/calendar") },
-        { id: "categories", label: "Categories", href: buildOrgHref(orgId, "/padel/tournaments/categories") },
-        { id: "teams", label: "Teams", href: buildOrgHref(orgId, "/padel/tournaments/teams") },
-        { id: "players", label: "Players", href: buildOrgHref(orgId, "/padel/tournaments/players") },
+        { id: "tournaments", label: "Torneios", href: buildOrgHref(orgId, "/padel/tournaments", { tab: "manage", section: "padel-tournaments", padel: "tournaments" }) },
+        { id: "create", label: "Criar", href: buildOrgHref(orgId, "/padel/tournaments/create") },
+        { id: "calendar", label: "Calendário", href: buildOrgHref(orgId, "/padel/tournaments", { tab: "manage", section: "padel-tournaments", padel: "calendar" }) },
+        { id: "categories", label: "Categorias", href: buildOrgHref(orgId, "/padel/tournaments", { tab: "manage", section: "padel-tournaments", padel: "categories" }) },
+        { id: "teams", label: "Equipas", href: buildOrgHref(orgId, "/padel/tournaments", { tab: "manage", section: "padel-tournaments", padel: "teams" }) },
+        { id: "players", label: "Jogadores", href: buildOrgHref(orgId, "/padel/tournaments", { tab: "manage", section: "padel-tournaments", padel: "players" }) },
       ]}
     />
   );

@@ -7,7 +7,11 @@ import { getOrgTransferEnabled, getPlatformFees, getPlatformOfficialEmail } from
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidWebsite } from "@/lib/validation/organization";
-import { normalizeOrganizationAvatarUrl, normalizeOrganizationCoverUrl } from "@/lib/profileMedia";
+import {
+  normalizeOrganizationAvatarUrl,
+  normalizeOrganizationCoverUrl,
+  parseSupabasePublicObjectUrl,
+} from "@/lib/profileMedia";
 import { sendEmail } from "@/lib/emailClient";
 import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
 import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
@@ -19,10 +23,11 @@ import {
   parseOrganizationModules,
   type OrganizationModule,
 } from "@/lib/organizationCategories";
-import { AddressSourceProvider, OrganizationStatus } from "@prisma/client";
+import { AddressSourceProvider, MediaOwnerType, OrganizationStatus } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 
 function errorCodeForStatus(status: number) {
@@ -36,6 +41,103 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
+
+type BrandingMediaKind = "avatar" | "cover";
+
+function brandingLabel(kind: BrandingMediaKind) {
+  return kind === "avatar" ? "Logo" : "Capa";
+}
+
+async function resolveOrganizationBrandingUrl(params: {
+  kind: BrandingMediaKind;
+  rawValue: unknown;
+  currentValue: string | null | undefined;
+  organizationId: number;
+}) {
+  const { kind, rawValue, currentValue, organizationId } = params;
+  const label = brandingLabel(kind);
+  if (rawValue === null) return { ok: true as const, value: null as string | null };
+  if (typeof rawValue !== "string") {
+    return { ok: false as const, error: `${label} inválido.` };
+  }
+  const trimmed = rawValue.trim();
+  if (!trimmed) return { ok: true as const, value: null as string | null };
+  const normalized =
+    kind === "avatar" ? normalizeOrganizationAvatarUrl(trimmed) : normalizeOrganizationCoverUrl(trimmed);
+  if (!normalized) {
+    return { ok: false as const, error: `${label} inválido. Usa um upload válido da organização.` };
+  }
+  const currentTrimmed = typeof currentValue === "string" ? currentValue.trim() || null : null;
+  if (normalized === currentTrimmed) {
+    return { ok: true as const, value: normalized };
+  }
+  const mediaRef = parseSupabasePublicObjectUrl(normalized);
+  if (!mediaRef) {
+    return { ok: false as const, error: `${label} inválido. Usa um upload válido da organização.` };
+  }
+  const mediaAsset = await prisma.mediaAsset.findFirst({
+    where: {
+      organizationId,
+      ownerType: MediaOwnerType.ORGANIZATION,
+      bucket: mediaRef.bucket,
+      objectPath: mediaRef.objectPath,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!mediaAsset) {
+    return { ok: false as const, error: `${label} inválido ou sem permissões para este ficheiro.` };
+  }
+  return { ok: true as const, value: normalized };
+}
+
+async function cleanupOrganizationMediaByUrl(params: {
+  url: string | null;
+  organizationId: number;
+  actorUserId: string;
+}) {
+  const { url, organizationId, actorUserId } = params;
+  if (!url) return;
+  const mediaRef = parseSupabasePublicObjectUrl(url);
+  if (!mediaRef) return;
+
+  const mediaAsset = await prisma.mediaAsset.findFirst({
+    where: {
+      organizationId,
+      ownerType: MediaOwnerType.ORGANIZATION,
+      bucket: mediaRef.bucket,
+      objectPath: mediaRef.objectPath,
+      deletedAt: null,
+    },
+    select: { id: true, bucket: true, objectPath: true },
+  });
+  if (!mediaAsset) return;
+
+  const removal = await supabaseAdmin.storage.from(mediaAsset.bucket).remove([mediaAsset.objectPath]);
+  if (removal.error) {
+    console.error("[organization/me] cleanup media remove error", removal.error);
+    return;
+  }
+
+  await prisma.mediaAsset.update({
+    where: { id: mediaAsset.id },
+    data: { deletedAt: new Date() },
+  });
+
+  await recordOrganizationAuditSafe({
+    organizationId,
+    actorUserId,
+    action: "MEDIA_DELETE",
+    entityType: "MediaAsset",
+    entityId: mediaAsset.id,
+    metadata: {
+      bucket: mediaAsset.bucket,
+      objectPath: mediaAsset.objectPath,
+      source: "organization_profile_branding_update",
+    },
+  });
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
@@ -143,6 +245,7 @@ async function _GET(req: NextRequest) {
       ? {
           id: organization.id,
           username: organization.username,
+          orgType: organization.orgType,
           stripeAccountId: organization.stripeAccountId,
           status: organization.status,
           stripeChargesEnabled: organization.stripeChargesEnabled,
@@ -321,6 +424,8 @@ async function _PATCH(req: NextRequest) {
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
     const publicProfileLayoutProvided = Object.prototype.hasOwnProperty.call(body, "publicProfileLayout");
     const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
+    const brandingAvatarProvided = Object.prototype.hasOwnProperty.call(body, "brandingAvatarUrl");
+    const brandingCoverProvided = Object.prototype.hasOwnProperty.call(body, "brandingCoverUrl");
 
     const primaryModule = primaryModuleProvided
       ? parsePrimaryModule(primaryModuleRaw)
@@ -378,9 +483,15 @@ async function _PATCH(req: NextRequest) {
       return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
     }
 
-    const isOwner = membership.role === "OWNER";
-    const isCoOwner = membership.role === "CO_OWNER";
     const isAdmin = membership.role === "ADMIN";
+    const currentBrandingAvatarUrl =
+      typeof (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl === "string"
+        ? ((organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null)
+        : null;
+    const currentBrandingCoverUrl =
+      typeof (organization as { brandingCoverUrl?: string | null }).brandingCoverUrl === "string"
+        ? ((organization as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null)
+        : null;
 
     if (isAdmin) {
       const adminAllowed = new Set([
@@ -539,13 +650,29 @@ async function _PATCH(req: NextRequest) {
     if (typeof alertsSalesEnabled === "boolean") organizationUpdates.alertsSalesEnabled = alertsSalesEnabled;
     if (typeof alertsPayoutEnabled === "boolean") organizationUpdates.alertsPayoutEnabled = alertsPayoutEnabled;
     if (typeof timezone === "string") organizationUpdates.timezone = timezone.trim() || "Europe/Lisbon";
-    if (brandingAvatarUrl === null) organizationUpdates.brandingAvatarUrl = null;
-    if (typeof brandingAvatarUrl === "string") {
-      organizationUpdates.brandingAvatarUrl = normalizeOrganizationAvatarUrl(brandingAvatarUrl);
+    if (brandingAvatarProvided) {
+      const avatarResolved = await resolveOrganizationBrandingUrl({
+        kind: "avatar",
+        rawValue: brandingAvatarUrl,
+        currentValue: currentBrandingAvatarUrl,
+        organizationId: organization.id,
+      });
+      if (!avatarResolved.ok) {
+        return fail(400, avatarResolved.error);
+      }
+      organizationUpdates.brandingAvatarUrl = avatarResolved.value;
     }
-    if (brandingCoverUrl === null) organizationUpdates.brandingCoverUrl = null;
-    if (typeof brandingCoverUrl === "string") {
-      organizationUpdates.brandingCoverUrl = normalizeOrganizationCoverUrl(brandingCoverUrl);
+    if (brandingCoverProvided) {
+      const coverResolved = await resolveOrganizationBrandingUrl({
+        kind: "cover",
+        rawValue: brandingCoverUrl,
+        currentValue: currentBrandingCoverUrl,
+        organizationId: organization.id,
+      });
+      if (!coverResolved.ok) {
+        return fail(400, coverResolved.error);
+      }
+      organizationUpdates.brandingCoverUrl = coverResolved.value;
     }
     if (typeof brandingPrimaryColor === "string") organizationUpdates.brandingPrimaryColor = brandingPrimaryColor.trim() || null;
     if (typeof brandingSecondaryColor === "string")
@@ -585,6 +712,14 @@ async function _PATCH(req: NextRequest) {
         .filter((v): v is number => v !== null);
       organizationUpdates.padelFavoriteCategories = nums;
     }
+    const avatarUrlWillUpdate = Object.prototype.hasOwnProperty.call(organizationUpdates, "brandingAvatarUrl");
+    const coverUrlWillUpdate = Object.prototype.hasOwnProperty.call(organizationUpdates, "brandingCoverUrl");
+    const nextBrandingAvatarUrl = avatarUrlWillUpdate
+      ? ((organizationUpdates.brandingAvatarUrl as string | null | undefined) ?? null)
+      : currentBrandingAvatarUrl;
+    const nextBrandingCoverUrl = coverUrlWillUpdate
+      ? ((organizationUpdates.brandingCoverUrl as string | null | undefined) ?? null)
+      : currentBrandingCoverUrl;
 
     if (Object.keys(profileUpdates).length > 0) {
       await prisma.profile.update({
@@ -598,6 +733,35 @@ async function _PATCH(req: NextRequest) {
         where: { id: organization.id },
         data: organizationUpdates,
       });
+    }
+
+    const staleBrandingUrls = new Set<string>();
+    if (
+      avatarUrlWillUpdate &&
+      currentBrandingAvatarUrl &&
+      currentBrandingAvatarUrl !== nextBrandingAvatarUrl &&
+      currentBrandingAvatarUrl !== nextBrandingCoverUrl
+    ) {
+      staleBrandingUrls.add(currentBrandingAvatarUrl);
+    }
+    if (
+      coverUrlWillUpdate &&
+      currentBrandingCoverUrl &&
+      currentBrandingCoverUrl !== nextBrandingCoverUrl &&
+      currentBrandingCoverUrl !== nextBrandingAvatarUrl
+    ) {
+      staleBrandingUrls.add(currentBrandingCoverUrl);
+    }
+    if (staleBrandingUrls.size > 0) {
+      await Promise.allSettled(
+        Array.from(staleBrandingUrls).map((url) =>
+          cleanupOrganizationMediaByUrl({
+            url,
+            organizationId: organization.id,
+            actorUserId: user.id,
+          }),
+        ),
+      );
     }
 
     let previousModules: string[] | null = null;

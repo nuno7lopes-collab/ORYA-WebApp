@@ -10,12 +10,12 @@ export default function PadelClubSubnav({ orgId, className }: { orgId: number | 
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "clubs", label: "Clubs", href: buildOrgHref(orgId, "/padel/clubs") },
-        { id: "courts", label: "Courts", href: buildOrgHref(orgId, "/padel/clubs/courts") },
-        { id: "players", label: "Players", href: buildOrgHref(orgId, "/padel/clubs/players") },
-        { id: "community", label: "Community", href: buildOrgHref(orgId, "/padel/clubs/community") },
-        { id: "trainers", label: "Trainers", href: buildOrgHref(orgId, "/padel/clubs/trainers") },
-        { id: "lessons", label: "Lessons", href: buildOrgHref(orgId, "/padel/clubs/lessons") },
+        { id: "clubs", label: "Clubes", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "clubs" }) },
+        { id: "courts", label: "Campos", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "courts" }) },
+        { id: "players", label: "Jogadores", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "players" }) },
+        { id: "community", label: "Comunidade", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "community" }) },
+        { id: "trainers", label: "Treinadores", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "trainers" }) },
+        { id: "lessons", label: "Aulas", href: buildOrgHref(orgId, "/padel/clubs", { tab: "manage", section: "padel-club", padel: "lessons" }) },
       ]}
     />
   );

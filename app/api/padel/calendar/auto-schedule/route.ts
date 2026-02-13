@@ -61,18 +61,24 @@ const parseNumber = (value: unknown) => {
 type MatchParticipantSideRow = {
   side: string;
   participant: {
-    sourcePairingId: number | null;
+    playerProfileId: number;
+    playerProfile: {
+      email: string | null;
+    } | null;
   } | null;
 };
 
-const resolveSourcePairingIdForSide = (participants: MatchParticipantSideRow[], side: "A" | "B") => {
-  const ids = participants
+const resolveSideProfileIds = (participants: MatchParticipantSideRow[], side: "A" | "B") =>
+  participants
     .filter((row) => row.side === side)
-    .map((row) => row.participant?.sourcePairingId)
+    .map((row) => row.participant?.playerProfileId)
     .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-  if (ids.length === 0) return null;
-  return ids[0] ?? null;
-};
+
+const resolveSideEmails = (participants: MatchParticipantSideRow[], side: "A" | "B") =>
+  participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.playerProfile?.email?.trim().toLowerCase() ?? null)
+    .filter((email): email is string => typeof email === "string" && email.length > 0);
 
 async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -339,7 +345,12 @@ async function _POST(req: NextRequest) {
             side: true,
             participant: {
               select: {
-                sourcePairingId: true,
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
               },
             },
           },
@@ -349,8 +360,10 @@ async function _POST(req: NextRequest) {
     });
     const unscheduledMatches = unscheduledMatchesRaw.map((match) => ({
       ...match,
-      pairingAId: resolveSourcePairingIdForSide(match.participants, "A"),
-      pairingBId: resolveSourcePairingIdForSide(match.participants, "B"),
+      sideAProfileIds: resolveSideProfileIds(match.participants, "A"),
+      sideBProfileIds: resolveSideProfileIds(match.participants, "B"),
+      sideAEmails: resolveSideEmails(match.participants, "A"),
+      sideBEmails: resolveSideEmails(match.participants, "B"),
     }));
 
     if (targetMatchIds) {
@@ -437,7 +450,12 @@ async function _POST(req: NextRequest) {
             side: true,
             participant: {
               select: {
-                sourcePairingId: true,
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    email: true,
+                  },
+                },
               },
             },
           },
@@ -446,49 +464,11 @@ async function _POST(req: NextRequest) {
     });
     const normalizedScheduledMatches = scheduledMatches.map((match) => ({
       ...match,
-      pairingAId: resolveSourcePairingIdForSide(match.participants, "A"),
-      pairingBId: resolveSourcePairingIdForSide(match.participants, "B"),
+      sideAProfileIds: resolveSideProfileIds(match.participants, "A"),
+      sideBProfileIds: resolveSideProfileIds(match.participants, "B"),
+      sideAEmails: resolveSideEmails(match.participants, "A"),
+      sideBEmails: resolveSideEmails(match.participants, "B"),
     }));
-
-    const pairingIds = new Set<number>();
-    sortedUnscheduledMatches.forEach((m) => {
-      if (m.pairingAId) pairingIds.add(m.pairingAId);
-      if (m.pairingBId) pairingIds.add(m.pairingBId);
-    });
-    normalizedScheduledMatches.forEach((m) => {
-      if (m.pairingAId) pairingIds.add(m.pairingAId);
-      if (m.pairingBId) pairingIds.add(m.pairingBId);
-    });
-
-    const pairings = pairingIds.size
-      ? await prisma.padelPairing.findMany({
-          where: { id: { in: Array.from(pairingIds) } },
-          select: {
-            id: true,
-            slots: {
-              select: {
-                playerProfileId: true,
-                playerProfile: { select: { email: true } },
-              },
-            },
-          },
-        })
-      : [];
-
-    const pairingPlayers = new Map<number, { profileIds: number[]; emails: string[] }>();
-    pairings.forEach((pairing) => {
-      const profileIds = new Set<number>();
-      const emails = new Set<string>();
-      pairing.slots.forEach((slot) => {
-        if (slot.playerProfileId) profileIds.add(slot.playerProfileId);
-        const email = slot.playerProfile?.email?.trim().toLowerCase();
-        if (email) emails.add(email);
-      });
-      pairingPlayers.set(pairing.id, {
-        profileIds: Array.from(profileIds),
-        emails: Array.from(emails),
-      });
-    });
 
     const availabilities = await prisma.calendarAvailability.findMany({
       where: { eventId: event.id, organizationId: organization.id },
@@ -557,7 +537,6 @@ async function _POST(req: NextRequest) {
       unscheduledMatches: sortedUnscheduledMatches,
       scheduledMatches: normalizedScheduledMatches,
       courts,
-      pairingPlayers,
       availabilities,
       courtBlocks: effectiveCourtBlocks,
       config: {

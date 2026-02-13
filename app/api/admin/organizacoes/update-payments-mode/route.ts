@@ -5,7 +5,7 @@ import { requireAdminUser } from "@/lib/admin/auth";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { auditAdminAction } from "@/lib/admin/audit";
 import { getClientIp } from "@/lib/auth/requestValidation";
-import { OrgType } from "@prisma/client";
+import { OrgType, PayoutMode } from "@prisma/client";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
@@ -74,28 +74,48 @@ async function _POST(req: NextRequest) {
       cancelledPayouts = 0;
     }
 
-    const updated = await prisma.organization.update({
-      where: { id: organization.id },
-      data:
-        orgType === OrgType.PLATFORM
-          ? {
-              orgType,
-              officialEmail: platformEmail,
-              officialEmailVerifiedAt: new Date(),
-              stripeAccountId: null,
-              stripeChargesEnabled: false,
-              stripePayoutsEnabled: false,
-            }
-          : {
-              orgType,
-              officialEmail: null,
-              officialEmailVerifiedAt: null,
-              stripeAccountId: null,
-              stripeChargesEnabled: false,
-              stripePayoutsEnabled: false,
-            },
-      select: { id: true, orgType: true },
+    const updateResult = await prisma.$transaction(async (tx) => {
+      const updated = await tx.organization.update({
+        where: { id: organization.id },
+        data:
+          orgType === OrgType.PLATFORM
+            ? {
+                orgType,
+                officialEmail: platformEmail,
+                officialEmailVerifiedAt: new Date(),
+                stripeAccountId: null,
+                stripeChargesEnabled: false,
+                stripePayoutsEnabled: false,
+              }
+            : {
+                orgType,
+                officialEmail: null,
+                officialEmailVerifiedAt: null,
+                stripeAccountId: null,
+                stripeChargesEnabled: false,
+                stripePayoutsEnabled: false,
+              },
+        select: { id: true, orgType: true },
+      });
+
+      const correctedEventPayoutModes =
+        orgType === OrgType.EXTERNAL
+          ? (
+              await tx.event.updateMany({
+                where: {
+                  organizationId: organization.id,
+                  payoutMode: PayoutMode.PLATFORM,
+                },
+                data: {
+                  payoutMode: PayoutMode.ORGANIZATION,
+                },
+              })
+            ).count
+          : 0;
+
+      return { updated, correctedEventPayoutModes };
     });
+    const updated = updateResult.updated;
 
     const ip = getClientIp(req);
     const userAgent = req.headers.get("user-agent");
@@ -107,6 +127,7 @@ async function _POST(req: NextRequest) {
         from: organization.orgType,
         to: orgType,
         cancelledPayouts,
+        correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
       },
       ip,
       userAgent,
@@ -120,6 +141,7 @@ async function _POST(req: NextRequest) {
         from: organization.orgType,
         to: orgType,
         cancelledPayouts,
+        correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
       },
     });
 
@@ -127,6 +149,7 @@ async function _POST(req: NextRequest) {
       ok: true,
       organization: { id: updated.id, orgType: updated.orgType },
       cancelledPayouts,
+      correctedEventPayoutModes: updateResult.correctedEventPayoutModes,
     });
   } catch (err) {
     logError("admin.organizacoes.update_payments_mode_failed", err);

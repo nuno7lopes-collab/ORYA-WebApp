@@ -423,6 +423,7 @@ type SplitState = {
 
 type CalendarView = "day" | "week";
 type CalendarTab = "agenda" | "availability";
+type BookingsFocus = "overview" | "availability" | "prices" | "integrations";
 
 type PositionedBooking = {
   booking: BookingItem;
@@ -495,6 +496,13 @@ const normalizeHourHeight = (value: number) =>
 
 export default function ReservasDashboardPage() {
   const searchParams = useSearchParams();
+  const bookingsFocusRaw = (searchParams?.get("bookings") ?? "overview").trim().toLowerCase();
+  const bookingsFocus: BookingsFocus =
+    bookingsFocusRaw === "availability" ||
+    bookingsFocusRaw === "prices" ||
+    bookingsFocusRaw === "integrations"
+      ? bookingsFocusRaw
+      : "overview";
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl =
@@ -536,6 +544,7 @@ export default function ReservasDashboardPage() {
   const [modeSaving, setModeSaving] = useState<string | null>(null);
   const initializedRef = useRef(false);
   const serviceInitRef = useRef(false);
+  const bookingsFocusInitRef = useRef<BookingsFocus | null>(null);
   const [createSlot, setCreateSlot] = useState<Date | null>(null);
   const [createServiceId, setCreateServiceId] = useState<number | null>(null);
   const [createClient, setCreateClient] = useState<ClientItem | null>(null);
@@ -931,6 +940,14 @@ export default function ReservasDashboardPage() {
     }
     serviceInitRef.current = false;
   }, [searchParams]);
+
+  useEffect(() => {
+    if (bookingsFocusInitRef.current === bookingsFocus) return;
+    bookingsFocusInitRef.current = bookingsFocus;
+    if (bookingsFocus === "prices") {
+      openServiceDrawer();
+    }
+  }, [bookingsFocus, openServiceDrawer]);
 
   useEffect(() => {
     if (!createSlot) return;
@@ -2026,6 +2043,15 @@ export default function ReservasDashboardPage() {
             <p className={DASHBOARD_LABEL}>Reservas</p>
             <h1 className={DASHBOARD_TITLE}>Agenda</h1>
             <p className={DASHBOARD_MUTED}>Gestão central de marcações, serviços e disponibilidade.</p>
+            {bookingsFocus !== "overview" && (
+              <p className="mt-1 text-[12px] text-white/65">
+                {bookingsFocus === "availability"
+                  ? "Subnavegação: Disponibilidade."
+                  : bookingsFocus === "prices"
+                    ? "Subnavegação: Preços e serviços."
+                    : "Subnavegação: Integrações."}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className={CTA_PRIMARY} onClick={openServiceDrawer}>

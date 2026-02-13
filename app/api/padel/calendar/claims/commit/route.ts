@@ -286,6 +286,123 @@ async function _PATCH(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
+  const claimIdForWindow =
+    typeof body.claimId === "string" && body.claimId.trim().length > 0
+      ? body.claimId.trim()
+      : null;
+  const hasWindowFields =
+    Object.prototype.hasOwnProperty.call(body, "startsAt") ||
+    Object.prototype.hasOwnProperty.call(body, "endsAt");
+  if (hasWindowFields) {
+    const startsAt = parseDate(body.startsAt);
+    const endsAt = parseDate(body.endsAt);
+    if (!claimIdForWindow) {
+      return jsonWrap({ ok: false, error: "CLAIM_ID_REQUIRED_FOR_WINDOW_UPDATE" }, { status: 400 });
+    }
+    if (!startsAt || !endsAt || endsAt <= startsAt) {
+      return jsonWrap({ ok: false, error: "INVALID_CLAIM_WINDOW" }, { status: 400 });
+    }
+
+    try {
+      const updated = await prisma.$transaction(async (tx) => {
+        const claim = await tx.agendaResourceClaim.findFirst({
+          where: {
+            id: claimIdForWindow,
+            organizationId: auth.organizationId,
+            status: AgendaResourceClaimStatus.CLAIMED,
+          },
+          select: {
+            id: true,
+            eventId: true,
+            resourceType: true,
+            resourceId: true,
+            startsAt: true,
+            endsAt: true,
+            sourceType: true,
+            sourceId: true,
+            bundleId: true,
+          },
+        });
+        if (!claim) {
+          throw Object.assign(new Error("CLAIM_NOT_FOUND"), { status: 404 });
+        }
+
+        const lockKey = `${auth.organizationId}:${claim.resourceType}:${claim.resourceId}`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+        const conflict = await tx.agendaResourceClaim.findFirst({
+          where: {
+            organizationId: auth.organizationId,
+            resourceType: claim.resourceType,
+            resourceId: claim.resourceId,
+            status: AgendaResourceClaimStatus.CLAIMED,
+            id: { not: claim.id },
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+          select: {
+            id: true,
+            sourceType: true,
+            sourceId: true,
+            startsAt: true,
+            endsAt: true,
+            resourceType: true,
+            resourceId: true,
+          },
+        });
+        if (conflict) {
+          throw Object.assign(new Error("RESOURCE_CLAIM_CONFLICT"), {
+            status: 409,
+            conflict,
+          });
+        }
+
+        return tx.agendaResourceClaim.update({
+          where: { id: claim.id },
+          data: { startsAt, endsAt },
+        });
+      });
+
+      await recordOrganizationAuditSafe({
+        organizationId: auth.organizationId,
+        actorUserId: auth.userId,
+        action: "PADEL_CALENDAR_CLAIMS_WINDOW_UPDATE",
+        metadata: {
+          claimId: updated.id,
+          bundleId: updated.bundleId ?? null,
+          startsAt: updated.startsAt,
+          endsAt: updated.endsAt,
+          resourceType: updated.resourceType,
+          resourceId: updated.resourceId,
+          sourceType: updated.sourceType,
+          sourceId: updated.sourceId,
+        },
+        ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+        userAgent: req.headers.get("user-agent") || null,
+      });
+
+      return jsonWrap({ ok: true, claim: updated }, { status: 200 });
+    } catch (error) {
+      const prismaError = mapPrismaError(error);
+      if (prismaError) return jsonWrap({ ok: false, error: prismaError.error }, { status: prismaError.status });
+      const status =
+        error && typeof error === "object" && "status" in error && typeof (error as { status?: unknown }).status === "number"
+          ? ((error as { status: number }).status as number)
+          : 500;
+      const conflict =
+        error && typeof error === "object" && "conflict" in error
+          ? (error as { conflict?: unknown }).conflict
+          : undefined;
+      const message =
+        error instanceof Error && error.message === "CLAIM_NOT_FOUND"
+          ? "CLAIM_NOT_FOUND"
+          : error instanceof Error && error.message === "RESOURCE_CLAIM_CONFLICT"
+            ? "RESOURCE_CLAIM_CONFLICT"
+            : "CLAIM_WINDOW_UPDATE_FAILED";
+      return jsonWrap({ ok: false, error: message, ...(conflict ? { conflict } : {}) }, { status });
+    }
+  }
+
   const statusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : "";
   const nextStatus =
     statusRaw === AgendaResourceClaimStatus.CANCELLED || statusRaw === AgendaResourceClaimStatus.RELEASED

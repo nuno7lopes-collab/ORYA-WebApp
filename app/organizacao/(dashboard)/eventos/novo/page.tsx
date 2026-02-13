@@ -296,6 +296,7 @@ export function NewOrganizationEventPage({
     organization?: {
       id?: number | null;
       status?: string | null;
+      orgType?: string | null;
       officialEmail?: string | null;
       officialEmailVerifiedAt?: string | null;
       primaryModule?: string | null;
@@ -346,7 +347,7 @@ export function NewOrganizationEventPage({
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [showTicketsModal, setShowTicketsModal] = useState(false);
-  const [showLiveHubModal, setShowLiveHubModal] = useState(false);
+  const [showLiveVisibilityModal, setShowLiveVisibilityModal] = useState(false);
   const [schedulePopover, setSchedulePopover] = useState<
     "startDate" | "startTime" | "endDate" | "endTime" | null
   >(null);
@@ -558,8 +559,10 @@ export function NewOrganizationEventPage({
   const organizationStatusValue = organizationStatus?.organization?.status ?? null;
   const organizationInactive = Boolean(organizationStatusValue && organizationStatusValue !== "ACTIVE");
   const canCreateEvents = moduleAccess[OrganizationModule.EVENTOS] === "EDIT";
-  const paymentsMode = organizationStatus?.paymentsMode ?? "CONNECT";
-  const isPlatformPayout = paymentsMode === "PLATFORM";
+  const organizationOrgType =
+    organizationStatus?.organization?.orgType ??
+    (organizationStatus?.paymentsMode === "PLATFORM" ? "PLATFORM" : "EXTERNAL");
+  const isPlatformPayout = organizationOrgType === "PLATFORM";
   const paymentsStatusRaw = isAdmin ? "READY" : organizationStatus?.paymentsStatus ?? "NO_STRIPE";
   const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
   const hasPaidTicket = useMemo(
@@ -1881,7 +1884,7 @@ export function NewOrganizationEventPage({
     ticketLabelPlural,
   ]);
 
-  const liveHubSummary =
+  const liveSummary =
     liveVisibility === "PUBLIC" ? "Público" : liveVisibility === "PRIVATE" ? "Privado" : "Desativado";
   const hasPublicTickets = useMemo(() => {
     if (isGratisEvent) return freeTicketPublicAccess;
@@ -2217,7 +2220,7 @@ export function NewOrganizationEventPage({
 
   const isAnyModalOpen =
     isTicketsModalOpen ||
-    showLiveHubModal ||
+    showLiveVisibilityModal ||
     showDescriptionModal ||
     showCoverModal ||
     showCoverCropModal;
@@ -2473,7 +2476,7 @@ export function NewOrganizationEventPage({
         coverImageUrl: coverUrl,
         accessPolicy,
         liveVisibility,
-        payoutMode: isPlatformPayout || (stripeNotReady && hasPaidTicket) ? "PLATFORM" : "ORGANIZATION",
+        payoutMode: isPlatformPayout ? "PLATFORM" : "ORGANIZATION",
         padel:
           selectedPreset === "padel"
             ? {
@@ -2545,7 +2548,7 @@ export function NewOrganizationEventPage({
   const resetForm = () => {
     setSelectedPreset(null);
     setShowTicketsModal(false);
-    setShowLiveHubModal(false);
+    setShowLiveVisibilityModal(false);
     setSchedulePopover(null);
     setShowDescriptionModal(false);
     setShowCoverModal(false);
@@ -3748,12 +3751,12 @@ export function NewOrganizationEventPage({
         )
       : null;
 
-  const renderLiveHubPanel = () => (
+  const renderLivePanel = () => (
     <div className="space-y-4 animate-fade-slide">
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
         <div>
-          <p className={labelClass}>LiveHub</p>
-          <p className="text-[12px] text-white/60">Visibilidade do LiveHub.</p>
+          <p className={labelClass}>Live</p>
+          <p className="text-[12px] text-white/60">Visibilidade do Live.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {([
@@ -3762,7 +3765,7 @@ export function NewOrganizationEventPage({
             { value: "DISABLED", label: "Desativado" },
           ] as const).map((opt) => (
             <button
-              key={`livehub-${opt.value}`}
+              key={`live-${opt.value}`}
               type="button"
               onClick={() => setLiveVisibility(opt.value)}
               className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
@@ -3782,20 +3785,20 @@ export function NewOrganizationEventPage({
     </div>
   );
 
-  const liveHubModal =
-    showLiveHubModal && portalRoot
+  const liveVisibilityModal =
+    showLiveVisibilityModal && portalRoot
       ? createPortal(
           <div className={MODAL_SHELL_CLASS}>
             <div
               className={MODAL_OVERLAY_CLASS}
-              onClick={() => setShowLiveHubModal(false)}
+              onClick={() => setShowLiveVisibilityModal(false)}
               aria-hidden
             />
             <div
               className={MODAL_CONTENT_WRAP_CLASS}
               onMouseDown={(event) => {
                 if (event.target === event.currentTarget) {
-                  setShowLiveHubModal(false);
+                  setShowLiveVisibilityModal(false);
                 }
               }}
             >
@@ -3803,23 +3806,23 @@ export function NewOrganizationEventPage({
                 className={`flex w-full max-w-3xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
                 role="dialog"
                 aria-modal="true"
-                aria-label="LiveHub"
+                aria-label="Live"
               >
                 <div className={MODAL_HEADER_CLASS}>
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">LiveHub</p>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live</p>
                     <p className="text-sm font-semibold text-white">Visibilidade</p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setShowLiveHubModal(false)}
+                    onClick={() => setShowLiveVisibilityModal(false)}
                     className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
                   >
                     Concluir
                   </button>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-                  {renderLiveHubPanel()}
+                  {renderLivePanel()}
                 </div>
               </div>
             </div>
@@ -4532,12 +4535,12 @@ export function NewOrganizationEventPage({
 
                   <button
                     type="button"
-                    onClick={() => setShowLiveHubModal(true)}
+                    onClick={() => setShowLiveVisibilityModal(true)}
                     className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
                   >
                     <div className="space-y-1">
-                      <p className={labelClass}>LiveHub</p>
-                      <p className="text-[12px] text-white/75">{liveHubSummary}</p>
+                      <p className={labelClass}>Live</p>
+                      <p className="text-[12px] text-white/75">{liveSummary}</p>
                     </div>
                     <span className="text-[12px] text-white/60 group-hover:text-white/85">Abrir</span>
                   </button>
@@ -5069,7 +5072,7 @@ export function NewOrganizationEventPage({
           </div>
 
         {ticketsModal}
-        {liveHubModal}
+        {liveVisibilityModal}
         {descriptionModal}
         {coverModal}
       </div>

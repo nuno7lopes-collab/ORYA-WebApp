@@ -8,16 +8,25 @@ describe("padel auto-schedule", () => {
 
     const result = computeAutoSchedulePlan({
       unscheduledMatches: [
-        { id: 1, pairingAId: 1, pairingBId: 2, plannedDurationMinutes: null, courtId: null, roundType: "GROUPS" },
-        { id: 2, pairingAId: 1, pairingBId: 3, plannedDurationMinutes: null, courtId: null, roundType: "GROUPS" },
+        {
+          id: 1,
+          sideAProfileIds: [101],
+          sideBProfileIds: [201],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+        {
+          id: 2,
+          sideAProfileIds: [101],
+          sideBProfileIds: [301],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
       ],
       scheduledMatches: [],
       courts: [{ id: 1 }, { id: 2 }],
-      pairingPlayers: new Map([
-        [1, { profileIds: [101], emails: [] }],
-        [2, { profileIds: [201], emails: [] }],
-        [3, { profileIds: [301], emails: [] }],
-      ]),
       availabilities: [],
       courtBlocks: [
         { courtId: 1, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T12:00:00Z") },
@@ -48,14 +57,17 @@ describe("padel auto-schedule", () => {
 
     const result = computeAutoSchedulePlan({
       unscheduledMatches: [
-        { id: 10, pairingAId: 4, pairingBId: 5, plannedDurationMinutes: null, courtId: null, roundType: "GROUPS" },
+        {
+          id: 10,
+          sideAProfileIds: [401],
+          sideBProfileIds: [501],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
       ],
       scheduledMatches: [],
       courts: [{ id: 1 }],
-      pairingPlayers: new Map([
-        [4, { profileIds: [401], emails: [] }],
-        [5, { profileIds: [501], emails: [] }],
-      ]),
       availabilities: [
         { playerProfileId: 401, playerEmail: null, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T12:30:00Z") },
       ],

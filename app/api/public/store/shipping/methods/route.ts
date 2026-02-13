@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
 import { prisma } from "@/lib/prisma";
 import { computeMethodShipping } from "@/lib/store/shipping";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseStoreId(req: NextRequest) {
@@ -33,6 +34,16 @@ async function _GET(req: NextRequest) {
         showOnProfile: true,
         catalogLocked: true,
         freeShippingThresholdCents: true,
+        organization: {
+          select: {
+            orgType: true,
+            officialEmail: true,
+            officialEmailVerifiedAt: true,
+            stripeAccountId: true,
+            stripeChargesEnabled: true,
+            stripePayoutsEnabled: true,
+          },
+        },
       },
     });
     if (!store) {
@@ -43,6 +54,18 @@ async function _GET(req: NextRequest) {
     }
     if (store.catalogLocked) {
       return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+    }
+
+    const paymentsGate = getPublicStorePaymentsGate({
+      orgType: store.organization?.orgType,
+      officialEmail: store.organization?.officialEmail,
+      officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
+      stripeAccountId: store.organization?.stripeAccountId,
+      stripeChargesEnabled: store.organization?.stripeChargesEnabled,
+      stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
+    });
+    if (!paymentsGate.ok) {
+      return jsonWrap({ ok: false, error: "PAYMENTS_NOT_READY" }, { status: 403 });
     }
 
     const country = req.nextUrl.searchParams.get("country") ?? "";

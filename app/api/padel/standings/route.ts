@@ -219,43 +219,15 @@ async function _GET(req: NextRequest) {
           .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
         return {
           ...match,
-          pairingAId: resolveSideSourcePairingId(match.participants, "A"),
-          pairingBId: resolveSideSourcePairingId(match.participants, "B"),
+          pairingAId: null,
+          pairingBId: null,
           sideAEntityIds: sideAEntityIds.length > 0 ? sideAEntityIds : undefined,
           sideBEntityIds: sideBEntityIds.length > 0 ? sideBEntityIds : undefined,
         };
       });
-
-      const pairingIds = new Set<number>();
-      matchesWithParticipantSides.forEach((match) => {
-        if (typeof match.pairingAId === "number") pairingIds.add(match.pairingAId);
-        if (typeof match.pairingBId === "number") pairingIds.add(match.pairingBId);
-      });
-
-      const pairings = pairingIds.size
-        ? await prisma.padelPairing.findMany({
-            where: { id: { in: Array.from(pairingIds) } },
-            select: {
-              id: true,
-              slots: {
-                select: {
-                  playerProfileId: true,
-                  playerProfile: { select: { id: true, fullName: true, displayName: true } },
-                },
-              },
-            },
-          })
-        : [];
-      const pairingPlayers = new Map<number, number[]>();
-      pairings.forEach((pairing) => {
-        const playerIds = pairing.slots
-          .map((slot) => slot.playerProfileId)
-          .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-        pairingPlayers.set(pairing.id, playerIds);
-      });
       standingsByGroup = computePadelStandingsByGroupForPlayers(
         matchesWithParticipantSides,
-        pairingPlayers,
+        new Map<number, number[]>(),
         pointsTable,
         tieBreakRules,
         {

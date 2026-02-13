@@ -1,1 +1,10 @@
-export { default } from "@/app/org/[orgId]/analytics/page";
+import { redirect } from "next/navigation";
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const { orgId } = await params;
+  redirect(`/org/${orgId}/analytics?tab=vendas&analytics=conversion`);
+}

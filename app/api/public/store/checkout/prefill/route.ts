@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { StoreAddressType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -69,10 +70,45 @@ async function _GET(req: NextRequest) {
 
     const store = await prisma.store.findFirst({
       where: { id: storeParsed.storeId },
-      select: { id: true },
+      select: {
+        id: true,
+        organization: {
+          select: {
+            orgType: true,
+            officialEmail: true,
+            officialEmailVerifiedAt: true,
+            stripeAccountId: true,
+            stripeChargesEnabled: true,
+            stripePayoutsEnabled: true,
+          },
+        },
+      },
     });
     if (!store) {
       return fail(404, "Store nao encontrada.");
+    }
+    const paymentsGate = getPublicStorePaymentsGate({
+      orgType: store.organization?.orgType,
+      officialEmail: store.organization?.officialEmail,
+      officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
+      stripeAccountId: store.organization?.stripeAccountId,
+      stripeChargesEnabled: store.organization?.stripeChargesEnabled,
+      stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
+    });
+    if (!paymentsGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: "PAYMENTS_NOT_READY",
+          message: "Pagamentos indisponíveis.",
+          retryable: false,
+          details: {
+            missingEmail: paymentsGate.missingEmail,
+            missingStripe: paymentsGate.missingStripe,
+          },
+        },
+        { status: 403 },
+      );
     }
 
     const supabase = await createSupabaseServer();

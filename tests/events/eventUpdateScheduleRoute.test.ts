@@ -44,6 +44,48 @@ beforeEach(async () => {
 });
 
 describe("organization events update route schedule invariants", () => {
+  it("rejects invalid payout mode combination", async () => {
+    prisma.profile.findUnique.mockResolvedValueOnce({
+      roles: ["admin"],
+      onboardingDone: true,
+      fullName: "User One",
+      username: "user_one",
+    });
+    prisma.event.findUnique.mockResolvedValueOnce({
+      id: 77,
+      slug: "evento-77",
+      title: "Evento 77",
+      startsAt: new Date("2026-03-01T10:00:00.000Z"),
+      endsAt: new Date("2026-03-01T12:00:00.000Z"),
+      status: "PUBLISHED",
+      organizationId: null,
+      pricingMode: "STANDARD",
+      templateType: "OTHER",
+      interestTags: [],
+      payoutMode: "ORGANIZATION",
+      addressId: "addr-1",
+      ticketTypes: [],
+      organization: null,
+      _count: { tickets: 0, reservations: 0, saleLines: 0 },
+    });
+
+    const req = new NextRequest("http://localhost/api/organizacao/events/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 77,
+        payoutMode: "PLATFORM",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("INVALID_PAYOUT_MODE");
+  });
+
   it("fails closed when event has missing endsAt", async () => {
     const req = new NextRequest("http://localhost/api/organizacao/events/update", {
       method: "POST",

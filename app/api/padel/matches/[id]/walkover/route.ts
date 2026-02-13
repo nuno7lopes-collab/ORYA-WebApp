@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole, OrganizationModule, PadelRegistrationStatus, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
@@ -29,8 +29,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     where: { id: matchId },
     select: {
       id: true,
-      pairingAId: true,
-      pairingBId: true,
       winnerSide: true,
       winnerParticipantId: true,
       eventId: true,
@@ -46,7 +44,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           participant: {
             select: {
               id: true,
-              sourcePairingId: true,
               playerProfileId: true,
             },
           },
@@ -82,25 +79,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "INVALID_RESULT_TYPE" }, { status: 400 });
   }
 
-  const matchParticipants = Array.isArray(match.participants) ? match.participants : [];
-  const winnerSideParticipants = matchParticipants
-    .filter((row) => row.side === winner)
-    .sort((a, b) => a.slotOrder - b.slotOrder || a.participantId - b.participantId);
-  let winnerParticipantId: number | null = winnerSideParticipants[0]?.participantId ?? null;
-  const winnerPairingIdFallback = winner === "A" ? match.pairingAId : match.pairingBId;
-  const winnerPairingId =
-    winnerSideParticipants.find((row) => typeof row.participant?.sourcePairingId === "number")?.participant
-      ?.sourcePairingId ??
-    winnerPairingIdFallback ??
-    null;
-  if (!winnerParticipantId && typeof winnerPairingId === "number") {
-    winnerParticipantId =
-      matchParticipants.find((row) => row.participant?.sourcePairingId === winnerPairingId)?.participantId ?? null;
-  }
-  if (!winnerParticipantId && typeof winnerPairingId !== "number") {
-    return jsonWrap({ ok: false, error: "MISSING_PARTICIPANTS" }, { status: 400 });
-  }
-
   const { organization, membership } = await getActiveOrganizationForUser(authData.user.id, {
     organizationId,
     roles: ROLE_ALLOWLIST,
@@ -133,20 +111,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: authority.error }, { status: authority.status });
   }
 
-  if (typeof winnerPairingId === "number") {
-    const winnerPairing = await prisma.padelPairing.findUnique({
-      where: { id: winnerPairingId },
-      select: { registration: { select: { status: true } } },
-    });
-    if (!winnerPairing) {
-      return jsonWrap({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
-    }
-    if (
-      winnerPairing.registration?.status &&
-      winnerPairing.registration.status !== PadelRegistrationStatus.CONFIRMED
-    ) {
-      return jsonWrap({ ok: false, error: "PAIRING_NOT_CONFIRMED" }, { status: 409 });
-    }
+  const matchParticipants = Array.isArray(match.participants) ? match.participants : [];
+  const winnerSideParticipants = matchParticipants
+    .filter((row) => row.side === winner)
+    .sort((a, b) => a.slotOrder - b.slotOrder || a.participantId - b.participantId);
+  let winnerParticipantId: number | null = winnerSideParticipants[0]?.participantId ?? null;
+  if (!winnerParticipantId && typeof match.winnerParticipantId === "number") {
+    winnerParticipantId = match.winnerParticipantId;
+  }
+  if (!winnerParticipantId) {
+    return jsonWrap({ ok: false, error: "MISSING_PARTICIPANTS" }, { status: 400 });
   }
 
   const config = await prisma.padelTournamentConfig.findUnique({
@@ -205,7 +179,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     metadata: {
       matchId,
       eventId: match.eventId,
-      winnerPairingId,
       winnerParticipantId,
       winnerSide: winner,
       resultType,

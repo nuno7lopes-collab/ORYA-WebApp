@@ -1,3 +1,18 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_type t
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'PadelMatchSide'
+      AND n.nspname = 'app_v3'
+  ) THEN
+    CREATE TYPE app_v3."PadelMatchSide" AS ENUM (
+      'A',
+      'B'
+    );
+  END IF;
+END $$;
+
 ALTER TABLE app_v3.padel_matches
   ADD COLUMN IF NOT EXISTS winner_side app_v3."PadelMatchSide";
 

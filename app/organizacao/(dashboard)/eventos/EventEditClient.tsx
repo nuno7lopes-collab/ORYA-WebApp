@@ -174,7 +174,13 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const organizationId = event.organizationId ?? null;
   const orgMeUrl =
     organizationId ? `/api/org/${organizationId}/me` : null;
-  const { data: organizationStatus } = useSWR<{ paymentsStatus?: string }>(
+  const { data: organizationStatus } = useSWR<{
+    paymentsStatus?: string;
+    paymentsMode?: "PLATFORM" | "CONNECT";
+    organization?: {
+      orgType?: string | null;
+    } | null;
+  }>(
     orgMeUrl,
     fetcher,
     { revalidateOnFocus: false }
@@ -345,8 +351,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   };
   const roles = Array.isArray(profile?.roles) ? (profile?.roles as string[]) : [];
   const isAdmin = roles.some((r) => r?.toLowerCase() === "admin");
-  const payoutMode = (event.payoutMode ?? "ORGANIZATION").toUpperCase();
-  const isPlatformPayout = payoutMode === "PLATFORM";
+  const organizationOrgType =
+    organizationStatus?.organization?.orgType ??
+    (organizationStatus?.paymentsMode === "PLATFORM" ? "PLATFORM" : "EXTERNAL");
+  const isPlatformPayout = organizationOrgType === "PLATFORM";
   const paymentsStatusRaw = isAdmin ? "READY" : organizationStatus?.paymentsStatus ?? "NO_STRIPE";
   const paymentsStatus = isPlatformPayout ? "READY" : paymentsStatusRaw;
   const hasPaidTicket = useMemo(
@@ -359,7 +367,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const primaryLabelTitle = isPadel ? "Torneio" : "Evento";
   const primaryLabelPlural = isPadel ? "Torneios" : "Eventos";
   const templateLabel = isPadel ? "Padel" : "Evento padrão";
-  const liveHubPreviewUrl = `/eventos/${event.slug}/live`;
+  const livePreviewUrl = `/eventos/${event.slug}/live`;
   const inputClass = (invalid: boolean) =>
     `w-full rounded-md border ${invalid ? "border-amber-400/60 focus:border-amber-300" : "border-white/15 focus:border-white/60"} bg-black/20 px-3 py-2 text-sm outline-none`;
   const locationError = fieldErrors.location ?? null;
@@ -1258,11 +1266,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         <div id="livehub" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live</p>
               <p className="text-sm text-white/80">Visibilidade e stream.</p>
             </div>
             <a
-              href={liveHubPreviewUrl}
+              href={livePreviewUrl}
               target="_blank"
               rel="noreferrer"
               className="rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-white/80 hover:border-white/40"
@@ -1387,43 +1395,103 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                     <div className="px-3 py-2 text-sm text-white/70">A procurar...</div>
                   ) : locationSearchError ? (
                     <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
-                  ) : locationSuggestions.length === 0 ? (
+                  ) : primarySuggestions.length === 0 ? (
                     <div className="space-y-1 px-3 py-2 text-sm text-white/65">
                       <p>Sem sugestões para este texto.</p>
                       <p className="text-[12px] text-white/50">Tenta rua + cidade (ex: &quot;Rua de Ceuta Porto&quot;).</p>
                     </div>
                   ) : (
-                    locationSuggestions.map((suggestion) => {
-                      const suggestionDistance =
-                        locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                          ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                          : null;
-                      return (
-                        <button
-                          key={suggestion.providerId}
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => handleSelectGeoSuggestion(suggestion)}
-                          className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                        >
-                          <div className="flex w-full items-start justify-between gap-3">
-                            <div className="space-y-0.5">
-                              <span className="block font-semibold text-white">{suggestion.label}</span>
-                              {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
-                                <span className="block text-[12px] text-white/60">
-                                  {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                    <div className="space-y-1">
+                      {bypassActive ? (
+                        <div className="px-3 py-2 text-[11px] text-cyan-100/90">
+                          Pesquisa global ativada por país na query.
+                        </div>
+                      ) : null}
+                      {showForeignFallbackNotice ? (
+                        <div className="px-3 py-2 text-[11px] text-amber-100/90">
+                          Sem resultados no país esperado; a mostrar globais.
+                        </div>
+                      ) : null}
+                      {primarySuggestions.map((suggestion) => {
+                        const suggestionDistance =
+                          locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
+                            ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
+                            : null;
+                        return (
+                          <button
+                            key={suggestion.providerId}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: showForeignFallback })}
+                            className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                          >
+                            <div className="flex w-full items-start justify-between gap-3">
+                              <div className="space-y-0.5">
+                                <span className="block font-semibold text-white">{suggestion.label}</span>
+                                {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
+                                  <span className="block text-[12px] text-white/60">
+                                    {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                                  </span>
+                                )}
+                              </div>
+                              {suggestionDistance && (
+                                <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                                  {suggestionDistance}
                                 </span>
                               )}
                             </div>
-                            {suggestionDistance && (
-                              <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                                {suggestionDistance}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })
+                          </button>
+                        );
+                      })}
+                      {collapsedForeignSuggestions.length > 0 ? (
+                        <div className="border-t border-white/10">
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={handleToggleForeignSuggestions}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-semibold text-white/75 hover:bg-white/8"
+                          >
+                            <span>Outros países ({collapsedForeignSuggestions.length})</span>
+                            <span aria-hidden>{showForeignSuggestions ? "▴" : "▾"}</span>
+                          </button>
+                          {showForeignSuggestions ? (
+                            <div className="border-t border-white/5">
+                              {collapsedForeignSuggestions.map((suggestion) => {
+                                const suggestionDistance =
+                                  locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
+                                    ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
+                                    : null;
+                                return (
+                                  <button
+                                    key={`foreign-${suggestion.providerId}`}
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: true })}
+                                    className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                                  >
+                                    <div className="flex w-full items-start justify-between gap-3">
+                                      <div className="space-y-0.5">
+                                        <span className="block font-semibold text-white">{suggestion.label}</span>
+                                        {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
+                                          <span className="block text-[12px] text-white/60">
+                                            {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {suggestionDistance && (
+                                        <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                                          {suggestionDistance}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               )}

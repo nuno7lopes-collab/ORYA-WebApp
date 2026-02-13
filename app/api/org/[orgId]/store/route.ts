@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, StoreStatus } from "@prisma/client";
 import { z } from "zod";
@@ -252,6 +253,22 @@ async function _PATCH(req: NextRequest) {
       return fail(404, "Loja ainda nao criada.");
     }
 
+    const organizationPayments = await prisma.organization.findUnique({
+      where: { id: organization.id },
+      select: {
+        id: true,
+        orgType: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+      },
+    });
+    if (!organizationPayments) {
+      return fail(404, "Organizacao nao encontrada.");
+    }
+
     const body = await req.json().catch(() => null);
     const parsed = updateStoreSchema.safeParse(body);
     if (!parsed.success) {
@@ -259,6 +276,34 @@ async function _PATCH(req: NextRequest) {
     }
 
     const payload = parsed.data;
+    const wantsPublicActivation =
+      payload.status === StoreStatus.ACTIVE || payload.showOnProfile === true || payload.checkoutEnabled === true;
+    if (wantsPublicActivation) {
+      const paymentsGate = getPublicStorePaymentsGate({
+        orgType: organizationPayments.orgType,
+        officialEmail: organizationPayments.officialEmail,
+        officialEmailVerifiedAt: organizationPayments.officialEmailVerifiedAt,
+        stripeAccountId: organizationPayments.stripeAccountId,
+        stripeChargesEnabled: organizationPayments.stripeChargesEnabled,
+        stripePayoutsEnabled: organizationPayments.stripePayoutsEnabled,
+      });
+      if (!paymentsGate.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: "PAYMENTS_NOT_READY",
+            message: "A organização ainda não está pronta para pagamentos.",
+            retryable: false,
+            details: {
+              missingEmail: paymentsGate.missingEmail,
+              missingStripe: paymentsGate.missingStripe,
+            },
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const updated = await prisma.store.update({
       where: { id: store.id },
       data: {

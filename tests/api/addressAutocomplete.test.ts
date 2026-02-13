@@ -52,6 +52,7 @@ vi.mock("@/lib/observability/logger", () => ({
 }));
 
 import { GET } from "@/app/api/address/autocomplete/route";
+import { buildCacheKey } from "@/lib/geo/cache";
 
 describe("GET /api/address/autocomplete", () => {
   beforeEach(() => {
@@ -252,5 +253,81 @@ describe("GET /api/address/autocomplete", () => {
     expect(json.queryCountryIntentCode ?? json.data?.queryCountryIntentCode).toBe("ES");
     expect(mocks.rank).toHaveBeenCalled();
     expect(mocks.rank.mock.calls[0]?.[3]).toMatchObject({ countryCode: "ES" });
+    expect(buildCacheKey).toHaveBeenCalled();
+    const cacheParts = vi.mocked(buildCacheKey).mock.calls[0]?.[0] as unknown[] | undefined;
+    expect(cacheParts).toEqual(
+      expect.arrayContaining(["address-autocomplete", "v3", "madrid spain", "PT", "ES", "ES", "pt-PT"]),
+    );
+  });
+
+  it("faz retry com hint de país quando resultados iniciais não têm país esperado", async () => {
+    mocks.autocomplete.mockImplementation(async ({ query }: { query: string }) => {
+      if (query === "estad") {
+        return {
+          sourceProvider: "APPLE_MAPS",
+          data: [
+            {
+              providerId: "us-1",
+              label: "Estados Unidos",
+              secondaryLabel: "Estados Unidos",
+              name: "Estados Unidos",
+              locality: null,
+              city: null,
+              address: "Estados Unidos",
+              countryCode: "US",
+              lat: 39.9997,
+              lng: -98.6785,
+            },
+          ],
+        };
+      }
+      if (query === "estad Portugal") {
+        return {
+          sourceProvider: "APPLE_MAPS",
+          data: [
+            {
+              providerId: "pt-1",
+              label: "Estádio Municipal de Abrantes",
+              secondaryLabel: "Abrantes, Portugal",
+              name: "Estádio Municipal de Abrantes",
+              locality: "Abrantes",
+              city: "Abrantes",
+              address: "Abrantes, Portugal",
+              countryCode: "PT",
+              lat: 39.466,
+              lng: -8.194,
+            },
+          ],
+        };
+      }
+      return { sourceProvider: "APPLE_MAPS", data: [] };
+    });
+
+    mocks.rank.mockImplementation((items: Array<{ countryCode?: string | null }>) =>
+      [...items].sort((a, b) => {
+        const aPt = (a.countryCode ?? "").toUpperCase() === "PT" ? 1 : 0;
+        const bPt = (b.countryCode ?? "").toUpperCase() === "PT" ? 1 : 0;
+        return bPt - aPt;
+      }),
+    );
+
+    const req = new NextRequest("http://localhost/api/address/autocomplete?q=estad&lang=pt-PT");
+    const res = await GET(req);
+    const json = (await res.json()) as {
+      items?: Array<{ label?: string | null; countryCode?: string | null }>;
+      data?: { items?: Array<{ label?: string | null; countryCode?: string | null }> };
+    };
+    const items = json.items ?? json.data?.items ?? [];
+
+    expect(res.status).toBe(200);
+    expect(mocks.autocomplete).toHaveBeenCalledTimes(2);
+    expect(mocks.autocomplete.mock.calls[1]?.[0]).toMatchObject({
+      query: "estad Portugal",
+      lat: 41.1579,
+      lng: -8.6291,
+      lang: "pt-PT",
+    });
+    expect(items[0]?.countryCode).toBe("PT");
+    expect(items[0]?.label).toContain("Estádio");
   });
 });

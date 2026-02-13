@@ -1779,7 +1779,7 @@ model Event {
   /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
   interestTags                       String[]                @default([]) @map("interest_tags")
-  liveVisibility                 LiveHubVisibility       @default(PUBLIC) @map("live_visibility")
+  liveVisibility                 LiveVisibility          @default(PUBLIC) @map("live_visibility")
   /// Liga ao Organization quando é evento de organização
   organizationId                       Int?                    @map("organization_id")
   startsAt                          DateTime                @map("starts_at")
@@ -5946,7 +5946,7 @@ enum Visibility {
 }
 
 
-enum LiveHubVisibility {
+enum LiveVisibility {
   PUBLIC
   PRIVATE
   DISABLED

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCheckoutClient from "@/components/storefront/StorefrontCheckoutClient";
 import StorefrontFooter from "@/components/storefront/StorefrontFooter";
@@ -33,7 +34,18 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
 
   const organization = await prisma.organization.findFirst({
     where: { username, status: "ACTIVE" },
-    select: { id: true, username: true, publicName: true, businessName: true },
+    select: {
+      id: true,
+      username: true,
+      publicName: true,
+      businessName: true,
+      orgType: true,
+      officialEmail: true,
+      officialEmailVerifiedAt: true,
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+    },
   });
 
   if (!organization) {
@@ -58,7 +70,15 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
   });
 
   const storeEnabled = isStoreFeatureEnabled();
-  const storePublic = resolveStoreState(store) === "ACTIVE";
+  const paymentsReady = getPublicStorePaymentsGate({
+    orgType: organization.orgType,
+    officialEmail: organization.officialEmail,
+    officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+    stripeAccountId: organization.stripeAccountId,
+    stripeChargesEnabled: organization.stripeChargesEnabled,
+    stripePayoutsEnabled: organization.stripePayoutsEnabled,
+  }).ok;
+  const storePublic = paymentsReady && resolveStoreState(store) === "ACTIVE";
   const displayName =
     organization.publicName || organization.businessName || organization.username || "Loja";
 

@@ -16,6 +16,11 @@ import { isPadelFormat, parsePadelFormat, resolvePadelFormat } from "@/domain/pa
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
+import {
+  resolveAllowedPayoutModeForOrganization,
+  requiresOrganizationStripe,
+  validateRequestedPayoutMode,
+} from "@/domain/finance/payoutModePolicy";
 import { SourceType, EventPricingMode } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
@@ -30,7 +35,6 @@ import { normalizeInterestIds } from "@/lib/ranking/interests";
 import {
   EventTemplateType,
   EventStatus,
-  LiveHubVisibility as LiveVisibilityEnum,
   PadelEligibilityType,
   PayoutMode,
   ResaleMode,
@@ -96,6 +100,8 @@ type CreateOrganizationEventBody = {
     staffIds?: number[];
   } | null;
 };
+
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type PadelConfigInput = {
   padelClubId?: number | null;
@@ -270,8 +276,6 @@ async function _POST(req: NextRequest) {
     if (!organizationInfo) {
       return fail(403, "FORBIDDEN");
     }
-    const isPlatformAccount = organizationInfo.orgType === "PLATFORM";
-
     const title = body.title?.trim();
     const description = body.description?.trim() ?? "";
     const startsAtRaw = body.startsAt;
@@ -284,8 +288,31 @@ async function _POST(req: NextRequest) {
       | "DISABLED"
       | undefined;
     const payoutModeRequested =
-      body.payoutMode?.toUpperCase() === "PLATFORM" ? PayoutMode.PLATFORM : PayoutMode.ORGANIZATION;
-    const payoutMode: PayoutMode = isPlatformAccount ? PayoutMode.PLATFORM : payoutModeRequested;
+      typeof body.payoutMode === "string"
+        ? body.payoutMode.toUpperCase() === "PLATFORM"
+          ? PayoutMode.PLATFORM
+          : PayoutMode.ORGANIZATION
+        : null;
+    if (payoutModeRequested) {
+      const payoutModeValidation = validateRequestedPayoutMode(organizationInfo.orgType, payoutModeRequested);
+      if (!payoutModeValidation.ok) {
+        return fail(
+          400,
+          "Payout mode inválido para o tipo da organização.",
+          "INVALID_PAYOUT_MODE",
+          false,
+          {
+            orgType: payoutModeValidation.orgType,
+            requestedPayoutMode: payoutModeValidation.requestedPayoutMode,
+            allowedPayoutMode: payoutModeValidation.allowedPayoutMode,
+          },
+        );
+      }
+    }
+    const payoutMode: PayoutMode = resolveAllowedPayoutModeForOrganization(
+      organizationInfo.orgType,
+      payoutModeRequested,
+    );
     const statusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : null;
     const eventStatus: EventStatus =
       statusRaw === "DRAFT" || statusRaw === "PUBLISHED" ? (statusRaw as EventStatus) : EventStatus.PUBLISHED;
@@ -351,10 +378,10 @@ async function _POST(req: NextRequest) {
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
     const liveVisibilityRaw = body.liveVisibility?.toUpperCase();
-    const liveVisibility: LiveVisibilityEnum =
+    const liveVisibility: LiveVisibility =
       liveVisibilityRaw === "PUBLIC" || liveVisibilityRaw === "PRIVATE" || liveVisibilityRaw === "DISABLED"
-        ? (liveVisibilityRaw as LiveVisibilityEnum)
-        : LiveVisibilityEnum.PUBLIC;
+        ? (liveVisibilityRaw as LiveVisibility)
+        : "PUBLIC";
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     let ticketTypesData = ticketTypesInput
@@ -438,7 +465,7 @@ async function _POST(req: NextRequest) {
         stripeAccountId: organizationInfo.stripeAccountId ?? null,
         stripeChargesEnabled: organizationInfo.stripeChargesEnabled ?? false,
         stripePayoutsEnabled: organizationInfo.stripePayoutsEnabled ?? false,
-        requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
+        requireStripe: requiresOrganizationStripe(organizationInfo.orgType),
       });
       if (!gate.ok) {
         return respondError(
@@ -718,7 +745,7 @@ async function _POST(req: NextRequest) {
           stripeAccountId: organizationInfo.stripeAccountId ?? null,
           stripeChargesEnabled: organizationInfo.stripeChargesEnabled ?? false,
           stripePayoutsEnabled: organizationInfo.stripePayoutsEnabled ?? false,
-          requireStripe: payoutMode === PayoutMode.ORGANIZATION && !isPlatformAccount,
+          requireStripe: requiresOrganizationStripe(organizationInfo.orgType),
         });
         if (!gate.ok) {
           return respondError(

@@ -19,8 +19,14 @@ const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const asObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
-const matchHasPairing = (match: { pairingAId: number | null; pairingBId: number | null }, pairingId: number) =>
-  match.pairingAId === pairingId || match.pairingBId === pairingId;
+const matchHasAnyParticipant = (
+  match: { participants?: Array<{ participantId: number }> },
+  participantIds: number[],
+) => {
+  if (!Array.isArray(match.participants) || participantIds.length === 0) return false;
+  const target = new Set(participantIds);
+  return match.participants.some((row) => target.has(row.participantId));
+};
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -52,16 +58,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       roundType: true,
       categoryId: true,
       roundLabel: true,
-      pairingAId: true,
-      pairingBId: true,
-      winnerPairingId: true,
       winnerParticipantId: true,
       winnerSide: true,
       participants: {
         orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
         select: {
           side: true,
-          participant: { select: { sourcePairingId: true } },
+          participantId: true,
         },
       },
       event: { select: { id: true, organizationId: true } },
@@ -122,24 +125,28 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       : match.winnerSide === "A" || match.winnerSide === "B"
         ? match.winnerSide
         : null;
-  const winnerPairingFromParticipants =
-    winnerSideFromAfter === null
-      ? null
-      : match.participants
+  const winnerParticipantIds =
+    winnerSideFromAfter === "A" || winnerSideFromAfter === "B"
+      ? match.participants
           .filter((row) => row.side === winnerSideFromAfter)
-          .map((row) => row.participant?.sourcePairingId)
-          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
-  const winnerPairingId =
-    typeof after?.winnerPairingId === "number"
-      ? (after.winnerPairingId as number)
-      : typeof winnerPairingFromParticipants === "number"
-        ? winnerPairingFromParticipants
-      : typeof match.winnerPairingId === "number"
-        ? match.winnerPairingId
-        : null;
+          .map((row) => row.participantId)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+      : typeof match.winnerParticipantId === "number"
+        ? [match.winnerParticipantId]
+        : [];
+  const loserParticipantIds =
+    winnerSideFromAfter === "A" || winnerSideFromAfter === "B"
+      ? match.participants
+          .filter((row) => row.side !== winnerSideFromAfter)
+          .map((row) => row.participantId)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+      : [];
 
-  const updateDownstream: Array<{ id: number; clearA: boolean; clearB: boolean }> = [];
-  if (match.roundType === "KNOCKOUT" && winnerPairingId) {
+  const updateDownstream: Array<{
+    id: number;
+    clearParticipantIds: number[];
+  }> = [];
+  if (match.roundType === "KNOCKOUT" && winnerParticipantIds.length > 0) {
     const [config, koMatches] = await Promise.all([
       prisma.padelTournamentConfig.findUnique({
         where: { eventId: match.eventId },
@@ -154,12 +161,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         select: {
           id: true,
           roundLabel: true,
-          pairingAId: true,
-          pairingBId: true,
-          winnerPairingId: true,
           winnerParticipantId: true,
           winnerSide: true,
           status: true,
+          participants: {
+            select: {
+              participantId: true,
+            },
+          },
         },
         orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
       }),
@@ -189,7 +198,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const winnerDownstream = koMatches.filter(
       (m) =>
         m.id !== match.id &&
-        matchHasPairing(m, winnerPairingId) &&
+        matchHasAnyParticipant(m, winnerParticipantIds) &&
         (!downstreamLabels || downstreamLabels.has(m.roundLabel || "?")),
     );
 
@@ -198,62 +207,58 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
 
     winnerDownstream.forEach((m) => {
+      const clearParticipantIds = (m.participants ?? [])
+        .map((row) => row.participantId)
+        .filter((id): id is number => winnerParticipantIds.includes(id));
       updateDownstream.push({
         id: m.id,
-        clearA: m.pairingAId === winnerPairingId,
-        clearB: m.pairingBId === winnerPairingId,
+        clearParticipantIds,
       });
     });
 
     if (
       config?.format === "QUADRO_AB" &&
       prefix === "A " &&
-      match.pairingAId &&
-      match.pairingBId &&
       roundOrder[0] &&
       (match.roundLabel || "") === roundOrder[0]
     ) {
-      const loserPairingId =
-        winnerPairingId === match.pairingAId ? match.pairingBId : match.pairingAId;
-      if (loserPairingId) {
-        const loserDownstream = koMatches.filter(
-          (m) =>
-            extractBracketPrefix(m.roundLabel) === "B " &&
-            matchHasPairing(m, loserPairingId),
-        );
-        if (loserDownstream.some((m) => m.status !== "PENDING")) {
-          return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
-        }
-        loserDownstream.forEach((m) => {
-          updateDownstream.push({
-            id: m.id,
-            clearA: m.pairingAId === loserPairingId,
-            clearB: m.pairingBId === loserPairingId,
-          });
-        });
+      const loserDownstream = koMatches.filter(
+        (m) =>
+          extractBracketPrefix(m.roundLabel) === "B " &&
+          matchHasAnyParticipant(m, loserParticipantIds),
+      );
+      if (loserDownstream.some((m) => m.status !== "PENDING")) {
+        return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
       }
+      loserDownstream.forEach((m) => {
+        const clearParticipantIds = (m.participants ?? [])
+          .map((row) => row.participantId)
+          .filter((id): id is number => loserParticipantIds.includes(id));
+        updateDownstream.push({
+          id: m.id,
+          clearParticipantIds,
+        });
+      });
     }
 
-    if (isDoubleElim && prefix === "A " && match.pairingAId && match.pairingBId) {
-      const loserPairingId =
-        winnerPairingId === match.pairingAId ? match.pairingBId : match.pairingAId;
-      if (loserPairingId) {
-        const loserDownstream = koMatches.filter(
-          (m) =>
-            extractBracketPrefix(m.roundLabel) === "B " &&
-            matchHasPairing(m, loserPairingId),
-        );
-        if (loserDownstream.some((m) => m.status !== "PENDING")) {
-          return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
-        }
-        loserDownstream.forEach((m) => {
-          updateDownstream.push({
-            id: m.id,
-            clearA: m.pairingAId === loserPairingId,
-            clearB: m.pairingBId === loserPairingId,
-          });
-        });
+    if (isDoubleElim && prefix === "A ") {
+      const loserDownstream = koMatches.filter(
+        (m) =>
+          extractBracketPrefix(m.roundLabel) === "B " &&
+          matchHasAnyParticipant(m, loserParticipantIds),
+      );
+      if (loserDownstream.some((m) => m.status !== "PENDING")) {
+        return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
       }
+      loserDownstream.forEach((m) => {
+        const clearParticipantIds = (m.participants ?? [])
+          .map((row) => row.participantId)
+          .filter((id): id is number => loserParticipantIds.includes(id));
+        updateDownstream.push({
+          id: m.id,
+          clearParticipantIds,
+        });
+      });
     }
 
     if (isDoubleElim && prefix === "B ") {
@@ -263,24 +268,34 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       const grandFinalReset = koMatches.find(
         (m) => extractBracketPrefix(m.roundLabel) === "A " && isGrandFinalResetLabel(m.roundLabel),
       );
-      if (grandFinal && matchHasPairing(grandFinal, winnerPairingId)) {
+      if (
+        grandFinal &&
+        matchHasAnyParticipant(grandFinal, winnerParticipantIds)
+      ) {
         if (grandFinal.status !== "PENDING") {
           return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
         }
+        const clearParticipantIds = (grandFinal.participants ?? [])
+          .map((row) => row.participantId)
+          .filter((id): id is number => winnerParticipantIds.includes(id));
         updateDownstream.push({
           id: grandFinal.id,
-          clearA: grandFinal.pairingAId === winnerPairingId,
-          clearB: grandFinal.pairingBId === winnerPairingId,
+          clearParticipantIds,
         });
       }
-      if (grandFinalReset && matchHasPairing(grandFinalReset, winnerPairingId)) {
+      if (
+        grandFinalReset &&
+        matchHasAnyParticipant(grandFinalReset, winnerParticipantIds)
+      ) {
         if (grandFinalReset.status !== "PENDING") {
           return jsonWrap({ ok: false, error: "DOWNSTREAM_LOCKED" }, { status: 409 });
         }
+        const clearParticipantIds = (grandFinalReset.participants ?? [])
+          .map((row) => row.participantId)
+          .filter((id): id is number => winnerParticipantIds.includes(id));
         updateDownstream.push({
           id: grandFinalReset.id,
-          clearA: grandFinalReset.pairingAId === winnerPairingId,
-          clearB: grandFinalReset.pairingBId === winnerPairingId,
+          clearParticipantIds,
         });
       }
     }
@@ -304,14 +319,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const updated = await prisma.$transaction(async (tx) => {
     for (const target of updateDownstream) {
-      if (!target.clearA && !target.clearB) continue;
-      const data: Prisma.EventMatchSlotUncheckedUpdateInput = {};
-      if (target.clearA) data.pairingAId = null;
-      if (target.clearB) data.pairingBId = null;
-      if (target.clearA || target.clearB) {
-        data.winnerParticipantId = null;
-        data.winnerSide = null;
+      if (target.clearParticipantIds.length === 0) continue;
+      if (target.clearParticipantIds.length > 0) {
+        await tx.padelMatchParticipant.deleteMany({
+          where: {
+            matchId: target.id,
+            participantId: { in: target.clearParticipantIds },
+          },
+        });
       }
+      const data: Prisma.EventMatchSlotUncheckedUpdateInput = {};
+      data.winnerParticipantId = null;
+      data.winnerSide = null;
       await updatePadelMatch({
         tx,
         matchId: target.id,

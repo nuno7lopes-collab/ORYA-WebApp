@@ -36,5 +36,6 @@ describe("mobile username rules", () => {
   it("normalizes free-form input with @ prefix", () => {
     expect(normalizeUsernameInput(" @João.Silva ")).toBe("joao.silva");
     expect(normalizeUsernameInput("@__TEST__")).toBe("__test__");
+    expect(normalizeUsernameInput("orya-org")).toBe("orya_org");
   });
 });

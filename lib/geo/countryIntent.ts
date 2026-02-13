@@ -1,18 +1,18 @@
 const COUNTRY_ALIASES: Record<string, readonly string[]> = {
-  PT: ["portugal", "pt"],
-  ES: ["spain", "espanha", "espana", "es"],
-  FR: ["france", "franca", "fr"],
-  DE: ["germany", "alemanha", "de"],
-  IT: ["italy", "italia", "it"],
-  NL: ["netherlands", "paises baixos", "holland", "nl"],
-  CH: ["switzerland", "suica", "ch"],
-  BE: ["belgium", "belgica", "be"],
-  GB: ["united kingdom", "reino unido", "uk", "gb", "scotland", "escocia", "escocia", "inglaterra"],
-  US: ["united states", "usa", "estados unidos", "us"],
-  BR: ["brazil", "brasil", "br"],
-  ET: ["ethiopia", "etiopia", "et"],
-  KZ: ["kazakhstan", "cazaquistao", "kz"],
-  TG: ["togo", "tg"],
+  PT: ["portugal"],
+  ES: ["spain", "espanha", "espana"],
+  FR: ["france", "franca"],
+  DE: ["germany", "alemanha"],
+  IT: ["italy", "italia"],
+  NL: ["netherlands", "paises baixos", "holland"],
+  CH: ["switzerland", "suica"],
+  BE: ["belgium", "belgica"],
+  GB: ["united kingdom", "reino unido", "great britain", "britain", "uk", "scotland", "escocia", "england", "inglaterra"],
+  US: ["united states", "usa", "estados unidos", "eua"],
+  BR: ["brazil", "brasil"],
+  ET: ["ethiopia", "etiopia"],
+  KZ: ["kazakhstan", "cazaquistao"],
+  TG: ["togo"],
 };
 
 export const KNOWN_COUNTRY_CODES = Object.freeze(Object.keys(COUNTRY_ALIASES));
@@ -36,6 +36,14 @@ const hasToken = (haystack: string, token: string) => {
   return haystack.includes(token);
 };
 
+const hasExplicitIsoCodeToken = (text: string, countryCode: string) => {
+  if (!text || !countryCode) return false;
+  const normalizedCode = countryCode.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(normalizedCode)) return false;
+  const pattern = new RegExp(`(?:^|[^A-Za-z])${escapeRegex(normalizedCode)}(?:$|[^A-Za-z])`);
+  return pattern.test(text);
+};
+
 export const getCountryAliases = (countryCode: string | null | undefined): readonly string[] => {
   if (!countryCode) return [];
   const normalized = countryCode.trim().toUpperCase();
@@ -44,6 +52,10 @@ export const getCountryAliases = (countryCode: string | null | undefined): reado
 };
 
 export const isCountryTokenPresent = (text: string | null | undefined, countryCode: string | null | undefined) => {
+  const rawText = (text ?? "").trim();
+  if (rawText && countryCode && hasExplicitIsoCodeToken(rawText, countryCode)) {
+    return true;
+  }
   const haystack = normalizeGeoText(text);
   if (!haystack) return false;
   const aliases = getCountryAliases(countryCode);
@@ -61,7 +73,7 @@ export const detectCountryCodeFromText = (text: string | null | undefined) => {
   }
 
   for (const code of KNOWN_COUNTRY_CODES) {
-    if (isCountryTokenPresent(normalized, code)) return code;
+    if (isCountryTokenPresent(text, code)) return code;
   }
   return null;
 };

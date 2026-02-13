@@ -119,4 +119,12 @@ describe("payments intent access gate", () => {
     const file = readFileSync(resolve(process.cwd(), "app/api/payments/intent/route.ts"), "utf8");
     expect(file).not.toContain('LEGACY_INTENT_DISABLED !== "false"');
   });
+
+  it("guardrail: stripe requirement must come from orgType, not legacy payout_mode", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const file = readFileSync(resolve(process.cwd(), "app/api/payments/intent/route.ts"), "utf8");
+    expect(file).toContain("requiresOrganizationStripe(event.org_type)");
+    expect(file).not.toContain('payout_mode !== "PLATFORM"');
+  });
 });

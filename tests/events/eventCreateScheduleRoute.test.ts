@@ -62,7 +62,7 @@ beforeEach(async () => {
   });
   prisma.organization.findUnique.mockResolvedValue({
     id: 12,
-    orgType: "CLUB",
+    orgType: "EXTERNAL",
     officialEmail: "team@example.com",
     officialEmailVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
     stripeAccountId: null,
@@ -74,6 +74,27 @@ beforeEach(async () => {
 });
 
 describe("organization events create route schedule invariants", () => {
+  it("rejects EXTERNAL org requesting PLATFORM payout mode", async () => {
+    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Evento payout invalido",
+        startsAt: "2026-03-01T10:00:00.000Z",
+        endsAt: "2026-03-01T11:00:00.000Z",
+        addressId: "addr-1",
+        payoutMode: "PLATFORM",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("INVALID_PAYOUT_MODE");
+  });
+
   it("rejects when endsAt is missing", async () => {
     const req = new NextRequest("http://localhost/api/organizacao/events/create", {
       method: "POST",

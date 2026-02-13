@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
 import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 type Pairing = {
   id: number;
@@ -200,6 +201,9 @@ export default function PadelTournamentTabs({
   eventSlug: string;
   categoriesMeta?: CategoryMeta[];
 }) {
+  const orgApi = (suffix: string, explicitOrgId?: number | null) =>
+    resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, explicitOrgId ?? null);
+
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang"));
   const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias">("duplas");
@@ -279,7 +283,7 @@ export default function PadelTournamentTabs({
     fetcher,
   );
   const { data: waitlistRes, mutate: mutateWaitlist } = useSWR(
-    eventId ? `/api/organizacao/padel/waitlist?eventId=${eventId}${categoryParam}` : null,
+    eventId ? orgApi(`/padel/waitlist?eventId=${eventId}${categoryParam}`) : null,
     fetcher,
   );
   const { data: standingsRes } = useSWR(
@@ -299,15 +303,15 @@ export default function PadelTournamentTabs({
   const orgIdForMe =
     typeof configRes?.config?.organizationId === "number" ? configRes.config.organizationId : null;
   const { data: orgMeRes } = useSWR<OrganizationMeResponse>(
-    orgIdForMe ? `/api/organizacao/me?organizationId=${orgIdForMe}` : null,
+    orgIdForMe ? orgApi("/me", orgIdForMe) : null,
     fetcher,
   );
   const { data: analyticsRes } = useSWR(
-    eventId ? `/api/organizacao/padel/analytics?eventId=${eventId}` : null,
+    eventId ? orgApi(`/padel/analytics?eventId=${eventId}`) : null,
     fetcher,
   );
   const { data: auditRes } = useSWR(
-    eventId ? `/api/organizacao/padel/audit?eventId=${eventId}&limit=25&actionPrefix=PADEL_` : null,
+    eventId ? orgApi(`/padel/audit?eventId=${eventId}&limit=25&actionPrefix=PADEL_`) : null,
     fetcher,
   );
 
@@ -1026,7 +1030,7 @@ export default function PadelTournamentTabs({
         formData.append("dryRun", "true");
       }
       formData.append("file", importFile);
-      const res = await fetch("/api/organizacao/padel/imports/inscritos", {
+      const res = await fetch(orgApi("/padel/imports/inscritos"), {
         method: "POST",
         body: formData,
       });
@@ -1203,7 +1207,7 @@ export default function PadelTournamentTabs({
     setSwapError(null);
     setSwapMessage(null);
     try {
-      const res = await fetch("/api/organizacao/padel/pairings/swap", {
+      const res = await fetch(orgApi("/padel/pairings/swap"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ eventId, pairingAId, pairingBId }),
@@ -1249,7 +1253,7 @@ export default function PadelTournamentTabs({
     setBroadcastError(null);
     setBroadcastResult(null);
     try {
-      const res = await fetch("/api/organizacao/padel/broadcast", {
+      const res = await fetch(orgApi("/padel/broadcast"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1285,7 +1289,7 @@ export default function PadelTournamentTabs({
   async function promoteWaitlist() {
     if (!eventId) return;
     setConfigMessage(null);
-    const res = await fetch(`/api/organizacao/padel/waitlist/promote`, {
+    const res = await fetch(orgApi("/padel/waitlist/promote"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2016,19 +2020,19 @@ export default function PadelTournamentTabs({
       >
         <span className="uppercase tracking-[0.16em] text-[11px] text-white/60">Exportações</span>
         <a
-          href={`/api/organizacao/padel/exports/inscritos?eventId=${eventId}&format=xlsx`}
+          href={orgApi(`/padel/exports/inscritos?eventId=${eventId}&format=xlsx`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Inscritos (Excel)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/resultados?eventId=${eventId}&format=xlsx`}
+          href={orgApi(`/padel/exports/resultados?eventId=${eventId}&format=xlsx`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Resultados (Excel)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/bracket?eventId=${eventId}&format=pdf`}
+          href={orgApi(`/padel/exports/bracket?eventId=${eventId}&format=pdf`)}
           target="_blank"
           rel="noreferrer"
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
@@ -2036,7 +2040,7 @@ export default function PadelTournamentTabs({
           Bracket (PDF)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/bracket?eventId=${eventId}&format=html`}
+          href={orgApi(`/padel/exports/bracket?eventId=${eventId}&format=html`)}
           target="_blank"
           rel="noreferrer"
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
@@ -2044,7 +2048,7 @@ export default function PadelTournamentTabs({
           Bracket (Poster)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=pdf`}
+          href={orgApi(`/padel/exports/calendario?eventId=${eventId}&format=pdf`)}
           target="_blank"
           rel="noreferrer"
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
@@ -2052,25 +2056,25 @@ export default function PadelTournamentTabs({
           Calendário (PDF)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=csv`}
+          href={orgApi(`/padel/exports/calendario?eventId=${eventId}&format=csv`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Calendário (CSV)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=ics`}
+          href={orgApi(`/padel/exports/calendario?eventId=${eventId}&format=ics`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Calendário (ICS)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/analytics?eventId=${eventId}&format=xlsx`}
+          href={orgApi(`/padel/exports/analytics?eventId=${eventId}&format=xlsx`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Analytics (Excel)
         </a>
         <a
-          href={`/api/organizacao/padel/exports/analytics?eventId=${eventId}&format=csv`}
+          href={orgApi(`/padel/exports/analytics?eventId=${eventId}&format=csv`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
           Analytics (CSV)

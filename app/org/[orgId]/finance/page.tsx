@@ -9,6 +9,8 @@ export default async function OrgFinancePage({
     ((await Promise.resolve(searchParams)) ?? {}) as Record<string, string | string[] | undefined>;
   const tabRaw = resolvedSearchParams.tab;
   const tab = Array.isArray(tabRaw) ? tabRaw[0] : tabRaw;
-  const section = tab === "invoices" ? "invoices" : "financas";
+  const section = tab === "invoices" || tab === "ops" || tab === "overview"
+    ? tab
+    : "financas";
   return <DashboardClient hasOrganization defaultObjective="analyze" defaultSection={section} />;
 }

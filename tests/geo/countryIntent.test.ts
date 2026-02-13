@@ -14,9 +14,13 @@ describe("countryIntent", () => {
     expect(detectCountryCodeFromText("Porto, Portugal")).toBe("PT");
     expect(detectCountryCodeFromText("Madrid, Spain")).toBe("ES");
     expect(detectCountryCodeFromText("Paris, France")).toBe("FR");
+    expect(detectCountryCodeFromText("London, United Kingdom")).toBe("GB");
+    expect(detectCountryCodeFromText("Seattle, United States")).toBe("US");
+    expect(detectCountryCodeFromText("Rio de Janeiro, Brasil")).toBe("BR");
     expect(detectCountryCodeFromText("Agulae, Etiópia")).toBe("ET");
     expect(detectCountryCodeFromText("Shymkent, Cazaquistão")).toBe("KZ");
     expect(detectCountryCodeFromText("Lomé, Togo")).toBe("TG");
+    expect(detectCountryCodeFromText("Porto, PT")).toBe("PT");
   });
 
   it("usa boundary para tokens curtos", () => {

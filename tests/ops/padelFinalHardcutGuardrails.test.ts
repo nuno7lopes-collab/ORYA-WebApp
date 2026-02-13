@@ -62,19 +62,35 @@ describe("padel final hard-cut guardrails", () => {
     expect(matchesRoute).not.toContain("winnerPairingId");
     expect(walkoverRoute).toContain("winnerSide");
     expect(walkoverRoute).toContain("winnerParticipantId");
+    expect(walkoverRoute).not.toContain("winnerPairingFallback");
     expect(undoRoute).toContain("winnerSide");
     expect(undoRoute).toContain("winnerParticipantId");
+    expect(undoRoute).not.toContain("winnerPairingId");
+    expect(undoRoute).not.toContain("pairingAId");
+    expect(undoRoute).not.toContain("pairingBId");
     expect(assignRoute).toContain("padelMatchParticipant");
     expect(assignRoute).toContain("winnerParticipantId");
   });
 
   it("remove dependência pairing-centric no scheduling canónico de calendário", () => {
     const calendarRoute = readLocal("app/api/padel/calendar/route.ts");
+    const autoScheduleRoute = readLocal("app/api/padel/calendar/auto-schedule/route.ts");
+    const autoScheduleDomain = readLocal("domain/padel/autoSchedule.ts");
+    const outbox = readLocal("domain/padel/outbox.ts");
     expect(calendarRoute).toContain("resolveMatchPlayerProfileIds");
     expect(calendarRoute).toContain("resolveMatchUserIds");
     expect(calendarRoute).not.toContain("pairingAId");
     expect(calendarRoute).not.toContain("pairingBId");
     expect(calendarRoute).not.toContain("winnerPairingId");
+    expect(autoScheduleRoute).toContain("sideAProfileIds");
+    expect(autoScheduleRoute).toContain("sideBProfileIds");
+    expect(autoScheduleRoute).not.toContain("padelPairing");
+    expect(autoScheduleRoute).not.toContain("resolveSourcePairingIdForSide");
+    expect(autoScheduleDomain).toContain("MISSING_PARTICIPANTS");
+    expect(autoScheduleDomain).not.toContain("pairingPlayers");
+    expect(autoScheduleDomain).not.toContain("MISSING_PAIRINGS");
+    expect(outbox).not.toContain("pairingPlayers");
+    expect(outbox).toContain("resolveSideProfileIds");
   });
 
   it("mantém consistência de desempate determinístico no live canónico padel", () => {
@@ -105,12 +121,20 @@ describe("padel final hard-cut guardrails", () => {
     }
   });
 
+  it("fecha enum de visibilidade live no schema sem alias legacy", () => {
+    const schema = readLocal("prisma/schema.prisma");
+    expect(schema).toContain("enum LiveVisibility {");
+    expect(schema).not.toContain("enum LiveHubVisibility {");
+  });
+
   it("força rotação individual em AMERICANO/MEXICANO no gerador canónico", () => {
     const generator = readLocal("domain/padel/autoGenerateMatches.ts");
     expect(generator).toContain("NEED_PLAYERS_FOR_INDIVIDUAL_FORMAT");
     expect(generator).toContain("AUTO_ROTATION:");
     expect(generator).toContain("individual-rotation");
     expect(generator).toContain("resultType: \"BYE_NEUTRAL\"");
+    expect(generator).toContain("participantAssignments");
+    expect(generator).not.toContain("ensureSyntheticPairing");
   });
 
   it("recompõe MEXICANO por performance na transição de ronda live", () => {
@@ -120,6 +144,9 @@ describe("padel final hard-cut guardrails", () => {
     expect(nextRound).toContain("computePadelStandingsByGroupForPlayers");
     expect(nextRound).toContain("deriveMexicanoRoundEntries");
     expect(nextRound).toContain("mexicanoRecomposition");
+    expect(nextRound).toContain("padelMatchParticipant");
+    expect(nextRound).not.toContain("ensureSyntheticPairing");
+    expect(nextRound).not.toContain("partnerLinkToken");
     expect(mexicanoDomain).toContain("buildMexicanoRoundRelations");
     expect(mexicanoDomain).toContain("deriveMexicanoRoundEntries");
   });
@@ -172,5 +199,46 @@ describe("padel final hard-cut guardrails", () => {
     expect(workspace).toContain("updateClaimStatus");
     expect(workspace).toContain("conflictsOwner");
     expect(workspace).toContain("conflictsPartner");
+  });
+
+  it("remove chamadas legacy /organizacao no hub web padel", () => {
+    const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
+    const tabs = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    expect(hub).not.toContain('"/api/organizacao');
+    expect(hub).not.toContain('"/organizacao/padel');
+    expect(hub).not.toContain('"/organizacao/reservas');
+    expect(hub).toContain("/api/org/[orgId]");
+    expect(tabs).not.toContain("/api/organizacao");
+    expect(tabs).toContain("/api/org/[orgId]");
+  });
+
+  it("mantém wrappers canónicos /api/org/[orgId]/padel para operação e exports", () => {
+    const analytics = readLocal("app/api/org/[orgId]/padel/analytics/route.ts");
+    const waitlist = readLocal("app/api/org/[orgId]/padel/waitlist/route.ts");
+    const waitlistPromote = readLocal("app/api/org/[orgId]/padel/waitlist/promote/route.ts");
+    const imports = readLocal("app/api/org/[orgId]/padel/imports/inscritos/route.ts");
+    const swap = readLocal("app/api/org/[orgId]/padel/pairings/swap/route.ts");
+    const broadcast = readLocal("app/api/org/[orgId]/padel/broadcast/route.ts");
+    const exportCalendario = readLocal("app/api/org/[orgId]/padel/exports/calendario/route.ts");
+    const exportInscritos = readLocal("app/api/org/[orgId]/padel/exports/inscritos/route.ts");
+    const exportResultados = readLocal("app/api/org/[orgId]/padel/exports/resultados/route.ts");
+    const exportBracket = readLocal("app/api/org/[orgId]/padel/exports/bracket/route.ts");
+    const exportAnalytics = readLocal("app/api/org/[orgId]/padel/exports/analytics/route.ts");
+
+    for (const content of [
+      analytics,
+      waitlist,
+      waitlistPromote,
+      imports,
+      swap,
+      broadcast,
+      exportCalendario,
+      exportInscritos,
+      exportResultados,
+      exportBracket,
+      exportAnalytics,
+    ]) {
+      expect(content).toContain('export * from "@/app/api/organizacao/padel/');
+    }
   });
 });

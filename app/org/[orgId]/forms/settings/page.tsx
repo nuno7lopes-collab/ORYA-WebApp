@@ -1,1 +1,10 @@
-export { default } from "@/app/org/[orgId]/forms/page";
+import { redirect } from "next/navigation";
+
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const { orgId } = await params;
+  redirect(`/org/${orgId}/forms?view=rascunhos&forms=settings`);
+}

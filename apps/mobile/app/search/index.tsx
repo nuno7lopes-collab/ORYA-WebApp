@@ -28,7 +28,7 @@ import { safeBack } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
-import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 
@@ -52,12 +52,11 @@ type SearchSection = {
   isError: boolean;
 };
 
-type SearchTabKey = "all" | "events" | "padel" | "services" | "people" | "orgs";
+type SearchTabKey = "all" | "events" | "services" | "people" | "orgs";
 
 const SEARCH_TABS: Array<{ key: SearchTabKey; label: string }> = [
   { key: "all", label: "Tudo" },
   { key: "events", label: "Eventos" },
-  { key: "padel", label: "Padel" },
   { key: "services", label: "Serviços" },
   { key: "people", label: "Pessoas" },
   { key: "orgs", label: "Organizações" },
@@ -89,8 +88,6 @@ export default function SearchScreen() {
     offers,
     users,
     organizations,
-    hasResults,
-    isLoading,
     enabled,
     minQueryLength,
     offersQuery,
@@ -106,8 +103,38 @@ export default function SearchScreen() {
   const tabBarPadding = useTabBarPadding();
   const bottomPadding = Math.max(tabBarPadding, insets.bottom + 24);
   const queryLength = debounced.trim().length;
-  const showSkeleton = enabled && isLoading;
-  const allErrored = offersQuery.isError && usersQuery.isError && orgsQuery.isError;
+  const showOffers = activeTab === "all" || activeTab === "events" || activeTab === "services";
+  const showUsers = activeTab === "all" || activeTab === "people";
+  const showOrgs = activeTab === "all" || activeTab === "orgs";
+
+  const filteredOffers = useMemo(() => {
+    return offers.filter((offer) => {
+      if (activeTab === "events") return offer.type === "event";
+      if (activeTab === "services") {
+        if (offer.type !== "service") return false;
+        if (!serviceKindFilter) return true;
+        return offer.service.kind === serviceKindFilter;
+      }
+      return true;
+    });
+  }, [activeTab, offers, serviceKindFilter]);
+
+  const offersLoading = showOffers && offersQuery.isLoading && filteredOffers.length === 0;
+  const usersLoading = showUsers && usersQuery.isLoading && users.length === 0;
+  const orgsLoading = showOrgs && orgsQuery.isLoading && organizations.length === 0;
+  const hasVisibleLoading = offersLoading || usersLoading || orgsLoading;
+
+  const hasVisibleResults =
+    (showOffers && filteredOffers.length > 0) ||
+    (showUsers && users.length > 0) ||
+    (showOrgs && organizations.length > 0);
+
+  const visibleErrorStates = [
+    showOffers ? offersQuery.isError : false,
+    showUsers ? usersQuery.isError : false,
+    showOrgs ? orgsQuery.isError : false,
+  ].filter(Boolean);
+  const allVisibleErrored = visibleErrorStates.length > 0 && visibleErrorStates.every(Boolean);
 
   useEffect(() => {
     const tabParamRaw = typeof params.tab === "string" ? params.tab : null;
@@ -137,29 +164,14 @@ export default function SearchScreen() {
     if (queryLength > 0 && queryLength < minQueryLength) {
       return `Escreve pelo menos ${minQueryLength} caracteres.`;
     }
-    if (!isLoading && !allErrored && !hasResults && enabled) return "Sem resultados para esta pesquisa.";
+    if (!hasVisibleLoading && !allVisibleErrored && !hasVisibleResults && enabled) {
+      return "Sem resultados para esta pesquisa.";
+    }
     return null;
-  }, [debounced, enabled, hasResults, isLoading, minQueryLength, queryLength, allErrored]);
+  }, [allVisibleErrored, debounced, enabled, hasVisibleLoading, hasVisibleResults, minQueryLength, queryLength]);
 
   const sections = useMemo<SearchSection[]>(() => {
     if (!enabled) return [];
-    const showOffers = activeTab === "all" || activeTab === "events" || activeTab === "padel" || activeTab === "services";
-    const showUsers = activeTab === "all" || activeTab === "people";
-    const showOrgs = activeTab === "all" || activeTab === "orgs";
-
-    const filteredOffers = offers.filter((offer) => {
-      if (activeTab === "events") return offer.type === "event";
-      if (activeTab === "services") {
-        if (offer.type !== "service") return false;
-        if (!serviceKindFilter) return true;
-        return offer.service.kind === serviceKindFilter;
-      }
-      if (activeTab === "padel") {
-        if (offer.type === "service") return offer.service.kind === "COURT";
-        return (offer.event.categories ?? []).includes("PADEL");
-      }
-      return true;
-    });
 
     const built: SearchSection[] = [
       {
@@ -167,7 +179,7 @@ export default function SearchScreen() {
         title: "Ofertas",
         subtitle: "Eventos, serviços e experiências",
         data: showOffers
-          ? showSkeleton
+          ? offersLoading
             ? buildSkeletons("offers", 2)
             : filteredOffers.map((offer) => ({ type: "offer" as const, offer }))
           : [],
@@ -178,7 +190,7 @@ export default function SearchScreen() {
         title: "Pessoas",
         subtitle: "Utilizadores e perfis",
         data: showUsers
-          ? showSkeleton
+          ? usersLoading
             ? buildSkeletons("users", 2)
             : users.map((user) => ({ type: "user" as const, user }))
           : [],
@@ -186,26 +198,37 @@ export default function SearchScreen() {
       },
       {
         key: "orgs",
-        title: "Organizacoes",
+        title: "Organizações",
         subtitle: "Clubes e marcas",
         data: showOrgs
-          ? showSkeleton
+          ? orgsLoading
             ? buildSkeletons("orgs", 2)
             : organizations.map((org) => ({ type: "org" as const, org }))
           : [],
         isError: orgsQuery.isError,
       },
     ];
-    return built.filter((section) => section.data.length > 0);
-  }, [activeTab, enabled, offers, offersQuery.isError, organizations, orgsQuery.isError, showSkeleton, users, usersQuery.isError]);
+    return built.filter((section) => section.data.length > 0 || section.isError);
+  }, [
+    enabled,
+    filteredOffers,
+    offersLoading,
+    offersQuery.isError,
+    organizations,
+    orgsLoading,
+    orgsQuery.isError,
+    showOffers,
+    showOrgs,
+    showUsers,
+    users,
+    usersLoading,
+    usersQuery.isError,
+  ]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: SearchSectionItem; index: number }) => {
       if (item.type === "skeleton") {
-        if (item.variant === "offers") {
-          return <EventCardSquareSkeleton />;
-        }
-        const height = item.variant === "users" ? 72 : 72;
+        const height = item.variant === "offers" ? 180 : 72;
         const spacingClass = "mb-3";
         return <GlassSkeleton className={spacingClass} height={height} />;
       }
@@ -270,7 +293,7 @@ export default function SearchScreen() {
 
   const renderSectionFooter = useCallback(
     ({ section }: { section: SearchSection }) => {
-      if (showSkeleton || !enabled || !section.isError) return null;
+      if (!enabled || !section.isError || section.data.length > 0) return null;
 
       const onRetry =
         section.key === "offers"
@@ -302,7 +325,7 @@ export default function SearchScreen() {
         </View>
       );
     },
-    [enabled, offersQuery.refetch, orgsQuery.refetch, showSkeleton, usersQuery.refetch],
+    [enabled, offersQuery.refetch, orgsQuery.refetch, usersQuery.refetch],
   );
 
   const listHeader = useMemo(
@@ -356,7 +379,7 @@ export default function SearchScreen() {
           <View className="pt-5">
             <GlassSurface intensity={50}>
               <Text className="text-white/70 text-sm">{emptyMessage}</Text>
-              {enabled && !isLoading && !allErrored && !hasResults ? (
+              {enabled && !hasVisibleLoading && !allVisibleErrored && !hasVisibleResults ? (
                 <Pressable
                   onPress={() => setQuery("")}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
@@ -414,11 +437,22 @@ export default function SearchScreen() {
         </View>
       </View>
     ),
-    [activeTab, allErrored, emptyMessage, enabled, handleBack, hasResults, insets.top, isLoading, query, router],
+    [
+      activeTab,
+      allVisibleErrored,
+      emptyMessage,
+      enabled,
+      handleBack,
+      hasVisibleLoading,
+      hasVisibleResults,
+      insets.top,
+      query,
+      router,
+    ],
   );
 
   const listFooter = useMemo(() => {
-    if (!enabled || showSkeleton || !allErrored) return null;
+    if (!enabled || hasVisibleLoading || !allVisibleErrored) return null;
     return (
       <View className="pt-6">
         <GlassSurface intensity={45}>
@@ -439,7 +473,7 @@ export default function SearchScreen() {
         </GlassSurface>
       </View>
     );
-  }, [allErrored, enabled, offersQuery, orgsQuery, showSkeleton, usersQuery]);
+  }, [allVisibleErrored, enabled, hasVisibleLoading, offersQuery, orgsQuery, usersQuery]);
 
   return (
     <LiquidBackground>

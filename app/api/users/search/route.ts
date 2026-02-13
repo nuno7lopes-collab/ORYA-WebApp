@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -8,8 +8,16 @@ import { logError } from "@/lib/observability/logger";
 
 export const runtime = "nodejs";
 
+function normalizeSearchTerm(raw: string) {
+  return raw
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/["'`“”‘’]/g, "")
+    .trim();
+}
+
 async function _GET(req: NextRequest) {
-  const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
+  const q = normalizeSearchTerm(req.nextUrl.searchParams.get("q") ?? "");
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limitRaw = limitParam ? Number(limitParam) : 8;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 12) : 8;
@@ -17,7 +25,7 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: true, results: [] }, { status: 200 });
   }
 
-  const normalized = q.startsWith("@") ? q.slice(1) : q;
+  const normalized = q;
   const supabase = await createSupabaseServer();
   const {
     data: { user },

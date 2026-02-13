@@ -6,7 +6,7 @@
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --webpack",
     "dev:fast": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --turbo",
     "dev:all": "node scripts/dev-all.js",
-    "mobile:dev": "npm --prefix apps/mobile run start -- -c --go",
+    "mobile:dev": "cross-env EXPO_PUBLIC_API_BASE_URL=http://localhost:3000 npm --prefix apps/mobile run start -- -c --go --host lan",
     "mobile:dev:tunnel": "npm --prefix apps/mobile run start -- -c --tunnel",
     "e2e:address:checklist": "node scripts/e2e/address_event_checklist.mjs",
     "reset": "scripts/reset-dev-servers.sh",
@@ -58,7 +58,8 @@
     "covers:validate": "node -r ts-node/register scripts/covers/validate-manifest.ts",
     "covers:all": "npm run covers:thumbs && npm run covers:manifest && npm run covers:validate",
     "admin:totp-key": "node scripts/generate-admin-totp-key.mjs",
-    "logo:build": "node scripts/regenerate-logo-assets.mjs"
+    "logo:build": "node scripts/regenerate-logo-assets.mjs",
+    "seed:store:top-padel": "node scripts/run-ts.cjs scripts/seed_store_top_padel.ts"
   },
   "dependencies": {
     "@aws-sdk/client-budgets": "^3.980.0",

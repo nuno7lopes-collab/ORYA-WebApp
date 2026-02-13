@@ -486,7 +486,12 @@ export default function OrganizationPublicProfilePanel({
   const { user } = useUser();
   const { openModal } = useAuthModal();
   const router = useRouter();
-  const canEdit = membershipRole === "OWNER" || membershipRole === "ADMIN";
+  const isOwner = membershipRole === "OWNER";
+  const isCoOwner = membershipRole === "CO_OWNER";
+  const isAdmin = membershipRole === "ADMIN";
+  const canEdit = isOwner || isCoOwner || isAdmin;
+  const canEditBranding = isOwner || isCoOwner;
+  const canEditUsername = isOwner || isCoOwner;
   const organizationId = organization?.id ?? null;
   const profileHref = appendOrganizationIdToHref("/organizacao/profile", organizationId);
 
@@ -698,6 +703,11 @@ export default function OrganizationPublicProfilePanel({
   }, [organization?.id]);
 
   useEffect(() => {
+    if (!canEditBranding && editingField === "name") setEditingField(null);
+    if (!canEditUsername && editingField === "username") setEditingField(null);
+  }, [canEditBranding, canEditUsername, editingField]);
+
+  useEffect(() => {
     if (!organization) return;
     const orgId = organization.id ?? null;
     if (layoutOrgId === orgId && layoutDirty) return;
@@ -900,6 +910,7 @@ export default function OrganizationPublicProfilePanel({
 
 
   const handleAvatarUpload = async (file: File | null) => {
+    if (!canEditBranding) return;
     if (!file) return;
     setUploading(true);
     setMessage(null);
@@ -930,6 +941,7 @@ export default function OrganizationPublicProfilePanel({
   };
 
   const handleCoverUpload = async (file: File | null) => {
+    if (!canEditBranding) return;
     if (!file) return;
     setUploadingCover(true);
     setMessage(null);
@@ -967,7 +979,7 @@ export default function OrganizationPublicProfilePanel({
     }
     if (!canEdit) return;
     const trimmedName = name.trim();
-    if (!trimmedName) {
+    if (canEditBranding && !trimmedName) {
       setMessage("O nome público é obrigatório.");
       return;
     }
@@ -983,15 +995,18 @@ export default function OrganizationPublicProfilePanel({
     setSaving(true);
     setMessage(null);
     try {
+      const payload: Record<string, unknown> = {
+        publicDescription: bio.trim(),
+      };
+      if (canEditBranding) {
+        payload.publicName = trimmedName;
+        payload.brandingAvatarUrl = avatarUrl;
+        payload.brandingCoverUrl = coverImageUrl;
+      }
       const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          publicName: trimmedName,
-          publicDescription: bio.trim(),
-          brandingAvatarUrl: avatarUrl,
-          brandingCoverUrl: coverImageUrl,
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
@@ -1049,7 +1064,7 @@ export default function OrganizationPublicProfilePanel({
       openModal({ mode: "login", redirectTo: profileHref });
       return;
     }
-    if (!canEdit) return;
+    if (!canEditUsername) return;
     setUsernameMessage(null);
     const validation = validateUsername(username);
     if (!validation.valid) {
@@ -1877,7 +1892,7 @@ export default function OrganizationPublicProfilePanel({
         type="file"
         accept="image/*"
         className="hidden"
-        disabled={!canEdit || uploadingCover}
+        disabled={!canEditBranding || uploadingCover}
         onChange={(e) => handleCoverUpload(e.target.files?.[0] ?? null)}
       />
       <input
@@ -1885,7 +1900,7 @@ export default function OrganizationPublicProfilePanel({
         type="file"
         accept="image/*"
         className="hidden"
-        disabled={!canEdit || uploading}
+        disabled={!canEditBranding || uploading}
         onChange={(e) => handleAvatarUpload(e.target.files?.[0] ?? null)}
       />
 
@@ -1901,7 +1916,7 @@ export default function OrganizationPublicProfilePanel({
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(107,255,255,0.25),transparent_55%),radial-gradient(circle_at_80%_20%,rgba(255,0,200,0.2),transparent_55%),linear-gradient(135deg,rgba(6,10,20,0.8),rgba(9,10,18,0.95))]" />
               )}
               <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/50 to-[#05070f]/95" />
-              {canEdit && (
+              {canEditBranding && (
                 <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
                   <button
                     type="button"
@@ -1927,7 +1942,7 @@ export default function OrganizationPublicProfilePanel({
                   )}
                 </div>
               )}
-              {canEdit && (
+              {canEditBranding && (
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
@@ -1947,7 +1962,7 @@ export default function OrganizationPublicProfilePanel({
                   type="button"
                   onClick={() => avatarInputRef.current?.click()}
                   className="relative inline-flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)]"
-                  disabled={!canEdit || uploading}
+                  disabled={!canEditBranding || uploading}
                 >
                   <Avatar
                     src={avatarPreviewUrl}
@@ -1955,13 +1970,13 @@ export default function OrganizationPublicProfilePanel({
                     className="h-full w-full"
                     textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
                   />
-                  {canEdit && (
+                  {canEditBranding && (
                     <span className="absolute -bottom-1 -right-1 rounded-full border border-white/20 bg-black/70 p-1.5 text-white/80">
                       <PencilIcon />
                     </span>
                   )}
                 </button>
-                {canEdit && avatarPreviewUrl && (
+                {canEditBranding && avatarPreviewUrl && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1989,7 +2004,7 @@ export default function OrganizationPublicProfilePanel({
                       {displayName}
                     </h1>
                   )}
-                  {canEdit && (
+                  {canEditBranding && (
                     <button
                       type="button"
                       onClick={() => setEditingField(editingField === "name" ? null : "name")}
@@ -2015,7 +2030,7 @@ export default function OrganizationPublicProfilePanel({
                         type="button"
                         className={CTA_SECONDARY}
                         onClick={handleSaveUsername}
-                        disabled={!canEdit || savingUsername}
+                        disabled={!canEditUsername || savingUsername}
                       >
                         {savingUsername ? "A guardar…" : "Guardar @"}
                       </button>
@@ -2025,7 +2040,7 @@ export default function OrganizationPublicProfilePanel({
                       {displayUsername ? `@${displayUsername}` : "Define um @username"}
                     </span>
                   )}
-                  {canEdit && (
+                  {canEditUsername && (
                     <button
                       type="button"
                       onClick={() => setEditingField(editingField === "username" ? null : "username")}

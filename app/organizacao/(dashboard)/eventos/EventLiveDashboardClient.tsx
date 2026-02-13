@@ -22,7 +22,7 @@ type Props = {
 };
 
 const TABS = [
-  { id: "setup", label: "LiveHub" },
+  { id: "setup", label: "Live" },
   { id: "bracket", label: "Bracket" },
   { id: "preview", label: "Preview" },
 ] as const;
@@ -45,7 +45,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
           <div>
             <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live</p>
             <h1 className="text-2xl font-semibold text-white">{event.title}</h1>
-            <p className="text-sm text-white/60">LiveHub, bracket e preview.</p>
+            <p className="text-sm text-white/60">Live, bracket e preview.</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -92,7 +92,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
         <>
           {!tournamentId && (
             <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100">
-              Sem torneio associado. Cria no separador LiveHub.
+              Sem torneio associado. Cria no separador Live.
             </div>
           )}
           {tournamentId && <TournamentLiveManager tournamentId={tournamentId} />}
@@ -102,7 +102,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
       {tab === "preview" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white/70">
-            Preview do LiveHub. Usa <span className="text-white">Editar</span> para resultados.
+            Preview do Live. Usa <span className="text-white">Editar</span> para resultados.
           </div>
           <EventLiveClient slug={event.slug} />
         </div>

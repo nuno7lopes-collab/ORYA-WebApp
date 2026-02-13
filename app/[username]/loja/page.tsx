@@ -4,6 +4,7 @@ import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontCartOverlay from "@/components/storefront/StorefrontCartOverlay";
 import StorefrontBundleCard from "@/components/storefront/StorefrontBundleCard";
@@ -62,7 +63,19 @@ export default async function PublicStorePage({ params }: PageProps) {
 
   const organization = await prisma.organization.findFirst({
     where: { username, status: "ACTIVE" },
-    select: { id: true, username: true, publicName: true, businessName: true, brandingAvatarUrl: true },
+    select: {
+      id: true,
+      username: true,
+      publicName: true,
+      businessName: true,
+      brandingAvatarUrl: true,
+      orgType: true,
+      officialEmail: true,
+      officialEmailVerifiedAt: true,
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+    },
   });
 
   if (!organization) {
@@ -88,8 +101,16 @@ export default async function PublicStorePage({ params }: PageProps) {
   });
 
   const storeEnabled = isStoreFeatureEnabled();
+  const paymentsReady = getPublicStorePaymentsGate({
+    orgType: organization.orgType,
+    officialEmail: organization.officialEmail,
+    officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+    stripeAccountId: organization.stripeAccountId,
+    stripeChargesEnabled: organization.stripeChargesEnabled,
+    stripePayoutsEnabled: organization.stripePayoutsEnabled,
+  }).ok;
   const storeState = resolveStoreState(store);
-  const storePublic = storeEnabled && storeState === "ACTIVE";
+  const storePublic = storeEnabled && paymentsReady && storeState === "ACTIVE";
   const storeLocked = Boolean(store?.catalogLocked) || storeState === "LOCKED";
   const storeOpen = storeState === "ACTIVE";
   const storeVisibleOnProfile = Boolean(store?.showOnProfile);
@@ -227,6 +248,12 @@ export default async function PublicStorePage({ params }: PageProps) {
         description: "A funcionalidade da loja esta temporariamente desativada.",
         tone: "amber",
       }
+    : !paymentsReady
+      ? {
+          label: "Pagamentos indisponiveis",
+          description: "A loja está temporariamente indisponível até os pagamentos estarem prontos.",
+          tone: "amber",
+        }
     : storeLocked
       ? {
           label: "Catalogo fechado",

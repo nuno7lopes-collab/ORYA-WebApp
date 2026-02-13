@@ -22,6 +22,7 @@ import {
   sortPadelCategories,
 } from "@/domain/padelDefaultCategories";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 type PadelClub = {
   id: number;
@@ -431,7 +432,7 @@ const TAB_LABELS: Record<PadelTab, string> = {
   manage: "Gestão",
   clubs: "Clubes",
   partnerships: "Parcerias",
-  courts: "Courts",
+  courts: "Campos",
   categories: "Categorias",
   players: "Jogadores",
   teams: "Equipas",
@@ -1292,18 +1293,43 @@ export default function PadelHubClient({
     setCalendarView(prefersList ? "list" : "timeline");
   }, [calendarViewTouched]);
 
+  const toolClubHref = organizationId ? buildOrgHref(organizationId, "/padel/clubs") : buildOrgHubHref("/organizations");
+  const toolTournamentsHref = organizationId
+    ? buildOrgHref(organizationId, "/padel/tournaments")
+    : buildOrgHubHref("/organizations");
+  const tournamentsCreateHref = organizationId
+    ? buildOrgHref(organizationId, "/padel/tournaments/create")
+    : buildOrgHubHref("/organizations");
+  const orgOverviewHref = organizationId ? buildOrgHref(organizationId, "/overview") : buildOrgHubHref("/organizations");
+
+  const buildOrgApiPath = (
+    path: string,
+    query?: Record<string, string | number | boolean | null | undefined>,
+  ) => {
+    if (!organizationId) return null;
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value === null || typeof value === "undefined") return;
+        params.set(key, String(value));
+      });
+    }
+    const suffix = params.size > 0 ? `${path}?${params.toString()}` : path;
+    return resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, organizationId);
+  };
+
   const { data: organizationStaff } = useSWR<OrganizationStaffResponse>(
     organizationId ? `/api/org-hub/organizations/members?organizationId=${organizationId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
   const { data: trainersRes, isLoading: trainersLoading, mutate: mutateTrainers } = useSWR<TrainersResponse>(
-    organizationId ? `/api/organizacao/trainers?organizationId=${organizationId}` : null,
+    buildOrgApiPath("/trainers"),
     fetcher,
     { revalidateOnFocus: false },
   );
   const { data: servicesRes, isLoading: servicesLoading, mutate: mutateServices } = useSWR<ServicesResponse>(
-    organizationId ? `/api/organizacao/servicos?organizationId=${organizationId}` : null,
+    buildOrgApiPath("/servicos"),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -1328,14 +1354,12 @@ export default function PadelHubClient({
     { revalidateOnFocus: false },
   );
   const { data: padelEventsRes, isLoading: padelEventsLoading } = useSWR<PadelEventsResponse>(
-    organizationId ? "/api/organizacao/events/list?templateType=PADEL&limit=200" : null,
+    buildOrgApiPath("/events/list", { templateType: "PADEL", limit: 200 }),
     fetcher,
     { revalidateOnFocus: false },
   );
   const { data: padelOverviewRes } = useSWR<PadelOverviewResponse>(
-    organizationId
-      ? `/api/organizacao/analytics/overview?range=30d&templateType=PADEL&organizationId=${organizationId}`
-      : null,
+    buildOrgApiPath("/analytics/overview", { range: "30d", templateType: "PADEL" }),
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -1521,14 +1545,15 @@ export default function PadelHubClient({
     params.set("section", activeSection);
     params.set("padel", section);
     const isModuleRoute =
-      pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel");
-    const moduleBasePath = toolMode === "CLUB" ? "/organizacao/padel/clube" : "/organizacao/padel/torneios";
+      pathname?.startsWith(toolClubHref) ||
+      pathname?.startsWith(toolTournamentsHref);
+    const moduleBasePath = toolMode === "CLUB" ? toolClubHref : toolTournamentsHref;
     if (isModuleRoute) {
       params.delete("tab");
     } else {
       params.set("tab", "manage");
     }
-    const basePath = isModuleRoute ? moduleBasePath : "/organizacao";
+    const basePath = isModuleRoute ? moduleBasePath : orgOverviewHref;
     router.replace(`${basePath}?${params.toString()}`, { scroll: false });
     setLastAction(null);
   };
@@ -1543,14 +1568,15 @@ export default function PadelHubClient({
     params.set("section", activeSection);
     params.set("padel", "calendar");
     const isModuleRoute =
-      pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel");
-    const moduleBasePath = toolMode === "CLUB" ? "/organizacao/padel/clube" : "/organizacao/padel/torneios";
+      pathname?.startsWith(toolClubHref) ||
+      pathname?.startsWith(toolTournamentsHref);
+    const moduleBasePath = toolMode === "CLUB" ? toolClubHref : toolTournamentsHref;
     if (isModuleRoute) {
       params.delete("tab");
     } else {
       params.set("tab", "manage");
     }
-    const basePath = isModuleRoute ? moduleBasePath : "/organizacao";
+    const basePath = isModuleRoute ? moduleBasePath : orgOverviewHref;
     router.replace(`${basePath}?${params.toString()}`, { scroll: false });
   };
 
@@ -1751,27 +1777,47 @@ export default function PadelHubClient({
   const quickLinks = useMemo(() => {
     if (toolMode === "TOURNAMENTS") {
       return [
-        { label: "Torneios", href: "/organizacao/padel/torneios", desc: "Lista, estados e operação live." },
-        { label: "Check-in", href: "/organizacao/scan", desc: "Entradas e QR em tempo real." },
+        { label: "Torneios", href: toolTournamentsHref, desc: "Lista, estados e operação live." },
+        {
+          label: "Check-in",
+          href: organizationId ? buildOrgHref(organizationId, "/check-in") : buildOrgHubHref("/organizations"),
+          desc: "Entradas e QR em tempo real.",
+        },
         {
           label: "Inscrições",
-          href: organizationId ? `/org/${organizationId}/inscricoes` : "/organizacao/organizations",
+          href: organizationId ? buildOrgHref(organizationId, "/forms") : buildOrgHubHref("/organizations"),
           desc: "Duplas, pagamentos e status.",
         },
-        { label: "Finanças", href: "/organizacao/clube/caixa", desc: "Receitas e reconciliação." },
+        {
+          label: "Finanças",
+          href: organizationId ? buildOrgHref(organizationId, "/finance") : buildOrgHubHref("/organizations"),
+          desc: "Receitas e reconciliação.",
+        },
       ];
     }
     return [
-      { label: "Reservas", href: "/organizacao/reservas", desc: "Agenda, aulas e bookings." },
-      { label: "CRM", href: "/organizacao/crm/clientes", desc: "Clientes, tags e segmentos." },
-      { label: "Treinadores", href: "/organizacao/treinadores", desc: "Perfis públicos e gestão." },
+      {
+        label: "Reservas",
+        href: organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations"),
+        desc: "Agenda, aulas e bookings.",
+      },
+      {
+        label: "CRM",
+        href: organizationId ? buildOrgHref(organizationId, "/crm/customers") : buildOrgHubHref("/organizations"),
+        desc: "Clientes, tags e segmentos.",
+      },
+      {
+        label: "Treinadores",
+        href: organizationId ? buildOrgHref(organizationId, "/team/trainers") : buildOrgHubHref("/organizations"),
+        desc: "Perfis públicos e gestão.",
+      },
       {
         label: "Loja",
-        href: organizationId ? `/org/${organizationId}/store` : "/organizacao/organizations",
+        href: organizationId ? buildOrgHref(organizationId, "/store") : buildOrgHubHref("/organizations"),
         desc: "Produtos e stock.",
       },
     ];
-  }, [organizationId, toolMode]);
+  }, [organizationId, toolMode, toolTournamentsHref]);
 
   const partnershipsError =
     (partnershipsRes && partnershipsRes.ok === false ? partnershipsRes.error : null) ||
@@ -2104,7 +2150,9 @@ export default function PadelHubClient({
     setTrainerError(null);
     setTrainerMessage(null);
     try {
-      const res = await fetch("/api/organizacao/trainers", {
+      const trainersApiPath = buildOrgApiPath("/trainers");
+      if (!trainersApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(trainersApiPath, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2149,7 +2197,9 @@ export default function PadelHubClient({
     setTrainerError(null);
     setTrainerMessage(null);
     try {
-      const res = await fetch("/api/organizacao/trainers", {
+      const trainersApiPath = buildOrgApiPath("/trainers");
+      if (!trainersApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(trainersApiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId, username: value }),
@@ -2191,7 +2241,9 @@ export default function PadelHubClient({
     setLessonError(null);
     setLessonMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos?organizationId=${organizationId}`, {
+      const servicesApiPath = buildOrgApiPath("/servicos");
+      if (!servicesApiPath) throw new Error("Organização indisponível.");
+      const res = await fetch(servicesApiPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3785,7 +3837,7 @@ export default function PadelHubClient({
         shortcut: "G",
         run: () =>
           router.push(
-            organizationId ? buildOrgHref(organizationId, "/padel/tournaments/new") : buildOrgHubHref("/organizations"),
+            tournamentsCreateHref,
           ),
       },
       {
@@ -3871,7 +3923,7 @@ export default function PadelHubClient({
       },
     ];
     return actions.filter((action) => action.enabled !== false);
-  }, [eventId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection, toolMode]);
+  }, [eventId, organizationId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection, toolMode, tournamentsCreateHref]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -3913,7 +3965,7 @@ export default function PadelHubClient({
   const toolSubtitle = isClubTool
     ? "Clubes, courts, equipa local, comunidade e atalhos cross-module."
     : "Formatos, categorias, equipas, calendário e operação competitiva.";
-  const toolSwitchHref = isClubTool ? "/organizacao/padel/torneios" : "/organizacao/padel/clube";
+  const toolSwitchHref = isClubTool ? toolTournamentsHref : toolClubHref;
   const toolSwitchLabel = isClubTool ? "Abrir Torneios de Padel" : "Abrir Gestão de Clube Padel";
 
   return (
@@ -3952,7 +4004,7 @@ export default function PadelHubClient({
             </button>
           )}
           {!isClubTool && (
-            <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_SECONDARY_SM}>
+            <Link href={tournamentsCreateHref} className={CTA_PAD_SECONDARY_SM}>
               Criar torneio
             </Link>
           )}
@@ -4008,7 +4060,7 @@ export default function PadelHubClient({
                 Clubes, courts e staff são geridos na Gestão de Clube Padel e consumidos aqui.
               </p>
             </div>
-            <Link href="/organizacao/padel/clube" className={CTA_PAD_SECONDARY_SM}>
+            <Link href={toolClubHref} className={CTA_PAD_SECONDARY_SM}>
               Abrir Gestão de Clube Padel
             </Link>
           </div>
@@ -4163,7 +4215,7 @@ export default function PadelHubClient({
               Define formato, categorias, preços, courts e publicação num fluxo único. Sem estados impossíveis.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
+              <Link href={tournamentsCreateHref} className={CTA_PAD_PRIMARY_SM}>
                 Abrir wizard
               </Link>
             </div>
@@ -4187,7 +4239,7 @@ export default function PadelHubClient({
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Operação de torneios</p>
               <p className="text-sm text-white/70">Lista rápida, estado e atalhos para live/configuração.</p>
             </div>
-            <Link href="/organizacao/padel/torneios/novo" className={CTA_PAD_PRIMARY_SM}>
+            <Link href={tournamentsCreateHref} className={CTA_PAD_PRIMARY_SM}>
               Novo torneio
             </Link>
           </div>
@@ -4243,10 +4295,10 @@ export default function PadelHubClient({
                       <span className={`rounded-full border px-2 py-1 text-[11px] ${liveTone}`}>{statusLabel}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Link href={`/organizacao/padel/torneios/${event.id}`} className={CTA_PAD_SECONDARY_SM}>
+                      <Link href={organizationId ? buildOrgHref(organizationId, `/events/${event.id}`) : buildOrgHubHref("/organizations")} className={CTA_PAD_SECONDARY_SM}>
                         Abrir
                       </Link>
-                      <Link href={`/organizacao/padel/torneios/${event.id}/live`} className={CTA_PAD_SECONDARY_SM}>
+                      <Link href={organizationId ? buildOrgHref(organizationId, `/events/${event.id}/live`) : buildOrgHubHref("/organizations")} className={CTA_PAD_SECONDARY_SM}>
                         Live
                       </Link>
                       <button
@@ -4394,7 +4446,7 @@ export default function PadelHubClient({
                   {!padelEventsLoading && padelEvents.length === 0 && (
                     <p className="text-white/50">
                       Ainda não tens torneios de padel.{" "}
-                      <Link href="/organizacao/padel/torneios/novo" className="text-white underline">
+                      <Link href={tournamentsCreateHref} className="text-white underline">
                         Criar torneio
                       </Link>
                       .
@@ -5070,7 +5122,7 @@ export default function PadelHubClient({
                 <a
                   href={
                     eventId
-                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=pdf`
+                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "pdf" }) || "#"
                       : "#"
                   }
                   aria-disabled={!eventId}
@@ -5083,7 +5135,7 @@ export default function PadelHubClient({
                 <a
                   href={
                     eventId
-                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=html`
+                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "html" }) || "#"
                       : "#"
                   }
                   target="_blank"
@@ -5098,7 +5150,7 @@ export default function PadelHubClient({
                 <a
                   href={
                     eventId
-                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=csv`
+                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "csv" }) || "#"
                       : "#"
                   }
                   aria-disabled={!eventId}
@@ -5111,7 +5163,7 @@ export default function PadelHubClient({
                 <a
                   href={
                     eventId
-                      ? `/api/organizacao/padel/exports/calendario?eventId=${eventId}&format=ics`
+                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "ics" }) || "#"
                       : "#"
                   }
                   aria-disabled={!eventId}
@@ -6537,7 +6589,7 @@ export default function PadelHubClient({
                       {p.crm ? (
                         <div className="space-y-1">
                           <Link
-                            href={`/organizacao/crm/clientes/${p.crm.id}`}
+                            href={organizationId ? buildOrgHref(organizationId, `/crm/customers/${p.crm.id}`) : buildOrgHubHref("/organizations")}
                             className="text-[12px] text-white underline"
                           >
                             Abrir CRM
@@ -6836,13 +6888,13 @@ export default function PadelHubClient({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href="/organizacao/staff?staff=convidados"
+                href={organizationId ? buildOrgHref(organizationId, "/team", { staff: "convidados" }) : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/40"
               >
                 Equipa
               </Link>
               <Link
-                href="/organizacao/treinadores"
+                href={organizationId ? buildOrgHref(organizationId, "/team/trainers") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
                 Perfil treinador
@@ -7021,13 +7073,13 @@ export default function PadelHubClient({
                 Ver treinadores
               </button>
               <Link
-                href="/organizacao/reservas"
+                href={organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/20 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
                 Agenda avançada
               </Link>
               <Link
-                href="/organizacao/reservas/servicos"
+                href={organizationId ? buildOrgHref(organizationId, "/bookings/services") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:border-white/30"
               >
                 Catálogo completo
@@ -7057,7 +7109,7 @@ export default function PadelHubClient({
                 return (
                   <Link
                     key={service.id}
-                    href={`/organizacao/reservas/${service.id}`}
+                    href={organizationId ? buildOrgHref(organizationId, `/bookings/${service.id}`) : buildOrgHubHref("/organizations")}
                     className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:border-white/30"
                   >
                     <div className="flex items-start justify-between gap-2">

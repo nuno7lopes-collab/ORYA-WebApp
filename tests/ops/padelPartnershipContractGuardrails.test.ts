@@ -63,6 +63,8 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(commitRoute).toContain("bundleId");
     expect(commitRoute).toContain("RESOURCE_CLAIM_CONFLICT");
     expect(commitRoute).toContain("PADEL_CALENDAR_CLAIMS_COMMIT");
+    expect(commitRoute).toContain("CLAIM_ID_REQUIRED_FOR_WINDOW_UPDATE");
+    expect(commitRoute).toContain("PADEL_CALENDAR_CLAIMS_WINDOW_UPDATE");
   });
 
   it("fecha constraints de parceria no auto-schedule (fail-closed)", () => {
@@ -86,5 +88,12 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(cron).toContain("autoRevoke: true");
     expect(cron).toContain("expiresAt: { lt: now }");
     expect(cron).toContain("revokedAt: now");
+  });
+
+  it("garante proteção DB anti-overlap de claims CLAIMED", () => {
+    const migration = readLocal("prisma/migrations/20260213194000_agenda_claims_overlap_exclusion/migration.sql");
+    expect(migration).toContain("EXCLUDE USING gist");
+    expect(migration).toContain("agenda_resource_claims_claimed_no_overlap_excl");
+    expect(migration).toContain("tstzrange(\"starts_at\", \"ends_at\", '[)') WITH &&");
   });
 });

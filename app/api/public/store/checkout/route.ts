@@ -13,7 +13,7 @@ import { z } from "zod";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees } from "@/lib/platformSettings";
-import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { computeStoreShippingQuote } from "@/lib/store/shipping";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { computeBundleTotals } from "@/lib/store/bundles";
@@ -147,6 +147,20 @@ async function _POST(req: NextRequest) {
         catalogLocked: true,
         currency: true,
         ownerOrganizationId: true,
+        organization: {
+          select: {
+            id: true,
+            orgType: true,
+            stripeAccountId: true,
+            stripeChargesEnabled: true,
+            stripePayoutsEnabled: true,
+            officialEmail: true,
+            officialEmailVerifiedAt: true,
+            feeMode: true,
+            platformFeeBps: true,
+            platformFeeFixedCents: true,
+          },
+        },
       },
     });
     if (!store) {
@@ -157,6 +171,20 @@ async function _POST(req: NextRequest) {
     }
     if (store.catalogLocked) {
       return fail("CATALOG_LOCKED", "Catalogo bloqueado.", 403);
+    }
+    const paymentsGate = getPublicStorePaymentsGate({
+      orgType: store.organization?.orgType,
+      officialEmail: store.organization?.officialEmail,
+      officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
+      stripeAccountId: store.organization?.stripeAccountId,
+      stripeChargesEnabled: store.organization?.stripeChargesEnabled,
+      stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
+    });
+    if (!paymentsGate.ok) {
+      return fail("PAYMENTS_NOT_READY", "Pagamentos indisponiveis.", 403, false, {
+        missingEmail: paymentsGate.missingEmail,
+        missingStripe: paymentsGate.missingStripe,
+      });
     }
 
     const body = await req.json().catch(() => null);
@@ -600,50 +628,13 @@ async function _POST(req: NextRequest) {
       return fail("ADDRESS_REQUIRED", "Morada obrigatoria.", 400);
     }
 
-    if (!store.ownerOrganizationId) {
-      throw new Error("STORE_ORG_NOT_FOUND");
-    }
-    const organization = await prisma.organization.findUnique({
-      where: { id: store.ownerOrganizationId },
-      select: {
-        id: true,
-        orgType: true,
-        stripeAccountId: true,
-        stripeChargesEnabled: true,
-        stripePayoutsEnabled: true,
-        officialEmail: true,
-        officialEmailVerifiedAt: true,
-        feeMode: true,
-        platformFeeBps: true,
-        platformFeeFixedCents: true,
-      },
-    });
+    const organization = store.organization;
     if (!organization) {
       throw new Error("STORE_ORG_NOT_FOUND");
     }
     const organizationId = organization.id;
 
     const isPlatformOrg = organization.orgType === "PLATFORM";
-
-    if (organization && subtotalCents > 0) {
-      const gate = getPaidSalesGate({
-        officialEmail: organization.officialEmail ?? null,
-        officialEmailVerifiedAt: organization.officialEmailVerifiedAt ?? null,
-        stripeAccountId: organization.stripeAccountId ?? null,
-        stripeChargesEnabled: organization.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: organization.stripePayoutsEnabled ?? false,
-        requireStripe: !isPlatformOrg,
-      });
-      if (!gate.ok) {
-        return fail(
-          "PAYMENTS_NOT_READY",
-          formatPaidSalesGateMessage(gate, "Pagamentos indisponiveis. Para ativar,"),
-          409,
-          false,
-          { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
-        );
-      }
-    }
 
     const providedPurchaseId = payload.purchaseId?.trim() || null;
     let shippingCents = 0;

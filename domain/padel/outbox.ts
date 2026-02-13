@@ -60,6 +60,69 @@ function normalizeDelayPolicy(value: unknown): DelayPolicy {
   return DEFAULT_DELAY_POLICY;
 }
 
+type OutboxMatchParticipant = {
+  side: "A" | "B";
+  participantId: number;
+  participant: {
+    sourcePairingId: number | null;
+    playerProfile: {
+      userId: string | null;
+      displayName: string | null;
+      fullName: string | null;
+    } | null;
+  } | null;
+};
+
+const uniqueStrings = (values: Array<string | null | undefined>) =>
+  Array.from(new Set(values.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)));
+
+const resolveSideParticipantIds = (participants: OutboxMatchParticipant[], side: "A" | "B") =>
+  participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participantId)
+    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+
+const resolveSideUserIds = (participants: OutboxMatchParticipant[], side: "A" | "B") =>
+  uniqueStrings(
+    participants
+      .filter((row) => row.side === side)
+      .map((row) => row.participant?.playerProfile?.userId ?? null),
+  );
+
+const resolveSideSourcePairingId = (participants: OutboxMatchParticipant[], side: "A" | "B") =>
+  participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.sourcePairingId)
+    .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
+
+const resolveParticipantLabel = (participants: OutboxMatchParticipant[], side: "A" | "B") => {
+  const names = participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.playerProfile?.displayName || row.participant?.playerProfile?.fullName)
+    .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+  return names.length > 0 ? names.join(" / ") : "Jogador";
+};
+
+type MatchParticipantProjection = Array<{
+  side: "A" | "B";
+  participant: { playerProfileId: number | null; playerProfile: { email: string | null } | null } | null;
+}>;
+
+function resolveSideProfileIds(participants: MatchParticipantProjection, side: "A" | "B") {
+  return participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.playerProfileId)
+    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+}
+
+function resolveSideEmails(participants: MatchParticipantProjection, side: "A" | "B") {
+  const values = participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.playerProfile?.email?.trim().toLowerCase())
+    .filter((email): email is string => typeof email === "string" && email.length > 0);
+  return Array.from(new Set(values));
+}
+
 export async function handlePadelOutboxEvent(params: { eventType: string; payload: Prisma.JsonValue }) {
   switch (params.eventType) {
     case "PADEL_AUTO_SCHEDULE_REQUESTED":
@@ -123,12 +186,22 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
       plannedDurationMinutes: true,
       startTime: true,
       courtId: true,
-      pairingAId: true,
-      pairingBId: true,
       roundLabel: true,
       roundType: true,
       groupLabel: true,
       score: true,
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          side: true,
+          participant: {
+            select: {
+              playerProfileId: true,
+              playerProfile: { select: { email: true } },
+            },
+          },
+        },
+      },
       event: {
         select: {
           id: true,
@@ -208,12 +281,22 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
           plannedDurationMinutes: true,
           startTime: true,
           courtId: true,
-          pairingAId: true,
-          pairingBId: true,
           roundLabel: true,
           roundType: true,
           groupLabel: true,
           score: true,
+          participants: {
+            orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+            select: {
+              side: true,
+              participant: {
+                select: {
+                  playerProfileId: true,
+                  playerProfile: { select: { email: true } },
+                },
+              },
+            },
+          },
         },
       });
       const affectedMatchIds = Array.from(new Set(matchesInScope.map((item) => item.id)));
@@ -274,38 +357,21 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
             plannedDurationMinutes: true,
             startTime: true,
             courtId: true,
-            pairingAId: true,
-            pairingBId: true,
+            participants: {
+              orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+              select: {
+                side: true,
+                participant: {
+                  select: {
+                    playerProfileId: true,
+                    playerProfile: { select: { email: true } },
+                  },
+                },
+              },
+            },
           },
         }),
       ]);
-
-      const pairingIds = new Set<number>();
-      unscheduledMatches.forEach((m) => {
-        if (m.pairingAId) pairingIds.add(m.pairingAId);
-        if (m.pairingBId) pairingIds.add(m.pairingBId);
-      });
-      scheduledMatches.forEach((m) => {
-        if (m.pairingAId) pairingIds.add(m.pairingAId);
-        if (m.pairingBId) pairingIds.add(m.pairingBId);
-      });
-      const pairings = pairingIds.size
-        ? await prisma.padelPairing.findMany({
-            where: { id: { in: Array.from(pairingIds) } },
-            select: { id: true, slots: { select: { playerProfileId: true, playerProfile: { select: { email: true } } } } },
-          })
-        : [];
-      const pairingPlayers = new Map<number, { profileIds: number[]; emails: string[] }>();
-      pairings.forEach((pairing) => {
-        const profileIds = new Set<number>();
-        const emails = new Set<string>();
-        pairing.slots.forEach((slot) => {
-          if (slot.playerProfileId) profileIds.add(slot.playerProfileId);
-          const email = slot.playerProfile?.email?.trim().toLowerCase();
-          if (email) emails.add(email);
-        });
-        pairingPlayers.set(pairing.id, { profileIds: Array.from(profileIds), emails: Array.from(emails) });
-      });
 
       const [availabilities, courtBlocks] = await Promise.all([
         prisma.calendarAvailability.findMany({
@@ -363,10 +429,31 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
       const priority = scheduleDefaults.priority === "KNOCKOUT_FIRST" ? "KNOCKOUT_FIRST" : "GROUPS_FIRST";
 
       const scheduleResult = computeAutoSchedulePlan({
-        unscheduledMatches,
-        scheduledMatches,
+        unscheduledMatches: unscheduledMatches.map((entry) => ({
+          id: entry.id,
+          plannedDurationMinutes: entry.plannedDurationMinutes,
+          courtId: entry.courtId,
+          sideAProfileIds: resolveSideProfileIds(entry.participants as MatchParticipantProjection, "A"),
+          sideBProfileIds: resolveSideProfileIds(entry.participants as MatchParticipantProjection, "B"),
+          sideAEmails: resolveSideEmails(entry.participants as MatchParticipantProjection, "A"),
+          sideBEmails: resolveSideEmails(entry.participants as MatchParticipantProjection, "B"),
+          roundLabel: entry.roundLabel,
+          roundType: entry.roundType,
+          groupLabel: entry.groupLabel,
+        })),
+        scheduledMatches: scheduledMatches.map((entry) => ({
+          id: entry.id,
+          plannedStartAt: entry.plannedStartAt,
+          plannedEndAt: entry.plannedEndAt,
+          plannedDurationMinutes: entry.plannedDurationMinutes,
+          startTime: entry.startTime,
+          courtId: entry.courtId,
+          sideAProfileIds: resolveSideProfileIds(entry.participants as MatchParticipantProjection, "A"),
+          sideBProfileIds: resolveSideProfileIds(entry.participants as MatchParticipantProjection, "B"),
+          sideAEmails: resolveSideEmails(entry.participants as MatchParticipantProjection, "A"),
+          sideBEmails: resolveSideEmails(entry.participants as MatchParticipantProjection, "B"),
+        })),
         courts,
-        pairingPlayers,
         availabilities,
         courtBlocks: effectiveCourtBlocks,
         config: {
@@ -436,6 +523,8 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
       roundLabel: true,
       groupLabel: true,
       categoryId: true,
+      winnerParticipantId: true,
+      winnerSide: true,
       pairingAId: true,
       pairingBId: true,
       winnerPairingId: true,
@@ -475,6 +564,25 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
           },
         },
       },
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          side: true,
+          participantId: true,
+          participant: {
+            select: {
+              sourcePairingId: true,
+              playerProfile: {
+                select: {
+                  userId: true,
+                  displayName: true,
+                  fullName: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
   if (!updated || !updated.event?.organizationId) return { ok: false, code: "MATCH_NOT_FOUND" } as const;
@@ -486,10 +594,17 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     eventType: SYSTEM_MATCH_EVENT,
   };
 
-  const involvedUserIds = [
-    ...((updated.pairingA?.slots ?? []).map((s) => s.profileId).filter(Boolean) as string[]),
-    ...((updated.pairingB?.slots ?? []).map((s) => s.profileId).filter(Boolean) as string[]),
-  ];
+  const participantRows = (updated.participants ?? []) as OutboxMatchParticipant[];
+  const participantUserIds = uniqueStrings(
+    participantRows.map((row) => row.participant?.playerProfile?.userId ?? null),
+  );
+  const involvedUserIds =
+    participantUserIds.length > 0
+      ? participantUserIds
+      : uniqueStrings([
+          ...((updated.pairingA?.slots ?? []).map((s) => s.profileId) as Array<string | null | undefined>),
+          ...((updated.pairingB?.slots ?? []).map((s) => s.profileId) as Array<string | null | undefined>),
+        ]);
 
   const matchCourtId = updated.courtId ?? updated.courtNumber ?? null;
   await queueMatchChanged({
@@ -499,8 +614,18 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     courtId: matchCourtId,
   });
 
-  const resolvedWinnerPairingId = updated.winnerPairingId ?? null;
-  if (resolvedWinnerPairingId) {
+  const resolvedWinnerSide = updated.winnerSide === "A" || updated.winnerSide === "B" ? updated.winnerSide : null;
+  const winnerSideParticipantIds =
+    resolvedWinnerSide !== null ? resolveSideParticipantIds(participantRows, resolvedWinnerSide) : [];
+  const resolvedWinnerParticipantId =
+    typeof updated.winnerParticipantId === "number"
+      ? updated.winnerParticipantId
+      : winnerSideParticipantIds[0] ?? null;
+  const resolvedWinnerPairingId =
+    updated.winnerPairingId ??
+    (resolvedWinnerSide !== null ? resolveSideSourcePairingId(participantRows, resolvedWinnerSide) : null);
+
+  if (resolvedWinnerParticipantId || resolvedWinnerPairingId) {
     await queueMatchResult(involvedUserIds, updated.id, updated.eventId);
     await queueNextOpponent(involvedUserIds, updated.id, updated.eventId);
 
@@ -515,7 +640,22 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
           roundType: "KNOCKOUT",
           ...(updated.categoryId ? { categoryId: updated.categoryId } : {}),
         },
-        select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
+        select: {
+          id: true,
+          roundLabel: true,
+          pairingAId: true,
+          pairingBId: true,
+          winnerPairingId: true,
+          winnerParticipantId: true,
+          winnerSide: true,
+          participants: {
+            orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+            select: {
+              side: true,
+              participantId: true,
+            },
+          },
+        },
         orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
       });
       const isDoubleElim = config?.format === "DUPLA_ELIMINACAO";
@@ -562,22 +702,131 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
         await advancePadelKnockoutWinner({
           matches: koMatches,
           updateMatch: async (matchId, data) => {
-            const { match } = await updatePadelMatch({
-              matchId,
-              data,
-              ...systemContext,
-              select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true, winnerPairingId: true },
-            });
-            return match as {
-              id: number;
-              roundLabel: string | null;
-              pairingAId: number | null;
-              pairingBId: number | null;
-              winnerPairingId: number | null;
+            const sideAParticipantIds =
+              Array.isArray(data.sideAParticipantIds) && data.sideAParticipantIds.length > 0
+                ? data.sideAParticipantIds
+                : data.sideAParticipantIds === undefined
+                  ? undefined
+                  : [];
+            const sideBParticipantIds =
+              Array.isArray(data.sideBParticipantIds) && data.sideBParticipantIds.length > 0
+                ? data.sideBParticipantIds
+                : data.sideBParticipantIds === undefined
+                  ? undefined
+                  : [];
+
+            const matchUpdateData: Prisma.EventMatchSlotUncheckedUpdateInput = {
+              ...(typeof data.pairingAId !== "undefined" ? { pairingAId: data.pairingAId } : {}),
+              ...(typeof data.pairingBId !== "undefined" ? { pairingBId: data.pairingBId } : {}),
+              ...(typeof data.winnerPairingId !== "undefined" ? { winnerPairingId: data.winnerPairingId } : {}),
+              ...(typeof data.winnerParticipantId !== "undefined"
+                ? { winnerParticipantId: data.winnerParticipantId }
+                : {}),
+              ...(typeof data.winnerSide !== "undefined" ? { winnerSide: data.winnerSide } : {}),
+              ...(typeof data.status !== "undefined" ? { status: data.status } : {}),
+              ...(typeof data.score !== "undefined" ? { score: data.score } : {}),
+              ...(typeof data.scoreSets !== "undefined" ? { scoreSets: data.scoreSets } : {}),
             };
+
+            const applyInTx = async (tx: Prisma.TransactionClient) => {
+              const { match } = await updatePadelMatch({
+                tx,
+                matchId,
+                data: matchUpdateData,
+                ...systemContext,
+                select: {
+                  id: true,
+                  roundLabel: true,
+                  pairingAId: true,
+                  pairingBId: true,
+                  winnerPairingId: true,
+                  winnerParticipantId: true,
+                  winnerSide: true,
+                },
+              });
+              if (typeof sideAParticipantIds !== "undefined") {
+                await tx.padelMatchParticipant.deleteMany({ where: { matchId, side: "A" } });
+                if (sideAParticipantIds.length > 0) {
+                  await tx.padelMatchParticipant.createMany({
+                    data: sideAParticipantIds.map((participantId, slotOrder) => ({
+                      matchId,
+                      participantId,
+                      side: "A",
+                      slotOrder,
+                    })),
+                    skipDuplicates: true,
+                  });
+                }
+                if (sideAParticipantIds.length > 0) {
+                  await tx.eventMatchSlot.update({
+                    where: { id: matchId },
+                    data: { pairingAId: null },
+                  });
+                }
+              }
+              if (typeof sideBParticipantIds !== "undefined") {
+                await tx.padelMatchParticipant.deleteMany({ where: { matchId, side: "B" } });
+                if (sideBParticipantIds.length > 0) {
+                  await tx.padelMatchParticipant.createMany({
+                    data: sideBParticipantIds.map((participantId, slotOrder) => ({
+                      matchId,
+                      participantId,
+                      side: "B",
+                      slotOrder,
+                    })),
+                    skipDuplicates: true,
+                  });
+                }
+                if (sideBParticipantIds.length > 0) {
+                  await tx.eventMatchSlot.update({
+                    where: { id: matchId },
+                    data: { pairingBId: null },
+                  });
+                }
+              }
+
+              const refreshed = await tx.eventMatchSlot.findUnique({
+                where: { id: matchId },
+                select: {
+                  id: true,
+                  roundLabel: true,
+                  pairingAId: true,
+                  pairingBId: true,
+                  winnerPairingId: true,
+                  winnerParticipantId: true,
+                  winnerSide: true,
+                  participants: {
+                    orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+                    select: { side: true, participantId: true },
+                  },
+                },
+              });
+              if (!refreshed) return match as any;
+              return {
+                id: refreshed.id,
+                roundLabel: refreshed.roundLabel,
+                pairingAId: refreshed.pairingAId ?? null,
+                pairingBId: refreshed.pairingBId ?? null,
+                winnerPairingId: refreshed.winnerPairingId ?? null,
+                winnerParticipantId: refreshed.winnerParticipantId ?? null,
+                winnerSide:
+                  refreshed.winnerSide === "A" || refreshed.winnerSide === "B" ? refreshed.winnerSide : null,
+                sideAParticipantIds: (refreshed.participants ?? [])
+                  .filter((row) => row.side === "A")
+                  .map((row) => row.participantId),
+                sideBParticipantIds: (refreshed.participants ?? [])
+                  .filter((row) => row.side === "B")
+                  .map((row) => row.participantId),
+              };
+            };
+
+            return prisma.$transaction((tx) => applyInTx(tx));
           },
           winnerMatchId: updated.id,
           winnerPairingId: resolvedWinnerPairingId,
+          winnerParticipantId: resolvedWinnerParticipantId,
+          winnerParticipantIds: winnerSideParticipantIds,
+          winnerSide: resolvedWinnerSide,
         });
       }
 

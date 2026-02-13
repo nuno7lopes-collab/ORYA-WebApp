@@ -57,6 +57,7 @@ import { sanitizeUsername } from "@/lib/username";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
@@ -1691,10 +1692,8 @@ async function _POST(req: NextRequest) {
     const stripeAccountId = event.org_stripe_account_id ?? null;
     const stripeChargesEnabled = event.org_stripe_charges_enabled ?? false;
     const stripePayoutsEnabled = event.org_stripe_payouts_enabled ?? false;
-    const payoutModeRaw = (event.payout_mode || "ORGANIZATION").toString().toUpperCase();
-
     // Plataforma ORYA: usa conta da plataforma, não exige Connect
-    const requiresOrganizationStripe = !isPlatformOrg && payoutModeRaw !== "PLATFORM";
+    const requiresOrganizationStripeForEvent = requiresOrganizationStripe(event.org_type);
 
     if (preDiscountAmountCents > 0) {
       const gate = getPaidSalesGate({
@@ -1703,7 +1702,7 @@ async function _POST(req: NextRequest) {
         stripeAccountId,
         stripeChargesEnabled: event.org_stripe_charges_enabled ?? false,
         stripePayoutsEnabled: event.org_stripe_payouts_enabled ?? false,
-        requireStripe: requiresOrganizationStripe,
+        requireStripe: requiresOrganizationStripeForEvent,
       });
       if (!gate.ok) {
         const code = gate.missingEmail
@@ -1722,7 +1721,7 @@ async function _POST(req: NextRequest) {
         );
       }
     }
-    const recipientConnectAccountId = requiresOrganizationStripe ? stripeAccountId : null;
+    const recipientConnectAccountId = requiresOrganizationStripeForEvent ? stripeAccountId : null;
 
     const totalAmountInCents = combinedFees.totalCents + cardPlatformFeeCents;
     const platformFeeCombinedCents = platformFeeTotalCents;
@@ -2646,7 +2645,7 @@ async function _POST(req: NextRequest) {
     const createPi = async (idemKey?: string) =>
       createPaymentIntent(intentParams, {
         idempotencyKey: idemKey,
-        requireStripe: requiresOrganizationStripe,
+        requireStripe: requiresOrganizationStripeForEvent,
         org: {
           stripeAccountId,
           stripeChargesEnabled,

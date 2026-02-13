@@ -148,11 +148,10 @@ async function buildLiveStandings(params: {
 
   let standingsByGroup: Record<string, PadelStandingRow[]>;
   if (entityType === "PLAYER") {
-    // Player standings no longer depend on legacy pairing joins; entity IDs come from match participants.
-    const pairingPlayers = new Map<number, number[]>();
+    // Standings individuais dependem apenas de participantes por lado.
     standingsByGroup = computePadelStandingsByGroupForPlayers(
       standingMatches,
-      pairingPlayers,
+      new Map<number, number[]>(),
       pointsTable,
       tieBreakRules,
       {
@@ -282,13 +281,19 @@ export async function buildPadelLivePayload(eventId: number, categoryId?: number
       },
     },
   });
+  const isPlayerEntityFormat =
+    event.padelTournamentConfig?.format === "AMERICANO" || event.padelTournamentConfig?.format === "MEXICANO";
   const standingMatches: PadelStandingMatchInput[] = groupMatches.map((match) => {
     const sideAEntityIds = resolveSideEntityIds(match.participants as LiveMatchParticipant[], "A");
     const sideBEntityIds = resolveSideEntityIds(match.participants as LiveMatchParticipant[], "B");
     return {
       id: match.id,
-      pairingAId: resolveSideSourcePairingId(match.participants as LiveMatchParticipant[], "A"),
-      pairingBId: resolveSideSourcePairingId(match.participants as LiveMatchParticipant[], "B"),
+      pairingAId: isPlayerEntityFormat
+        ? null
+        : resolveSideSourcePairingId(match.participants as LiveMatchParticipant[], "A"),
+      pairingBId: isPlayerEntityFormat
+        ? null
+        : resolveSideSourcePairingId(match.participants as LiveMatchParticipant[], "B"),
       sideAEntityIds: sideAEntityIds.length > 0 ? sideAEntityIds : undefined,
       sideBEntityIds: sideBEntityIds.length > 0 ? sideBEntityIds : undefined,
       scoreSets: match.scoreSets,
@@ -306,8 +311,12 @@ export async function buildPadelLivePayload(eventId: number, categoryId?: number
   const timerState = normalizeTimerState(event.padelTournamentConfig?.advancedSettings ?? null);
   const normalizedMatches = matches.map((match) => ({
     ...match,
-    pairingA: buildLegacyPairingSide(match.participants as LiveMatchParticipant[], "A"),
-    pairingB: buildLegacyPairingSide(match.participants as LiveMatchParticipant[], "B"),
+    pairingA: isPlayerEntityFormat
+      ? null
+      : buildLegacyPairingSide(match.participants as LiveMatchParticipant[], "A"),
+    pairingB: isPlayerEntityFormat
+      ? null
+      : buildLegacyPairingSide(match.participants as LiveMatchParticipant[], "B"),
   }));
 
   return {

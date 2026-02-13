@@ -54,25 +54,37 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - `POST /api/padel/pairings/[id]/assume` (capitão em split);
     - sem impacto na operação organizacional (staff/owner/admin mantêm fluxo operacional).
   - geração `AMERICANO`/`MEXICANO` evoluída para rotação individual prática:
-    - criação de duplas sintéticas por ronda com base em `PadelPlayerProfile`;
+    - write-path competitivo passa a `PadelMatchParticipant` por ronda (sem dependência de duplas sintéticas);
     - `BYE_NEUTRAL` explícito para sobras;
     - rounds por rotação determinística (com seed) e score `TIMED_GAMES`.
   - `MEXICANO` com recomposição por performance no live:
     - `POST /api/padel/live/timer/next-round` agora reatribui a ronda alvo com base em standings reais da ronda anterior;
     - penalização de repetição direta de parceiro/adversário na escolha de padrão de quarteto;
-    - limpeza de matches sem entrada e queda segura para `BYE_NEUTRAL` quando há sobras.
+    - limpeza de matches sem entrada e queda segura para `BYE_NEUTRAL` quando há sobras;
+    - write-path da recomposição passou a canónico por participantes (`PadelMatchParticipant`) sem criação de pairings sintéticos no motor competitivo.
+  - undo competitivo evoluído para participante-first:
+    - limpeza de downstream em KO considera `winnerSide + participantId` como fonte única de propagação downstream.
+  - walkover competitivo endurecido para participante-first:
+    - confirmação do vencedor exige participantes no lado vencedor (sem fallback `winnerPairing`).
   - novo domínio dedicado à recomposição Mexicano:
     - `domain/padel/mexicanoRecomposition.ts` com relações de ronda e geração determinística de entradas.
   - calendário canónico (`/api/padel/calendar`) deixou de depender de `pairingAId/pairingBId` para conflitos operacionais:
     - deteção de colisão por jogador baseada em `participants -> playerProfileId`;
     - notificações de reagendamento baseadas em `participants -> playerProfile.userId`.
+  - autoagendamento canónico (`/api/padel/calendar/auto-schedule`) migrou para participantes:
+    - alocação por `sideAProfileIds/sideBProfileIds` e emails dos participantes;
+    - remoção do lookup por `padelPairing` para calcular descanso/disponibilidade.
+  - outbox de atraso/reagendamento (`domain/padel/outbox.ts`) migrou o planeamento para participantes:
+    - cálculo de disponibilidade/descanso e agendamento usa `participants -> playerProfileId/email` (sem `pairingPlayers`).
   - live stream canónico (`domain/live/padelLivePayload.ts`) deixou de depender de joins diretos `pairingA/pairingB`:
     - payload de `matches` passa a derivar lados A/B a partir de `PadelMatchParticipant`;
     - standings live de jogador usa `sideEntityIds` dos participantes como fonte principal.
+  - live global (`/api/live/events/:slug`) deixou de exigir pairing em formatos individuais:
+    - `AMERICANO`/`MEXICANO` publicam `pairing1Id/pairing2Id = null` e mantêm o estado competitivo por participantes.
   - limpeza de naming live no frontend organizacional:
     - tipos locais renomeados para `LiveVisibility` em criação/edição/prep/dashboard (`eventos`), removendo alias `LiveHubVisibility` da UI ativa.
 - Testes desta ronda:
-  - `vitest` Padel/ops: `36 files`, `108 tests`, tudo verde.
+  - `vitest` Padel/ops: `36 files`, `116 tests`, tudo verde.
 
 ## 3) Princípios de execução
 - SSOT-first: nenhuma implementação fora de contrato normativo (`docs/ssot_registry_v1.md` + `docs/padel.md`).
@@ -174,7 +186,7 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
   - snapshot obrigatório no publish.
 - Endpoints/tipos:
   - `app/api/padel/matches/generate/route.ts` e `domain/padel/autoGenerateMatches.ts` com estratégia por formato.
-  - erro explícito `FORMAT_NOT_OPERATIONAL` quando superfície não suporta formato.
+  - erro explícito `FORMAT_NOT_OPERATIONAL` apenas para formatos não oficiais/bloqueados por contrato.
 - Ficheiros-alvo iniciais:
   - `domain/padel/formatCatalog.ts`
   - `app/api/padel/tournaments/config/route.ts`
@@ -458,6 +470,7 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - lock transacional por recurso com `pg_advisory_xact_lock`,
     - rollback total em conflito, sem estado parcial,
     - `bundleId` comum ao conjunto de claims.
+  - `PATCH /api/padel/calendar/claims/commit` com edição de janela (`startsAt`/`endsAt`) por claim, mantendo lock transacional por recurso, validação de conflito e auditoria.
   - lifecycle de parceria completado com rotas dedicadas:
     - `POST /api/padel/partnerships/agreements/:id/approve`
     - `POST /api/padel/partnerships/agreements/:id/pause`
@@ -476,6 +489,10 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - `POST /api/padel/rankings/rebuild`.
   - nova rota de sanções:
     - `POST /api/padel/rankings/sanctions`.
+  - hard-cut de naming no schema:
+    - enum Prisma renomeado para `LiveVisibility` (sem alias runtime `LiveHubVisibility`).
+  - proteção forte de claims ao nível da base de dados:
+    - constraint `EXCLUDE USING gist` para impedir overlap de claims `CLAIMED` por recurso.
 
 ### Validação adicional deste incremento
 - `npm run prisma:generate` -> OK

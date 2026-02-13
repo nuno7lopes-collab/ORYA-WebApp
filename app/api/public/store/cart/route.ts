@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
@@ -22,7 +23,23 @@ function parseStoreId(req: NextRequest) {
 async function resolveStore(storeId: number) {
   const store = await prisma.store.findFirst({
     where: { id: storeId },
-    select: { id: true, status: true, showOnProfile: true, catalogLocked: true, currency: true },
+    select: {
+      id: true,
+      status: true,
+      showOnProfile: true,
+      catalogLocked: true,
+      currency: true,
+      organization: {
+        select: {
+          orgType: true,
+          officialEmail: true,
+          officialEmailVerifiedAt: true,
+          stripeAccountId: true,
+          stripeChargesEnabled: true,
+          stripePayoutsEnabled: true,
+        },
+      },
+    },
   });
   if (!store) {
     return { ok: false as const, error: "Store nao encontrada." };
@@ -32,6 +49,17 @@ async function resolveStore(storeId: number) {
   }
   if (store.catalogLocked) {
     return { ok: false as const, error: "Catalogo bloqueado." };
+  }
+  const paymentsGate = getPublicStorePaymentsGate({
+    orgType: store.organization?.orgType,
+    officialEmail: store.organization?.officialEmail,
+    officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
+    stripeAccountId: store.organization?.stripeAccountId,
+    stripeChargesEnabled: store.organization?.stripeChargesEnabled,
+    stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
+  });
+  if (!paymentsGate.ok) {
+    return { ok: false as const, error: "PAYMENTS_NOT_READY" };
   }
   return { ok: true as const, store };
 }

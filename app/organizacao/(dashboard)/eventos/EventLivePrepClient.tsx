@@ -47,12 +47,12 @@ export default function EventLivePrepClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setMessage(json?.error || "Erro ao guardar LiveHub.");
+        setMessage(json?.error || "Erro ao guardar Live.");
         return;
       }
-      setMessage("LiveHub atualizado.");
+      setMessage("Live atualizado.");
     } catch {
-      setMessage("Erro inesperado ao guardar LiveHub.");
+      setMessage("Erro inesperado ao guardar Live.");
     } finally {
       setSaving(false);
     }
@@ -85,7 +85,7 @@ export default function EventLivePrepClient({
     <div className="space-y-6">
       <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-5 space-y-4 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">LiveHub</p>
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live</p>
           <p className="text-sm text-white/70">Define visibilidade e livestream.</p>
         </div>
 

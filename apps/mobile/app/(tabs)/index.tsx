@@ -375,10 +375,11 @@ export default function DiscoverScreen() {
     const query = typeof params.q === "string" ? params.q.trim() : "";
     if (shouldOpen || query) {
       searchParamsAppliedRef.current = true;
-      animateLayout();
-      setSearchOpen(true);
-      if (query) setSearchQuery(query);
+      const nextRoute = query
+        ? ({ pathname: "/search", params: { q: query } } as const)
+        : ({ pathname: "/search" } as const);
       router.setParams({ search: undefined, q: undefined });
+      router.push(nextRoute);
     }
   }, [params.q, params.search, router]);
 
@@ -396,10 +397,13 @@ export default function DiscoverScreen() {
   }, []);
 
   const handleOpenSearch = useCallback(() => {
-    if (searchOpen) return;
-    animateLayout();
-    setSearchOpen(true);
-  }, [searchOpen]);
+    const query = searchQuery.trim();
+    if (query.length > 0) {
+      router.push({ pathname: "/search", params: { q: query } });
+      return;
+    }
+    router.push("/search");
+  }, [router, searchQuery]);
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery("");

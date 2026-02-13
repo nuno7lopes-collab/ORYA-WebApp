@@ -1,1 +1,5 @@
-export { default } from "@/app/org/[orgId]/profile/page";
+import OrgProfileRequestsClient from "../OrgProfileRequestsClient";
+
+export default function Page() {
+  return <OrgProfileRequestsClient />;
+}

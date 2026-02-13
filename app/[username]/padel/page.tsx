@@ -504,6 +504,15 @@ export default async function PadelProfilePage({ params }: PageProps) {
       where: {
         status: "DONE",
         OR: [
+          {
+            participants: {
+              some: {
+                participant: {
+                  playerProfile: { userId: resolvedProfile.id },
+                },
+              },
+            },
+          },
           { pairingA: { slots: { some: { profileId: resolvedProfile.id } } } },
           { pairingB: { slots: { some: { profileId: resolvedProfile.id } } } },
         ],
@@ -514,6 +523,8 @@ export default async function PadelProfilePage({ params }: PageProps) {
         pairingAId: true,
         pairingBId: true,
         winnerPairingId: true,
+        winnerParticipantId: true,
+        winnerSide: true,
         scoreSets: true,
         score: true,
         startTime: true,
@@ -530,6 +541,25 @@ export default async function PadelProfilePage({ params }: PageProps) {
             slots: { select: { profileId: true, playerProfile: { select: { displayName: true, fullName: true } } } },
           },
         },
+        participants: {
+          orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+          select: {
+            participantId: true,
+            side: true,
+            participant: {
+              select: {
+                id: true,
+                playerProfile: {
+                  select: {
+                    userId: true,
+                    displayName: true,
+                    fullName: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -538,18 +568,43 @@ export default async function PadelProfilePage({ params }: PageProps) {
     const tournamentIds = new Set<number>();
 
     for (const match of statsRows) {
-      const inA = match.pairingA?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false;
-      const inB = match.pairingB?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false;
+      const participantRows = Array.isArray(match.participants) ? match.participants : [];
+      const participantInA =
+        participantRows.some((row) => row.side === "A" && row.participant?.playerProfile?.userId === resolvedProfile.id) ?? false;
+      const participantInB =
+        participantRows.some((row) => row.side === "B" && row.participant?.playerProfile?.userId === resolvedProfile.id) ?? false;
+      const inA = participantInA || (match.pairingA?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false);
+      const inB = participantInB || (match.pairingB?.slots?.some((slot) => slot.profileId === resolvedProfile.id) ?? false);
       if (!inA && !inB) continue;
 
       padelStats.matches += 1;
       if (Number.isFinite(match.eventId)) tournamentIds.add(match.eventId);
       const userPairingId = inA ? match.pairingAId : match.pairingBId;
       const winnerPairingId = match.winnerPairingId;
-      const decided = Boolean(userPairingId && winnerPairingId);
-      const didWin = decided && winnerPairingId === userPairingId;
+      const sideAParticipantIds = participantRows
+        .filter((row) => row.side === "A")
+        .map((row) => row.participantId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      const sideBParticipantIds = participantRows
+        .filter((row) => row.side === "B")
+        .map((row) => row.participantId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      const participantDidWin =
+        typeof match.winnerParticipantId === "number"
+          ? inA
+            ? sideAParticipantIds.includes(match.winnerParticipantId)
+            : sideBParticipantIds.includes(match.winnerParticipantId)
+          : null;
+      const pairingDidWin = Boolean(userPairingId && winnerPairingId) ? winnerPairingId === userPairingId : null;
+      const didWin =
+        typeof participantDidWin === "boolean"
+          ? participantDidWin
+          : typeof pairingDidWin === "boolean"
+            ? pairingDidWin
+            : null;
+      const decided = typeof didWin === "boolean";
       if (decided) {
-        if (didWin) padelStats.wins += 1;
+        if (didWin === true) padelStats.wins += 1;
         else padelStats.losses += 1;
       }
 
@@ -569,36 +624,78 @@ export default async function PadelProfilePage({ params }: PageProps) {
       }
 
       if (decided) {
-        formRows.push({ result: didWin ? "W" : "L", date: resolveMatchDate(match) });
+        formRows.push({ result: didWin === true ? "W" : "L", date: resolveMatchDate(match) });
       }
 
-      const opponentSlots = inA ? match.pairingB?.slots : match.pairingA?.slots;
-      if (!opponentSlots) continue;
-      for (const slot of opponentSlots) {
-        const opponentId = slot.profileId;
-        if (!opponentId || opponentId === resolvedProfile.id) continue;
-        const name = slot.playerProfile?.displayName || slot.playerProfile?.fullName || "Jogador";
-        const existing = opponentMap.get(opponentId) ?? {
-          opponentId,
-          name,
-          matches: 0,
-          wins: 0,
-          losses: 0,
-          lastPlayedAt: null,
-        };
-        existing.matches += 1;
-        if (decided) {
-          if (didWin) existing.wins += 1;
-          else existing.losses += 1;
+      const opponentParticipantRows =
+        participantRows.length > 0
+          ? participantRows.filter((row) =>
+              inA
+                ? row.side === "B"
+                : inB
+                  ? row.side === "A"
+                  : false,
+            )
+          : [];
+      if (opponentParticipantRows.length > 0) {
+        for (const row of opponentParticipantRows) {
+          const opponentId = row.participant?.playerProfile?.userId;
+          if (!opponentId || opponentId === resolvedProfile.id) continue;
+          const name =
+            row.participant?.playerProfile?.displayName ||
+            row.participant?.playerProfile?.fullName ||
+            "Jogador";
+          const existing = opponentMap.get(opponentId) ?? {
+            opponentId,
+            name,
+            matches: 0,
+            wins: 0,
+            losses: 0,
+            lastPlayedAt: null,
+          };
+          existing.matches += 1;
+          if (decided) {
+            if (didWin === true) existing.wins += 1;
+            else existing.losses += 1;
+          }
+          const playedAt = resolveMatchDate(match);
+          if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
+            existing.lastPlayedAt = playedAt;
+          }
+          if (!existing.name && name) {
+            existing.name = name;
+          }
+          opponentMap.set(opponentId, existing);
         }
-        const playedAt = resolveMatchDate(match);
-        if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
-          existing.lastPlayedAt = playedAt;
+      } else {
+        const opponentSlots = inA ? match.pairingB?.slots : match.pairingA?.slots;
+        if (!opponentSlots) continue;
+        for (const slot of opponentSlots) {
+          const opponentId = slot.profileId;
+          if (!opponentId || opponentId === resolvedProfile.id) continue;
+          const name = slot.playerProfile?.displayName || slot.playerProfile?.fullName || "Jogador";
+          const existing = opponentMap.get(opponentId) ?? {
+            opponentId,
+            name,
+            matches: 0,
+            wins: 0,
+            losses: 0,
+            lastPlayedAt: null,
+          };
+          existing.matches += 1;
+          if (decided) {
+            if (didWin === true) existing.wins += 1;
+            else existing.losses += 1;
+          }
+          const playedAt = resolveMatchDate(match);
+          if (playedAt && (!existing.lastPlayedAt || playedAt > existing.lastPlayedAt)) {
+            existing.lastPlayedAt = playedAt;
+          }
+          if (!existing.name && name) {
+            existing.name = name;
+          }
+          opponentMap.set(opponentId, existing);
         }
-        if (!existing.name && name) {
-          existing.name = name;
-        }
-        opponentMap.set(opponentId, existing);
       }
     }
 

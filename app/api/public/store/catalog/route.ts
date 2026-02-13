@@ -5,6 +5,7 @@ import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseUsername(req: NextRequest) {
@@ -36,6 +37,12 @@ async function _GET(req: NextRequest) {
         publicName: true,
         businessName: true,
         brandingAvatarUrl: true,
+        orgType: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
       },
     });
     if (!organization) {
@@ -62,6 +69,18 @@ async function _GET(req: NextRequest) {
 
     if (!store) {
       return jsonWrap({ ok: false, error: "Loja nao encontrada." }, { status: 404 });
+    }
+
+    const paymentsGate = getPublicStorePaymentsGate({
+      orgType: organization.orgType,
+      officialEmail: organization.officialEmail,
+      officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+      stripeAccountId: organization.stripeAccountId,
+      stripeChargesEnabled: organization.stripeChargesEnabled,
+      stripePayoutsEnabled: organization.stripePayoutsEnabled,
+    });
+    if (!paymentsGate.ok) {
+      return jsonWrap({ ok: false, error: "PAYMENTS_NOT_READY" }, { status: 403 });
     }
 
     const resolvedState = resolveStoreState(store);

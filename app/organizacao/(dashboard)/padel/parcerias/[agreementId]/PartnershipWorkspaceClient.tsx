@@ -136,6 +136,9 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
   const [claimCourtId, setClaimCourtId] = useState("");
   const [claimStartsAt, setClaimStartsAt] = useState("");
   const [claimEndsAt, setClaimEndsAt] = useState("");
+  const [editingClaimId, setEditingClaimId] = useState<string | null>(null);
+  const [editingClaimStartsAt, setEditingClaimStartsAt] = useState("");
+  const [editingClaimEndsAt, setEditingClaimEndsAt] = useState("");
 
   const workspaceUrl = useMemo(() => {
     if (!agreementId) return null;
@@ -517,6 +520,42 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
     }
   };
 
+  const startEditingClaim = (claim: { id: string; startAt: string | null; endAt: string | null; status?: string }) => {
+    if (claim.status && claim.status !== "CLAIMED") return;
+    setEditingClaimId(claim.id);
+    setEditingClaimStartsAt(toLocalDateTime(claim.startAt));
+    setEditingClaimEndsAt(toLocalDateTime(claim.endAt));
+  };
+
+  const saveClaimWindow = async () => {
+    if (!organizationId || !editingClaimId || !editingClaimStartsAt || !editingClaimEndsAt) return;
+    setActionBusy(`claim:window:${editingClaimId}`);
+    setActionFeedback(null);
+    try {
+      const res = await fetch("/api/padel/calendar/claims/commit", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          claimId: editingClaimId,
+          startsAt: new Date(editingClaimStartsAt).toISOString(),
+          endsAt: new Date(editingClaimEndsAt).toISOString(),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível ajustar janela da claim.");
+        return;
+      }
+      setEditingClaimId(null);
+      setEditingClaimStartsAt("");
+      setEditingClaimEndsAt("");
+      await mutate();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   if (!agreementId) {
     return (
       <div className="mx-auto w-full max-w-5xl p-6 text-white">
@@ -858,6 +897,21 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                       <div className="mt-2 flex gap-2">
                         <button
                           type="button"
+                          onClick={() =>
+                            startEditingClaim({
+                              id: claim.id,
+                              startAt: claim.startAt,
+                              endAt: claim.endAt,
+                              status: claim.status,
+                            })
+                          }
+                          disabled={Boolean(actionBusy) || claim.status !== "CLAIMED"}
+                          className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40 disabled:opacity-50"
+                        >
+                          Editar janela
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => updateClaimStatus(claim.id, "RELEASED")}
                           disabled={Boolean(actionBusy) || claim.status !== "CLAIMED"}
                           className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40 disabled:opacity-50"
@@ -875,6 +929,46 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                       </div>
                     </div>
                   ))
+                )}
+                {editingClaimId && (
+                  <div className="rounded-lg border border-white/15 bg-black/45 px-3 py-2 text-xs">
+                    <p className="mb-2 text-white/75">Editar janela da claim #{editingClaimId}</p>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <input
+                        type="datetime-local"
+                        value={editingClaimStartsAt}
+                        onChange={(event) => setEditingClaimStartsAt(event.target.value)}
+                        className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                      />
+                      <input
+                        type="datetime-local"
+                        value={editingClaimEndsAt}
+                        onChange={(event) => setEditingClaimEndsAt(event.target.value)}
+                        className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={saveClaimWindow}
+                          disabled={Boolean(actionBusy) || !editingClaimStartsAt || !editingClaimEndsAt}
+                          className="rounded-xl border border-white/20 px-3 py-2 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
+                        >
+                          {actionBusy?.startsWith("claim:window:") ? "A guardar..." : "Guardar"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingClaimId(null);
+                            setEditingClaimStartsAt("");
+                            setEditingClaimEndsAt("");
+                          }}
+                          className="rounded-xl border border-white/20 px-3 py-2 text-xs text-white/85 hover:border-white/40"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -914,6 +1008,21 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                       <div className="mt-1 flex flex-wrap gap-2">
                         {typeof row.claimId === "string" && row.claimId.length > 0 && (
                           <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                startEditingClaim({
+                                  id: row.claimId as string,
+                                  startAt: row.startAt,
+                                  endAt: row.endAt,
+                                  status: row.status,
+                                })
+                              }
+                              disabled={Boolean(actionBusy) || row.status !== "CLAIMED"}
+                              className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40 disabled:opacity-50"
+                            >
+                              Editar janela
+                            </button>
                             <button
                               type="button"
                               onClick={() => updateClaimStatus(row.claimId as string, "RELEASED")}

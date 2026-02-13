@@ -332,15 +332,12 @@ const SYSTEM_WORDS = [
   "upload",
   "download",
   "downloads",
-  "orya",
   "staff",
   "apple-app-site-association",
   "appleappsiteassociation",
 ];
 
-const RESERVED_ALLOWLIST: Record<string, string[]> = {
-  orya: ["admin@orya.pt"],
-};
+const RESERVED_ALLOWLIST: Record<string, string[]> = {};
 
 export function isReservedAllowlistEntry(username: string) {
   const normalized = normalizeReserved(username);
@@ -383,11 +380,13 @@ export function normalizeUsernameInput(raw: string | null | undefined): string {
   if (!raw) return "";
   const trimmed = String(raw).trim();
   const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-  return sanitizeUsername(withoutAt);
+  const hyphenNormalized = withoutAt.replace(/-/g, "_");
+  return sanitizeUsername(hyphenNormalized);
 }
 
 export function normalizeReserved(input: string): string {
-  const base = (input ?? "")
+  const hyphenNormalized = String(input ?? "").replace(/-/g, "_");
+  const base = hyphenNormalized
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "");
   const cleaned = base.replace(/[^A-Za-z0-9._]/g, "");

@@ -2,6 +2,11 @@ import { env } from "@/lib/env";
 
 const SUPABASE_PUBLIC_PREFIX = `${env.supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/public/`;
 
+export type SupabasePublicObjectRef = {
+  bucket: string;
+  objectPath: string;
+};
+
 function resolveBuckets(primary?: string, fallback?: string) {
   const buckets = new Set<string>();
   const primaryTrimmed = primary?.trim();
@@ -34,6 +39,29 @@ function normalizePublicUrl(
     return trimmed;
   }
   return null;
+}
+
+export function parseSupabasePublicObjectUrl(
+  raw: string | null | undefined,
+): SupabasePublicObjectRef | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith(SUPABASE_PUBLIC_PREFIX)) return null;
+  const path = trimmed.slice(SUPABASE_PUBLIC_PREFIX.length).split("?")[0] ?? "";
+  const firstSlash = path.indexOf("/");
+  if (firstSlash <= 0) return null;
+  const bucketRaw = path.slice(0, firstSlash).trim();
+  const objectPathRaw = path.slice(firstSlash + 1).trim();
+  if (!bucketRaw || !objectPathRaw) return null;
+  try {
+    return {
+      bucket: decodeURIComponent(bucketRaw),
+      objectPath: decodeURIComponent(objectPathRaw),
+    };
+  } catch {
+    return null;
+  }
 }
 
 const avatarBuckets = resolveBuckets(env.avatarsBucket, env.uploadsBucket);

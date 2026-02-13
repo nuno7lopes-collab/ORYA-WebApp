@@ -10,11 +10,11 @@ export default function AnalyticsSubnav({ orgId, className }: { orgId: number | 
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/analytics") },
-        { id: "occupancy", label: "Occupancy", href: buildOrgHref(orgId, "/analytics/occupancy") },
-        { id: "conversion", label: "Conversion", href: buildOrgHref(orgId, "/analytics/conversion") },
-        { id: "no-show", label: "No-show", href: buildOrgHref(orgId, "/analytics/no-show") },
-        { id: "cohorts", label: "Cohorts", href: buildOrgHref(orgId, "/analytics/cohorts") },
+        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/analytics", { tab: "overview", analytics: "overview" }) },
+        { id: "occupancy", label: "Occupancy", href: buildOrgHref(orgId, "/analytics", { tab: "overview", analytics: "occupancy" }) },
+        { id: "conversion", label: "Conversion", href: buildOrgHref(orgId, "/analytics", { tab: "vendas", analytics: "conversion" }) },
+        { id: "no-show", label: "No-show", href: buildOrgHref(orgId, "/analytics", { tab: "ops", analytics: "no-show" }) },
+        { id: "cohorts", label: "Cohorts", href: buildOrgHref(orgId, "/analytics", { tab: "overview", analytics: "cohorts" }) },
       ]}
     />
   );

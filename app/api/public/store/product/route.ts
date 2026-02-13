@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -30,7 +31,18 @@ async function _GET(req: NextRequest) {
 
     const organization = await prisma.organization.findFirst({
       where: { username: parsed.username, status: "ACTIVE" },
-      select: { id: true, username: true, publicName: true, businessName: true },
+      select: {
+        id: true,
+        username: true,
+        publicName: true,
+        businessName: true,
+        orgType: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+      },
     });
     if (!organization) {
       return jsonWrap({ ok: false, error: "Organizacao nao encontrada." }, { status: 404 });
@@ -49,6 +61,18 @@ async function _GET(req: NextRequest) {
     });
     if (!store) {
       return jsonWrap({ ok: false, error: "Loja nao encontrada." }, { status: 404 });
+    }
+
+    const paymentsGate = getPublicStorePaymentsGate({
+      orgType: organization.orgType,
+      officialEmail: organization.officialEmail,
+      officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+      stripeAccountId: organization.stripeAccountId,
+      stripeChargesEnabled: organization.stripeChargesEnabled,
+      stripePayoutsEnabled: organization.stripePayoutsEnabled,
+    });
+    if (!paymentsGate.ok) {
+      return jsonWrap({ ok: false, error: "PAYMENTS_NOT_READY" }, { status: 403 });
     }
 
     const resolvedState = resolveStoreState(store);

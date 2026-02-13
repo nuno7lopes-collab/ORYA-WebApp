@@ -436,6 +436,7 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze", "profile"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
+type ProfileView = "overview" | "followers" | "requests";
 
 type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
 
@@ -535,10 +536,15 @@ function OrganizacaoPageInner({
   const tabParamRaw = searchParams?.get("tab") ?? defaultObjective ?? null;
   const sectionParamRaw = searchParams?.get("section") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
+  const profileParamRaw = searchParams?.get("profile") ?? null;
   const activeObjective = mapTabToObjective(tabParamRaw);
   const normalizedSectionParam = sectionParamRaw;
   const normalizedDefaultSection = defaultSection;
   const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
+  const profileView: ProfileView =
+    profileParamRaw === "followers" || profileParamRaw === "requests"
+      ? profileParamRaw
+      : "overview";
   const scrollSection = normalizedSectionParam ?? undefined;
   const isPadelManageSection =
     sectionParamRaw === PADEL_CLUB_SECTION || sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
@@ -2489,6 +2495,24 @@ function OrganizacaoPageInner({
     return () => cancelAnimationFrame(id);
   }, [activeObjective, activeSection, marketingSection]);
   const fadeClass = cn("transition-opacity duration-300", fadeIn ? "opacity-100" : "opacity-0");
+  const profileHeroCopy = useMemo(() => {
+    if (profileView === "followers") {
+      return {
+        title: "Seguidores",
+        description: "Visibilidade pública e crescimento da comunidade.",
+      };
+    }
+    if (profileView === "requests") {
+      return {
+        title: "Pedidos",
+        description: "Acompanha pedidos pendentes e estado da comunidade.",
+      };
+    }
+    return {
+      title: "Perfil público",
+      description: "Edita como a tua organização aparece ao público.",
+    };
+  }, [profileView]);
   const renderChecklistRing = (percent: number) => {
     const clamped = Math.min(100, Math.max(0, percent));
     const radius = 16;
@@ -3066,10 +3090,10 @@ function OrganizacaoPageInner({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  Perfil público
+                  {profileHeroCopy.title}
                 </h2>
                 <p className="text-sm text-white/70">
-                  Edita como a tua organização aparece ao público.
+                  {profileHeroCopy.description}
                 </p>
               </div>
             </div>

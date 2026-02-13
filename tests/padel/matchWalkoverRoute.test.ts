@@ -16,7 +16,6 @@ const shouldNotify = vi.hoisted(() => vi.fn(async () => true));
 
 const prisma = vi.hoisted(() => ({
   eventMatchSlot: { findUnique: vi.fn() },
-  padelPairing: { findUnique: vi.fn() },
   padelTournamentConfig: { findUnique: vi.fn() },
   padelTournamentRoleAssignment: { findMany: vi.fn() },
   $transaction: vi.fn(async (fn: any) => fn({})),
@@ -55,7 +54,6 @@ beforeEach(async () => {
   createNotification.mockReset();
   shouldNotify.mockReset();
   prisma.eventMatchSlot.findUnique.mockReset();
-  prisma.padelPairing.findUnique.mockReset();
   prisma.padelTournamentConfig.findUnique.mockReset();
   prisma.padelTournamentRoleAssignment.findMany.mockReset();
   prisma.$transaction.mockClear();
@@ -79,8 +77,7 @@ describe("padel match walkover route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 1,
-      pairingAId: 11,
-      pairingBId: 12,
+      participants: [],
       eventId: 5,
       status: "PENDING",
       event: { organizationId: 99 },
@@ -110,8 +107,14 @@ describe("padel match walkover route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 1,
-      pairingAId: 11,
-      pairingBId: 12,
+      participants: [
+        {
+          participantId: 101,
+          side: "A",
+          slotOrder: 0,
+          participant: { id: 101, sourcePairingId: null, playerProfileId: 11 },
+        },
+      ],
       eventId: 5,
       status: "PENDING",
       event: { organizationId: 99 },
@@ -121,10 +124,6 @@ describe("padel match walkover route", () => {
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    prisma.padelPairing.findUnique.mockResolvedValue({
-      payment_mode: "SPLIT",
-      registration: { status: "CONFIRMED" },
-    });
     prisma.padelTournamentConfig.findUnique.mockResolvedValue({ advancedSettings: {} });
     prisma.padelTournamentRoleAssignment.findMany.mockResolvedValue([{ userId: "u-dir" }]);
     updatePadelMatch.mockResolvedValue({
@@ -154,8 +153,7 @@ describe("padel match walkover route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 1,
-      pairingAId: 11,
-      pairingBId: 12,
+      participants: [],
       eventId: 5,
       status: "PENDING",
       roundType: "KNOCKOUT",
@@ -192,8 +190,7 @@ describe("padel match walkover route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 1,
-      pairingAId: 11,
-      pairingBId: 12,
+      participants: [],
       eventId: 5,
       status: "PENDING",
       roundType: "GROUPS",
@@ -215,8 +212,14 @@ describe("padel match walkover route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 1,
-      pairingAId: 11,
-      pairingBId: 12,
+      participants: [
+        {
+          participantId: 101,
+          side: "A",
+          slotOrder: 0,
+          participant: { id: 101, sourcePairingId: null, playerProfileId: 11 },
+        },
+      ],
       eventId: 5,
       status: "PENDING",
       roundType: "GROUPS",
@@ -228,10 +231,6 @@ describe("padel match walkover route", () => {
       membership: { role: "STAFF", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    prisma.padelPairing.findUnique.mockResolvedValue({
-      payment_mode: "SPLIT",
-      registration: { status: "CONFIRMED" },
-    });
     prisma.padelTournamentConfig.findUnique.mockResolvedValue({ advancedSettings: {} });
     updatePadelMatch.mockResolvedValue({
       match: { id: 1, eventId: 5, status: "DONE" },

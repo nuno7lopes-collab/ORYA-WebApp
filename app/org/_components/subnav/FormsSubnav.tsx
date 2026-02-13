@@ -10,9 +10,9 @@ export default function FormsSubnav({ orgId, className }: { orgId: number | null
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "forms", label: "Forms", href: buildOrgHref(orgId, "/forms") },
-        { id: "responses", label: "Responses", href: buildOrgHref(orgId, "/forms/responses") },
-        { id: "settings", label: "Settings", href: buildOrgHref(orgId, "/forms/settings") },
+        { id: "forms", label: "Forms", href: buildOrgHref(orgId, "/forms", { view: "ativos", forms: "forms" }) },
+        { id: "responses", label: "Responses", href: buildOrgHref(orgId, "/forms", { view: "todos", forms: "responses" }) },
+        { id: "settings", label: "Settings", href: buildOrgHref(orgId, "/forms", { view: "rascunhos", forms: "settings" }) },
       ]}
     />
   );

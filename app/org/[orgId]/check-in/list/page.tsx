@@ -1,1 +1,5 @@
-export { default } from "@/app/org/[orgId]/check-in/page";
+import OrganizationScanPage from "@/app/organizacao/(dashboard)/scan/page";
+
+export default function OrgCheckInListPage() {
+  return <OrganizationScanPage embedded mode="list" />;
+}

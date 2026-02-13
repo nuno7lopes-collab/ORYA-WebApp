@@ -10,12 +10,12 @@ export default function FinanceSubnav({ orgId, className }: { orgId: number | nu
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/finance") },
-        { id: "ledger", label: "Ledger", href: buildOrgHref(orgId, "/finance/ledger") },
-        { id: "dimensions", label: "Dimensions", href: buildOrgHref(orgId, "/finance/dimensions") },
-        { id: "payouts", label: "Payouts", href: buildOrgHref(orgId, "/finance/payouts") },
-        { id: "refunds_disputes", label: "Refunds & disputes", href: buildOrgHref(orgId, "/finance/refunds-disputes") },
-        { id: "subscriptions", label: "Subscriptions", href: buildOrgHref(orgId, "/finance/subscriptions") },
+        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/finance", { tab: "overview", finance: "overview" }) },
+        { id: "ledger", label: "Ledger", href: buildOrgHref(orgId, "/finance", { tab: "financas", finance: "ledger" }) },
+        { id: "dimensions", label: "Dimensions", href: buildOrgHref(orgId, "/finance", { tab: "financas", finance: "dimensions" }) },
+        { id: "payouts", label: "Payouts", href: buildOrgHref(orgId, "/finance", { tab: "financas", finance: "payouts" }) },
+        { id: "refunds_disputes", label: "Refunds & disputes", href: buildOrgHref(orgId, "/finance", { tab: "ops", finance: "refunds-disputes" }) },
+        { id: "subscriptions", label: "Subscriptions", href: buildOrgHref(orgId, "/finance", { tab: "invoices", finance: "subscriptions" }) },
       ]}
     />
   );

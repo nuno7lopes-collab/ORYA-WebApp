@@ -161,17 +161,42 @@ function chunkArray<T>(values: T[], size: number) {
 
 async function createMatchList(params: {
   matches: Array<Prisma.EventMatchSlotCreateManyInput>;
+  participantAssignments?: Map<number, { sideA: number[]; sideB: number[] }>;
   eventId: number;
   organizationId: number;
   actorUserId: string | null;
 }) {
-  for (const data of params.matches) {
-    await createPadelMatch({
-      data,
-      eventId: params.eventId,
-      organizationId: params.organizationId,
-      actorUserId: params.actorUserId,
-      eventType: MATCH_GENERATED_EVENT,
+  for (let idx = 0; idx < params.matches.length; idx += 1) {
+    const data = params.matches[idx];
+    const assignment = params.participantAssignments?.get(idx);
+    await prisma.$transaction(async (tx) => {
+      const created = await createPadelMatch({
+        tx,
+        data,
+        eventId: params.eventId,
+        organizationId: params.organizationId,
+        actorUserId: params.actorUserId,
+        eventType: MATCH_GENERATED_EVENT,
+      });
+
+      if (!assignment) return;
+      const rows = [
+        ...assignment.sideA.map((participantId, slotOrder) => ({
+          matchId: created.match.id,
+          participantId,
+          side: "A" as const,
+          slotOrder: slotOrder + 1,
+        })),
+        ...assignment.sideB.map((participantId, slotOrder) => ({
+          matchId: created.match.id,
+          participantId,
+          side: "B" as const,
+          slotOrder: slotOrder + 1,
+        })),
+      ];
+      if (rows.length > 0) {
+        await tx.padelMatchParticipant.createMany({ data: rows });
+      }
     });
   }
 }
@@ -883,6 +908,7 @@ export async function autoGeneratePadelMatches({
   };
   const bracketPrefix = formatEffective === "QUADRO_AB" || isDoubleElim ? "A " : "";
   const matchCreateData: Prisma.EventMatchSlotCreateManyInput[] = [];
+  const matchParticipantAssignments = new Map<number, { sideA: number[]; sideB: number[] }>();
 
   if (isKnockout) {
     const bracketSize = Math.pow(2, Math.ceil(Math.log2(drawPairingIds.length)));
@@ -1041,14 +1067,7 @@ export async function autoGeneratePadelMatches({
     let matchIdx = 0;
 
     if (isIndividualRotationFormat) {
-      const markerPrefix = `AUTO_ROTATION:${eventId}:${resolvedCategoryId ?? 0}:${formatEffective}`;
-      await prisma.padelPairing.deleteMany({
-        where: {
-          eventId,
-          ...(resolvedCategoryId ? { categoryId: resolvedCategoryId } : { categoryId: null }),
-          partnerLinkToken: { startsWith: markerPrefix },
-        },
-      });
+      const rotationTag = `AUTO_ROTATION:${eventId}:${resolvedCategoryId ?? 0}:${formatEffective}`;
 
       let playerProfileIds = Array.from(
         new Set(
@@ -1082,39 +1101,45 @@ export async function autoGeneratePadelMatches({
       if (playerProfileIds.length < 4) {
         return { ok: false, error: "NEED_PLAYERS_FOR_INDIVIDUAL_FORMAT" };
       }
+      const participantMap = new Map<number, number>();
+      const existingParticipants = await prisma.padelTournamentParticipant.findMany({
+        where: { eventId, categoryId: resolvedCategoryId ?? null },
+        select: { id: true, playerProfileId: true },
+      });
+      existingParticipants.forEach((participant) => {
+        participantMap.set(participant.playerProfileId, participant.id);
+      });
 
-      const pairingCache = new Map<string, number>();
-      const ensureSyntheticPairing = async (sidePlayers: number[]) => {
-        const normalized = [...sidePlayers].sort((a, b) => a - b);
-        if (normalized.length === 0) return null;
-        const key = normalized.join(":");
-        const cached = pairingCache.get(key);
-        if (cached) return cached;
-
-        const created = await prisma.padelPairing.create({
-          data: {
-            eventId,
-            organizationId,
-            categoryId: resolvedCategoryId ?? null,
-            payment_mode: "FULL",
-            pairingStatus: "COMPLETE",
-            pairingJoinMode: "INVITE_PARTNER",
-            partnerLinkToken: `${markerPrefix}:${key}`,
-            isPublicOpen: false,
-            slots: {
-              create: normalized.map((playerProfileId, idx) => ({
-                slot_role: idx === 0 ? "CAPTAIN" : "PARTNER",
-                slotStatus: "FILLED",
-                paymentStatus: "PAID",
-                playerProfileId,
-              })),
+      const ensureTournamentParticipant = async (playerProfileId: number) => {
+        const cached = participantMap.get(playerProfileId);
+        if (typeof cached === "number") return cached;
+        try {
+          const created = await prisma.padelTournamentParticipant.create({
+            data: {
+              eventId,
+              categoryId: resolvedCategoryId ?? null,
+              organizationId,
+              playerProfileId,
+              status: "ACTIVE",
             },
-          },
-          select: { id: true },
-        });
-
-        pairingCache.set(key, created.id);
-        return created.id;
+            select: { id: true },
+          });
+          participantMap.set(playerProfileId, created.id);
+          return created.id;
+        } catch (error) {
+          if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+          const recovered = await prisma.padelTournamentParticipant.findFirst({
+            where: {
+              eventId,
+              categoryId: resolvedCategoryId ?? null,
+              playerProfileId,
+            },
+            select: { id: true },
+          });
+          if (!recovered?.id) throw error;
+          participantMap.set(playerProfileId, recovered.id);
+          return recovered.id;
+        }
       };
 
       const advancedRecord = advanced as Record<string, unknown>;
@@ -1144,14 +1169,14 @@ export async function autoGeneratePadelMatches({
         for (const quartet of quartets) {
           if (quartet.length < 4) {
             for (const playerProfileId of quartet) {
-              const byePairingId = await ensureSyntheticPairing([playerProfileId]);
-              if (!byePairingId) continue;
+              const byeParticipantId = await ensureTournamentParticipant(playerProfileId);
               const courtIndex = matchIdx % courtsList.length;
               const court = courtsList[courtIndex];
-              matchCreateData.push({
+              const nextIndex =
+                matchCreateData.push({
                 eventId,
                 categoryId: resolvedCategoryId ?? null,
-                pairingAId: byePairingId,
+                pairingAId: null,
                 pairingBId: null,
                 status: "DONE",
                 roundType: "GROUPS",
@@ -1162,6 +1187,7 @@ export async function autoGeneratePadelMatches({
                 courtName: court?.name || null,
                 score: {
                   mode: "TIMED_GAMES",
+                  sourceTag: rotationTag,
                   resultType: "BYE_NEUTRAL",
                   gamesA: 0,
                   gamesB: 0,
@@ -1170,7 +1196,8 @@ export async function autoGeneratePadelMatches({
                 } as Prisma.InputJsonValue,
                 scoreSets: [] as Prisma.InputJsonValue,
                 winnerPairingId: null,
-              });
+              }) - 1;
+              matchParticipantAssignments.set(nextIndex, { sideA: [byeParticipantId], sideB: [] });
               matchIdx += 1;
             }
             continue;
@@ -1179,17 +1206,21 @@ export async function autoGeneratePadelMatches({
           const pattern = pairingPatterns[roundIdx % pairingPatterns.length];
           const sideAPlayers = [quartet[pattern[0]], quartet[pattern[1]]];
           const sideBPlayers = [quartet[pattern[2]], quartet[pattern[3]]];
-          const pairingAId = await ensureSyntheticPairing(sideAPlayers);
-          const pairingBId = await ensureSyntheticPairing(sideBPlayers);
-          if (!pairingAId || !pairingBId) continue;
+          const sideAParticipants = await Promise.all(
+            sideAPlayers.map((playerProfileId) => ensureTournamentParticipant(playerProfileId)),
+          );
+          const sideBParticipants = await Promise.all(
+            sideBPlayers.map((playerProfileId) => ensureTournamentParticipant(playerProfileId)),
+          );
 
           const courtIndex = matchIdx % courtsList.length;
           const court = courtsList[courtIndex];
-          matchCreateData.push({
+          const nextIndex =
+            matchCreateData.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
-            pairingAId,
-            pairingBId,
+            pairingAId: null,
+            pairingBId: null,
             status: "PENDING",
             roundType: "GROUPS",
             roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
@@ -1197,8 +1228,9 @@ export async function autoGeneratePadelMatches({
             courtId: court?.id ?? null,
             courtNumber: courtIndex + 1,
             courtName: court?.name || null,
-            score: { mode: "TIMED_GAMES" } as Prisma.InputJsonValue,
-          });
+            score: { mode: "TIMED_GAMES", sourceTag: rotationTag } as Prisma.InputJsonValue,
+          }) - 1;
+          matchParticipantAssignments.set(nextIndex, { sideA: sideAParticipants, sideB: sideBParticipants });
           matchIdx += 1;
         }
       }
@@ -1263,6 +1295,7 @@ export async function autoGeneratePadelMatches({
 
   await createMatchList({
     matches: matchCreateData,
+    participantAssignments: matchParticipantAssignments.size > 0 ? matchParticipantAssignments : undefined,
     eventId,
     organizationId: organizationId,
     actorUserId,

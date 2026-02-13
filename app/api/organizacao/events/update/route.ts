@@ -11,7 +11,6 @@ import {
   Prisma,
   EventTemplateType,
   EventStatus,
-  LiveHubVisibility as LiveVisibilityEnum,
   EventPricingMode,
   AddressSourceProvider,
   PayoutMode,
@@ -25,6 +24,11 @@ import {
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import {
+  resolveAllowedPayoutModeForOrganization,
+  requiresOrganizationStripe,
+  validateRequestedPayoutMode,
+} from "@/domain/finance/payoutModePolicy";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -103,6 +107,8 @@ type UpdateEventBody = {
     undoWindowMinutes?: number | null;
   } | null;
 };
+
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 function slugify(input: string): string {
   return input
@@ -566,15 +572,37 @@ async function _POST(req: NextRequest) {
       const normalized =
         typeof body.liveVisibility === "string" ? body.liveVisibility.trim().toUpperCase() : "";
       if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
-        dataUpdate.liveVisibility = normalized as LiveVisibilityEnum;
+        dataUpdate.liveVisibility = normalized as LiveVisibility;
       }
     }
     if (
-      isAdmin &&
       body.payoutMode &&
       (body.payoutMode.toUpperCase() === "PLATFORM" || body.payoutMode.toUpperCase() === "ORGANIZATION")
     ) {
-      dataUpdate.payoutMode = body.payoutMode.toUpperCase() as PayoutMode;
+      const requestedPayoutMode = body.payoutMode.toUpperCase() as PayoutMode;
+      const payoutModeValidation = validateRequestedPayoutMode(
+        organization?.orgType,
+        requestedPayoutMode,
+      );
+      if (!payoutModeValidation.ok) {
+        return fail(
+          400,
+          "Payout mode inválido para o tipo da organização.",
+          "INVALID_PAYOUT_MODE",
+          false,
+          {
+            orgType: payoutModeValidation.orgType,
+            requestedPayoutMode: payoutModeValidation.requestedPayoutMode,
+            allowedPayoutMode: payoutModeValidation.allowedPayoutMode,
+          },
+        );
+      }
+      if (isAdmin) {
+        dataUpdate.payoutMode = resolveAllowedPayoutModeForOrganization(
+          organization?.orgType,
+          requestedPayoutMode,
+        );
+      }
     }
 
     const pricingModeRaw = typeof body.pricingMode === "string" ? body.pricingMode.trim().toUpperCase() : null;
@@ -606,7 +634,6 @@ async function _POST(req: NextRequest) {
         )
       : new Set<number>();
 
-    const payoutMode = event.payoutMode ?? PayoutMode.ORGANIZATION;
     const hasExistingPaid = !isPadelEvent && event.ticketTypes.some((t) => (t.price ?? 0) > 0);
     const hasNewPaid = !isPadelEvent && newTicketTypes.some((nt) => Number(nt.price ?? 0) > 0);
     if (event.organizationId && (hasExistingPaid || hasNewPaid) && !isAdmin) {
@@ -616,7 +643,7 @@ async function _POST(req: NextRequest) {
         stripeAccountId: organization?.stripeAccountId ?? null,
         stripeChargesEnabled: organization?.stripeChargesEnabled ?? false,
         stripePayoutsEnabled: organization?.stripePayoutsEnabled ?? false,
-        requireStripe: payoutMode === PayoutMode.ORGANIZATION && organization?.orgType !== "PLATFORM",
+        requireStripe: requiresOrganizationStripe(organization?.orgType),
       });
       if (!gate.ok) {
         return respondError(

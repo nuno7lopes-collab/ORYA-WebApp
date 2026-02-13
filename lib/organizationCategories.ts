@@ -87,7 +87,7 @@ export function parseOrganizationModules(value: unknown): OrganizationModule[] |
   const normalized: OrganizationModule[] = [];
   for (const entry of value) {
     if (typeof entry !== "string") return null;
-    let candidate = entry.trim().toUpperCase();
+    const candidate = entry.trim().toUpperCase();
     if (!candidate) return null;
     if (!organizationModuleSet.has(candidate as OrganizationModule)) return null;
     if (!normalized.includes(candidate as OrganizationModule)) {

@@ -2,8 +2,10 @@ export type AutoScheduleMatch = {
   id: number;
   plannedDurationMinutes: number | null;
   courtId: number | null;
-  pairingAId: number | null;
-  pairingBId: number | null;
+  sideAProfileIds: number[];
+  sideBProfileIds: number[];
+  sideAEmails?: string[];
+  sideBEmails?: string[];
   roundLabel?: string | null;
   roundType?: string | null;
   groupLabel?: string | null;
@@ -16,8 +18,10 @@ export type AutoScheduleExistingMatch = {
   plannedDurationMinutes: number | null;
   startTime: Date | null;
   courtId: number | null;
-  pairingAId: number | null;
-  pairingBId: number | null;
+  sideAProfileIds: number[];
+  sideBProfileIds: number[];
+  sideAEmails?: string[];
+  sideBEmails?: string[];
 };
 
 export type AutoScheduleCourt = {
@@ -47,14 +51,6 @@ export type AutoScheduleConfig = {
   minRestMinutes: number;
   priority: "GROUPS_FIRST" | "KNOCKOUT_FIRST";
 };
-
-export type AutoScheduleParticipants = Map<
-  number,
-  {
-    profileIds: number[];
-    emails: string[];
-  }
->;
 
 export type AutoScheduleResult = {
   scheduled: Array<{
@@ -147,7 +143,6 @@ export function computeAutoSchedulePlan({
   unscheduledMatches,
   scheduledMatches,
   courts,
-  pairingPlayers,
   availabilities,
   courtBlocks,
   config,
@@ -155,7 +150,6 @@ export function computeAutoSchedulePlan({
   unscheduledMatches: AutoScheduleMatch[];
   scheduledMatches: AutoScheduleExistingMatch[];
   courts: AutoScheduleCourt[];
-  pairingPlayers: AutoScheduleParticipants;
   availabilities: AutoScheduleAvailability[];
   courtBlocks: AutoScheduleCourtBlock[];
   config: AutoScheduleConfig;
@@ -193,7 +187,6 @@ export function computeAutoSchedulePlan({
   courtIds.forEach((id) => occupiedByCourt.set(id, []));
   const globalBlocks: Interval[] = [];
 
-  const busyByPairing = new Map<number, Interval[]>();
   const busyByProfile = new Map<number, Interval[]>();
   const busyByEmail = new Map<string, Interval[]>();
 
@@ -209,31 +202,28 @@ export function computeAutoSchedulePlan({
     }
   });
 
-  const resolveMatchParticipants = (match: { pairingAId: number | null; pairingBId: number | null }) => {
+  const resolveMatchParticipants = (match: {
+    sideAProfileIds: number[];
+    sideBProfileIds: number[];
+    sideAEmails?: string[];
+    sideBEmails?: string[];
+  }) => {
     const profileIds = new Set<number>();
     const emails = new Set<string>();
-    const pairingIdsForMatch: number[] = [];
-    [match.pairingAId, match.pairingBId].forEach((pairingId) => {
-      if (!pairingId) return;
-      pairingIdsForMatch.push(pairingId);
-      const players = pairingPlayers.get(pairingId);
-      players?.profileIds.forEach((id) => profileIds.add(id));
-      players?.emails.forEach((email) => emails.add(email));
+    [...(match.sideAProfileIds ?? []), ...(match.sideBProfileIds ?? [])].forEach((id) => {
+      if (typeof id === "number" && Number.isFinite(id)) profileIds.add(id);
+    });
+    [...(match.sideAEmails ?? []), ...(match.sideBEmails ?? [])].forEach((email) => {
+      const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
+      if (normalized) emails.add(normalized);
     });
     return {
       profileIds: Array.from(profileIds),
       emails: Array.from(emails),
-      pairingIds: pairingIdsForMatch,
     };
   };
 
-  const addBusy = (
-    participants: { profileIds: number[]; emails: string[]; pairingIds: number[] },
-    interval: Interval,
-  ) => {
-    participants.pairingIds.forEach((pairingId) => {
-      addInterval(busyByPairing, pairingId, interval);
-    });
+  const addBusy = (participants: { profileIds: number[]; emails: string[] }, interval: Interval) => {
     participants.profileIds.forEach((profileId) => {
       addInterval(busyByProfile, profileId, interval);
     });
@@ -273,13 +263,10 @@ export function computeAutoSchedulePlan({
   };
 
   const isPlayersAvailable = (
-    participants: { profileIds: number[]; emails: string[]; pairingIds: number[] },
+    participants: { profileIds: number[]; emails: string[] },
     start: Date,
     end: Date,
   ) => {
-    for (const pairingId of participants.pairingIds) {
-      if (hasOverlapWithRest(busyByPairing.get(pairingId), start, end)) return false;
-    }
     for (const profileId of participants.profileIds) {
       if (hasOverlapWithRest(busyByProfile.get(profileId), start, end)) return false;
       if (hasOverlap(availabilityByProfile.get(profileId), start, end)) return false;
@@ -322,8 +309,10 @@ export function computeAutoSchedulePlan({
   const skipped: AutoScheduleResult["skipped"] = [];
 
   for (const match of sortedMatches) {
-    if (!match.pairingAId || !match.pairingBId) {
-      skipped.push({ matchId: match.id, reason: "MISSING_PAIRINGS" });
+    const hasSideA = Array.isArray(match.sideAProfileIds) && match.sideAProfileIds.length > 0;
+    const hasSideB = Array.isArray(match.sideBProfileIds) && match.sideBProfileIds.length > 0;
+    if (!hasSideA || !hasSideB) {
+      skipped.push({ matchId: match.id, reason: "MISSING_PARTICIPANTS" });
       continue;
     }
     const participants = resolveMatchParticipants(match);

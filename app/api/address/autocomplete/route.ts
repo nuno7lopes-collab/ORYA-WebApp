@@ -13,7 +13,7 @@ import { logError } from "@/lib/observability/logger";
 export const runtime = "nodejs";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const AUTOCOMPLETE_CACHE_VERSION = "v2";
+const AUTOCOMPLETE_CACHE_VERSION = "v3";
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60 * 1000;
 const ENRICHMENT_MAX_ITEMS = 3;
@@ -66,6 +66,12 @@ const dedupeAutocompleteItems = <T extends GeoAutocompleteItem>(items: T[]) => {
     seen.add(key);
     return true;
   });
+};
+
+const normalizeCountryCode = (value: string | null | undefined) => {
+  if (!value) return null;
+  const normalized = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
 };
 
 const isRealAppleProviderId = (providerId: string | null | undefined) =>
@@ -263,9 +269,29 @@ async function _GET(req: NextRequest) {
     const countryHint = effectiveCountryCode ? COUNTRY_QUERY_HINTS[effectiveCountryCode] ?? null : null;
     if (!hasExplicitCoords && effectiveBias && resolved.data.length === 0) {
       resolved = await resolver.autocomplete({ query, limit: 12, lang });
-    } else if (!hasExplicitCoords && !effectiveBias && countryHint && resolved.data.length <= 4) {
+    }
+
+    const expectedCode = normalizeCountryCode(effectiveCountryCode);
+    const currentHasExpectedCountryMatch = Boolean(
+      expectedCode &&
+        resolved.data.some((item) => normalizeCountryCode(item.countryCode ?? null) === expectedCode),
+    );
+    const shouldRunCountryHintRetry = Boolean(
+      !hasExplicitCoords &&
+        countryHint &&
+        !queryCountryIntentCode &&
+        ((!effectiveBias && resolved.data.length <= 4) || (!currentHasExpectedCountryMatch && query.length <= 8)),
+    );
+
+    if (shouldRunCountryHintRetry) {
       const hintedQuery = `${query} ${countryHint}`.trim();
-      const hinted = await resolver.autocomplete({ query: hintedQuery, limit: 12, lang });
+      const hinted = await resolver.autocomplete({
+        query: hintedQuery,
+        lat: effectiveBias?.lat,
+        lng: effectiveBias?.lng,
+        limit: 12,
+        lang,
+      });
       resolved = {
         sourceProvider: resolved.sourceProvider,
         data: dedupeAutocompleteItems([...resolved.data, ...hinted.data]),

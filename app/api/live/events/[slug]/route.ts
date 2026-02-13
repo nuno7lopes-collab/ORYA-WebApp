@@ -346,18 +346,22 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
 
     const buildPadelMatch = (
       match: (typeof padelMatches)[number],
-      params: { stageId: number; groupId?: number | null; round?: number | null },
+      params: { stageId: number; groupId?: number | null; round?: number | null; entityType: "PLAYER" | "PAIRING" },
     ) => {
       const sideAPairingId =
-        match.participants
-          ?.filter((row) => row.side === "A")
-          .map((row) => row.participant?.sourcePairingId)
-          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
+        params.entityType === "PAIRING"
+          ? match.participants
+              ?.filter((row) => row.side === "A")
+              .map((row) => row.participant?.sourcePairingId)
+              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null
+          : null;
       const sideBPairingId =
-        match.participants
-          ?.filter((row) => row.side === "B")
-          .map((row) => row.participant?.sourcePairingId)
-          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
+        params.entityType === "PAIRING"
+          ? match.participants
+              ?.filter((row) => row.side === "B")
+              .map((row) => row.participant?.sourcePairingId)
+              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null
+          : null;
       const scoreObj =
         match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
       const rawSets = Array.isArray(match.scoreSets)
@@ -416,12 +420,14 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           .map((profile) => profile.id)
           .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
       }
-      const pairing = await prisma.padelPairing.findFirst({
-        where: { eventId: event.id, OR: [{ player1UserId: userId }, { player2UserId: userId }] },
-        select: { id: true },
-      });
-      if (pairing?.id) {
-        userPairingId = pairing.id;
+      if (!isPlayerEntityFormat) {
+        const pairing = await prisma.padelPairing.findFirst({
+          where: { eventId: event.id, OR: [{ player1UserId: userId }, { player2UserId: userId }] },
+          select: { id: true },
+        });
+        if (pairing?.id) {
+          userPairingId = pairing.id;
+        }
       }
     }
 
@@ -461,16 +467,18 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
 
       if (groupMatches.length > 0) {
         const standingMatches = groupMatches.map((m) => ({
-          pairingAId:
-            m.participants
-              ?.filter((row) => row.side === "A")
-              .map((row) => row.participant?.sourcePairingId)
-              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
-          pairingBId:
-            m.participants
-              ?.filter((row) => row.side === "B")
-              .map((row) => row.participant?.sourcePairingId)
-              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
+          pairingAId: isPlayerEntity
+            ? null
+            : m.participants
+                ?.filter((row) => row.side === "A")
+                .map((row) => row.participant?.sourcePairingId)
+                .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
+          pairingBId: isPlayerEntity
+            ? null
+            : m.participants
+                ?.filter((row) => row.side === "B")
+                .map((row) => row.participant?.sourcePairingId)
+                .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
           sideAEntityIds: m.participants
             ?.filter((row) => row.side === "A")
             .map((row) => row.participant?.playerProfileId)
@@ -549,7 +557,12 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
             entityType: isPlayerEntity ? "PLAYER" : "PAIRING",
             standings: standingsByGroup[groupLabel] ?? [],
             matches: groupMatchesList.map((m) =>
-              buildPadelMatch(m, { stageId, groupId: currentGroupId, round: resolvePadelRoundNumber(m.roundLabel) }),
+              buildPadelMatch(m, {
+                stageId,
+                groupId: currentGroupId,
+                round: resolvePadelRoundNumber(m.roundLabel),
+                entityType: isPlayerEntity ? "PLAYER" : "PAIRING",
+              }),
             ),
           };
         });
@@ -575,7 +588,11 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           const roundOrder = sortRoundsBySize(matchesForPrefix);
           const roundIndex = new Map(roundOrder.map((label, idx) => [label, idx + 1]));
           const matchesPayload = matchesForPrefix.map((m) =>
-            buildPadelMatch(m, { stageId, round: roundIndex.get(m.roundLabel ?? "?") ?? null }),
+            buildPadelMatch(m, {
+              stageId,
+              round: roundIndex.get(m.roundLabel ?? "?") ?? null,
+              entityType: isPlayerEntity ? "PLAYER" : "PAIRING",
+            }),
           );
           const prefixName = prefix === "A " ? "Quadro A" : prefix === "B " ? "Quadro B" : "Quadro";
           stages.push({
@@ -685,12 +702,14 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
     const championMatch = finalCandidates
       .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())[0];
     const championPairingId =
-      championMatch && (championMatch.winnerSide === "A" || championMatch.winnerSide === "B")
-        ? championMatch.participants
-            .filter((row) => row.side === championMatch.winnerSide)
-            .map((row) => row.participant?.sourcePairingId)
-            .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null
-        : null;
+      isPlayerEntityFormat
+        ? null
+        : championMatch && (championMatch.winnerSide === "A" || championMatch.winnerSide === "B")
+          ? championMatch.participants
+              .filter((row) => row.side === championMatch.winnerSide)
+              .map((row) => row.participant?.sourcePairingId)
+              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null
+          : null;
 
     tournamentPayload = {
       id: event.id,

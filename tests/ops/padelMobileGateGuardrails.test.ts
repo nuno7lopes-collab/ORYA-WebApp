@@ -16,7 +16,6 @@ describe("padel mobile upgrade gate guardrails", () => {
   it("aplica gate nos endpoints breaking", () => {
     const endpoints = [
       "app/api/padel/standings/route.ts",
-      "app/api/padel/live/route.ts",
       "app/api/padel/matches/route.ts",
       "app/api/padel/matches/generate/route.ts",
       "app/api/padel/calendar/route.ts",
@@ -27,5 +26,12 @@ describe("padel mobile upgrade gate guardrails", () => {
       const content = readLocal(file);
       expect(content, file).toContain("enforceMobileVersionGate");
     }
+  });
+
+  it("mantém hard-cut explícito no endpoint legado de live", () => {
+    const liveLegacy = readLocal("app/api/padel/live/route.ts");
+    expect(liveLegacy).toContain("LIVE_ENDPOINT_MOVED");
+    expect(liveLegacy).toContain("/api/live/events/:slug/stream");
+    expect(liveLegacy).not.toContain("enforceMobileVersionGate");
   });
 });

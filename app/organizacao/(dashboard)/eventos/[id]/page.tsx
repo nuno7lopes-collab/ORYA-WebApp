@@ -404,7 +404,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       ? advancedSettings.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))
       : [];
   const courtsCount = courtIds.length > 0 ? courtIds.length : event.padelTournamentConfig?.numberOfCourts ?? 0;
-  const liveHubReady = event.liveVisibility !== "DISABLED";
+  const liveReady = event.liveVisibility !== "DISABLED";
   const padelStatusItems = isPadelEvent
     ? [
         {
@@ -433,9 +433,9 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         },
         {
           key: "live",
-          label: "LiveHub",
-          status: liveHubReady ? "ok" : "missing",
-          detail: liveHubReady ? "Visível" : "Desativado",
+          label: "Live",
+          status: liveReady ? "ok" : "missing",
+          detail: liveReady ? "Visível" : "Desativado",
         },
         {
           key: "staff",
@@ -465,10 +465,10 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   if (activePadelCategoryIds.length === 0) generateIssues.push("Sem categorias ativas");
   if (categoriesWithPairings.length === 0) generateIssues.push("Duplas insuficientes (mín. 2)");
 
-  const readyForLive = padelMatchesCount > 0 && liveHubReady;
+  const readyForLive = padelMatchesCount > 0 && liveReady;
   const liveIssues: string[] = [];
   if (padelMatchesCount === 0) liveIssues.push("Sem jogos gerados");
-  if (!liveHubReady) liveIssues.push("LiveHub desativado");
+  if (!liveReady) liveIssues.push("Live desativado");
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
   const publicPageHref = `/eventos/${event.slug}`;
@@ -766,7 +766,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                     </a>
                   )}
                   <a href={liveHref} className={CTA_SECONDARY}>
-                    LiveHub
+                    Live
                   </a>
                 </div>
               )}
