@@ -8,7 +8,7 @@ function readLocal(pathname: string) {
 
 describe("padel live participant guardrails (D18.07, D18.13)", () => {
   it("livehub resolve participante Padel via entitlement + PadelRegistration (não via TournamentEntry)", () => {
-    const content = readLocal("app/api/livehub/[slug]/route.ts");
+    const content = readLocal("app/api/live/events/[slug]/route.ts");
     const match = content.match(/const hasPadelEntitlement[\s\S]*?const isParticipant\s*=/);
     expect(match).toBeTruthy();
     const block = match?.[0] ?? "";

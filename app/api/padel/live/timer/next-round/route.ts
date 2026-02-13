@@ -369,14 +369,16 @@ async function _POST(req: NextRequest) {
   if (!event?.organizationId || event.templateType !== "PADEL" || !event.padelTournamentConfig) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = event.organizationId;
+  const tournamentConfigId = event.padelTournamentConfig.id;
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: event.organizationId,
+    organizationId,
     roles: WRITE_ROLES,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   const permission = await ensureMemberModuleAccess({
-    organizationId: event.organizationId,
+    organizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,
@@ -409,13 +411,13 @@ async function _POST(req: NextRequest) {
       format === "MEXICANO"
         ? await recomposeMexicanoForNextRound(tx, {
             eventId: event.id,
-            organizationId: event.organizationId,
+            organizationId,
             roundNumber: nextTimerState.roundNumber,
           })
         : null;
 
     const updated = await tx.padelTournamentConfig.update({
-      where: { id: event.padelTournamentConfig.id },
+      where: { id: tournamentConfigId },
       data: {
         advancedSettings: {
           ...advanced,
@@ -429,7 +431,7 @@ async function _POST(req: NextRequest) {
   });
 
   await recordOrganizationAuditSafe({
-    organizationId: event.organizationId,
+    organizationId,
     actorUserId: user.id,
     action: "PADEL_LIVE_TIMER_NEXT_ROUND",
     entityType: "event",

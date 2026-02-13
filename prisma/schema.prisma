@@ -249,6 +249,8 @@ model Organization {
   padelTeams              PadelTeam[]
   padelCommunityPosts     PadelCommunityPost[]
   padelPlayers            PadelPlayerProfile[]
+  padelTournamentParticipants PadelTournamentParticipant[]
+  padelRounds             PadelRound[]
   padelRankingEntries     PadelRankingEntry[]
   padelRatingProfiles     PadelRatingProfile[]
   padelRatingEvents       PadelRatingEvent[]
@@ -1803,6 +1805,8 @@ model Event {
   notificationMutes                 NotificationMute[]
   eventMatchSlots                  EventMatchSlot[]
   padelPairings                     PadelPairing[]
+  padelTournamentParticipants       PadelTournamentParticipant[]
+  padelRounds                       PadelRound[]
   padelRankingEntries               PadelRankingEntry[]
   padelTournamentConfig             PadelTournamentConfig?
   padelTournamentTierApproval       PadelTournamentTierApproval?
@@ -2728,6 +2732,7 @@ model PadelPlayerProfile {
   organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   crmContact       CrmContact?            @relation(fields: [crmContactId], references: [id], onDelete: SetNull)
   users         users?              @relation(fields: [userId], references: [id], onUpdate: NoAction)
+  tournamentParticipants PadelTournamentParticipant[]
   rankings      PadelRankingEntry[]
   ratingProfile PadelRatingProfile?
   ratingEvents  PadelRatingEvent[]
@@ -2840,6 +2845,8 @@ model PadelCategory {
   organization         Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   matchSlots        EventMatchSlot[]
   pairings          PadelPairing[]
+  tournamentParticipants PadelTournamentParticipant[]
+  padelRounds       PadelRound[]
   tournamentConfigs PadelTournamentConfig[]
   tournamentEntries TournamentEntry[]
   eventLinks        PadelEventCategoryLink[]
@@ -3203,6 +3210,7 @@ model PadelPairing {
   matchSlotsA                 EventMatchSlot[]            @relation("MatchPairingA")
   matchSlotsB                 EventMatchSlot[]            @relation("MatchPairingB")
   matchSlotsWinner            EventMatchSlot[]            @relation("MatchWinnerPairing")
+  sourceTournamentParticipants PadelTournamentParticipant[] @relation("TournamentParticipantSourcePairing")
   slots                       PadelPairingSlot[]
   category                    PadelCategory?              @relation(fields: [categoryId], references: [id])
   event                       Event                       @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -3394,6 +3402,9 @@ model EventMatchSlot {
   groupLabel      String?            @map("group_label")
   roundType       String?            @map("round_type")
   winnerPairingId Int?               @map("winner_pairing_id")
+  winnerParticipantId Int?           @map("winner_participant_id")
+  roundId         Int?               @map("round_id")
+  scoreMode       PadelScoreMode     @default(SETS) @map("score_mode")
   scoreSets       Json?              @map("score_sets")
   courtName       String?            @map("court_name")
   category        PadelCategory?     @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
@@ -3402,10 +3413,98 @@ model EventMatchSlot {
   pairingA        PadelPairing?      @relation("MatchPairingA", fields: [pairingAId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_a_fk")
   pairingB        PadelPairing?      @relation("MatchPairingB", fields: [pairingBId], references: [id], onUpdate: NoAction, map: "padel_matches_pairing_b_fk")
   winnerPairing   PadelPairing?      @relation("MatchWinnerPairing", fields: [winnerPairingId], references: [id], onUpdate: NoAction, map: "padel_matches_winner_fk")
+  winnerParticipant PadelTournamentParticipant? @relation("MatchWinnerParticipant", fields: [winnerParticipantId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "padel_matches_winner_participant_fk")
+  round           PadelRound?        @relation(fields: [roundId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "padel_matches_round_fk")
+  participants    PadelMatchParticipant[]
 
   @@index([pairingAId, pairingBId], map: "padel_matches_pairings_idx")
   @@index([courtId], map: "padel_matches_court_idx")
+  @@index([roundId], map: "padel_matches_round_idx")
+  @@index([winnerParticipantId], map: "padel_matches_winner_participant_idx")
   @@map("padel_matches")
+  @@schema("app_v3")
+}
+
+/// Participante competitivo canónico por evento/categoria (jogador individual)
+model PadelTournamentParticipant {
+  env            String                          @default("prod")
+  id             Int                             @id @default(autoincrement())
+  eventId        Int                             @map("event_id")
+  categoryId     Int?                            @map("category_id")
+  organizationId Int                             @map("organization_id")
+  playerProfileId Int                            @map("player_profile_id")
+  sourcePairingId Int?                           @map("source_pairing_id")
+  status         PadelTournamentParticipantStatus @default(ACTIVE)
+  seedRank       Int?                            @map("seed_rank")
+  createdAt      DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event          Event                           @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category       PadelCategory?                  @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  organization   Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  playerProfile  PadelPlayerProfile              @relation(fields: [playerProfileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sourcePairing  PadelPairing?                   @relation("TournamentParticipantSourcePairing", fields: [sourcePairingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  winnerInMatches EventMatchSlot[]               @relation("MatchWinnerParticipant")
+  matchParticipations PadelMatchParticipant[]
+
+  @@unique([eventId, categoryId, playerProfileId], map: "padel_tournament_participants_event_category_player_uq")
+  @@index([eventId, categoryId], map: "padel_tournament_participants_event_category_idx")
+  @@index([organizationId], map: "padel_tournament_participants_org_idx")
+  @@index([status], map: "padel_tournament_participants_status_idx")
+  @@index([sourcePairingId], map: "padel_tournament_participants_source_pairing_idx")
+  @@map("padel_tournament_participants")
+  @@schema("app_v3")
+}
+
+/// Ronda canónica de operação live por evento/categoria/fase
+model PadelRound {
+  env             String              @default("prod")
+  id              Int                 @id @default(autoincrement())
+  eventId         Int                 @map("event_id")
+  categoryId      Int?                @map("category_id")
+  organizationId  Int                 @map("organization_id")
+  roundKey        String              @unique(map: "padel_rounds_round_key_uq") @map("round_key")
+  phase           PadelRoundPhase
+  roundNumber     Int                 @default(1) @map("round_number")
+  groupLabel      String?             @map("group_label")
+  state           PadelRoundState     @default(PENDING)
+  scoreMode       PadelScoreMode      @default(SETS) @map("score_mode")
+  durationSeconds Int?                @map("duration_seconds")
+  startsAt        DateTime?           @map("starts_at") @db.Timestamptz(6)
+  endsAt          DateTime?           @map("ends_at") @db.Timestamptz(6)
+  timerState      PadelRoundTimerState @default(IDLE) @map("timer_state")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event           Event               @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category        PadelCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  matches         EventMatchSlot[]
+
+  @@index([eventId, categoryId], map: "padel_rounds_event_category_idx")
+  @@index([phase, roundNumber], map: "padel_rounds_phase_round_number_idx")
+  @@index([state], map: "padel_rounds_state_idx")
+  @@map("padel_rounds")
+  @@schema("app_v3")
+}
+
+/// Mapeamento de participantes por lado em cada jogo
+model PadelMatchParticipant {
+  env           String               @default("prod")
+  id            Int                  @id @default(autoincrement())
+  matchId       Int                  @map("match_id")
+  participantId Int                  @map("participant_id")
+  side          PadelMatchSide
+  slotOrder     Int                  @default(0) @map("slot_order")
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  match         EventMatchSlot       @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  participant   PadelTournamentParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([matchId, participantId], map: "padel_match_participants_match_participant_uq")
+  @@index([matchId, side], map: "padel_match_participants_match_side_idx")
+  @@index([participantId], map: "padel_match_participants_participant_idx")
+  @@map("padel_match_participants")
   @@schema("app_v3")
 }
 
@@ -6281,6 +6380,54 @@ enum PadelTournamentTierApprovalStatus {
   PENDING
   APPROVED
   REJECTED
+
+  @@schema("app_v3")
+}
+
+enum PadelTournamentParticipantStatus {
+  ACTIVE
+  INACTIVE
+  WITHDRAWN
+
+  @@schema("app_v3")
+}
+
+enum PadelRoundPhase {
+  GROUPS
+  PLAYOFF
+  NON_STOP
+  ROUND_ROBIN
+
+  @@schema("app_v3")
+}
+
+enum PadelRoundState {
+  PENDING
+  LIVE
+  CLOSED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelRoundTimerState {
+  IDLE
+  RUNNING
+  STOPPED
+
+  @@schema("app_v3")
+}
+
+enum PadelMatchSide {
+  A
+  B
+
+  @@schema("app_v3")
+}
+
+enum PadelScoreMode {
+  SETS
+  TIMED_GAMES
 
   @@schema("app_v3")
 }

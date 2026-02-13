@@ -75,9 +75,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!isCaptain && !isStaff) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
+  const organizationId = pairing.event.organizationId;
+  if (!organizationId) {
+    return jsonWrap({ ok: false, error: "EVENT_ORGANIZATION_REQUIRED" }, { status: 409 });
+  }
   if (isCaptain && !isStaff) {
     const ratingGate = await ensurePadelRatingActionAllowed({
-      organizationId: pairing.event.organizationId,
+      organizationId,
       userId: user.id,
     });
     if (!ratingGate.ok) {

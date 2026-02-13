@@ -1344,10 +1344,15 @@ function LiveHubTv({
                       <p className="text-white/60">{t("noStandings", locale)}</p>
                     )}
                     {(group.standings ?? []).map((row: any, idx: number) => (
-                      <div key={`tv-group-${group.id}-${row.pairingId}`} className="flex items-center justify-between text-white/80">
+                      <div key={`tv-group-${group.id}-${row.entityId}`} className="flex items-center justify-between text-white/80">
                         <div className="flex items-center gap-3">
                           <span className="text-white/50">{idx + 1}</span>
-                          {renderPairingName(row.pairingId, pairings)}
+                          {row.label ||
+                            (typeof row.pairingId === "number"
+                              ? renderPairingName(row.pairingId, pairings)
+                              : typeof row.playerId === "number"
+                                ? `Jogador #${row.playerId}`
+                                : `Entidade #${row.entityId}`)}
                         </div>
                         <span className="text-white/50">{row.wins}-{row.losses}</span>
                       </div>
@@ -2792,7 +2797,7 @@ export default function EventLiveClient({
   const isOrganizationRoute = Boolean(pathname && pathname.startsWith("/org/"));
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const url = useMemo(() => `/api/livehub/${slug}`, [slug]);
+  const url = useMemo(() => `/api/live/events/${slug}`, [slug]);
   const { data, error, mutate } = useSWR(url, fetcher, { refreshInterval: 10000 });
   const onRefresh = () => {
     void mutate();
@@ -3502,10 +3507,15 @@ export default function EventLiveClient({
                         )}
                         {(group.standings ?? []).map((row: any, idx: number) => {
                           return (
-                            <div key={`group-${group.id}-row-${row.pairingId}`} className="flex items-center justify-between text-sm text-white/80">
+                            <div key={`group-${group.id}-row-${row.entityId}`} className="flex items-center justify-between text-sm text-white/80">
                               <div className="flex items-center gap-3">
                                 <span className="text-white/50">{idx + 1}</span>
-                                {renderPairingName(row.pairingId, pairings)}
+                                {row.label ||
+                                  (typeof row.pairingId === "number"
+                                    ? renderPairingName(row.pairingId, pairings)
+                                    : typeof row.playerId === "number"
+                                      ? `Jogador #${row.playerId}`
+                                      : `Entidade #${row.entityId}`)}
                               </div>
                               <span className="text-white/50">{row.wins}-{row.losses}</span>
                             </div>

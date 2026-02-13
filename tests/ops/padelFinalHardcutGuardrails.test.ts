@@ -46,10 +46,13 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("mantém consistência de desempate determinístico no livehub padel", () => {
-    const livehub = readLocal("app/api/livehub/[slug]/route.ts");
-    expect(livehub).toContain("tieBreakRulesForPadelFormat");
-    expect(livehub).toContain("drawOrderSeed");
-    expect(livehub).toContain("computePadelStandingsByGroupForPlayers");
+    const liveCanonical = readLocal("app/api/live/events/[slug]/route.ts");
+    const livehubDeprecated = readLocal("app/api/livehub/[slug]/route.ts");
+    expect(liveCanonical).toContain("tieBreakRulesForPadelFormat");
+    expect(liveCanonical).toContain("drawOrderSeed");
+    expect(liveCanonical).toContain("computePadelStandingsByGroupForPlayers");
+    expect(livehubDeprecated).toContain("LIVEHUB_ROUTE_DEPRECATED");
+    expect(livehubDeprecated).toContain("/api/live/events/");
   });
 
   it("força rotação individual em AMERICANO/MEXICANO no gerador canónico", () => {

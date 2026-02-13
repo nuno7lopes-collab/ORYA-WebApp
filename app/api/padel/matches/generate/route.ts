@@ -8,6 +8,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
+import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
@@ -97,6 +98,21 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: result.error }, { status: 409 });
     }
     return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });
+  }
+
+  try {
+    const syncResult = await syncPadelCompetitiveCore({
+      eventId,
+      categoryId: resolvedCategoryId ?? null,
+    });
+    if (!syncResult.ok) {
+      console.warn("[padel/matches/generate] competitive core sync skipped", {
+        eventId,
+        categoryId: resolvedCategoryId ?? null,
+      });
+    }
+  } catch (syncError) {
+    console.warn("[padel/matches/generate] competitive core sync failed (non-blocking)", syncError);
   }
 
   if (isGroupsFormat && phaseNormalized !== "KNOCKOUT") {

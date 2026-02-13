@@ -9,6 +9,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { isValidScore } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
 import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
@@ -370,6 +371,21 @@ async function _POST(req: NextRequest) {
       },
     },
   });
+
+  try {
+    const syncResult = await syncPadelCompetitiveCore({
+      eventId: match.eventId,
+      categoryId: (updated as { categoryId?: number | null }).categoryId ?? null,
+    });
+    if (!syncResult.ok) {
+      console.warn("[padel/matches] competitive core sync skipped", {
+        eventId: match.eventId,
+        categoryId: (updated as { categoryId?: number | null }).categoryId ?? null,
+      });
+    }
+  } catch (syncError) {
+    console.warn("[padel/matches] competitive core sync failed (non-blocking)", syncError);
+  }
 
   return respondOk(ctx, { match: updated, outboxEventId }, { status: 200 });
 }

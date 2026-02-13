@@ -11,6 +11,12 @@ import AuthRequiredCard from "./AuthRequiredCard";
 import { buildClientFingerprint, buildDeterministicIdemKey } from "./checkoutUtils";
 import { validateGuestDetails } from "./checkoutValidation";
 import { getStripePublishableKey } from "@/lib/stripePublic";
+import {
+  mapIntentErrorToUi,
+  shouldAutoRetryTerminalIntent,
+  type IntentCycleState,
+  type IntentErrorPayload,
+} from "./intentErrorUtils";
 
 type TicketCopy = ReturnType<typeof getTicketCopy>;
 
@@ -127,8 +133,13 @@ export default function Step2Pagamento() {
   const [promoWarning, setPromoWarning] = useState<string | null>(null);
   const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"mbway" | "card">("mbway");
+  const [intentCycleState, setIntentCycleState] = useState<IntentCycleState>("IDLE");
+  const [intentRetryToken, setIntentRetryToken] = useState(0);
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
+  const cycleGuardRef = useRef<string | null>(null);
+  const terminalRetryCycleKeyRef = useRef<string | null>(null);
+  const terminalRetryCountRef = useRef(0);
   const lastClearedFingerprintRef = useRef<string | null>(null);
   const idempotencyMismatchCountRef = useRef(0);
   const loadErrorCountRef = useRef(0);
@@ -152,6 +163,8 @@ export default function Step2Pagamento() {
     setClientSecret(null);
     setServerAmount(null);
     setBreakdown(null);
+    setIntentCycleState("IDLE");
+    setIntentRetryToken(0);
     lastIntentKeyRef.current = null;
     inFlightIntentRef.current = null;
     if (safeDados) {
@@ -389,17 +402,22 @@ export default function Step2Pagamento() {
   useEffect(() => {
     // Se não houver dados de checkout, mandamos de volta
     if (!payload) {
+      setIntentCycleState("IDLE");
       irParaPasso(1);
       return;
     }
 
     if (needsStripe && !stripeConfigured) {
+      setIntentCycleState("FAILED");
       setError("Configuração de pagamentos indisponível. Tenta novamente mais tarde.");
       setLoading(false);
       return;
     }
     // Enquanto não sabemos se está logado, não fazemos nada
-    if (!authChecked) return;
+    if (!authChecked) {
+      setIntentCycleState("IDLE");
+      return;
+    }
 
     const isGuestFlow = purchaseMode === "guest";
     const hasGuestSubmission = guestSubmitVersion > 0;
@@ -415,6 +433,7 @@ export default function Step2Pagamento() {
 
     // Se não está logado e ainda não escolheu convidado, mostramos UI e não chamamos a API
     if (!userId && !guestReady) {
+      setIntentCycleState("IDLE");
       setLoading(false);
       setClientSecret(null);
       setServerAmount(null);
@@ -464,8 +483,18 @@ export default function Step2Pagamento() {
       (safeDados?.additional as Record<string, unknown> | undefined)?.idempotencyKey ??
       (payload as any)?.idempotencyKey ??
       null;
-    const stableIdempotencyKey = buildDeterministicIdemKey(clientFingerprint);
+    const stableIdemFingerprint =
+      intentRetryToken > 0
+        ? `${clientFingerprint}:recovery:${intentRetryToken}`
+        : clientFingerprint;
+    const stableIdempotencyKey = buildDeterministicIdemKey(stableIdemFingerprint);
     const currentIdempotencyKey = existingIdempotencyKey ?? stableIdempotencyKey ?? null;
+    const cycleGuardKey = `${clientFingerprint}|${purchaseMode}|${paymentMethod}`;
+
+    if (terminalRetryCycleKeyRef.current !== cycleGuardKey) {
+      terminalRetryCycleKeyRef.current = cycleGuardKey;
+      terminalRetryCountRef.current = 0;
+    }
 
     const existingIntentFingerprint =
       typeof (additionalObj as any).intentFingerprint === "string"
@@ -511,6 +540,7 @@ export default function Step2Pagamento() {
         },
       });
 
+      setIntentCycleState("IDLE");
       setLoading(false);
       return;
     }
@@ -547,6 +577,7 @@ export default function Step2Pagamento() {
       setBreakdown(cachedIntent.breakdown);
       setAppliedDiscount(cachedIntent.discount);
       setAppliedPromoLabel(cachedIntent.promoLabel ?? null);
+      setIntentCycleState("READY");
       lastIntentKeyRef.current = intentKey;
       setLoading(false);
       if (cachedIntent.freeCheckout) {
@@ -558,6 +589,7 @@ export default function Step2Pagamento() {
 
     // Se já temos clientSecret para o mesmo payload, não refazemos
     if (clientSecret && lastIntentKeyRef.current === intentKey) {
+      setIntentCycleState("READY");
       setLoading(false);
       return;
     }
@@ -566,6 +598,9 @@ export default function Step2Pagamento() {
     // (ex.: Strict Mode cancela a primeira run e deixa loading a true), limpamos o ref
     // para voltar a tentar.
     if (inFlightIntentRef.current === intentKey) {
+      if (cycleGuardRef.current === cycleGuardKey) {
+        return;
+      }
       const stuck =
         loading &&
         !clientSecret &&
@@ -581,14 +616,18 @@ export default function Step2Pagamento() {
     async function createIntent() {
       try {
         inFlightIntentRef.current = intentKey;
+        cycleGuardRef.current = cycleGuardKey;
+        setIntentCycleState("PREPARING");
         setLoading(true);
         setError(null);
         setBreakdown(null);
 
-        console.log(
-          "[Step2Pagamento] A enviar payload para /api/payments/intent:",
-          payload,
-        );
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[Step2Pagamento.intent] start", {
+            cycleGuardKey,
+            idempotencyKey: currentIdempotencyKey,
+          });
+        }
 
         const idem = currentIdempotencyKey;
 
@@ -597,8 +636,9 @@ export default function Step2Pagamento() {
         let currentPayload = { ...payload };
         delete (currentPayload as any).purchaseId;
         let currentIntentFingerprint = undefined;
+        let currentIdemKey = idem;
         let res: Response | null = null;
-        let data: any = null;
+        let data: IntentErrorPayload | null = null;
 
         while (attempt < 2) {
           res = await fetch("/api/payments/intent", {
@@ -611,16 +651,34 @@ export default function Step2Pagamento() {
               guest: guestPayload ?? undefined,
               requiresAuth,
               purchaseId: null,
-              idempotencyKey: idem,
+              idempotencyKey: currentIdemKey,
               intentFingerprint: currentIntentFingerprint ?? undefined,
             }),
           });
 
-          data = await res.json().catch(() => null);
+          data = (await res.json().catch(() => null)) as IntentErrorPayload | null;
 
           if (res.status === 409) {
+            const canAutoRetryTerminal = shouldAutoRetryTerminalIntent({
+              status: res.status,
+              data,
+              retryCount: terminalRetryCountRef.current,
+              maxRetry: 1,
+            });
+
+            if (!canAutoRetryTerminal) {
+              break;
+            }
+
             attempt += 1;
-            // Reset total: limpar caches e fazer um retry sem anchors próprias.
+            terminalRetryCountRef.current += 1;
+            const retryToken = terminalRetryCountRef.current;
+            const retryFingerprint = `${clientFingerprint}:terminal-retry:${retryToken}`;
+            const nextRetryIdemKey =
+              buildDeterministicIdemKey(retryFingerprint) ?? currentIdemKey;
+            currentIdemKey = nextRetryIdemKey;
+
+            // Reset controlado: só para PI terminal recuperável.
             currentPayload = { ...payload };
             delete (currentPayload as any).purchaseId;
             currentIntentFingerprint = undefined;
@@ -632,6 +690,8 @@ export default function Step2Pagamento() {
               setBreakdown(null);
               lastIntentKeyRef.current = null;
               inFlightIntentRef.current = null;
+              setIntentRetryToken((prev) => prev + 1);
+              setPromoWarning("A sessão de pagamento expirou. Estamos a gerar um novo intento.");
               try {
                 atualizarDados({
                   additional: {
@@ -642,11 +702,20 @@ export default function Step2Pagamento() {
                     appliedPromoLabel: undefined,
                     clientFingerprint,
                     intentFingerprint: undefined,
-                    idempotencyKey: undefined,
+                    idempotencyKey: currentIdemKey ?? undefined,
                   },
                 });
               } catch {}
             }
+
+            if (process.env.NODE_ENV === "development") {
+              console.debug("[Step2Pagamento.intent] terminal retry", {
+                cycleGuardKey,
+                retryToken,
+                nextRetryIdemKey,
+              });
+            }
+
             continue;
           }
 
@@ -658,7 +727,7 @@ export default function Step2Pagamento() {
           if (!cancelled) {
             setBreakdown(null);
             setError("Falha ao contactar o servidor. Tenta novamente.");
-            setLoading(false);
+            setIntentCycleState("FAILED");
           }
           return;
         }
@@ -667,53 +736,38 @@ export default function Step2Pagamento() {
           if (!cancelled) {
             setBreakdown(null);
             setError("Resposta inválida do servidor. Tenta novamente.");
+            setIntentCycleState("FAILED");
           }
           return;
         }
-        console.log("[Step2Pagamento] Resposta de /api/payments/intent:", {
-          status: res.status,
-          ok: res.ok,
-          data,
-        });
+
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[Step2Pagamento.intent] response", {
+            status: res.status,
+            ok: res.ok,
+            data,
+          });
+        }
 
         const respCode = typeof data?.code === "string" ? data.code : null;
 
-        // 409 ➜ idempotencyKey reutilizada com payload diferente (proteção contra intents errados/duplicados)
+        // 409 final desta run (sem auto-retry adicional) -> mostrar erro final e parar ciclo.
         if (res.status === 409) {
+          const mapped = mapIntentErrorToUi({
+            status: res.status,
+            data,
+            fallbackMessage: "Não foi possível preparar o pagamento.",
+          });
           if (!cancelled) {
-            // Reset total para forçar recalcular (idempotencyKey + purchaseId + PI state)
             setCachedIntent(null);
             setClientSecret(null);
             setServerAmount(null);
             setBreakdown(null);
             lastIntentKeyRef.current = null;
             inFlightIntentRef.current = null;
-
-            const nextIdemKey = buildDeterministicIdemKey(clientFingerprint);
-
-            try {
-              atualizarDados({
-                additional: {
-                  ...(safeDados?.additional ?? {}),
-                  purchaseId: null,
-                  paymentIntentId: undefined,
-                  freeCheckout: undefined,
-                  appliedPromoLabel: undefined,
-                  clientFingerprint,
-                  intentFingerprint: undefined,
-                  idempotencyKey: nextIdemKey ?? undefined,
-                },
-              });
-            } catch {}
-
-            // Força novo ciclo de preparação (especialmente útil em guest flow)
-            setGuestSubmitVersion((v) => v + 1);
-            setPromoWarning(
-              typeof (data as any)?.error === "string"
-                ? (data as any).error
-                : "O teu checkout mudou e estamos a recalcular o pagamento…",
-            );
-            setError(null);
+            setIntentCycleState("FAILED");
+            setPromoWarning(null);
+            setError(mapped.message);
           }
           return;
         }
@@ -735,6 +789,7 @@ export default function Step2Pagamento() {
 
           if (mustAuth) {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               setPurchaseMode("auth");
               setGuestSubmitVersion(0);
               setGuestErrors({});
@@ -752,6 +807,7 @@ export default function Step2Pagamento() {
 
           // Guest permitido, mas algo correu mal (ex.: backend rejeitou por sessão)
           if (!cancelled) {
+            setIntentCycleState("FAILED");
             setError(
               typeof data?.error === "string"
                 ? data.error
@@ -764,6 +820,7 @@ export default function Step2Pagamento() {
         // 403 ➜ utilizador autenticado mas falta username (free checkout)
         if (res.status === 403 && respCode === "USERNAME_REQUIRED") {
           if (!cancelled) {
+            setIntentCycleState("FAILED");
             setPurchaseMode("auth");
             setGuestSubmitVersion(0);
             setGuestErrors({});
@@ -785,6 +842,7 @@ export default function Step2Pagamento() {
 
           if (respCode === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               // Limita a 1 retentativa local para evitar loops de 409
               if (idempotencyMismatchCountRef.current >= 1) {
                 setError(
@@ -832,6 +890,7 @@ export default function Step2Pagamento() {
 
           if (respCode === "USERNAME_REQUIRED_FOR_FREE") {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               setError("Este evento gratuito requer sessão com username definido.");
               setPurchaseMode("auth");
               setAuthInfo(`Inicia sessão e define um username para concluir a ${freeLabelLower}.`);
@@ -841,6 +900,7 @@ export default function Step2Pagamento() {
 
           if (respCode === "INVITE_REQUIRED") {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               setError("Este evento é apenas por convite.");
               const inviteCopy = userId
                 ? "O teu acesso não está na lista. Confirma o email/username convidado."
@@ -861,6 +921,7 @@ export default function Step2Pagamento() {
 
           if (respCode === "ORGANIZATION_PAYMENTS_NOT_READY") {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               const missingEmail = Boolean(data?.missingEmail);
               const missingStripe = Boolean(data?.missingStripe);
               setError(
@@ -883,9 +944,11 @@ export default function Step2Pagamento() {
 
           if (respCode === "ORGANIZATION_STRIPE_NOT_CONNECTED") {
             if (!cancelled) {
+              setIntentCycleState("FAILED");
               setError(
-                data?.message ||
-                  "Pagamentos desativados para este evento enquanto o organização não ligar a Stripe.",
+                (typeof data?.message === "string" && data.message.trim()
+                  ? data.message
+                  : "Pagamentos desativados para este evento enquanto o organização não ligar a Stripe."),
               );
               setAuthInfo("Liga a Stripe em Finanças & Payouts para ativares pagamentos.");
             }
@@ -898,6 +961,7 @@ export default function Step2Pagamento() {
             data.error.toLowerCase().includes("código");
 
           if (promoFail && !cancelled) {
+            setIntentCycleState("FAILED");
             setPromoWarning("Código não aplicado. Continuas sem desconto.");
             setPromoCode("");
             setAppliedDiscount(0);
@@ -908,6 +972,7 @@ export default function Step2Pagamento() {
           }
 
           if (!cancelled) {
+            setIntentCycleState("FAILED");
             setError(
               respCode === "PRICE_CHANGED"
                 ? "Os preços mudaram. Volta ao passo anterior e revê a seleção."
@@ -954,7 +1019,7 @@ export default function Step2Pagamento() {
           const promoLabel =
             promoCode?.trim()
               ? promoCode.trim()
-              : data.discountCents && data.discountCents > 0
+              : typeof data?.discountCents === "number" && data.discountCents > 0
                 ? "Promo automática"
                 : null;
           const isAutoAppliedPromo = !promoCode?.trim() && Boolean(promoLabel);
@@ -994,6 +1059,7 @@ export default function Step2Pagamento() {
             setClientSecret(null);
             setServerAmount(null);
             setBreakdown(null);
+            setIntentCycleState("FAILED");
             setError(typeof data?.error === "string" ? data.error : "Pagamento falhou.");
             return;
           }
@@ -1026,6 +1092,7 @@ export default function Step2Pagamento() {
               },
             });
             lastIntentKeyRef.current = intentKey;
+            setIntentCycleState("READY");
             irParaPasso(3);
             return;
           }
@@ -1071,14 +1138,19 @@ export default function Step2Pagamento() {
             autoAppliedPromo: isAutoAppliedPromo,
             purchaseId: purchaseIdFromServer ?? null,
           });
+          setIntentCycleState("READY");
         }
       } catch (err) {
         console.error("Erro ao criar PaymentIntent:", err);
         if (!cancelled) {
+          setIntentCycleState("FAILED");
           setError("Erro inesperado ao preparar o pagamento.");
         }
       } finally {
         if (!cancelled) setLoading(false);
+        if (cycleGuardRef.current === cycleGuardKey) {
+          cycleGuardRef.current = null;
+        }
         if (inFlightIntentRef.current === intentKey) {
           inFlightIntentRef.current = null;
         }
@@ -1100,6 +1172,8 @@ export default function Step2Pagamento() {
     purchaseMode,
     guestSubmitVersion,
     cachedIntent,
+    intentRetryToken,
+    paymentMethod,
   ]);
 
   if (!safeDados) {
@@ -1139,6 +1213,7 @@ export default function Step2Pagamento() {
     loadErrorCountRef.current += 1;
 
     setError("Sessão de pagamento expirou. Vamos criar um novo intento.");
+    setIntentCycleState("PREPARING");
     setLoading(true);
 
     setCachedIntent(null);
@@ -1147,13 +1222,18 @@ export default function Step2Pagamento() {
     setBreakdown(null);
     lastIntentKeyRef.current = null;
     inFlightIntentRef.current = null;
+    setIntentRetryToken((prev) => prev + 1);
     setGuestSubmitVersion((v) => v + 1);
 
     const fingerprintFromState =
       typeof (safeDados?.additional as Record<string, unknown> | undefined)?.clientFingerprint === "string"
         ? String((safeDados?.additional as Record<string, unknown>).clientFingerprint)
         : null;
-    const nextIdemKey = buildDeterministicIdemKey(fingerprintFromState);
+    const nextIdemKey = buildDeterministicIdemKey(
+      fingerprintFromState
+        ? `${fingerprintFromState}:element-recovery:${loadErrorCountRef.current}`
+        : `element-recovery:${loadErrorCountRef.current}`,
+    );
 
     atualizarDados({
       additional: {
@@ -1182,11 +1262,13 @@ export default function Step2Pagamento() {
   // Callback para continuar como convidado
   const handleGuestContinue = () => {
     if (requiresAuth) {
+      setIntentCycleState("FAILED");
       setError("Este tipo de checkout requer sessão iniciada.");
       setPurchaseMode("auth");
       setAuthInfo("Inicia sessão para continuar.");
       return;
     }
+    setIntentCycleState("IDLE");
     setError(null);
     setGuestAttemptVersion((v) => v + 1);
     const validation = validateGuestDetails(
@@ -1211,6 +1293,7 @@ export default function Step2Pagamento() {
     setGuestErrors(nextErrors);
 
     if (validation.hasErrors || !guestConsent) {
+      setIntentCycleState("FAILED");
       setError("Revê os dados e o consentimento para continuar como convidado.");
       return;
     }
@@ -1237,6 +1320,7 @@ export default function Step2Pagamento() {
     setPurchaseMode("guest");
     setClientSecret(null);
     setServerAmount(null);
+    setIntentRetryToken(0);
     setGuestSubmitVersion((v) => v + 1);
   };
 
@@ -1254,6 +1338,8 @@ export default function Step2Pagamento() {
     setBreakdown(null);
     setClientSecret(null);
     setServerAmount(null);
+    setIntentCycleState("IDLE");
+    setIntentRetryToken(0);
     setGuestSubmitVersion((v) => v + 1);
 
     try {
@@ -1291,7 +1377,7 @@ export default function Step2Pagamento() {
     : "Inicia sessão para continuar.";
 
   return (
-    <div className="flex flex-col gap-6 text-white">
+    <div className="flex flex-col gap-6 text-white" data-intent-state={intentCycleState}>
       <Step2Header
         isGratisScenario={isGratisScenario}
         freeHeaderLabel={freeHeaderLabel}
@@ -1352,6 +1438,8 @@ export default function Step2Pagamento() {
             setClientSecret(null);
             setServerAmount(null);
             setBreakdown(null);
+            setIntentCycleState("IDLE");
+            setIntentRetryToken(0);
             lastIntentKeyRef.current = null;
             inFlightIntentRef.current = null;
             setPromoCode(promoInput.trim());

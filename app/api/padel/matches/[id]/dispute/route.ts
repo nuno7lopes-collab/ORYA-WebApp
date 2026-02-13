@@ -91,16 +91,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = match.event.organizationId;
 
   const participant = isParticipant(match, user.id);
   if (!participant) {
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: match.event.organizationId,
+      organizationId,
       roles: ROLE_ALLOWLIST,
     });
     if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     const permission = await ensureMemberModuleAccess({
-      organizationId: match.event.organizationId,
+      organizationId,
       userId: user.id,
       role: membership.role,
       rolePack: membership.rolePack,
@@ -132,7 +133,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.event.id,
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     beforeStatus: match.status ?? null,
     eventType: SYSTEM_MATCH_EVENT,
@@ -153,7 +154,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
 
   await recordOrganizationAuditSafe({
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     action: "PADEL_MATCH_DISPUTE_OPEN",
     metadata: {
@@ -167,14 +168,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const openActions = await prisma.$transaction((tx) =>
     reconcilePadelDisputeAntiFraud({
       tx,
-      organizationId: match.event.organizationId,
+      organizationId,
       userId: user.id,
       actorUserId: user.id,
     }),
   );
   for (const action of openActions) {
     await recordOrganizationAuditSafe({
-      organizationId: match.event.organizationId,
+      organizationId,
       actorUserId: user.id,
       action: action.kind === "APPLIED" ? "PADEL_RATING_SANCTION_AUTO_APPLIED" : "PADEL_RATING_SANCTION_AUTO_RESOLVED",
       metadata: {
@@ -220,14 +221,15 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   if (!match || !match.event?.organizationId) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
+  const organizationId = match.event.organizationId;
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: match.event.organizationId,
+    organizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   const permission = await ensureMemberModuleAccess({
-    organizationId: match.event.organizationId,
+    organizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,
@@ -282,7 +284,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.event.id,
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     beforeStatus: match.status ?? null,
     eventType: SYSTEM_MATCH_EVENT,
@@ -302,7 +304,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   });
 
   await recordOrganizationAuditSafe({
-    organizationId: match.event.organizationId,
+    organizationId,
     actorUserId: user.id,
     action: "PADEL_MATCH_DISPUTE_RESOLVE",
     metadata: {
@@ -320,14 +322,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const resolveActions = await prisma.$transaction((tx) =>
       reconcilePadelDisputeAntiFraud({
         tx,
-        organizationId: match.event.organizationId,
+        organizationId,
         userId: disputedByUserId,
         actorUserId: user.id,
       }),
     );
     for (const action of resolveActions) {
       await recordOrganizationAuditSafe({
-        organizationId: match.event.organizationId,
+        organizationId,
         actorUserId: user.id,
         action: action.kind === "APPLIED" ? "PADEL_RATING_SANCTION_AUTO_APPLIED" : "PADEL_RATING_SANCTION_AUTO_RESOLVED",
         metadata: {

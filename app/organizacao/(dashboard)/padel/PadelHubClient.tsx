@@ -330,12 +330,73 @@ type CalendarResponse = {
   bufferMinutes?: number | null;
 };
 
+type PartnershipStatus = "PENDING" | "APPROVED" | "PAUSED" | "REVOKED" | "EXPIRED";
+
+type PartnershipAgreement = {
+  id: number;
+  ownerOrganizationId: number;
+  partnerOrganizationId: number;
+  ownerClubId: number;
+  partnerClubId: number | null;
+  status: PartnershipStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  approvedAt: string | null;
+  revokedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+  policy?: {
+    priorityMode: string;
+    ownerOverrideAllowed: boolean;
+    autoCompensationOnOverride: boolean;
+    hardStopMinutesBeforeBooking: number;
+  } | null;
+  windowsCount?: number;
+  activeWindowsCount?: number;
+  activeGrantsCount?: number;
+};
+
+type PartnershipOverride = {
+  id: number;
+  agreementId: number;
+  eventId: number | null;
+  reasonCode: string;
+  reason: string;
+  executionStatus: string | null;
+  createdAt: string;
+  executedAt: string | null;
+};
+
+type PartnershipCompensationCase = {
+  id: number;
+  agreementId: number;
+  overrideId: number | null;
+  status: string;
+  reasonCode: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PartnershipsResponse = {
+  ok: boolean;
+  items?: PartnershipAgreement[];
+  error?: string;
+};
+
+type PartnershipOverridesResponse = {
+  ok: boolean;
+  items?: PartnershipOverride[];
+  compensationCases?: PartnershipCompensationCase[];
+  error?: string;
+};
+
 const PADEL_TABS = [
   "create",
   "tournaments",
   "calendar",
   "manage",
   "clubs",
+  "partnerships",
   "courts",
   "categories",
   "teams",
@@ -349,6 +410,7 @@ type PadelToolMode = "CLUB" | "TOURNAMENTS";
 
 const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
   "clubs",
+  "partnerships",
   "courts",
   "players",
   "community",
@@ -368,6 +430,7 @@ const TAB_LABELS: Record<PadelTab, string> = {
   calendar: "Calendário",
   manage: "Gestão",
   clubs: "Clubes",
+  partnerships: "Parcerias",
   courts: "Courts",
   categories: "Categorias",
   players: "Jogadores",
@@ -392,7 +455,14 @@ const resolvePadelTabParam = (value: string | null, toolMode: PadelToolMode): Pa
   if (!PADEL_TABS.includes(normalized)) return null;
   if (toolMode === "TOURNAMENTS") {
     if (normalized === "categories" || normalized === "teams") return "manage";
-    if (normalized === "clubs" || normalized === "courts" || normalized === "community" || normalized === "trainers" || normalized === "lessons") {
+    if (
+      normalized === "clubs" ||
+      normalized === "partnerships" ||
+      normalized === "courts" ||
+      normalized === "community" ||
+      normalized === "trainers" ||
+      normalized === "lessons"
+    ) {
       return null;
     }
     return normalized;
@@ -487,6 +557,22 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
         ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
         : "border-white/15 bg-white/10 text-white/70"
   }`;
+
+const PARTNERSHIP_STATUS_LABEL: Record<PartnershipStatus, string> = {
+  PENDING: "Pendente",
+  APPROVED: "Aprovado",
+  PAUSED: "Pausado",
+  REVOKED: "Revogado",
+  EXPIRED: "Expirado",
+};
+
+const PARTNERSHIP_STATUS_TONE: Record<PartnershipStatus, string> = {
+  PENDING: "border-amber-300/60 bg-amber-500/10 text-amber-100",
+  APPROVED: "border-emerald-300/60 bg-emerald-500/12 text-emerald-100",
+  PAUSED: "border-orange-300/60 bg-orange-500/10 text-orange-100",
+  REVOKED: "border-rose-300/60 bg-rose-500/12 text-rose-100",
+  EXPIRED: "border-slate-300/40 bg-slate-500/10 text-slate-100",
+};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -1180,6 +1266,9 @@ export default function PadelHubClient({
   const [clubDialog, setClubDialog] = useState<{ club: PadelClub; nextActive: boolean } | null>(null);
   const [deleteClubDialog, setDeleteClubDialog] = useState<PadelClub | null>(null);
   const [deleteCourtDialog, setDeleteCourtDialog] = useState<PadelClubCourt | null>(null);
+  const [partnershipActionBusy, setPartnershipActionBusy] = useState<number | null>(null);
+  const [partnershipError, setPartnershipError] = useState<string | null>(null);
+  const [partnershipMessage, setPartnershipMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1270,6 +1359,24 @@ export default function PadelHubClient({
   );
   const { data: opsSummaryRes } = useSWR<PadelOpsSummaryResponse>(
     eventId ? `/api/padel/ops/summary?eventId=${eventId}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const {
+    data: partnershipsRes,
+    isLoading: partnershipsLoading,
+    mutate: mutatePartnerships,
+  } = useSWR<PartnershipsResponse>(
+    organizationId ? `/api/padel/partnerships/agreements?organizationId=${organizationId}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const {
+    data: partnershipOverridesRes,
+    isLoading: partnershipOverridesLoading,
+    mutate: mutatePartnershipOverrides,
+  } = useSWR<PartnershipOverridesResponse>(
+    organizationId ? `/api/padel/partnerships/overrides?organizationId=${organizationId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -1482,6 +1589,25 @@ export default function PadelHubClient({
     [padelEvents],
   );
   const padelEventsError = padelEventsRes?.ok === false ? padelEventsRes.error || "Erro ao carregar torneios." : null;
+  const partnershipAgreements = useMemo(() => {
+    if (!partnershipsRes?.ok || !Array.isArray(partnershipsRes.items)) return [];
+    return partnershipsRes.items;
+  }, [partnershipsRes]);
+  const partnershipOverrides = useMemo(() => {
+    if (!partnershipOverridesRes?.ok || !Array.isArray(partnershipOverridesRes.items)) return [];
+    return partnershipOverridesRes.items;
+  }, [partnershipOverridesRes]);
+  const partnershipCompensationCases = useMemo(() => {
+    if (!partnershipOverridesRes?.ok || !Array.isArray(partnershipOverridesRes.compensationCases)) return [];
+    return partnershipOverridesRes.compensationCases;
+  }, [partnershipOverridesRes]);
+  const partnershipPendingCompensationCount = useMemo(
+    () =>
+      partnershipCompensationCases.filter(
+        (item) => item.status === "PENDING_COMPENSATION" || item.status === "OPEN",
+      ).length,
+    [partnershipCompensationCases],
+  );
 
   useEffect(() => {
     if (!entryEventId) return;
@@ -1646,6 +1772,46 @@ export default function PadelHubClient({
       },
     ];
   }, [organizationId, toolMode]);
+
+  const partnershipsError =
+    (partnershipsRes && partnershipsRes.ok === false ? partnershipsRes.error : null) ||
+    (partnershipOverridesRes && partnershipOverridesRes.ok === false ? partnershipOverridesRes.error : null);
+
+  const runPartnershipAction = async (agreementId: number, action: "approve" | "pause" | "revoke") => {
+    setPartnershipError(null);
+    setPartnershipMessage(null);
+    setPartnershipActionBusy(agreementId);
+    try {
+      const endpoint = `/api/padel/partnerships/agreements/${agreementId}/${action}`;
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const err = typeof json?.error === "string" ? json.error : "Não foi possível atualizar a parceria.";
+        setPartnershipError(err);
+        toast(err, "err");
+        return;
+      }
+      const msg =
+        action === "approve"
+          ? "Parceria aprovada."
+          : action === "pause"
+            ? "Parceria pausada."
+            : "Parceria revogada.";
+      setPartnershipMessage(msg);
+      toast(msg, "ok");
+      await Promise.all([mutatePartnerships(), mutatePartnershipOverrides()]);
+    } catch (err) {
+      console.error("[padel/partnerships] action", err);
+      setPartnershipError("Erro inesperado ao atualizar parceria.");
+      toast("Erro ao atualizar parceria", "err");
+    } finally {
+      setPartnershipActionBusy(null);
+    }
+  };
 
   const trainers = trainersRes?.items ?? [];
   const trainersError = trainersRes?.ok === false ? trainersRes.error || "Erro ao carregar treinadores." : null;
@@ -3653,6 +3819,14 @@ export default function PadelHubClient({
         run: () => setPadelSection("players"),
       },
       {
+        id: "open-partnerships",
+        label: "Parcerias",
+        description: "Acordos, janelas e compensações.",
+        shortcut: "P",
+        run: () => setPadelSection("partnerships"),
+        enabled: toolMode === "CLUB",
+      },
+      {
         id: "open-live",
         label: "LiveHub",
         description: "Abrir painel live.",
@@ -3697,7 +3871,7 @@ export default function PadelHubClient({
       },
     ];
     return actions.filter((action) => action.enabled !== false);
-  }, [eventId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection]);
+  }, [eventId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection, toolMode]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -5721,6 +5895,167 @@ export default function PadelHubClient({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {!switchingTab && activeTab === "partnerships" && (
+        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Parcerias operacionais</p>
+              <p className="text-sm text-white/70">
+                Acordos aprovados são o único caminho canónico para operar em clube parceiro.
+              </p>
+            </div>
+            <span className={badge("slate")}>
+              {partnershipAgreements.length} acordos · {partnershipPendingCompensationCount} compensações pendentes
+            </span>
+          </div>
+
+          {(partnershipsError || partnershipError) && (
+            <p className="text-[12px] text-amber-200">{partnershipError || partnershipsError}</p>
+          )}
+          {!partnershipError && partnershipMessage && (
+            <p className="text-[12px] text-emerald-200">{partnershipMessage}</p>
+          )}
+
+          {(partnershipsLoading || partnershipOverridesLoading) && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <SkeletonBlock className="h-28" />
+              <SkeletonBlock className="h-28" />
+            </div>
+          )}
+
+          {!partnershipsLoading && partnershipAgreements.length === 0 && (
+            <div className="rounded-xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
+              Sem acordos ainda. Cria acordo via API de parcerias e faz aprovação para disponibilizar janelas.
+            </div>
+          )}
+
+          {!partnershipsLoading && partnershipAgreements.length > 0 && (
+            <div className="space-y-2">
+              {partnershipAgreements.map((agreement) => {
+                const status = (agreement.status || "PENDING") as PartnershipStatus;
+                const statusLabel = PARTNERSHIP_STATUS_LABEL[status] ?? status;
+                const statusTone = PARTNERSHIP_STATUS_TONE[status] ?? PARTNERSHIP_STATUS_TONE.PENDING;
+                const pendingCases = partnershipCompensationCases.filter(
+                  (item) =>
+                    item.agreementId === agreement.id &&
+                    (item.status === "PENDING_COMPENSATION" || item.status === "OPEN"),
+                ).length;
+                const recentOverride = partnershipOverrides.find((item) => item.agreementId === agreement.id) ?? null;
+                return (
+                  <article
+                    key={`partnership-${agreement.id}`}
+                    className="rounded-xl border border-white/12 bg-black/25 px-3 py-3 text-sm text-white/80"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-white">Acordo #{agreement.id}</p>
+                        <p className="text-[12px] text-white/60">
+                          Clube dono #{agreement.ownerClubId}
+                          {agreement.partnerClubId ? ` · Clube parceiro #${agreement.partnerClubId}` : ""}
+                          {agreement.activeWindowsCount != null ? ` · Janelas ativas ${agreement.activeWindowsCount}` : ""}
+                        </p>
+                        <p className="text-[12px] text-white/55">
+                          {agreement.policy?.priorityMode ? `Prioridade ${agreement.policy.priorityMode}` : "Sem política configurada"}
+                          {agreement.policy?.autoCompensationOnOverride ? " · Compensação auto ativa" : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-[11px] ${statusTone}`}>{statusLabel}</span>
+                        {pendingCases > 0 && <span className={badge("amber")}>{pendingCases} pendente(s)</span>}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Link
+                        href={buildOrgHref(organizationId, `/padel/parcerias/${agreement.id}`)}
+                        className="rounded-full border border-white/25 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 hover:border-white/45"
+                      >
+                        Workspace
+                      </Link>
+                      {(status === "PENDING" || status === "PAUSED") && (
+                        <button
+                          type="button"
+                          disabled={partnershipActionBusy === agreement.id}
+                          onClick={() => runPartnershipAction(agreement.id, "approve")}
+                          className={CTA_PAD_PRIMARY_SM}
+                        >
+                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Aprovar"}
+                        </button>
+                      )}
+                      {status === "APPROVED" && (
+                        <button
+                          type="button"
+                          disabled={partnershipActionBusy === agreement.id}
+                          onClick={() => runPartnershipAction(agreement.id, "pause")}
+                          className="rounded-full border border-amber-300/60 bg-amber-500/10 px-3 py-1.5 text-[12px] font-semibold text-amber-100 hover:border-amber-200/80 disabled:opacity-60"
+                        >
+                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Pausar"}
+                        </button>
+                      )}
+                      {status !== "REVOKED" && status !== "EXPIRED" && (
+                        <button
+                          type="button"
+                          disabled={partnershipActionBusy === agreement.id}
+                          onClick={() => runPartnershipAction(agreement.id, "revoke")}
+                          className="rounded-full border border-rose-300/60 bg-rose-500/10 px-3 py-1.5 text-[12px] font-semibold text-rose-100 hover:border-rose-200/80 disabled:opacity-60"
+                        >
+                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Revogar"}
+                        </button>
+                      )}
+                      {recentOverride && (
+                        <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                          Último override: {recentOverride.reasonCode}
+                          {recentOverride.executionStatus ? ` (${recentOverride.executionStatus})` : ""}
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Casos de compensação</p>
+              <div className="mt-2 space-y-2 text-[12px]">
+                {partnershipCompensationCases.length === 0 && (
+                  <p className="text-white/60">Sem casos ativos.</p>
+                )}
+                {partnershipCompensationCases.slice(0, 8).map((item) => (
+                  <div key={`comp-case-${item.id}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-white/85">Caso #{item.id} · Acordo #{item.agreementId}</p>
+                    <p className="text-white/60">
+                      Estado: {item.status}
+                      {item.reasonCode ? ` · ${item.reasonCode}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/12 bg-black/25 p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Overrides</p>
+              <div className="mt-2 space-y-2 text-[12px]">
+                {partnershipOverrides.length === 0 && (
+                  <p className="text-white/60">Sem overrides registados.</p>
+                )}
+                {partnershipOverrides.slice(0, 8).map((item) => (
+                  <div key={`override-${item.id}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-white/85">
+                      Override #{item.id} · Acordo #{item.agreementId}
+                    </p>
+                    <p className="text-white/60">
+                      {item.reasonCode}
+                      {item.executionStatus ? ` · ${item.executionStatus}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
