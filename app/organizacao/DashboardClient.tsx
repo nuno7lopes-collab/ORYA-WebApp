@@ -412,6 +412,7 @@ const PRIMARY_TOOL_KEYS = new Set<string>([
   "TORNEIOS",
   "CHECKIN",
   "FINANCEIRO",
+  "ANALYTICS",
   "STAFF",
   "PERFIL_PUBLICO",
   "DEFINICOES",
@@ -427,6 +428,7 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   CRM: "from-[#22D3EE]/35 via-[#38BDF8]/30 to-[#F97316]/35",
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
+  ANALYTICS: "from-[#22D3EE]/35 via-[#6A7BFF]/30 to-[#A78BFA]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
@@ -704,24 +706,30 @@ function OrganizacaoPageInner({
     pathname?.startsWith("/organizacao/torneios") ||
     pathname?.startsWith("/organizacao/padel") ||
     pathname?.startsWith("/organizacao/tournaments") ||
-    Boolean(isOrgCanonicalPath && pathname?.includes("/torneios"));
+    Boolean(isOrgCanonicalPath && (pathname?.includes("/torneios") || pathname?.includes("/tournaments") || pathname?.includes("/padel")));
   const isEventosRoute =
     pathname?.startsWith("/organizacao/eventos") ||
-    Boolean(isOrgCanonicalPath && pathname?.includes("/eventos"));
+    Boolean(isOrgCanonicalPath && (pathname?.includes("/eventos") || pathname?.includes("/events")));
+  const isManageEventosSection = activeObjective === "manage" && normalizedSection === "eventos";
+  const isManagePadelSection =
+    activeObjective === "manage" &&
+    (normalizedSection === PADEL_CLUB_SECTION || normalizedSection === PADEL_TOURNAMENTS_SECTION);
   const isPadelContext =
     hasTorneiosModule &&
-    !isEventosRoute &&
-    (isTorneiosOrg ||
-      pathname?.startsWith("/organizacao/torneios") ||
-      pathname?.startsWith("/organizacao/padel") ||
-      pathname?.startsWith("/organizacao/tournaments") ||
-      isOrgCanonicalPath ||
-      isPadelManageSection);
+    !isManageEventosSection &&
+    (isManagePadelSection ||
+      isTorneiosRoute ||
+      isPadelManageSection ||
+      (activeObjective !== "manage" && !isEventosRoute && isTorneiosOrg));
   const eventsScope = useMemo<"PADEL" | "EVENTOS">(() => {
+    if (activeObjective === "manage") {
+      if (normalizedSection === "eventos") return "EVENTOS";
+      if (normalizedSection === PADEL_CLUB_SECTION || normalizedSection === PADEL_TOURNAMENTS_SECTION) return "PADEL";
+    }
     if (isTorneiosRoute || isPadelManageSection) return "PADEL";
     if (isEventosRoute) return "EVENTOS";
     return isTorneiosOrg ? "PADEL" : "EVENTOS";
-  }, [isEventosRoute, isPadelManageSection, isTorneiosOrg, isTorneiosRoute]);
+  }, [activeObjective, isEventosRoute, isPadelManageSection, isTorneiosOrg, isTorneiosRoute, normalizedSection]);
   const eventsScopeQuery = eventsScope === "PADEL" ? "templateType=PADEL" : "excludeTemplateType=PADEL";
   const eventsScopeSuffix = `?${eventsScopeQuery}`;
   const eventsScopeAmp = `&${eventsScopeQuery}`;
@@ -809,11 +817,13 @@ function OrganizacaoPageInner({
   const canAccessStaff = canAccessModule("STAFF");
   const canAccessProfile = canAccessModule("PERFIL_PUBLICO");
   const canAccessSettings = canAccessModule("DEFINICOES");
+  const canAccessAnalytics = canAccessModule("ANALYTICS");
   const roleFlags = useMemo(
     () => getOrganizationRoleFlags(membershipRole, membershipRolePack),
     [membershipRole, membershipRolePack],
   );
   const canViewFinance = roleFlags.canViewFinance && canAccessFinance;
+  const canUseAnalytics = roleFlags.canViewFinance && canAccessAnalytics;
   const canPromote = roleFlags.canPromote && canAccessMarketing;
   const canManageMembers = roleFlags.canManageMembers && canAccessStaff;
   const canEditOrgProfile = roleFlags.canEditOrg && canAccessProfile;
@@ -2186,17 +2196,9 @@ function OrganizacaoPageInner({
     });
   }, [checklistCollapseStorageKey]);
   const checklistVisible = activeObjective === "create" && (!checklistDismissed || !canDismissChecklist);
-  const modulesSetupHref = "/organizacao/overview?section=modulos";
-  const isEventosActive = operationSelection.includes("EVENTOS");
-  const isReservasActive = operationSelection.includes("RESERVAS");
-  const isTorneiosActive = operationSelection.includes("TORNEIOS");
-  const isInscricoesActive = optionalSelection.includes("INSCRICOES");
-  const isMensagensActive = optionalSelection.includes("MENSAGENS");
-  const isLojaActive = optionalSelection.includes("LOJA");
-  const isCrmActive = optionalSelection.includes("CRM");
   const canUseCrm = canAccessCrm;
   const canUseChatInterno = canAccessMensagens;
-  const canUseCheckin = (canAccessEvents || canAccessTorneios) && (isEventosActive || isTorneiosActive);
+  const canUseCheckin = canAccessEvents || canAccessTorneios;
   const dashboardModules = useMemo<DashboardModuleCard[]>(
     () => [
       {
@@ -2205,12 +2207,8 @@ function OrganizacaoPageInner({
         title: "Eventos",
         summary: "Festas, sessões especiais, eventos públicos/privados.",
         bullets: ["Bilhetes e regras", "Participantes + check-in", "Live + chat + anúncios"],
-        status: canAccessEvents ? (isEventosActive ? "active" : "optional") : "locked",
-        href: canAccessEvents
-          ? isEventosActive
-            ? "/organizacao/eventos"
-            : modulesSetupHref
-          : undefined,
+        status: canAccessEvents ? "core" : "locked",
+        href: canAccessEvents && scopedOrganizationId ? `/org/${scopedOrganizationId}/events` : undefined,
         eyebrow: "Operações",
       },
       {
@@ -2219,26 +2217,28 @@ function OrganizacaoPageInner({
         title: "Reservas",
         summary: "Serviços e marcações com chat 1:1.",
         bullets: ["Serviços + disponibilidade", "Marcações + estados", "Chat 1:1 + check-in"],
-        status: canAccessReservas ? (isReservasActive ? "active" : "optional") : "locked",
-        href: canAccessReservas
-          ? isReservasActive
-            ? "/organizacao/reservas"
-            : modulesSetupHref
-          : undefined,
+        status: canAccessReservas ? "core" : "locked",
+        href: canAccessReservas && scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
         eyebrow: "Operações",
       },
       {
-        id: "torneios",
+        id: "padel-club",
         moduleKey: "TORNEIOS",
-        title: "Padel",
-        summary: "Gestão de Clube Padel + Torneios de Padel, com deep links.",
-        bullets: ["Gestão de Clube: clubes + courts + staff", "Torneios: calendário + live ops", "Integrações reservas/finanças/CRM"],
-        status: canAccessTorneios ? (isTorneiosActive ? "active" : "optional") : "locked",
-        href: canAccessTorneios
-          ? isTorneiosActive
-            ? "/organizacao/padel/clube"
-            : modulesSetupHref
-          : undefined,
+        title: "Padel Club",
+        summary: "Operação diária do clube e gestão de courts.",
+        bullets: ["Clubs + courts", "Players + trainers", "Community + lessons"],
+        status: canAccessTorneios ? "core" : "locked",
+        href: canAccessTorneios && scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
+        eyebrow: "Operações",
+      },
+      {
+        id: "padel-tournaments",
+        moduleKey: "TORNEIOS",
+        title: "Padel Tournaments",
+        summary: "Calendário competitivo, equipas e live ops.",
+        bullets: ["Criação + calendário", "Categorias + equipas", "Players + operação live"],
+        status: canAccessTorneios ? "core" : "locked",
+        href: canAccessTorneios && scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
         eyebrow: "Operações",
       },
       {
@@ -2248,7 +2248,7 @@ function OrganizacaoPageInner({
         summary: "Scanner rápido para eventos e torneios.",
         bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
         status: canUseCheckin ? "core" : "locked",
-        href: canUseCheckin ? "/organizacao/scan" : undefined,
+        href: canUseCheckin && scopedOrganizationId ? `/org/${scopedOrganizationId}/check-in` : undefined,
         eyebrow: "Operações",
       },
       {
@@ -2258,7 +2258,17 @@ function OrganizacaoPageInner({
         summary: "Receitas, indicadores e payouts num só lugar.",
         bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Payouts Stripe"],
         status: canViewFinance ? "core" : "locked",
-        href: canViewFinance ? "/organizacao/analyze?section=financas" : undefined,
+        href: canViewFinance && scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
+        eyebrow: "Financeiro",
+      },
+      {
+        id: "analytics",
+        moduleKey: "ANALYTICS",
+        title: "Analytics",
+        summary: "Insights de ocupação, conversão e retenção.",
+        bullets: ["Overview + cohorts", "No-show + conversion", "Leitura de performance por módulo"],
+        status: canUseAnalytics ? "core" : "locked",
+        href: canUseAnalytics && scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
         eyebrow: "Financeiro",
       },
       {
@@ -2268,7 +2278,7 @@ function OrganizacaoPageInner({
         summary: "Gestão de equipa, roles e permissões.",
         bullets: ["Owner / Admin / Staff / Scanner", "Permissões por módulo", "Log de ações"],
         status: canManageMembers ? "core" : "locked",
-        href: canManageMembers ? "/organizacao/staff" : undefined,
+        href: canManageMembers && scopedOrganizationId ? `/org/${scopedOrganizationId}/team` : undefined,
         eyebrow: "Configuração",
       },
       {
@@ -2278,7 +2288,7 @@ function OrganizacaoPageInner({
         summary: "Página e detalhes visíveis ao público.",
         bullets: ["Nome + bio", "Fotos e links", "Localização"],
         status: canEditOrgProfile ? "core" : "locked",
-        href: canEditOrgProfile ? "/organizacao/profile" : undefined,
+        href: canEditOrgProfile && scopedOrganizationId ? `/org/${scopedOrganizationId}/profile` : undefined,
         eyebrow: "Crescimento",
       },
       {
@@ -2288,7 +2298,7 @@ function OrganizacaoPageInner({
         summary: "Pagamentos, políticas e preferências.",
         bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
         status: canEditOrgSettings ? "core" : "locked",
-        href: canEditOrgSettings ? "/organizacao/settings" : undefined,
+        href: canEditOrgSettings && scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : undefined,
         eyebrow: "Configuração",
       },
       {
@@ -2297,16 +2307,8 @@ function OrganizacaoPageInner({
         title: "Formulários",
         summary: "Formulários e listas para inscrições e dados.",
         bullets: ["Formulários rápidos", "Vagas + listas de espera", "Exportação de dados"],
-        status: canAccessInscricoes
-          ? isInscricoesActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: canAccessInscricoes
-          ? isInscricoesActive
-            ? "/organizacao/inscricoes"
-            : modulesSetupHref
-          : undefined,
+        status: canAccessInscricoes ? "core" : "locked",
+        href: canAccessInscricoes && scopedOrganizationId ? `/org/${scopedOrganizationId}/forms` : undefined,
         eyebrow: "Operações",
       },
       {
@@ -2315,16 +2317,8 @@ function OrganizacaoPageInner({
         title: "Chat interno",
         summary: "Canal privado entre membros da organização.",
         bullets: ["Conversas rápidas da equipa", "Canais internos simples", "Histórico completo"],
-        status: canUseChatInterno
-          ? isMensagensActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: canUseChatInterno
-          ? isMensagensActive
-            ? "/organizacao/chat"
-            : modulesSetupHref
-          : undefined,
+        status: canUseChatInterno ? "core" : "locked",
+        href: canUseChatInterno && scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
         eyebrow: "Operações",
       },
       {
@@ -2334,9 +2328,7 @@ function OrganizacaoPageInner({
         summary: "Códigos, parcerias e partilha.",
         bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
         status: canPromote ? "core" : "locked",
-        href: canPromote
-          ? "/organizacao/promote?section=marketing&marketing=overview"
-          : undefined,
+        href: canPromote && scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
         eyebrow: "Crescimento",
       },
       {
@@ -2345,8 +2337,8 @@ function OrganizacaoPageInner({
         title: "CRM",
         summary: "Customer 360, segmentos e loyalty.",
         bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
-        status: canUseCrm ? (isCrmActive ? "active" : "optional") : "locked",
-        href: canUseCrm ? (isCrmActive ? "/organizacao/crm" : modulesSetupHref) : undefined,
+        status: canUseCrm ? "core" : "locked",
+        href: canUseCrm && scopedOrganizationId ? `/org/${scopedOrganizationId}/crm` : undefined,
         eyebrow: "Crescimento",
       },
       {
@@ -2355,23 +2347,12 @@ function OrganizacaoPageInner({
         title: "Loja",
         summary: "Produtos físicos e digitais num só checkout.",
         bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
-        status: canAccessLoja
-          ? isLojaActive
-            ? "active"
-            : "optional"
-          : "locked",
-        href: canAccessLoja
-          ? isLojaActive
-            ? organization?.id
-              ? `/org/${organization.id}/loja`
-              : "/organizacao/organizations"
-            : modulesSetupHref
-          : undefined,
+        status: canAccessLoja ? "core" : "locked",
+        href: canAccessLoja && scopedOrganizationId ? `/org/${scopedOrganizationId}/store` : undefined,
         eyebrow: "Crescimento",
       },
     ],
     [
-      primarySelection,
       canEditOrgProfile,
       canEditOrgSettings,
       canManageMembers,
@@ -2382,31 +2363,20 @@ function OrganizacaoPageInner({
       canAccessInscricoes,
       canAccessLoja,
       canViewFinance,
+      canUseAnalytics,
       canUseCheckin,
-      isEventosActive,
-      isReservasActive,
-      isTorneiosActive,
-      isInscricoesActive,
-      isMensagensActive,
-      isLojaActive,
-      isCrmActive,
       canUseCrm,
       canUseChatInterno,
-      modulesSetupHref,
-      organization?.id,
+      scopedOrganizationId,
     ],
   );
-  const activeDashboardModules = useMemo(
-    () => dashboardModules.filter((module) => module.status === "active" || module.status === "core"),
+  const primaryDashboardModules = useMemo(
+    () => dashboardModules.filter((module) => PRIMARY_TOOL_KEYS.has(module.moduleKey)),
     [dashboardModules],
   );
-  const primaryDashboardModules = useMemo(
-    () => activeDashboardModules.filter((module) => PRIMARY_TOOL_KEYS.has(module.moduleKey)),
-    [activeDashboardModules],
-  );
   const secondaryDashboardModules = useMemo(
-    () => activeDashboardModules.filter((module) => !PRIMARY_TOOL_KEYS.has(module.moduleKey)),
-    [activeDashboardModules],
+    () => dashboardModules.filter((module) => !PRIMARY_TOOL_KEYS.has(module.moduleKey)),
+    [dashboardModules],
   );
   const secondaryModuleGroups = useMemo(() => {
     const groups = new Map<string, DashboardModuleCard[]>();
@@ -2442,7 +2412,7 @@ function OrganizacaoPageInner({
     if (!scopedOrganizationId) return [];
     const coreTargets = [
       `/org/${scopedOrganizationId}/overview`,
-      `/org/${scopedOrganizationId}/manage`,
+      `/org/${scopedOrganizationId}/events`,
       `/org/${scopedOrganizationId}/analytics`,
       `/org/${scopedOrganizationId}/settings`,
     ];
@@ -3989,7 +3959,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
               <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
-                href={organization?.id ? `/org/${organization.id}/financas?tab=invoices` : "/organizacao/analyze?section=invoices"}
+                href={organization?.id ? `/org/${organization.id}/finance?tab=invoices` : "/organizacao/analyze?section=invoices"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
@@ -4000,7 +3970,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
               <p className="text-[12px] text-white/65">Detalhe de reservas e releases.</p>
               <Link
-                href={organization?.id ? `/org/${organization.id}/financas` : "/organizacao/analyze?section=financas"}
+                href={organization?.id ? `/org/${organization.id}/finance` : "/organizacao/analyze?section=financas"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Ver detalhe
@@ -4761,7 +4731,7 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
           <InvoicesClient
-            basePath={organization?.id ? `/org/${organization.id}/financas?tab=invoices` : "/organizacao/analyze?section=invoices"}
+            basePath={organization?.id ? `/org/${organization.id}/finance?tab=invoices` : "/organizacao/analyze?section=invoices"}
             fullWidth
             organizationId={organization?.id ?? null}
           />

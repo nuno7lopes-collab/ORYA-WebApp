@@ -233,7 +233,7 @@ const EVENT_SCHEMA_SAFE_SELECT = {
   description: true,
   type: true,
   templateType: true,
-  liveHubVisibility: true,
+  liveVisibility: true,
   organizationId: true,
   startsAt: true,
   endsAt: true,
@@ -282,7 +282,7 @@ const EVENT_BASELINE_COLUMNS = new Set([
   "fee_mode",
   "payout_mode",
   "live_stream_url",
-  "live_hub_visibility",
+  "live_visibility",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

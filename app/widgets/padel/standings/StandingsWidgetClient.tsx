@@ -17,9 +17,12 @@ type StandingRow = {
 };
 
 type StandingsMap = Record<string, StandingRow[]>;
+type StandingEntityType = "PAIRING" | "PLAYER";
 
 type StandingsWidgetClientProps = {
   eventId: number;
+  eventSlug?: string | null;
+  initialEntityType: StandingEntityType;
   initialStandings: StandingsMap;
   locale?: string;
 };
@@ -32,23 +35,31 @@ const fetchStandings = async (eventId: number) => {
   if (!res.ok || !data?.ok) {
     throw new Error(data?.error || "STANDINGS_ERROR");
   }
-  return (data?.groups ?? {}) as StandingsMap;
+  return {
+    entityType: (data?.entityType === "PLAYER" ? "PLAYER" : "PAIRING") as StandingEntityType,
+    groups: (data?.groups ?? {}) as StandingsMap,
+  };
 };
 
 export default function StandingsWidgetClient({
   eventId,
+  eventSlug,
+  initialEntityType,
   initialStandings,
   locale,
 }: StandingsWidgetClientProps) {
   const resolvedLocale = resolveLocale(locale);
+  const [entityType, setEntityType] = useState<StandingEntityType>(initialEntityType);
   const [standings, setStandings] = useState<StandingsMap>(initialStandings);
   const [realtimeActive, setRealtimeActive] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !eventSlug) return;
     let closed = false;
-    const source = new EventSource(`/api/padel/live?eventId=${encodeURIComponent(String(eventId))}`);
+    const source = new EventSource(
+      `/api/live/events/${encodeURIComponent(eventSlug)}/stream?eventId=${encodeURIComponent(String(eventId))}`,
+    );
 
     const stopPoll = () => {
       if (pollRef.current) {
@@ -62,7 +73,8 @@ export default function StandingsWidgetClient({
       pollRef.current = setInterval(async () => {
         try {
           const next = await fetchStandings(eventId);
-          setStandings(next);
+          setEntityType(next.entityType);
+          setStandings(next.groups);
         } catch {
           // ignore polling failures
         }
@@ -74,6 +86,7 @@ export default function StandingsWidgetClient({
       try {
         const payload = JSON.parse((event as MessageEvent).data);
         if (payload?.standings?.groups) {
+          setEntityType(payload?.standings?.entityType === "PLAYER" ? "PLAYER" : "PAIRING");
           setStandings(payload.standings.groups as StandingsMap);
         }
       } catch {
@@ -97,7 +110,7 @@ export default function StandingsWidgetClient({
       source.close();
       stopPoll();
     };
-  }, [eventId]);
+  }, [eventId, eventSlug]);
 
   const groups = useMemo(() => Object.entries(standings), [standings]);
 
@@ -121,7 +134,11 @@ export default function StandingsWidgetClient({
                 {rows.slice(0, 4).map((row, idx) => (
                   <div key={row.entityId} className="flex items-center justify-between">
                     <span>
-                      {idx + 1}º · {row.label || `${t("pairing", resolvedLocale)} ${row.pairingId ?? row.entityId}`}
+                      {idx + 1}º ·{" "}
+                      {row.label ||
+                        (entityType === "PLAYER"
+                          ? `Jogador ${row.playerId ?? row.entityId}`
+                          : `${t("pairing", resolvedLocale)} ${row.pairingId ?? row.entityId}`)}
                     </span>
                     <span className="text-white/60">
                       {t("pointsShort", resolvedLocale)} {row.points}

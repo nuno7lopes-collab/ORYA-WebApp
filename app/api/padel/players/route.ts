@@ -135,9 +135,27 @@ async function _GET(req: NextRequest) {
     const walkoverMatches = await prisma.eventMatchSlot.findMany({
       where: {
         status: "DONE",
-        OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }],
+        participants: {
+          some: {
+            participant: {
+              sourcePairingId: { in: pairingIds },
+            },
+          },
+        },
       },
-      select: { pairingAId: true, pairingBId: true, score: true },
+      select: {
+        score: true,
+        participants: {
+          select: {
+            side: true,
+            participant: {
+              select: {
+                sourcePairingId: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     walkoverMatches.forEach((match) => {
@@ -147,7 +165,12 @@ async function _GET(req: NextRequest) {
       if (!isWalkover) return;
       const winnerSide = typeof score.winnerSide === "string" ? score.winnerSide : null;
       if (winnerSide !== "A" && winnerSide !== "B") return;
-      const loserPairingId = winnerSide === "A" ? match.pairingBId : match.pairingAId;
+      const loserSide = winnerSide === "A" ? "B" : "A";
+      const loserPairingId =
+        match.participants
+          .filter((row) => row.side === loserSide)
+          .map((row) => row.participant?.sourcePairingId)
+          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
       if (!loserPairingId) return;
       const playersInPairing = pairingToPlayers.get(loserPairingId) ?? [];
       playersInPairing.forEach((playerProfileId) => {

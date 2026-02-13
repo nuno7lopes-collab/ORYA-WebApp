@@ -1,8 +1,8 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, OrganizationModule, Prisma, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, PadelMatchSide, Prisma, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -94,7 +94,16 @@ async function _POST(req: NextRequest) {
   if (pairingIds.length > 0) {
     const pairings = await prisma.padelPairing.findMany({
       where: { id: { in: pairingIds }, eventId: match.eventId },
-      select: { id: true, categoryId: true, pairingStatus: true, registration: { select: { status: true } } },
+      select: {
+        id: true,
+        categoryId: true,
+        pairingStatus: true,
+        registration: { select: { status: true } },
+        slots: {
+          orderBy: { id: "asc" },
+          select: { playerProfileId: true },
+        },
+      },
     });
     if (pairings.length !== pairingIds.length) {
       return jsonWrap({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
@@ -116,7 +125,13 @@ async function _POST(req: NextRequest) {
         roundLabel: match.roundLabel,
         id: { not: match.id },
         ...matchCategoryFilter,
-        OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }],
+        participants: {
+          some: {
+            participant: {
+              sourcePairingId: { in: pairingIds },
+            },
+          },
+        },
       },
       select: { id: true },
     });
@@ -126,22 +141,128 @@ async function _POST(req: NextRequest) {
   }
 
   const data: Prisma.EventMatchSlotUncheckedUpdateInput = {
-    pairingAId: pairingAId ?? null,
-    pairingBId: pairingBId ?? null,
-    winnerPairingId: null,
+    winnerParticipantId: null,
+    winnerSide: null,
     status: padel_match_status.PENDING,
     score: {} as Prisma.InputJsonValue,
     scoreSets: Prisma.DbNull,
   };
 
-  const { match: updated } = await updatePadelMatch({
-    matchId: match.id,
-    eventId: match.eventId,
-    organizationId,
-    actorUserId: user.id,
-    beforeStatus: match.status ?? null,
-    data,
-    select: { id: true, pairingAId: true, pairingBId: true, roundLabel: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    const { match: updatedMatch } = await updatePadelMatch({
+      tx,
+      matchId: match.id,
+      eventId: match.eventId,
+      organizationId,
+      actorUserId: user.id,
+      beforeStatus: match.status ?? null,
+      data,
+      select: { id: true, roundLabel: true, winnerParticipantId: true, winnerSide: true },
+    });
+
+    const sourcePairingIds = [pairingAId, pairingBId].filter((id): id is number => typeof id === "number");
+    const pairingDetails = sourcePairingIds.length
+      ? await tx.padelPairing.findMany({
+          where: { id: { in: sourcePairingIds } },
+          select: {
+            id: true,
+            categoryId: true,
+            slots: {
+              orderBy: { id: "asc" },
+              select: { playerProfileId: true },
+            },
+          },
+        })
+      : [];
+    const pairingById = new Map(pairingDetails.map((row) => [row.id, row]));
+
+    await tx.padelMatchParticipant.deleteMany({ where: { matchId: match.id } });
+
+    const participantAssignments: Array<{
+      matchId: number;
+      participantId: number;
+      side: PadelMatchSide;
+      slotOrder: number;
+    }> = [];
+
+    const assignSide = async (pairingId: number | null, side: PadelMatchSide) => {
+      if (!pairingId) return;
+      const pairing = pairingById.get(pairingId);
+      if (!pairing) return;
+      const targetCategoryId = match.categoryId ?? pairing.categoryId ?? null;
+      const playerProfileIds = pairing.slots
+        .map((slot) => slot.playerProfileId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      for (let idx = 0; idx < playerProfileIds.length; idx += 1) {
+        const playerProfileId = playerProfileIds[idx];
+        const participant =
+          targetCategoryId !== null
+            ? await tx.padelTournamentParticipant.upsert({
+                where: {
+                  eventId_categoryId_playerProfileId: {
+                    eventId: match.eventId,
+                    categoryId: targetCategoryId,
+                    playerProfileId,
+                  },
+                },
+                update: {
+                  sourcePairingId: pairing.id,
+                  status: "ACTIVE",
+                },
+                create: {
+                  eventId: match.eventId,
+                  categoryId: targetCategoryId,
+                  organizationId,
+                  playerProfileId,
+                  sourcePairingId: pairing.id,
+                  status: "ACTIVE",
+                },
+                select: { id: true },
+              })
+            : await (async () => {
+                const existing = await tx.padelTournamentParticipant.findFirst({
+                  where: { eventId: match.eventId, categoryId: null, playerProfileId },
+                  select: { id: true },
+                });
+                if (existing) {
+                  await tx.padelTournamentParticipant.update({
+                    where: { id: existing.id },
+                    data: { sourcePairingId: pairing.id, status: "ACTIVE" },
+                  });
+                  return existing;
+                }
+                return tx.padelTournamentParticipant.create({
+                  data: {
+                    eventId: match.eventId,
+                    categoryId: null,
+                    organizationId,
+                    playerProfileId,
+                    sourcePairingId: pairing.id,
+                    status: "ACTIVE",
+                  },
+                  select: { id: true },
+                });
+              })();
+        participantAssignments.push({
+          matchId: match.id,
+          participantId: participant.id,
+          side,
+          slotOrder: idx,
+        });
+      }
+    };
+
+    await assignSide(pairingAId ?? null, "A");
+    await assignSide(pairingBId ?? null, "B");
+
+    if (participantAssignments.length > 0) {
+      await tx.padelMatchParticipant.createMany({
+        data: participantAssignments,
+        skipDuplicates: true,
+      });
+    }
+
+    return updatedMatch;
   });
 
   const config = await prisma.padelTournamentConfig.findUnique({
@@ -169,8 +290,10 @@ async function _POST(req: NextRequest) {
     metadata: {
       matchId: match.id,
       eventId: match.eventId,
-      pairingAId: updated.pairingAId ?? null,
-      pairingBId: updated.pairingBId ?? null,
+      pairingAId: pairingAId ?? null,
+      pairingBId: pairingBId ?? null,
+      winnerParticipantId: updated.winnerParticipantId ?? null,
+      winnerSide: updated.winnerSide ?? null,
     },
   });
 

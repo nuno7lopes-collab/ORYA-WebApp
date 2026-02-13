@@ -160,7 +160,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           interestTags: event.interestTags ?? [],
           isGratis: isGratis,
           coverImageUrl: event.coverImageUrl,
-          liveHubVisibility: event.liveHubVisibility,
+          liveVisibility: event.liveVisibility,
           liveStreamUrl: event.liveStreamUrl,
           accessPolicy: event.accessPolicies?.[0] ?? null,
           payoutMode: event.payoutMode,

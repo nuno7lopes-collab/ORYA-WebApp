@@ -11,7 +11,7 @@ import {
   Prisma,
   EventTemplateType,
   EventStatus,
-  LiveHubVisibility,
+  LiveHubVisibility as LiveVisibilityEnum,
   EventPricingMode,
   AddressSourceProvider,
   PayoutMode,
@@ -83,7 +83,7 @@ type UpdateEventBody = {
   isGratis?: boolean;
   pricingMode?: string | null;
   coverImageUrl?: string | null;
-  liveHubVisibility?: string | null;
+  liveVisibility?: string | null;
   liveStreamUrl?: string | null;
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
@@ -562,11 +562,11 @@ async function _POST(req: NextRequest) {
       const trimmed = typeof body.liveStreamUrl === "string" ? body.liveStreamUrl.trim() : "";
       dataUpdate.liveStreamUrl = trimmed ? trimmed : null;
     }
-    if (body.liveHubVisibility !== undefined) {
+    if (body.liveVisibility !== undefined) {
       const normalized =
-        typeof body.liveHubVisibility === "string" ? body.liveHubVisibility.trim().toUpperCase() : "";
+        typeof body.liveVisibility === "string" ? body.liveVisibility.trim().toUpperCase() : "";
       if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
-        dataUpdate.liveHubVisibility = normalized as LiveHubVisibility;
+        dataUpdate.liveVisibility = normalized as LiveVisibilityEnum;
       }
     }
     if (

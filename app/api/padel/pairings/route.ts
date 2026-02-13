@@ -46,6 +46,7 @@ import { resolveUserIdentifier } from "@/lib/userResolver";
 import { queuePairingInvite, queueWaitlistJoined } from "@/domain/notifications/splitPayments";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
+import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -188,6 +189,20 @@ async function _POST(req: NextRequest) {
   const organizationId = organizationIdRaw ?? event.organizationId;
   if (!organizationId) {
     return jsonWrap({ ok: false, error: "ORGANIZATION_MISSING" }, { status: 400 });
+  }
+  const ratingGate = await ensurePadelRatingActionAllowed({
+    organizationId,
+    userId: user.id,
+  });
+  if (!ratingGate.ok) {
+    return jsonWrap(
+      {
+        ok: false,
+        error: ratingGate.error,
+        blockedUntil: ratingGate.blockedUntil,
+      },
+      { status: 423 },
+    );
   }
 
   // Basic guard: only proceed if padel_v2_enabled is active on the tournament config.

@@ -34,6 +34,12 @@ export type PadelStandingRow = {
   label?: string | null;
   players?: Array<{ id?: number | null; name: string | null; username: string | null }> | null;
 };
+export type PadelStandingEntityType = "PAIRING" | "PLAYER";
+export type PadelStandingsPayload = {
+  entityType: PadelStandingEntityType;
+  rows: PadelStandingRow[];
+  groups: Record<string, PadelStandingRow[]>;
+};
 
 export type PadelPairingSlot = {
   id: number;
@@ -167,15 +173,23 @@ const parseItems = <T>(payload: unknown, key: string): T[] => {
 export const fetchPadelStandings = async (
   eventId: number,
   categoryId?: number | null,
-): Promise<Record<string, PadelStandingRow[]>> => {
+): Promise<PadelStandingsPayload> => {
   if (!Number.isFinite(eventId)) {
     throw new ApiError(400, "Evento inválido.");
   }
   const query = new URLSearchParams({ eventId: String(eventId) });
   if (Number.isFinite(categoryId)) query.set("categoryId", String(categoryId));
   const response = await api.request<unknown>(`/api/padel/standings?${query.toString()}`);
-  const unwrapped = unwrapApiResponse<{ groups?: Record<string, PadelStandingRow[]> }>(response);
-  return unwrapped.groups ?? {};
+  const unwrapped = unwrapApiResponse<{
+    entityType?: string;
+    rows?: PadelStandingRow[];
+    groups?: Record<string, PadelStandingRow[]>;
+  }>(response);
+  return {
+    entityType: unwrapped.entityType === "PLAYER" ? "PLAYER" : "PAIRING",
+    rows: Array.isArray(unwrapped.rows) ? unwrapped.rows : [],
+    groups: unwrapped.groups ?? {},
+  };
 };
 
 export const fetchPadelMatches = async (

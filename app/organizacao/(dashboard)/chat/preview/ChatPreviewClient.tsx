@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   type ChangeEvent,
-  type DragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -18,7 +17,6 @@ import { cn } from "@/lib/utils";
 import { useChatPreviewData } from "./useChatPreviewData";
 import type {
   ChatFilterId,
-  ComposerAttachment,
   ConversationPreview,
   MessageAction,
   MessagePreview,
@@ -61,19 +59,10 @@ const showPinnedBanner = true;
 const sidebarState: "default" | "empty" | "empty-search" = "default";
 const conversationState: "default" | "empty" | "no-messages" = "default";
 const sidebarToggleId = "chat-sidebar-toggle";
-const initialComposerAttachments: ComposerAttachment[] = [];
 
 const reactionOptions = ["👍", "❤️", "🎉", "😄", "👀", "✅"];
 const emojiOptions = ["🙂", "🙌", "✅", "🎉", "👍", "❤️", "🔥", "🤝", "👏", "💡"];
 const headerMemberLimit = 3;
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${Math.round(kb)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
-}
 
 function formatDayLabel(value?: string) {
   if (!value) return "Hoje";
@@ -561,10 +550,6 @@ export default function ChatPreviewPage() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const [messageAction, setMessageAction] = useState<MessageAction | null>(null);
-  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>(
-    () => initialComposerAttachments,
-  );
-  const [isDragging, setIsDragging] = useState(false);
   const [isEmojiOpen, setIsEmojiOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -594,7 +579,6 @@ export default function ChatPreviewPage() {
   const [isCreating, setIsCreating] = useState(false);
   const messageListRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const messageActionRef = useRef<HTMLDivElement>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const membersPanelRef = useRef<HTMLDivElement>(null);
@@ -882,7 +866,6 @@ export default function ChatPreviewPage() {
     setIsEmojiOpen(false);
     setMentionOpen(false);
     setDraft("");
-    setComposerAttachments([]);
     clearComposerErrors();
     setMembersSearch("");
     if (composerRef.current) {
@@ -972,8 +955,7 @@ export default function ChatPreviewPage() {
       : activeConversation?.presenceLabel ?? "Conversa direta"
     : "Seleciona uma conversa na lista";
 
-  const canSend =
-    !composerDisabled && (draft.trim().length > 0 || composerAttachments.length > 0);
+  const canSend = !composerDisabled && draft.trim().length > 0;
   const composerError = attachmentsError || sendError;
   const pendingLabel = pendingNewCount > 99 ? "99+" : String(pendingNewCount);
   const canCreateConversation =
@@ -1128,68 +1110,6 @@ export default function ChatPreviewPage() {
     setCreateError(null);
   }, [createMode]);
 
-  const handleAttachmentButton = () => {
-    if (composerDisabled) return;
-    fileInputRef.current?.click();
-  };
-
-  const appendComposerAttachments = useCallback((files: File[]) => {
-    if (!files.length) return;
-    clearComposerErrors();
-    setComposerAttachments((prev) => {
-      const next = [...prev];
-      files.forEach((file) => {
-        const extension = file.name.split(".").pop()?.toUpperCase();
-        const metaLabel = `${extension ? `${extension} ` : ""}${formatFileSize(file.size)}`;
-        const isImage = file.type.startsWith("image/");
-        next.push({
-          id: `composer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          kind: isImage ? "image" : "file",
-          title: file.name,
-          meta: metaLabel,
-          file,
-        });
-      });
-      return next;
-    });
-  }, [clearComposerErrors]);
-
-  const handleFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    if (composerDisabled) return;
-    const files = Array.from(event.target.files ?? []);
-    appendComposerAttachments(files);
-    event.target.value = "";
-  };
-
-  const handleRemoveAttachment = (attachmentId: string) => {
-    clearComposerErrors();
-    setComposerAttachments((prev) => prev.filter((item) => item.id !== attachmentId));
-  };
-
-  const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (composerDisabled) return;
-    setIsDragging(true);
-  };
-
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-  };
-
-  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
-    if (event.currentTarget === event.target) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsDragging(false);
-    if (composerDisabled) return;
-    const files = Array.from(event.dataTransfer.files ?? []);
-    appendComposerAttachments(files);
-  };
-
   const handleInsertEmoji = (emoji: string) => {
     setDraft((prev) => `${prev}${emoji}`);
     setIsEmojiOpen(false);
@@ -1218,7 +1138,7 @@ export default function ChatPreviewPage() {
     setReplyToMessage({
       id: message.id,
       author: message.author,
-      text: message.text || "Anexo enviado",
+      text: message.text || "Mensagem",
     });
     setMessageAction(null);
     composerRef.current?.focus();
@@ -1282,7 +1202,7 @@ export default function ChatPreviewPage() {
   };
 
   const handleCopyMessage = async (message: MessagePreview) => {
-    const content = message.text || "Anexo enviado";
+    const content = message.text || "Mensagem";
     try {
       await navigator.clipboard.writeText(content);
     } catch {
@@ -1325,12 +1245,12 @@ export default function ChatPreviewPage() {
   const handleSendMessage = () => {
     if (!activeConversationId || composerDisabled) return;
     const trimmed = draft.trim();
-    if (!trimmed && composerAttachments.length === 0) return;
+    if (!trimmed) return;
     clearComposerErrors();
     void sendMessage({
       conversationId: activeConversationId,
       body: trimmed,
-      attachments: composerAttachments,
+      attachments: [],
       replyTo: replyToMessage ?? undefined,
     });
     if (typingActiveRef.current) {
@@ -1343,7 +1263,6 @@ export default function ChatPreviewPage() {
     }
     setDraft("");
     setReplyToMessage(null);
-    setComposerAttachments([]);
     setMentionOpen(false);
     setMentionQuery(null);
     setIsEmojiOpen(false);
@@ -2395,20 +2314,8 @@ export default function ChatPreviewPage() {
 
             <div className="border-t border-white/10 px-4 py-3">
               <div
-                className={cn(
-                  "relative flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 focus-within:ring-1 focus-within:ring-white/30",
-                  isDragging && "ring-1 ring-emerald-200/40",
-                )}
-                onDragEnter={handleDragEnter}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
+                className="relative flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/8 px-3 py-2 focus-within:ring-1 focus-within:ring-white/30"
               >
-                {isDragging ? (
-                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl border border-dashed border-emerald-200/40 bg-emerald-200/10 text-[12px] font-semibold text-emerald-100/80">
-                    Solta para anexar ficheiros
-                  </div>
-                ) : null}
                 {composerError ? (
                   <div className="rounded-xl border border-rose-200/30 bg-rose-200/10 px-3 py-2 text-[11px] text-rose-100">
                     {composerError}
@@ -2432,37 +2339,7 @@ export default function ChatPreviewPage() {
                     </button>
                   </div>
                 ) : null}
-                {composerAttachments.length > 0 && hasActiveConversation ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {composerAttachments.map((attachment) => (
-                      <div
-                        key={attachment.id}
-                        className="flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-2 py-1 text-[10px] text-white/70"
-                      >
-                        <span className="max-w-[140px] truncate">{attachment.title}</span>
-                        {attachment.meta ? <span className="text-white/50">{attachment.meta}</span> : null}
-                        <button
-                          type="button"
-                          aria-label="Remover anexo"
-                          onClick={() => handleRemoveAttachment(attachment.id)}
-                          className="flex h-4 w-4 items-center justify-center rounded-full border border-white/10 text-[9px] text-white/60 transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
-                        >
-                          x
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
                 <div className="flex items-end gap-2">
-                  <button
-                    type="button"
-                    aria-label="Anexar ficheiro"
-                    onClick={handleAttachmentButton}
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white/70 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={composerDisabled}
-                  >
-                    +
-                  </button>
                   <button
                     type="button"
                     aria-label="Inserir emoji"
@@ -2545,14 +2422,6 @@ export default function ChatPreviewPage() {
                     ))}
                   </div>
                 ) : null}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleFilesSelected}
-                  disabled={composerDisabled}
-                />
               </div>
             </div>
 

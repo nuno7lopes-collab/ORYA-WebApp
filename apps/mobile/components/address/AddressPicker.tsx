@@ -131,8 +131,10 @@ export function AddressPicker({ value, onSelect, onClear, placeholder, label }: 
               style={{ minHeight: tokens.layout.touchTarget }}
             >
               <Text className="text-white text-sm">{item.label}</Text>
-              {item.city || item.address ? (
-                <Text className="text-white/60 text-xs">{[item.address, item.city].filter(Boolean).join(" · ")}</Text>
+              {item.secondaryLabel || item.city || item.address ? (
+                <Text className="text-white/60 text-xs">
+                  {[item.secondaryLabel, item.address, item.city].filter(Boolean).join(" · ")}
+                </Text>
               ) : null}
             </Pressable>
           ))}

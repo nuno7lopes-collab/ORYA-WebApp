@@ -12,7 +12,7 @@ type OrganizationScanPageProps = {
 export default function OrganizationScanPage({ embedded }: OrganizationScanPageProps) {
   const pathname = usePathname();
   const orgId = parseOrgIdFromPathnameStrict(pathname);
-  const backHref = orgId ? buildOrgHref(orgId, "/operations") : "/org-hub/organizations";
+  const backHref = orgId ? buildOrgHref(orgId, "/overview") : "/org-hub/organizations";
   const wrapperClass = cn(
     embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
   );

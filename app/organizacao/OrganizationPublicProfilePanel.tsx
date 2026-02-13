@@ -1528,7 +1528,7 @@ export default function OrganizationPublicProfilePanel({
         ) : null}
         {canEdit && (
           <Link
-            href={organization?.id ? `/org/${organization.id}/loja?view=catalog&sub=products` : "/organizacao/organizations"}
+            href={organization?.id ? `/org/${organization.id}/store?view=catalog&sub=products` : "/organizacao/organizations"}
             className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80"
           >
             Gerir produtos

@@ -18,9 +18,11 @@ describe("padel live timer guardrails", () => {
   });
 
   it("live stream inclui estado de timer autoritativo", () => {
-    const live = readLocal("app/api/padel/live/route.ts");
-    expect(live).toContain("timerState");
-    expect(live).toContain("serverNow");
-    expect(live).toContain("remainingMs");
+    const live = readLocal("app/api/live/events/[slug]/stream/route.ts");
+    const payloadBuilder = readLocal("domain/live/padelLivePayload.ts");
+    expect(live).toContain("buildPadelLivePayload");
+    expect(payloadBuilder).toContain("timerState");
+    expect(payloadBuilder).toContain("serverNow");
+    expect(payloadBuilder).toContain("remainingMs");
   });
 });

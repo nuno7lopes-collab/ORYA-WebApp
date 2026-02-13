@@ -88,6 +88,7 @@ async function _GET(req: NextRequest) {
     where: eventId ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
     select: {
       id: true,
+      slug: true,
       title: true,
       status: true,
       padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
@@ -149,7 +150,7 @@ async function _GET(req: NextRequest) {
 
   return respondOk(
     ctx,
-    { event: { id: event.id, title: event.title }, rounds },
+    { event: { id: event.id, slug: event.slug, title: event.title }, rounds },
     { status: 200 },
   );
 }

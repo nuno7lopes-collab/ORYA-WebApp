@@ -79,6 +79,7 @@ export default async function PadelScorePage({ params, searchParams }: PageProps
     <PadelScoreboardClient
       event={{
         id: event.id,
+        slug,
         title: event.title,
         timezone: event.timezone ?? "Europe/Lisbon",
         liveStreamUrl: event.liveStreamUrl ?? null,

@@ -7,7 +7,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -70,9 +69,6 @@ function decodeCursor(raw: string | null) {
 
 async function _GET(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
 

@@ -5,10 +5,10 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
 
@@ -117,9 +117,12 @@ const STATUS_COUNT_DEFAULT: Record<SubmissionStatus, number> = {
 export default function InscricaoDetailPage() {
   const params = useParams<{ id: string }>();
   const formId = params?.id ?? "";
+  const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
   const tabParamRaw = searchParams?.get("tab") ?? "construcao";
   const normalizedTab = tabParamRaw === "editar" ? "construcao" : tabParamRaw;
   const activeTab =

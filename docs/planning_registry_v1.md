@@ -24,7 +24,7 @@ Atualizado: 2026-02-12
 - Escopo excluído: Padel/torneios/ranking/campos.
 
 ### P0.1 Política de rotas (decisão consolidada)
-- Item: legado web `/organizacao/*` com `301` para `/org/:orgId/*`.
+- Item: legado web `/organizacao/*` hard-cut com `410 LEGACY_ROUTE_REMOVED`.
   Estado: `MIGRADO_PARA_SSOT`
 - Item: legado API `/api/organizacao/*` com `410 LEGACY_ROUTE_REMOVED`.
   Estado: `MIGRADO_PARA_SSOT`

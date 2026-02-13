@@ -64,6 +64,33 @@ const buildMatchWindow = (match: {
   return { start, end: end ?? start };
 };
 
+type MatchParticipantRef = {
+  participant?: {
+    playerProfileId?: number | null;
+    playerProfile?: {
+      userId?: string | null;
+    } | null;
+  } | null;
+} | null;
+
+const resolveMatchPlayerProfileIds = (participants: MatchParticipantRef[] | null | undefined) =>
+  Array.from(
+    new Set(
+      (participants ?? [])
+        .map((row) => row?.participant?.playerProfileId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
+    ),
+  );
+
+const resolveMatchUserIds = (participants: MatchParticipantRef[] | null | undefined) =>
+  Array.from(
+    new Set(
+      (participants ?? [])
+        .map((row) => row?.participant?.playerProfile?.userId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+
 const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
   HARD_BLOCK: "bloqueio",
   MATCH_SLOT: "jogo",
@@ -349,8 +376,15 @@ async function _GET(req: NextRequest) {
         status: true,
         roundLabel: true,
         groupLabel: true,
-        pairingAId: true,
-        pairingBId: true,
+        participants: {
+          select: {
+            participant: {
+              select: {
+                playerProfileId: true,
+              },
+            },
+          },
+        },
         updatedAt: true,
         score: true,
       },
@@ -461,15 +495,15 @@ async function _GET(req: NextRequest) {
       const { start: s1, end: e1 } = matchWindow(m1);
       const { start: s2, end: e2 } = matchWindow(m2);
       if (!s1 || !e1 || !s2 || !e2) continue;
-      const sharePairing =
-        (m1.pairingAId && (m1.pairingAId === m2.pairingAId || m1.pairingAId === m2.pairingBId)) ||
-        (m1.pairingBId && (m1.pairingBId === m2.pairingAId || m1.pairingBId === m2.pairingBId));
-      if (sharePairing && overlaps({ startAt: s1, endAt: e1 }, { startAt: s2, endAt: e2 })) {
+      const m1Players = resolveMatchPlayerProfileIds(m1.participants);
+      const m2Players = resolveMatchPlayerProfileIds(m2.participants);
+      const sharePlayer = m1Players.some((playerId) => m2Players.includes(playerId));
+      if (sharePlayer && overlaps({ startAt: s1, endAt: e1 }, { startAt: s2, endAt: e2 })) {
         conflicts.push({
           type: "player_match",
           aId: m1.id,
           bId: m2.id,
-          summary: "Dupla/jogador marcado em dois jogos no mesmo horário",
+          summary: "Jogador marcado em dois jogos no mesmo horário",
         });
       }
     }
@@ -1003,8 +1037,20 @@ async function _PATCH(req: NextRequest) {
         eventId: true,
         courtId: true,
         updatedAt: true,
-        pairingAId: true,
-        pairingBId: true,
+        participants: {
+          select: {
+            participant: {
+              select: {
+                playerProfileId: true,
+                playerProfile: {
+                  select: {
+                    userId: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         plannedStartAt: true,
         plannedEndAt: true,
         plannedDurationMinutes: true,
@@ -1136,41 +1182,36 @@ async function _PATCH(req: NextRequest) {
 
     let playerConflictWarning: { matchId: number; message: string } | null = null;
 
-    // Colisão por jogador/dupla (pairing A/B) se houver info
-    if (desiredStart && desiredEnd && (match.pairingAId || match.pairingBId)) {
-      const pairingConditions = [
-        ...(match.pairingAId
-          ? [{ pairingAId: match.pairingAId }, { pairingBId: match.pairingAId }]
-          : []),
-        ...(match.pairingBId
-          ? [{ pairingAId: match.pairingBId }, { pairingBId: match.pairingBId }]
-          : []),
-      ];
-      const overlappingPlayerMatch =
-        pairingConditions.length > 0
-          ? await prisma.eventMatchSlot.findFirst({
-              where: {
-                eventId: match.eventId,
-                id: { not: id as number },
-                AND: [
-                  { OR: pairingConditions },
-                  {
-                    OR: [
-                      { plannedStartAt: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
-                      { startTime: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
-                    ],
-                  },
-                ],
+    const currentMatchPlayerProfileIds = resolveMatchPlayerProfileIds(match.participants);
+
+    // Colisão por jogador (participants canónicos) se houver info
+    if (desiredStart && desiredEnd && currentMatchPlayerProfileIds.length > 0) {
+      const overlappingPlayerMatch = await prisma.eventMatchSlot.findFirst({
+        where: {
+          eventId: match.eventId,
+          id: { not: id as number },
+          participants: {
+            some: {
+              participant: {
+                playerProfileId: {
+                  in: currentMatchPlayerProfileIds,
+                },
               },
-            })
-          : null;
+            },
+          },
+          OR: [
+            { plannedStartAt: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
+            { startTime: { lt: desiredEnd }, plannedEndAt: { gt: desiredStart } },
+          ],
+        },
+      });
       if (overlappingPlayerMatch) {
         const otherStart = overlappingPlayerMatch.plannedStartAt || overlappingPlayerMatch.startTime;
         const otherEnd = overlappingPlayerMatch.plannedEndAt || overlappingPlayerMatch.startTime;
         if (otherStart && otherEnd && overlapsWithBuffer(desiredStart, desiredEnd, otherStart, otherEnd)) {
           playerConflictWarning = {
             matchId: overlappingPlayerMatch.id,
-            message: "Jogador/dupla já tem jogo neste horário.",
+            message: "Jogador já tem jogo neste horário.",
           };
         }
       }
@@ -1249,19 +1290,8 @@ async function _PATCH(req: NextRequest) {
 
     const startChanged = (match.plannedStartAt?.getTime() ?? 0) !== (updated?.plannedStartAt?.getTime() ?? 0);
     const courtChanged = (match.courtId ?? null) !== (updated?.courtId ?? null);
-    if ((startChanged || courtChanged) && (match.pairingAId || match.pairingBId)) {
-      const pairingIds = [match.pairingAId, match.pairingBId].filter(Boolean) as number[];
-      const pairings = await prisma.padelPairing.findMany({
-        where: { id: { in: pairingIds } },
-        select: { slots: { select: { profileId: true } } },
-      });
-      const userIds = Array.from(
-        new Set(
-          pairings
-            .flatMap((pairing) => pairing.slots.map((slot) => slot.profileId))
-            .filter(Boolean) as string[],
-        ),
-      );
+    if (startChanged || courtChanged) {
+      const userIds = resolveMatchUserIds(match.participants);
       if (userIds.length > 0) {
         await queueMatchChanged({
           userIds,

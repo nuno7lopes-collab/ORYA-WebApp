@@ -11,7 +11,6 @@ import {
   ORYA_REQUEST_ID_HEADER,
   REQUEST_ID_HEADER,
 } from "@/lib/http/headers";
-import { resolveCanonicalOrgHref } from "@/lib/organizationIdUtils";
 
 const ADMIN_HOSTS = (process.env.ADMIN_HOSTS ?? "")
   .split(",")
@@ -171,172 +170,6 @@ function parsePositiveOrgId(raw: string | null | undefined) {
 
 const LEGACY_DOCS_URL = "/docs/org-canonical-migration";
 
-function mapCanonicalOrgWebRewrite(req: NextRequest): URL | null {
-  const pathname = req.nextUrl.pathname;
-  const match = pathname.match(/^\/org\/(\d+)(?:\/(.*))?$/i);
-  if (!match) return null;
-
-  const orgId = parsePositiveOrgId(match[1]);
-  if (!orgId) return null;
-
-  const rest = `/${match[2] ?? ""}`.replace(/\/+$/, "") || "/";
-  const params = new URLSearchParams(req.nextUrl.searchParams);
-  params.set("organizationId", String(orgId));
-  let legacyPath: string | null = null;
-
-  if (rest === "/" || rest === "/overview") {
-    legacyPath = "/organizacao/overview";
-  } else if (rest === "/operations" || rest === "/manage") {
-    legacyPath = "/organizacao/manage";
-  } else if (rest === "/marketing" || rest === "/promote" || rest === "/promo") {
-    legacyPath = "/organizacao/promote";
-  } else if (rest === "/profile") {
-    legacyPath = "/organizacao/profile";
-  } else if (rest === "/profile/followers" || rest === "/perfil/seguidores") {
-    legacyPath = "/organizacao/profile/seguidores";
-  } else if (rest === "/analytics") {
-    legacyPath = "/organizacao/analyze";
-    const tab = params.get("tab");
-    params.delete("tab");
-    if (tab === "vendas" || tab === "ops") {
-      params.set("section", tab);
-    } else {
-      params.set("section", "overview");
-    }
-  } else if (rest === "/finance" || rest === "/financas") {
-    legacyPath = "/organizacao/analyze";
-    const tab = params.get("tab");
-    params.delete("tab");
-    params.set("section", tab === "invoices" ? "invoices" : "financas");
-  } else if (rest === "/finance/invoices") {
-    legacyPath = "/organizacao/pagamentos/invoices";
-  } else if (rest === "/settings/verify") {
-    legacyPath = "/organizacao/settings/verify";
-  } else if (rest === "/settings" || rest.startsWith("/settings/")) {
-    legacyPath = `/organizacao${rest}`;
-  } else if (rest === "/check-in" || rest === "/checkin" || rest === "/scan") {
-    legacyPath = "/organizacao/scan";
-    if (!params.get("tab")) params.set("tab", "scanner");
-  } else if (rest === "/chat" || rest === "/mensagens") {
-    legacyPath = "/organizacao/chat";
-  } else if (rest === "/chat/preview") {
-    legacyPath = "/organizacao/chat/preview";
-  } else if (rest === "/events") {
-    legacyPath = "/organizacao/eventos";
-  } else if (rest === "/events/new") {
-    legacyPath = "/organizacao/eventos/novo";
-  } else if (rest.startsWith("/events/")) {
-    legacyPath = `/organizacao/eventos/${rest.slice("/events/".length)}`;
-  } else if (rest === "/bookings") {
-    legacyPath = "/organizacao/reservas";
-  } else if (rest === "/bookings/new") {
-    legacyPath = "/organizacao/reservas/novo";
-  } else if (rest === "/bookings/services") {
-    legacyPath = "/organizacao/reservas/servicos";
-  } else if (rest === "/bookings/customers") {
-    legacyPath = "/organizacao/reservas/clientes";
-  } else if (rest === "/bookings/professionals") {
-    legacyPath = "/organizacao/reservas/profissionais";
-  } else if (rest.startsWith("/bookings/professionals/")) {
-    legacyPath = `/organizacao/reservas/profissionais/${rest.slice("/bookings/professionals/".length)}`;
-  } else if (rest === "/bookings/resources") {
-    legacyPath = "/organizacao/reservas/recursos";
-  } else if (rest.startsWith("/bookings/resources/")) {
-    legacyPath = `/organizacao/reservas/recursos/${rest.slice("/bookings/resources/".length)}`;
-  } else if (rest === "/bookings/policies") {
-    legacyPath = "/organizacao/reservas/politicas";
-  } else if (rest === "/services" || rest === "/servicos") {
-    legacyPath = "/organizacao/reservas";
-  } else if (rest.startsWith("/bookings/")) {
-    legacyPath = `/organizacao/reservas/${rest.slice("/bookings/".length)}`;
-  } else if (rest === "/forms") {
-    legacyPath = "/organizacao/inscricoes";
-  } else if (rest.startsWith("/forms/")) {
-    legacyPath = `/organizacao/inscricoes/${rest.slice("/forms/".length)}`;
-  } else if (rest === "/team") {
-    legacyPath = "/organizacao/staff";
-  } else if (rest === "/trainers") {
-    legacyPath = "/organizacao/treinadores";
-  } else if (rest === "/club/members") {
-    legacyPath = "/organizacao/clube/membros";
-  } else if (rest === "/club/cash") {
-    legacyPath = "/organizacao/clube/caixa";
-  } else if (rest === "/padel") {
-    legacyPath = "/organizacao/padel";
-  } else if (rest === "/padel/clubs") {
-    legacyPath = "/organizacao/padel/clube";
-  } else if (rest === "/padel/tournaments") {
-    legacyPath = "/organizacao/padel/torneios";
-  } else if (rest === "/padel/tournaments/new") {
-    legacyPath = "/organizacao/padel/torneios/novo";
-  } else if (rest.startsWith("/padel/tournaments/")) {
-    legacyPath = `/organizacao/padel/torneios/${rest.slice("/padel/tournaments/".length)}`;
-  } else if (rest === "/tournaments") {
-    legacyPath = "/organizacao/torneios";
-  } else if (rest === "/tournaments/new") {
-    legacyPath = "/organizacao/torneios/novo";
-  } else if (rest.startsWith("/tournaments/")) {
-    legacyPath = `/organizacao/torneios/${rest.slice("/tournaments/".length)}`;
-  } else if (rest.startsWith("/crm/customers/")) {
-    legacyPath = `/organizacao/crm/clientes/${rest.slice("/crm/customers/".length)}`;
-  } else if (rest === "/crm/customers") {
-    legacyPath = "/organizacao/crm/clientes";
-  } else if (rest.startsWith("/crm/segments/")) {
-    legacyPath = `/organizacao/crm/segmentos/${rest.slice("/crm/segments/".length)}`;
-  } else if (rest === "/crm/segments") {
-    legacyPath = "/organizacao/crm/segmentos";
-  } else if (rest === "/crm/campaigns") {
-    legacyPath = "/organizacao/crm/campanhas";
-  } else if (rest === "/crm/reports") {
-    legacyPath = "/organizacao/crm/relatorios";
-  } else if (rest === "/crm/loyalty") {
-    legacyPath = "/organizacao/crm/loyalty";
-  } else if (rest === "/crm") {
-    legacyPath = "/organizacao/crm";
-  } else if (rest === "/store" || rest === "/loja") {
-    legacyPath = "/organizacao/loja";
-  } else if (rest.startsWith("/store/")) {
-    legacyPath = `/organizacao/loja/${rest.slice("/store/".length)}`;
-  } else if (rest === "/loja" || rest.startsWith("/loja/")) {
-    legacyPath = `/organizacao${rest}`;
-  }
-
-  if (!legacyPath) return null;
-
-  const rewritten = req.nextUrl.clone();
-  rewritten.pathname = legacyPath;
-  rewritten.search = params.toString() ? `?${params.toString()}` : "";
-  return rewritten;
-}
-
-function mapCanonicalOrgApiRewrite(req: NextRequest): URL | null {
-  const pathname = req.nextUrl.pathname;
-  const match = pathname.match(/^\/api\/org\/(\d+)(?:\/(.*))?$/i);
-  if (!match) return null;
-
-  const orgId = parsePositiveOrgId(match[1]);
-  if (!orgId) return null;
-
-  const rest = `${match[2] ?? ""}`.replace(/^\/+/, "");
-  if (!rest) return null;
-  if (rest === "store" || rest.startsWith("store/")) return null;
-
-  const normalized = (() => {
-    if (rest === "bookings" || rest.startsWith("bookings/")) return rest.replace(/^bookings/, "reservas");
-    if (rest === "forms" || rest.startsWith("forms/")) return rest.replace(/^forms/, "inscricoes");
-    if (rest === "services" || rest.startsWith("services/")) return rest.replace(/^services/, "servicos");
-    if (rest === "check-in" || rest.startsWith("check-in/")) return rest.replace(/^check-in/, "checkin");
-    if (rest === "operations" || rest.startsWith("operations/")) return rest.replace(/^operations/, "ops");
-    if (rest === "marketing" || rest.startsWith("marketing/")) return rest;
-    return rest;
-  })();
-
-  const rewritten = req.nextUrl.clone();
-  rewritten.pathname = `/api/organizacao/${normalized}`;
-  rewritten.searchParams.set("organizationId", String(orgId));
-  return rewritten;
-}
-
 function mapOrgHubAliasRewrite(req: NextRequest): URL | null {
   void req;
   return null;
@@ -350,22 +183,41 @@ function isLegacyWebRoute(pathname: string) {
   return pathname === "/organizacao" || pathname.startsWith("/organizacao/");
 }
 
-function resolveLegacyWebRedirect(req: NextRequest): URL | null {
-  const pathname = req.nextUrl.pathname;
-  if (!isLegacyWebRoute(pathname)) return null;
+const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
+  "/manage",
+  "/operations",
+  "/promote",
+  "/promo",
+  "/analyze",
+  "/financas",
+  "/faturacao",
+  "/pagamentos",
+  "/payments",
+  "/finance/invoices",
+  "/checkin",
+  "/scan",
+  "/servicos",
+  "/loja",
+  "/perfil",
+  "/profile/seguidores",
+  "/trainers",
+  "/tournaments",
+  "/crm/clientes",
+  "/crm/segmentos",
+  "/crm/campanhas",
+  "/crm/relatorios",
+] as const;
 
-  const search = new URLSearchParams(req.nextUrl.searchParams);
-  const orgId =
-    parsePositiveOrgId(search.get("organizationId")) ??
-    parsePositiveOrgId(search.get("org")) ??
-    parsePositiveOrgId(req.cookies.get("orya_organization")?.value);
-  const canonical = resolveCanonicalOrgHref(pathname, search, orgId);
-  if (!canonical) return null;
-
-  const target = req.nextUrl.clone();
-  target.pathname = canonical.pathname;
-  target.search = canonical.search.toString() ? `?${canonical.search.toString()}` : "";
-  return target;
+function isRemovedCanonicalOrgWebRoute(pathname: string) {
+  const match = pathname.match(/^\/org\/\d+(?:\/(.*))?$/i);
+  if (!match) return false;
+  const rest = `/${match[1] ?? ""}`.replace(/\/+$/, "") || "/";
+  if (rest === "/") return false;
+  if (rest === "/padel") return true;
+  if (rest.startsWith("/padel/clube")) return true;
+  if (rest.startsWith("/padel/torneios")) return true;
+  if (rest.startsWith("/padel/tournaments/new")) return true;
+  return REMOVED_CANONICAL_ORG_WEB_PREFIXES.some((prefix) => rest === prefix || rest.startsWith(`${prefix}/`));
 }
 
 function hasInvalidOrgContextSources(req: NextRequest) {
@@ -380,11 +232,14 @@ function hasInvalidOrgContextSources(req: NextRequest) {
   );
 }
 
-function buildLegacyRemovedResponse() {
+function buildLegacyRemovedResponse(pathname: string, namespace: "web" | "api") {
   return NextResponse.json(
     {
       ok: false,
       error: "LEGACY_ROUTE_REMOVED",
+      errorCode: "LEGACY_ROUTE_REMOVED",
+      namespace,
+      pathname,
       canonicalDocsUrl: LEGACY_DOCS_URL,
     },
     { status: 410 },
@@ -463,28 +318,35 @@ export async function proxy(req: NextRequest) {
   }
 
   if (isLegacyApiRoute(req.nextUrl.pathname)) {
-    const res = buildLegacyRemovedResponse();
+    console.warn(
+      `[proxy][legacy_removed] ${JSON.stringify({
+        errorCode: "LEGACY_ROUTE_REMOVED",
+        namespace: "api",
+        pathname: req.nextUrl.pathname,
+        requestId: requestContext.requestId,
+      })}`,
+    );
+    const res = buildLegacyRemovedResponse(req.nextUrl.pathname, "api");
+    applyRequestContextHeaders(res.headers, requestContext);
+    return res;
+  }
+
+  if (isLegacyWebRoute(req.nextUrl.pathname) || isRemovedCanonicalOrgWebRoute(req.nextUrl.pathname)) {
+    console.warn(
+      `[proxy][legacy_removed] ${JSON.stringify({
+        errorCode: "LEGACY_ROUTE_REMOVED",
+        namespace: "web",
+        pathname: req.nextUrl.pathname,
+        requestId: requestContext.requestId,
+      })}`,
+    );
+    const res = buildLegacyRemovedResponse(req.nextUrl.pathname, "web");
     applyRequestContextHeaders(res.headers, requestContext);
     return res;
   }
 
   if (hasInvalidOrgContextSources(req)) {
     const res = buildInvalidOrgContextResponse();
-    applyRequestContextHeaders(res.headers, requestContext);
-    return res;
-  }
-
-  const legacyWebRedirect = resolveLegacyWebRedirect(req);
-  if (legacyWebRedirect) {
-    const res = NextResponse.redirect(legacyWebRedirect, 301);
-    applyRequestContextHeaders(res.headers, requestContext);
-    return res;
-  }
-  if (isLegacyWebRoute(req.nextUrl.pathname)) {
-    const fallback = req.nextUrl.clone();
-    fallback.pathname = "/org-hub/organizations";
-    fallback.search = "";
-    const res = NextResponse.redirect(fallback, 301);
     applyRequestContextHeaders(res.headers, requestContext);
     return res;
   }

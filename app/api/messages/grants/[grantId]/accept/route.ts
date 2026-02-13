@@ -6,7 +6,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getMessagesScope } from "@/app/api/messages/_scope";
+import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
@@ -248,6 +248,8 @@ async function ensureOrgOrServiceConversation(params: {
 
 export async function POST(req: NextRequest, context: { params: { grantId: string } }) {
   try {
+    const mobileGate = enforceB2CMobileOnly(req);
+    if (mobileGate) return mobileGate;
     const grantId = context.params.grantId?.trim();
     if (!grantId) {
       return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });

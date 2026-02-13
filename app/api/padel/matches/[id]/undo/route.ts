@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { OrganizationMemberRole, OrganizationModule, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -55,6 +55,15 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       pairingAId: true,
       pairingBId: true,
       winnerPairingId: true,
+      winnerParticipantId: true,
+      winnerSide: true,
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          side: true,
+          participant: { select: { sourcePairingId: true } },
+        },
+      },
       event: { select: { id: true, organizationId: true } },
     },
   });
@@ -107,9 +116,24 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "UNDO_INVALID" }, { status: 400 });
   }
 
+  const winnerSideFromAfter =
+    after?.winnerSide === "A" || after?.winnerSide === "B"
+      ? (after.winnerSide as "A" | "B")
+      : match.winnerSide === "A" || match.winnerSide === "B"
+        ? match.winnerSide
+        : null;
+  const winnerPairingFromParticipants =
+    winnerSideFromAfter === null
+      ? null
+      : match.participants
+          .filter((row) => row.side === winnerSideFromAfter)
+          .map((row) => row.participant?.sourcePairingId)
+          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
   const winnerPairingId =
     typeof after?.winnerPairingId === "number"
       ? (after.winnerPairingId as number)
+      : typeof winnerPairingFromParticipants === "number"
+        ? winnerPairingFromParticipants
       : typeof match.winnerPairingId === "number"
         ? match.winnerPairingId
         : null;
@@ -133,6 +157,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
           pairingAId: true,
           pairingBId: true,
           winnerPairingId: true,
+          winnerParticipantId: true,
+          winnerSide: true,
           status: true,
         },
         orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
@@ -261,8 +287,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   }
 
   const beforeStatus = typeof before.status === "string" ? before.status : match.status;
-  const beforeWinner =
-    typeof before.winnerPairingId === "number" ? (before.winnerPairingId as number) : null;
+  const beforeWinnerParticipant =
+    typeof before.winnerParticipantId === "number"
+      ? (before.winnerParticipantId as number)
+      : typeof match.winnerParticipantId === "number"
+        ? match.winnerParticipantId
+        : null;
+  const beforeWinnerSide =
+    before.winnerSide === "A" || before.winnerSide === "B"
+      ? before.winnerSide
+      : match.winnerSide === "A" || match.winnerSide === "B"
+        ? match.winnerSide
+        : null;
   const beforeScore = before.score && typeof before.score === "object" ? before.score : {};
   const beforeScoreSets = Array.isArray(before.scoreSets) ? before.scoreSets : null;
 
@@ -272,7 +308,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       const data: Prisma.EventMatchSlotUncheckedUpdateInput = {};
       if (target.clearA) data.pairingAId = null;
       if (target.clearB) data.pairingBId = null;
-      if (target.clearA || target.clearB) data.winnerPairingId = null;
+      if (target.clearA || target.clearB) {
+        data.winnerParticipantId = null;
+        data.winnerSide = null;
+      }
       await updatePadelMatch({
         tx,
         matchId: target.id,
@@ -294,7 +333,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       eventType: SYSTEM_MATCH_EVENT,
       data: {
         status: beforeStatus as any,
-        winnerPairingId: beforeWinner,
+        winnerParticipantId: beforeWinnerParticipant,
+        winnerSide: beforeWinnerSide,
         score: beforeScore as Prisma.InputJsonValue,
         scoreSets: beforeScoreSets ? (beforeScoreSets as Prisma.InputJsonValue) : Prisma.DbNull,
       },

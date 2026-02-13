@@ -21,7 +21,7 @@ const LAST_SEEN_DEBOUNCE_SECONDS = Number(process.env.CHAT_LAST_SEEN_DEBOUNCE_SE
 const AUTH_RECHECK_MS = Number(process.env.CHAT_WS_AUTH_RECHECK_MS || 10 * 60 * 1000);
 
 const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"]);
-const B2C_CONTEXT_TYPES = new Set(["USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE"]);
+const B2C_CONTEXT_TYPES = new Set(["EVENT", "USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE"]);
 
 function loadEnv() {
   if (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -195,6 +195,26 @@ function extractTokenFromProtocols(headerValue) {
     }
   }
   return null;
+}
+
+function getClientPlatform(url, headers) {
+  const fromQuery = url.searchParams.get("platform");
+  if (typeof fromQuery === "string" && fromQuery.trim()) {
+    return fromQuery.trim().toLowerCase();
+  }
+
+  const fromHeaders =
+    headers["x-client-platform"] ||
+    headers["x-app-platform"] ||
+    headers["x-platform"] ||
+    null;
+  if (typeof fromHeaders === "string" && fromHeaders.trim()) {
+    return fromHeaders.trim().toLowerCase();
+  }
+  if (Array.isArray(fromHeaders) && fromHeaders.length > 0) {
+    return String(fromHeaders[0] || "").trim().toLowerCase();
+  }
+  return "";
 }
 
 async function validateToken(token) {
@@ -433,6 +453,7 @@ wss.on("connection", (ws, req) => {
     const orgIdParam = Number(url.searchParams.get("organizationId") || "");
     const scopeParam = url.searchParams.get("scope");
     const forceB2C = scopeParam === "b2c";
+    const clientPlatform = getClientPlatform(url, req.headers);
 
     const user = await validateToken(token);
     if (!user) {
@@ -442,6 +463,11 @@ wss.on("connection", (ws, req) => {
 
     const organizationId = forceB2C ? null : await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
     const scope = organizationId ? "org" : "b2c";
+
+    if (scope === "b2c" && clientPlatform !== "mobile") {
+      ws.close(4003, "MOBILE_APP_REQUIRED");
+      return;
+    }
 
     if (scope === "org") {
       const membership = await ensureOrgAccess(user.id, organizationId);

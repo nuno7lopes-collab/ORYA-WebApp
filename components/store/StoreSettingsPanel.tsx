@@ -109,7 +109,10 @@ export default function StoreSettingsPanel({ endpoint, storeEnabled }: StoreSett
     <section className="space-y-4">
       {!storeEnabled ? (
         <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          A funcionalidade da loja está desativada globalmente. Define `STORE_ENABLED=true` para continuar.
+          <p className="font-medium">A loja está temporariamente indisponível nesta instalação.</p>
+          <p className="mt-1 text-amber-100/85">
+            Pede à equipa técnica para ativar o módulo da loja antes de editar definições.
+          </p>
         </div>
       ) : null}
 

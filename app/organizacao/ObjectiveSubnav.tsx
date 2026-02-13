@@ -81,37 +81,45 @@ export default function ObjectiveSubnav({
   const organization = data?.organization ?? null;
   const inscricoesBasePath = (() => {
     if (!pathname) return null;
-    const canonicalMatch = pathname.match(/^\/org\/(\d+)\/inscricoes\/(\d+)/);
+    const canonicalMatch = pathname.match(/^\/org\/(\d+)\/(?:inscricoes|forms)\/(\d+)/);
     if (!canonicalMatch) return null;
     const orgId = organizationId ?? Number(canonicalMatch[1]);
     if (!Number.isFinite(orgId)) return null;
-    return `/org/${orgId}/inscricoes/${canonicalMatch[2]}`;
+    return `/org/${orgId}/forms/${canonicalMatch[2]}`;
   })();
-  const moduleBasePath =
-    pathname?.startsWith("/organizacao/eventos")
+  const isCanonicalOrgPath = pathname?.startsWith("/org/");
+  const moduleBasePath = isCanonicalOrgPath
+    ? null
+    : pathname?.startsWith("/organizacao/eventos")
       ? "/organizacao/eventos"
-      : pathname?.startsWith("/org/") && pathname?.includes("/eventos")
-        ? organizationId
-          ? `/org/${organizationId}/eventos`
-          : "/organizacao/eventos"
-      : pathname?.startsWith("/organizacao/torneios") || pathname?.startsWith("/organizacao/padel")
+      : pathname?.startsWith("/organizacao/torneios") ||
+          pathname?.startsWith("/organizacao/padel") ||
+          pathname?.startsWith("/organizacao/tournaments")
         ? "/organizacao/padel/torneios"
-        : pathname?.startsWith("/org/") && (pathname?.includes("/torneios") || pathname?.includes("/padel"))
-          ? organizationId
-            ? `/org/${organizationId}/padel/torneios`
-            : "/organizacao/padel/torneios"
-        : null;
-  const operationOverride =
-    pathname?.startsWith("/organizacao/reservas") || (pathname?.startsWith("/org/") && pathname?.includes("/servicos"))
+      : null;
+  const sectionParam = searchParams?.get("section");
+  const sectionOperationOverride =
+    sectionParam === "reservas"
       ? "RESERVAS"
-      : pathname?.startsWith("/organizacao/eventos") || (pathname?.startsWith("/org/") && pathname?.includes("/eventos"))
+      : sectionParam === "eventos"
+        ? "EVENTOS"
+        : sectionParam === "padel-club" || sectionParam === "padel-tournaments"
+          ? "TORNEIOS"
+          : null;
+  const pathnameOperationOverride =
+    pathname?.startsWith("/organizacao/reservas") ||
+    (isCanonicalOrgPath && (pathname?.includes("/bookings") || pathname?.includes("/servicos") || pathname?.includes("/services")))
+      ? "RESERVAS"
+      : pathname?.startsWith("/organizacao/eventos") ||
+          (isCanonicalOrgPath && (pathname?.includes("/events") || pathname?.includes("/eventos")))
         ? "EVENTOS"
         : pathname?.startsWith("/organizacao/torneios") ||
             pathname?.startsWith("/organizacao/padel") ||
             pathname?.startsWith("/organizacao/tournaments") ||
-            (pathname?.startsWith("/org/") && (pathname?.includes("/torneios") || pathname?.includes("/padel")))
+            (isCanonicalOrgPath && (pathname?.includes("/padel") || pathname?.includes("/tournaments") || pathname?.includes("/torneios")))
           ? "TORNEIOS"
           : null;
+  const operationOverride = sectionOperationOverride ?? pathnameOperationOverride;
 
   const rawModules = Array.isArray(modules)
     ? modules

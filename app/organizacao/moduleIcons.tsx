@@ -73,6 +73,18 @@ function IconCard(props: IconProps) {
   );
 }
 
+function IconChart(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 20h16" />
+      <path d="M7 16v-5" />
+      <path d="M12 16V8" />
+      <path d="M17 16v-3" />
+      <path d="M7 11l5-3 5 2" />
+    </svg>
+  );
+}
+
 function IconMegaphone(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -152,6 +164,7 @@ const MODULE_ICONS: Record<string, IconComponent> = {
   MENSAGENS: IconChat,
   STAFF: IconTeam,
   FINANCEIRO: IconCard,
+  ANALYTICS: IconChart,
   CRM: IconOrbit,
   MARKETING: IconMegaphone,
   LOJA: IconBag,

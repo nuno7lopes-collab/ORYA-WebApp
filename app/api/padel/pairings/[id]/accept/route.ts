@@ -28,6 +28,7 @@ import { validateEligibility } from "@/domain/padelEligibility";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEntriesForConfirmedPairing";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
+import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
 const ensurePlayerProfile = (params: { organizationId: number; userId: string }) =>
   ensurePadelPlayerProfileId(prisma, params);
@@ -82,6 +83,21 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   });
 
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  const organizationId = pairing.organizationId;
+  const ratingGate = await ensurePadelRatingActionAllowed({
+    organizationId,
+    userId: user.id,
+  });
+  if (!ratingGate.ok) {
+    return jsonWrap(
+      {
+        ok: false,
+        error: ratingGate.error,
+        blockedUntil: ratingGate.blockedUntil,
+      },
+      { status: 423 },
+    );
+  }
   const isInactiveRegistration =
     pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
   if (isInactiveRegistration || pairing.pairingStatus === "CANCELLED") {

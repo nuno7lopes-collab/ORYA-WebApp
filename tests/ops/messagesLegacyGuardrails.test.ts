@@ -52,8 +52,12 @@ describe("messages legacy guardrails", () => {
 
   it("blocks legacy chat tables in canonical message runtime", () => {
     const output = run(
-      'rg -n "chat_event_invites|chat_conversation_requests|chat_channel_requests|chat_threads|chat_members|chat_messages" app lib domain packages scripts -S',
+      'rg -n "chat_event_invites|chat_conversation_requests|chat_channel_requests|chat_threads|chat_members|chat_messages" app apps components lib domain packages scripts -S',
     );
     expect(output).toBe("");
+  });
+
+  it("removes deprecated ChatThread component", () => {
+    expect(existsSync("components/chat/ChatThread.tsx")).toBe(false);
   });
 });

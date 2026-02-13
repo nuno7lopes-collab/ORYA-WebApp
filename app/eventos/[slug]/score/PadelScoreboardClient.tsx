@@ -25,6 +25,7 @@ type ScoreboardMatch = {
 
 type ScoreboardEvent = {
   id: number;
+  slug: string;
   title: string;
   timezone: string | null;
   liveStreamUrl: string | null;
@@ -62,7 +63,7 @@ export default function PadelScoreboardClient({
   const timeZone = event.timezone ?? "Europe/Lisbon";
 
   useEffect(() => {
-    const url = new URL("/api/padel/live", window.location.origin);
+    const url = new URL(`/api/live/events/${encodeURIComponent(event.slug)}/stream`, window.location.origin);
     url.searchParams.set("eventId", String(event.id));
     const source = new EventSource(url.toString());
     const handleUpdate = (ev: MessageEvent) => {
@@ -78,7 +79,7 @@ export default function PadelScoreboardClient({
       source.removeEventListener("update", handleUpdate);
       source.close();
     };
-  }, [event.id]);
+  }, [event.id, event.slug]);
 
   const liveMatches = useMemo(
     () => matches.filter((m) => m.status === "IN_PROGRESS" || m.status === "LIVE"),

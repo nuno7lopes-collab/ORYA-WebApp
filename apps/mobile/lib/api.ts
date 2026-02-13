@@ -364,7 +364,7 @@ type ApiEnvelope<T> = {
 const isEnvelope = (payload: unknown): payload is ApiEnvelope<unknown> =>
   typeof payload === "object" && payload !== null && "ok" in payload;
 
-export const unwrapApiResponse = <T>(payload: unknown): T => {
+export const unwrapApiResponse = <T>(payload: unknown, status = 200): T => {
   if (!isEnvelope(payload)) return payload as T;
   if (payload.ok) {
     return (payload.data ?? payload.result ?? payload) as T;
@@ -384,5 +384,19 @@ export const unwrapApiResponse = <T>(payload: unknown): T => {
     (typeof payload.message === "string" && payload.message) ||
     (typeof payload.error === "object" && payload.error?.message) ||
     "Erro ao carregar.";
-  throw new ApiError(500, message);
+  const statusFromEnvelope =
+    typeof (payload as Record<string, unknown>).status === "number"
+      ? Number((payload as Record<string, unknown>).status)
+      : null;
+  const details = (payload as Record<string, unknown>).details;
+  const statusFromDetails =
+    details && typeof details === "object" && typeof (details as Record<string, unknown>).status === "number"
+      ? Number((details as Record<string, unknown>).status)
+      : null;
+
+  const finalStatus =
+    (statusFromEnvelope && Number.isFinite(statusFromEnvelope) ? statusFromEnvelope : null) ??
+    (statusFromDetails && Number.isFinite(statusFromDetails) ? statusFromDetails : null) ??
+    (Number.isFinite(status) ? status : 500);
+  throw new ApiError(finalStatus, message);
 };

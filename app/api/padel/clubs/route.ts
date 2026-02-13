@@ -219,6 +219,24 @@ async function _POST(req: NextRequest) {
         },
       })
     : null;
+  const activeAgreement =
+    isPartner && !existing && sourceClubIdCandidate
+      ? await prisma.padelPartnershipAgreement.findFirst({
+          where: {
+            ownerClubId: sourceClubIdCandidate,
+            partnerOrganizationId: organization.id,
+            status: "APPROVED",
+            revokedAt: null,
+            OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
+            AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] }],
+          },
+          select: {
+            id: true,
+            partnerClubId: true,
+          },
+          orderBy: [{ approvedAt: "desc" }, { id: "desc" }],
+        })
+      : null;
 
   const resolvedAddressId = addressIdInput ?? sourceClub?.addressId ?? existing?.addressId ?? null;
   if (!resolvedAddressId) {
@@ -258,6 +276,20 @@ async function _POST(req: NextRequest) {
         { ok: false, error: "Clube parceiro indisponível ou inexistente." },
         { status: 400 },
       );
+    }
+    if (isPartner && !existing) {
+      if (!sourceClubIdCandidate) {
+        return jsonWrap({ ok: false, error: "AGREEMENT_REQUIRED" }, { status: 409 });
+      }
+      if (!activeAgreement) {
+        return jsonWrap({ ok: false, error: "AGREEMENT_REQUIRED" }, { status: 409 });
+      }
+      if (activeAgreement.partnerClubId) {
+        return jsonWrap(
+          { ok: false, error: "PARTNER_CLUB_ALREADY_LINKED", partnerClubId: activeAgreement.partnerClubId },
+          { status: 409 },
+        );
+      }
     }
 
     const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
@@ -329,6 +361,12 @@ async function _POST(req: NextRequest) {
       }
       if (isPartner && saved.isDefault) {
         saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
+      }
+      if (isPartner && !existing && activeAgreement?.id) {
+        await tx.padelPartnershipAgreement.update({
+          where: { id: activeAgreement.id },
+          data: { partnerClubId: saved.id },
+        });
       }
       return saved;
     });

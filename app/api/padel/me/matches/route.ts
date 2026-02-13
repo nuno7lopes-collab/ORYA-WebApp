@@ -47,14 +47,22 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: true, items: [] }, { status: 200 });
   }
 
-  const pairingFilter = { OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }] };
-  const where: Record<string, any> = pairingFilter;
+  const participantFilter = {
+    participants: {
+      some: {
+        participant: {
+          sourcePairingId: { in: pairingIds },
+        },
+      },
+    },
+  };
+  const where: Record<string, any> = participantFilter;
   if (scope === "past") {
     where.status = "DONE";
   } else if (scope === "upcoming") {
     where.status = { not: "DONE" };
     where.AND = [
-      pairingFilter,
+      participantFilter,
       {
         OR: [
           { startTime: { gte: now } },
@@ -71,8 +79,6 @@ async function _GET(req: NextRequest) {
       id: true,
       eventId: true,
       categoryId: true,
-      pairingAId: true,
-      pairingBId: true,
       status: true,
       startTime: true,
       plannedStartAt: true,
@@ -80,6 +86,16 @@ async function _GET(req: NextRequest) {
       score: true,
       scoreSets: true,
       courtName: true,
+      participants: {
+        select: {
+          side: true,
+          participant: {
+            select: {
+              sourcePairingId: true,
+            },
+          },
+        },
+      },
       event: {
         select: {
           id: true,
@@ -97,12 +113,17 @@ async function _GET(req: NextRequest) {
   });
 
   const items = matches.map((match) => {
-    const pairingSide =
-      match.pairingAId && pairingIds.includes(match.pairingAId)
-        ? "A"
-        : match.pairingBId && pairingIds.includes(match.pairingBId)
-          ? "B"
-          : null;
+    const pairingSide = (() => {
+      const hasA = match.participants.some(
+        (row) => row.side === "A" && typeof row.participant?.sourcePairingId === "number" && pairingIds.includes(row.participant.sourcePairingId),
+      );
+      if (hasA) return "A" as const;
+      const hasB = match.participants.some(
+        (row) => row.side === "B" && typeof row.participant?.sourcePairingId === "number" && pairingIds.includes(row.participant.sourcePairingId),
+      );
+      if (hasB) return "B" as const;
+      return null;
+    })();
     const stats = resolvePadelMatchStats(match.scoreSets ?? null, match.score ?? null);
     const winnerSide = stats?.winner ?? null;
     return {

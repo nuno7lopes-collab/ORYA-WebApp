@@ -17,6 +17,7 @@ type StandingsRow = {
   label?: string | null;
   players?: Array<{ id?: number | null; name?: string | null; username?: string | null }> | null;
 };
+type StandingEntityType = "PAIRING" | "PLAYER";
 
 
 type PairingSlot = {
@@ -44,7 +45,12 @@ type Match = {
   score?: Record<string, unknown> | null;
 };
 
-type StandingsResponse = { ok?: boolean; groups?: Record<string, StandingsRow[]> };
+type StandingsResponse = {
+  ok?: boolean;
+  entityType?: StandingEntityType;
+  rows?: StandingsRow[];
+  groups?: Record<string, StandingsRow[]>;
+};
 type MatchesResponse = { ok?: boolean; items?: Match[] };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -93,17 +99,20 @@ const toTimeLabel = (value: string | Date, locale?: string | null, timezone?: st
 export default function PadelPublicTablesClient({
   eventId,
   eventSlug,
+  initialEntityType = "PAIRING",
   initialStandings,
   locale,
   timezone,
 }: {
   eventId: number;
   eventSlug: string;
+  initialEntityType?: StandingEntityType;
   initialStandings: Record<string, StandingsRow[]>;
   locale?: string | null;
   timezone?: string | null;
 }) {
   const [realtimeActive, setRealtimeActive] = useState(false);
+  const [entityType, setEntityType] = useState<StandingEntityType>(initialEntityType);
   const refreshInterval = realtimeActive ? 0 : 30000;
 
   const { data: standingsRes, mutate: mutateStandings } = useSWR<StandingsResponse>(
@@ -122,11 +131,15 @@ export default function PadelPublicTablesClient({
   );
 
   const standings = standingsRes?.groups ?? initialStandings;
+
+  useEffect(() => {
+    setEntityType(standingsRes?.entityType === "PLAYER" ? "PLAYER" : "PAIRING");
+  }, [standingsRes?.entityType]);
   const matches = Array.isArray(matchesRes?.items) ? matchesRes?.items ?? [] : [];
 
   useEffect(() => {
-    if (!eventId || typeof window === "undefined") return;
-    const url = new URL("/api/padel/live", window.location.origin);
+    if (!eventId || !eventSlug || typeof window === "undefined") return;
+    const url = new URL(`/api/live/events/${encodeURIComponent(eventSlug)}/stream`, window.location.origin);
     url.searchParams.set("eventId", String(eventId));
     const es = new EventSource(url.toString());
 
@@ -134,7 +147,15 @@ export default function PadelPublicTablesClient({
       try {
         const payload = JSON.parse(event.data);
         if (payload?.standings?.groups) {
-          mutateStandings({ ok: true, groups: payload.standings.groups }, { revalidate: false });
+          mutateStandings(
+            {
+              ok: true,
+              entityType: payload?.standings?.entityType === "PLAYER" ? "PLAYER" : "PAIRING",
+              rows: Array.isArray(payload?.standings?.rows) ? payload.standings.rows : [],
+              groups: payload.standings.groups,
+            },
+            { revalidate: false },
+          );
         }
         if (payload?.matches) {
           mutateMatches({ ok: true, items: payload.matches }, { revalidate: false });
@@ -156,7 +177,7 @@ export default function PadelPublicTablesClient({
       es.close();
       setRealtimeActive(false);
     };
-  }, [eventId, mutateMatches, mutateStandings]);
+  }, [eventId, eventSlug, mutateMatches, mutateStandings]);
 
   const standingsGroups = useMemo(() => {
     const entries = Object.entries(standings) as Array<[string, StandingsRow[]]>;
@@ -242,7 +263,9 @@ export default function PadelPublicTablesClient({
             <div key={label} className="rounded-2xl border border-white/12 bg-black/40 p-4">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-white/90">{label || t("groupLabel", locale)}</span>
-                <span className="text-[11px] text-white/60">{rows.length} {t("pairing", locale)}</span>
+                <span className="text-[11px] text-white/60">
+                  {rows.length} {entityType === "PLAYER" ? "Jogadores" : t("pairing", locale)}
+                </span>
               </div>
               <div className="mt-3 space-y-2">
                 {rows.map((row, idx) => (
@@ -254,7 +277,7 @@ export default function PadelPublicTablesClient({
                       <span className="w-5 text-[11px] text-white/50">{idx + 1}</span>
                       <span className="text-sm text-white/90">
                         {row.label ||
-                          (typeof row.pairingId === "number"
+                          (entityType === "PAIRING" && typeof row.pairingId === "number"
                             ? pairingNameMap.get(row.pairingId) ?? `${t("pairing", locale)} #${row.pairingId}`
                             : `Jogador #${row.entityId}`)}
                       </span>

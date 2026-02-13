@@ -5,12 +5,12 @@ export default function OrgCanonicalMigrationDocsPage() {
     <main className="mx-auto max-w-3xl px-6 py-14 text-sm text-slate-200">
       <h1 className="text-2xl font-semibold text-white">Legacy route removed</h1>
       <p className="mt-4 text-slate-300">
-        Legacy routing policy is now split: <code>/organizacao/*</code> redirects to canonical web routes, and{" "}
+        Legacy routing policy is now hard-cut: <code>/organizacao/*</code> is removed, and{" "}
         <code>/api/organizacao/*</code> is removed.
       </p>
       <ul className="mt-4 list-disc space-y-2 pl-5 text-slate-300">
         <li>
-          Legacy web: <code>/organizacao/*</code> -&gt; <code>301</code> to <code>/org/:orgId/*</code>
+          Legacy web: <code>/organizacao/*</code> -&gt; <code>410 LEGACY_ROUTE_REMOVED</code>
         </li>
         <li>
           Legacy API: <code>/api/organizacao/*</code> -&gt; <code>410 LEGACY_ROUTE_REMOVED</code>

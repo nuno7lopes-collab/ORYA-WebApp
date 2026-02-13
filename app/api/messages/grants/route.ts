@@ -6,7 +6,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { getMessagesScope } from "@/app/api/messages/_scope";
+import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 
@@ -258,6 +258,8 @@ async function buildB2CGrantVisibility(userId: string, email: string | null) {
 
 export async function GET(req: NextRequest) {
   try {
+    const mobileGate = enforceB2CMobileOnly(req);
+    if (mobileGate) return mobileGate;
     const scope = getMessagesScope(req);
     const kinds = parseKinds(req);
     const statuses = parseStatuses(req);

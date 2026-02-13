@@ -120,13 +120,24 @@ export function resolveCanonicalOrgHref(
 
   if (!organizationId || !Number.isFinite(organizationId)) return null;
 
+  const resolveLegacyManageSectionPath = (section: string | null) => {
+    if (section === "reservas") return buildOrgHref(organizationId, "/bookings");
+    if (section === "inscricoes") return buildOrgHref(organizationId, "/forms");
+    if (section === "padel-club") return buildOrgHref(organizationId, "/padel/clubs");
+    if (section === "padel-tournaments") return buildOrgHref(organizationId, "/padel/tournaments");
+    if (section === "staff") return buildOrgHref(organizationId, "/team");
+    if (section === "chat") return buildOrgHref(organizationId, "/chat");
+    if (section === "crm") return buildOrgHref(organizationId, "/crm/customers");
+    return buildOrgHref(organizationId, "/events");
+  };
+
   if (suffix === "" || suffix === "/" || suffix === "/overview") {
     const tab = nextSearch.get("tab");
     const section = nextSearch.get("section");
     nextSearch.delete("tab");
     nextSearch.delete("section");
     if (tab === "manage") {
-      return { pathname: buildOrgHref(organizationId, "/operations"), search: nextSearch };
+      return { pathname: resolveLegacyManageSectionPath(section), search: nextSearch };
     }
     if (tab === "promote") {
       return { pathname: buildOrgHref(organizationId, "/marketing"), search: nextSearch };
@@ -137,7 +148,7 @@ export function resolveCanonicalOrgHref(
     if (tab === "analyze") {
       if (section === "financas" || section === "invoices") {
         return {
-          pathname: section === "invoices" ? buildOrgHref(organizationId, "/finance/invoices") : buildOrgHref(organizationId, "/finance"),
+          pathname: buildOrgHref(organizationId, "/finance"),
           search: nextSearch,
         };
       }
@@ -154,7 +165,9 @@ export function resolveCanonicalOrgHref(
   }
 
   if (suffix === "/manage") {
-    return { pathname: buildOrgHref(organizationId, "/operations"), search: nextSearch };
+    const section = nextSearch.get("section");
+    nextSearch.delete("section");
+    return { pathname: resolveLegacyManageSectionPath(section), search: nextSearch };
   }
 
   if (suffix === "/promote" || suffix === "/promo") {
@@ -194,7 +207,7 @@ export function resolveCanonicalOrgHref(
   }
 
   if (suffix === "/pagamentos/invoices") {
-    return { pathname: buildOrgHref(organizationId, "/finance/invoices"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/finance"), search: nextSearch };
   }
 
   if (suffix === "/estatisticas") {
@@ -206,7 +219,7 @@ export function resolveCanonicalOrgHref(
     nextSearch.delete("section");
     if (section === "financas" || section === "invoices") {
       return {
-        pathname: section === "invoices" ? buildOrgHref(organizationId, "/finance/invoices") : buildOrgHref(organizationId, "/finance"),
+        pathname: buildOrgHref(organizationId, "/finance"),
         search: nextSearch,
       };
     }
@@ -277,7 +290,7 @@ export function resolveCanonicalOrgHref(
     return { pathname: buildOrgHref(organizationId, "/team"), search: nextSearch };
   }
   if (suffix === "/treinadores") {
-    return { pathname: buildOrgHref(organizationId, "/trainers"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/team/trainers"), search: nextSearch };
   }
   if (suffix === "/clube/membros") {
     return { pathname: buildOrgHref(organizationId, "/club/members"), search: nextSearch };
@@ -287,7 +300,7 @@ export function resolveCanonicalOrgHref(
   }
 
   if (suffix === "/padel") {
-    return { pathname: buildOrgHref(organizationId, "/padel"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/padel/clubs"), search: nextSearch };
   }
   if (suffix === "/padel/clube") {
     return { pathname: buildOrgHref(organizationId, "/padel/clubs"), search: nextSearch };
@@ -296,7 +309,7 @@ export function resolveCanonicalOrgHref(
     return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
   }
   if (suffix === "/padel/torneios/novo") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/new"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
   }
   if (suffix.startsWith("/padel/torneios/")) {
     return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/padel/torneios/".length)}`), search: nextSearch };
@@ -306,10 +319,13 @@ export function resolveCanonicalOrgHref(
     return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
   }
   if (suffix === "/torneios/novo") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/new"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
   }
   if (suffix.startsWith("/torneios/")) {
     return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/torneios/".length)}`), search: nextSearch };
+  }
+  if (suffix.startsWith("/tournaments/new")) {
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
   }
   if (suffix.startsWith("/tournaments/")) {
     return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/tournaments/".length)}`), search: nextSearch };

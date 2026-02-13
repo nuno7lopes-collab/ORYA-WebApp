@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { isOrganizationFollowed } from "@/domain/social/follows";
 import { EntitlementType, OrganizationMemberRole } from "@prisma/client";
-import { resolveLiveHubModules } from "@/lib/liveHubConfig";
+import { resolveLiveModules } from "@/lib/liveConfig";
 import { summarizeMatchStatus, computeStandingsForGroup } from "@/domain/tournaments/structure";
 import { type TieBreakRule } from "@/domain/tournaments/standings";
 import { getTournamentStructure } from "@/domain/tournaments/structureData";
@@ -70,6 +70,14 @@ function resolvePadelRoundNumber(label: string | null) {
   return Number.isFinite(value) ? value : null;
 }
 
+function includesAnyParticipant(
+  values: Array<number | null | undefined> | null | undefined,
+  targets: number[],
+) {
+  if (!Array.isArray(values) || targets.length === 0) return false;
+  return values.some((value) => typeof value === "number" && targets.includes(value));
+}
+
 function tieBreakRulesForPadelFormat(format: string | null) {
   if (format === "NON_STOP") {
     return normalizePadelTieBreakRules(["POINTS", "HEAD_TO_HEAD", "GAME_DIFFERENCE", "GAMES_FOR", "COIN_TOSS"]);
@@ -101,7 +109,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
         coverImageUrl: true,
         organizationId: true,
-        liveHubVisibility: true,
+        liveVisibility: true,
         liveStreamUrl: true,
         timezone: true,
         organization: {
@@ -142,7 +150,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
             addressRef: { select: { formattedAddress: true, canonical: true, latitude: true, longitude: true } },
             coverImageUrl: true,
             organizationId: true,
-            liveHubVisibility: true,
+            liveVisibility: true,
             liveStreamUrl: true,
             timezone: true,
             organization: {
@@ -247,17 +255,17 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       : hasAnyTicket || isParticipantInvited;
 
   const viewerRole = isOrganization ? "ORGANIZATION" : isParticipant ? "PARTICIPANT" : "PUBLIC";
-  const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
-  const liveHubAllowed =
-    liveHubVisibility === "PUBLIC"
+  const liveVisibility = event.liveVisibility ?? "PUBLIC";
+  const liveAllowed =
+    liveVisibility === "PUBLIC"
       ? true
-      : liveHubVisibility === "PRIVATE"
+      : liveVisibility === "PRIVATE"
         ? isOrganization || isParticipant
         : false;
 
   const primaryModule = event.organization?.primaryModule ?? null;
-  const liveHubMode = "DEFAULT";
-  const liveHubModules = resolveLiveHubModules({ templateType: event.templateType ?? null, primaryModule });
+  const liveMode = "DEFAULT";
+  const liveModules = resolveLiveModules({ templateType: event.templateType ?? null, primaryModule });
 
   let tournamentPayload: any = null;
   const pairings: Record<
@@ -291,9 +299,8 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           roundType: true,
           groupLabel: true,
           roundLabel: true,
-          pairingAId: true,
-          pairingBId: true,
-          winnerPairingId: true,
+          winnerSide: true,
+          winnerParticipantId: true,
           courtId: true,
           courtNumber: true,
           startTime: true,
@@ -302,6 +309,21 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           score: true,
           scoreSets: true,
           updatedAt: true,
+          participants: {
+            orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+            select: {
+              side: true,
+              slotOrder: true,
+              participantId: true,
+              participant: {
+                select: {
+                  id: true,
+                  playerProfileId: true,
+                  sourcePairingId: true,
+                },
+              },
+            },
+          },
         },
         orderBy: [
           { roundType: "asc" },
@@ -326,6 +348,16 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       match: (typeof padelMatches)[number],
       params: { stageId: number; groupId?: number | null; round?: number | null },
     ) => {
+      const sideAPairingId =
+        match.participants
+          ?.filter((row) => row.side === "A")
+          .map((row) => row.participant?.sourcePairingId)
+          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
+      const sideBPairingId =
+        match.participants
+          ?.filter((row) => row.side === "B")
+          .map((row) => row.participant?.sourcePairingId)
+          .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null;
       const scoreObj =
         match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
       const rawSets = Array.isArray(match.scoreSets)
@@ -339,12 +371,24 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         ...(normalizedSets.length ? { sets: normalizedSets } : {}),
       };
       const statusInfo = resolvePadelMatchStatus(match.status, scoreObj);
+      const participantSideAIds = match.participants
+        ?.filter((row) => row.side === "A")
+        .map((row) => row.participant?.playerProfileId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      const participantSideBIds = match.participants
+        ?.filter((row) => row.side === "B")
+        .map((row) => row.participant?.playerProfileId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
       return {
         id: match.id,
         stageId: params.stageId,
         groupId: params.groupId ?? null,
-        pairing1Id: match.pairingAId ?? null,
-        pairing2Id: match.pairingBId ?? null,
+        pairing1Id: sideAPairingId,
+        pairing2Id: sideBPairingId,
+        participantSideAIds: participantSideAIds ?? [],
+        participantSideBIds: participantSideBIds ?? [],
+        winnerSide: match.winnerSide ?? null,
+        winnerParticipantId: match.winnerParticipantId ?? null,
         courtId: match.courtNumber ?? match.courtId ?? null,
         round: params.round ?? resolvePadelRoundNumber(match.roundLabel) ?? null,
         roundLabel: match.roundLabel,
@@ -356,8 +400,22 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       };
     };
 
+    const isPlayerEntityFormat = padelConfig?.format === "AMERICANO" || padelConfig?.format === "MEXICANO";
     let userPairingId: number | null = null;
+    let userPlayerProfileIds: number[] = [];
     if (userId) {
+      if (isPlayerEntityFormat && typeof event.organizationId === "number") {
+        const playerProfiles = await prisma.padelPlayerProfile.findMany({
+          where: {
+            organizationId: event.organizationId,
+            userId,
+          },
+          select: { id: true },
+        });
+        userPlayerProfileIds = playerProfiles
+          .map((profile) => profile.id)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      }
       const pairing = await prisma.padelPairing.findFirst({
         where: { eventId: event.id, OR: [{ player1UserId: userId }, { player2UserId: userId }] },
         select: { id: true },
@@ -399,12 +457,28 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
       const { label, matches } = entry;
       const groupMatches = matches.filter((m) => m.roundType === "GROUPS");
       const knockoutMatches = matches.filter((m) => m.roundType === "KNOCKOUT");
-      const isPlayerEntity = padelConfig?.format === "AMERICANO" || padelConfig?.format === "MEXICANO";
+      const isPlayerEntity = isPlayerEntityFormat;
 
       if (groupMatches.length > 0) {
         const standingMatches = groupMatches.map((m) => ({
-          pairingAId: m.pairingAId ?? null,
-          pairingBId: m.pairingBId ?? null,
+          pairingAId:
+            m.participants
+              ?.filter((row) => row.side === "A")
+              .map((row) => row.participant?.sourcePairingId)
+              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
+          pairingBId:
+            m.participants
+              ?.filter((row) => row.side === "B")
+              .map((row) => row.participant?.sourcePairingId)
+              .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null,
+          sideAEntityIds: m.participants
+            ?.filter((row) => row.side === "A")
+            .map((row) => row.participant?.playerProfileId)
+            .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
+          sideBEntityIds: m.participants
+            ?.filter((row) => row.side === "B")
+            .map((row) => row.participant?.playerProfileId)
+            .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
           scoreSets: m.scoreSets,
           score: m.score,
           status: m.status,
@@ -414,26 +488,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
 
         let standingsByGroup: Record<string, Array<Record<string, unknown>>> = {};
         if (isPlayerEntity) {
-          const pairingIds = new Set<number>();
-          standingMatches.forEach((match) => {
-            if (typeof match.pairingAId === "number") pairingIds.add(match.pairingAId);
-            if (typeof match.pairingBId === "number") pairingIds.add(match.pairingBId);
-          });
-          const pairings = pairingIds.size
-            ? await prisma.padelPairing.findMany({
-                where: { id: { in: Array.from(pairingIds) } },
-                select: { id: true, slots: { select: { playerProfileId: true } } },
-              })
-            : [];
           const pairingPlayers = new Map<number, number[]>();
-          pairings.forEach((pairing) => {
-            pairingPlayers.set(
-              pairing.id,
-              pairing.slots
-                .map((slot) => slot.playerProfileId)
-                .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
-            );
-          });
           const raw = computePadelStandingsByGroupForPlayers(
             standingMatches,
             pairingPlayers,
@@ -538,13 +593,26 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
     const flatMatches = stages.flatMap((s) => [...s.matches, ...s.groups.flatMap((g) => g.matches)]) as Array<{
       pairing1Id?: number | null;
       pairing2Id?: number | null;
+      participantSideAIds?: number[];
+      participantSideBIds?: number[];
       status: string;
       startAt?: string | Date | null;
       updatedAt?: string | Date | null;
     }>;
 
     const nextMatch =
-      userPairingId !== null
+      isPlayerEntityFormat
+        ? flatMatches
+            .filter(
+              (m) =>
+                includesAnyParticipant(m.participantSideAIds, userPlayerProfileIds) ||
+                includesAnyParticipant(m.participantSideBIds, userPlayerProfileIds),
+            )
+            .filter((m) => m.status !== "DONE")
+            .sort((a, b) =>
+              a.startAt && b.startAt ? new Date(a.startAt).getTime() - new Date(b.startAt).getTime() : 0,
+            )[0] ?? null
+        : userPairingId !== null
         ? flatMatches
             .filter((m) => (m.pairing1Id === userPairingId || m.pairing2Id === userPairingId) && m.status !== "DONE")
             .sort((a, b) =>
@@ -553,7 +621,18 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         : null;
 
     const lastMatch =
-      userPairingId !== null
+      isPlayerEntityFormat
+        ? flatMatches
+            .filter(
+              (m) =>
+                includesAnyParticipant(m.participantSideAIds, userPlayerProfileIds) ||
+                includesAnyParticipant(m.participantSideBIds, userPlayerProfileIds),
+            )
+            .filter((m) => m.status === "DONE")
+            .sort((a, b) =>
+              a.startAt && b.startAt ? new Date(b.startAt).getTime() - new Date(a.startAt).getTime() : 0,
+            )[0] ?? null
+        : userPairingId !== null
         ? flatMatches
             .filter((m) => (m.pairing1Id === userPairingId || m.pairing2Id === userPairingId) && m.status === "DONE")
             .sort((a, b) =>
@@ -605,7 +684,13 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
     });
     const championMatch = finalCandidates
       .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())[0];
-    const championPairingId = championMatch?.winnerPairingId ?? null;
+    const championPairingId =
+      championMatch && (championMatch.winnerSide === "A" || championMatch.winnerSide === "B")
+        ? championMatch.participants
+            .filter((row) => row.side === championMatch.winnerSide)
+            .map((row) => row.participant?.sourcePairingId)
+            .find((id): id is number => typeof id === "number" && Number.isFinite(id)) ?? null
+        : null;
 
     tournamentPayload = {
       id: event.id,
@@ -835,7 +920,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
           coverImageUrl: event.coverImageUrl,
           liveStreamUrl: event.liveStreamUrl,
           timezone: event.timezone,
-          liveHubVisibility,
+          liveVisibility,
         },
         organization: event.organization
           ? {
@@ -851,14 +936,14 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
         organizationRole,
         canEditMatches,
         access: {
-          liveHubVisibility,
-          liveHubAllowed,
+          liveVisibility,
+          liveAllowed,
           isParticipant,
         },
-      liveHub: {
-        mode: liveHubMode,
+      live: {
+        mode: liveMode,
         primaryModule,
-        modules: liveHubModules,
+        modules: liveModules,
       },
         tournament: tournamentPayload,
         pairings,
@@ -869,7 +954,7 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ slug: str
     res.headers.set("Cache-Control", "public, max-age=8");
     return res;
   } catch (err) {
-    console.error("[livehub] error", err);
+    console.error("[live] error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }

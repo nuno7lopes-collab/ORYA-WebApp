@@ -34,6 +34,7 @@ type NextItem = {
 
 type NextMatchesWidgetClientProps = {
   eventId: number;
+  eventSlug?: string | null;
   timezone?: string | null;
   locale?: string;
   title: string;
@@ -92,6 +93,7 @@ const fetchMatches = async (eventId: number) => {
 
 export default function NextMatchesWidgetClient({
   eventId,
+  eventSlug,
   timezone,
   locale,
   title,
@@ -103,9 +105,11 @@ export default function NextMatchesWidgetClient({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !eventSlug) return;
     let closed = false;
-    const source = new EventSource(`/api/padel/live?eventId=${encodeURIComponent(String(eventId))}`);
+    const source = new EventSource(
+      `/api/live/events/${encodeURIComponent(eventSlug)}/stream?eventId=${encodeURIComponent(String(eventId))}`,
+    );
 
     const stopPoll = () => {
       if (pollRef.current) {
@@ -160,7 +164,7 @@ export default function NextMatchesWidgetClient({
       source.close();
       stopPoll();
     };
-  }, [eventId]);
+  }, [eventId, eventSlug]);
 
   const hasItems = useMemo(() => items.length > 0, [items]);
 

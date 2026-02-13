@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { enforceB2CMobileOnly } from "@/app/api/messages/_scope";
 
 async function canAccessEventGrant(params: {
   userId: string;
@@ -38,6 +39,8 @@ async function canAccessEventGrant(params: {
 
 export async function POST(req: NextRequest, context: { params: { grantId: string } }) {
   try {
+    const mobileGate = enforceB2CMobileOnly(req);
+    if (mobileGate) return mobileGate;
     const grantId = context.params.grantId?.trim();
     if (!grantId) {
       return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });

@@ -36,6 +36,44 @@ function buildMatchWindow(match: {
   return { start, end };
 }
 
+async function _GET(req: NextRequest) {
+  const check = await ensurePartnershipOrganization({ req, required: "VIEW" });
+  if (!check.ok) {
+    return jsonWrap({ ok: false, error: check.error }, { status: check.status });
+  }
+
+  const overrides = await prisma.padelPartnershipOverride.findMany({
+    where: {
+      OR: [
+        { ownerOrganizationId: check.organization.id },
+        { partnerOrganizationId: check.organization.id },
+      ],
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 200,
+  });
+
+  const compensationCases = await prisma.padelPartnershipCompensationCase.findMany({
+    where: {
+      OR: [
+        { ownerOrganizationId: check.organization.id },
+        { partnerOrganizationId: check.organization.id },
+      ],
+    },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 200,
+  });
+
+  return jsonWrap(
+    {
+      ok: true,
+      items: overrides,
+      compensationCases,
+    },
+    { status: 200 },
+  );
+}
+
 async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
@@ -226,4 +264,5 @@ async function _POST(req: NextRequest) {
   return jsonWrap({ ok: true, override }, { status: 201 });
 }
 
+export const GET = withApiEnvelope(_GET);
 export const POST = withApiEnvelope(_POST);

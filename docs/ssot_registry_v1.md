@@ -73,6 +73,7 @@ Atualizado: 2026-02-12
 | decisionId | owner | approvedAt | scope | status | rationale | migrationImpact |
 | --- | --- | --- | --- | --- | --- | --- |
 | SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | web legado passa a `301`; API legado passa a `410`; consumo frontend/mobile passa para `/org` e `/api/org*` |
+| SSOT-2026-02-13-ORG-HARDCUT-SUBNAV | Nuno | 2026-02-13 | hard-cut de legacy web + subnav dedicada por ferramenta | FECHADO | remover superfície legacy `/organizacao/*` e eliminar subnav partilhada no dashboard | `/organizacao/*` passa a `410`; slugs PT legacy em `/org/:orgId/*` passam a `410`; topbar resolve `toolKey -> subnav` 1:1; padel dividido em club/tournaments |
 ---
 
 ## 01 Global Invariants (I*)
@@ -2354,7 +2355,7 @@ D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
 	•	Regra: `endsAt` **tem de ser depois** de `startsAt` (nunca antes).  
 	•	Não existe fallback runtime para `endsAt`; payload inválido falha e deve ser corrigido na origem.  
 	•	Evento publicado **nunca** pode regressar a `DRAFT`. `DRAFT` nunca é público.  
-	•	Chat de evento: `open_at = startsAt`, `read_only_at = endsAt`, `close_at = endsAt + 24h`.  
+	•	Chat de evento: `open_at = startsAt`, `read_only_at = endsAt + 24h`, `close_at = endsAt + 24h`.  
 	•	Chat de evento (acesso) — **presença** obrigatória: **Entitlement + check-in consumido**.  
 	•	Definição: **check‑in consumido = entitlement consumido** (`CheckinResultCode.OK` ou `ALREADY_USED`).  
 	•	Entitlement mantém-se como prova única de acesso ao evento; o chat é uma feature de presença.  
@@ -2364,7 +2365,7 @@ D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
 	•	CTA “Entrar no chat” na página do evento **e** no bilhete/carteira, apenas após entitlement consumido.  
 	•	Notificação do chat enviada após entitlement consumido (respeita preferências do utilizador).  
 	•	Chat de evento é **exclusivo da app** (não existe chat de evento na web para users).  
-	•	Após `close_at`: chat fica **read‑only** para quem tem acesso; histórico **não expira**.  
+	•	Até `endsAt + 24h` mantém escrita para participantes com acesso; após isso fica **read‑only**.  
 	•	Discovery: eventos `PAST`/`CANCELLED` **não** entram em listas públicas.  
 	•	Mobile checkout: CTA **bloqueado** se `status != ACTIVE` **ou** `endsAt < now`.  
 	•	Wallet: separação “Ativos/Histórico” **baseada em `endsAt`** (ou janela de check‑in).
@@ -2373,7 +2374,8 @@ D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
 D01.02) Mensagens & Chat — decisões de produto (FECHADO)
 	•	Mensagens para utilizador final **apenas na app** (sem chat na web).  
 	•	“Inbox” único de Mensagens: eventos + reservas/serviços + chats com organizações + chats entre utilizadores.  
-	•	Chat de evento segue D01.01 (convite aceite, CTA pós‑consumo, app‑only, read‑only após close, histórico permanente).  
+	•	Escopo `b2c` é **mobile-only** por contrato backend (HTTP + WebSocket): clientes não‑mobile recebem `MOBILE_APP_REQUIRED`; versões mobile fora da gate recebem `UPGRADE_REQUIRED`.  
+	•	Chat de evento segue D01.01 e é suportado integralmente no `b2c` (inbox, mensagens, read, notifications, delete, realtime).  
 	•	Chat de reservas/serviços: canal **só ativa** com a 1ª mensagem (não criar canal vazio).  
 	•	Chat de serviço (pré‑reserva): **apenas via pedido**; pedido **aprovado por staff** da organização.  
 	•	Chat org‑contact (cliente → organização): **pedido obrigatório**, aprovado por staff.  
@@ -2382,9 +2384,9 @@ D01.02) Mensagens & Chat — decisões de produto (FECHADO)
 	•	Canais cliente‑profissional: cliente vê o profissional; admins podem ver/escrever; identidade padrão para admins é “Organização”; identidade pessoal opcional quando necessário; admins **não aparecem** como membros visíveis ao cliente.  
 	•	Mensagens entre utilizadores: só entre amigos/seguidores confirmados; pedidos de mensagem para desconhecidos; grupos por convite.  
 	•	Notificações: push em todas as mensagens por defeito; opção de silenciar por conversa.  
-	•	Conteúdo: **texto apenas** na Fase 1; anexos em fase futura.  
+	•	Conteúdo: **texto-only**. Upload/presign de anexos está desativado e payloads com anexos são rejeitados (`ATTACHMENTS_DISABLED`).  
 	•	“Anular envio”: janela de **2 minutos**.  
-	•	Retenção: mensagens guardadas; chats de evento/reserva ficam read‑only após fecho, sem purge.
+	•	Retenção: mensagens guardadas e chats de evento/reserva read‑only após fecho. Exceção única (one-off de migração): purge destrutivo de mensagens históricas com anexos + ficheiros/metadata para convergir para texto-only; não é política contínua.
 
 D02) Owners (fontes de verdade) — semântica blindada
 	•	Ticketing / Sessions / Página pública base / Entitlements de acesso: Eventos
@@ -2661,7 +2663,7 @@ D05.01) Resolução de organização é determinística
 	•	Cookie pode existir apenas como conveniência (redirect inicial), não como base de autorização.
 	•	RBAC avalia sempre com orgId explícito.
 	•	Qualquer fallback (cookie/lastUsedAt) é permitido apenas para redirect/UI. Nunca para autorização.
-	•	Alias legado web (compatibilidade): `/organizacao/*` → `301` para `/org/:orgId/*` (apenas UI; orgId resolvido por query/cookie só para redirect).
+	•	Alias legado web removido (hard-cut): `/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
 	•	Namespace legado API: `/api/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
 
 D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
@@ -3386,73 +3388,35 @@ Regra de canonicidade (FECHADO):
 - Web org-scoped: **`/org/:orgId/*`**
 - API org-scoped: **`/api/org/:orgId/*`**
 - API hub/sistema: **`/api/org-hub/*`** e **`/api/org-system/*`**
-- Alias web legado: **`/organizacao/*`** responde com **`301`** para rota canónica equivalente.
+- Alias web legado removido: **`/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
 - Namespace API legado: **`/api/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
 
-Resolução de `orgId` para redirect de alias web (`/organizacao/*`):
-- prioridade 1: query `organizationId` (ou `org`);
-- prioridade 2: cookie `orya_organization`;
-- sem contexto de org: redirect `301` para `/org-hub/organizations`.
+Regra de subnav (FECHADO):
+- Topbar principal resolve apenas **`toolKey -> ToolSubnav`** (1:1).
+- **Proibido fallback partilhado** de conteúdo de subnavegação entre ferramentas.
+- Partilha permitida apenas na shell visual (estilo/render).
 
-10.1 Serviços
+Matriz canónica final (web):
+- Dashboard: `/org/:orgId/overview` (sem subnav obrigatória)
+- Events: `/org/:orgId/events` (`list`, `new`, `live` contextual)
+- Bookings: `/org/:orgId/bookings` (`overview`, `availability`, `prices`, `professionals`, `resources`, `policies`, `integrations`)
+- Check-in: `/org/:orgId/check-in` (`scanner`, `list`, `sessions`, `logs`, `devices`)
+- Finance: `/org/:orgId/finance` (`overview`, `ledger`, `dimensions`, `payouts`, `refunds_disputes`, `subscriptions`)
+- Analytics: `/org/:orgId/analytics` (`overview`, `occupancy`, `conversion`, `no_show`, `cohorts`)
+- CRM: `/org/:orgId/crm/*` (`customers`, `segments`, `campaigns`, `journeys`, `reports`, `loyalty`)
+- Store: `/org/:orgId/store` (`overview`, `catalog`, `orders`, `shipping`, `marketing`, `settings`)
+- Forms: `/org/:orgId/forms` (`forms`, `responses`, `settings`)
+- Chat: `/org/:orgId/chat` (`inbox`, `preview`)
+- Team: `/org/:orgId/team` (`members`, `trainers`)
+- Padel Club: `/org/:orgId/padel/clubs` (`clubs`, `courts`, `players`, `community`, `trainers`, `lessons`)
+- Padel Tournaments: `/org/:orgId/padel/tournaments` (`tournaments`, `create`, `calendar`, `categories`, `teams`, `players`)
+- Marketing: `/org/:orgId/marketing` (`overview`, `promos`, `promoters`, `content`)
+- Profile: `/org/:orgId/profile` (`profile`, `followers`, `requests`)
+- Settings: `/org/:orgId/settings` (`general`, `verify`)
 
-`/org/:orgId/bookings`
-	•	`?tab=overview`
-	•	`?tab=availability`
-	•	`?tab=prices` (tarifários e regras)
-	•	`?tab=professionals`
-	•	`?tab=resources`
-	•	`?tab=policies`
-	•	`?tab=integrations`
-
-Alias legado web:
-`/organizacao/reservas?organizationId=:orgId` → `/org/:orgId/bookings`
-
-10.2 Seguidores
-
-`/org/:orgId/profile/followers`
-	•	`?tab=followers`
-	•	`?tab=requests`
-
-Alias legado web:
-`/organizacao/profile/seguidores?organizationId=:orgId` → `/org/:orgId/profile/followers`
-
-10.3 Check-in
-
-`/org/:orgId/check-in`
-	•	`?tab=scanner`
-	•	`?tab=list`
-	•	`?tab=sessions`
-	•	`?tab=logs`
-	•	`?tab=devices` (fase 2)
-
-Alias legado web:
-`/organizacao/scan?organizationId=:orgId` → `/org/:orgId/check-in?tab=scanner`
-
-10.4 Finanças (macro/micro)
-
-`/org/:orgId/finance`
-	•	`?tab=overview` (bolo)
-	•	`?tab=ledger` (movimentos)
-	•	`?tab=dimensions` (recurso/profissional/cliente/produto/filial)
-	•	`?tab=payouts`
-	•	`?tab=refunds_disputes`
-	•	`?tab=subscriptions` (fase 2)
-
-Alias legado web:
-`/organizacao/analyze?section=financas&organizationId=:orgId` → `/org/:orgId/finance`
-
-10.5 Analytics
-
-`/org/:orgId/analytics`
-	•	`?tab=overview`
-	•	`?tab=occupancy`
-	•	`?tab=conversion`
-	•	`?tab=no_show`
-	•	`?tab=cohorts` (fase 3)
-
-Alias legado web:
-`/organizacao/analyze?section=vendas|ops|overview&organizationId=:orgId` → `/org/:orgId/analytics`
+Hard-cut de slugs legacy em `/org/:orgId/*`:
+- Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `crm/clientes`, `manage`, `promote`, `tournaments`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
+- Sem redirects internos para slugs legacy (política single-route-only).
 
 ⸻
 

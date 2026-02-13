@@ -2,31 +2,44 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type SyntheticEvent } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import {
-  CORE_ORGANIZATION_MODULES,
-  parseOrganizationModules,
-  resolvePrimaryModule,
-} from "@/lib/organizationCategories";
 import { RoleBadge } from "@/app/organizacao/RoleBadge";
 import { NotificationBell } from "@/app/components/notifications/NotificationBell";
-import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
-import CrmSubnav from "@/app/organizacao/(dashboard)/crm/CrmSubnav";
-import { type ObjectiveTab } from "@/app/organizacao/objectiveNav";
-import { hasModuleAccess, normalizeAccessLevel, resolveModuleAccess } from "@/lib/organizationRbac";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
-import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
+import { OrganizationMemberRole } from "@prisma/client";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import { ModuleIcon } from "@/app/organizacao/moduleIcons";
-import { normalizeOrganizationPathname } from "@/app/organizacao/topbarRouteUtils";
+import { normalizeOrganizationPathname, resolveOrganizationTool, type OrgToolKey } from "@/app/organizacao/topbarRouteUtils";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
+import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
+import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
+import CheckInSubnav from "@/app/org/_components/subnav/CheckInSubnav";
+import FinanceSubnav from "@/app/org/_components/subnav/FinanceSubnav";
+import AnalyticsSubnav from "@/app/org/_components/subnav/AnalyticsSubnav";
+import CrmToolSubnav from "@/app/org/_components/subnav/CrmToolSubnav";
+import StoreToolSubnav from "@/app/org/_components/subnav/StoreToolSubnav";
+import FormsSubnav from "@/app/org/_components/subnav/FormsSubnav";
+import ChatSubnav from "@/app/org/_components/subnav/ChatSubnav";
+import TeamSubnav from "@/app/org/_components/subnav/TeamSubnav";
+import PadelClubSubnav from "@/app/org/_components/subnav/PadelClubSubnav";
+import PadelTournamentsSubnav from "@/app/org/_components/subnav/PadelTournamentsSubnav";
+import MarketingSubnav from "@/app/org/_components/subnav/MarketingSubnav";
+import ProfileSubnav from "@/app/org/_components/subnav/ProfileSubnav";
+import SettingsSubnav from "@/app/org/_components/subnav/SettingsSubnav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+const TOPBAR_FLOAT_OFFSET = 12;
+const TOPBAR_MIN_HEIGHT = 64;
+const TOPBAR_MAX_HEIGHT = 220;
+const TOPBAR_MIN_RENDERED_HEIGHT = TOPBAR_MIN_HEIGHT + TOPBAR_FLOAT_OFFSET;
+const TOPBAR_MAX_RENDERED_HEIGHT = TOPBAR_MAX_HEIGHT + TOPBAR_FLOAT_OFFSET;
+const SCROLL_TOP_THRESHOLD = 24;
+const SCROLL_NOISE_THRESHOLD = 2;
+const SCROLL_DIRECTION_THRESHOLD = 16;
 
 type OrgOption = {
   organizationId: number;
@@ -61,28 +74,33 @@ type UserInfo = {
   avatarUpdatedAt?: string | number | null;
 };
 
-type OperationModule = "EVENTOS" | "RESERVAS" | "TORNEIOS";
-
 type OrganizationMeResponse = {
   ok: boolean;
   organization?: {
     officialEmail?: string | null;
     officialEmailVerifiedAt?: string | null;
   } | null;
-  modulePermissions?: Array<{
-    moduleKey: OrganizationModule;
-    accessLevel: string;
-    scopeType?: string | null;
-    scopeId?: string | null;
-  }>;
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
   paymentsMode?: "CONNECT" | "PLATFORM";
 };
 
-const OPERATION_LABELS: Record<OperationModule, string> = {
-  EVENTOS: "Eventos",
-  RESERVAS: "Reservas",
-  TORNEIOS: "Padel",
+const TOOL_META: Record<OrgToolKey, { label: string; moduleKey: string | null }> = {
+  dashboard: { label: "Dashboard", moduleKey: null },
+  events: { label: "Events", moduleKey: "EVENTOS" },
+  bookings: { label: "Bookings", moduleKey: "RESERVAS" },
+  "check-in": { label: "Check-in", moduleKey: "CHECKIN" },
+  finance: { label: "Finance", moduleKey: "FINANCEIRO" },
+  analytics: { label: "Analytics", moduleKey: "ANALYTICS" },
+  crm: { label: "CRM", moduleKey: "CRM" },
+  store: { label: "Store", moduleKey: "LOJA" },
+  forms: { label: "Forms", moduleKey: "INSCRICOES" },
+  chat: { label: "Chat", moduleKey: "MENSAGENS" },
+  team: { label: "Team", moduleKey: "STAFF" },
+  "padel-club": { label: "Padel Club", moduleKey: "TORNEIOS" },
+  "padel-tournaments": { label: "Padel Tournaments", moduleKey: "TORNEIOS" },
+  marketing: { label: "Marketing", moduleKey: "MARKETING" },
+  profile: { label: "Profile", moduleKey: "PERFIL_PUBLICO" },
+  settings: { label: "Settings", moduleKey: "DEFINICOES" },
 };
 
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
@@ -94,6 +112,7 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
   STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
+  ANALYTICS: "from-[#22D3EE]/35 via-[#6A7BFF]/30 to-[#A78BFA]/35",
   CRM: "from-[#F97316]/35 via-[#38BDF8]/30 to-[#22D3EE]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
@@ -119,11 +138,12 @@ export default function OrganizationTopBar({
   type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const topbarRef = useRef<HTMLDivElement | null>(null);
   const normalizedPathname = useMemo(() => normalizeOrganizationPathname(pathname), [pathname]);
   const orgMenuRef = useRef<HTMLDetailsElement | null>(null);
   const userMenuRef = useRef<HTMLDetailsElement | null>(null);
   const lastScrollYRef = useRef(0);
+  const scrollDirectionDeltaRef = useRef(0);
   const [switchingOrgId, setSwitchingOrgId] = useState<number | null>(null);
   const [openMenu, setOpenMenu] = useState<"org" | "user" | null>(null);
   const [isVisible, setIsVisible] = useState(true);
@@ -134,219 +154,53 @@ export default function OrganizationTopBar({
   const userLabel = user?.name || user?.email || "Utilizador";
   const dashboardHref = activeOrg?.id ? buildOrgHref(activeOrg.id, "/overview") : buildOrgHubHref("/organizations");
 
-  const moduleState = useMemo(() => {
-    const primary = resolvePrimaryModule(
-      activeOrg?.primaryModule ?? null,
-      activeOrg?.modules ?? null,
-    ) as OperationModule;
-    return { primary };
-  }, [activeOrg?.primaryModule, activeOrg?.modules]);
-
-  const currentApp = useMemo(() => {
-    const setApp = (label: string, moduleKey: string | null) => ({ label, moduleKey });
-    const resolveManageApp = () => {
-      if (sectionParam === "inscricoes") return setApp("Formulários", "INSCRICOES");
-      if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
-      if (sectionParam === "padel-club") return setApp("Gestão de Clube Padel", "TORNEIOS");
-      if (sectionParam === "padel-tournaments") return setApp("Torneios de Padel", "TORNEIOS");
-      return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
-    };
-    const tabParam = searchParams?.get("tab");
-    const sectionParam = searchParams?.get("section");
-    if (normalizedPathname === "/organizacao") {
-      if (!tabParam || tabParam === "overview" || tabParam === "create") return setApp("Dashboard", null);
-      if (tabParam === "manage") return resolveManageApp();
-      if (tabParam === "promote") return setApp("Promoções", "MARKETING");
-      if (tabParam === "analyze") return setApp("Finanças", "FINANCEIRO");
-      if (tabParam === "profile") return setApp("Perfil público", "PERFIL_PUBLICO");
-      return setApp("Dashboard", null);
-    }
-    if (normalizedPathname === "/organizacao/manage") return resolveManageApp();
-    if (normalizedPathname === "/organizacao/promote") return setApp("Promoções", "MARKETING");
-    if (normalizedPathname === "/organizacao/analyze") return setApp("Finanças", "FINANCEIRO");
-    if (normalizedPathname === "/organizacao/profile") return setApp("Perfil público", "PERFIL_PUBLICO");
-    if (normalizedPathname?.startsWith("/organizacao/eventos")) return setApp("Eventos", "EVENTOS");
-    if (
-      normalizedPathname?.startsWith("/organizacao/torneios") ||
-      normalizedPathname?.startsWith("/organizacao/padel") ||
-      normalizedPathname?.startsWith("/organizacao/tournaments")
-    ) {
-      return setApp("Padel", "TORNEIOS");
-    }
-    if (normalizedPathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
-    if (normalizedPathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
-    if (normalizedPathname?.startsWith("/organizacao/chat")) {
-      return setApp("Chat interno", "MENSAGENS");
-    }
-    if (normalizedPathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");
-    if (normalizedPathname?.startsWith("/organizacao/crm")) return setApp("CRM", "CRM");
-    if (normalizedPathname?.startsWith("/organizacao/loja")) {
-      if (normalizedPathname?.includes("/loja")) return setApp("Loja", "LOJA");
-    }
-    if (normalizedPathname?.startsWith("/organizacao/staff") || normalizedPathname?.startsWith("/organizacao/treinadores")) {
-      return setApp("Equipa", "STAFF");
-    }
-    if (normalizedPathname?.startsWith("/organizacao/settings")) return setApp("Definições", "DEFINICOES");
-    if (
-      normalizedPathname?.startsWith("/organizacao/faturacao") ||
-      normalizedPathname?.startsWith("/organizacao/pagamentos") ||
-      (normalizedPathname?.startsWith("/organizacao/tournaments/") && normalizedPathname?.endsWith("/finance"))
-    ) {
-      return setApp("Finanças", "FINANCEIRO");
-    }
-    if (normalizedPathname?.startsWith("/organizacao/organizations")) return setApp("Organizações", null);
-    if (normalizedPathname?.startsWith("/organizacao/clube")) return setApp("Clube", null);
-    return setApp("Dashboard", null);
-  }, [moduleState.primary, normalizedPathname, searchParams]);
-
-  const activeObjective = useMemo<ObjectiveTab | null>(() => {
-    const tabParam = searchParams?.get("tab");
-    if (normalizedPathname === "/organizacao") {
-      if (!tabParam || tabParam === "overview" || tabParam === "create") return "create";
-      if (tabParam === "manage") return "manage";
-      if (tabParam === "promote") return "promote";
-      if (tabParam === "analyze") return "analyze";
-      if (tabParam === "profile") return "profile";
-      return "create";
-    }
-    if (normalizedPathname === "/organizacao/manage") return "manage";
-    if (normalizedPathname === "/organizacao/promote") return "promote";
-    if (normalizedPathname === "/organizacao/analyze") return "analyze";
-    if (normalizedPathname === "/organizacao/profile") return "profile";
-    if (
-      normalizedPathname?.startsWith("/organizacao/inscricoes") ||
-      normalizedPathname?.startsWith("/organizacao/eventos") ||
-      normalizedPathname?.startsWith("/organizacao/torneios") ||
-      normalizedPathname?.startsWith("/organizacao/reservas") ||
-      normalizedPathname?.startsWith("/organizacao/padel") ||
-      normalizedPathname?.startsWith("/organizacao/tournaments") ||
-      normalizedPathname?.startsWith("/organizacao/scan") ||
-      normalizedPathname?.startsWith("/organizacao/crm")
-    ) {
-      return "manage";
-    }
-    if (normalizedPathname?.startsWith("/organizacao/promo")) return "promote";
-    if (
-      normalizedPathname?.startsWith("/organizacao/faturacao") ||
-      normalizedPathname?.startsWith("/organizacao/pagamentos")
-    ) {
-      return "analyze";
-    }
-    return null;
-  }, [normalizedPathname, searchParams]);
-
-  const activeObjectiveSection = useMemo(() => {
-    const sectionParam = searchParams?.get("section");
-    const tabParam = searchParams?.get("tab");
-    const padelParam = searchParams?.get("padel");
-    const eventIdParam = searchParams?.get("eventId");
-    const hasEventId = eventIdParam ? Number.isFinite(Number(eventIdParam)) : false;
-    const isPadelClubSection = sectionParam === "padel-club";
-    const isPadelTournamentsSection = sectionParam === "padel-tournaments";
-    const padelFallback = isPadelTournamentsSection || hasEventId ? "calendar" : "clubs";
-    const isPadelSection = isPadelClubSection || isPadelTournamentsSection;
-    if (normalizedPathname?.startsWith("/organizacao/crm")) {
-      if (normalizedPathname?.startsWith("/organizacao/crm/segmentos")) return "crm-segmentos";
-      if (normalizedPathname?.startsWith("/organizacao/crm/campanhas")) return "crm-campanhas";
-      if (normalizedPathname?.startsWith("/organizacao/crm/loyalty")) return "crm-loyalty";
-      return "crm-clientes";
-    }
-    if (sectionParam && !isPadelSection) return sectionParam;
-    if (!activeObjective) return null;
-    if (activeObjective === "manage") {
-      if (isPadelSection) return padelParam ?? padelFallback;
-      if (normalizedPathname?.startsWith("/organizacao/reservas")) {
-        if (normalizedPathname?.startsWith("/organizacao/reservas/novo")) return "servicos";
-        if (normalizedPathname?.startsWith("/organizacao/reservas/servicos")) return "servicos";
-        if (normalizedPathname?.startsWith("/organizacao/reservas/clientes")) return "clientes";
-        if (normalizedPathname?.startsWith("/organizacao/reservas/profissionais")) return "profissionais";
-        if (normalizedPathname?.startsWith("/organizacao/reservas/recursos")) return "recursos";
-        if (normalizedPathname?.startsWith("/organizacao/reservas/politicas")) return "politicas";
-        if (searchParams?.get("tab") === "availability") return "disponibilidade";
-        return "agenda";
-      }
-      if (normalizedPathname?.startsWith("/organizacao/inscricoes")) {
-        if (tabParam === "respostas") return "respostas";
-        if (tabParam === "definicoes") return "definicoes";
-        return "inscricoes";
-      }
-      if (normalizedPathname?.startsWith("/organizacao/scan")) return "checkin";
-      if (normalizedPathname?.startsWith("/organizacao/padel/torneios/novo")) return "torneios-criar";
-      if (normalizedPathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
-      if (normalizedPathname?.startsWith("/organizacao/eventos/novo")) return "create";
-      if (
-        normalizedPathname?.startsWith("/organizacao/padel/torneios/novo") ||
-        normalizedPathname?.startsWith("/organizacao/torneios/novo")
-      ) {
-        return "torneios-criar";
-      }
-      if (
-        normalizedPathname?.startsWith("/organizacao/padel/torneios") ||
-        normalizedPathname?.startsWith("/organizacao/torneios") ||
-        normalizedPathname?.startsWith("/organizacao/tournaments")
-      ) {
-        return "torneios";
-      }
-      if (normalizedPathname?.startsWith("/organizacao/eventos")) return "eventos";
-      return moduleState.primary === "RESERVAS" ? "reservas" : "eventos";
-    }
-    if (activeObjective === "analyze") {
-      if (sectionParam === "invoices" || tabParam === "invoices") return "invoices";
-      if (sectionParam === "ops" || tabParam === "ops") return "ops";
-      if (sectionParam === "vendas" || tabParam === "vendas") return "vendas";
-      return "financas";
-    }
-    if (activeObjective === "promote") return "overview";
-    if (activeObjective === "profile") return "perfil";
-    return "overview";
-  }, [activeObjective, moduleState.primary, normalizedPathname, searchParams]);
-  const isDashboardOverview = normalizedPathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
-  const isStoreRoute = Boolean(normalizedPathname?.startsWith("/organizacao/loja"));
-  const isCrmRoute = normalizedPathname?.startsWith("/organizacao/crm");
-
-  const objectiveModules = useMemo(() => {
-    const rawModules = Array.isArray(activeOrg?.modules) ? activeOrg?.modules : [];
-    const normalizedModules = parseOrganizationModules(rawModules) ?? [];
-    const primary = resolvePrimaryModule(activeOrg?.primaryModule ?? null, normalizedModules);
-    const base = new Set<string>([...normalizedModules, ...CORE_ORGANIZATION_MODULES, primary]);
-    return { modules: Array.from(base), primary };
-  }, [activeOrg?.modules, activeOrg?.primaryModule]);
-  const subnavFocusId = currentApp.moduleKey === "INSCRICOES" ? "inscricoes" : null;
+  const activeTool = useMemo(
+    () => resolveOrganizationTool(normalizedPathname) ?? "dashboard",
+    [normalizedPathname],
+  );
+  const currentApp = TOOL_META[activeTool] ?? TOOL_META.dashboard;
   const currentIconGradient = currentApp.moduleKey
     ? MODULE_ICON_GRADIENTS[currentApp.moduleKey] ?? "from-white/15 via-white/5 to-white/10"
     : null;
+  const resolvedToolSubnav = useMemo(() => {
+    const orgId = activeOrg?.id ?? null;
+    if (!orgId || activeTool === "dashboard") return null;
+    if (activeTool === "events") return <EventsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "bookings") return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "check-in") return <CheckInSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "finance") return <FinanceSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "analytics") return <AnalyticsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "crm") {
+      return (
+        <CrmToolSubnav
+          orgId={orgId}
+          className="w-full max-w-full"
+          campaignsEnabled={crmCampaignsEnabled}
+        />
+      );
+    }
+    if (activeTool === "store") return <StoreToolSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "forms") return <FormsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "chat") return <ChatSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "team") return <TeamSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "padel-club") return <PadelClubSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "padel-tournaments") {
+      return <PadelTournamentsSubnav orgId={orgId} className="w-full max-w-full" />;
+    }
+    if (activeTool === "marketing") return <MarketingSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "profile") return <ProfileSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "settings") return <SettingsSubnav orgId={orgId} className="w-full max-w-full" />;
+    return null;
+  }, [activeOrg?.id, activeTool, crmCampaignsEnabled]);
 
   const orgMeUrl = activeOrg?.id ? `/api/org/${activeOrg.id}/me` : null;
   const { data: orgData, error: orgDataError, mutate: mutateOrgData } = useSWR<OrganizationMeResponse>(
     orgMeUrl,
     fetcher,
   );
-  const moduleOverrides = useMemo(() => {
-    if (!orgData?.modulePermissions) return [];
-    return orgData.modulePermissions
-      .filter((item) => item && item.moduleKey)
-      .map((item) => ({
-        moduleKey: item.moduleKey,
-        accessLevel: normalizeAccessLevel(item.accessLevel) ?? "NONE",
-        scopeType: item.scopeType ?? null,
-        scopeId: item.scopeId ?? null,
-      }));
-  }, [orgData?.modulePermissions]);
-  const moduleAccess = useMemo(() => {
-    if (!role) return null;
-    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) return null;
-    return resolveModuleAccess(role as OrganizationMemberRole, moduleOverrides);
-  }, [moduleOverrides, role]);
   const roleBadge = role && Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)
     ? (role as RoleBadgeRole)
     : null;
-  const objectiveModulesWithAccess = useMemo(() => {
-    if (!moduleAccess) return objectiveModules.modules;
-    return objectiveModules.modules.filter((moduleKey) => {
-      if (!Object.values(OrganizationModule).includes(moduleKey as OrganizationModule)) return true;
-      return hasModuleAccess(moduleAccess, moduleKey as OrganizationModule, "VIEW");
-    });
-  }, [moduleAccess, objectiveModules.modules]);
   const isOrgDataLoading = Boolean(activeOrg) && !orgData && !orgDataError;
   const shouldAutoRefreshOrg = useMemo(() => {
     if (!orgData) return false;
@@ -357,6 +211,53 @@ export default function OrganizationTopBar({
     const paymentsReady = paymentsMode === "PLATFORM" || paymentsStatus === "READY";
     return !emailVerified || !paymentsReady;
   }, [orgData]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const topbar = topbarRef.current;
+    if (!topbar) return;
+
+    const readCurrentTopbarHeight = () => {
+      const raw = root.style.getPropertyValue("--org-topbar-height").trim();
+      if (!raw) return null;
+      const parsed = Number.parseInt(raw.replace("px", ""), 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const syncTopbarHeight = () => {
+      const measuredHeight = Math.ceil(topbar.getBoundingClientRect().height);
+      const nextHeight = Math.min(TOPBAR_MAX_RENDERED_HEIGHT, Math.max(TOPBAR_MIN_RENDERED_HEIGHT, measuredHeight));
+      const currentHeight = readCurrentTopbarHeight();
+      if (currentHeight !== null && currentHeight === nextHeight) return;
+      root.style.setProperty("--org-topbar-height", `${nextHeight}px`);
+    };
+
+    // Reset defensivo para evitar drift visual entre navegações.
+    root.style.setProperty("--org-topbar-height", `${TOPBAR_MIN_RENDERED_HEIGHT}px`);
+    syncTopbarHeight();
+
+    let frameId: number | null = null;
+    const scheduleSync = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(syncTopbarHeight);
+    };
+
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(scheduleSync) : null;
+    observer?.observe(topbar);
+    window.addEventListener("resize", scheduleSync);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", scheduleSync);
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      root.style.setProperty("--org-topbar-height", `${TOPBAR_MIN_HEIGHT}px`);
+    };
+  }, []);
 
   useEffect(() => {
     if (!shouldAutoRefreshOrg) return;
@@ -424,27 +325,45 @@ export default function OrganizationTopBar({
     const scrollTarget: HTMLElement | Window = container ?? window;
     const getScrollY = () => (container ? container.scrollTop : window.scrollY || 0);
 
-    const handleScroll = () => {
-      const currentY = getScrollY();
-      const atTop = currentY < 24;
+    const syncTopState = (currentY: number) => {
+      const atTop = currentY <= SCROLL_TOP_THRESHOLD;
       setIsAtTop((prev) => (prev === atTop ? prev : atTop));
-
-      const prevY = lastScrollYRef.current;
-
       if (atTop) {
+        scrollDirectionDeltaRef.current = 0;
         setIsVisible(true);
-      } else {
-        if (currentY > prevY + 24) {
-          setIsVisible(false);
-        } else if (currentY < prevY - 24) {
-          setIsVisible(true);
-        }
       }
-
-      lastScrollYRef.current = currentY;
+      return atTop;
     };
 
-    handleScroll();
+    const handleScroll = () => {
+      const currentY = getScrollY();
+      const previousY = lastScrollYRef.current;
+      const delta = currentY - previousY;
+      lastScrollYRef.current = currentY;
+
+      const atTop = syncTopState(currentY);
+      if (atTop) return;
+      if (Math.abs(delta) < SCROLL_NOISE_THRESHOLD) return;
+
+      const currentDirectionDelta = scrollDirectionDeltaRef.current;
+      const sameDirection = currentDirectionDelta === 0 || Math.sign(currentDirectionDelta) === Math.sign(delta);
+      const nextDirectionDelta = sameDirection ? currentDirectionDelta + delta : delta;
+      scrollDirectionDeltaRef.current = nextDirectionDelta;
+
+      if (nextDirectionDelta >= SCROLL_DIRECTION_THRESHOLD) {
+        setIsVisible(false);
+        scrollDirectionDeltaRef.current = 0;
+      } else if (nextDirectionDelta <= -SCROLL_DIRECTION_THRESHOLD) {
+        setIsVisible(true);
+        scrollDirectionDeltaRef.current = 0;
+      }
+    };
+
+    const initialY = getScrollY();
+    lastScrollYRef.current = initialY;
+    syncTopState(initialY);
+    setIsVisible(true);
+
     scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
     return () => scrollTarget.removeEventListener("scroll", handleScroll);
   }, []);
@@ -521,8 +440,9 @@ export default function OrganizationTopBar({
 
   return (
     <div
+      ref={topbarRef}
       className={cn(
-        "fixed inset-x-0 top-0 z-[70] transition-transform duration-300 ease-out",
+        "fixed inset-x-0 top-0 z-[70] pt-3 transition-transform duration-300 ease-out",
         isVisible ? "translate-y-0" : "-translate-y-full",
       )}
     >
@@ -536,7 +456,7 @@ export default function OrganizationTopBar({
       >
         <div
           className={cn(
-            "relative flex min-h-[var(--org-topbar-height)] flex-wrap items-center gap-3 py-2 lg:h-[var(--org-topbar-height)] lg:flex-nowrap lg:py-0",
+            "relative flex min-h-16 flex-wrap items-center gap-3 py-2 lg:h-16 lg:flex-nowrap lg:py-0",
             ORG_SHELL_GUTTER,
           )}
         >
@@ -560,27 +480,7 @@ export default function OrganizationTopBar({
             </Link>
           </div>
           <div className="order-3 flex w-full min-w-0 items-center gap-2 lg:order-none lg:flex-1">
-            {isStoreRoute ? (
-              <StoreAdminSubnav
-                baseHref={activeOrg?.id ? buildOrgHref(activeOrg.id, "/store") : buildOrgHubHref("/organizations")}
-                variant="topbar"
-                className="w-full max-w-full"
-              />
-            ) : isCrmRoute ? (
-              <CrmSubnav variant="topbar" className="max-w-full" campaignsEnabled={crmCampaignsEnabled} />
-            ) : activeObjective && !isDashboardOverview ? (
-              <ObjectiveSubnav
-                objective={activeObjective}
-                activeId={activeObjectiveSection ?? undefined}
-                focusSectionId={subnavFocusId ?? undefined}
-                primaryModule={objectiveModules.primary}
-                modules={objectiveModulesWithAccess}
-                organizationId={activeOrg?.id ?? null}
-                mode="dashboard"
-                variant="topbar"
-                className="w-full max-w-full"
-              />
-            ) : null}
+            {resolvedToolSubnav}
           </div>
 
           <div className="order-2 ml-auto flex items-center gap-2 lg:order-none">

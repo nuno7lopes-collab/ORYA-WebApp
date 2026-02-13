@@ -110,7 +110,7 @@ export default async function PadelMonitorPage({ params, searchParams }: PagePro
 
   return (
       <PadelMonitorClient
-        event={{ id: event.id, title: event.title, timezone: event.timezone ?? null }}
+        event={{ id: event.id, slug, title: event.title, timezone: event.timezone ?? null }}
         initialMatches={matches as any}
         lang={lang}
         tvMonitor={tvMonitor}

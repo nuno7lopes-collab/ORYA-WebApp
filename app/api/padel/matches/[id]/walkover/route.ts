@@ -1,11 +1,8 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, PadelRegistrationStatus, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { canMarkWalkover } from "@/domain/padel/pairingPolicy";
-import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
-import { PadelRegistrationStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { readNumericParam } from "@/lib/routeParams";
@@ -34,10 +31,27 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       id: true,
       pairingAId: true,
       pairingBId: true,
+      winnerSide: true,
+      winnerParticipantId: true,
       eventId: true,
       status: true,
       roundType: true,
       roundLabel: true,
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          participantId: true,
+          side: true,
+          slotOrder: true,
+          participant: {
+            select: {
+              id: true,
+              sourcePairingId: true,
+              playerProfileId: true,
+            },
+          },
+        },
+      },
       event: { select: { organizationId: true } },
     },
   });
@@ -68,9 +82,23 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "INVALID_RESULT_TYPE" }, { status: 400 });
   }
 
-  const winnerPairingId = winner === "A" ? match.pairingAId : match.pairingBId;
-  if (!winnerPairingId) {
-    return jsonWrap({ ok: false, error: "MISSING_PAIRINGS" }, { status: 400 });
+  const matchParticipants = Array.isArray(match.participants) ? match.participants : [];
+  const winnerSideParticipants = matchParticipants
+    .filter((row) => row.side === winner)
+    .sort((a, b) => a.slotOrder - b.slotOrder || a.participantId - b.participantId);
+  let winnerParticipantId: number | null = winnerSideParticipants[0]?.participantId ?? null;
+  const winnerPairingIdFallback = winner === "A" ? match.pairingAId : match.pairingBId;
+  const winnerPairingId =
+    winnerSideParticipants.find((row) => typeof row.participant?.sourcePairingId === "number")?.participant
+      ?.sourcePairingId ??
+    winnerPairingIdFallback ??
+    null;
+  if (!winnerParticipantId && typeof winnerPairingId === "number") {
+    winnerParticipantId =
+      matchParticipants.find((row) => row.participant?.sourcePairingId === winnerPairingId)?.participantId ?? null;
+  }
+  if (!winnerParticipantId && typeof winnerPairingId !== "number") {
+    return jsonWrap({ ok: false, error: "MISSING_PARTICIPANTS" }, { status: 400 });
   }
 
   const { organization, membership } = await getActiveOrganizationForUser(authData.user.id, {
@@ -105,18 +133,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: authority.error }, { status: authority.status });
   }
 
-  const winnerPairing = await prisma.padelPairing.findUnique({
-    where: { id: winnerPairingId },
-    select: { payment_mode: true, registration: { select: { status: true } } },
-  });
-  const lifecycleStatus = winnerPairing
-    ? mapRegistrationToPairingLifecycle(
-        winnerPairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
-        winnerPairing.payment_mode,
-      )
-    : null;
-  if (!winnerPairing || !canMarkWalkover(lifecycleStatus)) {
-    return jsonWrap({ ok: false, error: "PAIRING_NOT_CONFIRMED" }, { status: 409 });
+  if (typeof winnerPairingId === "number") {
+    const winnerPairing = await prisma.padelPairing.findUnique({
+      where: { id: winnerPairingId },
+      select: { registration: { select: { status: true } } },
+    });
+    if (!winnerPairing) {
+      return jsonWrap({ ok: false, error: "PAIRING_NOT_FOUND" }, { status: 404 });
+    }
+    if (
+      winnerPairing.registration?.status &&
+      winnerPairing.registration.status !== PadelRegistrationStatus.CONFIRMED
+    ) {
+      return jsonWrap({ ok: false, error: "PAIRING_NOT_CONFIRMED" }, { status: 409 });
+    }
   }
 
   const config = await prisma.padelTournamentConfig.findUnique({
@@ -149,7 +179,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       beforeStatus: match.status ?? null,
       data: {
         status: padel_match_status.DONE,
-        winnerPairingId,
+        winnerSide: winner,
+        winnerParticipantId,
         score: {
           walkover: resultType === "WALKOVER",
           resultType,
@@ -175,6 +206,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       matchId,
       eventId: match.eventId,
       winnerPairingId,
+      winnerParticipantId,
+      winnerSide: winner,
       resultType,
       confirmedByRole: authority.confirmedByRole,
       confirmationSource: authority.confirmationSource,

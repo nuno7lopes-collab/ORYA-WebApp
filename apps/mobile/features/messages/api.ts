@@ -1,4 +1,4 @@
-import { api, unwrapApiResponse } from "../../lib/api";
+import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import {
   InboxResponse,
   MessageInvitesResponse,
@@ -18,12 +18,33 @@ function withB2CScope(path: string) {
   return `${url.pathname}${query ? `?${query}` : ""}`;
 }
 
+async function requestMessagesApi<T>(
+  path: string,
+  accessToken?: string | null,
+  init?: RequestInit,
+): Promise<T> {
+  const headers = new Headers(init?.headers ?? undefined);
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+
+  const raw = await api.requestRaw<unknown>(path, {
+    ...init,
+    headers,
+  });
+
+  if (!raw.ok && (raw.data === null || raw.data === undefined)) {
+    throw new ApiError(raw.status, raw.errorText || "Erro ao carregar.");
+  }
+
+  return unwrapApiResponse<T>(raw.data, raw.status);
+}
+
 export const fetchMessagesInbox = async (accessToken?: string | null): Promise<InboxResponse> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<InboxResponse>(
     withB2CScope("/api/messages/conversations"),
     accessToken,
   );
-  return unwrapApiResponse<InboxResponse>(response);
 };
 
 export const fetchMessageInvites = async (
@@ -37,11 +58,10 @@ export const fetchMessageInvites = async (
     url.searchParams.set("eventId", String(eventId));
   }
 
-  const response = await api.requestWithAccessToken<unknown>(
+  const payload = await requestMessagesApi<{ items: Array<any> }>(
     `${url.pathname}?${url.searchParams.toString()}`,
     accessToken,
   );
-  const payload = unwrapApiResponse<{ items: Array<any> }>(response);
 
   return {
     items: (payload.items ?? []).map((item) => ({
@@ -59,12 +79,11 @@ export const acceptMessageInvite = async (
   inviteId: string,
   accessToken?: string | null,
 ): Promise<MessageInviteAcceptResponse> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  const payload = await requestMessagesApi<any>(
     withB2CScope(`/api/messages/grants/${encodeURIComponent(inviteId)}/accept`),
     accessToken,
     { method: "POST" },
   );
-  const payload = unwrapApiResponse<any>(response);
   const threadId = String(payload.threadId ?? payload.invite?.threadId ?? payload.conversationId ?? "");
   const conversationId =
     typeof payload.conversationId === "string"
@@ -91,11 +110,10 @@ export const fetchMessageRequests = async (
   const url = new URL(path, "https://orya.local");
   url.searchParams.set("kind", "USER_DM_REQUEST,ORG_CONTACT_REQUEST,SERVICE_REQUEST");
 
-  const response = await api.requestWithAccessToken<unknown>(
+  const payload = await requestMessagesApi<{ items: Array<any> }>(
     `${url.pathname}?${url.searchParams.toString()}`,
     accessToken,
   );
-  const payload = unwrapApiResponse<{ items: Array<any> }>(response);
 
   return {
     items: (payload.items ?? []).map((item) => ({
@@ -128,7 +146,7 @@ export const createMessageRequest = async (
         ? "SERVICE"
         : null;
 
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<MessageRequestResponse>(
     withB2CScope("/api/messages/conversations/resolve"),
     accessToken,
     {
@@ -142,31 +160,28 @@ export const createMessageRequest = async (
       }),
     },
   );
-  return unwrapApiResponse<MessageRequestResponse>(response);
 };
 
 export const acceptMessageRequest = async (
   requestId: string,
   accessToken?: string | null,
 ): Promise<{ conversationId: string }> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<{ conversationId: string }>(
     withB2CScope(`/api/messages/grants/${encodeURIComponent(requestId)}/accept`),
     accessToken,
     { method: "POST" },
   );
-  return unwrapApiResponse<{ conversationId: string }>(response);
 };
 
 export const declineMessageRequest = async (
   requestId: string,
   accessToken?: string | null,
 ): Promise<{ ok: boolean }> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<{ ok: boolean }>(
     withB2CScope(`/api/messages/grants/${encodeURIComponent(requestId)}/decline`),
     accessToken,
     { method: "POST" },
   );
-  return unwrapApiResponse<{ ok: boolean }>(response);
 };
 
 export const fetchConversationMessages = async (
@@ -183,8 +198,7 @@ export const fetchConversationMessages = async (
   const path = query
     ? `/api/messages/conversations/${encodeURIComponent(conversationId)}/messages?${query}`
     : `/api/messages/conversations/${encodeURIComponent(conversationId)}/messages?scope=b2c`;
-  const response = await api.requestWithAccessToken<unknown>(path, accessToken);
-  return unwrapApiResponse<ConversationMessagesResponse>(response);
+  return requestMessagesApi<ConversationMessagesResponse>(path, accessToken);
 };
 
 export const sendConversationMessage = async (
@@ -197,7 +211,7 @@ export const sendConversationMessage = async (
     typeof clientMessageId === "string" && clientMessageId.trim().length > 0
       ? clientMessageId.trim()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<ConversationMessageSendResponse>(
     `/api/messages/conversations/${encodeURIComponent(conversationId)}/messages?scope=b2c`,
     accessToken,
     {
@@ -206,7 +220,6 @@ export const sendConversationMessage = async (
       body: JSON.stringify({ body, clientMessageId: resolvedClientMessageId }),
     },
   );
-  return unwrapApiResponse<ConversationMessageSendResponse>(response);
 };
 
 export const markConversationRead = async (
@@ -214,7 +227,7 @@ export const markConversationRead = async (
   messageId?: string | null,
   accessToken?: string | null,
 ): Promise<ConversationReadResponse> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<ConversationReadResponse>(
     `/api/messages/conversations/${encodeURIComponent(conversationId)}/read?scope=b2c`,
     accessToken,
     {
@@ -223,7 +236,6 @@ export const markConversationRead = async (
       body: JSON.stringify({ messageId: messageId ?? null }),
     },
   );
-  return unwrapApiResponse<ConversationReadResponse>(response);
 };
 
 export const muteConversation = async (
@@ -231,7 +243,7 @@ export const muteConversation = async (
   mutedUntil: string | null,
   accessToken?: string | null,
 ): Promise<ConversationNotificationResponse> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<ConversationNotificationResponse>(
     `/api/messages/conversations/${encodeURIComponent(conversationId)}/notifications?scope=b2c`,
     accessToken,
     {
@@ -240,7 +252,6 @@ export const muteConversation = async (
       body: JSON.stringify({ mutedUntil }),
     },
   );
-  return unwrapApiResponse<ConversationNotificationResponse>(response);
 };
 
 export const undoConversationMessage = async (
@@ -248,10 +259,9 @@ export const undoConversationMessage = async (
   messageId: string,
   accessToken?: string | null,
 ): Promise<{ ok: boolean; deletedAt: string }> => {
-  const response = await api.requestWithAccessToken<unknown>(
+  return requestMessagesApi<{ ok: boolean; deletedAt: string }>(
     `/api/messages/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}?scope=b2c`,
     accessToken,
     { method: "DELETE" },
   );
-  return unwrapApiResponse<{ ok: boolean; deletedAt: string }>(response);
 };

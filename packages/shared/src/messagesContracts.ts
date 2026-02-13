@@ -59,18 +59,6 @@ export const MessagesSendSchema = z.object({
   clientMessageId: z.string().trim().min(1).max(128),
   kind: ChatConversationMessageKindSchema.optional(),
   replyToId: z.string().uuid().optional(),
-  attachments: z
-    .array(
-      z.object({
-        type: z.enum(["IMAGE", "VIDEO", "FILE"]),
-        url: z.string().url(),
-        mime: z.string().min(1).max(255),
-        size: z.number().int().positive(),
-        metadata: z.record(z.string(), z.unknown()).default({}),
-      }),
-    )
-    .max(8)
-    .optional(),
 });
 
 export const MessagesGrantListQuerySchema = z.object({

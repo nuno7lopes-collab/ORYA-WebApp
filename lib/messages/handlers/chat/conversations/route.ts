@@ -6,7 +6,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -36,9 +35,6 @@ function resolveTitleFallback(
 
 async function _GET(req: NextRequest) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization, membership } = await requireChatContext(req);
 
@@ -218,9 +214,6 @@ async function _GET(req: NextRequest) {
 
 async function _POST(req: NextRequest) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization, membership } = await requireChatContext(req);
 

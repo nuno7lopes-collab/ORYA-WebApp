@@ -58,6 +58,22 @@ const parseNumber = (value: unknown) => {
   return null;
 };
 
+type MatchParticipantSideRow = {
+  side: string;
+  participant: {
+    sourcePairingId: number | null;
+  } | null;
+};
+
+const resolveSourcePairingIdForSide = (participants: MatchParticipantSideRow[], side: "A" | "B") => {
+  const ids = participants
+    .filter((row) => row.side === side)
+    .map((row) => row.participant?.sourcePairingId)
+    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+  if (ids.length === 0) return null;
+  return ids[0] ?? null;
+};
+
 async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -314,15 +330,28 @@ async function _POST(req: NextRequest) {
         id: true,
         plannedDurationMinutes: true,
         courtId: true,
-        pairingAId: true,
-        pairingBId: true,
         roundLabel: true,
         roundType: true,
         groupLabel: true,
         score: true,
+        participants: {
+          select: {
+            side: true,
+            participant: {
+              select: {
+                sourcePairingId: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ roundLabel: "asc" }, { id: "asc" }],
     });
+    const unscheduledMatches = unscheduledMatchesRaw.map((match) => ({
+      ...match,
+      pairingAId: resolveSourcePairingIdForSide(match.participants, "A"),
+      pairingBId: resolveSourcePairingIdForSide(match.participants, "B"),
+    }));
 
     if (targetMatchIds) {
       const foundIds = new Set(unscheduledMatchesRaw.map((m) => m.id));
@@ -368,7 +397,7 @@ async function _POST(req: NextRequest) {
     };
     const prefixOrder = (prefix: string) => (prefix === "A" ? 0 : prefix === "B" ? 1 : 2);
 
-    const unscheduledMatches = [...unscheduledMatchesRaw].sort((a, b) => {
+    const sortedUnscheduledMatches = [...unscheduledMatches].sort((a, b) => {
       const typeDiff = roundTypeOrder(a.roundType) - roundTypeOrder(b.roundType);
       if (typeDiff !== 0) return typeDiff;
       if (a.roundType === "KNOCKOUT" || b.roundType === "KNOCKOUT") {
@@ -403,17 +432,30 @@ async function _POST(req: NextRequest) {
         plannedDurationMinutes: true,
         startTime: true,
         courtId: true,
-        pairingAId: true,
-        pairingBId: true,
+        participants: {
+          select: {
+            side: true,
+            participant: {
+              select: {
+                sourcePairingId: true,
+              },
+            },
+          },
+        },
       },
     });
+    const normalizedScheduledMatches = scheduledMatches.map((match) => ({
+      ...match,
+      pairingAId: resolveSourcePairingIdForSide(match.participants, "A"),
+      pairingBId: resolveSourcePairingIdForSide(match.participants, "B"),
+    }));
 
     const pairingIds = new Set<number>();
-    unscheduledMatches.forEach((m) => {
+    sortedUnscheduledMatches.forEach((m) => {
       if (m.pairingAId) pairingIds.add(m.pairingAId);
       if (m.pairingBId) pairingIds.add(m.pairingBId);
     });
-    scheduledMatches.forEach((m) => {
+    normalizedScheduledMatches.forEach((m) => {
       if (m.pairingAId) pairingIds.add(m.pairingAId);
       if (m.pairingBId) pairingIds.add(m.pairingBId);
     });
@@ -512,8 +554,8 @@ async function _POST(req: NextRequest) {
     });
 
     const scheduleResult = computeAutoSchedulePlan({
-      unscheduledMatches,
-      scheduledMatches,
+      unscheduledMatches: sortedUnscheduledMatches,
+      scheduledMatches: normalizedScheduledMatches,
       courts,
       pairingPlayers,
       availabilities,

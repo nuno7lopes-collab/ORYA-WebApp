@@ -100,6 +100,19 @@ async function _GET(req: NextRequest) {
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        include: {
+          participant: {
+            select: {
+              id: true,
+              playerProfileId: true,
+              sourcePairingId: true,
+              playerProfile: { select: { id: true, fullName: true, displayName: true } },
+            },
+          },
+        },
+      },
     },
     orderBy: [
       { roundType: "asc" },
@@ -160,12 +173,26 @@ async function _POST(req: NextRequest) {
       status: true,
       score: true,
       scoreSets: true,
-      pairingAId: true,
-      pairingBId: true,
-      winnerPairingId: true,
+      winnerSide: true,
+      winnerParticipantId: true,
       startTime: true,
       courtId: true,
       courtNumber: true,
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        select: {
+          participantId: true,
+          side: true,
+          slotOrder: true,
+          participant: {
+            select: {
+              id: true,
+              sourcePairingId: true,
+              playerProfileId: true,
+            },
+          },
+        },
+      },
       event: { select: { organizationId: true } },
     },
   });
@@ -267,19 +294,32 @@ async function _POST(req: NextRequest) {
 
   const isDrawResult = stats?.isDraw === true;
   const isByeNeutral = stats?.resultType === "BYE_NEUTRAL";
-  let winnerPairingId: number | null = null;
   const winnerSideRaw = mergedScore?.winnerSide;
-  const winnerSide =
+  let winnerSide =
     stats?.winner ?? (winnerSideRaw === "A" || winnerSideRaw === "B" ? winnerSideRaw : null);
-  if (winnerSide === "A" && match.pairingAId) winnerPairingId = match.pairingAId;
-  if (winnerSide === "B" && match.pairingBId) winnerPairingId = match.pairingBId;
+  const matchParticipants = Array.isArray(match.participants) ? match.participants : [];
+
+  const sideParticipants = {
+    A: matchParticipants
+      .filter((row) => row.side === "A")
+      .sort((a, b) => a.slotOrder - b.slotOrder || a.participantId - b.participantId),
+    B: matchParticipants
+      .filter((row) => row.side === "B")
+      .sort((a, b) => a.slotOrder - b.slotOrder || a.participantId - b.participantId),
+  };
+  let winnerParticipantId: number | null =
+    winnerSide === "A" ? sideParticipants.A[0]?.participantId ?? null : winnerSide === "B" ? sideParticipants.B[0]?.participantId ?? null : null;
 
   const shouldSetWinner = nextStatus === "DONE";
-  if (shouldSetWinner && !winnerPairingId && !isDrawResult && !isByeNeutral) {
-    if (match.pairingAId && !match.pairingBId) winnerPairingId = match.pairingAId;
-    if (!match.pairingAId && match.pairingBId) winnerPairingId = match.pairingBId;
+  if (shouldSetWinner && !winnerSide && !isDrawResult && !isByeNeutral) {
+    if (sideParticipants.A.length > 0 && sideParticipants.B.length === 0) winnerSide = "A";
+    if (sideParticipants.A.length === 0 && sideParticipants.B.length > 0) winnerSide = "B";
   }
-  if (shouldSetWinner && !winnerPairingId && !isDrawResult && !isByeNeutral) {
+  if (shouldSetWinner && winnerSide && !winnerParticipantId && !isDrawResult && !isByeNeutral) {
+    winnerParticipantId =
+      winnerSide === "A" ? sideParticipants.A[0]?.participantId ?? null : sideParticipants.B[0]?.participantId ?? null;
+  }
+  if (shouldSetWinner && !winnerParticipantId && !isDrawResult && !isByeNeutral) {
     return fail(ctx, 400, "INVALID_SCORE");
   }
 
@@ -328,11 +368,12 @@ async function _POST(req: NextRequest) {
       status: nextStatus,
       score: scoreValue,
       scoreSets: scoreSetsValue,
-      winnerPairingId: shouldSetWinner
+      winnerSide: shouldSetWinner ? (isDrawResult || isByeNeutral ? null : winnerSide) : match.winnerSide,
+      winnerParticipantId: shouldSetWinner
         ? isDrawResult || isByeNeutral
           ? null
-          : winnerPairingId ?? match.winnerPairingId
-        : match.winnerPairingId,
+          : winnerParticipantId ?? match.winnerParticipantId
+        : match.winnerParticipantId,
       startTime: startAtRaw ?? match.startTime,
       courtId: courtIdValue ?? match.courtId,
       ...(typeof courtNumberValue === "number" ? { courtNumber: courtNumberValue } : {}),
@@ -340,6 +381,19 @@ async function _POST(req: NextRequest) {
     include: {
       pairingA: { include: { slots: { include: { playerProfile: true } } } },
       pairingB: { include: { slots: { include: { playerProfile: true } } } },
+      participants: {
+        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+        include: {
+          participant: {
+            select: {
+              id: true,
+              playerProfileId: true,
+              sourcePairingId: true,
+              playerProfile: { select: { id: true, fullName: true, displayName: true } },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -356,16 +410,19 @@ async function _POST(req: NextRequest) {
       matchId: updated.id,
       eventId: updated.eventId,
       status: updated.status,
-      winnerPairingId: updated.winnerPairingId ?? null,
+      winnerSide: (updated as { winnerSide?: "A" | "B" | null }).winnerSide ?? null,
+      winnerParticipantId: (updated as { winnerParticipantId?: number | null }).winnerParticipantId ?? null,
       before: {
         status: match.status,
-        winnerPairingId: match.winnerPairingId ?? null,
+        winnerSide: match.winnerSide ?? null,
+        winnerParticipantId: match.winnerParticipantId ?? null,
         score: beforeScore,
         scoreSets: beforeScoreSets,
       },
       after: {
         status: updated.status,
-        winnerPairingId: updated.winnerPairingId ?? null,
+        winnerSide: (updated as { winnerSide?: "A" | "B" | null }).winnerSide ?? null,
+        winnerParticipantId: (updated as { winnerParticipantId?: number | null }).winnerParticipantId ?? null,
         score: afterScore,
         scoreSets: afterScoreSets,
       },

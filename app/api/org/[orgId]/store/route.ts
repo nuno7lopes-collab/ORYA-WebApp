@@ -235,6 +235,10 @@ async function _PATCH(req: NextRequest) {
       return fail(403, "Sem permissões.");
     }
 
+    const emailGate = ensureOrganizationEmailVerified(organization);
+    if (!emailGate.ok) {
+      return fail(403, emailGate.errorCode);
+    }
     const lojaAccess = await ensureLojaModuleAccess(organization);
     if (!lojaAccess.ok) {
       return fail(403, lojaAccess.error);

@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import type { LiveHubModule, LiveHubViewerRole } from "@/lib/liveHubConfig";
+import type { LiveModule, LiveViewerRole } from "@/lib/liveConfig";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
@@ -394,7 +394,7 @@ function renderPairingName(id: number | null | undefined, pairings: Record<numbe
   return <span className={className}>{content}</span>;
 }
 
-function RoleBadge({ role, locale }: { role: LiveHubViewerRole; locale: string }) {
+function RoleBadge({ role, locale }: { role: LiveViewerRole; locale: string }) {
   const style =
     role === "ORGANIZATION"
       ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
@@ -2815,8 +2815,8 @@ export default function EventLiveClient({
   const orgApiBase = organization?.id ? `/api/org/${organization.id}` : null;
   const access = data?.access as
     | {
-        liveHubAllowed?: boolean;
-        liveHubVisibility?: "PUBLIC" | "PRIVATE" | "DISABLED";
+        liveAllowed?: boolean;
+        liveVisibility?: "PUBLIC" | "PRIVATE" | "DISABLED";
       }
     | undefined;
   const tournament = data?.tournament ?? null;
@@ -2855,7 +2855,7 @@ export default function EventLiveClient({
   }
 
   const event: EventPayload = data.event;
-  const viewerRole: LiveHubViewerRole = data.viewerRole;
+  const viewerRole: LiveViewerRole = data.viewerRole;
   const canEditMatches = Boolean(data?.canEditMatches);
   const organizationRole = typeof data?.organizationRole === "string" ? data.organizationRole : null;
   const canPostAnnouncements =
@@ -2864,14 +2864,14 @@ export default function EventLiveClient({
   const canManageLiveConfig =
     organizationRole === "OWNER" || organizationRole === "CO_OWNER" || organizationRole === "ADMIN";
   const canResolveDispute = canManageLiveConfig;
-  const liveHub = data.liveHub as { modules: LiveHubModule[]; mode: "DEFAULT" | "PREMIUM" };
+  const live = data.live as { modules: LiveModule[]; mode: "DEFAULT" | "PREMIUM" };
   const pairingIdFromQuery = searchParams?.get("pairingId");
   const showCourt = event.templateType === "PADEL";
   const ticketCopy = getTicketCopy(showCourt ? "PADEL" : "DEFAULT");
   const locationLabel = event.addressRef?.formattedAddress ?? null;
 
-  if (access?.liveHubAllowed === false) {
-    const visibility = access?.liveHubVisibility ?? "PUBLIC";
+  if (access?.liveAllowed === false) {
+    const visibility = access?.liveVisibility ?? "PUBLIC";
     const message =
       visibility === "DISABLED"
         ? t("liveHubDisabled", locale)
@@ -2968,8 +2968,8 @@ export default function EventLiveClient({
     )
     .slice(0, 6);
 
-  const modules: LiveHubModule[] = Array.isArray(liveHub?.modules) ? (liveHub.modules as LiveHubModule[]) : [];
-  const resolvedModules: LiveHubModule[] =
+  const modules: LiveModule[] = Array.isArray(live?.modules) ? (live.modules as LiveModule[]) : [];
+  const resolvedModules: LiveModule[] =
     event.liveStreamUrl && !modules.includes("VIDEO") ? ["VIDEO", ...modules] : modules;
   const eventStatusKey = getEventStatusKey(event.startsAt, event.endsAt);
   const eventStatus = getEventStatusLabel(eventStatusKey, locale);
@@ -3189,7 +3189,7 @@ export default function EventLiveClient({
     );
   }
 
-  const renderModule = (mod: LiveHubModule) => {
+  const renderModule = (mod: LiveModule) => {
     switch (mod) {
       case "HERO": {
         const statusTone =

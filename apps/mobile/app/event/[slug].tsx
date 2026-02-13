@@ -1918,12 +1918,12 @@ export default function EventDetail() {
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.standingsLoading")}
                             </Text>
-                          ) : Object.keys(standingsQuery.data ?? {}).length === 0 ? (
+                          ) : Object.keys(standingsQuery.data?.groups ?? {}).length === 0 ? (
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.standingsEmpty")}
                             </Text>
                           ) : (
-                            Object.entries(standingsQuery.data ?? {}).map(([groupLabel, rows]) => {
+                            Object.entries(standingsQuery.data?.groups ?? {}).map(([groupLabel, rows]) => {
                               const rowList = Array.isArray(rows) ? (rows as Array<any>) : [];
                               return (
                                 <View key={`standings-${groupLabel}`} className="gap-2">
@@ -1937,7 +1937,7 @@ export default function EventDetail() {
                                       .map((player) => player?.name || player?.username)
                                       .filter(Boolean)
                                       .join(" / ") ||
-                                    (typeof row.pairingId === "number"
+                                    (standingsQuery.data?.entityType !== "PLAYER" && typeof row.pairingId === "number"
                                       ? t("events:padel.pairing.withId", { id: row.pairingId })
                                       : `Jogador #${row.entityId}`);
                                   return (

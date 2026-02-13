@@ -5,7 +5,6 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -17,9 +16,6 @@ function parseEmoji(value: unknown) {
 
 async function _POST(req: NextRequest, context: { params: { messageId: string } }) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
     const { messageId } = await context.params;
@@ -113,9 +109,6 @@ async function _POST(req: NextRequest, context: { params: { messageId: string } 
 
 async function _DELETE(req: NextRequest, context: { params: { messageId: string } }) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
     const { messageId } = await context.params;

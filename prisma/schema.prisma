@@ -1779,7 +1779,7 @@ model Event {
   /// Template de apoio (padel, evento padrão)
   templateType                      EventTemplateType?      @map("template_type")
   interestTags                       String[]                @default([]) @map("interest_tags")
-  liveHubVisibility                 LiveHubVisibility       @default(PUBLIC) @map("live_hub_visibility")
+  liveVisibility                 LiveHubVisibility       @default(PUBLIC) @map("live_visibility")
   /// Liga ao Organization quando é evento de organização
   organizationId                       Int?                    @map("organization_id")
   startsAt                          DateTime                @map("starts_at")
@@ -3402,6 +3402,7 @@ model EventMatchSlot {
   groupLabel      String?            @map("group_label")
   roundType       String?            @map("round_type")
   winnerPairingId Int?               @map("winner_pairing_id")
+  winnerSide      PadelMatchSide?    @map("winner_side")
   winnerParticipantId Int?           @map("winner_participant_id")
   roundId         Int?               @map("round_id")
   scoreMode       PadelScoreMode     @default(SETS) @map("score_mode")

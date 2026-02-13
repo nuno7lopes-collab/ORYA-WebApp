@@ -21,11 +21,15 @@ type StandingRow = {
 
 type StandingsResponse = {
   ok?: boolean;
+  event?: { id?: number; slug?: string | null } | null;
+  entityType?: "PAIRING" | "PLAYER";
+  rows?: StandingRow[];
   groups?: Record<string, StandingRow[]>;
 };
 
 export default async function WidgetStandingsPage({ searchParams }: PageProps) {
   const eventId = typeof searchParams?.eventId === "string" ? searchParams.eventId : undefined;
+  const eventSlug = typeof searchParams?.slug === "string" ? searchParams.slug : undefined;
   const lang = typeof searchParams?.lang === "string" ? searchParams.lang : undefined;
   const locale = resolveLocale(lang);
   if (!eventId) {
@@ -36,11 +40,14 @@ export default async function WidgetStandingsPage({ searchParams }: PageProps) {
     );
   }
   const baseUrl = getAppBaseUrl();
-  const res = await fetch(`${baseUrl}/api/widgets/padel/standings?eventId=${encodeURIComponent(eventId)}`, {
+  const query = new URLSearchParams({ eventId });
+  if (eventSlug) query.set("slug", eventSlug);
+  const res = await fetch(`${baseUrl}/api/widgets/padel/standings?${query.toString()}`, {
     cache: "no-store",
   }).then((r) => r.json()).catch(() => null) as StandingsResponse | null;
 
   const standings = res?.groups ?? {};
+  const entityType = res?.entityType === "PLAYER" ? "PLAYER" : "PAIRING";
   const eventIdNumber = Number(eventId);
   if (!Number.isFinite(eventIdNumber)) {
     return (
@@ -51,6 +58,12 @@ export default async function WidgetStandingsPage({ searchParams }: PageProps) {
   }
 
   return (
-    <StandingsWidgetClient eventId={eventIdNumber} initialStandings={standings} locale={locale} />
+    <StandingsWidgetClient
+      eventId={eventIdNumber}
+      eventSlug={res?.event?.slug ?? eventSlug ?? null}
+      initialEntityType={entityType}
+      initialStandings={standings}
+      locale={locale}
+    />
   );
 }

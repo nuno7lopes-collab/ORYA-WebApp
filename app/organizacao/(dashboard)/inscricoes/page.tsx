@@ -10,7 +10,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type FormItem = {
   id: number;
@@ -70,7 +70,9 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
   const baseHref = appendOrganizationIdToHref("/organizacao/inscricoes", organizationId);
   const { data, mutate, isLoading: loadingForms } = useSWR<FormsResponse>(
     user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/inscricoes") : null,

@@ -30,7 +30,7 @@ describe("organization canonical href helpers", () => {
   });
 
   it("appendOrganizationIdToHref normaliza legacy para canonico", () => {
-    expect(appendOrganizationIdToHref("/organizacao/manage", 7)).toBe("/org/7/operations");
+    expect(appendOrganizationIdToHref("/organizacao/manage", 7)).toBe("/org/7/events");
     expect(appendOrganizationIdToHref("/organizacao/become", null)).toBe("/org-hub/create");
     expect(appendOrganizationIdToHref("/organizacao", null)).toBe("/org-hub/organizations");
     expect(appendOrganizationIdToHref("/org/7/overview?organizationId=7", 7)).toBe("/org/7/overview");

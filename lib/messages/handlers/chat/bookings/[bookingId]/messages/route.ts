@@ -4,7 +4,6 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
@@ -17,6 +16,10 @@ import { enqueueNotification } from "@/domain/notifications/outbox";
 import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
+import {
+  resolvePostingWindow,
+  resolvePostingWindowStatus,
+} from "@/lib/messages/postingWindow";
 
 const ADMIN_ROLES = new Set<OrganizationMemberRole>([
   OrganizationMemberRole.OWNER,
@@ -75,9 +78,6 @@ function mapSenderDisplay(params: {
 
 async function _POST(req: NextRequest, context: { params: { bookingId: string } }) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
 
@@ -107,20 +107,23 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
       return jsonWrap({ ok: false, error: "BOOKING_NO_CUSTOMER" }, { status: 400 });
     }
 
-    if (!["CONFIRMED", "COMPLETED"].includes(booking.status)) {
-      return jsonWrap({ ok: false, error: "BOOKING_INACTIVE" }, { status: 403 });
+    const posting = await resolvePostingWindow({
+      contextType: "BOOKING",
+      contextId: String(booking.id),
+      organizationId: booking.organizationId,
+    });
+    if (!posting.canPost) {
+      return jsonWrap({ ok: false, error: posting.reason }, { status: resolvePostingWindowStatus(posting.reason) });
     }
 
-    if (!booking.startsAt || !Number.isFinite(booking.durationMinutes)) {
-      return jsonWrap({ ok: false, error: "BOOKING_INVALID" }, { status: 400 });
+    const payload = (await req.json().catch(() => null)) as {
+      body?: unknown;
+      clientMessageId?: unknown;
+      attachments?: unknown;
+    } | null;
+    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
+      return jsonWrap({ ok: false, error: "ATTACHMENTS_DISABLED" }, { status: 400 });
     }
-    const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const closeAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
-    if (Date.now() > closeAt.getTime()) {
-      return jsonWrap({ ok: false, error: "READ_ONLY" }, { status: 403 });
-    }
-
-    const payload = (await req.json().catch(() => null)) as { body?: unknown; clientMessageId?: unknown } | null;
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
     if (!body) {
       return jsonWrap({ ok: false, error: "EMPTY_BODY" }, { status: 400 });

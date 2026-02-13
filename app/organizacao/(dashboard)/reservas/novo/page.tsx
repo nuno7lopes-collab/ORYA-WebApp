@@ -3,9 +3,9 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import {
   CTA_PRIMARY,
   CTA_SECONDARY,
@@ -22,8 +22,11 @@ const DURATION_OPTIONS = [30, 60, 90, 120];
 
 export default function NovoServicoPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [unitPrice, setUnitPrice] = useState("20");

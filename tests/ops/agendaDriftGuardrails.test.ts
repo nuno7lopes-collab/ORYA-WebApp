@@ -8,6 +8,7 @@ const ALLOWLIST = new Set([
   "domain/hardBlocks/commands.ts",
   "domain/softBlocks/commands.ts",
   "domain/padel/autoGenerateMatches.ts",
+  "domain/padel/competitiveCoreSync.ts",
   "domain/padel/outbox.ts",
   "app/api/servicos/[id]/reservar/route.ts",
   "app/api/servicos/[id]/checkout/route.ts",
@@ -26,6 +27,7 @@ const ALLOWLIST = new Set([
   "app/api/padel/matches/[id]/dispute/route.ts",
   "app/api/padel/matches/[id]/undo/route.ts",
   "app/api/padel/matches/[id]/walkover/route.ts",
+  "app/api/padel/live/timer/next-round/route.ts",
   "app/api/admin/eventos/purge/route.ts",
 ]);
 

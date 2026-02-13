@@ -3,10 +3,10 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import type { GeoAutocompleteItem } from "@/lib/geo/provider";
@@ -143,9 +143,12 @@ function formatMoney(cents: number, currency: string) {
 
 export default function ServicoDetalhePage() {
   const params = useParams();
+  const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
   const idRaw = params?.id;
   const serviceId = useMemo(() => {
     const value = Array.isArray(idRaw) ? idRaw[0] : idRaw;

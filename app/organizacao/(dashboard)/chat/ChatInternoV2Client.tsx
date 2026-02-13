@@ -10,10 +10,8 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { computeBlobSha256Hex } from "@/lib/chat/attachmentChecksum";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatDateTime } from "@/lib/i18n";
@@ -160,7 +158,6 @@ type PendingMessage = {
 type OutgoingMessage = {
   conversationId: string;
   body: string;
-  attachments: File[];
   clientMessageId: string;
 };
 
@@ -366,6 +363,20 @@ function reactionLabel(reaction: Reaction) {
   return reaction.user?.id ?? reaction.userId;
 }
 
+function getDialogFocusableElements(container: HTMLElement) {
+  const selectors = [
+    'a[href]',
+    'button:not([disabled])',
+    'textarea:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+  return Array.from(container.querySelectorAll<HTMLElement>(selectors)).filter(
+    (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true",
+  );
+}
+
 function groupReactions(reactions?: Reaction[]) {
   if (!reactions?.length) return [] as Array<{ emoji: string; count: number; users: string[] }>;
   const map = new Map<string, { count: number; users: string[] }>();
@@ -410,8 +421,6 @@ export default function ChatInternoV2Client() {
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
 
   const [messageBody, setMessageBody] = useState("");
-  const [attachments, setAttachments] = useState<File[]>([]);
-  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
 
   const [directUserId, setDirectUserId] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
@@ -426,10 +435,14 @@ export default function ChatInternoV2Client() {
 
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
+  const [showMembersPanel, setShowMembersPanel] = useState(false);
+  const [showConversationMenu, setShowConversationMenu] = useState(false);
+  const [membersSearch, setMembersSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState<string | null>(null);
+  const [conversationActionPending, setConversationActionPending] = useState<"leave" | null>(null);
 
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
 
@@ -466,6 +479,13 @@ export default function ChatInternoV2Client() {
   const conversationListRef = useRef<HTMLDivElement | null>(null);
   const centerPaneRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const membersButtonRef = useRef<HTMLButtonElement | null>(null);
+  const conversationMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const conversationMenuRef = useRef<HTMLDivElement | null>(null);
+  const membersDialogRef = useRef<HTMLDivElement | null>(null);
+  const newConversationDialogRef = useRef<HTMLDivElement | null>(null);
+  const switcherDialogRef = useRef<HTMLDivElement | null>(null);
+  const searchDialogRef = useRef<HTMLDivElement | null>(null);
 
   const activeConversation = useMemo(
     () => conversations.find((conv) => conv.id === activeConversationId) ?? conversations[0] ?? null,
@@ -1582,6 +1602,8 @@ export default function ChatInternoV2Client() {
       if (event.key === "Escape") {
         if (showSwitcher) setShowSwitcher(false);
         if (showSearchOverlay) setShowSearchOverlay(false);
+        if (showMembersPanel) setShowMembersPanel(false);
+        if (showConversationMenu) setShowConversationMenu(false);
       }
       if (event.key === "F6") {
         event.preventDefault();
@@ -1594,7 +1616,119 @@ export default function ChatInternoV2Client() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [handleJumpToUnread, showSearchOverlay, showSwitcher]);
+  }, [handleJumpToUnread, showConversationMenu, showMembersPanel, showSearchOverlay, showSwitcher]);
+
+  useEffect(() => {
+    if (!showConversationMenu) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (
+        conversationMenuRef.current?.contains(target as Node) ||
+        conversationMenuButtonRef.current?.contains(target as Node)
+      ) {
+        return;
+      }
+      setShowConversationMenu(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showConversationMenu]);
+
+  const activeDialogKey = showMembersPanel
+    ? "members"
+    : newConversationOpen
+      ? "new"
+      : showSwitcher
+        ? "switcher"
+        : showSearchOverlay
+          ? "search"
+          : null;
+
+  useEffect(() => {
+    if (!activeDialogKey) return;
+
+    const getDialog = () => {
+      if (activeDialogKey === "members") {
+        return {
+          element: membersDialogRef.current,
+          restoreTarget: membersButtonRef.current,
+          close: () => setShowMembersPanel(false),
+        };
+      }
+      if (activeDialogKey === "new") {
+        return {
+          element: newConversationDialogRef.current,
+          restoreTarget: document.activeElement as HTMLElement | null,
+          close: () => setNewConversationOpen(false),
+        };
+      }
+      if (activeDialogKey === "switcher") {
+        return {
+          element: switcherDialogRef.current,
+          restoreTarget: document.activeElement as HTMLElement | null,
+          close: () => setShowSwitcher(false),
+        };
+      }
+      return {
+        element: searchDialogRef.current,
+        restoreTarget: conversationMenuButtonRef.current ?? document.activeElement,
+        close: () => setShowSearchOverlay(false),
+      };
+    };
+
+    const { element, restoreTarget, close } = getDialog();
+    if (!element) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+
+    const focusTarget = () => {
+      const focusables = getDialogFocusableElements(element);
+      if (focusables.length > 0) {
+        focusables[0].focus();
+      } else {
+        element.focus();
+      }
+    };
+    const raf = requestAnimationFrame(focusTarget);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusables = getDialogFocusableElements(element);
+      if (focusables.length === 0) {
+        event.preventDefault();
+        element.focus();
+        return;
+      }
+      const current = document.activeElement as HTMLElement | null;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && current === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && current === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      const restore = restoreTarget ?? previouslyFocused;
+      if (restore instanceof HTMLElement) {
+        restore.focus();
+      }
+    };
+  }, [activeDialogKey]);
 
   const handleScroll = () => {
     if (!listRef.current) return;
@@ -1619,73 +1753,13 @@ export default function ChatInternoV2Client() {
   };
 
   const sendMessagePayload = useCallback(async (payload: OutgoingMessage) => {
-    setAttachmentsError(null);
     try {
-      let preparedAttachments: Array<{
-        type: "IMAGE" | "VIDEO" | "FILE";
-        url: string;
-        mime: string;
-        size: number;
-        metadata?: Record<string, unknown>;
-      }> = [];
-
-      if (payload.attachments.length > 0) {
-        const uploads = await Promise.all(
-          payload.attachments.map(async (file) => {
-            const type: Attachment["type"] = file.type.startsWith("image/")
-              ? "IMAGE"
-              : file.type.startsWith("video/")
-                ? "VIDEO"
-                : "FILE";
-            const checksumSha256 = await computeBlobSha256Hex(file);
-            const presign = await fetchChat<{
-              ok: boolean;
-              uploadUrl: string;
-              uploadToken: string;
-              path: string;
-              bucket: string;
-              url: string;
-            }>("/api/messages/attachments/presign", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ type, mime: file.type, size: file.size, metadata: { name: file.name } }),
-            });
-
-            const upload = await supabaseBrowser.storage
-              .from(presign.bucket)
-              .uploadToSignedUrl(presign.path, presign.uploadToken, file, {
-                contentType: file.type,
-              });
-
-            if (upload.error) {
-              throw new Error(upload.error.message || "Falha no upload");
-            }
-
-            return {
-              type,
-              url: presign.url,
-              mime: file.type,
-              size: file.size,
-              metadata: {
-                name: file.name,
-                path: presign.path,
-                bucket: presign.bucket,
-                checksumSha256,
-              },
-            };
-          }),
-        );
-
-        preparedAttachments = uploads;
-      }
-
       const res = await fetchChat<{ ok: boolean; message: Message }>("/api/messages/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId: payload.conversationId,
           body: payload.body,
-          attachments: preparedAttachments,
           clientMessageId: payload.clientMessageId,
         }),
       });
@@ -1695,7 +1769,6 @@ export default function ChatInternoV2Client() {
       return res.message;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao enviar.";
-      setAttachmentsError(message);
       setMessagesError(message);
       throw err;
     }
@@ -1754,13 +1827,9 @@ export default function ChatInternoV2Client() {
 
   const handleSendMessage = async () => {
     if (!activeConversation?.id) return;
-    if (!messageBody.trim() && attachments.length === 0) return;
+    if (!messageBody.trim()) return;
 
     if (isOffline) {
-      if (attachments.length > 0) {
-        setAttachmentsError("Não é possível enviar anexos offline.");
-        return;
-      }
       const pendingId = generateClientMessageId();
       setPendingMessages((prev) => [
         ...prev,
@@ -1773,7 +1842,6 @@ export default function ChatInternoV2Client() {
         },
       ]);
       setMessageBody("");
-      setAttachments([]);
       return;
     }
 
@@ -1791,26 +1859,13 @@ export default function ChatInternoV2Client() {
     const payload: OutgoingMessage = {
       conversationId: activeConversation.id,
       body: messageBody.trim(),
-      attachments: [...attachments],
       clientMessageId,
     };
     setMessagesError(null);
     setMessageBody("");
-    setAttachments([]);
     sendWsMessage({ type: "typing:stop", conversationId: activeConversation.id });
     typingActiveRef.current = false;
     enqueueSend(payload);
-  };
-
-  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    if (files.length === 0) return;
-    setAttachments((prev) => [...prev, ...files]);
-    event.target.value = "";
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const handleCreateConversation = async () => {
@@ -1975,6 +2030,26 @@ export default function ChatInternoV2Client() {
     }
   };
 
+  const handleLeaveConversation = useCallback(async () => {
+    if (!activeConversation?.id) return;
+    const confirmed = window.confirm("Sair desta conversa?");
+    if (!confirmed) return;
+    setConversationActionPending("leave");
+    setShowConversationMenu(false);
+    try {
+      await fetchChat(`/api/messages/conversations/${activeConversation.id}/leave`, { method: "POST" });
+      setActiveConversationId(null);
+      setMessages([]);
+      setMembers([]);
+      await loadConversations();
+      sendWsMessage({ type: "conversation:sync" });
+    } catch (err) {
+      setMessagesError(err instanceof Error ? err.message : "Erro ao sair da conversa.");
+    } finally {
+      setConversationActionPending(null);
+    }
+  }, [activeConversation?.id, fetchChat, loadConversations, sendWsMessage]);
+
   const activeTypingLabel = useMemo(() => {
     if (typingUsers.length === 0) {
       return "";
@@ -2023,7 +2098,44 @@ export default function ChatInternoV2Client() {
     .filter((cmd) => cmd.startsWith(messageBody.trim()))
     .slice(0, MAX_COMMANDS);
 
-  const conversationMembersCount = members.length || activeConversation?.members?.length || 0;
+  const conversationMembers = useMemo(() => {
+    if (members.length > 0) {
+      return members.map((member) => ({
+        userId: member.userId,
+        role: member.role,
+        fullName: member.profile.fullName,
+        username: member.profile.username,
+        avatarUrl: member.profile.avatarUrl,
+        lastSeenAt: member.profile.lastSeenAt,
+      }));
+    }
+    return (activeConversation?.members ?? []).map((member) => ({
+      userId: member.userId,
+      role: member.role,
+      fullName: member.fullName,
+      username: member.username,
+      avatarUrl: member.avatarUrl,
+      lastSeenAt: member.lastSeenAt,
+    }));
+  }, [activeConversation?.members, members]);
+  const filteredConversationMembers = useMemo(() => {
+    const term = membersSearch.trim().toLowerCase();
+    if (!term) return conversationMembers;
+    return conversationMembers.filter((member) => {
+      const label = member.fullName?.trim() || member.username || "";
+      return label.toLowerCase().includes(term) || member.role.toLowerCase().includes(term);
+    });
+  }, [conversationMembers, membersSearch]);
+  const conversationMembersCount = conversationMembers.length;
+  const conversationNotificationLabel = useMemo(() => {
+    if (!activeConversation) return "Notificações";
+    if (activeConversation.mutedUntil && new Date(activeConversation.mutedUntil) > new Date()) {
+      return "Silenciado";
+    }
+    if (activeConversation.notifLevel === "MENTIONS_ONLY") return "Só menções";
+    if (activeConversation.notifLevel === "OFF") return "Sem alertas";
+    return "Tudo";
+  }, [activeConversation]);
   const headerTitle = useMemo(() => {
     if (!activeConversation) return "Conversa";
     const title = buildConversationTitle(activeConversation, user?.id ?? null);
@@ -2209,7 +2321,7 @@ export default function ChatInternoV2Client() {
                 const lastTime = conversation.lastMessageAt ? formatMessageTime(conversation.lastMessageAt) : "";
                 const lastPreview =
                   conversation.lastMessage?.body ??
-                  (conversation.lastMessage ? "Anexo" : "Sem mensagens");
+                  (conversation.lastMessage ? "Mensagem sem texto" : "Sem mensagens");
                 const safeMembers = Array.isArray(conversation.members) ? conversation.members : [];
                 const primaryMember =
                   conversation.type === "DIRECT"
@@ -2302,7 +2414,14 @@ export default function ChatInternoV2Client() {
               <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/55">
                 <span>{activeConversation ? `${conversationMembersCount} membros` : "—"}</span>
                 <button
+                  ref={membersButtonRef}
                   type="button"
+                  onClick={() => {
+                    setMembersSearch("");
+                    setShowMembersPanel(true);
+                    setShowConversationMenu(false);
+                  }}
+                  disabled={!activeConversation}
                   className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/70 hover:border-white/20 hover:bg-white/5"
                 >
                   Ver membros
@@ -2311,7 +2430,7 @@ export default function ChatInternoV2Client() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             {connectionLabel ? (
               <span className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[10px] text-white/70">
                 {connectionLabel}
@@ -2319,7 +2438,10 @@ export default function ChatInternoV2Client() {
             ) : null}
             <button
               type="button"
-              onClick={() => setShowSearchOverlay(true)}
+              onClick={() => {
+                setShowSearchOverlay(true);
+                setShowConversationMenu(false);
+              }}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
               aria-label="Pesquisar"
               disabled={!activeConversation}
@@ -2335,9 +2457,15 @@ export default function ChatInternoV2Client() {
               </svg>
             </button>
             <button
+              ref={conversationMenuButtonRef}
               type="button"
+              onClick={() => setShowConversationMenu((prev) => !prev)}
               className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
               aria-label="Mais opções"
+              aria-haspopup="menu"
+              aria-controls="chat-conversation-menu"
+              aria-expanded={showConversationMenu}
+              disabled={!activeConversation}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
                 <circle cx="5" cy="12" r="1.6" fill="currentColor" />
@@ -2345,6 +2473,89 @@ export default function ChatInternoV2Client() {
                 <circle cx="19" cy="12" r="1.6" fill="currentColor" />
               </svg>
             </button>
+            {showConversationMenu ? (
+              <div
+                id="chat-conversation-menu"
+                ref={conversationMenuRef}
+                role="menu"
+                aria-label="Opções da conversa"
+                className="absolute right-0 top-11 z-30 w-56 space-y-1 rounded-2xl border border-white/15 bg-black/90 p-2 shadow-[0_20px_45px_rgba(0,0,0,0.5)]"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  onClick={() => {
+                    setShowMembersPanel(true);
+                    setMembersSearch("");
+                    setShowConversationMenu(false);
+                  }}
+                >
+                  Ver membros
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  onClick={() => {
+                    setShowSearchOverlay(true);
+                    setShowConversationMenu(false);
+                  }}
+                >
+                  Pesquisar nesta conversa
+                </button>
+                <div className="my-1 h-px bg-white/10" />
+                <p className="px-3 py-1 text-[10px] uppercase tracking-[0.08em] text-white/45">
+                  Notificações: {conversationNotificationLabel}
+                </p>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  onClick={() => {
+                    void handleUpdateNotifSettings("ALL", null);
+                    setShowConversationMenu(false);
+                  }}
+                >
+                  Receber tudo
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  onClick={() => {
+                    void handleUpdateNotifSettings("MENTIONS_ONLY", null);
+                    setShowConversationMenu(false);
+                  }}
+                >
+                  Apenas menções
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-white/80 transition hover:bg-white/10"
+                  onClick={() => {
+                    const mutedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+                    void handleUpdateNotifSettings("OFF", mutedUntil);
+                    setShowConversationMenu(false);
+                  }}
+                >
+                  Silenciar 1 hora
+                </button>
+                <div className="my-1 h-px bg-white/10" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[12px] text-rose-200 transition hover:bg-rose-500/15"
+                  onClick={() => {
+                    void handleLeaveConversation();
+                  }}
+                  disabled={conversationActionPending === "leave"}
+                >
+                  {conversationActionPending === "leave" ? "A sair..." : "Sair da conversa"}
+                </button>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -2385,7 +2596,7 @@ export default function ChatInternoV2Client() {
               ) : displayMessages.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-white/15 bg-black/20 px-4 py-4 text-center text-[12px] text-white/60">
                   <p className="text-sm font-semibold text-white/80">Ainda sem mensagens</p>
-                  <p className="mt-1 text-[12px] text-white/60">Diz olá ou partilha um ficheiro para começar.</p>
+                  <p className="mt-1 text-[12px] text-white/60">Diz olá para começar.</p>
                 </div>
               ) : (
                 <div
@@ -2503,44 +2714,6 @@ export default function ChatInternoV2Client() {
                               <p className="mt-1 whitespace-pre-wrap text-[13px] leading-[1.5] text-white/90">
                                 {message.body}
                               </p>
-                            ) : null}
-
-                            {!isDeleted && message.attachments?.length ? (
-                              <div className="mt-1 grid gap-2 sm:grid-cols-2">
-                                {message.attachments.map((att) => (
-                                  <div
-                                    key={att.id}
-                                    className="rounded-xl border border-white/10 bg-black/20 p-2 text-[11px] text-white/70"
-                                  >
-                                    {att.type === "IMAGE" ? (
-                                      att.url ? (
-                                        <Image
-                                          src={att.url}
-                                          alt="Anexo"
-                                          width={448}
-                                          height={112}
-                                          sizes="(max-width: 640px) 100vw, 50vw"
-                                          className="h-28 w-full rounded-lg object-cover"
-                                        />
-                                      ) : (
-                                        <div className="h-28 w-full rounded-lg border border-white/10 bg-black/30" />
-                                      )
-                                    ) : att.url ? (
-                                      <a
-                                        href={att.url}
-                                        className="text-white/80 underline"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                      >
-                                        {att.metadata?.name ? String(att.metadata.name) : "Abrir ficheiro"}
-                                      </a>
-                                    ) : (
-                                      <span className="text-white/50">Anexo indisponível</span>
-                                    )}
-                                    <p className="mt-1 text-white/50">{att.mime}</p>
-                                  </div>
-                                ))}
-                              </div>
                             ) : null}
 
                             {!isDeleted && groupedReactions.length ? (
@@ -2688,27 +2861,7 @@ export default function ChatInternoV2Client() {
               ))}
             </div>
           ) : null}
-          {attachmentsError ? <p className="mb-2 text-[11px] text-rose-200">{attachmentsError}</p> : null}
-          {attachments.length > 0 ? (
-            <div className="mb-2 flex flex-wrap gap-2 text-[11px] text-white/70">
-              {attachments.map((file, idx) => (
-                <span
-                  key={`${file.name}-${idx}`}
-                  className="flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1"
-                >
-                  {file.name}
-                  <button type="button" onClick={() => removeAttachment(idx)} className="text-white/40">
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
           <div className="flex items-end gap-2">
-            <label className={cn(actionPill, "cursor-pointer")}>
-              <input type="file" multiple onChange={handleAttachmentChange} className="sr-only" />
-              Anexos
-            </label>
             <textarea
               ref={composerRef}
               value={messageBody}
@@ -2727,7 +2880,7 @@ export default function ChatInternoV2Client() {
               type="button"
               className={cn(CTA_PRIMARY, "text-[12px] hover:scale-[1.02]")}
               onClick={handleSendMessage}
-              disabled={!activeConversation || (!messageBody.trim() && attachments.length === 0)}
+              disabled={!activeConversation || !messageBody.trim()}
             >
               Enviar
             </button>
@@ -2739,18 +2892,118 @@ export default function ChatInternoV2Client() {
         </div>
       </div>
 
-      {newConversationOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      {showMembersPanel ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowMembersPanel(false);
+          }}
+        >
           <div
+            ref={membersDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-members-title"
+            tabIndex={-1}
+            className={cn(
+              DASHBOARD_CARD,
+              "w-full max-w-xl rounded-3xl border border-white/12 bg-black/85 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.6)]",
+            )}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-center justify-between">
+              <div>
+                <p className={DASHBOARD_LABEL}>Membros</p>
+                <h3 id="chat-members-title" className="text-lg font-semibold">
+                  Membros da conversa
+                </h3>
+              </div>
+              <button type="button" className={cn(CTA_GHOST, "text-[11px]")} onClick={() => setShowMembersPanel(false)}>
+                Fechar
+              </button>
+            </header>
+            <div className="mt-4">
+              <input
+                value={membersSearch}
+                onChange={(event) => setMembersSearch(event.target.value)}
+                placeholder="Pesquisar por nome ou role"
+                className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              />
+            </div>
+            <div className="mt-4 max-h-[55vh] space-y-2 overflow-y-auto pr-1 orya-scrollbar-hide">
+              {filteredConversationMembers.length === 0 ? (
+                <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-[12px] text-white/65">
+                  Nenhum membro encontrado.
+                </p>
+              ) : (
+                filteredConversationMembers.map((member) => {
+                  const displayName = member.fullName?.trim() || (member.username ? `@${member.username}` : "Membro");
+                  const typing = typingUsers.includes(member.userId);
+                  const lastSeenTime = member.lastSeenAt ? new Date(member.lastSeenAt).getTime() : null;
+                  const online = typing || (lastSeenTime !== null && Date.now() - lastSeenTime < 3 * 60 * 1000);
+                  const presence = typing
+                    ? "A escrever"
+                    : online
+                      ? "Online"
+                      : member.lastSeenAt
+                        ? `Visto ${formatMessageTime(member.lastSeenAt)}`
+                        : "Offline";
+                  return (
+                    <div
+                      key={member.userId}
+                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/30 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar src={member.avatarUrl} name={displayName} className="h-9 w-9 border border-white/15" />
+                        <div className="min-w-0">
+                          <p className="truncate text-[12px] font-semibold text-white/90">{displayName}</p>
+                          <p className="truncate text-[11px] text-white/55">{presence}</p>
+                        </div>
+                      </div>
+                      <div className="ml-3 flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "h-2 w-2 rounded-full",
+                            online ? "bg-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.8)]" : "bg-white/25",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className={subtlePill}>{member.role === "ADMIN" ? "Admin" : "Membro"}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {newConversationOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setNewConversationOpen(false);
+          }}
+        >
+          <div
+            ref={newConversationDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-new-conversation-title"
+            tabIndex={-1}
             className={cn(
               DASHBOARD_CARD,
               "w-full max-w-lg rounded-3xl border border-white/12 bg-black/80 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.6)]",
             )}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="flex items-center justify-between">
               <div>
                 <p className={DASHBOARD_LABEL}>Nova conversa</p>
-                <h3 className="text-lg font-semibold">Criar conversa</h3>
+                <h3 id="chat-new-conversation-title" className="text-lg font-semibold">
+                  Criar conversa
+                </h3>
               </div>
               <button
                 type="button"
@@ -2879,17 +3132,30 @@ export default function ChatInternoV2Client() {
       ) : null}
 
       {showSwitcher ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowSwitcher(false);
+          }}
+        >
           <div
+            ref={switcherDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-switcher-title"
+            tabIndex={-1}
             className={cn(
               DASHBOARD_CARD,
               "w-full max-w-lg rounded-3xl border border-white/12 bg-black/80 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.6)]",
             )}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="flex items-center justify-between">
               <div>
                 <p className={DASHBOARD_LABEL}>Switcher</p>
-                <h3 className="text-lg font-semibold">Trocar conversa</h3>
+                <h3 id="chat-switcher-title" className="text-lg font-semibold">
+                  Trocar conversa
+                </h3>
               </div>
               <button type="button" className={cn(CTA_GHOST, "text-[11px]")} onClick={() => setShowSwitcher(false)}>
                 Fechar
@@ -2915,17 +3181,30 @@ export default function ChatInternoV2Client() {
       ) : null}
 
       {showSearchOverlay ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowSearchOverlay(false);
+          }}
+        >
           <div
+            ref={searchDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-search-title"
+            tabIndex={-1}
             className={cn(
               DASHBOARD_CARD,
               "w-full max-w-2xl rounded-3xl border border-white/12 bg-black/80 p-5 text-white shadow-[0_24px_70px_rgba(0,0,0,0.6)]",
             )}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="flex items-center justify-between">
               <div>
                 <p className={DASHBOARD_LABEL}>Pesquisa</p>
-                <h3 className="text-lg font-semibold">Pesquisar mensagens</h3>
+                <h3 id="chat-search-title" className="text-lg font-semibold">
+                  Pesquisar mensagens
+                </h3>
               </div>
               <button type="button" className={cn(CTA_GHOST, "text-[11px]")} onClick={() => setShowSearchOverlay(false)}>
                 Fechar

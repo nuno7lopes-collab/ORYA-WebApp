@@ -28,7 +28,7 @@ type CalendarDay = {
 
 type CalendarResponse = {
   ok?: boolean;
-  event?: { id: number; title: string; timezone: string };
+  event?: { id: number; slug?: string | null; title: string; timezone: string };
   days?: CalendarDay[];
   error?: string;
 };
@@ -76,7 +76,13 @@ export default async function WidgetPadelCalendarPage({ searchParams }: PageProp
 
   return (
     eventId ? (
-      <CalendarWidgetClient eventId={eventId} timezone={timezone} locale={locale} initialDays={days} />
+      <CalendarWidgetClient
+        eventId={eventId}
+        eventSlug={res?.event?.slug ?? slug ?? null}
+        timezone={timezone}
+        locale={locale}
+        initialDays={days}
+      />
     ) : (
       <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] px-4 py-4 text-white">
         <p className="text-sm text-white/70">{t("eventMissing", locale)}</p>

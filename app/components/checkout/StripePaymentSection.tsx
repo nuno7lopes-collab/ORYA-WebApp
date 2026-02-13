@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Elements,
   PaymentElement,
@@ -180,9 +180,29 @@ function PaymentForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elementReady, setElementReady] = useState(false);
+  const statusCheckDoneRef = useRef<Set<string>>(new Set());
+  const loadErrorNotifiedRef = useRef<Set<string>>(new Set());
   const currency = breakdown?.currency ?? "EUR";
   const discountCents = Math.max(0, Math.round(discount * 100));
   const promoApplied = discountCents > 0;
+
+  const notifyLoadErrorOnce = (
+    secret: string | null,
+    message: string,
+    extra?: Record<string, unknown>,
+  ) => {
+    setError(message);
+    if (!secret) {
+      onLoadError?.();
+      return;
+    }
+    if (loadErrorNotifiedRef.current.has(secret)) return;
+    loadErrorNotifiedRef.current.add(secret);
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[PaymentForm] load_error_once", { secret, ...extra });
+    }
+    onLoadError?.();
+  };
 
   useEffect(() => {
     setElementReady(false);
@@ -190,6 +210,8 @@ function PaymentForm({
 
   useEffect(() => {
     if (!stripe || !clientSecret) return;
+    if (statusCheckDoneRef.current.has(clientSecret)) return;
+    statusCheckDoneRef.current.add(clientSecret);
     let cancelled = false;
     (async () => {
       try {
@@ -197,19 +219,24 @@ function PaymentForm({
         if (cancelled) return;
         const status = pi.paymentIntent?.status;
         if (status && !["requires_payment_method", "requires_action", "requires_confirmation"].includes(status)) {
-          setError("Sessão de pagamento expirou. Vamos criar um novo intento.");
-          if (onLoadError) onLoadError();
+          notifyLoadErrorOnce(
+            clientSecret,
+            "Sessão de pagamento expirou. Vamos criar um novo intento.",
+            { source: "status-check", status },
+          );
         }
       } catch (err) {
         if (cancelled) return;
-        setError("Falha ao validar estado do pagamento. Tenta novamente.");
-        if (onLoadError) onLoadError();
+        notifyLoadErrorOnce(clientSecret, "Falha ao validar estado do pagamento. Tenta novamente.", {
+          source: "status-check",
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [stripe, clientSecret, onLoadError]);
+  }, [stripe, clientSecret]);
 
   useEffect(() => {
     if (!stripe) return;
@@ -395,8 +422,11 @@ function PaymentForm({
             onLoadError={(err) => {
               console.error("[PaymentElement] loaderror", err);
               setElementReady(false);
-              setError(err?.error?.message ?? "Não foi possível carregar o formulário de pagamento. Tenta novamente.");
-              if (onLoadError) onLoadError();
+              notifyLoadErrorOnce(
+                clientSecret,
+                err?.error?.message ?? "Não foi possível carregar o formulário de pagamento. Tenta novamente.",
+                { source: "payment-element" },
+              );
               if (stripe && clientSecret) {
                 stripe
                   .retrievePaymentIntent(clientSecret)

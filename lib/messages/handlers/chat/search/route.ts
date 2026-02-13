@@ -6,7 +6,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -18,9 +17,6 @@ function parseLimit(value: string | null) {
 
 async function _GET(req: NextRequest) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
 

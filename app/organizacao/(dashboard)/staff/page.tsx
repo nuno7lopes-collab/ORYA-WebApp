@@ -18,6 +18,7 @@ import { ViewState } from "@/components/ui/view-state";
 import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLevel } from "@/lib/organizationRbac";
+import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
@@ -376,7 +377,11 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const eventId = eventIdParam ? Number(eventIdParam) : null;
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
-  const organizationId = organizationIdParsed && Number.isFinite(organizationIdParsed) ? organizationIdParsed : null;
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId =
+    organizationIdParsed && Number.isFinite(organizationIdParsed)
+      ? organizationIdParsed
+      : organizationIdFromPath;
   const orgMeUrl = organizationId ? `/api/org/${organizationId}/me` : null;
   const { data: meData } = useSWR<{
     ok: boolean;
@@ -628,7 +633,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const handleRequireLogin = () => {
     openModal({
       mode: "login",
-      redirectTo: embedded ? "/organizacao/manage?section=staff" : "/organizacao/staff",
+      redirectTo: "/organizacao/staff",
       showGoogle: true,
     });
   };

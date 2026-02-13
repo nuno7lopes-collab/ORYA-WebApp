@@ -42,5 +42,5 @@ export default async function LegacyOrganizationStorePage({ searchParams }: Page
   if (view) next.set("view", view);
   if (sub) next.set("sub", sub);
   const suffix = next.size > 0 ? `?${next.toString()}` : "";
-  redirect(`/org/${organization.id}/loja${suffix}`);
+  redirect(`/org/${organization.id}/store${suffix}`);
 }

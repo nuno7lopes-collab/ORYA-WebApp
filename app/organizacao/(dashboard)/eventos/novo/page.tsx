@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import useSWR from "swr";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
@@ -20,12 +20,14 @@ import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
-import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import { fetchGeoAutocompleteWithMeta, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
+import { partitionSuggestionsByCountry } from "@/lib/geo/autocompletePolicy";
+import { trackEvent } from "@/lib/analytics";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
@@ -35,7 +37,6 @@ import {
   distanceKm,
   formatDistanceLabel,
   isFiniteCoordinate,
-  rankLocationSuggestions,
   sanitizeRecentLocation,
 } from "@/lib/geo/locationUx";
 
@@ -47,7 +48,7 @@ type TicketTypeRow = {
   padelCategoryId?: number | null;
 };
 
-type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 const DRAFT_KEY = "orya-organization-new-event-draft";
 
@@ -277,11 +278,15 @@ export function NewOrganizationEventPage({
   forcePreset,
 }: NewOrganizationEventPageProps = {}) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user, profile, isLoading: isUserLoading } = useUser();
   const { openModal } = useAuthModal();
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
-  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationId =
+    organizationIdQuery && Number.isFinite(organizationIdQuery) ? organizationIdQuery : organizationIdFromPath;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
       ? `/api/org/${organizationId}/me`
@@ -329,6 +334,10 @@ export function NewOrganizationEventPage({
   const [locationBias, setLocationBias] = useState<{ lat: number; lng: number } | null>(null);
   const [requestingLocationBias, setRequestingLocationBias] = useState(false);
   const [recentLocationItems, setRecentLocationItems] = useState<GeoAutocompleteItem[]>([]);
+  const [expectedCountryCode, setExpectedCountryCode] = useState<string | null>(null);
+  const [effectiveCountryCode, setEffectiveCountryCode] = useState<string | null>(null);
+  const [queryCountryIntentCode, setQueryCountryIntentCode] = useState<string | null>(null);
+  const [showForeignSuggestions, setShowForeignSuggestions] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -368,7 +377,7 @@ export function NewOrganizationEventPage({
     useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
   const [coverPage, setCoverPage] = useState(1);
   const [isGratisEvent, setIsFreeEvent] = useState(false);
-  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>("PUBLIC");
+  const [liveVisibility, setLiveVisibility] = useState<LiveVisibility>("PUBLIC");
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeTicketPublicAccess, setFreeTicketPublicAccess] = useState(true);
   const [freeCapacity, setFreeCapacity] = useState("");
@@ -424,6 +433,7 @@ export function NewOrganizationEventPage({
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
   const activeProviderRef = useRef<string | null>(null);
+  const locationBypassAnalyticsRef = useRef<string | null>(null);
 
   useEffect(() => {
     setPortalRoot(document.body);
@@ -616,7 +626,7 @@ export function NewOrganizationEventPage({
   ]);
   const organizationIdFromStatus = organizationStatus?.organization?.id ?? null;
 
-  const { data: padelClubs, mutate: mutatePadelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
+  const { data: padelClubs } = useSWR<{ ok: boolean; items?: PadelClubSummary[] }>(
     selectedPreset === "padel" ? "/api/padel/clubs" : null,
     fetcher,
     { revalidateOnFocus: false },
@@ -689,7 +699,7 @@ export function NewOrganizationEventPage({
         coverUrl: string | null;
         selectedPreset: string | null;
         isGratisEvent: boolean;
-        liveHubVisibility: LiveHubVisibility;
+        liveVisibility: LiveVisibility;
         freeTicketName: string;
         freeTicketPublicAccess: boolean;
         freeCapacity: string;
@@ -722,7 +732,7 @@ export function NewOrganizationEventPage({
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isGratisEvent));
-      setLiveHubVisibility(draft.liveHubVisibility ?? "PUBLIC");
+      setLiveVisibility(draft.liveVisibility ?? "PUBLIC");
       setFreeTicketName(draft.freeTicketName || freeTicketPlaceholder);
       setFreeTicketPublicAccess(draft.freeTicketPublicAccess ?? true);
       setFreeCapacity(normalizeIntegerInput(draft.freeCapacity || ""));
@@ -1091,6 +1101,10 @@ export function NewOrganizationEventPage({
     if (query.length < 2) {
       setLocationSuggestions([]);
       setLocationSearchError(null);
+      setExpectedCountryCode(null);
+      setEffectiveCountryCode(null);
+      setQueryCountryIntentCode(null);
+      setShowForeignSuggestions(false);
       return;
     }
     if (locationSearchTimeout.current) {
@@ -1101,16 +1115,23 @@ export function NewOrganizationEventPage({
     locationSearchTimeout.current = setTimeout(async () => {
       setLocationSearchLoading(true);
       try {
-        const items = await fetchGeoAutocomplete(query, locationBias ?? undefined);
+        const result = await fetchGeoAutocompleteWithMeta(query, locationBias ?? undefined);
         if (locationSearchSeq.current === seq) {
-          const ranked = rankLocationSuggestions(items, query, locationBias);
-          setLocationSuggestions(ranked);
+          setLocationSuggestions(result.items);
+          setExpectedCountryCode(result.expectedCountryCode);
+          setEffectiveCountryCode(result.effectiveCountryCode);
+          setQueryCountryIntentCode(result.queryCountryIntentCode);
+          setShowForeignSuggestions(false);
         }
       } catch (err) {
         console.warn("[eventos/novo] autocomplete falhou", err);
         if (locationSearchSeq.current === seq) {
           setLocationSuggestions([]);
           setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+          setExpectedCountryCode(null);
+          setEffectiveCountryCode(null);
+          setQueryCountryIntentCode(null);
+          setShowForeignSuggestions(false);
         }
       } finally {
         if (locationSearchSeq.current === seq) {
@@ -1125,6 +1146,31 @@ export function NewOrganizationEventPage({
       }
     };
   }, [locationQuery, locationBias]);
+
+  useEffect(() => {
+    const queryLength = locationQuery.trim().length;
+    const bypassActive = Boolean(
+      queryLength >= 2 &&
+      expectedCountryCode &&
+      effectiveCountryCode &&
+      expectedCountryCode !== effectiveCountryCode,
+    );
+    if (!bypassActive) {
+      locationBypassAnalyticsRef.current = null;
+      return;
+    }
+
+    const signature = `${expectedCountryCode}:${effectiveCountryCode}:${queryCountryIntentCode ?? ""}`;
+    if (locationBypassAnalyticsRef.current === signature) return;
+    locationBypassAnalyticsRef.current = signature;
+    trackEvent("geo_autocomplete_country_bypass_triggered", {
+      formContext: "event_new",
+      expectedCountryCode,
+      effectiveCountryCode,
+      queryCountryIntentCode,
+      queryLength,
+    });
+  }, [effectiveCountryCode, expectedCountryCode, locationQuery, queryCountryIntentCode]);
 
   const rememberRecentLocation = (item: GeoAutocompleteItem) => {
     setRecentLocationItems((prev) => {
@@ -1177,7 +1223,20 @@ export function NewOrganizationEventPage({
     if (nextLabel) setLocationQuery(nextLabel);
   };
 
-  const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
+  const handleSelectGeoSuggestion = async (
+    item: GeoAutocompleteItem,
+    options?: { isForeign?: boolean },
+  ) => {
+    const queryLength = locationQuery.trim().length;
+    if (options?.isForeign) {
+      trackEvent("geo_autocomplete_foreign_selected", {
+        formContext: "event_new",
+        expectedCountryCode,
+        effectiveCountryCode,
+        queryCountryIntentCode,
+        queryLength,
+      });
+    }
     setLocationProviderId(item.providerId);
     setLocationAddressId(null);
     activeProviderRef.current = item.providerId;
@@ -1188,6 +1247,7 @@ export function NewOrganizationEventPage({
     setLocationSearchError(null);
     setLocationBiasError(null);
     setShowLocationSuggestions(false);
+    setShowForeignSuggestions(false);
     rememberRecentLocation(item);
 
     const seq = ++locationDetailsSeq.current;
@@ -1252,9 +1312,9 @@ export function NewOrganizationEventPage({
   const selectedEndDate = endDateInput ? parseInputDate(endDateInput) : null;
   const minEndDate = selectedStartDate ?? today;
 
-  const createPartnerClubFromDirectory = async (club: PadelPublicClub) => {
+  const selectPartnerClubFromDirectory = async (club: PadelPublicClub) => {
     if (!organizationIdFromStatus) {
-      setPadelDirectoryError("Seleciona uma organização antes de adicionar o clube.");
+      setPadelDirectoryError("Seleciona uma organização antes de escolher o clube.");
       return;
     }
     const existingPartner = partnerPadelClubs.find(
@@ -1262,73 +1322,32 @@ export function NewOrganizationEventPage({
         item.sourceClubId === club.id ||
         (item.addressId && club.addressId && item.addressId === club.addressId),
     );
-    if (existingPartner) {
+    if (!existingPartner) {
+      setPadelDirectoryError(
+        "Este clube ainda não está ligado por parceria aprovada. Ativa a parceria em Gestão de Clube Padel e volta aqui.",
+      );
+      return;
+    }
+
+    setPadelDirectoryError(null);
+    setCreatingPartnerClubId(club.id);
+    try {
       setPadelClubMode("PARTNER");
       setPadelClubSource("DIRECTORY");
       setPadelClubSourceTouched(true);
       setSelectedPadelClubId(existingPartner.id);
       clearErrorsForFields(["padel"]);
-      return;
-    }
-    setPadelDirectoryError(null);
-    setCreatingPartnerClubId(club.id);
-    try {
-    const addressId = typeof club.addressId === "string" ? club.addressId.trim() : "";
-    if (!addressId) {
-      setPadelDirectoryError("Clube sem morada Apple confirmada.");
-      return;
-    }
-    const res = await fetch("/api/padel/clubs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        organizationId: organizationIdFromStatus,
-        name: club.name,
-        kind: "PARTNER",
-        sourceClubId: club.id,
-        addressId,
-        courtsCount: club.courtsCount ?? 1,
-        isActive: true,
-      }),
-    });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.club) {
-        setPadelDirectoryError(json?.error || "Nao foi possivel criar o clube parceiro.");
-        return;
-      }
-      const savedClub = json.club as { id?: number };
-      const syncedCourtIds = Array.isArray(json?.partnerCourtSync?.localCourtIds)
-        ? json.partnerCourtSync.localCourtIds
-            .map((id: unknown) => (typeof id === "number" ? id : Number(id)))
+      const courtsRes = await fetch(`/api/padel/clubs/${existingPartner.id}/courts`);
+      const courtsJson = await courtsRes.json().catch(() => null);
+      const activeCourtIds = Array.isArray(courtsJson?.items)
+        ? courtsJson.items
+            .filter((court: { id?: unknown; isActive?: boolean }) => court?.isActive !== false)
+            .map((court: { id?: unknown }) => (typeof court.id === "number" ? court.id : Number(court.id)))
             .filter((id: number) => Number.isFinite(id))
         : [];
-      if (!savedClub.id) {
-        setPadelDirectoryError("Erro ao criar clube parceiro.");
-        return;
+      if (activeCourtIds.length > 0) {
+        setSelectedPadelCourtIds(activeCourtIds);
       }
-      await mutatePadelClubs();
-      setPadelClubMode("PARTNER");
-      setPadelClubSource("DIRECTORY");
-      setPadelClubSourceTouched(true);
-      setSelectedPadelClubId(savedClub.id);
-      clearErrorsForFields(["padel"]);
-      if (syncedCourtIds.length > 0) {
-        setSelectedPadelCourtIds(syncedCourtIds);
-      } else {
-        const courtsRes = await fetch(`/api/padel/clubs/${savedClub.id}/courts`);
-        const courtsJson = await courtsRes.json().catch(() => null);
-        const activeCourtIds = Array.isArray(courtsJson?.items)
-          ? courtsJson.items
-              .filter((court: { id?: unknown; isActive?: boolean }) => court?.isActive !== false)
-              .map((court: { id?: unknown }) => (typeof court.id === "number" ? court.id : Number(court.id)))
-              .filter((id: number) => Number.isFinite(id))
-          : [];
-        if (activeCourtIds.length > 0) {
-          setSelectedPadelCourtIds(activeCourtIds);
-        }
-      }
-    } catch (err) {
-      setPadelDirectoryError("Erro ao criar clube parceiro.");
     } finally {
       setCreatingPartnerClubId(null);
     }
@@ -1486,10 +1505,10 @@ export function NewOrganizationEventPage({
                           <button
                             type="button"
                             disabled={isBusy}
-                            onClick={() => createPartnerClubFromDirectory(club)}
+                            onClick={() => selectPartnerClubFromDirectory(club)}
                             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
                           >
-                            {isBusy ? "A adicionar..." : "Adicionar parceiro"}
+                            {isBusy ? "A selecionar..." : "Selecionar parceiro"}
                           </button>
                         </div>
                       );
@@ -1863,7 +1882,7 @@ export function NewOrganizationEventPage({
   ]);
 
   const liveHubSummary =
-    liveHubVisibility === "PUBLIC" ? "Público" : liveHubVisibility === "PRIVATE" ? "Privado" : "Desativado";
+    liveVisibility === "PUBLIC" ? "Público" : liveVisibility === "PRIVATE" ? "Privado" : "Desativado";
   const hasPublicTickets = useMemo(() => {
     if (isGratisEvent) return freeTicketPublicAccess;
     if (ticketTypes.length === 0) return true;
@@ -2453,7 +2472,7 @@ export function NewOrganizationEventPage({
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         accessPolicy,
-        liveHubVisibility,
+        liveVisibility,
         payoutMode: isPlatformPayout || (stripeNotReady && hasPaidTicket) ? "PLATFORM" : "ORGANIZATION",
         padel:
           selectedPreset === "padel"
@@ -3086,6 +3105,39 @@ export function NewOrganizationEventPage({
       locationBias && isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng)
         ? formatDistanceLabel(distanceKm(locationBias, { lat: locationLat, lng: locationLng }))
         : null;
+    const groupedSuggestions = partitionSuggestionsByCountry(locationSuggestions, effectiveCountryCode);
+    const hasLocalSuggestions = groupedSuggestions.local.length > 0 || groupedSuggestions.unknown.length > 0;
+    const showForeignFallback = !hasLocalSuggestions && groupedSuggestions.foreign.length > 0;
+    const primarySuggestions = showForeignFallback
+      ? groupedSuggestions.foreign
+      : [...groupedSuggestions.local, ...groupedSuggestions.unknown];
+    const collapsedForeignSuggestions = showForeignFallback ? [] : groupedSuggestions.foreign;
+    const bypassActive = Boolean(
+      expectedCountryCode &&
+      effectiveCountryCode &&
+      expectedCountryCode !== effectiveCountryCode,
+    );
+    const showForeignFallbackNotice =
+      !waitingForTyping &&
+      !locationSearchLoading &&
+      !locationSearchError &&
+      showForeignFallback;
+
+    const handleToggleForeignSuggestions = () => {
+      setShowForeignSuggestions((prev) => {
+        const next = !prev;
+        if (next) {
+          trackEvent("geo_autocomplete_foreign_section_opened", {
+            formContext: "event_new",
+            expectedCountryCode,
+            effectiveCountryCode,
+            queryCountryIntentCode,
+            queryLength: trimmedQuery.length,
+          });
+        }
+        return next;
+      });
+    };
 
     return (
       <div className="space-y-4 animate-fade-slide">
@@ -3115,6 +3167,7 @@ export function NewOrganizationEventPage({
                   setLocationLat(null);
                   setLocationLng(null);
                 }
+                setShowForeignSuggestions(false);
                 setShowLocationSuggestions(true);
               }}
               onFocus={() => setShowLocationSuggestions(true)}
@@ -3176,41 +3229,103 @@ export function NewOrganizationEventPage({
                   <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar...</div>
                 ) : locationSearchError ? (
                   <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
-                ) : locationSuggestions.length === 0 ? (
+                ) : primarySuggestions.length === 0 ? (
                   <div className="space-y-1 px-3 py-2 text-sm text-white/65">
                     <p>Sem sugestões para este texto.</p>
                     <p className="text-[12px] text-white/50">Tenta rua + cidade, por exemplo: &quot;Rua de Ceuta Porto&quot;.</p>
                   </div>
                 ) : (
-                  locationSuggestions.map((suggestion) => {
-                    const suggestionDistance =
-                      locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                        ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                        : null;
-                    return (
-                      <button
-                        key={suggestion.providerId}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handleSelectGeoSuggestion(suggestion)}
-                        className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                      >
-                        <div className="flex w-full items-start justify-between gap-3">
-                          <div className="space-y-0.5">
-                            <span className="block font-semibold text-white">{suggestion.label}</span>
-                            <span className="block text-[12px] text-white/60">
-                              {suggestion.address || suggestion.city || "Morada sem detalhe"}
-                            </span>
+                  <div className="space-y-1">
+                    {bypassActive ? (
+                      <div className="px-3 py-2 text-[11px] text-cyan-100/90">
+                        Pesquisa global ativada por país na query.
+                      </div>
+                    ) : null}
+                    {showForeignFallbackNotice ? (
+                      <div className="px-3 py-2 text-[11px] text-amber-100/90">
+                        Sem resultados no país esperado; a mostrar globais.
+                      </div>
+                    ) : null}
+                    {primarySuggestions.map((suggestion) => {
+                      const suggestionDistance =
+                        locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
+                          ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
+                          : null;
+                      return (
+                        <button
+                          key={suggestion.providerId}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: showForeignFallback })}
+                          className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                        >
+                          <div className="flex w-full items-start justify-between gap-3">
+                            <div className="space-y-0.5">
+                              <span className="block font-semibold text-white">{suggestion.label}</span>
+                              {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
+                                <span className="block text-[12px] text-white/60">
+                                  {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                                </span>
+                              )}
+                            </div>
+                            {suggestionDistance && (
+                              <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                                {suggestionDistance}
+                              </span>
+                            )}
                           </div>
-                          {suggestionDistance && (
-                            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                              {suggestionDistance}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })
+                        </button>
+                      );
+                    })}
+                    {collapsedForeignSuggestions.length > 0 ? (
+                      <div className="border-t border-white/10">
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={handleToggleForeignSuggestions}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-semibold text-white/75 hover:bg-white/8"
+                        >
+                          <span>Outros países ({collapsedForeignSuggestions.length})</span>
+                          <span aria-hidden>{showForeignSuggestions ? "▴" : "▾"}</span>
+                        </button>
+                        {showForeignSuggestions ? (
+                          <div className="border-t border-white/5">
+                            {collapsedForeignSuggestions.map((suggestion) => {
+                              const suggestionDistance =
+                                locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
+                                  ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
+                                  : null;
+                              return (
+                                <button
+                                  key={`foreign-${suggestion.providerId}`}
+                                  type="button"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: true })}
+                                  className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
+                                >
+                                  <div className="flex w-full items-start justify-between gap-3">
+                                    <div className="space-y-0.5">
+                                      <span className="block font-semibold text-white">{suggestion.label}</span>
+                                      {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
+                                        <span className="block text-[12px] text-white/60">
+                                          {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {suggestionDistance && (
+                                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
+                                        {suggestionDistance}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 )}
               </div>
             )}
@@ -3649,9 +3764,9 @@ export function NewOrganizationEventPage({
             <button
               key={`livehub-${opt.value}`}
               type="button"
-              onClick={() => setLiveHubVisibility(opt.value)}
+              onClick={() => setLiveVisibility(opt.value)}
               className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-                liveHubVisibility === opt.value
+                liveVisibility === opt.value
                   ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-100"
                   : "border-white/20 bg-black/40 text-white/70"
               }`}
@@ -3660,7 +3775,7 @@ export function NewOrganizationEventPage({
             </button>
           ))}
         </div>
-        {liveHubVisibility === "PRIVATE" && (
+        {liveVisibility === "PRIVATE" && (
           <p className="text-[11px] text-white/55">Privado: apenas participantes e organização.</p>
         )}
       </div>

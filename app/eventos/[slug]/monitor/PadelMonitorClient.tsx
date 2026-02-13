@@ -26,6 +26,7 @@ type MonitorMatch = {
 
 type MonitorEvent = {
   id: number;
+  slug: string;
   title: string;
   timezone: string | null;
 };
@@ -473,7 +474,7 @@ export default function PadelMonitorClient({
   const [opsMatchId, setOpsMatchId] = useState<number | null>(null);
 
   useEffect(() => {
-    const url = new URL("/api/padel/live", window.location.origin);
+    const url = new URL(`/api/live/events/${encodeURIComponent(event.slug)}/stream`, window.location.origin);
     url.searchParams.set("eventId", String(event.id));
     const source = new EventSource(url.toString());
     const handleUpdate = (ev: MessageEvent) => {
@@ -489,7 +490,7 @@ export default function PadelMonitorClient({
       source.removeEventListener("update", handleUpdate);
       source.close();
     };
-  }, [event.id]);
+  }, [event.id, event.slug]);
 
   const refreshMatches = async () => {
     try {

@@ -8,7 +8,7 @@ type PageProps = {
 
 type NextResponse = {
   ok?: boolean;
-  event?: { id: number; title: string; timezone?: string | null };
+  event?: { id: number; slug?: string | null; title: string; timezone?: string | null };
   items?: Array<{
     id: number;
     startAt: string | null;
@@ -50,6 +50,7 @@ export default async function WidgetNextMatchesPage({ searchParams }: PageProps)
     event?.id ? (
       <NextMatchesWidgetClient
         eventId={event.id}
+        eventSlug={event.slug ?? slug ?? null}
         timezone={event.timezone ?? null}
         locale={locale}
         title={event.title ?? ""}

@@ -1,0 +1,25 @@
+{
+  "startedAt": "2026-02-13T12:46:30.639Z",
+  "finishedAt": "2026-02-13T12:46:31.782Z",
+  "mode": "dry-run",
+  "totals": {
+    "attachmentsFound": 1,
+    "messagesFound": 1,
+    "conversationsImpacted": 1,
+    "storageObjectsFound": 1,
+    "mediaAssetsFound": 1,
+    "memberPointersAffected": 1,
+    "storageObjectsDeleted": 0,
+    "mediaAssetsDeleted": 0,
+    "messagesDeleted": 0,
+    "conversationsRecalculated": 0,
+    "memberPointersReconciled": 0
+  },
+  "integrity": {
+    "remainingAttachmentsForPurgedMessages": 1,
+    "remainingMediaAssetsForPurgedObjects": 1,
+    "danglingConversationLastMessageIds": 0,
+    "danglingMemberLastReadMessageIds": 0
+  },
+  "errors": []
+}

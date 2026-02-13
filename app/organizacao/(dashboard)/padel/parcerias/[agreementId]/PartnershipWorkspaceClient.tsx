@@ -60,12 +60,32 @@ type WorkspaceResponse = {
       windowStart: string | null;
       windowEnd: string | null;
     }>;
+    claims: Array<{
+      id: string;
+      bundleId: string | null;
+      status: "CLAIMED" | "RELEASED" | "CANCELLED";
+      sourceType: string;
+      sourceId: string;
+      courtId: number | null;
+      startAt: string | null;
+      endAt: string | null;
+    }>;
     courts: Array<{ id: number; name: string }>;
   };
   calendar?: {
     masterLane: Array<{ id: string; label: string; startAt: string | null; endAt: string | null; courtId: number | null }>;
     partnerLane: Array<{ id: string; label: string; startAt: string | null; endAt: string | null; courtId: number | null }>;
-    sharedLane: Array<{ id: string; sourceType?: string; startAt: string | null; endAt: string | null; courtId: number | null }>;
+    sharedLane: Array<{
+      id: string;
+      claimId?: string;
+      bundleId?: string | null;
+      status?: string;
+      sourceType?: string;
+      sourceId?: string;
+      startAt: string | null;
+      endAt: string | null;
+      courtId: number | null;
+    }>;
   };
   error?: string;
 };
@@ -78,6 +98,21 @@ function toLocalDateTime(value: string | null | undefined) {
   if (Number.isNaN(parsed.getTime())) return "";
   const pad = (num: number) => String(num).padStart(2, "0");
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
+
+function toTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function overlaps(startA: string | null | undefined, endA: string | null | undefined, startB: string | null | undefined, endB: string | null | undefined) {
+  const aStart = toTimestamp(startA);
+  const aEnd = toTimestamp(endA);
+  const bStart = toTimestamp(startB);
+  const bEnd = toTimestamp(endB);
+  if (aStart === null || aEnd === null || bStart === null || bEnd === null) return false;
+  return aStart < bEnd && bStart < aEnd;
 }
 
 export default function PartnershipWorkspaceClient({ agreementId, organizationId }: Props) {
@@ -97,6 +132,10 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
   const [overrideEndsAt, setOverrideEndsAt] = useState("");
   const [overrideReasonCode, setOverrideReasonCode] = useState("FORCE_REPLAN");
   const [overrideReason, setOverrideReason] = useState("");
+  const [claimEventId, setClaimEventId] = useState("");
+  const [claimCourtId, setClaimCourtId] = useState("");
+  const [claimStartsAt, setClaimStartsAt] = useState("");
+  const [claimEndsAt, setClaimEndsAt] = useState("");
 
   const workspaceUrl = useMemo(() => {
     if (!agreementId) return null;
@@ -114,8 +153,30 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
   const grants = data?.workspace?.grants ?? [];
   const overrides = data?.workspace?.overrides ?? [];
   const cases = data?.workspace?.compensationCases ?? [];
+  const claims = data?.workspace?.claims ?? [];
   const courts = data?.workspace?.courts ?? [];
   const calendar = data?.calendar ?? { masterLane: [], partnerLane: [], sharedLane: [] };
+  const sharedCalendarRows = useMemo(
+    () =>
+      calendar.sharedLane.map((row) => {
+        const conflictsOwner = calendar.masterLane.filter(
+          (entry) =>
+            (entry.courtId == null || row.courtId == null || entry.courtId === row.courtId) &&
+            overlaps(entry.startAt, entry.endAt, row.startAt, row.endAt),
+        ).length;
+        const conflictsPartner = calendar.partnerLane.filter(
+          (entry) =>
+            (entry.courtId == null || row.courtId == null || entry.courtId === row.courtId) &&
+            overlaps(entry.startAt, entry.endAt, row.startAt, row.endAt),
+        ).length;
+        return {
+          ...row,
+          conflictsOwner,
+          conflictsPartner,
+        };
+      }),
+    [calendar],
+  );
 
   const runAgreementAction = async (action: "approve" | "pause" | "revoke") => {
     if (!agreement || !organizationId) return;
@@ -293,6 +354,59 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
     }
   };
 
+  const createAndExecuteOverrideFromClaim = async (claim: {
+    claimId?: string;
+    courtId: number | null;
+    startAt: string | null;
+    endAt: string | null;
+    sourceType?: string;
+    sourceId?: string;
+  }) => {
+    if (!agreement || !organizationId) return;
+    setActionBusy(`claim-override:${claim.claimId ?? "row"}`);
+    setActionFeedback(null);
+    try {
+      const createRes = await fetch("/api/padel/partnerships/overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          agreementId: agreement.id,
+          targetType: "COURT_SLOT",
+          reasonCode: "PARTNERSHIP_CONFLICT",
+          reason: `Override contextual de claim ${claim.claimId ?? "N/A"} (${claim.sourceType ?? "SOURCE"}:${claim.sourceId ?? "-"})`,
+          eventId: claim.sourceType === "EVENT" && claim.sourceId ? Number(claim.sourceId) : undefined,
+          courtId: claim.courtId ?? undefined,
+          startsAt: claim.startAt ?? undefined,
+          endsAt: claim.endAt ?? undefined,
+        }),
+      });
+      const createdJson = await createRes.json().catch(() => null);
+      if (!createRes.ok || !createdJson?.ok || !createdJson?.override?.id) {
+        setActionFeedback(typeof createdJson?.error === "string" ? createdJson.error : "Não foi possível criar override contextual.");
+        return;
+      }
+
+      const overrideId = Number(createdJson.override.id);
+      const executeRes = await fetch(`/api/padel/partnerships/overrides/${overrideId}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId }),
+      });
+      const executeJson = await executeRes.json().catch(() => null);
+      if (!executeRes.ok || !executeJson?.ok) {
+        setActionFeedback(typeof executeJson?.error === "string" ? executeJson.error : "Override criado, mas falhou execução.");
+        await mutate();
+        return;
+      }
+
+      setActionFeedback(`Override ${overrideId} criado e executado a partir da claim.`);
+      await mutate();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   const executeOverride = async (overrideId: number) => {
     if (!organizationId) return;
     setActionBusy(`override:execute:${overrideId}`);
@@ -328,6 +442,73 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível atualizar caso.");
+        return;
+      }
+      await mutate();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const createClaim = async () => {
+    if (!organizationId || !claimEventId || !claimCourtId || !claimStartsAt || !claimEndsAt) return;
+    setActionBusy("claim:create");
+    setActionFeedback(null);
+    try {
+      const res = await fetch("/api/padel/calendar/claims/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          eventId: Number(claimEventId),
+          sourceType: "EVENT",
+          sourceId: claimEventId,
+          resourceClaims: [
+            {
+              resourceType: "COURT",
+              resourceId: String(claimCourtId),
+              startsAt: new Date(claimStartsAt).toISOString(),
+              endsAt: new Date(claimEndsAt).toISOString(),
+              sourceType: "EVENT",
+              sourceId: claimEventId,
+              metadata: {
+                agreementId,
+              },
+            },
+          ],
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar claim.");
+        return;
+      }
+      setClaimStartsAt("");
+      setClaimEndsAt("");
+      setActionFeedback("Claim criada.");
+      await mutate();
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const updateClaimStatus = async (claimId: string, status: "RELEASED" | "CANCELLED") => {
+    if (!organizationId) return;
+    setActionBusy(`claim:${claimId}:${status}`);
+    setActionFeedback(null);
+    try {
+      const res = await fetch("/api/padel/calendar/claims/commit", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizationId,
+          claimId,
+          status,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível atualizar claim.");
         return;
       }
       await mutate();
@@ -620,6 +801,83 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
 
           <section className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Calendário partilhado</h2>
+            <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-white/65">Operação de claims</p>
+              <div className="mt-2 grid gap-2 md:grid-cols-5">
+                <input
+                  value={claimEventId}
+                  onChange={(event) => setClaimEventId(event.target.value)}
+                  placeholder="eventId"
+                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                />
+                <select
+                  value={claimCourtId}
+                  onChange={(event) => setClaimCourtId(event.target.value)}
+                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                >
+                  <option value="">Court</option>
+                  {courts.map((court) => (
+                    <option key={`claim-court-${court.id}`} value={court.id}>
+                      #{court.id} · {court.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="datetime-local"
+                  value={claimStartsAt}
+                  onChange={(event) => setClaimStartsAt(event.target.value)}
+                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                />
+                <input
+                  type="datetime-local"
+                  value={claimEndsAt}
+                  onChange={(event) => setClaimEndsAt(event.target.value)}
+                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                />
+                <button
+                  type="button"
+                  onClick={createClaim}
+                  disabled={Boolean(actionBusy) || !claimEventId || !claimCourtId || !claimStartsAt || !claimEndsAt}
+                  className="rounded-xl border border-white/20 px-3 py-2 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
+                >
+                  {actionBusy === "claim:create" ? "A criar..." : "Criar claim"}
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                {claims.length === 0 ? (
+                  <p className="text-xs text-white/60">Sem claims no intervalo.</p>
+                ) : (
+                  claims.map((claim) => (
+                    <div key={`claim-item-${claim.id}`} className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs">
+                      <p>
+                        Claim #{claim.id} · Court {claim.courtId ?? "—"} · {claim.status}
+                      </p>
+                      <p className="text-white/70">
+                        {toLocalDateTime(claim.startAt)} → {toLocalDateTime(claim.endAt)} · source {claim.sourceType}:{claim.sourceId}
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateClaimStatus(claim.id, "RELEASED")}
+                          disabled={Boolean(actionBusy) || claim.status !== "CLAIMED"}
+                          className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40 disabled:opacity-50"
+                        >
+                          Libertar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateClaimStatus(claim.id, "CANCELLED")}
+                          disabled={Boolean(actionBusy) || claim.status !== "CLAIMED"}
+                          className="rounded-full border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-50"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
             <div className="mt-3 grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Lane Dona</p>
@@ -646,10 +904,54 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
               <div className="rounded-xl border border-white/10 bg-black/30 p-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Lane Partilhada</p>
                 <div className="space-y-2 text-xs">
-                  {calendar.sharedLane.map((row) => (
+                  {sharedCalendarRows.map((row) => (
                     <div key={row.id} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1">
                       <p>{row.id}</p>
                       <p className="text-white/70">{toLocalDateTime(row.startAt)} → {toLocalDateTime(row.endAt)}</p>
+                      <p className="text-[11px] text-white/60">
+                        Court {row.courtId ?? "—"} · conflitos dona: {row.conflictsOwner} · conflitos parceira: {row.conflictsPartner}
+                      </p>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {typeof row.claimId === "string" && row.claimId.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => updateClaimStatus(row.claimId as string, "RELEASED")}
+                              disabled={Boolean(actionBusy) || row.status !== "CLAIMED"}
+                              className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40 disabled:opacity-50"
+                            >
+                              Libertar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateClaimStatus(row.claimId as string, "CANCELLED")}
+                              disabled={Boolean(actionBusy) || row.status !== "CLAIMED"}
+                              className="rounded-full border border-rose-300/40 px-2 py-1 text-[11px] text-rose-100 hover:border-rose-200/70 disabled:opacity-50"
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        )}
+                        {(row.conflictsOwner > 0 || row.conflictsPartner > 0) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              createAndExecuteOverrideFromClaim({
+                                claimId: row.claimId,
+                                courtId: row.courtId,
+                                startAt: row.startAt,
+                                endAt: row.endAt,
+                                sourceType: row.sourceType,
+                                sourceId: row.sourceId,
+                              })
+                            }
+                            disabled={Boolean(actionBusy)}
+                            className="rounded-full border border-amber-300/40 px-2 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-50"
+                          >
+                            Resolver via override
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -661,4 +963,3 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
     </div>
   );
 }
-

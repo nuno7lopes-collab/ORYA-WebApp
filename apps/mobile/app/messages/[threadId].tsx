@@ -36,6 +36,7 @@ import type { ConversationMessage, ConversationMember, ConversationMessagesRespo
 import { getUserFacingError } from "../../lib/errors";
 import { getMobileEnv } from "../../lib/env";
 import { formatTime } from "../../lib/formatters";
+import { ApiError } from "../../lib/api";
 
 const WS_PING_INTERVAL_MS = 25000;
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
@@ -48,6 +49,8 @@ type UnifiedMessage = {
   createdAt: string;
   deletedAt?: string | null;
   kind?: "USER" | "ANNOUNCEMENT" | "SYSTEM";
+  reactions?: unknown[];
+  pins?: unknown[];
   sender: {
     id: string;
     fullName: string | null;
@@ -57,6 +60,12 @@ type UnifiedMessage = {
 };
 
 const resolveChatError = (err: unknown, fallback: string, t: (key: string) => string) => {
+  if (err instanceof ApiError) {
+    if (err.status === 426) return "Atualiza a app para continuar.";
+    if (err.status === 429) return "Muitas tentativas. Tenta novamente em instantes.";
+    if (err.status === 410) return t("messages:thread.errors.readOnly");
+    if (err.status === 403) return t("messages:thread.errors.participantsOnly");
+  }
   const message = err instanceof Error ? err.message : String(err ?? "");
   if (message.includes("READ_ONLY")) return t("messages:thread.errors.readOnly");
   if (message.includes("FORBIDDEN")) return t("messages:thread.errors.participantsOnly");
@@ -235,6 +244,7 @@ export default function ChatThreadScreen() {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       const wsUrl = new URL(wsBase);
       wsUrl.searchParams.set("scope", "b2c");
+      wsUrl.searchParams.set("platform", "mobile");
       const ws = new WebSocket(wsUrl.toString(), [
         WS_PROTOCOL_BASE,
         `${WS_AUTH_PROTOCOL_PREFIX}${accessToken}`,
@@ -267,6 +277,13 @@ export default function ChatThreadScreen() {
               markConversationRead(threadId, incoming.id, accessToken).catch(() => null);
             }
           }
+          if (payload.type === "message:update" && payload.conversationId === threadId) {
+            const updated = payload.message as Partial<UnifiedMessage> & { id?: string };
+            if (!updated?.id) return;
+            setMessages((prev) =>
+              prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)),
+            );
+          }
           if (payload.type === "message:delete" && payload.conversationId === threadId) {
             const deletedAt = payload.deletedAt as string | undefined;
             setMessages((prev) =>
@@ -274,8 +291,31 @@ export default function ChatThreadScreen() {
                 item.id === payload.messageId
                   ? { ...item, deletedAt: deletedAt ?? new Date().toISOString(), body: null }
                   : item,
-              ),
+                ),
             );
+          }
+          if (payload.type === "reaction:update" && payload.conversationId === threadId) {
+            const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+            if (!messageId) return;
+            const reactions = Array.isArray(payload.reactions) ? payload.reactions : [];
+            setMessages((prev) =>
+              prev.map((item) => (item.id === messageId ? { ...item, reactions } : item)),
+            );
+          }
+          if (payload.type === "pin:update" && payload.conversationId === threadId) {
+            const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+            if (!messageId) return;
+            const pins = Array.isArray(payload.pins) ? payload.pins : [];
+            setMessages((prev) =>
+              prev.map((item) => (item.id === messageId ? { ...item, pins } : item)),
+            );
+          }
+          if (payload.type === "message:read" && payload.conversationId === threadId) {
+            const lastReadMessageId =
+              typeof payload.lastReadMessageId === "string" ? payload.lastReadMessageId : null;
+            if (lastReadMessageId) {
+              markConversationRead(threadId, lastReadMessageId, accessToken).catch(() => null);
+            }
           }
         } catch {
           // ignore

@@ -16,6 +16,10 @@ import { enqueueNotification } from "@/domain/notifications/outbox";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
+import {
+  resolvePostingWindow,
+  resolvePostingWindowStatus,
+} from "@/lib/messages/postingWindow";
 
 const ADMIN_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
 
@@ -93,20 +97,23 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
       return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
     }
 
-    if (!["CONFIRMED", "COMPLETED"].includes(booking.status)) {
-      return jsonWrap({ error: "BOOKING_INACTIVE" }, { status: 403 });
+    const posting = await resolvePostingWindow({
+      contextType: "BOOKING",
+      contextId: String(booking.id),
+      organizationId: booking.organizationId,
+    });
+    if (!posting.canPost) {
+      return jsonWrap({ error: posting.reason }, { status: resolvePostingWindowStatus(posting.reason) });
     }
 
-    if (!booking.startsAt || !Number.isFinite(booking.durationMinutes)) {
-      return jsonWrap({ error: "BOOKING_INVALID" }, { status: 400 });
+    const payload = (await req.json().catch(() => null)) as {
+      body?: unknown;
+      clientMessageId?: unknown;
+      attachments?: unknown;
+    } | null;
+    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
+      return jsonWrap({ error: "ATTACHMENTS_DISABLED" }, { status: 400 });
     }
-    const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const closeAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
-    if (Date.now() > closeAt.getTime()) {
-      return jsonWrap({ error: "READ_ONLY" }, { status: 403 });
-    }
-
-    const payload = (await req.json().catch(() => null)) as { body?: unknown; clientMessageId?: unknown } | null;
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
     if (!body) {
       return jsonWrap({ error: "EMPTY_BODY" }, { status: 400 });

@@ -17,7 +17,8 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
   - `AMERICANO`/`MEXICANO` removidos de `FORMAT_NOT_OPERATIONAL` na geração (`/api/padel/matches/generate` + `domain/padel/autoGenerateMatches.ts`).
   - score canónico com `mode=TIMED_GAMES` + `BYE_NEUTRAL` (`domain/padel/score.ts`, `lib/padel/validation.ts`, `/api/padel/matches`).
   - standings canónico com `entityType` e `rows`/`groups` (PLAYER para `AMERICANO`/`MEXICANO`, PAIRING restantes) em `/api/padel/standings`.
-  - live público com estado de timer autoritativo (`timerState`, `serverNow`, `remainingMs`) em `/api/padel/live`.
+  - live público canónico com estado de timer autoritativo (`timerState`, `serverNow`, `remainingMs`) em `/api/live/events/:slug` e stream em `/api/live/events/:slug/stream`.
+  - `/api/padel/live` movido em hard-cut para `410 LIVE_ENDPOINT_MOVED`.
   - endpoints de timer live: `POST /api/padel/live/timer/start`, `POST /api/padel/live/timer/stop`, `POST /api/padel/live/timer/next-round`.
   - hard-cut de claims legacy: `/api/padel/calendar` com `type=resource_claim` devolve `410 RESOURCE_CLAIM_WRITE_MOVED_TO_COMMIT`; write canónico em `/api/padel/calendar/claims/commit`.
   - enforcer de `ttlAt` para snapshots de courts parceiros em `domain/padel/partnershipSchedulePolicy.ts`.
@@ -45,7 +46,7 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
   - paridade adicional de contrato canónico de standings:
     - widget/public/mobile atualizados para `entityType + rows + groups`;
     - `EventLiveClient` remove fallback pairing-only em tabelas de standings;
-    - livehub padel usa `drawOrderSeed` determinístico por `{event,category,format}`.
+    - live canónico padel usa `drawOrderSeed` determinístico por `{event,category,format}`.
   - enforcement de sanções também em claim de convite:
     - `POST /api/padel/pairings/claim/[token]` bloqueia ação com `RANKING_SANCTION_BLOCK`.
   - enforcement adicional de sanções em ações de jogador no pairing:
@@ -370,7 +371,8 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - `POST /api/padel/partnerships/overrides`
   - calendário canónico:
     - `GET /api/padel/calendar` passa a incluir `resourceClaims`.
-    - `POST /api/padel/calendar` aceita `type=resource_claim` com validação de conflito fail-closed.
+    - hard-cut de writes legacy: `POST /api/padel/calendar` com `type=resource_claim` devolve `410 RESOURCE_CLAIM_WRITE_MOVED_TO_COMMIT`.
+    - write canónico de claims multi-recurso apenas em `POST /api/padel/calendar/claims/commit`.
   - fluxo parceiro:
     - sync automático de courts parceiro via `domain/padel/partnerCourtSync.ts`.
     - criação/edição local de courts em clube `PARTNER` mantém-se bloqueada (`CLUB_READ_ONLY`) no write-path.
@@ -380,7 +382,7 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
 - Feito:
   - catálogo canónico atualizado em `domain/padel/formatCatalog.ts`.
   - `POST /api/padel/matches/generate` sem fallback implícito para formato inválido (`INVALID_FORMAT`).
-  - formatos `AMERICANO`/`MEXICANO` marcados como não operacionais no gerador (`FORMAT_NOT_OPERATIONAL`) até motor completo.
+  - formatos oficiais `AMERICANO`/`MEXICANO` operacionais no gerador e no live (sem `FORMAT_NOT_OPERATIONAL` no write-path oficial).
   - wizard/listas de formato atualizados para expor `AMERICANO` e `MEXICANO`.
 
 ### N5 — Live Ops (atraso + política + constraints de parceria)
@@ -426,7 +428,7 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - valida schema de parceria/claims.
     - valida existência das rotas canónicas de parceria.
     - valida bloqueio write-path para courts de clube parceiro.
-    - valida suporte de `resource_claim` no calendário.
+    - valida hard-cut de `resource_claim` fora de `/claims/commit`.
 
 ### Validação executada
 - `npm run prisma:generate` -> OK

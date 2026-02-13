@@ -134,9 +134,9 @@ export default function Step2Pagamento() {
   const [appliedPromoLabel, setAppliedPromoLabel] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"mbway" | "card">("mbway");
   const [intentCycleState, setIntentCycleState] = useState<IntentCycleState>("IDLE");
-  const [intentRetryToken, setIntentRetryToken] = useState(0);
   const lastIntentKeyRef = useRef<string | null>(null);
   const inFlightIntentRef = useRef<string | null>(null);
+  const intentRetryTokenRef = useRef(0);
   const cycleGuardRef = useRef<string | null>(null);
   const terminalRetryCycleKeyRef = useRef<string | null>(null);
   const terminalRetryCountRef = useRef(0);
@@ -164,7 +164,7 @@ export default function Step2Pagamento() {
     setServerAmount(null);
     setBreakdown(null);
     setIntentCycleState("IDLE");
-    setIntentRetryToken(0);
+    intentRetryTokenRef.current = 0;
     lastIntentKeyRef.current = null;
     inFlightIntentRef.current = null;
     if (safeDados) {
@@ -484,8 +484,8 @@ export default function Step2Pagamento() {
       (payload as any)?.idempotencyKey ??
       null;
     const stableIdemFingerprint =
-      intentRetryToken > 0
-        ? `${clientFingerprint}:recovery:${intentRetryToken}`
+      intentRetryTokenRef.current > 0
+        ? `${clientFingerprint}:recovery:${intentRetryTokenRef.current}`
         : clientFingerprint;
     const stableIdempotencyKey = buildDeterministicIdemKey(stableIdemFingerprint);
     const currentIdempotencyKey = existingIdempotencyKey ?? stableIdempotencyKey ?? null;
@@ -614,6 +614,8 @@ export default function Step2Pagamento() {
     let cancelled = false;
 
     async function createIntent() {
+      let lastResponseStatus: number | null = null;
+      let outcome: "READY" | "FAILED" | "CANCELLED" = "FAILED";
       try {
         inFlightIntentRef.current = intentKey;
         cycleGuardRef.current = cycleGuardKey;
@@ -655,6 +657,7 @@ export default function Step2Pagamento() {
               intentFingerprint: currentIntentFingerprint ?? undefined,
             }),
           });
+          lastResponseStatus = res.status;
 
           data = (await res.json().catch(() => null)) as IntentErrorPayload | null;
 
@@ -690,7 +693,7 @@ export default function Step2Pagamento() {
               setBreakdown(null);
               lastIntentKeyRef.current = null;
               inFlightIntentRef.current = null;
-              setIntentRetryToken((prev) => prev + 1);
+              intentRetryTokenRef.current += 1;
               setPromoWarning("A sessão de pagamento expirou. Estamos a gerar um novo intento.");
               try {
                 atualizarDados({
@@ -757,6 +760,7 @@ export default function Step2Pagamento() {
             status: res.status,
             data,
             fallbackMessage: "Não foi possível preparar o pagamento.",
+            retryCount: terminalRetryCountRef.current,
           });
           if (!cancelled) {
             setCachedIntent(null);
@@ -850,7 +854,6 @@ export default function Step2Pagamento() {
                     ? data.error
                     : "O checkout mudou noutro separador. Volta ao passo anterior ou recarrega a página e tenta de novo.",
                 );
-                setLoading(false);
                 return;
               }
               idempotencyMismatchCountRef.current += 1;
@@ -1092,6 +1095,7 @@ export default function Step2Pagamento() {
               },
             });
             lastIntentKeyRef.current = intentKey;
+            outcome = "READY";
             setIntentCycleState("READY");
             irParaPasso(3);
             return;
@@ -1138,6 +1142,7 @@ export default function Step2Pagamento() {
             autoAppliedPromo: isAutoAppliedPromo,
             purchaseId: purchaseIdFromServer ?? null,
           });
+          outcome = "READY";
           setIntentCycleState("READY");
         }
       } catch (err) {
@@ -1147,12 +1152,21 @@ export default function Step2Pagamento() {
           setError("Erro inesperado ao preparar o pagamento.");
         }
       } finally {
+        if (cancelled) outcome = "CANCELLED";
         if (!cancelled) setLoading(false);
         if (cycleGuardRef.current === cycleGuardKey) {
           cycleGuardRef.current = null;
         }
         if (inFlightIntentRef.current === intentKey) {
           inFlightIntentRef.current = null;
+        }
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[Step2Pagamento.intent] end", {
+            cycleGuardKey,
+            outcome,
+            status: lastResponseStatus,
+            retries: terminalRetryCountRef.current,
+          });
         }
       }
     }
@@ -1172,7 +1186,6 @@ export default function Step2Pagamento() {
     purchaseMode,
     guestSubmitVersion,
     cachedIntent,
-    intentRetryToken,
     paymentMethod,
   ]);
 
@@ -1222,7 +1235,7 @@ export default function Step2Pagamento() {
     setBreakdown(null);
     lastIntentKeyRef.current = null;
     inFlightIntentRef.current = null;
-    setIntentRetryToken((prev) => prev + 1);
+    intentRetryTokenRef.current += 1;
     setGuestSubmitVersion((v) => v + 1);
 
     const fingerprintFromState =
@@ -1320,7 +1333,7 @@ export default function Step2Pagamento() {
     setPurchaseMode("guest");
     setClientSecret(null);
     setServerAmount(null);
-    setIntentRetryToken(0);
+    intentRetryTokenRef.current = 0;
     setGuestSubmitVersion((v) => v + 1);
   };
 
@@ -1339,7 +1352,7 @@ export default function Step2Pagamento() {
     setClientSecret(null);
     setServerAmount(null);
     setIntentCycleState("IDLE");
-    setIntentRetryToken(0);
+    intentRetryTokenRef.current = 0;
     setGuestSubmitVersion((v) => v + 1);
 
     try {
@@ -1439,7 +1452,7 @@ export default function Step2Pagamento() {
             setServerAmount(null);
             setBreakdown(null);
             setIntentCycleState("IDLE");
-            setIntentRetryToken(0);
+            intentRetryTokenRef.current = 0;
             lastIntentKeyRef.current = null;
             inFlightIntentRef.current = null;
             setPromoCode(promoInput.trim());

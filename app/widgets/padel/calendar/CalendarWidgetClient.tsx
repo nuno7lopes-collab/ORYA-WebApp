@@ -50,6 +50,7 @@ type CalendarDay = {
 
 type CalendarWidgetClientProps = {
   eventId: number;
+  eventSlug?: string | null;
   timezone: string;
   locale?: string;
   initialDays: CalendarDay[];
@@ -146,6 +147,7 @@ const fetchMatches = async (eventId: number) => {
 
 export default function CalendarWidgetClient({
   eventId,
+  eventSlug,
   timezone,
   locale,
   initialDays,
@@ -158,9 +160,11 @@ export default function CalendarWidgetClient({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !eventSlug) return;
     let closed = false;
-    const source = new EventSource(`/api/padel/live?eventId=${encodeURIComponent(String(eventId))}`);
+    const source = new EventSource(
+      `/api/live/events/${encodeURIComponent(eventSlug)}/stream?eventId=${encodeURIComponent(String(eventId))}`,
+    );
 
     const stopPoll = () => {
       if (pollRef.current) {
@@ -209,7 +213,7 @@ export default function CalendarWidgetClient({
       source.close();
       stopPoll();
     };
-  }, [eventId, timezone]);
+  }, [eventId, eventSlug, timezone]);
 
   const hasDays = useMemo(() => days.length > 0, [days]);
 

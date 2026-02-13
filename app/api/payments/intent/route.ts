@@ -819,6 +819,20 @@ type IntentStatus =
 
 type NextAction = "NONE" | "PAY_NOW" | "CONFIRM_GUARANTEE" | "CONTACT_SUPPORT" | "LOGIN" | "CONNECT_STRIPE" | "ACCEPT";
 
+export const PAYMENT_INTENT_TERMINAL_ERROR_OPTS = {
+  httpStatus: 409,
+  status: "FAILED" as IntentStatus,
+  retryable: true,
+  nextAction: "PAY_NOW" as NextAction,
+} as const;
+
+export const NON_RETRYABLE_CONFLICT_ERROR_OPTS = {
+  httpStatus: 409,
+  status: "FAILED" as IntentStatus,
+  retryable: false,
+  nextAction: "NONE" as NextAction,
+} as const;
+
 function intentError(
   code: string,
   message: string,
@@ -2063,10 +2077,7 @@ async function _POST(req: NextRequest) {
       }
       if (hasExistingFreeEntry) {
         return intentError("FREE_ALREADY_CLAIMED", "Já tens uma inscrição gratuita neste evento.", {
-          httpStatus: 409,
-          status: "FAILED",
-          nextAction: "NONE",
-          retryable: false,
+          ...NON_RETRYABLE_CONFLICT_ERROR_OPTS,
         });
       }
     }
@@ -2482,10 +2493,7 @@ async function _POST(req: NextRequest) {
 
       if (isFreeOnlyEvent && hasExistingFreeEntry) {
         return intentError("FREE_ALREADY_CLAIMED", "Já tens uma inscrição gratuita neste evento.", {
-          httpStatus: 409,
-          status: "FAILED",
-          nextAction: "NONE",
-          retryable: false,
+          ...NON_RETRYABLE_CONFLICT_ERROR_OPTS,
         });
       }
 
@@ -2658,6 +2666,13 @@ async function _POST(req: NextRequest) {
         paymentIntent = await createPi(attemptKey);
         if (isTerminal(paymentIntent?.status)) {
           // PI reaproveitado (provavelmente via idempotency) em estado terminal — gerar chave nova
+          logWarn("payments.intent.pi_terminal_retry", {
+            purchaseId,
+            intentFingerprint,
+            paymentIntentId: paymentIntent?.id ?? null,
+            paymentIntentStatus: paymentIntent?.status ?? null,
+            attempt: attempts + 1,
+          });
           attempts += 1;
           attemptKey = `${stripeIdempotencyKey}:retry:${attempts}`;
           paymentIntent = null as any;
@@ -2687,10 +2702,17 @@ async function _POST(req: NextRequest) {
 
     // Se apesar das retentativas ainda recebemos um PI terminal, devolvemos 409 para o FE refazer tudo com novas keys.
     if (!paymentIntent || isTerminal(paymentIntent?.status)) {
+      logWarn("payments.intent.pi_terminal_exhausted", {
+        purchaseId,
+        intentFingerprint,
+        paymentIntentId: paymentIntent?.id ?? null,
+        paymentIntentStatus: paymentIntent?.status ?? null,
+        attempts,
+      });
       return intentError(
         "PAYMENT_INTENT_TERMINAL",
         "Sessão de pagamento expirada. Vamos criar um novo intento.",
-        { httpStatus: 409, status: "FAILED", retryable: true, nextAction: "PAY_NOW" },
+        { ...PAYMENT_INTENT_TERMINAL_ERROR_OPTS },
       );
     }
 

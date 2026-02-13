@@ -11,6 +11,10 @@ import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/acc
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { requireChatContext, ChatContextError } from "@/lib/chat/context";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import {
+  enforceMobileClientRequest,
+  getMessagesScope,
+} from "@/app/api/messages/_scope";
 
 type ResolvePayload = {
   contextType?: unknown;
@@ -322,9 +326,15 @@ export async function POST(req: NextRequest) {
   try {
     const payload = (await req.json().catch(() => null)) as ResolvePayload | null;
     const contextTypeRaw = typeof payload?.contextType === "string" ? payload.contextType.trim().toUpperCase() : "";
+    const scope = getMessagesScope(req);
 
     if (!contextTypeRaw) {
       return jsonWrap({ ok: false, error: "INVALID_CONTEXT" }, { status: 400 });
+    }
+
+    if (scope === "b2c" || contextTypeRaw !== "ORG_CHANNEL") {
+      const mobileGate = enforceMobileClientRequest(req);
+      if (mobileGate) return mobileGate;
     }
 
     if (contextTypeRaw === "ORG_CHANNEL") {

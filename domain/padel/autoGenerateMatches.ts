@@ -143,6 +143,22 @@ function roundRobinSchedule(ids: Array<number | null>) {
   return rounds;
 }
 
+function rotateArray<T>(values: T[], by: number) {
+  if (values.length === 0) return [];
+  const size = values.length;
+  const offset = ((by % size) + size) % size;
+  if (offset === 0) return [...values];
+  return [...values.slice(offset), ...values.slice(0, offset)];
+}
+
+function chunkArray<T>(values: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let idx = 0; idx < values.length; idx += size) {
+    chunks.push(values.slice(idx, idx + size));
+  }
+  return chunks;
+}
+
 async function createMatchList(params: {
   matches: Array<Prisma.EventMatchSlotCreateManyInput>;
   eventId: number;
@@ -312,7 +328,11 @@ export async function autoGeneratePadelMatches({
       pairingStatus: "COMPLETE",
       ...matchCategoryFilter,
     },
-    select: { id: true, createdAt: true, slots: { select: { profileId: true } } },
+    select: {
+      id: true,
+      createdAt: true,
+      slots: { select: { profileId: true, playerProfileId: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
   const seedRanksRaw = advanced.seedRanks ?? {};
@@ -631,8 +651,23 @@ export async function autoGeneratePadelMatches({
           gamesAgainst: r.gamesAgainst,
         })),
       );
+      const qualifierAsStandingRow = (row: Qualifier): PadelStandingRow => ({
+        entityId: row.pairingId,
+        pairingId: row.pairingId,
+        playerId: null,
+        points: row.points,
+        wins: row.wins ?? 0,
+        draws: 0,
+        losses: row.losses ?? 0,
+        setDiff: row.setDiff,
+        gameDiff: row.gameDiff,
+        setsFor: row.setsFor,
+        setsAgainst: row.setsAgainst,
+        gamesFor: row.gamesFor ?? 0,
+        gamesAgainst: row.gamesAgainst ?? 0,
+      });
       extraPool.sort((a, b) => {
-        const base = comparePadelStandingsRows(a as PadelStandingRow, b as PadelStandingRow, tieBreakRules, {
+        const base = comparePadelStandingsRows(qualifierAsStandingRow(a), qualifierAsStandingRow(b), tieBreakRules, {
           includePairingIdFallback: false,
         });
         if (base !== 0) return base;
@@ -996,66 +1031,232 @@ export async function autoGeneratePadelMatches({
   if (isRoundRobin) {
     const isTimedGamesFormat =
       formatEffective === "NON_STOP" || formatEffective === "AMERICANO" || formatEffective === "MEXICANO";
-    const rounds = roundRobinSchedule(drawPairingIds);
     const groupLabel =
       formatEffective === "NON_STOP" ? "NS" : formatEffective === "AMERICANO" ? "AM" : formatEffective === "MEXICANO" ? "MX" : "A";
     const roundLabelPrefix =
       formatEffective === "NON_STOP" || formatEffective === "AMERICANO" || formatEffective === "MEXICANO"
         ? "Ronda"
         : "Jornada";
+    const isIndividualRotationFormat = formatEffective === "AMERICANO" || formatEffective === "MEXICANO";
     let matchIdx = 0;
-    rounds.forEach((round, roundIdx) => {
-      round.forEach((pair) => {
-        if (pair.a === null || pair.b === null) {
-          const byePairingId = pair.a ?? pair.b;
-          if (!isTimedGamesFormat || byePairingId == null) return;
+
+    if (isIndividualRotationFormat) {
+      const markerPrefix = `AUTO_ROTATION:${eventId}:${resolvedCategoryId ?? 0}:${formatEffective}`;
+      await prisma.padelPairing.deleteMany({
+        where: {
+          eventId,
+          ...(resolvedCategoryId ? { categoryId: resolvedCategoryId } : { categoryId: null }),
+          partnerLinkToken: { startsWith: markerPrefix },
+        },
+      });
+
+      let playerProfileIds = Array.from(
+        new Set(
+          sortedPairings.flatMap((pairing) =>
+            pairing.slots
+              .map((slot) => slot.playerProfileId)
+              .filter((playerProfileId): playerProfileId is number =>
+                typeof playerProfileId === "number" && Number.isFinite(playerProfileId),
+              ),
+          ),
+        ),
+      );
+      if (playerProfileIds.length < 4) {
+        const profileIds = Array.from(
+          new Set(
+            sortedPairings.flatMap((pairing) =>
+              pairing.slots
+                .map((slot) => slot.profileId)
+                .filter((profileId): profileId is string => typeof profileId === "string" && profileId.length > 0),
+            ),
+          ),
+        );
+        if (profileIds.length > 0) {
+          const profiles = await prisma.padelPlayerProfile.findMany({
+            where: { userId: { in: profileIds } },
+            select: { id: true },
+          });
+          playerProfileIds = Array.from(new Set([...playerProfileIds, ...profiles.map((profile) => profile.id)]));
+        }
+      }
+      if (playerProfileIds.length < 4) {
+        return { ok: false, error: "NEED_PLAYERS_FOR_INDIVIDUAL_FORMAT" };
+      }
+
+      const pairingCache = new Map<string, number>();
+      const ensureSyntheticPairing = async (sidePlayers: number[]) => {
+        const normalized = [...sidePlayers].sort((a, b) => a - b);
+        if (normalized.length === 0) return null;
+        const key = normalized.join(":");
+        const cached = pairingCache.get(key);
+        if (cached) return cached;
+
+        const created = await prisma.padelPairing.create({
+          data: {
+            eventId,
+            organizationId,
+            categoryId: resolvedCategoryId ?? null,
+            payment_mode: "FULL",
+            pairingStatus: "COMPLETE",
+            pairingJoinMode: "INVITE_PARTNER",
+            partnerLinkToken: `${markerPrefix}:${key}`,
+            isPublicOpen: false,
+            slots: {
+              create: normalized.map((playerProfileId, idx) => ({
+                slot_role: idx === 0 ? "CAPTAIN" : "PARTNER",
+                slotStatus: "FILLED",
+                paymentStatus: "PAID",
+                playerProfileId,
+              })),
+            },
+          },
+          select: { id: true },
+        });
+
+        pairingCache.set(key, created.id);
+        return created.id;
+      };
+
+      const advancedRecord = advanced as Record<string, unknown>;
+      const roundsRaw =
+        typeof advancedRecord.rotationRounds === "number"
+          ? Number(advancedRecord.rotationRounds)
+          : typeof advancedRecord.nonStopRounds === "number"
+            ? Number(advancedRecord.nonStopRounds)
+            : null;
+      const defaultRounds =
+        formatEffective === "MEXICANO"
+          ? Math.max(1, Math.min(playerProfileIds.length - 1, 6))
+          : Math.max(1, playerProfileIds.length - 1);
+      const roundsCount = roundsRaw && Number.isFinite(roundsRaw) ? Math.max(1, Math.floor(roundsRaw)) : defaultRounds;
+      const baseOrder = shuffle(playerProfileIds, rngFor("individual-rotation"));
+      const pairingPatterns: Array<[number, number, number, number]> = [
+        [0, 1, 2, 3],
+        [0, 2, 1, 3],
+        [0, 3, 1, 2],
+      ];
+
+      for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
+        const rotationStep = formatEffective === "MEXICANO" ? roundIdx * 2 : roundIdx;
+        const rotated = rotateArray(baseOrder, rotationStep);
+        const quartets = chunkArray(rotated, 4);
+
+        for (const quartet of quartets) {
+          if (quartet.length < 4) {
+            for (const playerProfileId of quartet) {
+              const byePairingId = await ensureSyntheticPairing([playerProfileId]);
+              if (!byePairingId) continue;
+              const courtIndex = matchIdx % courtsList.length;
+              const court = courtsList[courtIndex];
+              matchCreateData.push({
+                eventId,
+                categoryId: resolvedCategoryId ?? null,
+                pairingAId: byePairingId,
+                pairingBId: null,
+                status: "DONE",
+                roundType: "GROUPS",
+                roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
+                groupLabel,
+                courtId: court?.id ?? null,
+                courtNumber: courtIndex + 1,
+                courtName: court?.name || null,
+                score: {
+                  mode: "TIMED_GAMES",
+                  resultType: "BYE_NEUTRAL",
+                  gamesA: 0,
+                  gamesB: 0,
+                  endedByBuzzer: false,
+                  endedAt: new Date().toISOString(),
+                } as Prisma.InputJsonValue,
+                scoreSets: [] as Prisma.InputJsonValue,
+                winnerPairingId: null,
+              });
+              matchIdx += 1;
+            }
+            continue;
+          }
+
+          const pattern = pairingPatterns[roundIdx % pairingPatterns.length];
+          const sideAPlayers = [quartet[pattern[0]], quartet[pattern[1]]];
+          const sideBPlayers = [quartet[pattern[2]], quartet[pattern[3]]];
+          const pairingAId = await ensureSyntheticPairing(sideAPlayers);
+          const pairingBId = await ensureSyntheticPairing(sideBPlayers);
+          if (!pairingAId || !pairingBId) continue;
+
           const courtIndex = matchIdx % courtsList.length;
           const court = courtsList[courtIndex];
           matchCreateData.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
-            pairingAId: byePairingId,
-            pairingBId: null,
-            status: "DONE",
+            pairingAId,
+            pairingBId,
+            status: "PENDING",
             roundType: "GROUPS",
             roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
             groupLabel,
             courtId: court?.id ?? null,
             courtNumber: courtIndex + 1,
             courtName: court?.name || null,
-            score: {
-              mode: "TIMED_GAMES",
-              resultType: "BYE_NEUTRAL",
-              gamesA: 0,
-              gamesB: 0,
-              endedByBuzzer: false,
-              endedAt: new Date().toISOString(),
-            } as Prisma.InputJsonValue,
-            scoreSets: [] as Prisma.InputJsonValue,
-            winnerPairingId: null,
+            score: { mode: "TIMED_GAMES" } as Prisma.InputJsonValue,
           });
           matchIdx += 1;
-          return;
         }
-        const courtIndex = matchIdx % courtsList.length;
-        const court = courtsList[courtIndex];
-        matchCreateData.push({
-          eventId,
-          categoryId: resolvedCategoryId ?? null,
-          pairingAId: pair.a,
-          pairingBId: pair.b,
-          status: "PENDING",
-          roundType: "GROUPS",
-          roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
-          groupLabel,
-          courtId: court?.id ?? null,
-          courtNumber: courtIndex + 1,
-          courtName: court?.name || null,
-          score: isTimedGamesFormat ? ({ mode: "TIMED_GAMES" } as Prisma.InputJsonValue) : {},
+      }
+    } else {
+      const rounds = roundRobinSchedule(drawPairingIds);
+      rounds.forEach((round, roundIdx) => {
+        round.forEach((pair) => {
+          if (pair.a === null || pair.b === null) {
+            const byePairingId = pair.a ?? pair.b;
+            if (!isTimedGamesFormat || byePairingId == null) return;
+            const courtIndex = matchIdx % courtsList.length;
+            const court = courtsList[courtIndex];
+            matchCreateData.push({
+              eventId,
+              categoryId: resolvedCategoryId ?? null,
+              pairingAId: byePairingId,
+              pairingBId: null,
+              status: "DONE",
+              roundType: "GROUPS",
+              roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
+              groupLabel,
+              courtId: court?.id ?? null,
+              courtNumber: courtIndex + 1,
+              courtName: court?.name || null,
+              score: {
+                mode: "TIMED_GAMES",
+                resultType: "BYE_NEUTRAL",
+                gamesA: 0,
+                gamesB: 0,
+                endedByBuzzer: false,
+                endedAt: new Date().toISOString(),
+              } as Prisma.InputJsonValue,
+              scoreSets: [] as Prisma.InputJsonValue,
+              winnerPairingId: null,
+            });
+            matchIdx += 1;
+            return;
+          }
+          const courtIndex = matchIdx % courtsList.length;
+          const court = courtsList[courtIndex];
+          matchCreateData.push({
+            eventId,
+            categoryId: resolvedCategoryId ?? null,
+            pairingAId: pair.a,
+            pairingBId: pair.b,
+            status: "PENDING",
+            roundType: "GROUPS",
+            roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
+            groupLabel,
+            courtId: court?.id ?? null,
+            courtNumber: courtIndex + 1,
+            courtName: court?.name || null,
+            score: isTimedGamesFormat ? ({ mode: "TIMED_GAMES" } as Prisma.InputJsonValue) : {},
+          });
+          matchIdx += 1;
         });
-        matchIdx += 1;
       });
-    });
+    }
   }
 
   if (!matchCreateData.length) return { ok: false, error: "NO_MATCHES_GENERATED" };

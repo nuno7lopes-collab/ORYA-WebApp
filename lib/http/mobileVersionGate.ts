@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 
 export const MIN_SUPPORTED_MOBILE_VERSION = process.env.MIN_SUPPORTED_MOBILE_VERSION?.trim() || "1.0.0";
@@ -31,7 +31,7 @@ function isMobileRequest(req: NextRequest) {
   return typeof platform === "string" && platform.trim().toLowerCase() === "mobile";
 }
 
-export function enforceMobileVersionGate(req: NextRequest): NextResponse | null {
+export function enforceMobileVersionGate(req: NextRequest): Response | null {
   if (!isMobileRequest(req)) return null;
   const appVersion = req.headers.get("x-app-version") || req.headers.get("x-client-version");
   if (!appVersion) {

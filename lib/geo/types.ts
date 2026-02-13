@@ -1,9 +1,12 @@
 export type GeoAutocompleteItem = {
   providerId: string;
   label: string;
+  secondaryLabel?: string | null;
   name: string | null;
+  locality?: string | null;
   city: string | null;
   address: string | null;
+  countryCode?: string | null;
   lat: number;
   lng: number;
   sourceProvider?: string | null;

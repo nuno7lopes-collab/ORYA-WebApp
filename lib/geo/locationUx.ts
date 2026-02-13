@@ -1,4 +1,9 @@
 import type { GeoAutocompleteItem } from "./provider";
+import {
+  KNOWN_COUNTRY_CODES,
+  isCountryTokenPresent,
+  normalizeGeoText,
+} from "./countryIntent";
 
 export const RECENT_LOCATION_KEY = "orya-recent-locations";
 export const MAX_RECENT_LOCATIONS = 5;
@@ -26,41 +31,146 @@ export const formatDistanceLabel = (distance: number) => {
   return `${Math.round(distance)} km`;
 };
 
-const looksPortuguese = (item: GeoAutocompleteItem) => {
-  const haystack = [item.city, item.address, item.label].filter(Boolean).join(" ").toLowerCase();
-  return /\bportugal\b/.test(haystack) || /(?:^|[,\s])pt(?:$|[,\s])/.test(haystack);
+type RankLocationOptions = {
+  countryCode?: string | null;
+};
+
+const normalizeSearchText = normalizeGeoText;
+
+const tokenizeSearchText = (value: string) =>
+  normalizeSearchText(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasToken = (haystack: string, token: string) => {
+  if (!token) return false;
+  if (token.length <= 2) {
+    const pattern = new RegExp(`(?:^|[^a-z0-9])${escapeRegex(token)}(?:$|[^a-z0-9])`);
+    return pattern.test(haystack);
+  }
+  return haystack.includes(token);
+};
+
+const scoreDistance = (distance: number | null) => {
+  if (distance == null) return 0;
+  if (distance <= 3) return 135;
+  if (distance <= 10) return 105;
+  if (distance <= 25) return 82;
+  if (distance <= 50) return 64;
+  if (distance <= 120) return 42;
+  if (distance <= 300) return 25;
+  if (distance <= 800) return 10;
+  if (distance <= 1600) return -35;
+  if (distance <= 3000) return -85;
+  return -140;
+};
+
+const scoreCountry = (
+  haystack: string,
+  itemCountryCode: string | null | undefined,
+  expectedCountryCode: string | null | undefined,
+  queryLength: number,
+) => {
+  if (!expectedCountryCode) return 0;
+  const normalizedExpectedCode = expectedCountryCode.trim().toUpperCase();
+  if (!normalizedExpectedCode) return 0;
+  const normalizedItemCode = itemCountryCode?.trim().toUpperCase() || null;
+  if (normalizedItemCode) {
+    if (normalizedItemCode === normalizedExpectedCode) {
+      return queryLength <= 5 ? 34 : 22;
+    }
+    return queryLength <= 5 ? -150 : -52;
+  }
+
+  if (isCountryTokenPresent(haystack, normalizedExpectedCode)) return queryLength <= 5 ? 28 : 18;
+  const explicitOtherCountry = KNOWN_COUNTRY_CODES.some(
+    (code) => code !== normalizedExpectedCode && isCountryTokenPresent(haystack, code),
+  );
+  if (explicitOtherCountry) return queryLength <= 5 ? -90 : -20;
+  return 0;
+};
+
+const semanticKey = (item: GeoAutocompleteItem) => {
+  const label = normalizeSearchText(item.label);
+  const locality = normalizeSearchText(item.locality ?? item.city ?? item.address ?? item.secondaryLabel);
+  const latBucket = Number.isFinite(item.lat) ? Math.round(item.lat * 1_000) / 1_000 : 0;
+  const lngBucket = Number.isFinite(item.lng) ? Math.round(item.lng * 1_000) / 1_000 : 0;
+  return `${label}|${locality}|${latBucket}|${lngBucket}`;
+};
+
+const dedupeLocationSuggestions = (items: GeoAutocompleteItem[]) => {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = semanticKey(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 export const rankLocationSuggestions = (
   items: GeoAutocompleteItem[],
   query: string,
   locationBias: { lat: number; lng: number } | null,
+  options?: RankLocationOptions,
 ) => {
-  const normalizedQuery = query.trim().toLowerCase();
-  return [...items]
+  const normalizedQuery = normalizeSearchText(query);
+  const queryTokens = tokenizeSearchText(query);
+  const normalizedItems = dedupeLocationSuggestions(items);
+  return [...normalizedItems]
     .map((item, idx) => {
-      const label = item.label.toLowerCase();
-      const city = (item.city ?? "").toLowerCase();
-      const address = (item.address ?? "").toLowerCase();
-      const startsWithQuery = label.startsWith(normalizedQuery) || city.startsWith(normalizedQuery);
-      const queryInAddress = address.includes(normalizedQuery);
+      const label = normalizeSearchText(item.label);
+      const secondaryLabel = normalizeSearchText(item.secondaryLabel);
+      const city = normalizeSearchText(item.city);
+      const locality = normalizeSearchText(item.locality);
+      const address = normalizeSearchText(item.address);
+      const haystack = `${label} ${secondaryLabel} ${address} ${city} ${locality}`.trim();
       const distance =
         locationBias && isFiniteCoordinate(item.lat) && isFiniteCoordinate(item.lng)
           ? distanceKm(locationBias, { lat: item.lat, lng: item.lng })
           : null;
+      let score = 0;
+      if (normalizedQuery) {
+        if (label === normalizedQuery) score += 160;
+        if (city === normalizedQuery) score += 125;
+        if (locality === normalizedQuery) score += 112;
+        if (address === normalizedQuery) score += 110;
+        if (label.startsWith(normalizedQuery)) score += 88;
+        if (city.startsWith(normalizedQuery)) score += 68;
+        if (locality.startsWith(normalizedQuery)) score += 60;
+        if (address.startsWith(normalizedQuery)) score += 58;
+        if (secondaryLabel.startsWith(normalizedQuery)) score += 46;
+        if (hasToken(haystack, normalizedQuery)) score += 36;
+        else if (haystack.includes(normalizedQuery)) score += 22;
+        else score -= 20;
+
+        for (const token of queryTokens) {
+          if (hasToken(haystack, token)) score += 10;
+          else score -= 16;
+        }
+      }
+      score += scoreDistance(distance);
+      score += scoreCountry(
+        `${haystack} ${normalizeSearchText(item.countryCode)}`,
+        item.countryCode ?? null,
+        options?.countryCode,
+        normalizedQuery.length,
+      );
+      if (distance != null && normalizedQuery.length <= 4 && distance > 1000) {
+        score -= 55;
+      }
       return {
         item,
         idx,
-        startsWithQuery,
-        queryInAddress,
-        isPortuguese: looksPortuguese(item),
         distance,
+        score,
       };
     })
     .sort((a, b) => {
-      if (a.startsWithQuery !== b.startsWithQuery) return a.startsWithQuery ? -1 : 1;
-      if (a.queryInAddress !== b.queryInAddress) return a.queryInAddress ? -1 : 1;
-      if (a.isPortuguese !== b.isPortuguese) return a.isPortuguese ? -1 : 1;
+      if (a.score !== b.score) return b.score - a.score;
       if (a.distance !== null && b.distance !== null) return a.distance - b.distance;
       if (a.distance !== null) return -1;
       if (b.distance !== null) return 1;
@@ -80,9 +190,12 @@ export const sanitizeRecentLocation = (input: unknown): GeoAutocompleteItem | nu
   return {
     providerId,
     label,
+    secondaryLabel: typeof item.secondaryLabel === "string" ? item.secondaryLabel : null,
     name: typeof item.name === "string" ? item.name : null,
+    locality: typeof item.locality === "string" ? item.locality : null,
     city: typeof item.city === "string" ? item.city : null,
     address: typeof item.address === "string" ? item.address : null,
+    countryCode: typeof item.countryCode === "string" ? item.countryCode : null,
     lat,
     lng,
     sourceProvider: typeof item.sourceProvider === "string" ? item.sourceProvider : "APPLE_MAPS",

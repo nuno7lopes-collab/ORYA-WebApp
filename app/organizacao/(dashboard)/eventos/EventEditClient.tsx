@@ -10,12 +10,14 @@ import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal"
 import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl, parseEventCoverToken } from "@/lib/eventCover";
-import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
+import { fetchGeoAutocompleteWithMeta, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 import { useToast } from "@/components/ui/toast-provider";
+import { partitionSuggestionsByCountry } from "@/lib/geo/autocompletePolicy";
+import { trackEvent } from "@/lib/analytics";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import {
@@ -24,7 +26,6 @@ import {
   distanceKm,
   formatDistanceLabel,
   isFiniteCoordinate,
-  rankLocationSuggestions,
   sanitizeRecentLocation,
 } from "@/lib/geo/locationUx";
 import type { Prisma } from "@prisma/client";
@@ -38,7 +39,7 @@ const TicketTypeStatus = {
 
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
 
-type LiveHubVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
+type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type TicketTypeUI = {
   id: number;
@@ -130,7 +131,7 @@ type EventEditClientProps = {
     templateType: string | null;
     isGratis: boolean;
     coverImageUrl: string | null;
-    liveHubVisibility: LiveHubVisibility;
+    liveVisibility: LiveVisibility;
     liveStreamUrl: string | null;
     accessPolicy?: {
       mode?: string | null;
@@ -205,6 +206,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [locationBias, setLocationBias] = useState<{ lat: number; lng: number } | null>(null);
   const [requestingLocationBias, setRequestingLocationBias] = useState(false);
   const [recentLocationItems, setRecentLocationItems] = useState<GeoAutocompleteItem[]>([]);
+  const [expectedCountryCode, setExpectedCountryCode] = useState<string | null>(null);
+  const [effectiveCountryCode, setEffectiveCountryCode] = useState<string | null>(null);
+  const [queryCountryIntentCode, setQueryCountryIntentCode] = useState<string | null>(null);
+  const [showForeignSuggestions, setShowForeignSuggestions] = useState(false);
   const [templateType] = useState(event.templateType ?? "OTHER");
   const isPadel = templateType === "PADEL";
   const ticketLabel = isPadel ? "inscrição" : "bilhete";
@@ -235,8 +240,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         format: "webp",
       })
     : null;
-  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
-    event.liveHubVisibility ?? "PUBLIC",
+  const [liveVisibility, setLiveVisibility] = useState<LiveVisibility>(
+    event.liveVisibility ?? "PUBLIC",
   );
   const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
   const accessMode =
@@ -333,6 +338,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
   const activeProviderRef = useRef<string | null>(null);
+  const locationBypassAnalyticsRef = useRef<string | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const pushToast = (message: string, tone: "success" | "error" = "error") => {
     publishToast(message, { variant: tone === "success" ? "success" : "error" });
@@ -403,6 +409,10 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     if (query.length < 2) {
       setLocationSuggestions([]);
       setLocationSearchError(null);
+      setExpectedCountryCode(null);
+      setEffectiveCountryCode(null);
+      setQueryCountryIntentCode(null);
+      setShowForeignSuggestions(false);
       return;
     }
     if (locationSearchTimeout.current) {
@@ -413,16 +423,23 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     locationSearchTimeout.current = setTimeout(async () => {
       setLocationSearchLoading(true);
       try {
-        const items = await fetchGeoAutocomplete(query, locationBias ?? undefined);
+        const result = await fetchGeoAutocompleteWithMeta(query, locationBias ?? undefined);
         if (locationSearchSeq.current === seq) {
-          const ranked = rankLocationSuggestions(items, query, locationBias);
-          setLocationSuggestions(ranked);
+          setLocationSuggestions(result.items);
+          setExpectedCountryCode(result.expectedCountryCode);
+          setEffectiveCountryCode(result.effectiveCountryCode);
+          setQueryCountryIntentCode(result.queryCountryIntentCode);
+          setShowForeignSuggestions(false);
         }
       } catch (err) {
         console.warn("[eventos/edit] autocomplete falhou", err);
         if (locationSearchSeq.current === seq) {
           setLocationSuggestions([]);
           setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
+          setExpectedCountryCode(null);
+          setEffectiveCountryCode(null);
+          setQueryCountryIntentCode(null);
+          setShowForeignSuggestions(false);
         }
       } finally {
         if (locationSearchSeq.current === seq) {
@@ -437,6 +454,31 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       }
     };
   }, [locationQuery, locationBias]);
+
+  useEffect(() => {
+    const queryLength = locationQuery.trim().length;
+    const bypassActive = Boolean(
+      queryLength >= 2 &&
+      expectedCountryCode &&
+      effectiveCountryCode &&
+      expectedCountryCode !== effectiveCountryCode,
+    );
+    if (!bypassActive) {
+      locationBypassAnalyticsRef.current = null;
+      return;
+    }
+
+    const signature = `${expectedCountryCode}:${effectiveCountryCode}:${queryCountryIntentCode ?? ""}`;
+    if (locationBypassAnalyticsRef.current === signature) return;
+    locationBypassAnalyticsRef.current = signature;
+    trackEvent("geo_autocomplete_country_bypass_triggered", {
+      formContext: "event_edit",
+      expectedCountryCode,
+      effectiveCountryCode,
+      queryCountryIntentCode,
+      queryLength,
+    });
+  }, [effectiveCountryCode, expectedCountryCode, locationQuery, queryCountryIntentCode]);
 
   const rememberRecentLocation = (item: GeoAutocompleteItem) => {
     setRecentLocationItems((prev) => {
@@ -489,7 +531,20 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     if (nextLabel) setLocationQuery(nextLabel);
   };
 
-  const handleSelectGeoSuggestion = async (item: GeoAutocompleteItem) => {
+  const handleSelectGeoSuggestion = async (
+    item: GeoAutocompleteItem,
+    options?: { isForeign?: boolean },
+  ) => {
+    const queryLength = locationQuery.trim().length;
+    if (options?.isForeign) {
+      trackEvent("geo_autocomplete_foreign_selected", {
+        formContext: "event_edit",
+        expectedCountryCode,
+        effectiveCountryCode,
+        queryCountryIntentCode,
+        queryLength,
+      });
+    }
     setLocationProviderId(item.providerId);
     setLocationAddressId(null);
     activeProviderRef.current = item.providerId;
@@ -499,6 +554,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setLocationFormattedAddress(item.label);
     setLocationSuggestions([]);
     setShowLocationSuggestions(false);
+    setShowForeignSuggestions(false);
     setLocationSearchError(null);
     setLocationBiasError(null);
     rememberRecentLocation(item);
@@ -956,7 +1012,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           interestTags,
           isGratis,
           coverImageUrl: coverUrl,
-          liveHubVisibility,
+          liveVisibility,
           liveStreamUrl: liveStreamUrl.trim() || null,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
@@ -1186,8 +1242,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             <div className="space-y-1">
               <label className="text-sm font-medium">Visibilidade</label>
               <select
-                value={liveHubVisibility}
-                onChange={(e) => setLiveHubVisibility(e.target.value as LiveHubVisibility)}
+                value={liveVisibility}
+                onChange={(e) => setLiveVisibility(e.target.value as LiveVisibility)}
                 className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
               >
                 <option value="PUBLIC">Público</option>
@@ -1250,6 +1306,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                     setLocationLat(null);
                     setLocationLng(null);
                   }
+                  setShowForeignSuggestions(false);
                   setShowLocationSuggestions(true);
                 }}
                 onFocus={() => setShowLocationSuggestions(true)}
@@ -1319,9 +1376,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                           <div className="flex w-full items-start justify-between gap-3">
                             <div className="space-y-0.5">
                               <span className="block font-semibold text-white">{suggestion.label}</span>
-                              <span className="block text-[12px] text-white/60">
-                                {suggestion.address || suggestion.city || "Morada sem detalhe"}
-                              </span>
+                              {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
+                                <span className="block text-[12px] text-white/60">
+                                  {suggestion.secondaryLabel || suggestion.address || suggestion.city}
+                                </span>
+                              )}
                             </div>
                             {suggestionDistance && (
                               <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">

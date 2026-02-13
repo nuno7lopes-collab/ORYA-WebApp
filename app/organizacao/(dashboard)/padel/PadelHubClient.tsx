@@ -1767,7 +1767,7 @@ export default function PadelHubClient({
       { label: "Treinadores", href: "/organizacao/treinadores", desc: "Perfis públicos e gestão." },
       {
         label: "Loja",
-        href: organizationId ? `/org/${organizationId}/loja` : "/organizacao/organizations",
+        href: organizationId ? `/org/${organizationId}/store` : "/organizacao/organizations",
         desc: "Produtos e stock.",
       },
     ];

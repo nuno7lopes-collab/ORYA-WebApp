@@ -14,8 +14,13 @@ import {
 } from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import { ChatConversationContextType, Prisma } from "@prisma/client";
+import {
+  resolvePostingWindow,
+  resolvePostingWindowStatus,
+} from "@/lib/messages/postingWindow";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
+  ChatConversationContextType.EVENT,
   ChatConversationContextType.USER_DM,
   ChatConversationContextType.USER_GROUP,
   ChatConversationContextType.ORG_CONTACT,
@@ -89,38 +94,6 @@ function mapSenderDisplay(params: {
     username: member.user.username,
     avatarUrl: member.user.avatarUrl,
   };
-}
-
-async function resolvePostingWindow(conversation: {
-  contextType: string;
-  contextId: string | null;
-  organizationId: number | null;
-}) {
-  if (conversation.contextType !== "BOOKING") {
-    return { canPost: true };
-  }
-
-  const bookingId = Number(conversation.contextId ?? "");
-  if (!Number.isFinite(bookingId)) return { canPost: false, reason: "INVALID_BOOKING" };
-
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    select: { status: true, startsAt: true, durationMinutes: true, organizationId: true },
-  });
-  if (!booking || booking.organizationId !== conversation.organizationId) {
-    return { canPost: false, reason: "BOOKING_NOT_FOUND" };
-  }
-  if (!["CONFIRMED", "COMPLETED"].includes(booking.status)) {
-    return { canPost: false, reason: "BOOKING_INACTIVE" };
-  }
-
-  const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-  const closeAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
-  if (Date.now() > closeAt.getTime()) {
-    return { canPost: false, reason: "READ_ONLY" };
-  }
-
-  return { canPost: true };
 }
 
 async function _GET(req: NextRequest, context: { params: { conversationId: string } }) {
@@ -363,7 +336,14 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
 
     const conversation = membership.conversation;
 
-    const payload = (await req.json().catch(() => null)) as { body?: unknown; clientMessageId?: unknown } | null;
+    const payload = (await req.json().catch(() => null)) as {
+      body?: unknown;
+      clientMessageId?: unknown;
+      attachments?: unknown;
+    } | null;
+    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
+      return jsonWrap({ error: "ATTACHMENTS_DISABLED" }, { status: 400 });
+    }
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
     if (!body) {
       return jsonWrap({ error: "EMPTY_BODY" }, { status: 400 });
@@ -378,7 +358,10 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       organizationId: conversation.organizationId,
     });
     if (!posting.canPost) {
-      return jsonWrap({ error: posting.reason ?? "READ_ONLY" }, { status: 403 });
+      return jsonWrap(
+        { error: posting.reason ?? "READ_ONLY" },
+        { status: resolvePostingWindowStatus(posting.reason) },
+      );
     }
 
     const clientMessageId =

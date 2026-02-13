@@ -30,7 +30,7 @@ import { normalizeInterestIds } from "@/lib/ranking/interests";
 import {
   EventTemplateType,
   EventStatus,
-  LiveHubVisibility,
+  LiveHubVisibility as LiveVisibilityEnum,
   PadelEligibilityType,
   PayoutMode,
   ResaleMode,
@@ -67,7 +67,7 @@ type CreateOrganizationEventBody = {
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   pricingMode?: string | null;
   coverImageUrl?: string | null;
-  liveHubVisibility?: string;
+  liveVisibility?: string;
   payoutMode?: string; // ORGANIZATION | PLATFORM
   feeMode?: string;
   platformFeeBps?: number;
@@ -350,11 +350,11 @@ async function _POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
-    const liveHubVisibilityRaw = body.liveHubVisibility?.toUpperCase();
-    const liveHubVisibility: LiveHubVisibility =
-      liveHubVisibilityRaw === "PUBLIC" || liveHubVisibilityRaw === "PRIVATE" || liveHubVisibilityRaw === "DISABLED"
-        ? (liveHubVisibilityRaw as LiveHubVisibility)
-        : LiveHubVisibility.PUBLIC;
+    const liveVisibilityRaw = body.liveVisibility?.toUpperCase();
+    const liveVisibility: LiveVisibilityEnum =
+      liveVisibilityRaw === "PUBLIC" || liveVisibilityRaw === "PRIVATE" || liveVisibilityRaw === "DISABLED"
+        ? (liveVisibilityRaw as LiveVisibilityEnum)
+        : LiveVisibilityEnum.PUBLIC;
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     let ticketTypesData = ticketTypesInput
@@ -766,7 +766,7 @@ async function _POST(req: NextRequest) {
           endsAt,
           addressId: addressRecord.id,
           pricingMode,
-          liveHubVisibility,
+          liveVisibility,
           status: eventStatus,
           ...(timezone ? { timezone } : {}),
           resaleMode,

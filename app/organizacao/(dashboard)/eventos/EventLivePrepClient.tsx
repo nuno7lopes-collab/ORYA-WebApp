@@ -10,7 +10,7 @@ type EventLivePrepClientProps = {
     id: number;
     slug: string;
     title: string;
-    liveHubVisibility: LiveHubVisibility;
+    liveVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
   };
   tournamentId?: number | null;
@@ -22,8 +22,8 @@ export default function EventLivePrepClient({
 }: EventLivePrepClientProps) {
   const [currentTournamentId, setCurrentTournamentId] = useState<number | null>(tournamentId ?? null);
 
-  const [liveHubVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
-    event.liveHubVisibility ?? "PUBLIC",
+  const [liveVisibility, setLiveHubVisibility] = useState<LiveHubVisibility>(
+    event.liveVisibility ?? "PUBLIC",
   );
   const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
   const [saving, setSaving] = useState(false);
@@ -41,7 +41,7 @@ export default function EventLivePrepClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventId: event.id,
-          liveHubVisibility,
+          liveVisibility,
           liveStreamUrl: liveStreamUrl.trim() || null,
         }),
       });
@@ -93,7 +93,7 @@ export default function EventLivePrepClient({
           <div className="space-y-1">
             <label className="text-sm font-medium">Visibilidade</label>
             <select
-              value={liveHubVisibility}
+              value={liveVisibility}
               onChange={(e) => setLiveHubVisibility(e.target.value as LiveHubVisibility)}
               className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
             >

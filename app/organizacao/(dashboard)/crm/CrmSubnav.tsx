@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { normalizeOrganizationPathname } from "@/app/organizacao/topbarRouteUtils";
 
 const CRM_NAV = [
   { id: "clientes", label: "Clientes", href: "/organizacao/crm/clientes" },
@@ -20,7 +21,7 @@ type CrmSubnavProps = {
 };
 
 export default function CrmSubnav({ variant = "default", className, campaignsEnabled = false }: CrmSubnavProps) {
-  const pathname = usePathname();
+  const pathname = normalizeOrganizationPathname(usePathname());
   const isTopbar = variant === "topbar";
   const navItems = CRM_NAV.filter((item) => {
     if (item.feature === "CRM_CAMPAIGNS") return campaignsEnabled;

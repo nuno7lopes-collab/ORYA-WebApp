@@ -257,7 +257,7 @@ export default async function EventPage({
     templateType: true,
     coverImageUrl: true,
     timezone: true,
-    liveHubVisibility: true,
+    liveVisibility: true,
     organizationId: true,
     ticketTypes: {
       select: {
@@ -501,7 +501,7 @@ export default async function EventPage({
   const safeOrganization = organizationDisplay || t("organizationFallback", locale);
   const organizationAvatarUrl = event.organization?.brandingAvatarUrl?.trim() || null;
   const organizationHandle = organizationUsername ? `@${organizationUsername}` : null;
-  const liveHubVisibility = event.liveHubVisibility ?? "PUBLIC";
+  const liveVisibility = event.liveVisibility ?? "PUBLIC";
 
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
   // Server Component para evitar erros de escrita de cookies.
@@ -718,6 +718,7 @@ export default async function EventPage({
     return cheapest.id ?? null;
   })();
 
+  let padelStandingsEntityType: "PAIRING" | "PLAYER" = "PAIRING";
   let padelStandings: Record<string, PadelStandingRow[]> = {};
 
   const canShowPadelTables = isPadel && padelV2Enabled && isPublicEvent && padelCompetitionState === "PUBLIC";
@@ -730,9 +731,10 @@ export default async function EventPage({
         );
         if (standingsRes.ok) {
           const data = (await standingsRes.json().catch(() => null)) as
-            | { ok?: boolean; groups?: Record<string, PadelStandingRow[]> }
+            | { ok?: boolean; entityType?: "PAIRING" | "PLAYER"; groups?: Record<string, PadelStandingRow[]> }
             | null;
           if (data?.ok && data.groups) {
+            padelStandingsEntityType = data.entityType === "PLAYER" ? "PLAYER" : "PAIRING";
             padelStandings = Object.fromEntries(
               Object.entries(data.groups).map(([group, rows]) => [
                 group,
@@ -1099,11 +1101,11 @@ export default async function EventPage({
                     <span>{t("liveLabel", locale)}</span>
                     <span className="h-1 w-1 rounded-full bg-white/30" />
                     <span>{isPadel ? t("liveSectionPadelSubtitle", locale) : t("liveSectionDefaultSubtitle", locale)}</span>
-                    {liveHubVisibility !== "PUBLIC" && (
+                    {liveVisibility !== "PUBLIC" && (
                       <>
                         <span className="h-1 w-1 rounded-full bg-white/30" />
                         <span>
-                          {liveHubVisibility === "PRIVATE"
+                          {liveVisibility === "PRIVATE"
                             ? t("liveVisibilityPrivate", locale)
                             : t("liveVisibilityDisabled", locale)}
                         </span>
@@ -1119,7 +1121,7 @@ export default async function EventPage({
                       : t("liveSectionDefaultDescription", locale)}
                   </p>
                 </div>
-                {liveHubVisibility !== "DISABLED" && (
+                {liveVisibility !== "DISABLED" && (
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href={liveHref}
@@ -1145,7 +1147,7 @@ export default async function EventPage({
                 )}
               </div>
 
-              {liveHubVisibility === "DISABLED" ? (
+              {liveVisibility === "DISABLED" ? (
                 <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
                   {t("liveHubDisabledMessage", locale)}
                 </div>
@@ -1201,6 +1203,7 @@ export default async function EventPage({
                 <PadelPublicTablesClient
                   eventId={event.id}
                   eventSlug={event.slug}
+                  initialEntityType={padelStandingsEntityType}
                   initialStandings={padelStandings}
                   locale={locale}
                   timezone={safeTimezone}

@@ -32,7 +32,7 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
       slug: true,
       title: true,
       organizationId: true,
-      liveHubVisibility: true,
+      liveVisibility: true,
       liveStreamUrl: true,
       templateType: true,
       tournament: { select: { id: true } },
@@ -70,7 +70,7 @@ export default async function OrganizationEventLivePrepPage({ params }: PageProp
           id: event.id,
           slug: event.slug,
           title: event.title,
-          liveHubVisibility: event.liveHubVisibility ?? "PUBLIC",
+          liveVisibility: event.liveVisibility ?? "PUBLIC",
           liveStreamUrl: event.liveStreamUrl ?? null,
           templateType: event.templateType ?? null,
         }}

@@ -10,6 +10,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ChatConversationContextType } from "@prisma/client";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
+  ChatConversationContextType.EVENT,
   ChatConversationContextType.USER_DM,
   ChatConversationContextType.USER_GROUP,
   ChatConversationContextType.ORG_CONTACT,

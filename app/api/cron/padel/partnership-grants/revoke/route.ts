@@ -6,7 +6,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 
-async function _GET(req: NextRequest) {
+async function _RUN(req: NextRequest) {
   const startedAt = new Date();
   try {
     if (!requireInternalSecret(req)) {
@@ -45,4 +45,5 @@ async function _GET(req: NextRequest) {
   }
 }
 
-export const GET = withApiEnvelope(_GET);
+export const GET = withApiEnvelope(_RUN);
+export const POST = withApiEnvelope(_RUN);

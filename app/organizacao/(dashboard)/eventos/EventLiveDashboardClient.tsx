@@ -13,7 +13,7 @@ type Props = {
     id: number;
     slug: string;
     title: string;
-    liveHubVisibility: LiveHubVisibility;
+    liveVisibility: LiveHubVisibility;
     liveStreamUrl: string | null;
     templateType?: string | null;
   };
@@ -81,7 +81,7 @@ export default function EventLiveDashboardClient({ event, tournamentId, canManag
             id: event.id,
             slug: event.slug,
             title: event.title,
-            liveHubVisibility: event.liveHubVisibility,
+            liveVisibility: event.liveVisibility,
             liveStreamUrl: event.liveStreamUrl,
           }}
           tournamentId={tournamentId}

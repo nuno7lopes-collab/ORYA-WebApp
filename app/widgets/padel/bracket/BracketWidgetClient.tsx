@@ -29,6 +29,7 @@ type RoundItem = {
 
 type BracketWidgetClientProps = {
   eventId: number;
+  eventSlug?: string | null;
   title: string;
   initialRounds: RoundItem[];
   locale?: string;
@@ -131,6 +132,7 @@ const fetchMatches = async (eventId: number) => {
 
 export default function BracketWidgetClient({
   eventId,
+  eventSlug,
   title,
   initialRounds,
   locale,
@@ -141,9 +143,11 @@ export default function BracketWidgetClient({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !eventSlug) return;
     let closed = false;
-    const source = new EventSource(`/api/padel/live?eventId=${encodeURIComponent(String(eventId))}`);
+    const source = new EventSource(
+      `/api/live/events/${encodeURIComponent(eventSlug)}/stream?eventId=${encodeURIComponent(String(eventId))}`,
+    );
 
     const stopPoll = () => {
       if (pollRef.current) {
@@ -194,7 +198,7 @@ export default function BracketWidgetClient({
       source.close();
       stopPoll();
     };
-  }, [eventId]);
+  }, [eventId, eventSlug]);
 
   const hasRounds = useMemo(() => rounds.length > 0, [rounds]);
 

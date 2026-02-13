@@ -16,7 +16,7 @@ export type StoreResolvedState =
   | "ACTIVE";
 
 export function isStoreFeatureEnabled() {
-  return env.storeEnabled;
+  return true;
 }
 
 export function isStoreDigitalEnabled() {

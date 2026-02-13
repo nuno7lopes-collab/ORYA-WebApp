@@ -55,12 +55,44 @@ async function _GET(req: NextRequest) {
   });
 
   const agreementIds = items.map((item) => item.id);
-  const policies = agreementIds.length
-    ? await prisma.padelPartnershipBookingPolicy.findMany({
-        where: { agreementId: { in: agreementIds } },
-      })
-    : [];
+  const [policies, windows, grants] = agreementIds.length
+    ? await Promise.all([
+        prisma.padelPartnershipBookingPolicy.findMany({
+          where: { agreementId: { in: agreementIds } },
+        }),
+        prisma.padelPartnershipWindow.findMany({
+          where: { agreementId: { in: agreementIds } },
+          select: { agreementId: true, isActive: true },
+        }),
+        prisma.padelPartnerRoleGrant.findMany({
+          where: { agreementId: { in: agreementIds } },
+          select: { agreementId: true, isActive: true, revokedAt: true, expiresAt: true },
+        }),
+      ])
+    : [[], [], []];
   const policyByAgreementId = new Map(policies.map((policy) => [policy.agreementId, policy]));
+  const windowsCountByAgreementId = new Map<number, number>();
+  const activeWindowsCountByAgreementId = new Map<number, number>();
+  windows.forEach((window) => {
+    windowsCountByAgreementId.set(window.agreementId, (windowsCountByAgreementId.get(window.agreementId) ?? 0) + 1);
+    if (window.isActive) {
+      activeWindowsCountByAgreementId.set(
+        window.agreementId,
+        (activeWindowsCountByAgreementId.get(window.agreementId) ?? 0) + 1,
+      );
+    }
+  });
+
+  const activeGrantsCountByAgreementId = new Map<number, number>();
+  const now = new Date();
+  grants.forEach((grant) => {
+    const active = grant.isActive && !grant.revokedAt && grant.expiresAt > now;
+    if (!active) return;
+    activeGrantsCountByAgreementId.set(
+      grant.agreementId,
+      (activeGrantsCountByAgreementId.get(grant.agreementId) ?? 0) + 1,
+    );
+  });
 
   return jsonWrap(
     {
@@ -68,6 +100,9 @@ async function _GET(req: NextRequest) {
       items: items.map((item) => ({
         ...item,
         policy: policyByAgreementId.get(item.id) ?? null,
+        windowsCount: windowsCountByAgreementId.get(item.id) ?? 0,
+        activeWindowsCount: activeWindowsCountByAgreementId.get(item.id) ?? 0,
+        activeGrantsCount: activeGrantsCountByAgreementId.get(item.id) ?? 0,
       })),
     },
     { status: 200 },

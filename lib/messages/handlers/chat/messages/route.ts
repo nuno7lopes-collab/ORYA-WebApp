@@ -8,7 +8,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { env } from "@/lib/env";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
-import { isChatV2Enabled } from "@/lib/chat/featureFlags";
 import { isUnauthenticatedError } from "@/lib/security";
 import {
   isChatRedisAvailable,
@@ -22,6 +21,10 @@ import {
   CHAT_MESSAGE_MAX_LENGTH,
 } from "@/lib/chat/constants";
 import { enqueueNotification } from "@/domain/notifications/outbox";
+import {
+  resolvePostingWindow,
+  resolvePostingWindowStatus,
+} from "@/lib/messages/postingWindow";
 
 const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
@@ -233,9 +236,6 @@ async function resolveMessageAttachments<T extends { attachments: any[] }>(messa
 
 async function _POST(req: NextRequest) {
   try {
-    if (!isChatV2Enabled()) {
-      return jsonWrap({ ok: false, error: "CHAT_DISABLED" }, { status: 404 });
-    }
 
     const { user, organization } = await requireChatContext(req);
 
@@ -287,6 +287,10 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "MESSAGE_TOO_LONG" }, { status: 400 });
     }
 
+    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
+      return jsonWrap({ ok: false, error: "ATTACHMENTS_DISABLED" }, { status: 400 });
+    }
+
     const attachmentResult = normalizeAttachments(payload?.attachments);
     if (!attachmentResult.ok) {
       return jsonWrap({ ok: false, error: attachmentResult.error }, { status: 400 });
@@ -334,29 +338,13 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    if (member.conversation.contextType === "BOOKING") {
-      const bookingId = Number(member.conversation.contextId ?? "");
-      if (!Number.isFinite(bookingId)) {
-        return jsonWrap({ ok: false, error: "INVALID_BOOKING" }, { status: 400 });
-      }
-      const booking = await prisma.booking.findUnique({
-        where: { id: bookingId },
-        select: { status: true, startsAt: true, durationMinutes: true, organizationId: true },
-      });
-      if (!booking || booking.organizationId !== organization.id) {
-        return jsonWrap({ ok: false, error: "BOOKING_NOT_FOUND" }, { status: 404 });
-      }
-      if (!["CONFIRMED", "COMPLETED"].includes(booking.status)) {
-        return jsonWrap({ ok: false, error: "BOOKING_INACTIVE" }, { status: 403 });
-      }
-      if (!booking.startsAt || !Number.isFinite(booking.durationMinutes)) {
-        return jsonWrap({ ok: false, error: "BOOKING_INVALID" }, { status: 400 });
-      }
-      const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-      const closeAt = new Date(endAt.getTime() + 24 * 60 * 60 * 1000);
-      if (Date.now() > closeAt.getTime()) {
-        return jsonWrap({ ok: false, error: "READ_ONLY" }, { status: 403 });
-      }
+    const posting = await resolvePostingWindow({
+      contextType: member.conversation.contextType,
+      contextId: member.conversation.contextId,
+      organizationId: member.conversation.organizationId,
+    });
+    if (!posting.canPost) {
+      return jsonWrap({ ok: false, error: posting.reason }, { status: resolvePostingWindowStatus(posting.reason) });
     }
 
     if (replyToId) {

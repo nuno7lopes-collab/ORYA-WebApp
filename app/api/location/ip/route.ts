@@ -1,37 +1,30 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { resolveRequestGeoContext } from "@/lib/geo/ipBias";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-
-const pickHeader = (req: NextRequest, names: string[]) => {
-  for (const name of names) {
-    const value = req.headers.get(name);
-    if (value && value.trim()) return value.trim();
-  }
-  return null;
-};
 
 async function _GET(req: NextRequest) {
   try {
-    const city =
-      pickHeader(req, ["cf-ipcity", "x-geo-city", "x-country-city"]) ?? null;
-    const region =
-      pickHeader(req, [
-        "cf-region",
-        "x-geo-region",
-        "x-country-region",
-      ]) ?? null;
-    const country =
-      pickHeader(req, ["cf-ipcountry", "cloudfront-viewer-country", "x-geo-country"]) ??
-      null;
+    const lang = req.headers.get("accept-language")?.split(",")[0]?.trim() ?? null;
+    const context = await resolveRequestGeoContext({ req, lang });
+    const city = context.city ?? null;
+    const region = context.region ?? null;
+    const country = context.countryCode ?? null;
+    const approxLat = context.lat ?? null;
+    const approxLon = context.lng ?? null;
 
-    const hasAny = Boolean(city || region || country);
+    const hasAny = Boolean(city || region || country || (approxLat != null && approxLon != null));
     return jsonWrap(
       {
         ok: true,
         city,
         region,
         country,
-        source: hasAny ? "EDGE_HEADERS" : "UNAVAILABLE",
+        countryCode: country,
+        approxLat,
+        approxLon,
+        accuracyMeters: hasAny ? 10_000 : null,
+        source: hasAny ? context.source : "UNAVAILABLE",
         granularity: hasAny ? "COARSE" : "UNKNOWN",
       },
       { status: 200 },

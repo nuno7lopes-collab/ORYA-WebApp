@@ -1,14 +1,14 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-13T00:49:17.499Z
+Generated: 2026-02-13T12:31:47.210Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 619
-- Covered by UI: 473
+- API routes total: 626
+- Covered by UI: 476
 - Orphan (no UI): 0
-- Orphan allowlisted: 0
-- Exempt (internal/cron/webhook): 146
+- Orphan allowlisted: 1
+- Exempt (internal/cron/webhook): 149
 - UI endpoints missing API: 0
 
 ## UI endpoints missing API routes
@@ -18,7 +18,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - none
 
 ## API orphan allowlist matches
-- none
+- /api/messages/attachments/presign (app/api/messages/attachments/presign/route.ts)
 
 ## Exempt routes (internal/cron/webhook)
 - /api/cron/analytics/rollup (app/api/cron/analytics/rollup/route.ts)
@@ -106,6 +106,9 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/discover (app/api/padel/discover/route.ts)
 - /api/padel/event-categories (app/api/padel/event-categories/route.ts)
 - /api/padel/live (app/api/padel/live/route.ts)
+- /api/padel/live/timer/next-round (app/api/padel/live/timer/next-round/route.ts)
+- /api/padel/live/timer/start (app/api/padel/live/timer/start/route.ts)
+- /api/padel/live/timer/stop (app/api/padel/live/timer/stop/route.ts)
 - /api/padel/matches (app/api/padel/matches/route.ts)
 - /api/padel/matches/[id]/delay (app/api/padel/matches/[id]/delay/route.ts)
 - /api/padel/matches/[id]/dispute (app/api/padel/matches/[id]/dispute/route.ts)

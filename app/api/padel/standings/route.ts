@@ -163,14 +163,42 @@ async function _GET(req: NextRequest) {
       where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
       select: {
         id: true,
-        pairingAId: true,
-        pairingBId: true,
         scoreSets: true,
         score: true,
         groupLabel: true,
         status: true,
+        participants: {
+          orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+          select: {
+            side: true,
+            slotOrder: true,
+            participant: {
+              select: {
+                id: true,
+                playerProfileId: true,
+                sourcePairingId: true,
+              },
+            },
+          },
+        },
       },
     });
+
+    const resolveSideSourcePairingId = (
+      participantRows: Array<{
+        side: string;
+        participant: { sourcePairingId: number | null } | null;
+      }>,
+      side: "A" | "B",
+    ) => {
+      const ids = participantRows
+        .filter((row) => row.side === side)
+        .map((row) => row.participant?.sourcePairingId)
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+      if (ids.length === 0) return null;
+      const unique = Array.from(new Set(ids));
+      return unique[0] ?? null;
+    };
 
     const drawOrderSeed = `${eventId}:${Number.isFinite(categoryId) ? categoryId : "all"}:${format ?? "UNKNOWN"}`;
     let standingsByGroup: Record<string, PadelStandingRow[]> = {};
@@ -180,8 +208,26 @@ async function _GET(req: NextRequest) {
     >();
 
     if (entityType === "PLAYER") {
+      const matchesWithParticipantSides = matches.map((match) => {
+        const sideAEntityIds = match.participants
+          .filter((row) => row.side === "A")
+          .map((row) => row.participant?.playerProfileId)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+        const sideBEntityIds = match.participants
+          .filter((row) => row.side === "B")
+          .map((row) => row.participant?.playerProfileId)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+        return {
+          ...match,
+          pairingAId: resolveSideSourcePairingId(match.participants, "A"),
+          pairingBId: resolveSideSourcePairingId(match.participants, "B"),
+          sideAEntityIds: sideAEntityIds.length > 0 ? sideAEntityIds : undefined,
+          sideBEntityIds: sideBEntityIds.length > 0 ? sideBEntityIds : undefined,
+        };
+      });
+
       const pairingIds = new Set<number>();
-      matches.forEach((match) => {
+      matchesWithParticipantSides.forEach((match) => {
         if (typeof match.pairingAId === "number") pairingIds.add(match.pairingAId);
         if (typeof match.pairingBId === "number") pairingIds.add(match.pairingBId);
       });
@@ -207,9 +253,15 @@ async function _GET(req: NextRequest) {
           .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
         pairingPlayers.set(pairing.id, playerIds);
       });
-      standingsByGroup = computePadelStandingsByGroupForPlayers(matches, pairingPlayers, pointsTable, tieBreakRules, {
-        drawOrderSeed,
-      });
+      standingsByGroup = computePadelStandingsByGroupForPlayers(
+        matchesWithParticipantSides,
+        pairingPlayers,
+        pointsTable,
+        tieBreakRules,
+        {
+          drawOrderSeed,
+        },
+      );
 
       const playerIds = new Set<number>();
       Object.values(standingsByGroup).forEach((rows) => {
@@ -231,7 +283,18 @@ async function _GET(req: NextRequest) {
         });
       });
     } else {
-      standingsByGroup = computePadelStandingsByGroup(matches, pointsTable, tieBreakRules, { drawOrderSeed });
+      standingsByGroup = computePadelStandingsByGroup(
+        matches.map((match) => ({
+          ...match,
+          pairingAId: resolveSideSourcePairingId(match.participants, "A"),
+          pairingBId: resolveSideSourcePairingId(match.participants, "B"),
+          sideAEntityIds: undefined,
+          sideBEntityIds: undefined,
+        })),
+        pointsTable,
+        tieBreakRules,
+        { drawOrderSeed },
+      );
       const pairingIds = new Set<number>();
       Object.values(standingsByGroup).forEach((rows) => {
         rows.forEach((row) => {

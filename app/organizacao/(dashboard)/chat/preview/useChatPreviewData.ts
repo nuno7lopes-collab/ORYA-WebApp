@@ -5,7 +5,6 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { computeBlobSha256Hex } from "@/lib/chat/attachmentChecksum";
 import { useUser } from "@/app/hooks/useUser";
 import { getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 import type {
@@ -339,7 +338,8 @@ function buildConversationPreview({
     const time = new Date(member.lastSeenAt).getTime();
     return Number.isFinite(time) && Date.now() - time <= ONLINE_WINDOW_MS;
   }).length;
-  const snippet = conversation.lastMessage?.body?.trim() || (conversation.lastMessage ? "Anexo enviado" : "Sem mensagens");
+  const snippet =
+    conversation.lastMessage?.body?.trim() || (conversation.lastMessage ? "Mensagem sem texto" : "Sem mensagens");
 
   return {
     id: conversation.id,
@@ -1131,72 +1131,26 @@ export function useChatPreviewData() {
         return;
       }
 
+      if (attachments.length > 0) {
+        const message = "ATTACHMENTS_DISABLED";
+        setSendError(message);
+        setAttachmentsError(message);
+        setPendingByConversation((prev) => ({
+          ...prev,
+          [conversationId]: (prev[conversationId] ?? []).map((entry) =>
+            entry.id === pendingId ? { ...entry, status: "failed", error: message } : entry,
+          ),
+        }));
+        return;
+      }
+
       try {
-        let preparedAttachments: Array<{
-          type: "IMAGE" | "VIDEO" | "FILE";
-          url: string;
-          mime: string;
-          size: number;
-          metadata?: Record<string, unknown>;
-        }> = [];
-
-        const files = attachments.map((entry) => entry.file).filter(Boolean) as File[];
-        if (files.length > 0) {
-          const uploads = await Promise.all(
-            files.map(async (file) => {
-              const type: Attachment["type"] = file.type.startsWith("image/")
-                ? "IMAGE"
-                : file.type.startsWith("video/")
-                  ? "VIDEO"
-                  : "FILE";
-              const checksumSha256 = await computeBlobSha256Hex(file);
-              const presign = await fetcher<{
-                ok: boolean;
-                uploadUrl: string;
-                uploadToken: string;
-                path: string;
-                bucket: string;
-                url: string;
-              }>("/api/messages/attachments/presign", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ type, mime: file.type, size: file.size, metadata: { name: file.name } }),
-              });
-
-              const upload = await supabaseBrowser.storage
-                .from(presign.bucket)
-                .uploadToSignedUrl(presign.path, presign.uploadToken, file, {
-                  contentType: file.type,
-                });
-
-              if (upload.error) {
-                throw new Error(upload.error.message || "Falha no upload");
-              }
-
-              return {
-                type,
-                url: presign.url,
-                mime: file.type,
-                size: file.size,
-                metadata: {
-                  name: file.name,
-                  path: presign.path,
-                  bucket: presign.bucket,
-                  checksumSha256,
-                },
-              };
-            }),
-          );
-          preparedAttachments = uploads;
-        }
-
         const res = await fetcher<{ ok: boolean; message: Message }>("/api/messages/messages", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversationId,
             body,
-            attachments: preparedAttachments,
             clientMessageId,
             replyToMessageId: replyTo?.id ?? undefined,
           }),

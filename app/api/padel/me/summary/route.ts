@@ -167,15 +167,29 @@ async function _GET() {
   const matchRows = pairingIds.length
     ? await prisma.eventMatchSlot.findMany({
         where: {
-          OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }],
+          participants: {
+            some: {
+              participant: {
+                sourcePairingId: { in: pairingIds },
+              },
+            },
+          },
         },
         select: {
           id: true,
           status: true,
           score: true,
           scoreSets: true,
-          pairingAId: true,
-          pairingBId: true,
+          participants: {
+            select: {
+              side: true,
+              participant: {
+                select: {
+                  sourcePairingId: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { id: "desc" },
         take: MAX_MATCHES,
@@ -183,12 +197,17 @@ async function _GET() {
     : [];
 
   const matchesForStats = matchRows.map((match) => ({
-    pairingSide:
-      (match.pairingAId && pairingIds.includes(match.pairingAId)
-        ? "A"
-        : match.pairingBId && pairingIds.includes(match.pairingBId)
-          ? "B"
-          : null) as "A" | "B" | null,
+    pairingSide: (() => {
+      const hasA = match.participants.some(
+        (row) => row.side === "A" && typeof row.participant?.sourcePairingId === "number" && pairingIds.includes(row.participant.sourcePairingId),
+      );
+      if (hasA) return "A" as const;
+      const hasB = match.participants.some(
+        (row) => row.side === "B" && typeof row.participant?.sourcePairingId === "number" && pairingIds.includes(row.participant.sourcePairingId),
+      );
+      if (hasB) return "B" as const;
+      return null;
+    })(),
     status: match.status ?? null,
     scoreSets: match.scoreSets ?? null,
     score: match.score ?? null,

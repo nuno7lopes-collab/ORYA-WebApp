@@ -44,6 +44,7 @@ async function _GET(req: NextRequest) {
     where: eventId ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
     select: {
       id: true,
+      slug: true,
       title: true,
       status: true,
       timezone: true,
@@ -105,7 +106,7 @@ async function _GET(req: NextRequest) {
 
   return respondOk(
     ctx,
-    { event: { id: event.id, title: event.title, timezone: event.timezone }, items },
+    { event: { id: event.id, slug: event.slug, title: event.title, timezone: event.timezone }, items },
     { status: 200 },
   );
 }

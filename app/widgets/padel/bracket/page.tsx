@@ -8,7 +8,7 @@ type PageProps = {
 
 type BracketResponse = {
   ok?: boolean;
-  event?: { id: number; title: string };
+  event?: { id: number; slug?: string | null; title: string };
   rounds?: Array<{
     label: string;
     matches: Array<{ id: number; status: string; score: string; teamA: string; teamB: string }>;
@@ -45,6 +45,7 @@ export default async function WidgetBracketPage({ searchParams }: PageProps) {
     eventId ? (
       <BracketWidgetClient
         eventId={eventId}
+        eventSlug={data?.event?.slug ?? slug ?? null}
         title={data?.event?.title ?? ""}
         initialRounds={rounds}
         locale={locale}

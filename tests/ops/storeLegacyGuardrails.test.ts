@@ -5,7 +5,7 @@ const STORE_DOMAIN_PATHS = [
   "app/api/org/[orgId]/store",
   "app/api/public/store",
   "app/api/me/purchases/store",
-  "app/org/[orgId]/loja",
+  "app/org/[orgId]/store",
   "app/[username]/loja",
   "components/store",
   "components/storefront",

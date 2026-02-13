@@ -108,10 +108,11 @@ async function _GET(req: NextRequest) {
         resourceType: "COURT",
         startsAt: { lt: rangeEnd },
         endsAt: { gt: rangeStart },
-        status: "CLAIMED",
       },
       select: {
         id: true,
+        bundleId: true,
+        status: true,
         sourceType: true,
         sourceId: true,
         resourceId: true,
@@ -197,6 +198,9 @@ async function _GET(req: NextRequest) {
   const sharedLane = filteredClaims.map((claim) => ({
     kind: "CLAIM",
     id: `claim:${claim.id}`,
+    claimId: claim.id,
+    bundleId: claim.bundleId,
+    status: claim.status,
     courtId: Number(claim.resourceId),
     startAt: toIso(claim.startsAt),
     endAt: toIso(claim.endsAt),
@@ -215,6 +219,16 @@ async function _GET(req: NextRequest) {
         overrides,
         compensationCases: cases,
         courts: ownerCourts,
+        claims: filteredClaims.map((claim) => ({
+          id: claim.id,
+          bundleId: claim.bundleId,
+          status: claim.status,
+          sourceType: claim.sourceType,
+          sourceId: claim.sourceId,
+          courtId: Number(claim.resourceId),
+          startAt: toIso(claim.startsAt),
+          endAt: toIso(claim.endsAt),
+        })),
       },
       range: {
         startAt: rangeStart.toISOString(),
@@ -231,4 +245,3 @@ async function _GET(req: NextRequest) {
 }
 
 export const GET = withApiEnvelope(_GET);
-

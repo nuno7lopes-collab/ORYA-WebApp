@@ -39,7 +39,7 @@ type EventWithTickets = {
     canonical: Prisma.JsonValue | null;
   } | null;
   status: string;
-  liveHubVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
+  liveVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
   coverImageUrl: string | null;
   isGratis: boolean;
   ticketTypes: Array<{
@@ -404,7 +404,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       ? advancedSettings.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))
       : [];
   const courtsCount = courtIds.length > 0 ? courtIds.length : event.padelTournamentConfig?.numberOfCourts ?? 0;
-  const liveHubReady = event.liveHubVisibility !== "DISABLED";
+  const liveHubReady = event.liveVisibility !== "DISABLED";
   const padelStatusItems = isPadelEvent
     ? [
         {

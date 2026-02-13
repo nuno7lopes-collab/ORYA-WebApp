@@ -23,6 +23,8 @@
     "finance:prove-cycles": "npm run finance:seed-real-cycles && npm run gate:finance-ops",
     "cron:local": "node scripts/cron-loop.js",
     "chat:ws": "node scripts/chat-ws-server.js",
+    "messages:purge-attachments:dry": "node scripts/run-ts.cjs scripts/messages_purge_attachments_oneoff.ts",
+    "messages:purge-attachments:execute": "node scripts/run-ts.cjs scripts/messages_purge_attachments_oneoff.ts --execute",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "db:env": "node -r ./scripts/load-env.js ./scripts/check-db-env.js",

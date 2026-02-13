@@ -1,6 +1,21 @@
 import type { GeoAutocompleteItem, GeoDetailsItem } from "./provider";
 
-export async function fetchGeoAutocomplete(query: string, opts?: { lat?: number; lng?: number }) {
+export type GeoAutocompleteWithMetaResult = {
+  items: GeoAutocompleteItem[];
+  expectedCountryCode: string | null;
+  effectiveCountryCode: string | null;
+  queryCountryIntentCode: string | null;
+  locationBiasSource: string | null;
+  sourceProvider: string | null;
+};
+
+const normalizeCountryCode = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(trimmed) ? trimmed : null;
+};
+
+export async function fetchGeoAutocompleteWithMeta(query: string, opts?: { lat?: number; lng?: number }) {
   const params = new URLSearchParams({ q: query });
   if (Number.isFinite(opts?.lat ?? NaN) && Number.isFinite(opts?.lng ?? NaN)) {
     params.set("lat", String(opts?.lat));
@@ -11,12 +26,32 @@ export async function fetchGeoAutocomplete(query: string, opts?: { lat?: number;
     ok: boolean;
     items?: GeoAutocompleteItem[];
     error?: string;
+    expectedCountryCode?: string | null;
+    effectiveCountryCode?: string | null;
+    queryCountryIntentCode?: string | null;
+    countryCode?: string | null;
+    locationBiasSource?: string | null;
     sourceProvider?: string | null;
   };
   if (!res.ok || !data.ok) {
     throw new Error(data.error || "Falha ao obter sugestões.");
   }
-  return data.items ?? [];
+  const expectedCountryCode = normalizeCountryCode(data.expectedCountryCode ?? data.countryCode);
+  const effectiveCountryCode = normalizeCountryCode(data.effectiveCountryCode ?? expectedCountryCode);
+  const queryCountryIntentCode = normalizeCountryCode(data.queryCountryIntentCode);
+  return {
+    items: data.items ?? [],
+    expectedCountryCode,
+    effectiveCountryCode,
+    queryCountryIntentCode,
+    locationBiasSource: typeof data.locationBiasSource === "string" ? data.locationBiasSource : null,
+    sourceProvider: typeof data.sourceProvider === "string" ? data.sourceProvider : null,
+  } satisfies GeoAutocompleteWithMetaResult;
+}
+
+export async function fetchGeoAutocomplete(query: string, opts?: { lat?: number; lng?: number }) {
+  const result = await fetchGeoAutocompleteWithMeta(query, opts);
+  return result.items;
 }
 
 export async function fetchGeoDetails(

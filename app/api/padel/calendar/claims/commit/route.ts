@@ -276,4 +276,93 @@ async function _POST(req: NextRequest) {
   }
 }
 
+async function _PATCH(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
+  const auth = await ensureOrganization(req);
+  if (!auth.ok) return jsonWrap({ ok: false, error: auth.error }, { status: auth.status });
+
+  const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+
+  const statusRaw = typeof body.status === "string" ? body.status.trim().toUpperCase() : "";
+  const nextStatus =
+    statusRaw === AgendaResourceClaimStatus.CANCELLED || statusRaw === AgendaResourceClaimStatus.RELEASED
+      ? (statusRaw as AgendaResourceClaimStatus)
+      : null;
+  if (!nextStatus) {
+    return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
+  }
+
+  const claimId =
+    typeof body.claimId === "string" && body.claimId.trim().length > 0
+      ? body.claimId.trim()
+      : null;
+  const bundleId =
+    typeof body.bundleId === "string" && body.bundleId.trim().length > 0 ? body.bundleId.trim() : null;
+  if (!claimId && !bundleId) {
+    return jsonWrap({ ok: false, error: "CLAIM_TARGET_REQUIRED" }, { status: 400 });
+  }
+
+  const where: Prisma.AgendaResourceClaimWhereInput = {
+    organizationId: auth.organizationId,
+    status: AgendaResourceClaimStatus.CLAIMED,
+    ...(claimId ? { id: claimId } : {}),
+    ...(bundleId ? { bundleId } : {}),
+  };
+
+  const targetClaims = await prisma.agendaResourceClaim.findMany({
+    where,
+    select: {
+      id: true,
+      eventId: true,
+      resourceType: true,
+      resourceId: true,
+      startsAt: true,
+      endsAt: true,
+      sourceType: true,
+      sourceId: true,
+      bundleId: true,
+    },
+    orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+    take: 200,
+  });
+  if (targetClaims.length === 0) {
+    return jsonWrap({ ok: false, error: "CLAIM_NOT_FOUND" }, { status: 404 });
+  }
+
+  await prisma.agendaResourceClaim.updateMany({
+    where: { id: { in: targetClaims.map((claim) => claim.id) }, organizationId: auth.organizationId },
+    data: { status: nextStatus },
+  });
+
+  await recordOrganizationAuditSafe({
+    organizationId: auth.organizationId,
+    actorUserId: auth.userId,
+    action: "PADEL_CALENDAR_CLAIMS_STATUS_UPDATE",
+    metadata: {
+      status: nextStatus,
+      claimCount: targetClaims.length,
+      claimIds: targetClaims.map((claim) => claim.id),
+      bundleId,
+    },
+    ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    userAgent: req.headers.get("user-agent") || null,
+  });
+
+  return jsonWrap(
+    {
+      ok: true,
+      status: nextStatus,
+      claims: targetClaims.map((claim) => ({
+        ...claim,
+        status: nextStatus,
+      })),
+    },
+    { status: 200 },
+  );
+}
+
 export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);
