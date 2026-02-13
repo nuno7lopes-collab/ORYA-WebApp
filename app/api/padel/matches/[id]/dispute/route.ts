@@ -15,6 +15,7 @@ import {
   normalizeConfirmationSource,
   resolveIncidentAuthority,
 } from "@/domain/padel/incidentGovernance";
+import { reconcilePadelDisputeAntiFraud } from "@/domain/padel/ratingAntiFraud";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -163,6 +164,32 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     },
   });
 
+  const openActions = await prisma.$transaction((tx) =>
+    reconcilePadelDisputeAntiFraud({
+      tx,
+      organizationId: match.event.organizationId,
+      userId: user.id,
+      actorUserId: user.id,
+    }),
+  );
+  for (const action of openActions) {
+    await recordOrganizationAuditSafe({
+      organizationId: match.event.organizationId,
+      actorUserId: user.id,
+      action: action.kind === "APPLIED" ? "PADEL_RATING_SANCTION_AUTO_APPLIED" : "PADEL_RATING_SANCTION_AUTO_RESOLVED",
+      metadata: {
+        matchId: match.id,
+        eventId: match.event.id,
+        playerId: action.playerId,
+        sanctionType: action.sanctionType,
+        reasonCode: action.reasonCode,
+        openDisputesCount: action.openDisputesCount,
+        invalidDisputesCount: action.invalidDisputesCount,
+        ...(action.kind === "APPLIED" ? { sanctionId: action.sanctionId } : { resolvedCount: action.resolvedCount }),
+      },
+    });
+  }
+
   return jsonWrap({ ok: true, match: updated }, { status: 200 });
 }
 
@@ -287,6 +314,36 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       confirmationSource: authority.confirmationSource,
     },
   });
+
+  const disputedByUserId = typeof score.disputedBy === "string" ? score.disputedBy : null;
+  if (disputedByUserId) {
+    const resolveActions = await prisma.$transaction((tx) =>
+      reconcilePadelDisputeAntiFraud({
+        tx,
+        organizationId: match.event.organizationId,
+        userId: disputedByUserId,
+        actorUserId: user.id,
+      }),
+    );
+    for (const action of resolveActions) {
+      await recordOrganizationAuditSafe({
+        organizationId: match.event.organizationId,
+        actorUserId: user.id,
+        action: action.kind === "APPLIED" ? "PADEL_RATING_SANCTION_AUTO_APPLIED" : "PADEL_RATING_SANCTION_AUTO_RESOLVED",
+        metadata: {
+          matchId: match.id,
+          eventId: match.event.id,
+          disputedBy: disputedByUserId,
+          playerId: action.playerId,
+          sanctionType: action.sanctionType,
+          reasonCode: action.reasonCode,
+          openDisputesCount: action.openDisputesCount,
+          invalidDisputesCount: action.invalidDisputesCount,
+          ...(action.kind === "APPLIED" ? { sanctionId: action.sanctionId } : { resolvedCount: action.resolvedCount }),
+        },
+      });
+    }
+  }
 
   if (authority.confirmedByRole === "REFEREE") {
     const directorUserIds = await listTournamentDirectorUserIds({

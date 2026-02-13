@@ -24,8 +24,12 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
   - gate de versão mobile (`x-client-platform=mobile`, `x-app-version`) com `426 UPGRADE_REQUIRED` em endpoints breaking.
   - snapshot de rating no fecho oficial (`COMPLETED`) integrado no lifecycle (`/api/padel/tournaments/lifecycle`).
   - carry assimétrico no ranking e regra de rei único 1.00 reforçada no read-model.
+  - reconciliação anti-fraude automática por threshold no fluxo de disputa (`/api/padel/matches/[id]/dispute`):
+    - `3` disputas inválidas -> `SUSPENSION` automática (15 dias);
+    - `5` não-validados pendentes -> `BLOCK_NEW_MATCHES` automático;
+    - regularização abaixo do threshold resolve bloqueio automático e atualiza perfil.
 - Testes desta ronda:
-  - `vitest` Padel/ops: `33 files`, `95 tests`, tudo verde.
+  - `vitest` Padel/ops: `34 files`, `99 tests`, tudo verde.
 
 ## 3) Princípios de execução
 - SSOT-first: nenhuma implementação fora de contrato normativo (`docs/ssot_registry_v1.md` + `docs/padel.md`).

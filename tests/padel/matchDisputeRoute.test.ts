@@ -10,11 +10,13 @@ const resolveIncidentAuthority = vi.hoisted(() => vi.fn());
 const listTournamentDirectorUserIds = vi.hoisted(() => vi.fn());
 const createNotification = vi.hoisted(() => vi.fn());
 const shouldNotify = vi.hoisted(() => vi.fn(async () => true));
+const reconcilePadelDisputeAntiFraud = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   eventMatchSlot: { findUnique: vi.fn() },
   padelTournamentConfig: { findUnique: vi.fn() },
   padelTournamentRoleAssignment: { findMany: vi.fn() },
+  $transaction: vi.fn(),
 }));
 
 vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer }));
@@ -28,6 +30,7 @@ vi.mock("@/domain/padel/incidentGovernance", () => ({
 }));
 vi.mock("@/lib/notifications", () => ({ createNotification, shouldNotify }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
+vi.mock("@/domain/padel/ratingAntiFraud", () => ({ reconcilePadelDisputeAntiFraud }));
 
 let PATCH: typeof import("@/app/api/padel/matches/[id]/dispute/route").PATCH;
 
@@ -41,9 +44,11 @@ beforeEach(async () => {
   listTournamentDirectorUserIds.mockReset();
   createNotification.mockReset();
   shouldNotify.mockReset();
+  reconcilePadelDisputeAntiFraud.mockReset();
   prisma.eventMatchSlot.findUnique.mockReset();
   prisma.padelTournamentConfig.findUnique.mockReset();
   prisma.padelTournamentRoleAssignment.findMany.mockReset();
+  prisma.$transaction.mockReset();
 
   resolveIncidentAuthority.mockResolvedValue({
     ok: true,
@@ -54,6 +59,8 @@ beforeEach(async () => {
   });
   listTournamentDirectorUserIds.mockResolvedValue([]);
   shouldNotify.mockResolvedValue(true);
+  reconcilePadelDisputeAntiFraud.mockResolvedValue([]);
+  prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prisma));
 
   vi.resetModules();
   PATCH = (await import("@/app/api/padel/matches/[id]/dispute/route")).PATCH;
@@ -203,5 +210,55 @@ describe("padel match dispute resolve route", () => {
     const res = await PATCH(req, { params: Promise.resolve({ id: "51" }) });
     expect(res.status).toBe(200);
     expect(createNotification).toHaveBeenCalled();
+  });
+
+  it("executa reconciliação anti-fraude para o jogador que abriu disputa", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u-admin" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 77,
+      status: "DONE",
+      score: { disputeStatus: "OPEN", disputedBy: "u-player", ruleSnapshot: { source: "DEFAULT" } },
+      roundType: "GROUPS",
+      roundLabel: "G4",
+      event: { id: 19, organizationId: 88 },
+    });
+    prisma.padelTournamentConfig.findUnique.mockResolvedValue({ ruleSetId: null, ruleSetVersionId: null });
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 88 },
+      membership: { role: "ADMIN", rolePack: null },
+    });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: true });
+    resolveIncidentAuthority.mockResolvedValue({
+      ok: true,
+      confirmedByRole: "DIRETOR_PROVA",
+      confirmationSource: "WEB_ORGANIZATION",
+      isCriticalRound: false,
+      actorTournamentRoles: ["DIRETOR_PROVA"],
+    });
+    updatePadelMatch.mockResolvedValue({
+      match: { id: 77, eventId: 19 },
+    });
+
+    const req = new NextRequest("http://localhost/api/padel/matches/77/dispute", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        resolutionStatus: "CONFIRMED",
+        confirmationSource: "WEB_ORGANIZATION",
+      }),
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: "77" }) });
+    expect(res.status).toBe(200);
+    expect(reconcilePadelDisputeAntiFraud).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tx: prisma,
+        organizationId: 88,
+        userId: "u-player",
+        actorUserId: "u-admin",
+      }),
+    );
   });
 });
