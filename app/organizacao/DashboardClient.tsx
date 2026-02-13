@@ -2524,7 +2524,7 @@ function OrganizacaoPageInner({
     const isOptional = OPTIONAL_MODULES.includes(module.moduleKey as OptionalModule);
     const isActive = module.status === "active" || module.status === "core";
     const isLocked = module.status === "locked";
-    const canDeactivate = isActive && canEditModules && !modulesSaving && isOptional;
+    const canDeactivate = module.status === "active" && canEditModules && !modulesSaving && isOptional;
     const cardClasses = cn(
       "group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition",
       isActive ? "hover:-translate-y-0.5 hover:border-white/25" : "opacity-85",

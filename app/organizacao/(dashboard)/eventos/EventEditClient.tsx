@@ -1132,6 +1132,39 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       locationBias && isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng)
         ? formatDistanceLabel(distanceKm(locationBias, { lat: locationLat, lng: locationLng }))
         : null;
+    const groupedSuggestions = partitionSuggestionsByCountry(locationSuggestions, effectiveCountryCode);
+    const hasLocalSuggestions = groupedSuggestions.local.length > 0 || groupedSuggestions.unknown.length > 0;
+    const showForeignFallback = !hasLocalSuggestions && groupedSuggestions.foreign.length > 0;
+    const primarySuggestions = showForeignFallback
+      ? groupedSuggestions.foreign
+      : [...groupedSuggestions.local, ...groupedSuggestions.unknown];
+    const collapsedForeignSuggestions = showForeignFallback ? [] : groupedSuggestions.foreign;
+    const bypassActive = Boolean(
+      expectedCountryCode &&
+      effectiveCountryCode &&
+      expectedCountryCode !== effectiveCountryCode,
+    );
+    const showForeignFallbackNotice =
+      !waitingForLocationQuery &&
+      !locationSearchLoading &&
+      !locationSearchError &&
+      showForeignFallback;
+
+    const handleToggleForeignSuggestions = () => {
+      setShowForeignSuggestions((prev) => {
+        const next = !prev;
+        if (next) {
+          trackEvent("geo_autocomplete_foreign_section_opened", {
+            formContext: "event_edit",
+            expectedCountryCode,
+            effectiveCountryCode,
+            queryCountryIntentCode,
+            queryLength: trimmedLocationQuery.length,
+          });
+        }
+        return next;
+      });
+    };
 
     const baseBlock = (
       <div className="space-y-4">

@@ -63,6 +63,14 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - limpeza de matches sem entrada e queda segura para `BYE_NEUTRAL` quando há sobras.
   - novo domínio dedicado à recomposição Mexicano:
     - `domain/padel/mexicanoRecomposition.ts` com relações de ronda e geração determinística de entradas.
+  - calendário canónico (`/api/padel/calendar`) deixou de depender de `pairingAId/pairingBId` para conflitos operacionais:
+    - deteção de colisão por jogador baseada em `participants -> playerProfileId`;
+    - notificações de reagendamento baseadas em `participants -> playerProfile.userId`.
+  - live stream canónico (`domain/live/padelLivePayload.ts`) deixou de depender de joins diretos `pairingA/pairingB`:
+    - payload de `matches` passa a derivar lados A/B a partir de `PadelMatchParticipant`;
+    - standings live de jogador usa `sideEntityIds` dos participantes como fonte principal.
+  - limpeza de naming live no frontend organizacional:
+    - tipos locais renomeados para `LiveVisibility` em criação/edição/prep/dashboard (`eventos`), removendo alias `LiveHubVisibility` da UI ativa.
 - Testes desta ronda:
   - `vitest` Padel/ops: `36 files`, `108 tests`, tudo verde.
 
