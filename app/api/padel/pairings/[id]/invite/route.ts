@@ -11,6 +11,7 @@ import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
 const pairingSelect = {
   id: true,
@@ -73,6 +74,22 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   }
   if (!isCaptain && !isStaff) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  if (isCaptain && !isStaff) {
+    const ratingGate = await ensurePadelRatingActionAllowed({
+      organizationId: pairing.event.organizationId,
+      userId: user.id,
+    });
+    if (!ratingGate.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          error: ratingGate.error,
+          blockedUntil: ratingGate.blockedUntil,
+        },
+        { status: 423 },
+      );
+    }
   }
 
   const now = new Date();

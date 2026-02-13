@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
 const pairingSelect = {
   id: true,
@@ -53,6 +54,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const isCaptain = pairing.createdByUserId === user.id;
   if (!isCaptain) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  const ratingGate = await ensurePadelRatingActionAllowed({
+    organizationId: pairing.event.organizationId,
+    userId: user.id,
+  });
+  if (!ratingGate.ok) {
+    return jsonWrap(
+      {
+        ok: false,
+        error: ratingGate.error,
+        blockedUntil: ratingGate.blockedUntil,
+      },
+      { status: 423 },
+    );
   }
 
   // Verifica se ainda há slot pendente não pago

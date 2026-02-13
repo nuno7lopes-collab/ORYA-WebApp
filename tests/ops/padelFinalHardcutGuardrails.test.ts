@@ -76,11 +76,15 @@ describe("padel final hard-cut guardrails", () => {
     const openPairing = readLocal("app/api/padel/pairings/open/route.ts");
     const acceptPairing = readLocal("app/api/padel/pairings/[id]/accept/route.ts");
     const claimPairing = readLocal("app/api/padel/pairings/claim/[token]/route.ts");
+    const invitePairing = readLocal("app/api/padel/pairings/[id]/invite/route.ts");
+    const assumePairing = readLocal("app/api/padel/pairings/[id]/assume/route.ts");
 
     expect(createPairing).toContain("ensurePadelRatingActionAllowed");
     expect(openPairing).toContain("ensurePadelRatingActionAllowed");
     expect(acceptPairing).toContain("ensurePadelRatingActionAllowed");
     expect(claimPairing).toContain("ensurePadelRatingActionAllowed");
+    expect(invitePairing).toContain("ensurePadelRatingActionAllowed");
+    expect(assumePairing).toContain("ensurePadelRatingActionAllowed");
     expect(claimPairing).toContain("error: ratingGate.error");
   });
 });

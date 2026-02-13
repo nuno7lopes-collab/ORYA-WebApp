@@ -48,6 +48,10 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
     - livehub padel usa `drawOrderSeed` determinístico por `{event,category,format}`.
   - enforcement de sanções também em claim de convite:
     - `POST /api/padel/pairings/claim/[token]` bloqueia ação com `RANKING_SANCTION_BLOCK`.
+  - enforcement adicional de sanções em ações de jogador no pairing:
+    - `POST /api/padel/pairings/[id]/invite` (capitão);
+    - `POST /api/padel/pairings/[id]/assume` (capitão em split);
+    - sem impacto na operação organizacional (staff/owner/admin mantêm fluxo operacional).
   - geração `AMERICANO`/`MEXICANO` evoluída para rotação individual prática:
     - criação de duplas sintéticas por ronda com base em `PadelPlayerProfile`;
     - `BYE_NEUTRAL` explícito para sobras;
