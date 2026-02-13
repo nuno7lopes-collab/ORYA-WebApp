@@ -2,7 +2,7 @@
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/i18n";
@@ -113,6 +113,40 @@ type JourneyActionStep = {
 
 type JourneyStepDraft = JourneyConditionStep | JourneyDelayStep | JourneyActionStep;
 
+type CrmConfig = {
+  timezone: string;
+  quietHoursStartMinute: number;
+  quietHoursEndMinute: number;
+  capPerDay: number;
+  capPerWeek: number;
+  capPerMonth: number;
+  approvalEscalationHours: number;
+  approvalExpireHours: number;
+};
+
+type CrmConfigResponse = {
+  ok: boolean;
+  config?: CrmConfig;
+  error?: string;
+  message?: string;
+};
+
+type JourneySimulationContact = {
+  lastActivityDays: string;
+  totalSpentCents: string;
+  marketingOptIn: "true" | "false";
+  contactType: string;
+  tags: string;
+};
+
+type JourneySimulationStepResult = {
+  stepId: string;
+  label: string;
+  kind: JourneyStepDraft["kind"];
+  status: "PASSED" | "FAILED" | "PENDING";
+  detail: string;
+};
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -175,12 +209,152 @@ function stepAccent(kind: JourneyStepDraft["kind"]) {
   return "border-amber-300/35 bg-amber-500/10";
 }
 
+function parseIntSafe(value: string, fallback = 0) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.trunc(parsed);
+}
+
+function parseTags(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function parseTokens(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function isWithinQuietHours(minuteOfDay: number, start: number, end: number) {
+  if (start === end) return false;
+  if (start < end) {
+    return minuteOfDay >= start && minuteOfDay < end;
+  }
+  return minuteOfDay >= start || minuteOfDay < end;
+}
+
+function applyQuietHours(scheduleAt: Date, policy: CrmConfig | null) {
+  if (!policy) return { date: scheduleAt, deferredByQuietHours: false };
+  const start = policy.quietHoursStartMinute;
+  const end = policy.quietHoursEndMinute;
+  const minuteOfDay = scheduleAt.getHours() * 60 + scheduleAt.getMinutes();
+  if (!isWithinQuietHours(minuteOfDay, start, end)) {
+    return { date: scheduleAt, deferredByQuietHours: false };
+  }
+  const shifted = new Date(scheduleAt);
+  if (start < end) {
+    shifted.setHours(Math.floor(end / 60), end % 60, 0, 0);
+    if (shifted <= scheduleAt) shifted.setDate(shifted.getDate() + 1);
+    return { date: shifted, deferredByQuietHours: true };
+  }
+  if (minuteOfDay >= start) {
+    shifted.setDate(shifted.getDate() + 1);
+  }
+  shifted.setHours(Math.floor(end / 60), end % 60, 0, 0);
+  return { date: shifted, deferredByQuietHours: true };
+}
+
+function evaluateCondition(step: JourneyConditionStep, contact: JourneySimulationContact) {
+  const value = step.value.trim();
+  if (!value) return { matched: false, detail: "Sem valor para validar." };
+  const op = step.op;
+  const rawWindow = parseIntSafe(step.windowDays, 0);
+  const windowDays = rawWindow > 0 ? rawWindow : null;
+
+  if (step.field === "lastActivityAt") {
+    const contactDays = parseIntSafe(contact.lastActivityDays, Number.POSITIVE_INFINITY);
+    const threshold = parseIntSafe(value.replace(/d$/i, ""), Number.NaN);
+    if (!Number.isFinite(contactDays) || !Number.isFinite(threshold)) {
+      return { matched: false, detail: "Última atividade inválida para simulação." };
+    }
+    let matched = false;
+    if (op === "gte") matched = contactDays <= threshold;
+    else if (op === "lte") matched = contactDays >= threshold;
+    else matched = contactDays === threshold;
+    const effective = windowDays ?? threshold;
+    return {
+      matched,
+      detail: matched
+        ? `Contacto ativo dentro de ${effective} dia(s).`
+        : `Contacto fora da janela de ${effective} dia(s).`,
+    };
+  }
+
+  if (step.field === "totalSpentCents") {
+    const spent = parseIntSafe(contact.totalSpentCents, 0);
+    const threshold = parseIntSafe(value, Number.NaN);
+    if (!Number.isFinite(threshold)) {
+      return { matched: false, detail: "Valor de gasto inválido." };
+    }
+    let matched = false;
+    if (op === "gte") matched = spent >= threshold;
+    else if (op === "lte") matched = spent <= threshold;
+    else matched = spent === threshold;
+    return {
+      matched,
+      detail: matched ? `Gasto ${spent} cêntimos cumpre condição.` : `Gasto ${spent} cêntimos não cumpre condição.`,
+    };
+  }
+
+  if (step.field === "marketingOptIn") {
+    const expected = value.toLowerCase() === "true";
+    const current = contact.marketingOptIn === "true";
+    const matched = current === expected;
+    return {
+      matched,
+      detail: matched ? "Consentimento marketing válido." : "Consentimento marketing bloqueia a jornada.",
+    };
+  }
+
+  if (step.field === "contactType") {
+    const current = contact.contactType.trim().toLowerCase();
+    const tokens = parseTokens(value);
+    const matched =
+      op === "in" || op === "not_in"
+        ? op === "in"
+          ? tokens.includes(current)
+          : !tokens.includes(current)
+        : current === value.trim().toLowerCase();
+    return {
+      matched,
+      detail: matched ? `Tipo ${contact.contactType || "n/d"} compatível.` : `Tipo ${contact.contactType || "n/d"} incompatível.`,
+    };
+  }
+
+  if (step.field === "tag") {
+    const contactTags = parseTags(contact.tags);
+    const expected = parseTokens(value);
+    const any = expected.some((token) => contactTags.includes(token));
+    const matched = op === "not_in" ? !any : any;
+    return {
+      matched,
+      detail: matched ? "Tags compatíveis." : "Tags não cumprem a condição.",
+    };
+  }
+
+  const normalized = value.toLowerCase();
+  const matched = op === "not_in" ? normalized !== "" : normalized !== "";
+  return {
+    matched,
+    detail: matched ? "Condição genérica simulada como válida." : "Condição genérica inválida.",
+  };
+}
+
 export default function CrmJourneysPage() {
   const { data, isLoading, mutate } = useSWR<JourneyListResponse>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/journeys"),
     fetcher,
   );
+  const { data: configData } = useSWR<CrmConfigResponse>(
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/config"),
+    fetcher,
+  );
   const journeys = data?.ok ? data.items ?? [] : [];
+  const policy = configData?.ok && configData.config ? configData.config : null;
 
   const [editingJourneyId, setEditingJourneyId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -197,6 +371,15 @@ export default function CrmJourneysPage() {
   const [savingComposer, setSavingComposer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [draggedStepId, setDraggedStepId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [simulationContact, setSimulationContact] = useState<JourneySimulationContact>({
+    lastActivityDays: "14",
+    totalSpentCents: "15000",
+    marketingOptIn: "true",
+    contactType: "CUSTOMER",
+    tags: "vip,padel",
+  });
 
   const totalDelayMinutes = useMemo(
     () =>
@@ -208,6 +391,80 @@ export default function CrmJourneysPage() {
   );
   const actionsCount = useMemo(() => steps.filter((step) => step.kind === "ACTION").length, [steps]);
   const conditionsCount = useMemo(() => steps.filter((step) => step.kind === "CONDITION").length, [steps]);
+  const simulation = useMemo(() => {
+    const now = new Date();
+    const stepResults: JourneySimulationStepResult[] = [];
+    let blocked = false;
+    let currentOffsetMinutes = 0;
+    let sentActions = 0;
+    let suppressedByQuietHours = 0;
+
+    steps.forEach((step, index) => {
+      const label = `Passo ${index + 1} · ${stepBadge(step.kind)}`;
+      if (blocked) {
+        stepResults.push({
+          stepId: step.id,
+          label,
+          kind: step.kind,
+          status: "PENDING",
+          detail: "Não executado porque uma condição anterior bloqueou o fluxo.",
+        });
+        return;
+      }
+
+      if (step.kind === "CONDITION") {
+        const result = evaluateCondition(step, simulationContact);
+        if (!result.matched) blocked = true;
+        stepResults.push({
+          stepId: step.id,
+          label,
+          kind: step.kind,
+          status: result.matched ? "PASSED" : "FAILED",
+          detail: result.detail,
+        });
+        return;
+      }
+
+      if (step.kind === "DELAY") {
+        const minutes = sanitizePositiveInt(step.minutes, 1);
+        currentOffsetMinutes += minutes;
+        stepResults.push({
+          stepId: step.id,
+          label,
+          kind: step.kind,
+          status: "PASSED",
+          detail: `Espera acumulada: ${currentOffsetMinutes} minuto(s).`,
+        });
+        return;
+      }
+
+      const planned = new Date(now.getTime() + currentOffsetMinutes * 60 * 1000);
+      const scheduled = applyQuietHours(planned, policy);
+      if (scheduled.deferredByQuietHours) suppressedByQuietHours += 1;
+      sentActions += 1;
+      stepResults.push({
+        stepId: step.id,
+        label,
+        kind: step.kind,
+        status: "PASSED",
+        detail: `${step.channel} às ${formatDateTime(scheduled.date)}${scheduled.deferredByQuietHours ? " (ajustado por quiet hours)" : ""}.`,
+      });
+    });
+
+    const capBlocked =
+      policy &&
+      (sentActions > policy.capPerDay || sentActions > policy.capPerWeek || sentActions > policy.capPerMonth)
+        ? true
+        : false;
+
+    return {
+      stepResults,
+      blocked,
+      sentActions,
+      suppressedByQuietHours,
+      capBlocked,
+    };
+  }, [policy, simulationContact, steps]);
 
   const canSaveComposer = useMemo(() => {
     return name.trim().length >= 2 && actionsCount > 0 && !savingComposer;
@@ -219,18 +476,27 @@ export default function CrmJourneysPage() {
     setDescription("");
     setTrigger(TRIGGER_OPTIONS[0]);
     setSteps([createConditionStep(1), createDelayStep(2), createActionStep(3)]);
+    setDraggedStepId(null);
+    setDropTargetId(null);
+  };
+
+  const moveStepById = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setSteps((prev) => {
+      const fromIndex = prev.findIndex((step) => step.id === fromId);
+      const toIndex = prev.findIndex((step) => step.id === toId);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+      const clone = [...prev];
+      const [moved] = clone.splice(fromIndex, 1);
+      clone.splice(toIndex, 0, moved);
+      return clone;
+    });
   };
 
   const moveStep = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= steps.length) return;
-    setSteps((prev) => {
-      const clone = [...prev];
-      const current = clone[index];
-      clone[index] = clone[target];
-      clone[target] = current;
-      return clone;
-    });
+    moveStepById(steps[index].id, steps[target].id);
   };
 
   const updateStep = (stepId: string, patch: Partial<JourneyStepDraft>) => {
@@ -253,6 +519,35 @@ export default function CrmJourneysPage() {
       if (kind === "DELAY") return [...prev, createDelayStep(seed)];
       return [...prev, createActionStep(seed)];
     });
+  };
+
+  const handleDragStart = (stepId: string, event: DragEvent<HTMLElement>) => {
+    setDraggedStepId(stepId);
+    setDropTargetId(stepId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", stepId);
+  };
+
+  const handleDragOver = (stepId: string, event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    if (dropTargetId !== stepId) {
+      setDropTargetId(stepId);
+    }
+  };
+
+  const handleDrop = (targetStepId: string, event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    const sourceStepId = event.dataTransfer.getData("text/plain") || draggedStepId;
+    if (sourceStepId && sourceStepId !== targetStepId) {
+      moveStepById(sourceStepId, targetStepId);
+    }
+    setDraggedStepId(null);
+    setDropTargetId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedStepId(null);
+    setDropTargetId(null);
   };
 
   const buildStepsPayload = () => {
@@ -558,16 +853,28 @@ export default function CrmJourneysPage() {
           <button type="button" className={CTA_NEUTRAL} onClick={() => addStep("ACTION")}>
             + Ação
           </button>
+          <span className="text-[11px] text-white/55">Arrasta e larga os cartões para reordenar.</span>
         </div>
 
         <div className="space-y-3">
           {steps.map((step, index) => (
             <article
               key={step.id}
-              className={cn("rounded-2xl border p-3", stepAccent(step.kind))}
+              className={cn(
+                "rounded-2xl border p-3 transition",
+                stepAccent(step.kind),
+                draggedStepId === step.id ? "opacity-60" : "",
+                dropTargetId === step.id ? "ring-2 ring-cyan-300/45" : "",
+              )}
+              draggable
+              onDragStart={(event) => handleDragStart(step.id, event)}
+              onDragOver={(event) => handleDragOver(step.id, event)}
+              onDrop={(event) => handleDrop(step.id, event)}
+              onDragEnd={handleDragEnd}
             >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-[11px] text-white/75">
+                  <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5">↕</span>
                   <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 font-semibold">
                     Passo {index + 1}
                   </span>
@@ -725,6 +1032,112 @@ export default function CrmJourneysPage() {
               ) : null}
             </article>
           ))}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-white">Simulação rápida</h3>
+            <p className="text-[11px] text-white/55">
+              {policy
+                ? `Quiet hours ${String(Math.floor(policy.quietHoursStartMinute / 60)).padStart(2, "0")}:${String(policy.quietHoursStartMinute % 60).padStart(2, "0")}–${String(Math.floor(policy.quietHoursEndMinute / 60)).padStart(2, "0")}:${String(policy.quietHoursEndMinute % 60).padStart(2, "0")} · caps ${policy.capPerDay}/${policy.capPerWeek}/${policy.capPerMonth}`
+                : "A carregar política CRM…"}
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-5">
+            <label className="text-[11px] text-white/70">
+              Última atividade (dias)
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.lastActivityDays}
+                onChange={(event) => setSimulationContact((prev) => ({ ...prev, lastActivityDays: event.target.value }))}
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Gasto total (cêntimos)
+              <input
+                type="number"
+                min={0}
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.totalSpentCents}
+                onChange={(event) => setSimulationContact((prev) => ({ ...prev, totalSpentCents: event.target.value }))}
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Opt-in marketing
+              <select
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.marketingOptIn}
+                onChange={(event) =>
+                  setSimulationContact((prev) => ({
+                    ...prev,
+                    marketingOptIn: event.target.value === "false" ? "false" : "true",
+                  }))
+                }
+              >
+                <option value="true">Sim</option>
+                <option value="false">Não</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-white/70">
+              Tipo de contacto
+              <input
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.contactType}
+                onChange={(event) => setSimulationContact((prev) => ({ ...prev, contactType: event.target.value.toUpperCase() }))}
+                placeholder="CUSTOMER"
+              />
+            </label>
+            <label className="text-[11px] text-white/70">
+              Tags
+              <input
+                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-2 py-2 text-sm text-white outline-none focus:border-white/40"
+                value={simulationContact.tags}
+                onChange={(event) => setSimulationContact((prev) => ({ ...prev, tags: event.target.value }))}
+                placeholder="vip,padel"
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className={cn("rounded-full border px-2 py-1", simulation.blocked ? "border-rose-300/40 text-rose-200" : "border-emerald-300/35 text-emerald-200")}>
+              {simulation.blocked ? "Bloqueada por condição" : "Fluxo elegível"}
+            </span>
+            <span className={cn("rounded-full border px-2 py-1", simulation.capBlocked ? "border-rose-300/40 text-rose-200" : "border-white/20 text-white/70")}>
+              {simulation.capBlocked ? "Excede frequency cap" : "Dentro do frequency cap"}
+            </span>
+            <span className="rounded-full border border-white/20 px-2 py-1 text-white/70">
+              Ações previstas: {simulation.sentActions}
+            </span>
+            <span className="rounded-full border border-white/20 px-2 py-1 text-white/70">
+              Ajustadas por quiet hours: {simulation.suppressedByQuietHours}
+            </span>
+          </div>
+
+          <div className="mt-3 space-y-2">
+            {simulation.stepResults.map((result) => (
+              <div key={result.stepId} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-white/80">{result.label}</span>
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5",
+                      result.status === "PASSED"
+                        ? "border-emerald-300/35 text-emerald-200"
+                        : result.status === "FAILED"
+                          ? "border-rose-300/40 text-rose-200"
+                          : "border-white/20 text-white/60",
+                    )}
+                  >
+                    {result.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-[12px] text-white/70">{result.detail}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

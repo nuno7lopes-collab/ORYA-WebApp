@@ -59,6 +59,7 @@ model Profile {
   crmCampaignApprovalsAuthored                                     CrmCampaignApproval[] @relation("CrmCampaignApprovalActor")
   crmJourneysCreated                                               CrmJourney[]         @relation("CrmJourneyCreator")
   crmCampaignDeliveries                                            CrmCampaignDelivery[]
+  crmSavedViews                                                    CrmSavedView[]
   userConsents                                                     UserConsent[]
   loyaltyLedgerEntries                                             LoyaltyLedger[]
   organizationInvitesSent                                             OrganizationMemberInvite[] @relation("OrganizationMemberInviteInviter")
@@ -295,6 +296,7 @@ model Organization {
   crmJourneyEnrollments   CrmJourneyEnrollment[]
   crmJourneyRuns          CrmJourneyRun[]
   crmCampaignDeliveries   CrmCampaignDelivery[]
+  crmSavedViews           CrmSavedView[]
   userConsents            UserConsent[]
   invoices                Invoice[]
   payouts                 Payout[]
@@ -4888,6 +4890,27 @@ model CrmOrganizationPolicy {
   @@schema("app_v3")
 }
 
+model CrmSavedView {
+  env            String            @default("prod")
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId Int               @map("organization_id")
+  userId         String            @map("user_id") @db.Uuid
+  scope          CrmSavedViewScope
+  name           String            @db.Citext
+  definition     Json              @default("{}")
+  isDefault      Boolean           @default(false) @map("is_default")
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         Profile      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, scope, name], map: "crm_saved_views_org_user_scope_name_uq")
+  @@index([organizationId, userId, scope, updatedAt], map: "crm_saved_views_org_user_scope_updated_idx")
+  @@map("crm_saved_views")
+  @@schema("app_v3")
+}
+
 model CrmContact {
   env                     String                         @default("prod")
   id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -7011,6 +7034,13 @@ enum CrmJourneyRunStatus {
   SENT
   SKIPPED
   FAILED
+
+  @@schema("app_v3")
+}
+
+enum CrmSavedViewScope {
+  CUSTOMERS
+  SEGMENTS
 
   @@schema("app_v3")
 }

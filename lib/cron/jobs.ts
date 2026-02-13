@@ -78,6 +78,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/padel/tournament-eve",
   },
   {
+    key: "padel-partnership-grants-revoke",
+    envIntervalMs: "CRON_PADEL_PARTNERSHIP_GRANTS_REVOKE_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/padel/partnership-grants/revoke",
+  },
+  {
     key: "entitlements-qr-cleanup",
     envIntervalMs: "CRON_ENTITLEMENTS_QR_CLEANUP_INTERVAL_MS",
     defaultIntervalMs: 3_600_000,

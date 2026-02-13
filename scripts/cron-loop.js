@@ -182,6 +182,12 @@ const jobs = [
     intervalMs: getInterval("CRON_PADEL_TOURNAMENT_EVE_INTERVAL_MS", 3600000),
   },
   {
+    name: "padel-partnership-grants-revoke",
+    method: "POST",
+    path: "/api/cron/padel/partnership-grants/revoke",
+    intervalMs: getInterval("CRON_PADEL_PARTNERSHIP_GRANTS_REVOKE_INTERVAL_MS", 300000),
+  },
+  {
     name: "entitlements-qr-cleanup",
     method: "GET",
     path: "/api/cron/entitlements/qr-cleanup",

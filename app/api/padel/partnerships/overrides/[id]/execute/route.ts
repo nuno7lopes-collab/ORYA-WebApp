@@ -349,7 +349,9 @@ async function _POST(req: NextRequest) {
 
   const bookingIntervals: Interval[] = bookingsRaw
     .filter((booking) => typeof booking.courtId === "number")
-    .filter((booking) => (bookingPolicy?.protectExternalReservations ?? true ? isActiveBooking(booking.status, booking.pendingExpiresAt) : false))
+    .filter(({ status, pendingExpiresAt }) =>
+      bookingPolicy?.protectExternalReservations ?? true ? isActiveBooking(status, pendingExpiresAt) : false,
+    )
     .map((booking) => ({
       courtId: booking.courtId as number,
       startsAt: booking.startsAt,

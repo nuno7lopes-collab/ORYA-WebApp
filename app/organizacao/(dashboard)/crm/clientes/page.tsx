@@ -63,7 +63,26 @@ type CustomerSavedView = {
   id: string;
   name: string;
   filters: CustomerFilters;
+  isDefault: boolean;
   updatedAt: string;
+};
+
+type SavedViewItem = {
+  id: string;
+  scope: "CUSTOMERS" | "SEGMENTS";
+  name: string;
+  definition: unknown;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SavedViewListResponse = {
+  ok: boolean;
+  items?: SavedViewItem[];
+  view?: SavedViewItem;
+  error?: string;
+  message?: string;
 };
 
 const CONTACT_TYPE_LABELS: Record<string, string> = {
@@ -75,7 +94,6 @@ const CONTACT_TYPE_LABELS: Record<string, string> = {
 };
 
 const PAGE_SIZE = 20;
-const SAVED_VIEWS_STORAGE_KEY = "crm_clientes_saved_views_v1";
 
 const SYSTEM_VIEWS: Array<{ id: string; label: string; patch: Partial<CustomerFilters> }> = [
   { id: "active_30d", label: "Ativos 30d", patch: { lastActivityDays: "30" } },
@@ -110,6 +128,21 @@ function normalizeFilters(raw: Partial<CustomerFilters> | null | undefined): Cus
   };
 }
 
+function parseViewFilters(definition: unknown): CustomerFilters {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+    return createEmptyFilters();
+  }
+  const payload = definition as { filters?: unknown };
+  if (payload.filters && typeof payload.filters === "object" && !Array.isArray(payload.filters)) {
+    return normalizeFilters(payload.filters as Partial<CustomerFilters>);
+  }
+  return normalizeFilters(definition as Partial<CustomerFilters>);
+}
+
+function resolveSavedViewItemPath(viewId: string) {
+  return resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views/[id]").replace("/[id]", `/${viewId}`);
+}
+
 function formatRelativeDate(value: string | null) {
   if (!value) return "—";
   const date = new Date(value);
@@ -141,13 +174,38 @@ export default function CrmClientesPage() {
   const [filters, setFilters] = useState<CustomerFilters>(() => createEmptyFilters());
   const [page, setPage] = useState(1);
 
-  const [savedViews, setSavedViews] = useState<CustomerSavedView[]>([]);
-  const [defaultViewId, setDefaultViewId] = useState<string | null>(null);
   const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [savedViewNotice, setSavedViewNotice] = useState<string | null>(null);
-  const [viewsHydrated, setViewsHydrated] = useState(false);
   const [defaultApplied, setDefaultApplied] = useState(false);
+  const [savingView, setSavingView] = useState(false);
+  const [viewActionId, setViewActionId] = useState<string | null>(null);
+
+  const savedViewsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views?scope=CUSTOMERS");
+  const {
+    data: savedViewsData,
+    mutate: mutateSavedViews,
+    isLoading: isLoadingSavedViews,
+  } = useSWR<SavedViewListResponse>(savedViewsUrl, fetcher, {
+    keepPreviousData: true,
+  });
+  const savedViewsApiError = savedViewsData?.ok === false;
+
+  const savedViews = useMemo<CustomerSavedView[]>(() => {
+    if (!savedViewsData?.ok) return [];
+    return (savedViewsData.items ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      filters: parseViewFilters(item.definition),
+      isDefault: Boolean(item.isDefault),
+      updatedAt: item.updatedAt,
+    }));
+  }, [savedViewsData]);
+
+  const defaultViewId = useMemo(
+    () => savedViews.find((view) => view.isDefault)?.id ?? null,
+    [savedViews],
+  );
 
   const applyFilterSet = (next: CustomerFilters, sourceSavedViewId?: string | null) => {
     setDraftFilters(next);
@@ -157,58 +215,17 @@ export default function CrmClientesPage() {
   };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SAVED_VIEWS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          views?: Array<{ id?: unknown; name?: unknown; filters?: unknown; updatedAt?: unknown }>;
-          defaultViewId?: unknown;
-        };
-        const normalizedViews = Array.isArray(parsed.views)
-          ? parsed.views
-              .map((view) => {
-                if (!view || typeof view !== "object") return null;
-                const id = typeof view.id === "string" ? view.id : null;
-                const name = typeof view.name === "string" ? view.name.trim() : "";
-                if (!id || name.length < 2) return null;
-                return {
-                  id,
-                  name,
-                  filters: normalizeFilters(view.filters as Partial<CustomerFilters>),
-                  updatedAt: typeof view.updatedAt === "string" ? view.updatedAt : new Date().toISOString(),
-                } satisfies CustomerSavedView;
-              })
-              .filter((view): view is CustomerSavedView => Boolean(view))
-          : [];
-        setSavedViews(normalizedViews);
-        setDefaultViewId(typeof parsed.defaultViewId === "string" ? parsed.defaultViewId : null);
-      }
-    } catch (err) {
-      console.warn("[crm][clientes] saved views load failed", err);
-    } finally {
-      setViewsHydrated(true);
+    if (savedViewsData === undefined || defaultApplied) return;
+    if (countActiveFilters(filters) > 0 || !defaultViewId) {
+      setDefaultApplied(true);
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    if (!viewsHydrated) return;
-    localStorage.setItem(
-      SAVED_VIEWS_STORAGE_KEY,
-      JSON.stringify({
-        views: savedViews,
-        defaultViewId,
-      }),
-    );
-  }, [viewsHydrated, savedViews, defaultViewId]);
-
-  useEffect(() => {
-    if (!viewsHydrated || defaultApplied) return;
-    setDefaultApplied(true);
-    if (countActiveFilters(filters) > 0 || !defaultViewId) return;
     const defaultView = savedViews.find((view) => view.id === defaultViewId);
-    if (!defaultView) return;
-    applyFilterSet(defaultView.filters, defaultView.id);
-  }, [defaultApplied, defaultViewId, filters, savedViews, viewsHydrated]);
+    if (defaultView) {
+      applyFilterSet(defaultView.filters, defaultView.id);
+    }
+    setDefaultApplied(true);
+  }, [defaultApplied, defaultViewId, filters, savedViews, savedViewsData]);
 
   const url = useMemo(() => {
     const params = new URLSearchParams();
@@ -264,40 +281,80 @@ export default function CrmClientesPage() {
     applyFilterSet(view.filters, view.id);
   };
 
-  const saveCurrentView = () => {
+  const saveCurrentView = async () => {
     const name = newViewName.trim();
     if (name.length < 2) {
       setSavedViewNotice("Dá um nome à vista (mínimo 2 caracteres).");
       return;
     }
-    const filtersToSave = normalizeFilters(draftFilters);
-    const now = new Date().toISOString();
-    setSavedViews((prev) => {
-      const existing = prev.find((view) => view.name.toLowerCase() === name.toLowerCase());
-      if (existing) {
-        const updated = prev.map((view) =>
-          view.id === existing.id ? { ...view, name, filters: filtersToSave, updatedAt: now } : view,
-        );
-        setActiveSavedViewId(existing.id);
-        return updated;
+    setSavingView(true);
+    try {
+      const filtersToSave = normalizeFilters(draftFilters);
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "CUSTOMERS",
+          name,
+          definition: { filters: filtersToSave },
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok || !json.view) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao guardar vista.");
       }
-      const created: CustomerSavedView = {
-        id: `view_${Date.now()}`,
-        name,
-        filters: filtersToSave,
-        updatedAt: now,
-      };
-      setActiveSavedViewId(created.id);
-      return [created, ...prev];
-    });
-    setSavedViewNotice("Vista guardada.");
-    setNewViewName("");
+      await mutateSavedViews();
+      setActiveSavedViewId(json.view.id);
+      setSavedViewNotice("Vista guardada.");
+      setNewViewName("");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao guardar vista.");
+    } finally {
+      setSavingView(false);
+    }
   };
 
-  const deleteSavedView = (viewId: string) => {
-    setSavedViews((prev) => prev.filter((view) => view.id !== viewId));
-    if (defaultViewId === viewId) setDefaultViewId(null);
-    if (activeSavedViewId === viewId) setActiveSavedViewId(null);
+  const toggleDefaultSavedView = async (view: CustomerSavedView) => {
+    setViewActionId(view.id);
+    try {
+      const res = await fetch(resolveSavedViewItemPath(view.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefault: !view.isDefault }),
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao atualizar vista.");
+      }
+      await mutateSavedViews();
+      setSavedViewNotice(!view.isDefault ? "Vista definida como default." : "Default removido.");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao atualizar default.");
+    } finally {
+      setViewActionId(null);
+    }
+  };
+
+  const deleteSavedView = async (viewId: string) => {
+    setViewActionId(viewId);
+    try {
+      const res = await fetch(resolveSavedViewItemPath(viewId), {
+        method: "DELETE",
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao remover vista.");
+      }
+      await mutateSavedViews();
+      if (activeSavedViewId === viewId) {
+        setActiveSavedViewId(null);
+      }
+      setSavedViewNotice("Vista removida.");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao remover vista.");
+    } finally {
+      setViewActionId(null);
+    }
   };
 
   const handleDraftChange =
@@ -340,13 +397,15 @@ export default function CrmClientesPage() {
                     type="button"
                     className={cn("text-[11px] text-white/80", isActive ? "font-semibold text-white" : "")}
                     onClick={() => applySavedView(view)}
+                    disabled={viewActionId === view.id}
                   >
                     {view.name}
                   </button>
                   <button
                     type="button"
                     className="text-[11px] text-white/60 hover:text-white"
-                    onClick={() => setDefaultViewId(isDefault ? null : view.id)}
+                    onClick={() => toggleDefaultSavedView(view)}
+                    disabled={viewActionId === view.id}
                     title={isDefault ? "Remover default" : "Definir default"}
                   >
                     {isDefault ? "★" : "☆"}
@@ -355,6 +414,7 @@ export default function CrmClientesPage() {
                     type="button"
                     className="text-[11px] text-white/60 hover:text-rose-200"
                     onClick={() => deleteSavedView(view.id)}
+                    disabled={viewActionId === view.id}
                     title="Remover vista"
                   >
                     ×
@@ -371,12 +431,16 @@ export default function CrmClientesPage() {
               value={newViewName}
               onChange={(event) => setNewViewName(event.target.value)}
             />
-            <button type="button" className={CTA_NEUTRAL} onClick={saveCurrentView}>
-              Guardar vista atual
+            <button type="button" className={CTA_NEUTRAL} onClick={saveCurrentView} disabled={savingView}>
+              {savingView ? "A guardar..." : "Guardar vista atual"}
             </button>
             {savedViewNotice ? <span className="text-[11px] text-white/60">{savedViewNotice}</span> : null}
           </div>
         </div>
+        {savedViewsApiError ? (
+          <p className="text-[11px] text-rose-200">Não foi possível sincronizar vistas guardadas.</p>
+        ) : null}
+        {isLoadingSavedViews ? <p className="text-[11px] text-white/45">A carregar vistas guardadas…</p> : null}
 
         <form
           className="space-y-3"

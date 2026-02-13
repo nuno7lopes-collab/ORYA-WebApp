@@ -31,7 +31,9 @@ const MISSING_API_ALLOWLIST = new Set([
   "/api/organizacao",
 ]);
 
-const ORPHAN_API_ALLOWLIST = new Set<string>([]);
+const ORPHAN_API_ALLOWLIST = new Set<string>([
+  "/api/messages/attachments/presign",
+]);
 
 const UI_ROOTS = [
   path.join(ROOT, "app"),

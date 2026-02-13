@@ -138,10 +138,27 @@ type SegmentSavedView = {
   id: string;
   name: string;
   filters: SegmentListFilters;
+  isDefault: boolean;
   updatedAt: string;
 };
 
-const SEGMENT_VIEWS_STORAGE_KEY = "crm_segmentos_saved_views_v1";
+type SavedViewItem = {
+  id: string;
+  scope: "CUSTOMERS" | "SEGMENTS";
+  name: string;
+  definition: unknown;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SavedViewListResponse = {
+  ok: boolean;
+  items?: SavedViewItem[];
+  view?: SavedViewItem;
+  error?: string;
+  message?: string;
+};
 
 const SEGMENT_SYSTEM_VIEWS: Array<{ id: string; label: string; patch: Partial<SegmentListFilters> }> = [
   { id: "active", label: "Ativos", patch: { status: "ACTIVE" } },
@@ -206,6 +223,21 @@ function normalizeListFilters(raw: Partial<SegmentListFilters> | null | undefine
   };
 }
 
+function parseSavedViewFilters(definition: unknown): SegmentListFilters {
+  if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+    return createDefaultListFilters();
+  }
+  const payload = definition as { filters?: unknown };
+  if (payload.filters && typeof payload.filters === "object" && !Array.isArray(payload.filters)) {
+    return normalizeListFilters(payload.filters as Partial<SegmentListFilters>);
+  }
+  return normalizeListFilters(definition as Partial<SegmentListFilters>);
+}
+
+function resolveSavedViewItemPath(viewId: string) {
+  return resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views/[id]").replace("/[id]", `/${viewId}`);
+}
+
 function countListFilters(filters: SegmentListFilters) {
   let count = 0;
   if (filters.query.trim()) count += 1;
@@ -235,13 +267,38 @@ export default function CrmSegmentosPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [listFilters, setListFilters] = useState<SegmentListFilters>(() => createDefaultListFilters());
-  const [savedViews, setSavedViews] = useState<SegmentSavedView[]>([]);
-  const [defaultViewId, setDefaultViewId] = useState<string | null>(null);
   const [activeSavedViewId, setActiveSavedViewId] = useState<string | null>(null);
   const [newViewName, setNewViewName] = useState("");
   const [savedViewNotice, setSavedViewNotice] = useState<string | null>(null);
-  const [viewsHydrated, setViewsHydrated] = useState(false);
   const [defaultApplied, setDefaultApplied] = useState(false);
+  const [savingView, setSavingView] = useState(false);
+  const [viewActionId, setViewActionId] = useState<string | null>(null);
+
+  const savedViewsUrl = resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views?scope=SEGMENTS");
+  const {
+    data: savedViewsData,
+    mutate: mutateSavedViews,
+    isLoading: isLoadingSavedViews,
+  } = useSWR<SavedViewListResponse>(savedViewsUrl, fetcher, {
+    keepPreviousData: true,
+  });
+  const savedViewsApiError = savedViewsData?.ok === false;
+
+  const savedViews = useMemo<SegmentSavedView[]>(() => {
+    if (!savedViewsData?.ok) return [];
+    return (savedViewsData.items ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      filters: parseSavedViewFilters(item.definition),
+      isDefault: Boolean(item.isDefault),
+      updatedAt: item.updatedAt,
+    }));
+  }, [savedViewsData]);
+
+  const defaultViewId = useMemo(
+    () => savedViews.find((view) => view.isDefault)?.id ?? null,
+    [savedViews],
+  );
 
   const normalizedRules = useMemo(() => {
     return rules
@@ -301,59 +358,18 @@ export default function CrmSegmentosPage() {
   }, [rules]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SEGMENT_VIEWS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          views?: Array<{ id?: unknown; name?: unknown; filters?: unknown; updatedAt?: unknown }>;
-          defaultViewId?: unknown;
-        };
-        const normalizedViews = Array.isArray(parsed.views)
-          ? parsed.views
-              .map((view) => {
-                if (!view || typeof view !== "object") return null;
-                const id = typeof view.id === "string" ? view.id : null;
-                const name = typeof view.name === "string" ? view.name.trim() : "";
-                if (!id || name.length < 2) return null;
-                return {
-                  id,
-                  name,
-                  filters: normalizeListFilters(view.filters as Partial<SegmentListFilters>),
-                  updatedAt: typeof view.updatedAt === "string" ? view.updatedAt : new Date().toISOString(),
-                } satisfies SegmentSavedView;
-              })
-              .filter((view): view is SegmentSavedView => Boolean(view))
-          : [];
-        setSavedViews(normalizedViews);
-        setDefaultViewId(typeof parsed.defaultViewId === "string" ? parsed.defaultViewId : null);
-      }
-    } catch (err) {
-      console.warn("[crm][segmentos] saved views load failed", err);
-    } finally {
-      setViewsHydrated(true);
+    if (savedViewsData === undefined || defaultApplied) return;
+    if (countListFilters(listFilters) > 0 || !defaultViewId) {
+      setDefaultApplied(true);
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    if (!viewsHydrated) return;
-    localStorage.setItem(
-      SEGMENT_VIEWS_STORAGE_KEY,
-      JSON.stringify({
-        views: savedViews,
-        defaultViewId,
-      }),
-    );
-  }, [viewsHydrated, savedViews, defaultViewId]);
-
-  useEffect(() => {
-    if (!viewsHydrated || defaultApplied) return;
-    setDefaultApplied(true);
-    if (countListFilters(listFilters) > 0 || !defaultViewId) return;
     const defaultView = savedViews.find((view) => view.id === defaultViewId);
-    if (!defaultView) return;
-    setListFilters(defaultView.filters);
-    setActiveSavedViewId(defaultView.id);
-  }, [defaultApplied, defaultViewId, listFilters, savedViews, viewsHydrated]);
+    if (defaultView) {
+      setListFilters(defaultView.filters);
+      setActiveSavedViewId(defaultView.id);
+    }
+    setDefaultApplied(true);
+  }, [defaultApplied, defaultViewId, listFilters, savedViews, savedViewsData]);
 
   const validRuleCount = normalizedRules.length;
   const canCreate = name.trim().length >= 2 && validRuleCount > 0 && !saving;
@@ -430,40 +446,80 @@ export default function CrmSegmentosPage() {
     setSavedViewNotice(`Vista aplicada: ${view.name}`);
   };
 
-  const saveCurrentView = () => {
+  const saveCurrentView = async () => {
     const name = newViewName.trim();
     if (name.length < 2) {
       setSavedViewNotice("Dá um nome à vista (mínimo 2 caracteres).");
       return;
     }
-    const now = new Date().toISOString();
-    const filters = normalizeListFilters(listFilters);
-    setSavedViews((prev) => {
-      const existing = prev.find((view) => view.name.toLowerCase() === name.toLowerCase());
-      if (existing) {
-        const updated = prev.map((view) =>
-          view.id === existing.id ? { ...view, name, filters, updatedAt: now } : view,
-        );
-        setActiveSavedViewId(existing.id);
-        return updated;
+    setSavingView(true);
+    try {
+      const filters = normalizeListFilters(listFilters);
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/saved-views"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "SEGMENTS",
+          name,
+          definition: { filters },
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok || !json.view) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao guardar vista.");
       }
-      const created: SegmentSavedView = {
-        id: `view_${Date.now()}`,
-        name,
-        filters,
-        updatedAt: now,
-      };
-      setActiveSavedViewId(created.id);
-      return [created, ...prev];
-    });
-    setSavedViewNotice("Vista guardada.");
-    setNewViewName("");
+      await mutateSavedViews();
+      setActiveSavedViewId(json.view.id);
+      setSavedViewNotice("Vista guardada.");
+      setNewViewName("");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao guardar vista.");
+    } finally {
+      setSavingView(false);
+    }
   };
 
-  const deleteSavedView = (viewId: string) => {
-    setSavedViews((prev) => prev.filter((view) => view.id !== viewId));
-    if (defaultViewId === viewId) setDefaultViewId(null);
-    if (activeSavedViewId === viewId) setActiveSavedViewId(null);
+  const toggleDefaultSavedView = async (view: SegmentSavedView) => {
+    setViewActionId(view.id);
+    try {
+      const res = await fetch(resolveSavedViewItemPath(view.id), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefault: !view.isDefault }),
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao atualizar vista.");
+      }
+      await mutateSavedViews();
+      setSavedViewNotice(!view.isDefault ? "Vista definida como default." : "Default removido.");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao atualizar default.");
+    } finally {
+      setViewActionId(null);
+    }
+  };
+
+  const deleteSavedView = async (viewId: string) => {
+    setViewActionId(viewId);
+    try {
+      const res = await fetch(resolveSavedViewItemPath(viewId), {
+        method: "DELETE",
+      });
+      const json = (await res.json().catch(() => null)) as SavedViewListResponse | null;
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message ?? json?.error ?? "Falha ao remover vista.");
+      }
+      await mutateSavedViews();
+      if (activeSavedViewId === viewId) {
+        setActiveSavedViewId(null);
+      }
+      setSavedViewNotice("Vista removida.");
+    } catch (err) {
+      setSavedViewNotice(err instanceof Error ? err.message : "Falha ao remover vista.");
+    } finally {
+      setViewActionId(null);
+    }
   };
 
   const filteredSegments = useMemo(() => {
@@ -754,13 +810,15 @@ export default function CrmSegmentosPage() {
                       type="button"
                       className={cn("text-[11px] text-white/80", isActive ? "font-semibold text-white" : "")}
                       onClick={() => applySavedView(view)}
+                      disabled={viewActionId === view.id}
                     >
                       {view.name}
                     </button>
                     <button
                       type="button"
                       className="text-[11px] text-white/60 hover:text-white"
-                      onClick={() => setDefaultViewId(isDefault ? null : view.id)}
+                      onClick={() => toggleDefaultSavedView(view)}
+                      disabled={viewActionId === view.id}
                       title={isDefault ? "Remover default" : "Definir default"}
                     >
                       {isDefault ? "★" : "☆"}
@@ -769,6 +827,7 @@ export default function CrmSegmentosPage() {
                       type="button"
                       className="text-[11px] text-white/60 hover:text-rose-200"
                       onClick={() => deleteSavedView(view.id)}
+                      disabled={viewActionId === view.id}
                       title="Remover vista"
                     >
                       ×
@@ -785,12 +844,16 @@ export default function CrmSegmentosPage() {
                 value={newViewName}
                 onChange={(event) => setNewViewName(event.target.value)}
               />
-              <button type="button" className={CTA_NEUTRAL} onClick={saveCurrentView}>
-                Guardar vista atual
+              <button type="button" className={CTA_NEUTRAL} onClick={saveCurrentView} disabled={savingView}>
+                {savingView ? "A guardar..." : "Guardar vista atual"}
               </button>
               {savedViewNotice ? <span className="text-[11px] text-white/60">{savedViewNotice}</span> : null}
             </div>
           </div>
+          {savedViewsApiError ? (
+            <p className="text-[11px] text-rose-200">Não foi possível sincronizar vistas guardadas.</p>
+          ) : null}
+          {isLoadingSavedViews ? <p className="text-[11px] text-white/45">A carregar vistas guardadas…</p> : null}
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
             <label className="text-[12px] text-white/70">
