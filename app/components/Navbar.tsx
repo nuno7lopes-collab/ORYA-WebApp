@@ -7,13 +7,14 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
 import { getEventCoverUrl } from "@/lib/eventCover";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
+import { shouldHideUserNavbar } from "./navbarVisibility";
 
 type SearchEvent = {
   id: number;
@@ -88,8 +89,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
   const lastScrollYRef = useRef(0);
   const pathname = hydratedPathname ?? "";
-  const shouldHide =
-    rawPathname?.startsWith("/organizacao") || rawPathname?.startsWith("/landing");
+  const shouldHide = shouldHideUserNavbar(rawPathname);
   const isMobileHubRoute =
     rawPathname === "/" ||
     rawPathname?.startsWith("/descobrir") ||
@@ -607,7 +607,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                   return;
                 }
                 const orgId = getOrganizationIdFromBrowser();
-                const target = appendOrganizationIdToHref("/organizacao/overview", orgId);
+                const target = orgId ? buildOrgHref(orgId, "/overview") : buildOrgHubHref("/organizations");
                 router.push(target);
               }}
               className={`${navButtonBase} hidden md:inline-flex border-white/20 bg-white/5 text-white/80 hover:border-white/35 hover:bg-white/10`}
@@ -691,7 +691,9 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                       >
                         <span>Definições</span>
                       </Link>
-                      {pathname?.startsWith("/organizacao") && (
+                      {(pathname?.startsWith("/org/") ||
+                        pathname === "/org" ||
+                        pathname?.startsWith("/org-hub")) && (
                         <Link
                           href="/me"
                           onClick={() => setIsProfileMenuOpen(false)}

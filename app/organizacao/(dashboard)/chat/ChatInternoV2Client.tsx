@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import {
   useCallback,
   useEffect,
@@ -728,7 +730,7 @@ export default function ChatInternoV2Client() {
         setDirectoryError("Sem organização ativa.");
         return;
       }
-      const url = new URL("/api/organizacao/organizations/members", window.location.origin);
+      const url = new URL(resolveCanonicalOrgApiPath("/api/org-hub/organizations/members"), window.location.origin);
       url.searchParams.set("organizationId", String(orgId));
       const data = await fetcher<{ ok: boolean; items: MemberDirectoryItem[] }>(url.pathname + url.search);
       setDirectory(data.items ?? []);

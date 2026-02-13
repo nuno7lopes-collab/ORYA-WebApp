@@ -10,10 +10,14 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 async function _POST(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -89,7 +93,7 @@ async function _POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED" || result.error === "FORMAT_NOT_OPERATIONAL") {
+    if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED") {
       return jsonWrap({ ok: false, error: result.error }, { status: 409 });
     }
     return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });

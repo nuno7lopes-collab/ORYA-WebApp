@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 const CRM_NAV = [
   { id: "clientes", label: "Clientes", href: "/organizacao/crm/clientes" },
   { id: "segmentos", label: "Segmentos", href: "/organizacao/crm/segmentos" },
-  { id: "campanhas", label: "Campanhas", href: "/organizacao/crm/campanhas" },
+  { id: "campanhas", label: "Campanhas", href: "/organizacao/crm/campanhas", feature: "CRM_CAMPAIGNS" as const },
+  { id: "journeys", label: "Journeys", href: "/organizacao/crm/journeys" },
   { id: "relatorios", label: "Relatórios", href: "/organizacao/crm/relatorios" },
   { id: "loyalty", label: "Pontos & recompensas", href: "/organizacao/crm/loyalty" },
 ];
@@ -15,11 +16,16 @@ const CRM_NAV = [
 type CrmSubnavProps = {
   variant?: "default" | "topbar";
   className?: string;
+  campaignsEnabled?: boolean;
 };
 
-export default function CrmSubnav({ variant = "default", className }: CrmSubnavProps) {
+export default function CrmSubnav({ variant = "default", className, campaignsEnabled = false }: CrmSubnavProps) {
   const pathname = usePathname();
   const isTopbar = variant === "topbar";
+  const navItems = CRM_NAV.filter((item) => {
+    if (item.feature === "CRM_CAMPAIGNS") return campaignsEnabled;
+    return true;
+  });
   const wrapperClass = cn(
     isTopbar
       ? "relative w-full max-w-full rounded-full border border-white/12 bg-white/5 px-1 py-1 text-[12px] shadow-[0_10px_32px_rgba(0,0,0,0.35)] overflow-hidden"
@@ -39,7 +45,7 @@ export default function CrmSubnav({ variant = "default", className }: CrmSubnavP
 
   const content = (
     <div className={listClass}>
-      {CRM_NAV.map((item) => {
+      {navItems.map((item) => {
         const isActive = pathname?.startsWith(item.href);
         return (
           <Link

@@ -14,7 +14,7 @@ import { useAuthModal } from "./AuthModalContext";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { mutate as swrMutate } from "swr";
 import type { User } from "@supabase/supabase-js";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";

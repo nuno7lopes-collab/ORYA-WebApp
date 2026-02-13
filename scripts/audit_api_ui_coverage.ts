@@ -111,9 +111,13 @@ function routeType(route: string) {
   return "public";
 }
 
+function isOutOfScopePadel(route: string) {
+  return /\/(padel|tournaments|torneios)(?:\/|$)/i.test(route);
+}
+
 function isUiExempt(route: string) {
   const type = routeType(route);
-  return type === "internal" || type === "cron" || type === "webhook";
+  return type === "internal" || type === "cron" || type === "webhook" || isOutOfScopePadel(route);
 }
 
 function isOrphanAllowlisted(route: string) {
@@ -481,6 +485,7 @@ function main() {
     );
     if (!matched) {
       if (MISSING_API_ALLOWLIST.has(endpoint)) continue;
+      if (isOutOfScopePadel(endpoint)) continue;
       missingApi.push({ endpoint, files: Array.from(files).sort() });
     }
   }

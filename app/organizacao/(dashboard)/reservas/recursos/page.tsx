@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
@@ -25,7 +27,7 @@ type ResourceItem = {
 
 export default function RecursosPage() {
   const { data, mutate } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    "/api/organizacao/reservas/recursos",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"),
     fetcher,
   );
   const [label, setLabel] = useState("");
@@ -41,7 +43,7 @@ export default function RecursosPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/reservas/recursos", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,7 +69,7 @@ export default function RecursosPage() {
 
   const handleToggle = async (item: ResourceItem) => {
     try {
-      const res = await fetch(`/api/organizacao/reservas/recursos/${item.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${item.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !item.isActive }),
@@ -88,7 +90,7 @@ export default function RecursosPage() {
     const nextCapacity = window.prompt("Capacidade", String(item.capacity));
     const nextPriority = window.prompt("Prioridade", String(item.priority));
     try {
-      const res = await fetch(`/api/organizacao/reservas/recursos/${item.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/recursos/${item.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

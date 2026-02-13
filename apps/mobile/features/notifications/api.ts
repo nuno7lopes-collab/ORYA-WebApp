@@ -58,7 +58,7 @@ export const fetchNotificationsUnread = async (
 
 export const fetchOrganizationInvites = async (accessToken?: string | null): Promise<OrganizationInvite[]> => {
   requireAccessToken(accessToken);
-  const response = await api.requestWithAccessToken<unknown>("/api/organizacao/invites", accessToken);
+  const response = await api.requestWithAccessToken<unknown>("/api/org-hub/invites", accessToken);
   const payload = unwrapApiResponse<OrganizationInvitesPayload>(response);
   return Array.isArray(payload?.items) ? payload.items : [];
 };
@@ -136,7 +136,7 @@ export const respondOrganizationInvite = async (
   }
   requireAccessToken(accessToken);
   const response = await api.requestWithAccessToken<unknown>(
-    "/api/organizacao/organizations/members/invites",
+    "/api/org-hub/organizations/members/invites",
     accessToken,
     {
       method: "PATCH",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 
 type ErrorProps = {
   error: Error & { digest?: string };

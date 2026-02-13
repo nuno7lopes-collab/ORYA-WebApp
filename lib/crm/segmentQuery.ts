@@ -1,6 +1,13 @@
+import {
+  buildContactWhereFromRule,
+  extractInteractionRule,
+  normalizeSegmentDefinition,
+  type SegmentExplainRule,
+  type SegmentGroupNode,
+  type SegmentNode,
+  type SegmentRuleNode,
+} from "@/lib/crm/segments";
 import { prisma } from "@/lib/prisma";
-import { buildContactFilters, normalizeSegmentDefinition } from "@/lib/crm/segments";
-import { Prisma } from "@prisma/client";
 
 const MAX_IN_CLAUSE = 5000;
 
@@ -18,60 +25,117 @@ function unionSets(a: Set<string>, b: Set<string>) {
   return out;
 }
 
-async function resolveInteractionContactIds(params: {
+async function resolveRuleContactSet(params: {
   organizationId: number;
-  rules: Array<{ types: string[]; since?: Date }>;
-  logic: "AND" | "OR";
-}) {
-  if (!params.rules.length) return null;
+  rule: SegmentRuleNode;
+}): Promise<{ set: Set<string>; explain: SegmentExplainRule }> {
+  const interaction = extractInteractionRule(params.rule);
 
-  let currentSet: Set<string> | null = null;
-  for (const rule of params.rules) {
-    const contactIds = await prisma.crmInteraction.findMany({
+  if (interaction) {
+    const rows = await prisma.crmInteraction.findMany({
       where: {
         organizationId: params.organizationId,
-        type: { in: rule.types as any },
-        ...(rule.since ? { occurredAt: { gte: rule.since } } : {}),
+        type: { in: interaction.types as any },
+        ...(interaction.since ? { occurredAt: { gte: interaction.since } } : {}),
       },
       select: { contactId: true },
       distinct: ["contactId"],
     });
 
-    const nextSet = new Set(contactIds.map((item) => item.contactId));
-    if (!currentSet) {
-      currentSet = nextSet;
+    const set = new Set(rows.map((row) => row.contactId));
+    return {
+      set,
+      explain: {
+        ruleId: params.rule.id,
+        field: params.rule.field,
+        op: params.rule.op,
+        matched: set.size,
+      },
+    };
+  }
+
+  const where = buildContactWhereFromRule(params.rule);
+  if (!where) {
+    return {
+      set: new Set(),
+      explain: {
+        ruleId: params.rule.id,
+        field: params.rule.field,
+        op: params.rule.op,
+        matched: 0,
+      },
+    };
+  }
+
+  const rows = await prisma.crmContact.findMany({
+    where: {
+      organizationId: params.organizationId,
+      ...where,
+    },
+    select: { id: true },
+  });
+
+  const set = new Set(rows.map((row) => row.id));
+  return {
+    set,
+    explain: {
+      ruleId: params.rule.id,
+      field: params.rule.field,
+      op: params.rule.op,
+      matched: set.size,
+    },
+  };
+}
+
+async function evaluateNode(params: {
+  organizationId: number;
+  node: SegmentNode;
+}): Promise<{ set: Set<string>; explain: SegmentExplainRule[] }> {
+  const { node, organizationId } = params;
+
+  if (node.kind === "rule") {
+    const resolved = await resolveRuleContactSet({ organizationId, rule: node });
+    return { set: resolved.set, explain: [resolved.explain] };
+  }
+
+  return evaluateGroupNode({ organizationId, group: node });
+}
+
+async function evaluateGroupNode(params: {
+  organizationId: number;
+  group: SegmentGroupNode;
+}): Promise<{ set: Set<string>; explain: SegmentExplainRule[] }> {
+  const { group, organizationId } = params;
+  if (!group.children.length) {
+    return { set: new Set(), explain: [] };
+  }
+
+  let current: Set<string> | null = null;
+  const explain: SegmentExplainRule[] = [];
+
+  for (const child of group.children) {
+    const childResult = await evaluateNode({ organizationId, node: child });
+    explain.push(...childResult.explain);
+
+    if (!current) {
+      current = childResult.set;
       continue;
     }
 
-    currentSet = params.logic === "AND" ? intersectSets(currentSet, nextSet) : unionSets(currentSet, nextSet);
+    current = group.logic === "AND" ? intersectSets(current, childResult.set) : unionSets(current, childResult.set);
   }
 
-  return currentSet;
+  return { set: current ?? new Set(), explain };
 }
 
-export async function resolveSegmentContactIds(params: {
+export async function resolveSegmentAudience(params: {
   organizationId: number;
   rules: unknown;
   maxContacts?: number;
-}): Promise<{ contactIds: string[]; total: number; unfiltered: boolean }> {
+  includeExplain?: boolean;
+}): Promise<{ contactIds: string[]; total: number; unfiltered: boolean; explain: SegmentExplainRule[] }> {
   const definition = normalizeSegmentDefinition(params.rules);
-  const { filters, interactionRules, logic } = buildContactFilters(definition, {
-    organizationId: params.organizationId,
-  });
-
-  const hasContactFilters = filters.length > 0;
-  const contactWhere: Prisma.CrmContactWhereInput = {
-    organizationId: params.organizationId,
-    ...(hasContactFilters ? { [logic]: filters } : {}),
-  };
-
-  const interactionSet = await resolveInteractionContactIds({
-    organizationId: params.organizationId,
-    rules: interactionRules.map((rule) => ({ types: rule.types, since: rule.since })),
-    logic,
-  });
-
-  if (!hasContactFilters && !interactionSet) {
+  if (!definition.root.children.length) {
     const total = await prisma.crmContact.count({ where: { organizationId: params.organizationId } });
     const take = Math.min(params.maxContacts ?? 200, MAX_IN_CLAUSE);
     const contacts = await prisma.crmContact.findMany({
@@ -80,36 +144,57 @@ export async function resolveSegmentContactIds(params: {
       orderBy: [{ lastActivityAt: "desc" }, { createdAt: "desc" }],
       take,
     });
-    return { contactIds: contacts.map((c) => c.id), total, unfiltered: true };
+    return {
+      contactIds: contacts.map((c) => c.id),
+      total,
+      unfiltered: true,
+      explain: [],
+    };
   }
 
-  let baseSet: Set<string> | null = null;
-  if (hasContactFilters) {
-    const base = await prisma.crmContact.findMany({
-      where: contactWhere,
-      select: { id: true },
-    });
-    baseSet = new Set(base.map((item) => item.id));
+  const evaluated = await evaluateGroupNode({
+    organizationId: params.organizationId,
+    group: definition.root,
+  });
+
+  const total = evaluated.set.size;
+  if (!total) {
+    return {
+      contactIds: [],
+      total: 0,
+      unfiltered: false,
+      explain: params.includeExplain ? evaluated.explain : [],
+    };
   }
 
-  let finalSet: Set<string> | null = null;
-  if (logic === "AND") {
-    if (baseSet && interactionSet) {
-      finalSet = intersectSets(baseSet, interactionSet);
-    } else {
-      finalSet = baseSet ?? interactionSet ?? new Set();
-    }
-  } else {
-    finalSet = unionSets(baseSet ?? new Set(), interactionSet ?? new Set());
-  }
-
-  const contactIds = Array.from(finalSet ?? []);
-  if (!contactIds.length) return { contactIds: [], total: 0, unfiltered: false };
-
-  const total = finalSet ? finalSet.size : contactIds.length;
-  const limited = contactIds.slice(0, MAX_IN_CLAUSE);
+  const limited = Array.from(evaluated.set).slice(0, MAX_IN_CLAUSE);
   const take = Math.min(params.maxContacts ?? 200, limited.length);
-  return { contactIds: limited.slice(0, take), total, unfiltered: false };
+
+  return {
+    contactIds: limited.slice(0, take),
+    total,
+    unfiltered: false,
+    explain: params.includeExplain ? evaluated.explain : [],
+  };
+}
+
+export async function resolveSegmentContactIds(params: {
+  organizationId: number;
+  rules: unknown;
+  maxContacts?: number;
+}): Promise<{ contactIds: string[]; total: number; unfiltered: boolean }> {
+  const resolved = await resolveSegmentAudience({
+    organizationId: params.organizationId,
+    rules: params.rules,
+    maxContacts: params.maxContacts,
+    includeExplain: false,
+  });
+
+  return {
+    contactIds: resolved.contactIds,
+    total: resolved.total,
+    unfiltered: resolved.unfiltered,
+  };
 }
 
 export async function resolveSegmentUserIds(params: {
@@ -122,13 +207,16 @@ export async function resolveSegmentUserIds(params: {
     rules: params.rules,
     maxContacts: params.maxUsers,
   });
+
   if (!resolved.contactIds.length) {
     return { userIds: [], total: resolved.total, unfiltered: resolved.unfiltered };
   }
+
   const contacts = await prisma.crmContact.findMany({
     where: { id: { in: resolved.contactIds }, userId: { not: null } },
     select: { userId: true },
   });
+
   return {
     userIds: contacts.map((item) => item.userId!).filter(Boolean),
     total: resolved.total,

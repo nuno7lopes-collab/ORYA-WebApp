@@ -7,10 +7,10 @@ import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizat
 
 const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
-  modulos: "Ferramentas",
+  modulos: "Módulos",
   eventos: "Eventos",
-  "padel-club": "Padel Clube",
-  "padel-tournaments": "Padel Torneios",
+  "padel-club": "Gestão de Clube Padel",
+  "padel-tournaments": "Torneios de Padel",
   calendar: "Calendário",
   clubs: "Clubes",
   courts: "Campos",
@@ -87,9 +87,9 @@ function resolveLabel(
       return `${sectionLabel ?? "Padel"} · ${padelLabel}`;
     }
     if (sectionLabel && section !== "eventos") {
-      return `Padel Torneios · ${sectionLabel}`;
+      return `Torneios de Padel · ${sectionLabel}`;
     }
-    return "Padel Torneios";
+    return "Torneios de Padel";
   }
   if (pathname.startsWith("/organizacao/eventos")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
@@ -123,7 +123,7 @@ function resolveLabel(
   if (pathname.startsWith("/organizacao/pagamentos/invoices")) return "Faturação";
   if (pathname.startsWith("/organizacao/tournaments/") && pathname.endsWith("/finance")) return "Finanças do torneio";
   if (pathname.startsWith("/organizacao/tournaments/") && pathname.endsWith("/live")) return "Live do torneio";
-  if (pathname.startsWith("/organizacao/tournaments/")) return "Padel Torneios";
+  if (pathname.startsWith("/organizacao/tournaments/")) return "Torneios de Padel";
   if (pathname.startsWith("/organizacao/staff")) return "Equipa";
   if (pathname.startsWith("/organizacao/settings")) return "Definições";
   const objectiveLabel = OBJECTIVE_LABELS[tab];

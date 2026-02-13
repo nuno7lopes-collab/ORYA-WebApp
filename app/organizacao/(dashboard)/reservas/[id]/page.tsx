@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -151,13 +153,13 @@ export default function ServicoDetalhePage() {
     return Number.isFinite(parsed) ? parsed : null;
   }, [idRaw]);
 
-  const serviceKey = serviceId ? `/api/organizacao/servicos/${serviceId}` : null;
+  const serviceKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`) : null;
   const packsEnabled = false;
-  const packsKey = packsEnabled && serviceId ? `/api/organizacao/servicos/${serviceId}/packs` : null;
-  const addonsKey = serviceId ? `/api/organizacao/servicos/${serviceId}/addons` : null;
-  const packagesKey = serviceId ? `/api/organizacao/servicos/${serviceId}/packages` : null;
-  const classSeriesKey = serviceId ? `/api/organizacao/servicos/${serviceId}/class-series` : null;
-  const classSessionsKey = serviceId ? `/api/organizacao/servicos/${serviceId}/class-sessions` : null;
+  const packsKey = packsEnabled && serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packs`) : null;
+  const addonsKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/addons`) : null;
+  const packagesKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packages`) : null;
+  const classSeriesKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series`) : null;
+  const classSessionsKey = serviceId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-sessions`) : null;
   const clubsKey = "/api/padel/clubs?includeInactive=1";
 
   const { data: serviceData, mutate: mutateService } = useSWR<{ ok: boolean; service: Service }>(
@@ -165,15 +167,15 @@ export default function ServicoDetalhePage() {
     fetcher,
   );
   const { data: policiesData } = useSWR<{ ok: boolean; items: PolicyItem[] }>(
-    "/api/organizacao/policies",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"),
     fetcher,
   );
   const { data: professionalsData } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
-    "/api/organizacao/reservas/profissionais",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
     fetcher,
   );
   const { data: resourcesData } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    "/api/organizacao/reservas/recursos",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"),
     fetcher,
   );
   const { data: packsData, mutate: mutatePacks } = useSWR<{ ok: boolean; items: ServicePack[] }>(
@@ -463,7 +465,7 @@ export default function ServicoDetalhePage() {
   const toggleService = async () => {
     if (!serviceId || !service) return;
     setServiceError(null);
-    const res = await fetch(`/api/organizacao/servicos/${serviceId}`, {
+    const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ isActive: !service.isActive }),
@@ -551,7 +553,7 @@ export default function ServicoDetalhePage() {
     setServiceSaving(true);
 
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -586,7 +588,7 @@ export default function ServicoDetalhePage() {
     setAddonSaving(true);
     setAddonError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/addons`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/addons`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -626,7 +628,7 @@ export default function ServicoDetalhePage() {
     setAddonSavingId(addonId);
     setAddonError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/addons/${addonId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/addons/${addonId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -654,7 +656,7 @@ export default function ServicoDetalhePage() {
 
   const handleAddonDisable = async (addonId: number) => {
     if (!serviceId) return;
-    await fetch(`/api/organizacao/servicos/${serviceId}/addons/${addonId}`, {
+    await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/addons/${addonId}`), {
       method: "DELETE",
     });
     mutateAddons();
@@ -665,7 +667,7 @@ export default function ServicoDetalhePage() {
     setPackageSaving(true);
     setPackageError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packages`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packages`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -703,7 +705,7 @@ export default function ServicoDetalhePage() {
     setPackageSavingId(packageId);
     setPackageError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packages/${packageId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packages/${packageId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -730,7 +732,7 @@ export default function ServicoDetalhePage() {
 
   const handlePackageDisable = async (packageId: number) => {
     if (!serviceId) return;
-    await fetch(`/api/organizacao/servicos/${serviceId}/packages/${packageId}`, {
+    await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packages/${packageId}`), {
       method: "DELETE",
     });
     mutatePackages();
@@ -741,7 +743,7 @@ export default function ServicoDetalhePage() {
     setPackSaving(true);
     setPackError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packs`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packs`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -774,7 +776,7 @@ export default function ServicoDetalhePage() {
     setPackSavingId(packId);
     setPackError(null);
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/packs/${packId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packs/${packId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -799,7 +801,7 @@ export default function ServicoDetalhePage() {
 
   const handlePackDisable = async (packId: number) => {
     if (!serviceId) return;
-    await fetch(`/api/organizacao/servicos/${serviceId}/packs/${packId}`, {
+    await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/packs/${packId}`), {
       method: "DELETE",
     });
     mutatePacks();
@@ -866,8 +868,8 @@ export default function ServicoDetalhePage() {
     setSeriesError(null);
     try {
       const url = seriesEditingId
-        ? `/api/organizacao/servicos/${serviceId}/class-series/${seriesEditingId}`
-        : `/api/organizacao/servicos/${serviceId}/class-series`;
+        ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series/${seriesEditingId}`)
+        : resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series`);
       const res = await fetch(url, {
         method: seriesEditingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -890,7 +892,7 @@ export default function ServicoDetalhePage() {
   const handleSeriesToggle = async (series: ClassSeriesItem, next: boolean) => {
     if (!serviceId) return;
     try {
-      const res = await fetch(`/api/organizacao/servicos/${serviceId}/class-series/${series.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/servicos/${serviceId}/class-series/${series.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: next }),

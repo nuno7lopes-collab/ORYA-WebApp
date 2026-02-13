@@ -448,6 +448,9 @@ async function updateContactReadModel(params: {
       totalAttendances: true,
       totalTournaments: true,
       totalStoreOrders: true,
+      sourceType: true,
+      sourceId: true,
+      externalId: true,
       contactEmail: true,
       contactPhone: true,
     },
@@ -487,6 +490,15 @@ async function updateContactReadModel(params: {
   if (typeof params.marketingPushOptIn === "boolean") {
     updates.marketingPushOptIn = params.marketingPushOptIn;
   }
+  if (!existing.sourceType) {
+    updates.sourceType = interaction.sourceType;
+  }
+  if (!existing.sourceId && interaction.sourceId) {
+    updates.sourceId = interaction.sourceId;
+  }
+  if (!existing.externalId && interaction.externalId) {
+    updates.externalId = interaction.externalId;
+  }
 
   if (Object.keys(updates).length) {
     await prisma.crmContact.update({ where: { id: contactId }, data: updates });
@@ -503,90 +515,6 @@ async function updateContactReadModel(params: {
       totalStoreOrders: existing.totalStoreOrders + (interaction.type === "STORE_ORDER_PAID" ? 1 : 0),
     },
   };
-}
-
-async function updateCustomerReadModel(params: {
-  organizationId: number;
-  userId: string;
-  interaction: InteractionPayload;
-  occurredAt: Date;
-  amountCents: number | null;
-  displayName?: string | null;
-  contactEmail?: string | null;
-  contactPhone?: string | null;
-  marketingOptIn?: boolean | null;
-}) {
-  const { organizationId, userId, interaction, occurredAt, amountCents } = params;
-
-  const existing = await prisma.crmCustomer.findUnique({
-    where: { organizationId_userId: { organizationId, userId } },
-    select: {
-      id: true,
-      displayName: true,
-      contactEmail: true,
-      contactPhone: true,
-      firstInteractionAt: true,
-      lastActivityAt: true,
-      lastPurchaseAt: true,
-      totalSpentCents: true,
-      totalOrders: true,
-      totalBookings: true,
-      totalAttendances: true,
-      totalTournaments: true,
-      totalStoreOrders: true,
-      tags: true,
-    },
-  });
-
-  const customer = existing
-    ? await prisma.crmCustomer.update({
-        where: { organizationId_userId: { organizationId, userId } },
-        data: {
-          ...(params.displayName && !existing.displayName ? { displayName: params.displayName } : {}),
-          ...(params.contactEmail !== undefined ? { contactEmail: params.contactEmail } : {}),
-          ...(params.contactPhone !== undefined ? { contactPhone: params.contactPhone } : {}),
-          ...(typeof params.marketingOptIn === "boolean" ? { marketingOptIn: params.marketingOptIn } : {}),
-        },
-      })
-    : await prisma.crmCustomer.create({
-        data: {
-          organizationId,
-          userId,
-          displayName: params.displayName || undefined,
-          contactEmail: params.contactEmail === undefined ? undefined : params.contactEmail,
-          contactPhone: params.contactPhone === undefined ? undefined : params.contactPhone,
-          firstInteractionAt: occurredAt,
-          lastActivityAt: occurredAt,
-          lastPurchaseAt: PURCHASE_TYPES.has(interaction.type) ? occurredAt : null,
-          marketingOptIn: params.marketingOptIn ?? false,
-        },
-      });
-
-  if (!existing) return customer;
-
-  const updates: Prisma.CrmCustomerUpdateInput = {};
-  if (!existing.firstInteractionAt || occurredAt < existing.firstInteractionAt) updates.firstInteractionAt = occurredAt;
-  if (!existing.lastActivityAt || occurredAt > existing.lastActivityAt) updates.lastActivityAt = occurredAt;
-  if (PURCHASE_TYPES.has(interaction.type) && (!existing.lastPurchaseAt || occurredAt > existing.lastPurchaseAt)) {
-    updates.lastPurchaseAt = occurredAt;
-  }
-  if (SPEND_TYPES.has(interaction.type) && typeof amountCents === "number") {
-    updates.totalSpentCents = { increment: amountCents };
-  }
-  if (interaction.type === "STORE_ORDER_PAID") updates.totalStoreOrders = { increment: 1 };
-  if (interaction.type === "EVENT_TICKET") updates.totalOrders = { increment: 1 };
-  if (interaction.type === "BOOKING_CONFIRMED") updates.totalBookings = { increment: 1 };
-  if (interaction.type === "EVENT_CHECKIN") updates.totalAttendances = { increment: 1 };
-  if (interaction.type === "PADEL_TOURNAMENT_ENTRY") updates.totalTournaments = { increment: 1 };
-
-  if (Object.keys(updates).length) {
-    await prisma.crmCustomer.update({
-      where: { organizationId_userId: { organizationId, userId } },
-      data: updates,
-    });
-  }
-
-  return customer;
 }
 
 async function computePadelNoShows(pairingIds: number[]) {
@@ -877,22 +805,29 @@ export async function consumeCrmEventLog(eventLogId: string) {
 
   const marketingOptIn = consentSnapshot.marketingStatus === ConsentStatus.GRANTED ? true : null;
 
-  await prisma.crmInteraction.create({
-    data: {
-      organizationId: log.organizationId,
-      contactId,
-      userId: contact.userId ?? log.actorUserId ?? undefined,
-      eventId: log.id,
-      externalId: interaction.externalId ?? undefined,
-      type: interaction.type,
-      sourceType: interaction.sourceType,
-      sourceId: interaction.sourceId ?? undefined,
-      occurredAt,
-      amountCents: amountCents ?? undefined,
-      currency,
-      metadata: (interaction.metadata ?? {}) as Prisma.JsonObject,
-    },
-  });
+  try {
+    await prisma.crmInteraction.create({
+      data: {
+        organizationId: log.organizationId,
+        contactId,
+        userId: contact.userId ?? log.actorUserId ?? undefined,
+        eventId: log.id,
+        externalId: interaction.externalId ?? undefined,
+        type: interaction.type,
+        sourceType: interaction.sourceType,
+        sourceId: interaction.sourceId ?? undefined,
+        occurredAt,
+        amountCents: amountCents ?? undefined,
+        currency,
+        metadata: (interaction.metadata ?? {}) as Prisma.JsonObject,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { ok: true, deduped: true } as const;
+    }
+    throw err;
+  }
 
   const contactTotals = await updateContactReadModel({
     contactId,
@@ -914,18 +849,6 @@ export async function consumeCrmEventLog(eventLogId: string) {
   }
 
   if (resolvedUserId) {
-    await updateCustomerReadModel({
-      organizationId: log.organizationId,
-      userId: resolvedUserId,
-      interaction,
-      occurredAt,
-      amountCents,
-      displayName: displayNameValue,
-      contactEmail: contactEmailValue,
-      contactPhone: contactPhoneValue,
-      marketingOptIn: marketingOptIn,
-    });
-
     await applyLoyaltyForInteraction({
       organizationId: log.organizationId,
       userId: resolvedUserId,

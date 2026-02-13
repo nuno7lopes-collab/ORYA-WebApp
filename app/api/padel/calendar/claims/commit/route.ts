@@ -18,6 +18,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 type ClaimInput = {
   resourceType: AgendaResourceClaimType;
@@ -124,6 +125,9 @@ async function ensureOrganization(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const auth = await ensureOrganization(req);
   if (!auth.ok) return jsonWrap({ ok: false, error: auth.error }, { status: auth.status });
 

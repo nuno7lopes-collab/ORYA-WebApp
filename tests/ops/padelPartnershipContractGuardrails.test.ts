@@ -52,11 +52,12 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(route).toContain("return jsonWrap({ ok: false, error: \"CLUB_READ_ONLY\" }, { status: 403 });");
   });
 
-  it("exige suporte de resource_claim no calendário canónico", () => {
+  it("força hard-cut de resource_claim para endpoint canónico de commit", () => {
     const route = readLocal("app/api/padel/calendar/route.ts");
     const commitRoute = readLocal("app/api/padel/calendar/claims/commit/route.ts");
     expect(route).toContain("type !== \"resource_claim\"");
-    expect(route).toContain("RESOURCE_CLAIM_CONFLICT");
+    expect(route).toContain("RESOURCE_CLAIM_WRITE_MOVED_TO_COMMIT");
+    expect(route).toContain("status: 410");
     expect(route).toContain("resourceClaims");
     expect(commitRoute).toContain("pg_advisory_xact_lock");
     expect(commitRoute).toContain("bundleId");

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import FormField from "./FormField";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { sanitizePhone } from "@/lib/phone";
 
 type GuestDetailsFormProps = {

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import Link from "next/link";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -25,7 +27,7 @@ const formatPrice = (cents: number, currency: string) => `${(cents / 100).toFixe
 
 export default function ReservasServicosPage() {
   const { data, isLoading } = useSWR<{ ok: boolean; items: ServiceItem[] }>(
-    "/api/organizacao/servicos",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"),
     fetcher,
   );
   const services = data?.items ?? [];

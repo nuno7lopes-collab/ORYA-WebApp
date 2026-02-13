@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -25,7 +27,7 @@ export default function VerifyOfficialEmailPage() {
     const confirm = async () => {
       try {
         setState("loading");
-        const res = await fetch("/api/organizacao/organizations/settings/official-email/confirm", {
+        const res = await fetch(resolveCanonicalOrgApiPath("/api/org-hub/organizations/settings/official-email/confirm"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),

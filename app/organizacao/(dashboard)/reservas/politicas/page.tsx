@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
@@ -35,7 +37,7 @@ function formatWindow(minutes: number | null) {
 
 export default function PoliticasReservaPage() {
   const { data, mutate } = useSWR<{ ok: boolean; items: PolicyItem[] }>(
-    "/api/organizacao/policies",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"),
     fetcher,
   );
   const [name, setName] = useState("");
@@ -71,7 +73,7 @@ export default function PoliticasReservaPage() {
         allowReschedule: true,
         rescheduleWindowMinutes: minutes.trim() ? Number(minutes) : null,
       };
-      const res = await fetch("/api/organizacao/policies", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -114,7 +116,7 @@ export default function PoliticasReservaPage() {
     if (!editing || !editDraft || editDraft.saving) return;
     setEditDraft({ ...editDraft, saving: true, error: null });
     try {
-      const res = await fetch(`/api/organizacao/policies/${editing.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/policies/${editing.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,7 +150,7 @@ export default function PoliticasReservaPage() {
     const confirmed = window.confirm(`Remover a política "${policy.name}"?`);
     if (!confirmed) return;
     try {
-      const res = await fetch(`/api/organizacao/policies/${policy.id}`, { method: "DELETE" });
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/policies/${policy.id}`), { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao remover política.");

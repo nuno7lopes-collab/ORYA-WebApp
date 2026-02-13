@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -71,7 +73,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
   const baseHref = appendOrganizationIdToHref("/organizacao/inscricoes", organizationId);
   const { data, mutate, isLoading: loadingForms } = useSWR<FormsResponse>(
-    user ? "/api/organizacao/inscricoes" : null,
+    user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/inscricoes") : null,
     fetcher,
   );
 
@@ -121,7 +123,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/inscricoes", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/inscricoes"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description }),
@@ -150,7 +152,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
     setActionLoadingId(formId);
     setActionError(null);
     try {
-      const res = await fetch(`/api/organizacao/inscricoes/${formId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus }),

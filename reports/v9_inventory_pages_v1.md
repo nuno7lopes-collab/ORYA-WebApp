@@ -1,6 +1,6 @@
 # V9 Inventory — Pages/Routes
 
-Total: 172
+Total: 178
 
 | Route | File | Group | Flow Tags |
 | --- | --- | --- | --- |
@@ -39,6 +39,7 @@ Total: 172
 | /descobrir/eventos | app/descobrir/eventos/page.tsx | - | public |
 | /descobrir/reservas | app/descobrir/reservas/page.tsx | - | reservas |
 | /descobrir/torneios | app/descobrir/torneios/page.tsx | - | public |
+| /docs/org-canonical-migration | app/docs/org-canonical-migration/page.tsx | - | public |
 | /em-breve | app/em-breve/page.tsx | - | public |
 | /eventos | app/eventos/page.tsx | - | eventos |
 | /eventos/[slug] | app/eventos/[slug]/page.tsx | - | eventos |
@@ -77,6 +78,11 @@ Total: 172
 | /network | app/network/page.tsx | - | public |
 | /onboarding/padel | app/onboarding/padel/page.tsx | - | onboarding, padel |
 | /onboarding/perfil | app/onboarding/perfil/page.tsx | - | onboarding |
+| /org-hub | app/org-hub/page.tsx | - | public |
+| /org-hub/create | app/org-hub/create/page.tsx | - | public |
+| /org-hub/organizations | app/org-hub/organizations/page.tsx | - | public |
+| /org/[orgId] | app/org/[orgId]/page.tsx | - | public |
+| /org/[orgId]/[...slug] | app/org/[orgId]/[...slug]/page.tsx | - | public |
 | /org/[orgId]/analytics | app/org/[orgId]/analytics/page.tsx | - | public |
 | /org/[orgId]/checkin | app/org/[orgId]/checkin/page.tsx | - | public |
 | /org/[orgId]/financas | app/org/[orgId]/financas/page.tsx | - | public |
@@ -85,6 +91,7 @@ Total: 172
 | /org/[orgId]/overview | app/org/[orgId]/overview/page.tsx | - | public |
 | /org/[orgId]/perfil/seguidores | app/org/[orgId]/perfil/seguidores/page.tsx | - | public |
 | /org/[orgId]/profile | app/org/[orgId]/profile/page.tsx | - | public |
+| /org/[orgId]/profile/followers | app/org/[orgId]/profile/followers/page.tsx | - | public |
 | /org/[orgId]/promote | app/org/[orgId]/promote/page.tsx | - | public |
 | /org/[orgId]/servicos | app/org/[orgId]/servicos/page.tsx | - | public |
 | /org/[orgId]/settings | app/org/[orgId]/settings/page.tsx | - | public |

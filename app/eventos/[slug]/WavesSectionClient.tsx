@@ -1,6 +1,6 @@
 "use client";
 import { useCheckout } from "@/app/components/checkout/contextoCheckout";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { t } from "@/lib/i18n";
 

@@ -1,7 +1,12 @@
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 import { prisma } from "@/lib/prisma";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import {
+  appendOrganizationIdToHref,
+  buildOrgHref,
+  buildOrgHubHref,
+  parseOrganizationId,
+} from "@/lib/organizationIdUtils";
 import { OrganizationStatus } from "@prisma/client";
 
 type OrganizationWriteContext = {
@@ -51,7 +56,7 @@ export type StripeGateResult =
 
 export type AccessResult = OfficialEmailGateResult | StripeGateResult | KillSwitchGateResult;
 
-const OFFICIAL_EMAIL_VERIFY_URL = "/organizacao/settings?tab=official-email";
+const OFFICIAL_EMAIL_VERIFY_PATH = "/settings";
 
 function generateId() {
   if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -83,11 +88,12 @@ export function ensureOrganizationEmailVerified(
 ): OfficialEmailGateResult {
   const { requestId, correlationId } = resolveGateContext(opts);
   const resolvedOrgId = parseOrganizationId(opts?.organizationId ?? org.id ?? null);
-  const nextStepUrl = appendOrganizationIdToHref(
-    opts?.nextStepUrl ?? OFFICIAL_EMAIL_VERIFY_URL,
-    resolvedOrgId,
-  );
-  const verifyUrl = appendOrganizationIdToHref(OFFICIAL_EMAIL_VERIFY_URL, resolvedOrgId);
+  const verifyUrl = resolvedOrgId
+    ? buildOrgHref(resolvedOrgId, OFFICIAL_EMAIL_VERIFY_PATH, { tab: "official-email" })
+    : buildOrgHubHref("/organizations");
+  const nextStepUrl = opts?.nextStepUrl
+    ? appendOrganizationIdToHref(opts.nextStepUrl, resolvedOrgId)
+    : verifyUrl;
   const email = normalizeOfficialEmail(org.officialEmail ?? null);
   if (!email) {
     return {

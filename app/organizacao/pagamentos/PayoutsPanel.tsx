@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -79,7 +81,7 @@ export default function PayoutsPanel() {
       params.set("status", status);
       if (search) params.set("q", search);
       if (cursor) params.set("cursor", String(cursor));
-      return `/api/organizacao/payouts/list?${params.toString()}`;
+      return resolveCanonicalOrgApiPath(`/api/org/[orgId]/payouts/list?${params.toString()}`);
     },
     [status, search],
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
@@ -47,7 +49,7 @@ const formatDateOnly = (value?: string | null) => {
 };
 
 export default function ReconciliationPanel() {
-  const { data, isLoading } = useSWR<ReconciliationResponse>("/api/organizacao/finance/reconciliation", fetcher, {
+  const { data, isLoading } = useSWR<ReconciliationResponse>(resolveCanonicalOrgApiPath("/api/org/[orgId]/finance/reconciliation"), fetcher, {
     revalidateOnFocus: false,
   });
 

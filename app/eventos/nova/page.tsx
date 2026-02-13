@@ -2,16 +2,16 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_shared/dashboardUi";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
 
 export default function NovaEventoPage() {
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
   const orgId = getOrganizationIdFromBrowser();
-  const becomeHref = appendOrganizationIdToHref("/organizacao/become", orgId);
-  const dashboardHref = appendOrganizationIdToHref("/organizacao/overview", orgId);
+  const becomeHref = buildOrgHubHref("/create");
+  const dashboardHref = orgId ? buildOrgHref(orgId, "/overview") : buildOrgHubHref("/organizations");
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 text-white">

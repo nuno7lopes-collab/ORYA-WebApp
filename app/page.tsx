@@ -160,7 +160,7 @@ export default async function HomePage() {
 
       <section className="orya-page-width px-4 md:px-8 pt-24 pb-12 lg:pt-24">
         <div className="grid gap-20 md:grid-cols-2 md:items-stretch lg:gap-12">
-          <div className="flex min-h-[460px] flex-col justify-center rounded-[32px] bg-[#0f141a] p-8 text-white md:min-h-[560px] md:p-10 lg:min-h-[600px] lg:p-12">
+          <div className="flex min-h-[460px] flex-col justify-center rounded-[32px] bg-transparent p-8 text-white md:min-h-[560px] md:p-10 lg:min-h-[600px] lg:p-12">
             <h1 className="text-4xl font-semibold leading-[0.98] tracking-[-0.02em] text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.55)] md:text-5xl lg:text-[60px]">
               Leva a ORYA no bolso e descobre o que acontece agora.
             </h1>

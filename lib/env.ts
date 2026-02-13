@@ -143,6 +143,10 @@ export const env = {
     process.env.PUBLIC_API_ENABLED ?? process.env.FEATURE_PUBLIC_API,
     false,
   ),
+  crmCampaignsEnabled: parseBoolean(
+    process.env.CRM_CAMPAIGNS_ENABLED ?? process.env.FEATURE_CRM_CAMPAIGNS,
+    false,
+  ),
   appleWalletPassEnabled: parseBoolean(process.env.APPLE_WALLET_PASS_ENABLED, false),
   appleWalletPassTypeId: process.env.APPLE_WALLET_PASS_TYPE_ID ?? "",
   appleWalletTeamId: process.env.APPLE_WALLET_TEAM_ID ?? "",

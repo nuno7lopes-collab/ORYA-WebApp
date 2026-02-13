@@ -13,7 +13,7 @@ export type ResolveMobileLinkOptions = {
 // Exceções raras que podem abrir no webview.
 // Adiciona aqui apenas o que for estritamente necessário.
 const WEB_ALLOWED_PATHS = new Set<string>([]);
-const WEB_ALLOWED_PREFIXES: string[] = ["/organizacao"];
+const WEB_ALLOWED_PREFIXES: string[] = [];
 
 const normalizeInput = (input?: string | null) => {
   if (!input) return null;
@@ -139,6 +139,13 @@ export const resolveMobileLink = (
     }
   }
   if (path === "/organizacao/chat") {
+    const conversationId = url.searchParams.get("conversationId");
+    if (conversationId) {
+      return buildNative(`/messages/${conversationId}`, "", source);
+    }
+    return buildNative("/messages", "", source);
+  }
+  if (parts[0] === "org" && parts[2] === "chat") {
     const conversationId = url.searchParams.get("conversationId");
     if (conversationId) {
       return buildNative(`/messages/${conversationId}`, "", source);

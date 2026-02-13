@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -18,7 +20,7 @@ export default function RecursoDisponibilidadePage() {
   const idRaw = Array.isArray(params?.id) ? params?.id[0] : params?.id;
   const resourceId = Number(idRaw);
   const { data } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    "/api/organizacao/reservas/recursos",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"),
     fetcher,
   );
 

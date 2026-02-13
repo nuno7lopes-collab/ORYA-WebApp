@@ -26,6 +26,10 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: data?.error || "STANDINGS_ERROR" }, { status: 400 });
   }
 
-  return jsonWrap({ ok: true, standings: data.standings ?? {} }, { status: 200 });
+  const groups =
+    data && typeof data === "object" && data.groups && typeof data.groups === "object"
+      ? (data.groups as Record<string, unknown>)
+      : {};
+  return jsonWrap({ ok: true, groups }, { status: 200 });
 }
 export const GET = withApiEnvelope(_GET);

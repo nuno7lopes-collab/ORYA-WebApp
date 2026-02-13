@@ -1,6 +1,6 @@
 # V9 Inventory — API Routes
 
-Total: 477
+Total: 588
 
 | Route | File | Methods | Type | Auth | Payloads | Status codes | Runtime | Cache | Envelope | Legacy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -187,6 +187,113 @@ Total: 477
 | /api/notifications/mark-click | app/api/notifications/mark-click/route.ts | POST | public | user | json | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/notifications/mark-read | app/api/notifications/mark-read/route.ts | POST | public | user | json | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/notifications/prefs | app/api/notifications/prefs/route.ts | GET, POST | public | user | json | 401 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub | app/api/org-hub/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/become | app/api/org-hub/become/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/invites | app/api/org-hub/invites/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations | app/api/org-hub/organizations/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/[id] | app/api/org-hub/organizations/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/leave | app/api/org-hub/organizations/leave/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/members | app/api/org-hub/organizations/members/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/members/invites | app/api/org-hub/organizations/members/invites/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/members/permissions | app/api/org-hub/organizations/members/permissions/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/owner/confirm | app/api/org-hub/organizations/owner/confirm/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/owner/transfer | app/api/org-hub/organizations/owner/transfer/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/settings/official-email | app/api/org-hub/organizations/settings/official-email/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/settings/official-email/confirm | app/api/org-hub/organizations/settings/official-email/confirm/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-hub/organizations/switch | app/api/org-hub/organizations/switch/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org-system/payouts/webhook | app/api/org-system/payouts/webhook/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId] | app/api/org/[orgId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/agenda | app/api/org/[orgId]/agenda/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/agenda/soft-blocks | app/api/org/[orgId]/agenda/soft-blocks/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/analytics/buyers | app/api/org/[orgId]/analytics/buyers/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/analytics/dimensoes | app/api/org/[orgId]/analytics/dimensoes/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/analytics/overview | app/api/org/[orgId]/analytics/overview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/analytics/time-series | app/api/org/[orgId]/analytics/time-series/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/audit | app/api/org/[orgId]/audit/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/avaliacoes | app/api/org/[orgId]/avaliacoes/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/checkin | app/api/org/[orgId]/checkin/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/checkin/preview | app/api/org/[orgId]/checkin/preview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/club/finance/overview | app/api/org/[orgId]/club/finance/overview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/consentimentos | app/api/org/[orgId]/consentimentos/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/consentimentos/[userId] | app/api/org/[orgId]/consentimentos/[userId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/campanhas | app/api/org/[orgId]/crm/campanhas/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/campanhas/[campaignId]/enviar | app/api/org/[orgId]/crm/campanhas/[campaignId]/enviar/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/clientes | app/api/org/[orgId]/crm/clientes/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/clientes/[customerId] | app/api/org/[orgId]/crm/clientes/[customerId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/clientes/[customerId]/notas | app/api/org/[orgId]/crm/clientes/[customerId]/notas/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/clientes/[customerId]/tags | app/api/org/[orgId]/crm/clientes/[customerId]/tags/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/relatorios | app/api/org/[orgId]/crm/relatorios/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/segmentos | app/api/org/[orgId]/crm/segmentos/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/segmentos/[segmentId] | app/api/org/[orgId]/crm/segmentos/[segmentId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/crm/segmentos/[segmentId]/preview | app/api/org/[orgId]/crm/segmentos/[segmentId]/preview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/[id]/attendees | app/api/org/[orgId]/events/[id]/attendees/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/[id]/invite-token | app/api/org/[orgId]/events/[id]/invite-token/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/[id]/invites | app/api/org/[orgId]/events/[id]/invites/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/[id]/refund | app/api/org/[orgId]/events/[id]/refund/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/create | app/api/org/[orgId]/events/create/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/list | app/api/org/[orgId]/events/list/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/summary | app/api/org/[orgId]/events/summary/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/events/update | app/api/org/[orgId]/events/update/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/faturacao | app/api/org/[orgId]/faturacao/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/exports/fees | app/api/org/[orgId]/finance/exports/fees/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/exports/ledger | app/api/org/[orgId]/finance/exports/ledger/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/exports/payouts | app/api/org/[orgId]/finance/exports/payouts/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/invoicing | app/api/org/[orgId]/finance/invoicing/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/overview | app/api/org/[orgId]/finance/overview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/finance/reconciliation | app/api/org/[orgId]/finance/reconciliation/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/inscricoes | app/api/org/[orgId]/inscricoes/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/inscricoes/[id] | app/api/org/[orgId]/inscricoes/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/inscricoes/[id]/export | app/api/org/[orgId]/inscricoes/[id]/export/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/inscricoes/[id]/submissions | app/api/org/[orgId]/inscricoes/[id]/submissions/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/inscricoes/[id]/summary | app/api/org/[orgId]/inscricoes/[id]/summary/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/loyalty/programa | app/api/org/[orgId]/loyalty/programa/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/loyalty/recompensas | app/api/org/[orgId]/loyalty/recompensas/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/loyalty/regras | app/api/org/[orgId]/loyalty/regras/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/marketing/overview | app/api/org/[orgId]/marketing/overview/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/me | app/api/org/[orgId]/me/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/ops/feed | app/api/org/[orgId]/ops/feed/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/pagamentos/invoices | app/api/org/[orgId]/pagamentos/invoices/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/payouts/connect | app/api/org/[orgId]/payouts/connect/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/payouts/list | app/api/org/[orgId]/payouts/list/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/payouts/settings | app/api/org/[orgId]/payouts/settings/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/payouts/status | app/api/org/[orgId]/payouts/status/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/payouts/summary | app/api/org/[orgId]/payouts/summary/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/policies | app/api/org/[orgId]/policies/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/policies/[id] | app/api/org/[orgId]/policies/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/promo | app/api/org/[orgId]/promo/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/promo/[id] | app/api/org/[orgId]/promo/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/refunds/list | app/api/org/[orgId]/refunds/list/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas | app/api/org/[orgId]/reservas/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/cancel | app/api/org/[orgId]/reservas/[id]/cancel/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/charges | app/api/org/[orgId]/reservas/[id]/charges/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/checkout | app/api/org/[orgId]/reservas/[id]/checkout/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/invites | app/api/org/[orgId]/reservas/[id]/invites/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/no-show | app/api/org/[orgId]/reservas/[id]/no-show/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/participants | app/api/org/[orgId]/reservas/[id]/participants/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/reschedule | app/api/org/[orgId]/reservas/[id]/reschedule/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/[id]/split | app/api/org/[orgId]/reservas/[id]/split/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/clientes | app/api/org/[orgId]/reservas/clientes/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/delays | app/api/org/[orgId]/reservas/delays/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/disponibilidade | app/api/org/[orgId]/reservas/disponibilidade/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/disponibilidade/[overrideId] | app/api/org/[orgId]/reservas/disponibilidade/[overrideId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/profissionais | app/api/org/[orgId]/reservas/profissionais/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/profissionais/[id] | app/api/org/[orgId]/reservas/profissionais/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/recursos | app/api/org/[orgId]/reservas/recursos/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/recursos/[id] | app/api/org/[orgId]/reservas/recursos/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/reservas/summary | app/api/org/[orgId]/reservas/summary/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos | app/api/org/[orgId]/servicos/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id] | app/api/org/[orgId]/servicos/[id]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/addons | app/api/org/[orgId]/servicos/[id]/addons/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/addons/[addonId] | app/api/org/[orgId]/servicos/[id]/addons/[addonId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/class-series | app/api/org/[orgId]/servicos/[id]/class-series/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/class-series/[seriesId] | app/api/org/[orgId]/servicos/[id]/class-series/[seriesId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/class-sessions | app/api/org/[orgId]/servicos/[id]/class-sessions/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/disponibilidade | app/api/org/[orgId]/servicos/[id]/disponibilidade/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/disponibilidade/[availabilityId] | app/api/org/[orgId]/servicos/[id]/disponibilidade/[availabilityId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/packages | app/api/org/[orgId]/servicos/[id]/packages/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/packages/[packageId] | app/api/org/[orgId]/servicos/[id]/packages/[packageId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/packs | app/api/org/[orgId]/servicos/[id]/packs/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/servicos/[id]/packs/[packId] | app/api/org/[orgId]/servicos/[id]/packs/[packId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
 | /api/org/[orgId]/store | app/api/org/[orgId]/store/route.ts | GET, PATCH, POST | public | org, orgEmail, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/bundles | app/api/org/[orgId]/store/bundles/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/bundles/[id] | app/api/org/[orgId]/store/bundles/[id]/route.ts | DELETE, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
@@ -220,6 +327,10 @@ Total: 477
 | /api/org/[orgId]/store/shipping/zones | app/api/org/[orgId]/store/shipping/zones/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/shipping/zones/[zoneId] | app/api/org/[orgId]/store/shipping/zones/[zoneId]/route.ts | DELETE, GET, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/shipping/zones/[zoneId]/methods | app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/trainers | app/api/org/[orgId]/trainers/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/trainers/profile | app/api/org/[orgId]/trainers/profile/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/username | app/api/org/[orgId]/username/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
+| /api/org/[orgId]/venues/recent | app/api/org/[orgId]/venues/recent/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
 | /api/organizacao/agenda | app/api/organizacao/agenda/route.ts | GET | organizacao | org, user | query | 200, 400, 403, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/organizacao/agenda/soft-blocks | app/api/organizacao/agenda/soft-blocks/route.ts | DELETE, PATCH, POST | organizacao | org, orgEmail, user | json | 200, 201, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/organizacao/analytics/buyers | app/api/organizacao/analytics/buyers/route.ts | GET | organizacao | org, user | query | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
@@ -354,8 +465,8 @@ Total: 477
 | /api/organizacao/tournaments/[id]/structure | app/api/organizacao/tournaments/[id]/structure/route.ts | GET | organizacao | org, user | none detected | 200, 400, 401, 403, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/organizacao/tournaments/create | app/api/organizacao/tournaments/create/route.ts | POST | organizacao | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/organizacao/tournaments/list | app/api/organizacao/tournaments/list/route.ts | GET | organizacao | org, user | query | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/organizacao/trainers | app/api/organizacao/trainers/route.ts | GET, PATCH, POST | organizacao | org, orgEmail, user | json, query | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/organizacao/trainers/profile | app/api/organizacao/trainers/profile/route.ts | GET, PATCH | organizacao | org, orgEmail, user | json, query | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/organizacao/trainers | app/api/organizacao/trainers/route.ts | GET, PATCH, POST | organizacao | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/organizacao/trainers/profile | app/api/organizacao/trainers/profile/route.ts | GET, PATCH | organizacao | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/organizacao/username | app/api/organizacao/username/route.ts | PATCH | organizacao | org, orgEmail, user | json | 200, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/organizacao/venues/recent | app/api/organizacao/venues/recent/route.ts | GET | organizacao | org, user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/organizations/search | app/api/organizations/search/route.ts | GET | public | user | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |

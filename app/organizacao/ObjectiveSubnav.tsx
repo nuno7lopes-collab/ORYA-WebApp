@@ -76,7 +76,7 @@ export default function ObjectiveSubnav({
   const organizationIdParam = parseOrganizationId(searchParams?.get("organizationId"));
   const organizationIdPath = parseOrganizationIdFromPathname(pathname);
   const organizationId = organizationIdProp ?? organizationIdParam ?? organizationIdPath ?? null;
-  const orgMeUrl = organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+  const orgMeUrl = organizationId ? `/api/org/${organizationId}/me` : null;
   const { data } = useSWR(primaryModule || modules ? null : orgMeUrl, fetcher);
   const organization = data?.organization ?? null;
   const inscricoesBasePath = (() => {

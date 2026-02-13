@@ -22,14 +22,17 @@ export type PadelOpenPairing = {
 };
 
 export type PadelStandingRow = {
-  pairingId: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId?: number | null;
   points: number;
   wins: number;
+  draws?: number;
   losses: number;
   setsFor: number;
   setsAgainst: number;
   label?: string | null;
-  players?: Array<{ name: string | null; username: string | null }> | null;
+  players?: Array<{ id?: number | null; name: string | null; username: string | null }> | null;
 };
 
 export type PadelPairingSlot = {
@@ -171,8 +174,8 @@ export const fetchPadelStandings = async (
   const query = new URLSearchParams({ eventId: String(eventId) });
   if (Number.isFinite(categoryId)) query.set("categoryId", String(categoryId));
   const response = await api.request<unknown>(`/api/padel/standings?${query.toString()}`);
-  const unwrapped = unwrapApiResponse<{ standings?: Record<string, PadelStandingRow[]> }>(response);
-  return unwrapped.standings ?? {};
+  const unwrapped = unwrapApiResponse<{ groups?: Record<string, PadelStandingRow[]> }>(response);
+  return unwrapped.groups ?? {};
 };
 
 export const fetchPadelMatches = async (

@@ -9,7 +9,7 @@ import { useWallet } from "@/app/components/wallet/useWallet";
 import { WalletCard } from "@/app/components/wallet/WalletCard";
 import useSWR from "swr";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -32,7 +32,7 @@ export default function MePage() {
   const router = useRouter();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const orgId = getOrganizationIdFromBrowser();
-  const orgDashboardHref = appendOrganizationIdToHref("/organizacao/overview", orgId);
+  const orgDashboardHref = orgId ? buildOrgHref(orgId, "/overview") : "/org-hub/organizations";
   const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
   const {
     items: tickets,
@@ -56,7 +56,7 @@ export default function MePage() {
     fetcher,
   );
   const { data: orgsData } = useSWR<{ ok: boolean; items?: Array<{ organizationId: number; role: string; organization: { publicName: string | null; businessName: string | null; username: string | null; primaryModule: string | null } }> }>(
-    user ? "/api/organizacao/organizations" : null,
+    user ? "/api/org-hub/organizations" : null,
     fetcher,
   );
 
@@ -451,7 +451,7 @@ export default function MePage() {
               return (
                 <Link
                   key={org.organizationId}
-                  href={`/organizacao/overview?organizationId=${org.organizationId}`}
+                  href={buildOrgHref(org.organizationId, "/overview")}
                   className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:border-white/25 hover:bg-white/10"
                 >
                   <p className="text-sm font-semibold text-white">{name}</p>

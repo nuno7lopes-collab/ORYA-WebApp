@@ -5,10 +5,10 @@ import useSWR from "swr";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { OrganizationMemberRole } from "@prisma/client";
-import { RoleBadge } from "@/app/organizacao/RoleBadge";
+import { RoleBadge } from "@/app/org/_shared/RoleBadge";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
@@ -83,18 +83,18 @@ export default function OrganizationInvitesClient({
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const orgIdFallback = getOrganizationIdFromBrowser();
-  const orgHomeHref = appendOrganizationIdToHref("/organizacao", orgIdFallback);
-  const orgBecomeHref = appendOrganizationIdToHref("/organizacao/become", orgIdFallback);
+  const orgHomeHref = orgIdFallback ? buildOrgHref(orgIdFallback, "/overview") : buildOrgHubHref("/organizations");
+  const orgBecomeHref = buildOrgHubHref("/create");
 
   const inviteIdParam = searchParams.get("invite") ?? searchParams.get("inviteId") ?? initialInviteId;
   const tokenParam = searchParams.get("token") ?? initialToken;
 
   const invitesKey = useMemo(() => {
-    if (!inviteIdParam && !tokenParam) return "/api/organizacao/invites";
+    if (!inviteIdParam && !tokenParam) return "/api/org-hub/invites";
     const params = new URLSearchParams();
     if (inviteIdParam) params.set("invite", inviteIdParam);
     if (tokenParam) params.set("token", tokenParam);
-    return `/api/organizacao/invites?${params.toString()}`;
+    return `/api/org-hub/invites?${params.toString()}`;
   }, [inviteIdParam, tokenParam]);
 
   const { data, isLoading, mutate } = useSWR<InvitesResponse>(invitesKey, fetcher);
@@ -106,7 +106,7 @@ export default function OrganizationInvitesClient({
     setActionMessage(null);
     setActionLoading((prev) => ({ ...prev, [invite.id]: true }));
     try {
-      const res = await fetch("/api/organizacao/organizations/members/invites", {
+      const res = await fetch("/api/org-hub/organizations/members/invites", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -126,7 +126,7 @@ export default function OrganizationInvitesClient({
         await mutate();
         if (action === "ACCEPT") {
           try {
-            await fetch("/api/organizacao/organizations/switch", {
+            await fetch("/api/org-hub/organizations/switch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ organizationId: invite.organizationId }),
@@ -134,10 +134,7 @@ export default function OrganizationInvitesClient({
           } catch (err) {
             console.warn("[convites][switch]", err);
           }
-          const target = appendOrganizationIdToHref(
-            "/organizacao/overview",
-            invite.organizationId ?? orgIdFallback,
-          );
+          const target = buildOrgHref(invite.organizationId ?? orgIdFallback ?? 0, "/overview");
           setTimeout(() => router.push(target), 600);
         }
       }

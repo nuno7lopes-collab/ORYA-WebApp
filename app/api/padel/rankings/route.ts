@@ -17,6 +17,7 @@ import {
   computeVisualLevel,
   rebuildPadelRatingsForEvent,
 } from "@/domain/padel/ratingEngine";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const DEFAULT_LIMIT = 50;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -36,6 +37,9 @@ async function ensureUser() {
 }
 
 async function _GET(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_rankings",
     max: 120,
@@ -136,7 +140,9 @@ async function _GET(req: NextRequest) {
 
     const items = profiles.map((profile, idx) => {
       const computed = computeVisualLevel(profile.rating, leaderRating);
-      const drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+      let drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+      if (idx === 0) drifted = 1;
+      if (idx > 0 && drifted <= 1) drifted = 1.01;
       return {
         position: idx + 1,
         points: Math.round(profile.rating),
@@ -173,7 +179,9 @@ async function _GET(req: NextRequest) {
 
   const items = profiles.map((profile, idx) => {
     const computed = computeVisualLevel(profile.rating, leaderRating);
-    const drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+    let drifted = applyInactivityToVisual(computed, profile.lastActivityAt ?? null);
+    if (idx === 0) drifted = 1;
+    if (idx > 0 && drifted <= 1) drifted = 1.01;
     return {
       position: idx + 1,
       points: Math.round(profile.rating),
@@ -192,6 +200,9 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const user = await ensureUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

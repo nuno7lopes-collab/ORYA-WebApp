@@ -4,12 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveLocale, t } from "@/lib/i18n";
 
 type StandingRow = {
-  pairingId: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId?: number | null;
   points: number;
   wins: number;
+  draws?: number;
   losses: number;
   setsFor: number;
   setsAgainst: number;
+  label?: string | null;
 };
 
 type StandingsMap = Record<string, StandingRow[]>;
@@ -28,7 +32,7 @@ const fetchStandings = async (eventId: number) => {
   if (!res.ok || !data?.ok) {
     throw new Error(data?.error || "STANDINGS_ERROR");
   }
-  return (data?.standings ?? {}) as StandingsMap;
+  return (data?.groups ?? {}) as StandingsMap;
 };
 
 export default function StandingsWidgetClient({
@@ -69,8 +73,8 @@ export default function StandingsWidgetClient({
       if (closed) return;
       try {
         const payload = JSON.parse((event as MessageEvent).data);
-        if (payload?.standings) {
-          setStandings(payload.standings as StandingsMap);
+        if (payload?.standings?.groups) {
+          setStandings(payload.standings.groups as StandingsMap);
         }
       } catch {
         // ignore malformed payload
@@ -115,9 +119,9 @@ export default function StandingsWidgetClient({
               </p>
               <div className="mt-2 space-y-1 text-[12px]">
                 {rows.slice(0, 4).map((row, idx) => (
-                  <div key={row.pairingId} className="flex items-center justify-between">
+                  <div key={row.entityId} className="flex items-center justify-between">
                     <span>
-                      {idx + 1}º · {t("pairing", resolvedLocale)} {row.pairingId}
+                      {idx + 1}º · {row.label || `${t("pairing", resolvedLocale)} ${row.pairingId ?? row.entityId}`}
                     </span>
                     <span className="text-white/60">
                       {t("pointsShort", resolvedLocale)} {row.points}

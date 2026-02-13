@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
@@ -65,7 +67,7 @@ export default function BookingChargesPanel({
 
   const chargesKey = useMemo(() => {
     if (!bookingId || !organizationId) return null;
-    return `/api/organizacao/reservas/${bookingId}/charges?organizationId=${organizationId}`;
+    return `/api/org/${organizationId}/reservas/${bookingId}/charges`;
   }, [bookingId, organizationId]);
 
   const { data, isLoading, mutate } = useSWR(chargesKey, fetcher);
@@ -81,7 +83,7 @@ export default function BookingChargesPanel({
     }
     setCreating(true);
     try {
-      const res = await fetch(`/api/organizacao/reservas/${bookingId}/charges`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${bookingId}/charges`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

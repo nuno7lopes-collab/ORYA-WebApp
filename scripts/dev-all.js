@@ -390,13 +390,26 @@ function resetDevState() {
   [3000, 3001, 3002, 3003].forEach((port) => {
     killPortProcesses(port, ["next dev", "next-server", "node_modules/.bin/next"], false);
   });
-  // Clean Next cache only when explicitly requested (faster default boot).
-  const shouldCleanNext = parseBool(process.env.DEV_ALL_CLEAN_NEXT, false);
+  // Default to clean boot to avoid stale route/runtime artifacts.
+  const shouldCleanNext = parseBool(process.env.DEV_ALL_CLEAN_NEXT, true);
   if (shouldCleanNext) {
     const nextDir = path.join(repoRoot, ".next");
     if (fs.existsSync(nextDir)) {
       fs.rmSync(nextDir, { recursive: true, force: true });
       console.log("[dev-all] Removed .next cache.");
+    }
+  }
+
+  const shouldCleanToolCache = parseBool(process.env.DEV_ALL_CLEAN_TOOL_CACHE, true);
+  if (shouldCleanToolCache) {
+    const cacheDirs = [
+      path.join(repoRoot, ".turbo"),
+      path.join(repoRoot, ".cache", "tsbuildinfo"),
+    ];
+    for (const dir of cacheDirs) {
+      if (!fs.existsSync(dir)) continue;
+      fs.rmSync(dir, { recursive: true, force: true });
+      console.log(`[dev-all] Removed cache: ${path.relative(repoRoot, dir)}.`);
     }
   }
 }

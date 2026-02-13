@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
@@ -191,7 +193,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     setLoadingSwitch(true);
     setActionMessage(null);
     try {
-      const res = await fetch("/api/organizacao/organizations/switch", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org-hub/organizations/switch"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId }),
@@ -246,7 +248,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     setError(null);
     setActionMessage(null);
     try {
-      const res = await fetch("/api/organizacao/organizations", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org-hub/organizations"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

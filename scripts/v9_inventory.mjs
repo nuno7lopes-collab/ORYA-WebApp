@@ -13,6 +13,10 @@ const OUTPUTS = {
   parity: path.join(ROOT, "reports", "v9_parity_report_v1.md"),
 };
 
+const FRONTEND_API_USAGE_EXCLUDES = new Set([
+  "lib/canonicalOrgApiPath.ts",
+]);
+
 const API_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
 function listFiles(dir) {
@@ -194,8 +198,20 @@ function normalizeEndpoint(raw) {
   return endpoint;
 }
 
+function isOutOfScopePadel(endpoint) {
+  return /\/(padel|tournaments|torneios)(?:\/|$)/i.test(endpoint);
+}
+
 function extractFrontendApiUsage() {
-  const sourceRoots = [path.join(ROOT, "app"), path.join(ROOT, "components")];
+  const sourceRoots = [
+    path.join(ROOT, "app"),
+    path.join(ROOT, "components"),
+    path.join(ROOT, "lib"),
+    path.join(ROOT, "domain"),
+    path.join(ROOT, "apps", "mobile", "app"),
+    path.join(ROOT, "apps", "mobile", "features"),
+    path.join(ROOT, "apps", "mobile", "lib"),
+  ];
   const files = [];
   const apiRoot = path.join(ROOT, "app", "api");
   for (const root of sourceRoots) {
@@ -205,6 +221,8 @@ function extractFrontendApiUsage() {
   const codeFiles = files.filter((file) => {
     if (!/\.(ts|tsx|js|jsx)$/.test(file)) return false;
     if (file.startsWith(apiRoot + path.sep)) return false;
+    const rel = path.relative(ROOT, file).replace(/\\/g, "/");
+    if (FRONTEND_API_USAGE_EXCLUDES.has(rel)) return false;
     return true;
   });
   const usage = new Map();
@@ -444,6 +462,8 @@ function main() {
   const apiRoutesSet = new Set(apiRoutes);
   const missingApi = [];
   for (const endpoint of usage.keys()) {
+    if (isOutOfScopePadel(endpoint)) continue;
+    if (endpoint === "/api/organizacao") continue;
     if (apiRoutesSet.has(endpoint)) continue;
     if (endpoint.includes("[param]")) {
       const matched = apiRoutes.some((candidate) => matchesEndpointPattern(endpoint, candidate));

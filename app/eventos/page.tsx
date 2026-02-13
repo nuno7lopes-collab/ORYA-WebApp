@@ -2,13 +2,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getEventLocationDisplay } from "@/lib/location/eventLocation";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { defaultBlurDataURL } from "@/lib/image";
 import { resolveOrganizationIdFromCookies } from "@/lib/organizationId";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { headers } from "next/headers";
 import { resolveLocale, t } from "@/lib/i18n";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
@@ -131,7 +131,9 @@ export default async function EventosFeedPage({ searchParams }: PageProps) {
   const locale = resolveLocale(acceptLanguage ? acceptLanguage.split(",")[0] : null);
   const events = await loadEvents(search);
   const organizationId = await resolveOrganizationIdFromCookies();
-  const createEventHref = appendOrganizationIdToHref("/organizacao/eventos/novo", organizationId);
+  const createEventHref = organizationId
+    ? buildOrgHref(organizationId, "/events/new")
+    : buildOrgHubHref("/create");
 
   return (
     <main className="min-h-screen w-full text-white">

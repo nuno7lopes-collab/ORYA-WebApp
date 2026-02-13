@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
@@ -170,7 +172,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { user, profile } = useUser();
   const organizationId = event.organizationId ?? null;
   const orgMeUrl =
-    organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+    organizationId ? `/api/org/${organizationId}/me` : null;
   const { data: organizationStatus } = useSWR<{ paymentsStatus?: string }>(
     orgMeUrl,
     fetcher,
@@ -271,7 +273,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const { data: publicInvitesData, mutate: mutatePublicInvites, isLoading: publicInvitesLoading } = useSWR<{
     ok?: boolean;
     items?: EventInvite[];
-  }>(user ? `/api/organizacao/events/${event.id}/invites?scope=PUBLIC` : null, fetcher, {
+  }>(user ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites?scope=PUBLIC`) : null, fetcher, {
     revalidateOnFocus: false,
   });
   const publicInvites = useMemo(
@@ -821,7 +823,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setPublicInviteSaving(true);
     setPublicInviteError(null);
     try {
-      const res = await fetch(`/api/organizacao/events/${event.id}/invites`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: value, scope: "PUBLIC" }),
@@ -847,7 +849,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setInviteRemovingId(inviteId);
     setPublicInviteError(null);
     try {
-      const res = await fetch(`/api/organizacao/events/${event.id}/invites`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${event.id}/invites`), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inviteId }),
@@ -940,7 +942,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             ]
           : [];
 
-      const res = await fetch("/api/organizacao/events/update", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/events/update"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1036,7 +1038,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     setIsSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/events/update", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/events/update"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1298,7 +1300,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                   ) : locationSuggestions.length === 0 ? (
                     <div className="space-y-1 px-3 py-2 text-sm text-white/65">
                       <p>Sem sugestões para este texto.</p>
-                      <p className="text-[12px] text-white/50">Tenta rua + cidade (ex: "Rua de Ceuta Porto").</p>
+                      <p className="text-[12px] text-white/50">Tenta rua + cidade (ex: &quot;Rua de Ceuta Porto&quot;).</p>
                     </div>
                   ) : (
                     locationSuggestions.map((suggestion) => {

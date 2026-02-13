@@ -32,6 +32,7 @@ for (const file of files) {
   // Some routes are thin adapters that delegate directly to canonical handlers
   // where envelope helpers are enforced.
   const delegatesToCanonicalHandler = /from\s+["']@\/lib\/messages\/handlers\//.test(content);
+  const delegatesViaApiReexport = /^export\s+\*\s+from\s+["']@\/app\/api\/.+\/route["'];?\s*$/m.test(content);
 
   const hasEnvelopeHelper =
     /withApiEnvelope\s*\(/.test(content) ||
@@ -39,7 +40,8 @@ for (const file of files) {
     /respondError\s*\(/.test(content) ||
     /respondPlainText\s*\(/.test(content) ||
     /jsonWrap\s*\(/.test(content) ||
-    delegatesToCanonicalHandler;
+    delegatesToCanonicalHandler ||
+    delegatesViaApiReexport;
 
   if (!hasEnvelopeHelper) {
     missingEnvelope.push(rel);

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
@@ -34,11 +36,11 @@ type MemberItem = {
 
 export default function ProfissionaisPage() {
   const { data, mutate } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
-    "/api/organizacao/reservas/profissionais",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
     fetcher,
   );
   const { data: membersData } = useSWR<{ ok: boolean; items: MemberItem[] }>(
-    "/api/organizacao/organizations/members",
+    resolveCanonicalOrgApiPath("/api/org-hub/organizations/members"),
     fetcher,
   );
   const [name, setName] = useState("");
@@ -69,7 +71,7 @@ export default function ProfissionaisPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/reservas/profissionais", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -96,7 +98,7 @@ export default function ProfissionaisPage() {
 
   const handleToggle = async (item: ProfessionalItem) => {
     try {
-      const res = await fetch(`/api/organizacao/reservas/profissionais/${item.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${item.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !item.isActive }),
@@ -118,7 +120,7 @@ export default function ProfissionaisPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/reservas/profissionais", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -156,7 +158,7 @@ export default function ProfissionaisPage() {
     setEditSavingId(editing.id);
     setError(null);
     try {
-      const res = await fetch(`/api/organizacao/reservas/profissionais/${editing.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/profissionais/${editing.id}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmedName, roleTitle: editing.roleTitle.trim() }),

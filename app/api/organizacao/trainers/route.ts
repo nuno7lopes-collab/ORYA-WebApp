@@ -3,7 +3,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { NotificationType, OrganizationMemberRole, OrganizationModule, TrainerProfileReviewStatus } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { parseOrganizationId } from "@/lib/organizationId";
+import { parseOrganizationId, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { createNotification } from "@/lib/notifications";
 import { setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
@@ -44,8 +44,7 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 401, "UNAUTHENTICATED");
     }
 
-    const url = new URL(req.url);
-    const organizationId = parseOrganizationId(url.searchParams.get("organizationId"));
+    const organizationId = resolveOrganizationIdFromRequest(req);
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -138,7 +137,7 @@ async function _PATCH(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
+    const organizationId = resolveOrganizationIdFromRequest(req) ?? parseOrganizationId(body?.organizationId);
     const targetUserId = typeof body?.userId === "string" ? body.userId : null;
     const action = typeof body?.action === "string" ? body.action.toUpperCase() : null;
     const reviewNote = typeof body?.reviewNote === "string" ? body.reviewNote.trim() : null;

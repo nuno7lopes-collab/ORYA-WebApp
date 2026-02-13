@@ -1937,9 +1937,14 @@ export default function EventDetail() {
                                       .map((player) => player?.name || player?.username)
                                       .filter(Boolean)
                                       .join(" / ") ||
-                                    t("events:padel.pairing.withId", { id: row.pairingId });
+                                    (typeof row.pairingId === "number"
+                                      ? t("events:padel.pairing.withId", { id: row.pairingId })
+                                      : `Jogador #${row.entityId}`);
                                   return (
-                                    <View key={`row-${groupLabel}-${row.pairingId}`} className="flex-row items-center justify-between">
+                                    <View
+                                      key={`row-${groupLabel}-${row.entityId}`}
+                                      className="flex-row items-center justify-between"
+                                    >
                                       <Text className="text-white/80 text-sm">#{idx + 1} · {label}</Text>
                                       <Text className="text-white/60 text-xs">
                                         {row.points} {t("events:padel.pointsShort")} · {row.wins}

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
@@ -130,7 +132,7 @@ export default function InscricaoDetailPage() {
   const respostasParam = searchParams?.get("respostas") ?? "resumo";
   const definicoesParam = searchParams?.get("definicoes") ?? "geral";
   const { data, mutate, isLoading } = useSWR<FormResponse>(
-    formId ? `/api/organizacao/inscricoes/${formId}` : null,
+    formId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`) : null,
     fetcher,
   );
   const {
@@ -138,11 +140,11 @@ export default function InscricaoDetailPage() {
     mutate: mutateSummary,
     isLoading: loadingSummary,
   } = useSWR<SummaryResponse>(
-    formId ? `/api/organizacao/inscricoes/${formId}/summary` : null,
+    formId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/summary`) : null,
     fetcher,
   );
   const submissionsKey = formId
-    ? `/api/organizacao/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=0`
+    ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=0`)
     : null;
   const {
     data: submissionsData,
@@ -377,7 +379,7 @@ export default function InscricaoDetailPage() {
     setStatusUpdatingId(submissionId);
     setStatusMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/inscricoes/${formId}/submissions`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ submissionId, status: nextStatus }),
@@ -413,7 +415,7 @@ export default function InscricaoDetailPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/inscricoes/${formId}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -517,7 +519,7 @@ export default function InscricaoDetailPage() {
     : "";
   const publicLabel = status === "PUBLISHED" ? "Ver página pública" : "Pré-visualizar";
   const canDelete = responsesCount === 0 && status !== "PUBLISHED";
-  const exportUrl = form ? `/api/organizacao/inscricoes/${form.id}/export` : "";
+  const exportUrl = form ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${form.id}/export`) : "";
 
   const handleCopy = async (value: string, label: string) => {
     if (!value) return;
@@ -538,7 +540,7 @@ export default function InscricaoDetailPage() {
     try {
       const skip = submissionItems.length;
       const res = await fetch(
-        `/api/organizacao/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=${skip}`,
+        resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${formId}/submissions?take=${SUBMISSIONS_PAGE_SIZE}&skip=${skip}`),
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
@@ -573,7 +575,7 @@ export default function InscricaoDetailPage() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`/api/organizacao/inscricoes/${form.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/inscricoes/${form.id}`), {
         method: "DELETE",
       });
       const json = await res.json().catch(() => null);

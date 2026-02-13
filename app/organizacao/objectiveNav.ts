@@ -181,7 +181,7 @@ export function getObjectiveSections(
       sections.push(
         {
           id: "padel-tool-b",
-          label: "Ferramenta B",
+          label: "Torneios de Padel",
           href: padelTournamentsHref("calendar"),
           items: [
             { id: "torneios", label: "Torneios", href: torneiosHref },
@@ -193,7 +193,7 @@ export function getObjectiveSections(
         },
         {
           id: "padel-tool-a",
-          label: "Ferramenta A",
+          label: "Gestão de Clube Padel",
           href: padelClubHref("clubs"),
           items: [
             { id: "clubs", label: "Clubes", href: padelClubHref("clubs") },
@@ -261,12 +261,12 @@ export function getObjectiveSections(
       },
       {
         id: "padel-tool-a",
-        label: "Padel Clube",
+        label: "Gestão de Clube Padel",
         href: manageHref(PADEL_CLUB_SECTION),
       },
       {
         id: "padel-tool-b",
-        label: "Padel Torneios",
+        label: "Torneios de Padel",
         href: manageHref(PADEL_TOURNAMENTS_SECTION),
       },
     );

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 type PreviewPayload = {
   code: string;
@@ -107,6 +108,9 @@ export function CheckinScanner({
   showBackLink = true,
 }: Props) {
   const search = useSearchParams();
+  const pathname = usePathname();
+  const orgId = useMemo(() => parseOrgIdFromPathnameStrict(pathname), [pathname]);
+  const orgApiBase = orgId ? `/api/org/${orgId}` : null;
   const eventIdRaw = search.get("eventId");
   const eventId = eventIdRaw ? Number(eventIdRaw) : Number.NaN;
   const hasQueryEvent = Number.isFinite(eventId) && eventId > 0;
@@ -130,10 +134,15 @@ export function CheckinScanner({
 
   useEffect(() => {
     if (!allowOrganizationEvents || hasQueryEvent) return;
+    if (!orgApiBase) {
+      setEvents([]);
+      setEventsError("Contexto de organização inválido.");
+      return;
+    }
     let active = true;
     setEventsLoading(true);
     setEventsError(null);
-    fetch("/api/organizacao/events/list?limit=60")
+    fetch(`${orgApiBase}/events/list?limit=60`)
       .then(async (res) => {
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.ok) {
@@ -153,7 +162,7 @@ export function CheckinScanner({
     return () => {
       active = false;
     };
-  }, [allowOrganizationEvents, hasQueryEvent]);
+  }, [allowOrganizationEvents, hasQueryEvent, orgApiBase]);
 
   const [deviceId, setDeviceId] = useState("");
   const [qrToken, setQrToken] = useState("");
@@ -205,7 +214,12 @@ export function CheckinScanner({
     }
     setPreviewing(true);
     try {
-      const res = await fetch("/api/organizacao/checkin/preview", {
+      if (!orgApiBase) {
+        setError("Contexto de organização inválido.");
+        setPreviewing(false);
+        return;
+      }
+      const res = await fetch(`${orgApiBase}/checkin/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ qrToken: qrToken.trim(), eventId: effectiveEventId }),
@@ -230,7 +244,12 @@ export function CheckinScanner({
     setConfirming(true);
     setError(null);
     try {
-      const res = await fetch("/api/organizacao/checkin", {
+      if (!orgApiBase) {
+        setError("Contexto de organização inválido.");
+        setConfirming(false);
+        return;
+      }
+      const res = await fetch(`${orgApiBase}/checkin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ qrToken: qrToken.trim(), eventId: effectiveEventId, deviceId }),

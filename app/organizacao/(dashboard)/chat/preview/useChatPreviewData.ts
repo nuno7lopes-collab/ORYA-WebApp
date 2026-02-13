@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
@@ -497,7 +499,7 @@ export function useChatPreviewData() {
   const loadOrganizationMembers = useCallback(async (): Promise<OrganizationMemberDirectoryItem[]> => {
     const orgId = organizationId ?? (await loadOrganizationId());
     if (!orgId) return [];
-    const url = new URL("/api/organizacao/organizations/members", window.location.origin);
+    const url = new URL(resolveCanonicalOrgApiPath("/api/org-hub/organizations/members"), window.location.origin);
     url.searchParams.set("organizationId", String(orgId));
     try {
       const data = await fetcher<OrganizationMembersResponse>(url.pathname + url.search);

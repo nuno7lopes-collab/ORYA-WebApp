@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import {
   useCallback,
   useEffect,
@@ -576,19 +578,19 @@ export default function OrganizationPublicProfilePanel({
   const shouldLoadReviews = Boolean(user && moduleAvailability.GALLERY);
   const shouldLoadStore = Boolean(user && moduleAvailability.STORE);
   const { data: formsData } = useSWR<{ ok: boolean; items: FormPreviewItem[] }>(
-    shouldLoadForms ? "/api/organizacao/inscricoes" : null,
+    shouldLoadForms ? resolveCanonicalOrgApiPath("/api/org/[orgId]/inscricoes") : null,
     fetcher,
   );
   const { data: professionalsData } = useSWR<{ ok: boolean; items: ProfessionalOption[] }>(
-    shouldLoadProfessionals ? "/api/organizacao/reservas/profissionais" : null,
+    shouldLoadProfessionals ? resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais") : null,
     fetcher,
   );
   const { data: resourcesData } = useSWR<{ ok: boolean; items: ResourceOption[] }>(
-    shouldLoadResources ? "/api/organizacao/reservas/recursos" : null,
+    shouldLoadResources ? resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos") : null,
     fetcher,
   );
   const { data: reviewsData } = useSWR<{ ok: boolean; items: ReviewItem[] }>(
-    shouldLoadReviews ? "/api/organizacao/avaliacoes" : null,
+    shouldLoadReviews ? resolveCanonicalOrgApiPath("/api/org/[orgId]/avaliacoes") : null,
     fetcher,
   );
   const storePreviewEndpoint =
@@ -981,7 +983,7 @@ export default function OrganizationPublicProfilePanel({
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
+      const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1021,7 +1023,7 @@ export default function OrganizationPublicProfilePanel({
     setSavingLayout(true);
     setLayoutMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
+      const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ publicProfileLayout: profileLayout }),
@@ -1056,7 +1058,7 @@ export default function OrganizationPublicProfilePanel({
     }
     setSavingUsername(true);
     try {
-      const res = await fetch("/api/organizacao/username", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/username"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: validation.normalized }),

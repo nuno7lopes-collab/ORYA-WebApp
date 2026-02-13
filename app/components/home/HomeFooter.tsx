@@ -13,9 +13,9 @@ const PRODUCT_LINKS: FooterLink[] = [
 ];
 
 const ORG_LINKS: FooterLink[] = [
-  { label: "Criar organização", href: "/organizacao/become" },
-  { label: "Painel da organização", href: "/organizacao" },
-  { label: "Promoções", href: "/organizacao/promo" },
+  { label: "Criar organização", href: "/org-hub/create" },
+  { label: "Painel da organização", href: "/org-hub/organizations" },
+  { label: "Promoções", href: "/org-hub/organizations" },
 ];
 
 const ACCOUNT_LINKS: FooterLink[] = [

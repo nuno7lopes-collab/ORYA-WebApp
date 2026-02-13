@@ -9,7 +9,7 @@ import FollowClient from "@/app/[username]/FollowClient";
 import ProfileHeaderLayout, { ProfileStatPill } from "@/app/components/profile/ProfileHeaderLayout";
 import { Avatar } from "@/components/ui/avatar";
 import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 export type ProfileHeaderProps = {
   /** Se é o próprio utilizador a ver o seu perfil */
@@ -75,7 +75,8 @@ export default function ProfileHeader({
 }: ProfileHeaderProps) {
   const router = useRouter();
   const { user } = useUser();
-  const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
+  const orgId = getOrganizationIdFromBrowser();
+  const orgFallbackHref = orgId ? buildOrgHref(orgId, "/overview") : buildOrgHubHref("/organizations");
   const displayName = name?.trim() || "Utilizador ORYA";
   const handle = username?.trim() || undefined;
 

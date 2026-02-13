@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
@@ -63,7 +65,7 @@ export default function TrainerProfilePage() {
   const { openModal } = useAuthModal();
   const loginRedirectHref = appendOrganizationIdToHref("/organizacao/treinadores", getOrganizationIdFromBrowser());
   const { data, isLoading, mutate } = useSWR<ProfileResponse>(
-    user ? "/api/organizacao/trainers/profile" : null,
+    user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile") : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -162,7 +164,7 @@ export default function TrainerProfilePage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/organizacao/trainers/profile", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -196,7 +198,7 @@ export default function TrainerProfilePage() {
     setSubmitting(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/organizacao/trainers/profile", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

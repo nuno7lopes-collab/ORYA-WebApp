@@ -5,12 +5,17 @@ import useSWR from "swr";
 import { formatDate, formatTime, t } from "@/lib/i18n";
 
 type StandingsRow = {
-  pairingId: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId?: number | null;
   points: number;
   wins: number;
+  draws?: number;
   losses: number;
   setsFor: number;
   setsAgainst: number;
+  label?: string | null;
+  players?: Array<{ id?: number | null; name?: string | null; username?: string | null }> | null;
 };
 
 
@@ -39,7 +44,7 @@ type Match = {
   score?: Record<string, unknown> | null;
 };
 
-type StandingsResponse = { ok?: boolean; standings?: Record<string, StandingsRow[]> };
+type StandingsResponse = { ok?: boolean; groups?: Record<string, StandingsRow[]> };
 type MatchesResponse = { ok?: boolean; items?: Match[] };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -107,7 +112,7 @@ export default function PadelPublicTablesClient({
     {
       refreshInterval,
       revalidateOnFocus: false,
-      fallbackData: { ok: true, standings: initialStandings },
+      fallbackData: { ok: true, groups: initialStandings },
     },
   );
   const { data: matchesRes, mutate: mutateMatches } = useSWR<MatchesResponse>(
@@ -116,7 +121,7 @@ export default function PadelPublicTablesClient({
     { refreshInterval, revalidateOnFocus: false },
   );
 
-  const standings = standingsRes?.standings ?? initialStandings;
+  const standings = standingsRes?.groups ?? initialStandings;
   const matches = Array.isArray(matchesRes?.items) ? matchesRes?.items ?? [] : [];
 
   useEffect(() => {
@@ -128,8 +133,8 @@ export default function PadelPublicTablesClient({
     const handleUpdate = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload?.standings) {
-          mutateStandings({ ok: true, standings: payload.standings }, { revalidate: false });
+        if (payload?.standings?.groups) {
+          mutateStandings({ ok: true, groups: payload.standings.groups }, { revalidate: false });
         }
         if (payload?.matches) {
           mutateMatches({ ok: true, items: payload.matches }, { revalidate: false });
@@ -242,13 +247,16 @@ export default function PadelPublicTablesClient({
               <div className="mt-3 space-y-2">
                 {rows.map((row, idx) => (
                   <div
-                    key={`${label}-${row.pairingId}`}
+                    key={`${label}-${row.entityId}`}
                     className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80"
                   >
                     <div className="flex items-center gap-3">
                       <span className="w-5 text-[11px] text-white/50">{idx + 1}</span>
                       <span className="text-sm text-white/90">
-                        {pairingNameMap.get(row.pairingId) ?? `${t("pairing", locale)} #${row.pairingId}`}
+                        {row.label ||
+                          (typeof row.pairingId === "number"
+                            ? pairingNameMap.get(row.pairingId) ?? `${t("pairing", locale)} #${row.pairingId}`
+                            : `Jogador #${row.entityId}`)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-white/70">

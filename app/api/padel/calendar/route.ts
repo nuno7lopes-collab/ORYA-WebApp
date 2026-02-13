@@ -9,7 +9,6 @@ import {
   OrganizationModule,
   Prisma,
   SoftBlockScope,
-  SourceType,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -23,6 +22,7 @@ import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
@@ -509,6 +509,9 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const check = await ensureOrganization(req);
   if ("error" in check) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
@@ -543,101 +546,14 @@ async function _POST(req: NextRequest) {
   }
 
   if (type === "resource_claim") {
-    const resourceTypeRaw = typeof body.resourceType === "string" ? body.resourceType.trim().toUpperCase() : "";
-    const resourceType = Object.values(AgendaResourceClaimType).includes(resourceTypeRaw as AgendaResourceClaimType)
-      ? (resourceTypeRaw as AgendaResourceClaimType)
-      : null;
-    if (!resourceType) {
-      return jsonWrap({ ok: false, error: "INVALID_RESOURCE_TYPE" }, { status: 400 });
-    }
-
-    const resourceIdRaw =
-      typeof body.resourceId === "string"
-        ? body.resourceId.trim()
-        : typeof body.resourceId === "number"
-          ? String(Math.floor(body.resourceId))
-          : "";
-    if (!resourceIdRaw) {
-      return jsonWrap({ ok: false, error: "RESOURCE_ID_REQUIRED" }, { status: 400 });
-    }
-
-    const sourceTypeRaw = typeof body.sourceType === "string" ? body.sourceType.trim().toUpperCase() : "";
-    const sourceType = Object.values(SourceType).includes(sourceTypeRaw as SourceType)
-      ? (sourceTypeRaw as SourceType)
-      : SourceType.EVENT;
-    const sourceId =
-      typeof body.sourceId === "string" && body.sourceId.trim().length > 0
-        ? body.sourceId.trim()
-        : String(event.id);
-
-    const overlapping = await prisma.agendaResourceClaim.findFirst({
-      where: {
-        organizationId: organization.id,
-        eventId: event.id,
-        resourceType,
-        resourceId: resourceIdRaw,
-        status: AgendaResourceClaimStatus.CLAIMED,
-        startsAt: { lt: endAt },
-        endsAt: { gt: startAt },
+    return jsonWrap(
+      {
+        ok: false,
+        error: "RESOURCE_CLAIM_WRITE_MOVED_TO_COMMIT",
+        endpoint: "/api/padel/calendar/claims/commit",
       },
-      select: { id: true, startsAt: true, endsAt: true, sourceType: true, sourceId: true },
-    });
-    if (overlapping) {
-      return jsonWrap(
-        {
-          ok: false,
-          error: "RESOURCE_CLAIM_CONFLICT",
-          conflict: overlapping,
-        },
-        { status: 409 },
-      );
-    }
-
-    const claim = await prisma.agendaResourceClaim.create({
-      data: {
-        organizationId: organization.id,
-        eventId: event.id,
-        sourceType,
-        sourceId,
-        resourceType,
-        resourceId: resourceIdRaw,
-        startsAt: startAt,
-        endsAt: endAt,
-        status: AgendaResourceClaimStatus.CLAIMED,
-        metadata:
-          body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
-            ? (body.metadata as Prisma.JsonObject)
-            : {},
-      },
-      select: {
-        id: true,
-        sourceType: true,
-        sourceId: true,
-        resourceType: true,
-        resourceId: true,
-        startsAt: true,
-        endsAt: true,
-        status: true,
-        metadata: true,
-      },
-    });
-    await recordOrganizationAuditSafe({
-      organizationId: organization.id,
-      actorUserId: check.userId,
-      action: "PADEL_CALENDAR_RESOURCE_CLAIM_CREATE",
-      metadata: {
-        claimId: claim.id,
-        eventId: event.id,
-        sourceType: claim.sourceType,
-        sourceId: claim.sourceId,
-        resourceType: claim.resourceType,
-        resourceId: claim.resourceId,
-        startsAt: claim.startsAt,
-        endsAt: claim.endsAt,
-      },
-      ...getRequestMeta(req),
-    });
-    return jsonWrap({ ok: true, claim }, { status: 201 });
+      { status: 410 },
+    );
   }
 
   if (type === "block") {

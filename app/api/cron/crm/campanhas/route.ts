@@ -6,11 +6,13 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { sendCrmCampaign } from "@/lib/crm/campaignSend";
-import { CrmCampaignStatus } from "@prisma/client";
+import { CrmCampaignApprovalState, CrmCampaignStatus } from "@prisma/client";
+import { ensureCrmPolicy, policyToConfig } from "@/lib/crm/policy";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
+import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
@@ -21,18 +23,112 @@ function parseLimit(value: string | null) {
   return Math.min(Math.floor(parsed), MAX_LIMIT);
 }
 
+async function processApprovalSla(now: Date, limit: number) {
+  const pending = await prisma.crmCampaign.findMany({
+    where: {
+      approvalState: CrmCampaignApprovalState.SUBMITTED,
+      status: { notIn: [CrmCampaignStatus.SENT, CrmCampaignStatus.SENDING, CrmCampaignStatus.CANCELLED] },
+    },
+    orderBy: { approvalSubmittedAt: "asc" },
+    take: limit,
+    select: {
+      id: true,
+      organizationId: true,
+      approvalSubmittedAt: true,
+      approvalExpiresAt: true,
+      status: true,
+    },
+  });
+
+  let escalated = 0;
+  let expired = 0;
+
+  for (const campaign of pending) {
+    const policy = await ensureCrmPolicy(prisma, campaign.organizationId);
+    const config = policyToConfig(policy);
+    const submittedAt = campaign.approvalSubmittedAt ?? now;
+    const escalationAt = new Date(submittedAt.getTime() + config.approvalEscalationHours * 60 * 60 * 1000);
+    const expiresAt =
+      campaign.approvalExpiresAt ?? new Date(submittedAt.getTime() + config.approvalExpireHours * 60 * 60 * 1000);
+
+    if (now >= expiresAt) {
+      await prisma.$transaction(async (tx) => {
+        await tx.crmCampaign.update({
+          where: { id: campaign.id },
+          data: {
+            approvalState: CrmCampaignApprovalState.EXPIRED,
+            status: CrmCampaignStatus.CANCELLED,
+            cancelledAt: now,
+          },
+        });
+        await tx.crmCampaignApproval.create({
+          data: {
+            organizationId: campaign.organizationId,
+            campaignId: campaign.id,
+            state: CrmCampaignApprovalState.EXPIRED,
+            action: "EXPIRED",
+            metadata: {
+              submittedAt: submittedAt.toISOString(),
+              expiresAt: expiresAt.toISOString(),
+            },
+          },
+        });
+      });
+      expired += 1;
+      continue;
+    }
+
+    if (now >= escalationAt) {
+      const alreadyEscalated = await prisma.crmCampaignApproval.findFirst({
+        where: {
+          campaignId: campaign.id,
+          action: "ESCALATED",
+          createdAt: { gte: submittedAt },
+        },
+        select: { id: true },
+      });
+      if (!alreadyEscalated) {
+        await prisma.crmCampaignApproval.create({
+          data: {
+            organizationId: campaign.organizationId,
+            campaignId: campaign.id,
+            state: CrmCampaignApprovalState.SUBMITTED,
+            action: "ESCALATED",
+            metadata: {
+              escalationAt: escalationAt.toISOString(),
+            },
+          },
+        });
+        escalated += 1;
+      }
+    }
+  }
+
+  return { escalated, expired };
+}
+
 async function _POST(req: NextRequest) {
   const startedAt = new Date();
   try {
     if (!requireInternalSecret(req)) {
       return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
+    if (!isCrmCampaignsEnabled()) {
+      logInfo("cron.crm.campanhas.skipped", { reason: "CRM_CAMPAIGNS_DISABLED" });
+      await recordCronHeartbeat("crm-campanhas", { status: "SUCCESS", startedAt });
+      return jsonWrap(
+        { ok: true, processed: 0, sent: 0, skipped: true, reason: "CRM_CAMPAIGNS_DISABLED" },
+        { status: 200 },
+      );
+    }
 
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
     const now = new Date();
+    const approvalSla = await processApprovalSla(now, limit * 2);
     const campaigns = await prisma.crmCampaign.findMany({
       where: {
         status: CrmCampaignStatus.SCHEDULED,
+        approvalState: CrmCampaignApprovalState.APPROVED,
         scheduledAt: { lte: now },
       },
       orderBy: { scheduledAt: "asc" },
@@ -88,10 +184,25 @@ async function _POST(req: NextRequest) {
     }
 
     const sent = results.filter((item) => item.ok).length;
-    logInfo("cron.crm.campanhas", { processed: results.length, sent });
+    logInfo("cron.crm.campanhas", {
+      processed: results.length,
+      sent,
+      escalated: approvalSla.escalated,
+      expired: approvalSla.expired,
+    });
 
     await recordCronHeartbeat("crm-campanhas", { status: "SUCCESS", startedAt });
-    return jsonWrap({ ok: true, processed: results.length, sent, results }, { status: 200 });
+    return jsonWrap(
+      {
+        ok: true,
+        processed: results.length,
+        sent,
+        escalated: approvalSla.escalated,
+        expired: approvalSla.expired,
+        results,
+      },
+      { status: 200 },
+    );
   } catch (err) {
     logError("cron.crm.campanhas_error", err);
     await recordCronHeartbeat("crm-campanhas", { status: "ERROR", startedAt, error: err });

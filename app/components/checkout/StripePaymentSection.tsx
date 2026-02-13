@@ -12,7 +12,7 @@ import {
   type Appearance,
   type StripeElementsOptions,
 } from "@stripe/stripe-js";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { useCheckout, type CheckoutBreakdown } from "./contextoCheckout";
 import OrderSummaryPanel from "./OrderSummaryPanel";
 import { getStripePublishableKey } from "@/lib/stripePublic";

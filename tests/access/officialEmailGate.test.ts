@@ -13,8 +13,8 @@ describe("ensureOrganizationEmailVerified", () => {
     if (!result.ok) {
       expect(result.errorCode).toBe("OFFICIAL_EMAIL_REQUIRED");
       expect(result.email).toBeNull();
-      expect(result.verifyUrl).toContain("/organizacao/settings");
-      expect(result.nextStepUrl).toContain("/organizacao/settings");
+      expect(result.verifyUrl).toContain("/org-hub/organizations");
+      expect(result.nextStepUrl).toContain("/org-hub/organizations");
       expect(result.requestId).toBeTruthy();
       expect(result.correlationId).toBeTruthy();
     }

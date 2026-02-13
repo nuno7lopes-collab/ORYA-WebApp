@@ -10,7 +10,7 @@ import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
 import type { Prisma } from "@prisma/client";
 
@@ -503,6 +503,7 @@ function EmptyCard({ title, children }: { title: string; children: string }) {
 function OrganizationMatchEditor({
   match,
   tournamentId,
+  organizationId,
   onUpdated,
   goalLimit,
   locked = false,
@@ -512,6 +513,7 @@ function OrganizationMatchEditor({
 }: {
   match: MatchPayload;
   tournamentId: number;
+  organizationId?: number | null;
   onUpdated: () => void;
   goalLimit: number;
   locked?: boolean;
@@ -528,6 +530,9 @@ function OrganizationMatchEditor({
   const [disputePending, setDisputePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const tournamentApiBase = organizationId
+    ? `/api/org/${organizationId}/tournaments/${tournamentId}`
+    : null;
   const pendingScoreRef = useRef<{ a: number; b: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const expectedUpdatedAtRef = useRef<string | null>(match.updatedAt ?? null);
@@ -565,6 +570,10 @@ function OrganizationMatchEditor({
   const clampScore = (value: number) => Math.max(0, Math.min(goalLimit, value));
 
   const pushScore = async (nextA: number, nextB: number) => {
+    if (!tournamentApiBase) {
+      setError(t("organizationUnavailable", locale));
+      return;
+    }
     if (locked) {
       setError(lockedReason || t("matchLocked", locale));
       return;
@@ -577,7 +586,7 @@ function OrganizationMatchEditor({
     setSaving(true);
     savingRef.current = true;
     setError(null);
-    const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
+    const res = await fetch(`${tournamentApiBase}/matches/${match.id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -627,6 +636,10 @@ function OrganizationMatchEditor({
 
 
   const overrideWinner = async (side: "A" | "B") => {
+    if (!tournamentApiBase) {
+      setError(t("organizationUnavailable", locale));
+      return;
+    }
     if (saving) return;
     if (locked) {
       setError(lockedReason || t("matchLocked", locale));
@@ -649,7 +662,7 @@ function OrganizationMatchEditor({
     setSaving(true);
     savingRef.current = true;
     setError(null);
-    const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
+    const res = await fetch(`${tournamentApiBase}/matches/${match.id}/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -680,6 +693,10 @@ function OrganizationMatchEditor({
   };
 
   const markDisputed = async () => {
+    if (!tournamentApiBase) {
+      setError(t("organizationUnavailable", locale));
+      return;
+    }
     if (saving || disputePending) return;
     if (locked) {
       setError(lockedReason || t("matchLocked", locale));
@@ -696,7 +713,7 @@ function OrganizationMatchEditor({
     setError(null);
     setInfo(null);
     try {
-      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
+      const res = await fetch(`${tournamentApiBase}/matches/${match.id}/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -721,6 +738,10 @@ function OrganizationMatchEditor({
   };
 
   const resolveDispute = async () => {
+    if (!tournamentApiBase) {
+      setError(t("organizationUnavailable", locale));
+      return;
+    }
     if (saving || disputePending) return;
     if (!canResolveDispute) {
       setError(t("matchDisputeAdminOnly", locale));
@@ -738,7 +759,7 @@ function OrganizationMatchEditor({
     setInfo(null);
     const nextStatus = score.a > 0 || score.b > 0 ? "IN_PROGRESS" : "PENDING";
     try {
-      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/result`, {
+      const res = await fetch(`${tournamentApiBase}/matches/${match.id}/result`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -763,12 +784,16 @@ function OrganizationMatchEditor({
   };
 
   const undoLast = async () => {
+    if (!tournamentApiBase) {
+      setError(t("organizationUnavailable", locale));
+      return;
+    }
     if (undoing || saving) return;
     setUndoing(true);
     setError(null);
     setInfo(null);
     try {
-      const res = await fetch(`/api/organizacao/tournaments/${tournamentId}/matches/${match.id}/undo`, {
+      const res = await fetch(`${tournamentApiBase}/matches/${match.id}/undo`, {
         method: "POST",
       });
       const json = await res.json().catch(() => null);
@@ -995,13 +1020,14 @@ function PadelMatchEditor({
     setError(null);
     setInfo(null);
     try {
-      const res = await fetch("/api/padel/matches", {
+      const res = await fetch(`/api/padel/matches/${match.id}/walkover`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: match.id,
-          status: "DONE",
-          score: { resultType: "WALKOVER", winnerSide: side, walkover: true },
+          winner: side,
+          resultType: "WALKOVER",
+          confirmedByRole: "DIRETOR_PROVA",
+          confirmationSource: "WEB_ORGANIZATION",
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1035,7 +1061,7 @@ function PadelMatchEditor({
       const res = await fetch(`/api/padel/matches/${match.id}/dispute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify({ reason, confirmationSource: "WEB_PUBLIC" }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -1065,7 +1091,11 @@ function PadelMatchEditor({
       const res = await fetch(`/api/padel/matches/${match.id}/dispute`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(resolutionNote ? { resolutionNote } : {}),
+        body: JSON.stringify({
+          ...(resolutionNote ? { resolutionNote } : {}),
+          resolutionStatus: "CONFIRMED",
+          confirmationSource: "WEB_ORGANIZATION",
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -1338,6 +1368,7 @@ function BracketRoundsView({
   pairings,
   isOrganizationEdit,
   tournamentId,
+  organizationId,
   eventId,
   onUpdated,
   goalLimits,
@@ -1351,6 +1382,7 @@ function BracketRoundsView({
   pairings: Record<number, PairingMeta>;
   isOrganizationEdit: boolean;
   tournamentId: number | null;
+  organizationId?: number | null;
   eventId?: number | null;
   onUpdated: () => void;
   goalLimits: GoalLimitsConfig;
@@ -1567,6 +1599,7 @@ function BracketRoundsView({
               <OrganizationMatchEditor
                 match={match}
                 tournamentId={tournamentId as number}
+                organizationId={organizationId}
                 onUpdated={onUpdated}
                 goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
                 locked={isLocked}
@@ -2026,6 +2059,7 @@ function OneVOneLiveLayout({
   const overrideActive = Boolean(featuredMatchId && nowMatch?.id === featuredMatchId);
   const [featuredDraft, setFeaturedDraft] = useState<number | null>(featuredMatchId);
   const isPadelLive = event.templateType === "PADEL";
+  const orgApiBase = organization?.id ? `/api/org/${organization.id}` : null;
   const configFormat = typeof tournament?.format === "string" ? tournament.format : null;
 
   useEffect(() => {
@@ -2064,7 +2098,11 @@ function OneVOneLiveLayout({
           }),
         });
       } else if (tournament?.id) {
-        await fetch(`/api/organizacao/tournaments/${tournament.id}/featured-match`, {
+        if (!orgApiBase) {
+          setConfigMessage(t("organizationUnavailable", locale));
+          return;
+        }
+        await fetch(`${orgApiBase}/tournaments/${tournament.id}/featured-match`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ matchId }),
@@ -2085,7 +2123,11 @@ function OneVOneLiveLayout({
     setConfigMessage(null);
     try {
       if (streamUrl.trim() !== (event.liveStreamUrl ?? "")) {
-        await fetch("/api/organizacao/events/update", {
+        if (!orgApiBase) {
+          setConfigMessage(t("organizationUnavailable", locale));
+          return;
+        }
+        await fetch(`${orgApiBase}/events/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2119,7 +2161,11 @@ function OneVOneLiveLayout({
           }),
         });
       } else if (tournament?.id) {
-        await fetch(`/api/organizacao/tournaments/${tournament.id}/sponsors`, {
+        if (!orgApiBase) {
+          setConfigMessage(t("organizationUnavailable", locale));
+          return;
+        }
+        await fetch(`${orgApiBase}/tournaments/${tournament.id}/sponsors`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2129,7 +2175,7 @@ function OneVOneLiveLayout({
             nowPlaying: sponsorDraft?.nowPlaying ?? null,
           }),
         });
-        await fetch(`/api/organizacao/tournaments/${tournament.id}/rules`, {
+        await fetch(`${orgApiBase}/tournaments/${tournament.id}/rules`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2743,7 +2789,7 @@ export default function EventLiveClient({
   const [startingMatchId, setStartingMatchId] = useState<number | null>(null);
   const [startMessage, setStartMessage] = useState<string | null>(null);
   const isTv = searchParams?.get("tv") === "1";
-  const isOrganizationRoute = Boolean(pathname && pathname.startsWith("/organizacao/"));
+  const isOrganizationRoute = Boolean(pathname && pathname.startsWith("/org/"));
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const url = useMemo(() => `/api/livehub/${slug}`, [slug]);
@@ -2761,6 +2807,7 @@ export default function EventLiveClient({
         isFollowed?: boolean;
       }
     | null) ?? null;
+  const orgApiBase = organization?.id ? `/api/org/${organization.id}` : null;
   const access = data?.access as
     | {
         liveHubAllowed?: boolean;
@@ -2950,16 +2997,16 @@ export default function EventLiveClient({
   const isOrganizationEdit =
     viewerRole === "ORGANIZATION" && canEditMatches && isOrganizationRoute && searchParams?.get("edit") === "1";
   const organizationEditHref = (() => {
-    const defaultBase =
-      event.templateType === "PADEL"
-        ? `/organizacao/padel/torneios/${event.id}/live`
-        : `/organizacao/eventos/${event.id}/live`;
+    const defaultBase = organization?.id
+      ? event.templateType === "PADEL"
+        ? buildOrgHref(organization.id, `/padel/tournaments/${event.id}/live`)
+        : buildOrgHref(organization.id, `/events/${event.id}/live`)
+      : `/eventos/${event.slug}/live`;
     const base = isOrganizationRoute && pathname ? pathname : defaultBase;
     const params = new URLSearchParams(searchParams?.toString());
     params.set("tab", "preview");
     params.set("edit", "1");
-    const rawHref = `${base}?${params.toString()}`;
-    return appendOrganizationIdToHref(rawHref, organization?.id ?? null);
+    return `${base}?${params.toString()}`;
   })();
   const pendingMatches = flatMatches
     .filter((match) => match.status === "PENDING" || match.status === "SCHEDULED")
@@ -2978,6 +3025,10 @@ export default function EventLiveClient({
     setStartingMatchId(firstPlayableMatch.id);
     setStartMessage(null);
     try {
+      if (event.templateType !== "PADEL" && !orgApiBase) {
+        setStartMessage(t("organizationUnavailable", locale));
+        return;
+      }
       const res =
         event.templateType === "PADEL"
           ? await fetch("/api/padel/matches", {
@@ -2989,7 +3040,7 @@ export default function EventLiveClient({
               }),
             })
           : await fetch(
-              `/api/organizacao/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
+              `${orgApiBase}/tournaments/${tournamentView.id}/matches/${firstPlayableMatch.id}/result`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -3412,6 +3463,7 @@ export default function EventLiveClient({
                         pairings={pairings}
                         isOrganizationEdit={isOrganizationEdit}
                         tournamentId={tournamentView?.id ?? null}
+                        organizationId={organization?.id ?? null}
                         eventId={event.id}
                         onUpdated={onRefresh}
                         goalLimits={goalLimits}
@@ -3615,6 +3667,7 @@ export default function EventLiveClient({
                     <OrganizationMatchEditor
                       match={match}
                       tournamentId={tournamentView.id}
+                      organizationId={organization?.id ?? null}
                       onUpdated={() => mutate()}
                       goalLimit={resolveGoalLimit(match.round ?? null, goalLimits)}
                       locked={roundIsLockedGlobal(match.round ?? 0) || match.status === "DISPUTED"}

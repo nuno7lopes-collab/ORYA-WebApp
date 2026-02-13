@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
+import { rebuildCrmContacts } from "@/lib/crm/rebuild";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { parseOrganizationId, requireOrganizationIdFromPayload } from "@/lib/organizationId";
@@ -32,7 +32,7 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
     }
 
-    const result = await rebuildCrmCustomers({ organizationId: orgResult.organizationId });
+    const result = await rebuildCrmContacts({ organizationId: orgResult.organizationId });
 
     return jsonWrap({
       ok: true,

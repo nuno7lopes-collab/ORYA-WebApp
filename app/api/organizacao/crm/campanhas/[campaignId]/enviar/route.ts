@@ -10,6 +10,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -63,6 +64,11 @@ async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: 
     if (!crmAccess.ok) {
       return fail(403, crmAccess.error);
     }
+    if (!isCrmCampaignsEnabled()) {
+      return fail(403, "Campanhas CRM desativadas.", "FEATURE_DISABLED", false, {
+        feature: "CRM_CAMPAIGNS",
+      });
+    }
 
     const resolvedParams = await context.params;
     const result = await sendCrmCampaign({
@@ -78,6 +84,9 @@ async function _POST(req: NextRequest, context: { params: Promise<{ campaignId: 
       sentCount: result.sentCount,
       failedCount: result.failedCount,
       totalEligible: result.totalEligible,
+      suppressedByCap: result.suppressedByCap,
+      suppressedByConsent: result.suppressedByConsent,
+      suppressedByQuietHours: result.suppressedByQuietHours,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

@@ -26,7 +26,7 @@ export default async function OrganizationEventosPage() {
   });
 
   if (!organization) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   const { activeModules } = await getOrganizationActiveModules(

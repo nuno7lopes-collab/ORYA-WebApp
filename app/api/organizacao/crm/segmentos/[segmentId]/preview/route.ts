@@ -7,7 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
-import { resolveSegmentContactIds } from "@/lib/crm/segmentQuery";
+import { resolveSegmentAudience } from "@/lib/crm/segmentQuery";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
@@ -47,10 +47,11 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       return jsonWrap({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
     }
 
-    const resolved = await resolveSegmentContactIds({
+    const resolved = await resolveSegmentAudience({
       organizationId: organization.id,
       rules: segment.rules,
       maxContacts: MAX_SAMPLE,
+      includeExplain: true,
     });
 
     try {
@@ -94,7 +95,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       tags: item.tags,
     }));
 
-    return jsonWrap({ ok: true, segment: { id: segment.id, name: segment.name }, total: resolved.total, items: mapped });
+    return jsonWrap({
+      ok: true,
+      segment: { id: segment.id, name: segment.name },
+      total: resolved.total,
+      items: mapped,
+      explain: resolved.explain,
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

@@ -7,17 +7,21 @@ type PageProps = {
 };
 
 type StandingRow = {
-  pairingId: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId?: number | null;
   points: number;
   wins: number;
+  draws?: number;
   losses: number;
   setsFor: number;
   setsAgainst: number;
+  label?: string | null;
 };
 
 type StandingsResponse = {
   ok?: boolean;
-  standings?: Record<string, StandingRow[]>;
+  groups?: Record<string, StandingRow[]>;
 };
 
 export default async function WidgetStandingsPage({ searchParams }: PageProps) {
@@ -36,7 +40,7 @@ export default async function WidgetStandingsPage({ searchParams }: PageProps) {
     cache: "no-store",
   }).then((r) => r.json()).catch(() => null) as StandingsResponse | null;
 
-  const standings = res?.standings ?? {};
+  const standings = res?.groups ?? {};
   const eventIdNumber = Number(eventId);
   if (!Number.isFinite(eventIdNumber)) {
     return (

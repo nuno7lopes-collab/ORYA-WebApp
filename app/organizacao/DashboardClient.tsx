@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
+import NextLink from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -29,15 +29,46 @@ import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
-import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcherStrict = async (url: string) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error((json && typeof json.error === "string" && json.error) || `HTTP_${res.status}`);
+    }
+    return json;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("HTTP_TIMEOUT");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+};
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: false,
   dedupingInterval: 60_000,
+};
+const orgContextSwrOptions = {
+  ...swrOptions,
+  errorRetryCount: 2,
+  errorRetryInterval: 1_500,
+  shouldRetryOnError: (error: unknown) => {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "HTTP_TIMEOUT") return true;
+    if (message.startsWith("HTTP_5")) return true;
+    if (message === "Failed to fetch") return true;
+    return false;
+  },
 };
 
 const SkeletonBlock = ({ className = "" }: { className?: string }) => (
@@ -456,7 +487,13 @@ function OrganizacaoPageInner({
   const [eventActionLoading, setEventActionLoading] = useState<number | null>(null);
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [pendingModuleRemoval, setPendingModuleRemoval] = useState<DashboardModuleCard | null>(null);
+  const loadingRetryAttemptRef = useRef(false);
+  const dashboardLoadStartedAtRef = useRef<number | null>(null);
+  const dashboardLoadSuccessTrackedRef = useRef(false);
+  const dashboardLoadTimeoutTrackedRef = useRef(false);
+  const dashboardLoadErrorTrackedRef = useRef(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -582,16 +619,29 @@ function OrganizacaoPageInner({
   const organizationIdParam = searchParams?.get("organizationId");
   const organizationIdFromQuery = organizationIdParam ? Number(organizationIdParam) : null;
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
+  const organizationIdFromBrowser = useMemo(
+    () => getOrganizationIdFromBrowser(),
+    [pathname, organizationIdParam],
+  );
   const organizationId =
     organizationIdFromQuery && !Number.isNaN(organizationIdFromQuery)
       ? organizationIdFromQuery
-      : organizationIdFromPath;
+      : organizationIdFromPath ?? organizationIdFromBrowser;
   const orgMeUrl = useMemo(() => {
     if (!organizationId || Number.isNaN(organizationId)) return null;
-    return `/api/organizacao/me?organizationId=${organizationId}`;
+    return `/api/org/${organizationId}/me`;
+  }, [organizationId]);
+  const orgApiBase = useMemo(() => {
+    if (!organizationId || Number.isNaN(organizationId)) return null;
+    return `/api/org/${organizationId}`;
   }, [organizationId]);
 
-  const { data: organizationData, isLoading: organizationLoading, mutate: mutateOrganization } = useSWR<
+  const {
+    data: organizationData,
+    error: organizationError,
+    isLoading: organizationLoading,
+    mutate: mutateOrganization,
+  } = useSWR<
     OrganizationStatus & {
       profile?: { fullName?: string | null } | null;
       organization?: OrganizationLite | null;
@@ -607,9 +657,14 @@ function OrganizacaoPageInner({
         scopeId?: string | null;
       }>;
     }
-  >(orgMeUrl, fetcher, swrOptions);
+  >(orgMeUrl, fetcherStrict, orgContextSwrOptions);
 
   const organization = organizationData?.organization ?? null;
+  const scopedOrganizationId = organization?.id ?? organizationId ?? null;
+  const Link = ({ href, ...props }: ComponentProps<typeof NextLink>) => {
+    const resolvedHref = typeof href === "string" ? appendOrganizationIdToHref(href, scopedOrganizationId) : href;
+    return <NextLink href={resolvedHref} {...props} />;
+  };
   const isSuspended = organization?.status === "SUSPENDED";
   const isActive = organization?.status === "ACTIVE";
   const isPending = Boolean(organization?.status && !isActive && !isSuspended);
@@ -701,7 +756,10 @@ function OrganizacaoPageInner({
   const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
   const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
   const eventRouteBase = isPadelContext ? "/organizacao/padel/torneios" : "/organizacao/eventos";
-  const loading = userLoading || organizationLoading || (Boolean(orgMeUrl) && !organizationData);
+  const loading =
+    organizationLoading ||
+    (Boolean(orgMeUrl) && !organizationData && !organizationError) ||
+    (userLoading && !user && !organizationData && !organizationError);
   const paymentsStatus = organizationData?.paymentsStatus ?? "NO_STRIPE";
   const paymentsMode = organizationData?.paymentsMode ?? "CONNECT";
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
@@ -763,6 +821,71 @@ function OrganizacaoPageInner({
   const canEditFinanceAlerts =
     membershipRole === "OWNER" || membershipRole === "CO_OWNER" || membershipRole === "ADMIN";
   const canUseMarketing = canPromote && hasMarketingModule;
+  useEffect(() => {
+    if (!orgMeUrl) return;
+    loadingRetryAttemptRef.current = false;
+    dashboardLoadStartedAtRef.current = Date.now();
+    dashboardLoadSuccessTrackedRef.current = false;
+    dashboardLoadTimeoutTrackedRef.current = false;
+    dashboardLoadErrorTrackedRef.current = false;
+    trackEvent("org_dashboard_load_started", {
+      organizationId: organizationId ?? null,
+      pathname: pathname ?? null,
+    });
+  }, [orgMeUrl, organizationId, pathname]);
+  useEffect(() => {
+    if (!loading) {
+      setLoadingTimedOut(false);
+      loadingRetryAttemptRef.current = false;
+      return;
+    }
+    const timeout = setTimeout(() => {
+      if (!loadingRetryAttemptRef.current) {
+        loadingRetryAttemptRef.current = true;
+        trackEvent("org_dashboard_load_retry", {
+          organizationId: organization?.id ?? organizationId ?? null,
+          reason: "soft_timeout",
+        });
+        mutateOrganization();
+        return;
+      }
+      setLoadingTimedOut(true);
+    }, 12_000);
+    return () => clearTimeout(timeout);
+  }, [loading, mutateOrganization, organization?.id, organizationId]);
+  useEffect(() => {
+    if (loading || !organizationData || dashboardLoadSuccessTrackedRef.current) return;
+    dashboardLoadSuccessTrackedRef.current = true;
+    const durationMs =
+      dashboardLoadStartedAtRef.current !== null
+        ? Math.max(0, Date.now() - dashboardLoadStartedAtRef.current)
+        : null;
+    trackEvent("org_dashboard_load_success", {
+      organizationId: organization?.id ?? organizationId ?? null,
+      durationMs,
+    });
+  }, [loading, organizationData, organization?.id, organizationId]);
+  useEffect(() => {
+    if (!loadingTimedOut || dashboardLoadTimeoutTrackedRef.current) return;
+    dashboardLoadTimeoutTrackedRef.current = true;
+    const durationMs =
+      dashboardLoadStartedAtRef.current !== null
+        ? Math.max(0, Date.now() - dashboardLoadStartedAtRef.current)
+        : null;
+    trackEvent("org_dashboard_load_timeout", {
+      organizationId: organization?.id ?? organizationId ?? null,
+      durationMs,
+      pathname: pathname ?? null,
+    });
+  }, [loadingTimedOut, organization?.id, organizationId, pathname]);
+  useEffect(() => {
+    if (!organizationError || organizationData || dashboardLoadErrorTrackedRef.current) return;
+    dashboardLoadErrorTrackedRef.current = true;
+    trackEvent("org_dashboard_load_error", {
+      organizationId: organization?.id ?? organizationId ?? null,
+      message: organizationError instanceof Error ? organizationError.message : String(organizationError),
+    });
+  }, [organizationError, organizationData, organization?.id, organizationId]);
   const marketingTabs = useMemo(() => {
     if (!canUseMarketing) return [];
     if (roleFlags.isPromoterOnly) {
@@ -830,7 +953,7 @@ function OrganizacaoPageInner({
         }
         const organizationIdForPatch = organization?.id ?? (organizationIdParam ? Number(organizationIdParam) : null);
         if (!organizationIdForPatch || Number.isNaN(organizationIdForPatch)) return;
-        const patchUrl = `/api/organizacao/me?organizationId=${organizationIdForPatch}`;
+        const patchUrl = `/api/org/${organizationIdForPatch}/me`;
         const res = await fetch(patchUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -948,7 +1071,8 @@ function OrganizacaoPageInner({
   useEffect(() => {
     const refreshStripe = async () => {
       try {
-        const res = await fetch("/api/organizacao/payouts/status");
+        if (!orgApiBase) return;
+        const res = await fetch(`${orgApiBase}/payouts/status`);
         const data = await res.json().catch(() => null);
         if (res.ok && data?.status) {
           setStripeRequirements(Array.isArray(data.requirements_due) ? data.requirements_due : []);
@@ -965,7 +1089,7 @@ function OrganizacaoPageInner({
     if (activeObjective === "analyze") {
       refreshStripe();
     }
-  }, [onboardingParam, activeObjective, mutateOrganization]);
+  }, [onboardingParam, activeObjective, mutateOrganization, orgApiBase]);
 
   // Prefill onboarding fields quando já existirem dados
   useEffect(() => {
@@ -1018,9 +1142,7 @@ function OrganizacaoPageInner({
     canViewFinance &&
     (activeObjective === "create" || (activeObjective === "analyze" && normalizedSection === "overview"));
   const { data: overview } = useSWR<OverviewResponse>(
-    shouldLoadOverview
-      ? `/api/organizacao/analytics/overview?range=30d${eventsScopeAmp}`
-      : null,
+    shouldLoadOverview && orgApiBase ? `${orgApiBase}/analytics/overview?range=30d${eventsScopeAmp}` : null,
     fetcher,
     swrOptions
   );
@@ -1033,9 +1155,7 @@ function OrganizacaoPageInner({
 
   type TimeSeriesResponse = { ok: boolean; points: TimeSeriesPoint[]; range: { from: string | null; to: string | null } };
   const { data: timeSeries } = useSWR<TimeSeriesResponse>(
-    shouldLoadOverviewSeries
-      ? `/api/organizacao/analytics/time-series?range=30d${eventsScopeAmp}`
-      : null,
+    shouldLoadOverviewSeries && orgApiBase ? `${orgApiBase}/analytics/time-series?range=30d${eventsScopeAmp}` : null,
     fetcher,
     swrOptions
   );
@@ -1046,7 +1166,7 @@ function OrganizacaoPageInner({
   const shouldLoadEventSummary =
     organization?.status === "ACTIVE" && activeObjective === "create";
   const { data: eventsSummary } = useSWR<EventsSummaryResponse>(
-    shouldLoadEventSummary ? `/api/organizacao/events/summary${eventsScopeSuffix}` : null,
+    shouldLoadEventSummary && orgApiBase ? `${orgApiBase}/events/summary${eventsScopeSuffix}` : null,
     fetcher,
     swrOptions
   );
@@ -1055,7 +1175,7 @@ function OrganizacaoPageInner({
     error: eventsError,
     mutate: mutateEvents,
   } = useSWR<EventsResponse>(
-    shouldLoadEvents ? `/api/organizacao/events/list${eventsScopeSuffix}` : null,
+    shouldLoadEvents && orgApiBase ? `${orgApiBase}/events/list${eventsScopeSuffix}` : null,
     fetcher,
     swrOptions
   );
@@ -1064,23 +1184,23 @@ function OrganizacaoPageInner({
   const shouldLoadReservasSummary =
     organization?.status === "ACTIVE" && activeObjective === "create" && isReservasOrg;
   const { data: reservasSummary } = useSWR<ReservasSummaryResponse>(
-    shouldLoadReservasSummary ? "/api/organizacao/reservas/summary" : null,
+    shouldLoadReservasSummary && orgApiBase ? `${orgApiBase}/reservas/summary` : null,
     fetcher,
     swrOptions
   );
   const { data: servicesData } = useSWR<ServicesResponse>(
-    shouldLoadReservasLists ? "/api/organizacao/servicos" : null,
+    shouldLoadReservasLists && orgApiBase ? `${orgApiBase}/servicos` : null,
     fetcher,
     swrOptions
   );
   const { data: bookingsData } = useSWR<BookingsResponse>(
-    shouldLoadReservasLists ? "/api/organizacao/reservas" : null,
+    shouldLoadReservasLists && orgApiBase ? `${orgApiBase}/reservas` : null,
     fetcher,
     swrOptions
   );
   const { data: membersData } = useSWR<MembersResponse>(
     organization?.status === "ACTIVE" && organization?.id && activeObjective === "create"
-      ? `/api/organizacao/organizations/members?organizationId=${organization.id}`
+      ? `/api/org-hub/organizations/members?organizationId=${organization.id}`
       : null,
     fetcher,
     swrOptions
@@ -1100,8 +1220,8 @@ function OrganizacaoPageInner({
   }, [events, salesEventId, shouldLoadSales]);
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
-    organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze" && activeSection === "financas"
-      ? "/api/organizacao/payouts/summary"
+    organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze" && activeSection === "financas" && orgApiBase
+      ? `${orgApiBase}/payouts/summary`
       : null,
     fetcher,
     swrOptions
@@ -1111,7 +1231,8 @@ function OrganizacaoPageInner({
       canViewFinance &&
       activeObjective === "analyze" &&
       activeSection === "financas"
-      ? `/api/organizacao/finance/overview${eventsScopeSuffix}`
+      && orgApiBase
+      ? `${orgApiBase}/finance/overview${eventsScopeSuffix}`
       : null,
     fetcher,
     swrOptions
@@ -1122,7 +1243,7 @@ function OrganizacaoPageInner({
     activeObjective === "analyze" &&
     (activeSection === "financas" || activeSection === "invoices");
   const { data: financeInvoicingSettings, mutate: mutateFinanceInvoicingSettings } = useSWR<FinanceInvoicingResponse>(
-    shouldLoadFinanceControls ? "/api/organizacao/finance/invoicing" : null,
+    shouldLoadFinanceControls && orgApiBase ? `${orgApiBase}/finance/invoicing` : null,
     fetcher,
     swrOptions,
   );
@@ -1132,7 +1253,7 @@ function OrganizacaoPageInner({
     activeObjective === "analyze" &&
     activeSection === "ops";
   const { data: opsFeed } = useSWR<OpsFeedResponse>(
-    shouldLoadOpsFeed ? "/api/organizacao/ops/feed?limit=25" : null,
+    shouldLoadOpsFeed && orgApiBase ? `${orgApiBase}/ops/feed?limit=25` : null,
     fetcher,
     swrOptions,
   );
@@ -1148,16 +1269,14 @@ function OrganizacaoPageInner({
 
   const buildFinanceExportHref = useCallback(
     (kind: "fees" | "ledger" | "payouts") => {
+      if (!orgApiBase) return "#";
       const params = new URLSearchParams({
         from: financeExportRange.from,
         to: financeExportRange.to,
       });
-      if (organization?.id) {
-        params.set("organizationId", String(organization.id));
-      }
-      return `/api/organizacao/finance/exports/${kind}?${params.toString()}`;
+      return `${orgApiBase}/finance/exports/${kind}?${params.toString()}`;
     },
-    [financeExportRange.from, financeExportRange.to, organization?.id],
+    [financeExportRange.from, financeExportRange.to, orgApiBase],
   );
 
   const oneYearAgoIso = useMemo(() => {
@@ -1168,16 +1287,16 @@ function OrganizacaoPageInner({
   }, []);
 
   const salesSeriesKey = useMemo(() => {
-    if (!shouldLoadSales || !salesEventId) return null;
+    if (!shouldLoadSales || !salesEventId || !orgApiBase) return null;
     const templateQuery = eventsScopeAmp;
     if (salesRange === "7d" || salesRange === "30d" || salesRange === "90d") {
-      return `/api/organizacao/analytics/time-series?range=${salesRange}&eventId=${salesEventId}${templateQuery}`;
+      return `${orgApiBase}/analytics/time-series?range=${salesRange}&eventId=${salesEventId}${templateQuery}`;
     }
     if (salesRange === "365d") {
-      return `/api/organizacao/analytics/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}${templateQuery}`;
+      return `${orgApiBase}/analytics/time-series?eventId=${salesEventId}&from=${oneYearAgoIso}${templateQuery}`;
     }
-    return `/api/organizacao/analytics/time-series?eventId=${salesEventId}${templateQuery}`;
-  }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales, eventsScopeAmp]);
+    return `${orgApiBase}/analytics/time-series?eventId=${salesEventId}${templateQuery}`;
+  }, [salesEventId, salesRange, oneYearAgoIso, shouldLoadSales, eventsScopeAmp, orgApiBase]);
 
   const { data: salesSeries } = useSWR<TimeSeriesResponse>(
     salesSeriesKey,
@@ -1188,15 +1307,16 @@ function OrganizacaoPageInner({
     organization?.status === "ACTIVE" &&
       canViewFinance &&
       activeObjective === "analyze" &&
-      activeSection === "overview"
-      ? "/api/organizacao/analytics/dimensoes?dimensionKey=MODULE"
+      activeSection === "overview" &&
+      orgApiBase
+      ? `${orgApiBase}/analytics/dimensoes?dimensionKey=MODULE`
       : null,
     fetcher,
     swrOptions,
   );
 
   const { data: buyers } = useSWR<BuyersResponse>(
-    shouldLoadSales && salesEventId ? `/api/organizacao/analytics/buyers?eventId=${salesEventId}` : null,
+    shouldLoadSales && salesEventId && orgApiBase ? `${orgApiBase}/analytics/buyers?eventId=${salesEventId}` : null,
     fetcher,
     swrOptions
   );
@@ -1209,7 +1329,8 @@ function OrganizacaoPageInner({
       const archive = mode === "archive" || mode === "delete";
       const targetLabel = target.templateType === "PADEL" ? "Torneio" : "Evento";
       try {
-        const res = await fetch("/api/organizacao/events/update", {
+        if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
+        const res = await fetch(`${orgApiBase}/events/update`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ eventId: target.id, archive }),
@@ -1239,22 +1360,23 @@ function OrganizacaoPageInner({
         setEventDialog(null);
       }
     },
-    [mutateEvents],
+    [mutateEvents, orgApiBase],
   );
   const { data: marketingOverview } = useSWR<MarketingOverviewResponse>(
     organization?.status === "ACTIVE" &&
       activeObjective === "promote" &&
       !roleFlags.isPromoterOnly &&
-      canUseMarketing
-      ? `/api/organizacao/marketing/overview${eventsScopeSuffix}`
+      canUseMarketing &&
+      orgApiBase
+      ? `${orgApiBase}/marketing/overview${eventsScopeSuffix}`
       : null,
     fetcher,
     swrOptions
   );
 
   const { data: promoData } = useSWR<PromoListResponse>(
-    organization?.status === "ACTIVE" && canUseMarketing && activeObjective === "promote"
-      ? "/api/organizacao/promo"
+    organization?.status === "ACTIVE" && canUseMarketing && activeObjective === "promote" && orgApiBase
+      ? `${orgApiBase}/promo`
       : null,
     fetcher,
     swrOptions
@@ -1268,7 +1390,8 @@ function OrganizacaoPageInner({
     setStripeCtaError(null);
     setStripeCtaLoading(true);
     try {
-      const res = await fetch("/api/organizacao/payouts/connect", { method: "POST" });
+      if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
+      const res = await fetch(`${orgApiBase}/payouts/connect`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json.url) {
         setStripeCtaError(json?.error || "Não foi possível gerar o link de onboarding.");
@@ -1298,7 +1421,8 @@ function OrganizacaoPageInner({
             ? financeInvoicingSettings.settings.invoicingSoftwareName
             : "Software externo";
       }
-      const res = await fetch("/api/organizacao/finance/invoicing", {
+      if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
+      const res = await fetch(`${orgApiBase}/finance/invoicing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1321,7 +1445,8 @@ function OrganizacaoPageInner({
     setFinanceActionMessage(null);
     setFinanceActionSaving("payout-settings");
     try {
-      const res = await fetch("/api/organizacao/payouts/settings", {
+      if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
+      const res = await fetch(`${orgApiBase}/payouts/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2106,8 +2231,8 @@ function OrganizacaoPageInner({
         id: "torneios",
         moduleKey: "TORNEIOS",
         title: "Padel",
-        summary: "Ferramenta A (Clube) + Ferramenta B (Torneios), com deep links.",
-        bullets: ["A: Clube + courts + staff", "B: Torneios + live ops", "Integrações reservas/finanças/CRM"],
+        summary: "Gestão de Clube Padel + Torneios de Padel, com deep links.",
+        bullets: ["Gestão de Clube: clubes + courts + staff", "Torneios: calendário + live ops", "Integrações reservas/finanças/CRM"],
         status: canAccessTorneios ? (isTorneiosActive ? "active" : "optional") : "locked",
         href: canAccessTorneios
           ? isTorneiosActive
@@ -2313,6 +2438,33 @@ function OrganizacaoPageInner({
     });
     return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
   }, [inactiveDashboardModules]);
+  const modulePrefetchTargets = useMemo(() => {
+    if (!scopedOrganizationId) return [];
+    const coreTargets = [
+      `/org/${scopedOrganizationId}/overview`,
+      `/org/${scopedOrganizationId}/manage`,
+      `/org/${scopedOrganizationId}/analytics`,
+      `/org/${scopedOrganizationId}/settings`,
+    ];
+    const moduleTargets = dashboardModules
+      .map((module) => module.href)
+      .filter((href): href is string => typeof href === "string")
+      .map((href) => appendOrganizationIdToHref(href, scopedOrganizationId));
+    return Array.from(new Set([...coreTargets, ...moduleTargets])).slice(0, 12);
+  }, [dashboardModules, scopedOrganizationId]);
+  useEffect(() => {
+    if (loading || loadingTimedOut || modulePrefetchTargets.length === 0) return;
+    const timer = window.setTimeout(() => {
+      modulePrefetchTargets.forEach((href) => {
+        try {
+          router.prefetch(href);
+        } catch {
+          // Best effort.
+        }
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [loading, loadingTimedOut, modulePrefetchTargets, router]);
   useEffect(() => {
     const params = new URLSearchParams(currentQuery);
     const setParam = (key: string, value: string, defaultVal: string) => {
@@ -2421,7 +2573,7 @@ function OrganizacaoPageInner({
           <button
             type="button"
             onClick={handleDeactivate}
-            aria-label="Desativar ferramenta"
+            aria-label="Desativar módulo"
             className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
           >
             ×
@@ -2539,7 +2691,7 @@ function OrganizacaoPageInner({
             className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
             role="dialog"
             aria-modal="true"
-            aria-label="Ferramentas disponíveis"
+            aria-label="Módulos disponíveis"
             onClick={(event) => {
               if (event.target === event.currentTarget) setToolsModalOpen(false);
             }}
@@ -2547,8 +2699,8 @@ function OrganizacaoPageInner({
             <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/12 bg-[#050915]/95 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.75)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas disponíveis</p>
-                  <h3 className="text-xl font-semibold text-white">Adicionar ferramentas</h3>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Módulos disponíveis</p>
+                  <h3 className="text-xl font-semibold text-white">Adicionar módulos</h3>
                   <p className="text-[12px] text-white/65">
                     Ativa módulos para o teu dashboard. Podes remover quando quiseres.
                   </p>
@@ -2568,7 +2720,7 @@ function OrganizacaoPageInner({
                     <div key={group.label} className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.label}</p>
-                        <span className="text-[11px] text-white/40">{group.modules.length} ferramentas</span>
+                        <span className="text-[11px] text-white/40">{group.modules.length} módulos</span>
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
                         {group.modules.map((module) => renderModulePickerCard(module))}
@@ -2588,7 +2740,7 @@ function OrganizacaoPageInner({
         )
       : null;
 
-  if (loading) {
+  if (loading && !loadingTimedOut) {
     return (
       <div className={`${containerClasses} space-y-6`}>
         <div className="rounded-3xl border border-white/12 bg-white/5 p-5">
@@ -2615,6 +2767,72 @@ function OrganizacaoPageInner({
     );
   }
 
+  if (loadingTimedOut && !organizationData) {
+    return (
+      <div className={`${containerClasses} space-y-6`}>
+        <div className="max-w-xl space-y-3 rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-100 backdrop-blur-2xl">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-rose-100/80">Timeout de carregamento</p>
+          <h1 className="text-2xl font-semibold text-white">O dashboard demorou demasiado tempo a abrir.</h1>
+          <p className="text-sm text-rose-100/80">
+            Atualiza o contexto da organização e tenta novamente.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setLoadingTimedOut(false);
+                loadingRetryAttemptRef.current = false;
+                trackEvent("org_dashboard_load_retry", {
+                  organizationId: organization?.id ?? organizationId ?? null,
+                  reason: "manual_retry",
+                });
+                mutateOrganization();
+              }}
+              className={cn(CTA_PRIMARY, "justify-center")}
+            >
+              Tentar novamente
+            </button>
+            <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
+              Ir para organizações
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (organizationError && !organizationData) {
+    return (
+      <div className={`${containerClasses} space-y-6`}>
+        <div className="max-w-xl space-y-3 rounded-3xl border border-rose-400/40 bg-rose-500/10 p-6 text-rose-100 backdrop-blur-2xl">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-rose-100/80">Erro de contexto</p>
+          <h1 className="text-2xl font-semibold text-white">Não foi possível carregar a organização.</h1>
+          <p className="text-sm text-rose-100/80">
+            Recarrega a página. Se persistir, troca de organização no topo e volta a abrir o dashboard.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent("org_dashboard_load_retry", {
+                  organizationId: organization?.id ?? organizationId ?? null,
+                  reason: "error_retry",
+                });
+                mutateOrganization();
+              }}
+              className={cn(CTA_PRIMARY, "justify-center")}
+            >
+              Tentar novamente
+            </button>
+            <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
+              Ir para organizações
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!hasOrganization || !organization) {
     return (
       <div className={`${containerClasses} space-y-6`}>
@@ -2623,10 +2841,10 @@ function OrganizacaoPageInner({
           <h1 className="text-2xl font-semibold text-white">Liga-te a uma organização.</h1>
           <p className="text-sm text-white/70">Cria ou escolhe uma organização para entrar.</p>
           <div className="flex flex-wrap gap-2">
-            <Link href="/organizacao/become" className={cn(CTA_PRIMARY, "justify-center")}>
+            <Link href="/org-hub/create" className={cn(CTA_PRIMARY, "justify-center")}>
               Criar organização
             </Link>
-            <Link href="/organizacao/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
+            <Link href="/org-hub/organizations" className={cn(CTA_SECONDARY, "justify-center")}>
               Escolher organização
             </Link>
           </div>
@@ -2694,7 +2912,7 @@ function OrganizacaoPageInner({
                 onClick={() => setToolsModalOpen(true)}
                 className={CTA_SECONDARY}
               >
-                Ferramentas
+                Módulos
               </button>
             </div>
           </div>
@@ -2827,13 +3045,13 @@ function OrganizacaoPageInner({
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Módulos</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setToolsModalOpen(true)}
                   disabled={!canEditModules || addableModules.length === 0}
-                  aria-label="Adicionar ferramenta"
+                  aria-label="Adicionar módulo"
                   className={cn(
                     "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10",
                     (!canEditModules || addableModules.length === 0) && "cursor-not-allowed opacity-50",

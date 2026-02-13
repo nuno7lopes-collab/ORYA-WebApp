@@ -37,6 +37,7 @@ import {
   Prisma,
   AddressSourceProvider,
   padel_format,
+  PadelTournamentRole,
   OrganizationModule,
   TournamentFormat,
 } from "@prisma/client";
@@ -563,10 +564,70 @@ async function _POST(req: NextRequest) {
 
       const club = await prisma.padelClub.findFirst({
         where: { id: padelClubId, organizationId: organization.id, isActive: true, deletedAt: null },
-        select: { id: true },
+        select: { id: true, kind: true, sourceClubId: true },
       });
       if (!club) {
         return fail(400, "Clube de padel arquivado ou inexistente.");
+      }
+
+      if (club.kind === "PARTNER") {
+        if (!club.sourceClubId) {
+          return fail(400, "Clube parceiro inválido: falta ligação ao clube de origem.");
+        }
+
+        const agreementDateClauses: Prisma.PadelPartnershipAgreementWhereInput[] = [];
+        if (endsAt) {
+          agreementDateClauses.push({
+            OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }],
+          });
+        }
+        if (startsAt) {
+          agreementDateClauses.push({
+            OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
+          });
+        }
+
+        const agreement = await prisma.padelPartnershipAgreement.findFirst({
+          where: {
+            ownerClubId: club.sourceClubId,
+            partnerOrganizationId: organization.id,
+            status: "APPROVED",
+            revokedAt: null,
+            AND: [
+              { OR: [{ partnerClubId: club.id }, { partnerClubId: null }] },
+              ...agreementDateClauses,
+            ],
+          },
+          select: { id: true },
+        });
+
+        if (!agreement) {
+          return fail(400, "Clube parceiro sem parceria aprovada para este período.");
+        }
+
+        const windowDateClauses: Prisma.PadelPartnershipWindowWhereInput[] = [];
+        if (endsAt) {
+          windowDateClauses.push({
+            OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }],
+          });
+        }
+        if (startsAt) {
+          windowDateClauses.push({
+            OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
+          });
+        }
+
+        const windowsCount = await prisma.padelPartnershipWindow.count({
+          where: {
+            agreementId: agreement.id,
+            isActive: true,
+            ...(windowDateClauses.length > 0 ? { AND: windowDateClauses } : {}),
+          },
+        });
+
+        if (windowsCount === 0) {
+          return fail(400, "Parceria sem janelas ativas para o período do torneio.");
+        }
       }
 
       const activeCourts = await prisma.padelClubCourt.findMany({
@@ -829,6 +890,22 @@ async function _POST(req: NextRequest) {
                 }
               : {}),
           },
+        });
+        await prisma.padelTournamentRoleAssignment.upsert({
+          where: {
+            eventId_role_userId: {
+              eventId: event.id,
+              role: PadelTournamentRole.DIRETOR_PROVA,
+              userId: profile.id,
+            },
+          },
+          create: {
+            eventId: event.id,
+            organizationId: organization.id,
+            userId: profile.id,
+            role: PadelTournamentRole.DIRETOR_PROVA,
+          },
+          update: {},
         });
         if (config.ruleSetId) {
           await prisma.$transaction(async (tx) => {

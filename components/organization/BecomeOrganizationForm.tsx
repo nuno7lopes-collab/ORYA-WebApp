@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
-import { ModuleIcon } from "@/app/organizacao/moduleIcons";
+import { ModuleIcon } from "@/app/org/_shared/moduleIcons";
 import {
   DEFAULT_PRIMARY_MODULE,
   getDefaultOrganizationModules,
@@ -16,7 +16,7 @@ import {
   BecomeOrganizationFormValues,
   becomeOrganizationSchema,
 } from "@/lib/validation/organization";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "reserved" | "error";
 
@@ -293,10 +293,9 @@ export default function BecomeOrganizationForm() {
     }
     const fallbackOrgId =
       organizationId ?? createdOrganizationIdRef.current ?? getOrganizationIdFromBrowser();
-    const targetHref = appendOrganizationIdToHref(
-      "/organizacao/overview?section=modulos",
-      fallbackOrgId,
-    );
+    const targetHref = fallbackOrgId
+      ? buildOrgHref(fallbackOrgId, "/overview", { section: "modulos" })
+      : buildOrgHubHref("/organizations");
     buildTimerRef.current = setTimeout(() => {
       router.replace(targetHref);
     }, 7000);
@@ -431,7 +430,7 @@ export default function BecomeOrganizationForm() {
 
     setSaving(true);
     try {
-      const res = await fetch("/api/organizacao/organizations", {
+      const res = await fetch("/api/org-hub/organizations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -452,7 +451,7 @@ export default function BecomeOrganizationForm() {
       const nextOrganizationId =
         typeof data?.organization?.id === "number" ? data.organization.id : null;
       if (nextOrganizationId) {
-        await fetch("/api/organizacao/organizations/switch", {
+        await fetch("/api/org-hub/organizations/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ organizationId: data.organization.id }),

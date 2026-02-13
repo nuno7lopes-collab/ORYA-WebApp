@@ -52,7 +52,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       return jsonWrap({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
     }
 
-    return jsonWrap({ ok: true, segment });
+    return jsonWrap({
+      ok: true,
+      segment: {
+        ...segment,
+        definition: segment.rules,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

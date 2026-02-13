@@ -84,7 +84,7 @@ export default async function OrganizationsHubPage() {
     if (pendingInvite) {
       redirect("/convites/organizacoes");
     }
-    redirect("/organizacao/become");
+    redirect("/org-hub/create");
   }
 
   const cookieStore = await cookies();

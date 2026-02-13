@@ -59,6 +59,7 @@ type PartnershipSnapshotRow = {
   partnerClubId: number;
   localCourtId: number | null;
   sourceCourtId: number;
+  ttlAt: Date | null;
 };
 
 function overlaps(startA: Date, endA: Date, startB: Date, endB: Date) {
@@ -305,6 +306,7 @@ export async function resolvePartnershipScheduleConstraints(params: {
         },
       })
     : [];
+  const now = new Date();
   const snapshots: PartnershipSnapshotRow[] = await db.padelPartnerCourtSnapshot.findMany({
     where: {
       partnerOrganizationId: organizationId,
@@ -316,15 +318,22 @@ export async function resolvePartnershipScheduleConstraints(params: {
       partnerClubId: true,
       localCourtId: true,
       sourceCourtId: true,
+      ttlAt: true,
     },
   });
 
   const policyByAgreementId = new Map<number, PartnershipPolicyRow>(
     policies.map((policy) => [policy.agreementId, policy] as [number, PartnershipPolicyRow]),
   );
+  const snapshotByLocalCourtIdAll = new Map<number, PartnershipSnapshotRow>(
+    snapshots
+      .filter((snapshot) => typeof snapshot.localCourtId === "number")
+      .map((snapshot) => [snapshot.localCourtId as number, snapshot] as [number, PartnershipSnapshotRow]),
+  );
   const snapshotByLocalCourtId = new Map<number, PartnershipSnapshotRow>(
     snapshots
       .filter((snapshot) => typeof snapshot.localCourtId === "number")
+      .filter((snapshot) => snapshot.ttlAt == null || snapshot.ttlAt > now)
       .map((snapshot) => [snapshot.localCourtId as number, snapshot] as [number, PartnershipSnapshotRow]),
   );
 
@@ -350,15 +359,17 @@ export async function resolvePartnershipScheduleConstraints(params: {
     for (const court of clubCourts) {
       const snapshot = snapshotByLocalCourtId.get(court.id);
       if (!snapshot) {
+        const anySnapshot = snapshotByLocalCourtIdAll.get(court.id);
+        const reason = anySnapshot ? "PARTNERSHIP_SNAPSHOT_EXPIRED" : "PARTNERSHIP_SNAPSHOT_REQUIRED";
         additionalCourtBlocks.push({
           courtId: court.id,
           startAt: windowStart,
           endAt: windowEnd,
-          reason: "PARTNERSHIP_SNAPSHOT_REQUIRED",
+          reason,
           partnerClubId: partnerClub.id,
           agreementIds: agreementIdsForClub,
         });
-        errors.push(`PARTNERSHIP_SNAPSHOT_REQUIRED:court:${court.id}`);
+        errors.push(`${reason}:court:${court.id}`);
         continue;
       }
 

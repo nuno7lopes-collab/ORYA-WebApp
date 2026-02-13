@@ -6,7 +6,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import CrmSubnav from "./CrmSubnav";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { prisma } from "@/lib/prisma";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
@@ -46,10 +45,5 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     redirect(appendOrganizationIdToHref("/organizacao/overview?section=modulos", organization.id));
   }
 
-  return (
-    <div className="space-y-6">
-      <CrmSubnav />
-      {children}
-    </div>
-  );
+  return <div className="space-y-6">{children}</div>;
 }

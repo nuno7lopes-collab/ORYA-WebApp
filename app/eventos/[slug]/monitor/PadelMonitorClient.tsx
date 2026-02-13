@@ -241,14 +241,11 @@ function OpsPanel({
           ? t("confirmRetirement", locale)
           : t("confirmInjury", locale);
     if (!window.confirm(`${confirmLabel} ${label}?`)) return;
-    const ok = await submit("/api/padel/matches", {
-      id: match.id,
-      status: "DONE",
-      score: {
-        resultType,
-        winnerSide,
-        walkover: resultType === "WALKOVER",
-      },
+    const ok = await submit(`/api/padel/matches/${match.id}/walkover`, {
+      winner: winnerSide,
+      resultType,
+      confirmedByRole: "DIRETOR_PROVA",
+      confirmationSource: "WEB_ORGANIZATION",
     });
     if (ok) {
       setMessage(t("matchResultSaved", locale));

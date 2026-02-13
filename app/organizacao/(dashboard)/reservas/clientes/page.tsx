@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -26,7 +28,7 @@ export default function ReservasClientesPage() {
   const shouldSearch = trimmedQuery.length >= 2;
   const { data, isLoading } = useSWR<{ ok: boolean; items: ClientItem[] }>(
     shouldSearch
-      ? `/api/organizacao/reservas/clientes?q=${encodeURIComponent(trimmedQuery)}`
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/clientes?q=${encodeURIComponent(trimmedQuery)}`)
       : null,
     fetcher,
   );

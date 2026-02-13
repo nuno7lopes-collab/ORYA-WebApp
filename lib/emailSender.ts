@@ -2,7 +2,7 @@
 
 import { sendEmail, assertEmailReady } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import {
   renderPurchaseConfirmationEmail,
   renderTournamentScheduleEmail,
@@ -301,10 +301,9 @@ type OwnerTransferEmailInput = {
 export async function sendOwnerTransferEmail(input: OwnerTransferEmailInput) {
   assertEmailReady();
   const baseUrl = getAppBaseUrl();
-  const confirmPath = appendOrganizationIdToHref(
-    `/organizacao/owner/confirm?token=${encodeURIComponent(input.token)}`,
-    input.organizationId ?? null,
-  );
+  const confirmPath = input.organizationId
+    ? buildOrgHref(input.organizationId, "/settings", { token: input.token })
+    : buildOrgHubHref("/organizations");
   const confirmUrl = `${baseUrl}${confirmPath}`;
   const { subject, html, text } = renderOwnerTransferEmail({
     organizationName: input.organizationName,
@@ -333,10 +332,9 @@ type OfficialEmailVerificationInput = {
 export async function sendOfficialEmailVerificationEmail(input: OfficialEmailVerificationInput) {
   assertEmailReady();
   const baseUrl = getAppBaseUrl();
-  const confirmPath = appendOrganizationIdToHref(
-    `/organizacao/settings/verify?token=${encodeURIComponent(input.token)}`,
-    input.organizationId ?? null,
-  );
+  const confirmPath = input.organizationId
+    ? buildOrgHref(input.organizationId, "/settings/verify", { token: input.token })
+    : buildOrgHubHref("/organizations");
   const confirmUrl = `${baseUrl}${confirmPath}`;
   const { subject, html, text } = renderOfficialEmailVerificationEmail({
     organizationName: input.organizationName,

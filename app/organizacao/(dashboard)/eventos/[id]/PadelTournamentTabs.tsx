@@ -31,7 +31,21 @@ type Match = {
   roundLabel?: string | null;
 };
 
-type Standings = Record<string, Array<{ pairingId: number; points: number; wins: number; losses: number; setsFor: number; setsAgainst: number }>>;
+type Standings = Record<
+  string,
+  Array<{
+    entityId: number;
+    pairingId: number | null;
+    playerId?: number | null;
+    label?: string | null;
+    points: number;
+    wins: number;
+    draws?: number;
+    losses: number;
+    setsFor: number;
+    setsAgainst: number;
+  }>
+>;
 type CategoryMeta = { name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null };
 type PadelRuleSetSummary = { id: number; name: string; tieBreakRules?: string[] | null; pointsTable?: Record<string, number> | null };
 type PadelRuleSetsResponse = { ok: boolean; items?: PadelRuleSetSummary[] };
@@ -299,7 +313,7 @@ export default function PadelTournamentTabs({
 
   const pairings: Pairing[] = pairingsRes?.pairings ?? [];
   const matches: Match[] = Array.isArray(matchesRes?.items) ? (matchesRes.items as Match[]) : emptyMatches;
-  const standings: Standings = standingsRes?.standings ?? {};
+  const standings: Standings = standingsRes?.groups ?? standingsRes?.standings ?? {};
   const pairingsById = useMemo(() => new Map(pairings.map((pairing) => [pairing.id, pairing])), [pairings]);
   const swapCandidates = useMemo(
     () =>
@@ -1522,6 +1536,7 @@ export default function PadelTournamentTabs({
     }
 
     updateResultDraft(matchId, { saving: true, error: null });
+    const isSpecialResult = resultType !== "NORMAL";
     const score: Record<string, unknown> = {
       resultType,
       ...(sets.length > 0 ? { sets } : {}),
@@ -1530,11 +1545,22 @@ export default function PadelTournamentTabs({
       ...(draft.streamUrl ? { liveStreamUrl: draft.streamUrl.trim() } : {}),
     };
 
-    const res = await fetch(`/api/padel/matches`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: matchId, status: "DONE", score }),
-    });
+    const res = isSpecialResult
+      ? await fetch(`/api/padel/matches/${matchId}/walkover`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            winner: draft.winnerSide,
+            resultType,
+            confirmedByRole: "DIRETOR_PROVA",
+            confirmationSource: "WEB_ORGANIZATION",
+          }),
+        })
+      : await fetch(`/api/padel/matches`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: matchId, status: "DONE", score }),
+        });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
       const error =
@@ -1630,7 +1656,11 @@ export default function PadelTournamentTabs({
       const res = await fetch(`/api/padel/matches/${matchId}/dispute`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolutionNote }),
+        body: JSON.stringify({
+          ...(resolutionNote ? { resolutionNote } : {}),
+          resolutionStatus: "CONFIRMED",
+          confirmationSource: "WEB_ORGANIZATION",
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -2792,13 +2822,15 @@ export default function PadelTournamentTabs({
                   </div>
                   <div className="space-y-2">
                     {rows.map((row, index) => {
-                      const pairing = pairingsById.get(row.pairingId) ?? null;
+                      const pairing = typeof row.pairingId === "number" ? (pairingsById.get(row.pairingId) ?? null) : null;
                       const setDiff = row.setsFor - row.setsAgainst;
                       return (
-                        <div key={`stand-${row.pairingId}`} className="flex items-center justify-between gap-2 text-[12px]">
+                        <div key={`stand-${row.entityId}`} className="flex items-center justify-between gap-2 text-[12px]">
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-white/50">#{index + 1}</span>
-                            <span className="font-semibold text-white">{nameFromSlots(pairing, locale)}</span>
+                            <span className="font-semibold text-white">
+                              {row.label || (pairing ? nameFromSlots(pairing, locale) : `Jogador #${row.entityId}`)}
+                            </span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/60">
                             <span>{row.points} pts</span>

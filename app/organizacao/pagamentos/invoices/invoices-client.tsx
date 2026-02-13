@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import useSWR from "swr";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useEffect } from "react";
@@ -63,7 +65,7 @@ export default function InvoicesClient({
     null;
   const qs = toQuery({ organizationId, from, to });
   const { data, isLoading, mutate } = useSWR(
-    () => (organizationId ? `/api/organizacao/pagamentos/invoices${qs}` : null),
+    () => (organizationId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/pagamentos/invoices${qs}`) : null),
     fetcher,
     { revalidateOnFocus: false },
   );

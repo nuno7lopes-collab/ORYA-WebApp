@@ -40,7 +40,7 @@ export default async function ModuleGuardLayout({
   });
 
   if (!organization) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   if (!requiredModules.length) {

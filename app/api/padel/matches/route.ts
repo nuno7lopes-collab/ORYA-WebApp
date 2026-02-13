@@ -16,6 +16,7 @@ import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessP
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
@@ -34,6 +35,9 @@ function fail(
 }
 
 async function _GET(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
@@ -108,6 +112,9 @@ async function _GET(req: NextRequest) {
 }
 
 async function _POST(req: NextRequest) {
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
+
   const ctx = getRequestContext(req);
   const supabase = await createSupabaseServer();
   const {
@@ -209,6 +216,13 @@ async function _POST(req: NextRequest) {
   }
 
   const hasIncomingSets = scoreObj && Object.prototype.hasOwnProperty.call(scoreObj, "sets");
+  const hasTimedPayload =
+    !!scoreObj &&
+    (scoreObj.mode === "TIMED_GAMES" ||
+      Object.prototype.hasOwnProperty.call(scoreObj, "gamesA") ||
+      Object.prototype.hasOwnProperty.call(scoreObj, "gamesB") ||
+      Object.prototype.hasOwnProperty.call(scoreObj, "endedByBuzzer") ||
+      Object.prototype.hasOwnProperty.call(scoreObj, "endedAt"));
   const incomingSets = hasIncomingSets ? (scoreObj as { sets?: unknown }).sets : undefined;
   const fallbackSets = Array.isArray(match.scoreSets)
     ? match.scoreSets
@@ -217,7 +231,7 @@ async function _POST(req: NextRequest) {
       : null;
   const rawSets = hasIncomingSets ? incomingSets : fallbackSets;
   const isWalkover = false;
-  const shouldApplyScoreRules = hasIncomingSets || isWalkover;
+  const shouldApplyScoreRules = hasIncomingSets || hasTimedPayload || isWalkover;
   const configForScore = shouldApplyScoreRules
     ? await prisma.padelTournamentConfig.findUnique({
         where: { eventId: match.eventId },
@@ -250,6 +264,8 @@ async function _POST(req: NextRequest) {
     };
   }
 
+  const isDrawResult = stats?.isDraw === true;
+  const isByeNeutral = stats?.resultType === "BYE_NEUTRAL";
   let winnerPairingId: number | null = null;
   const winnerSideRaw = mergedScore?.winnerSide;
   const winnerSide =
@@ -258,19 +274,28 @@ async function _POST(req: NextRequest) {
   if (winnerSide === "B" && match.pairingBId) winnerPairingId = match.pairingBId;
 
   const shouldSetWinner = nextStatus === "DONE";
-  if (shouldSetWinner && !winnerPairingId) {
+  if (shouldSetWinner && !winnerPairingId && !isDrawResult && !isByeNeutral) {
     if (match.pairingAId && !match.pairingBId) winnerPairingId = match.pairingAId;
     if (!match.pairingAId && match.pairingBId) winnerPairingId = match.pairingBId;
   }
-  if (shouldSetWinner && !winnerPairingId) {
+  if (shouldSetWinner && !winnerPairingId && !isDrawResult && !isByeNeutral) {
     return fail(ctx, 400, "INVALID_SCORE");
   }
 
   const scoreValue = (scoreObj ? mergedScore : existingScore) as Prisma.InputJsonValue;
   const shouldSetScoreSetsFromStats =
-    !hasIncomingSets && nextStatus === "DONE" && stats?.sets && !Array.isArray(match.scoreSets);
+    !hasIncomingSets &&
+    nextStatus === "DONE" &&
+    stats?.mode === "SETS" &&
+    Array.isArray(stats?.sets) &&
+    stats.sets.length > 0 &&
+    !Array.isArray(match.scoreSets);
+  const shouldResetScoreSetsForTimed =
+    !hasIncomingSets && nextStatus === "DONE" && stats?.mode === "TIMED_GAMES";
   const scoreSetsValue = hasIncomingSets
     ? ((stats?.sets ?? incomingSets) as Prisma.InputJsonValue)
+    : shouldResetScoreSetsForTimed
+      ? ([] as Prisma.InputJsonValue)
     : shouldSetScoreSetsFromStats
       ? (stats?.sets as Prisma.InputJsonValue)
       : (match.scoreSets as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined);
@@ -302,7 +327,11 @@ async function _POST(req: NextRequest) {
       status: nextStatus,
       score: scoreValue,
       scoreSets: scoreSetsValue,
-      winnerPairingId: shouldSetWinner ? winnerPairingId ?? match.winnerPairingId : match.winnerPairingId,
+      winnerPairingId: shouldSetWinner
+        ? isDrawResult || isByeNeutral
+          ? null
+          : winnerPairingId ?? match.winnerPairingId
+        : match.winnerPairingId,
       startTime: startAtRaw ?? match.startTime,
       courtId: courtIdValue ?? match.courtId,
       ...(typeof courtNumberValue === "number" ? { courtNumber: courtNumberValue } : {}),

@@ -1,6 +1,6 @@
 "use client";
 
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_shared/dashboardUi";
 
 type FlowStickyFooterProps = {
   backLabel?: string;

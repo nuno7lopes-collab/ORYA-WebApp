@@ -56,7 +56,7 @@ export async function ensureDashboardAccess(): Promise<DashboardAccessResult> {
     if (pendingInvite) {
       redirect("/convites/organizacoes");
     }
-    redirect("/organizacao/become");
+    redirect("/org-hub/create");
   }
 
   const cookieStore = await cookies();
@@ -75,7 +75,7 @@ export async function ensureDashboardAccess(): Promise<DashboardAccessResult> {
   const isSuspended = organization?.status === OrganizationStatus.SUSPENDED;
 
   if (!activeOrganizationId) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   return {

@@ -23,7 +23,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { sanitizeUsername } from "@/lib/username";
 import InviteGateClient from "./InviteGateClient";
 import { Avatar } from "@/components/ui/avatar";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "@/app/components/checkout/checkoutCopy";
 import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
@@ -146,12 +146,17 @@ type EventResale = {
   ticketTypeName?: string | null;
 };
 type PadelStandingRow = {
-  pairingId: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId?: number | null;
   points: number;
   wins: number;
+  draws?: number;
   losses: number;
   setsFor: number;
   setsAgainst: number;
+  label?: string | null;
+  players?: Array<{ id?: number | null; name?: string | null; username?: string | null }> | null;
 };
 
 const EVENT_BG_MASK = `linear-gradient(
@@ -725,11 +730,11 @@ export default async function EventPage({
         );
         if (standingsRes.ok) {
           const data = (await standingsRes.json().catch(() => null)) as
-            | { ok?: boolean; standings?: Record<string, PadelStandingRow[]> }
+            | { ok?: boolean; groups?: Record<string, PadelStandingRow[]> }
             | null;
-          if (data?.ok && data.standings) {
+          if (data?.ok && data.groups) {
             padelStandings = Object.fromEntries(
-              Object.entries(data.standings).map(([group, rows]) => [
+              Object.entries(data.groups).map(([group, rows]) => [
                 group,
                 rows.map((row) => ({
                   ...row,

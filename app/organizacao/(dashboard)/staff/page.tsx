@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
@@ -375,7 +377,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdParsed = organizationIdParam ? Number(organizationIdParam) : null;
   const organizationId = organizationIdParsed && Number.isFinite(organizationIdParsed) ? organizationIdParsed : null;
-  const orgMeUrl = organizationId ? `/api/organizacao/me?organizationId=${organizationId}` : null;
+  const orgMeUrl = organizationId ? `/api/org/${organizationId}/me` : null;
   const { data: meData } = useSWR<{
     ok: boolean;
     organization?: { id: number; publicName?: string | null } | null;
@@ -390,15 +392,15 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   const membersKey = useMemo(() => {
     if (!user) return null;
-    if (organizationId) return `/api/organizacao/organizations/members?organizationId=${organizationId}`;
-    if (eventId && !Number.isNaN(eventId)) return `/api/organizacao/organizations/members?eventId=${eventId}`;
+    if (organizationId) return `/api/org-hub/organizations/members?organizationId=${organizationId}`;
+    if (eventId && !Number.isNaN(eventId)) return `/api/org-hub/organizations/members?eventId=${eventId}`;
     return null;
   }, [user, organizationId, eventId]);
 
   const invitesKey = useMemo(() => {
     if (!user) return null;
-    if (organizationId) return `/api/organizacao/organizations/members/invites?organizationId=${organizationId}`;
-    if (eventId && !Number.isNaN(eventId)) return `/api/organizacao/organizations/members/invites?eventId=${eventId}`;
+    if (organizationId) return `/api/org-hub/organizations/members/invites?organizationId=${organizationId}`;
+    if (eventId && !Number.isNaN(eventId)) return `/api/org-hub/organizations/members/invites?eventId=${eventId}`;
     return null;
   }, [user, organizationId, eventId]);
 
@@ -428,7 +430,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     if (!user) return null;
     if (!resolvedOrganizationId) return null;
     if (!canInvite) return null;
-    return `/api/organizacao/trainers?organizationId=${resolvedOrganizationId}`;
+    return `/api/org/${resolvedOrganizationId}/trainers`;
   }, [user, resolvedOrganizationId, canInvite]);
   const { data: trainersData, mutate: mutateTrainers } = useSWR<TrainersResponse>(
     trainersKey,
@@ -442,7 +444,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const permissionsKey = useMemo(() => {
     if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
     if (activeStaffTab !== "permissoes") return null;
-    return `/api/organizacao/organizations/members/permissions?organizationId=${resolvedOrganizationId}`;
+    return `/api/org-hub/organizations/members/permissions?organizationId=${resolvedOrganizationId}`;
   }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
   const { data: permissionsData, isLoading: isPermissionsLoading, mutate: mutatePermissions } =
     useSWR<MemberPermissionsResponse>(permissionsKey, fetcher, { revalidateOnFocus: false });
@@ -451,7 +453,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const auditKey = useMemo(() => {
     if (!user || !resolvedOrganizationId || !canManagePermissions) return null;
     if (activeStaffTab !== "auditoria") return null;
-    return `/api/organizacao/audit?organizationId=${resolvedOrganizationId}&limit=80`;
+    return `/api/org/${resolvedOrganizationId}/audit?limit=80`;
   }, [activeStaffTab, canManagePermissions, resolvedOrganizationId, user]);
   const { data: auditData, isLoading: isAuditLoading } = useSWR<AuditLogResponse>(auditKey, fetcher, {
     revalidateOnFocus: false,
@@ -533,7 +535,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     const scopeKey = scopeType ? `${scopeType}:${scopeId ?? "ALL"}` : "GLOBAL";
     setPermissionSavingKey(`${userId}:${moduleKey}:${scopeKey}`);
     try {
-      const res = await fetch("/api/organizacao/organizations/members/permissions", {
+      const res = await fetch("/api/org-hub/organizations/members/permissions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -562,7 +564,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     if (!resolvedOrganizationId) return;
     setTrainerActionLoading(trainer.userId);
     try {
-      const res = await fetch("/api/organizacao/trainers", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -603,7 +605,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
     setCreatingTrainer(true);
     try {
-      const res = await fetch("/api/organizacao/trainers", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: resolvedOrganizationId, username: value }),
@@ -647,7 +649,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
     setInviteLoading(true);
     try {
-      const res = await fetch("/api/organizacao/organizations/members/invites", {
+      const res = await fetch("/api/org-hub/organizations/members/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -689,7 +691,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     if (!resolvedOrganizationId) return;
     setMemberActionLoading(userId);
     try {
-      const res = await fetch("/api/organizacao/organizations/members", {
+      const res = await fetch("/api/org-hub/organizations/members", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -751,7 +753,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     setMemberActionLoading(member.userId);
     try {
       const res = await fetch(
-        `/api/organizacao/organizations/members?organizationId=${resolvedOrganizationId}&userId=${member.userId}`,
+        `/api/org-hub/organizations/members?organizationId=${resolvedOrganizationId}&userId=${member.userId}`,
         { method: "DELETE" },
       );
       const json = await res.json().catch(() => null);
@@ -779,7 +781,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     if (!resolvedOrganizationId) return;
     setInviteActionLoading(inviteId);
     try {
-      const res = await fetch("/api/organizacao/organizations/members/invites", {
+      const res = await fetch("/api/org-hub/organizations/members/invites", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: resolvedOrganizationId, inviteId, action }),
@@ -825,7 +827,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
     setTransferLoading(true);
     try {
-      const res = await fetch("/api/organizacao/organizations/owner/transfer", {
+      const res = await fetch("/api/org-hub/organizations/owner/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: resolvedOrganizationId, targetUserId: transferTarget.trim() }),
@@ -852,7 +854,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     if (!resolvedOrganizationId) return;
     setLeaveLoading(true);
     try {
-      const res = await fetch("/api/organizacao/organizations/leave", {
+      const res = await fetch("/api/org-hub/organizations/leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: resolvedOrganizationId }),
@@ -862,7 +864,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         pushToast(json?.error || "Não foi possível sair desta organização.");
       } else {
         pushToast("Saíste da organização.", "success");
-        router.push("/organizacao/organizations");
+        router.push("/org-hub/organizations");
       }
     } catch (err) {
       console.error("[staff] leave error", err);

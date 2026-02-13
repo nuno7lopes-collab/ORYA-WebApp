@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCheckout, type DadosCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "./checkoutCopy";
 
 type Wave = {

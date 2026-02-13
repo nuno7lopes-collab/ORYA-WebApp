@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -126,7 +128,7 @@ export default function AvailabilityEditor({
     return params.toString();
   }, [scopeType, scopeId]);
 
-  const availabilityKey = `/api/organizacao/reservas/disponibilidade?${scopeParams}`;
+  const availabilityKey = resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/disponibilidade?${scopeParams}`);
   const { data: availabilityData, mutate: mutateAvailability } = useSWR<AvailabilityResponse>(availabilityKey, fetcher);
 
   const templates = availabilityData?.templates ?? [];
@@ -209,7 +211,7 @@ export default function AvailabilityEditor({
     setTemplateSavingDay(dayIdx);
     setAvailabilityError(null);
     try {
-      const res = await fetch("/api/organizacao/reservas/disponibilidade", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -263,7 +265,7 @@ export default function AvailabilityEditor({
     setOverrideSaving(true);
     setAvailabilityError(null);
     try {
-      const res = await fetch("/api/organizacao/reservas/disponibilidade", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -292,7 +294,7 @@ export default function AvailabilityEditor({
   const handleOverrideDelete = async (overrideId: number) => {
     setAvailabilityError(null);
     try {
-      const res = await fetch(`/api/organizacao/reservas/disponibilidade/${overrideId}`, { method: "DELETE" });
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/disponibilidade/${overrideId}`), { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao remover override.");

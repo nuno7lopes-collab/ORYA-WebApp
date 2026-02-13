@@ -16,6 +16,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
+import { rebuildPadelRatingsForEvent } from "@/domain/padel/ratingEngine";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -288,7 +289,24 @@ async function _POST(req: NextRequest) {
       tx,
     );
 
-    return updatedConfig;
+    let ratingSnapshot: { processedMatches: number; processedPlayers: number; rankingRows: number } | null = null;
+    if (nextStatus === PadelTournamentLifecycleStatus.COMPLETED) {
+      const configForTier = await tx.padelTournamentConfig.findUnique({
+        where: { eventId: event.id },
+        select: { advancedSettings: true },
+      });
+      const advanced = (configForTier?.advancedSettings ?? {}) as Record<string, unknown>;
+      const tier = typeof advanced.tournamentTier === "string" ? advanced.tournamentTier : null;
+      ratingSnapshot = await rebuildPadelRatingsForEvent({
+        tx,
+        organizationId: event.organizationId!,
+        eventId: event.id,
+        actorUserId: user.id,
+        tier,
+      });
+    }
+
+    return { updatedConfig, ratingSnapshot };
   });
 
   await recordOrganizationAuditSafe({
@@ -362,7 +380,15 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "TOURNAMENT_SYNC_FAILED" }, { status: 500 });
   }
 
-  return jsonWrap({ ok: true, lifecycle: updated, eventStatus: nextEventStatus }, { status: 200 });
+  return jsonWrap(
+    {
+      ok: true,
+      lifecycle: updated.updatedConfig,
+      eventStatus: nextEventStatus,
+      ...(updated.ratingSnapshot ? { ratingSnapshot: updated.ratingSnapshot } : {}),
+    },
+    { status: 200 },
+  );
 }
 
 export const GET = withApiEnvelope(_GET);

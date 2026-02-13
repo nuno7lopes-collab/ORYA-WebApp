@@ -101,13 +101,14 @@ export function resolveTierMultiplier(rawTier: string | null | undefined) {
   return TIER_MULTIPLIERS[key] ?? 1.3;
 }
 
-export function resolveCarryMultiplier(playerRating: number, partnerRating: number) {
+export function resolveCarryMultiplier(playerRating: number, partnerRating: number, actualScore = 0.5) {
   const diff = playerRating - partnerRating;
   if (!Number.isFinite(diff)) return 1;
-  if (diff >= 400) return 0.85;
-  if (diff >= 200) return 0.92;
-  if (diff <= -400) return 1.18;
-  if (diff <= -200) return 1.1;
+  const won = actualScore >= 0.5;
+  if (diff >= 400) return won ? 0.84 : 1.18;
+  if (diff >= 200) return won ? 0.9 : 1.1;
+  if (diff <= -400) return won ? 1.18 : 0.84;
+  if (diff <= -200) return won ? 1.1 : 0.9;
   return 1;
 }
 
@@ -310,7 +311,7 @@ export async function rebuildPadelRatingsForEvent(params: {
                 .reduce((acc, id) => acc + (playerProfiles.get(id)?.rating ?? ownAvgRating), 0) /
               (sidePlayers.length - 1)
             : ownAvgRating;
-        const carryMultiplier = resolveCarryMultiplier(current.rating, partnerAvg);
+        const carryMultiplier = resolveCarryMultiplier(current.rating, partnerAvg, sideScore);
         const multiplier = tierMultiplier * carryMultiplier;
 
         const updated = glicko2Update({
@@ -367,10 +368,17 @@ export async function rebuildPadelRatingsForEvent(params: {
     return { processedMatches: 0, processedPlayers: 0, rankingRows: 0 } satisfies RebuildResult;
   }
 
-  const leaderRating = Math.max(...Array.from(playerProfiles.values()).map((profile) => profile.rating));
+  const sortedProfiles = Array.from(playerProfiles.values()).sort(
+    (a, b) => b.rating - a.rating || a.playerId - b.playerId,
+  );
+  const leaderRating = sortedProfiles[0]?.rating ?? DEFAULT_RATING;
 
-  for (const profile of playerProfiles.values()) {
-    const levelVisual = computeVisualLevel(profile.rating, leaderRating);
+  for (let idx = 0; idx < sortedProfiles.length; idx += 1) {
+    const profile = sortedProfiles[idx];
+    let levelVisual = computeVisualLevel(profile.rating, leaderRating);
+    if (idx > 0 && levelVisual <= 1) {
+      levelVisual = 1.01;
+    }
     await tx.padelRatingProfile.update({
       where: { id: profile.id },
       data: {
@@ -387,7 +395,7 @@ export async function rebuildPadelRatingsForEvent(params: {
     });
   }
 
-  const sorted = Array.from(playerProfiles.values()).sort((a, b) => b.rating - a.rating || a.playerId - b.playerId);
+  const sorted = [...sortedProfiles];
   let lastPoints: number | null = null;
   let lastPosition = 0;
   const rows = sorted.map((profile, idx) => {
@@ -397,7 +405,10 @@ export async function rebuildPadelRatingsForEvent(params: {
       lastPosition = idx + 1;
     }
     const leader = sorted[0]?.rating ?? profile.rating;
-    const levelVisual = applyInactivityToVisual(computeVisualLevel(profile.rating, leader), profile.lastActivityAt ?? null);
+    let levelVisual = applyInactivityToVisual(computeVisualLevel(profile.rating, leader), profile.lastActivityAt ?? null);
+    if (idx > 0 && levelVisual <= 1) {
+      levelVisual = 1.01;
+    }
     return {
       organizationId,
       eventId,

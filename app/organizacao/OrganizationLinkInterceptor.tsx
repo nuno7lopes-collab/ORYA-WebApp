@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { usePathname, useRouter } from "next/navigation";
+import { appendOrganizationIdToHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 export default function OrganizationLinkInterceptor({
   organizationId,
@@ -10,11 +10,43 @@ export default function OrganizationLinkInterceptor({
   organizationId?: number | null;
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const resolvedOrgId = organizationId ?? parseOrganizationId(searchParams?.get("organizationId"));
+  const pathname = usePathname();
+  const resolvedOrgId = organizationId ?? parseOrgIdFromPathnameStrict(pathname);
 
   useEffect(() => {
-    if (!resolvedOrgId) return;
+    const normalizeHref = (anchor: HTMLAnchorElement) => {
+      if (!anchor.href) return;
+      if (anchor.getAttribute("data-org-link") === "ignore") return;
+      let url: URL;
+      try {
+        url = new URL(anchor.href);
+      } catch {
+        return;
+      }
+      if (url.origin !== window.location.origin) return;
+      if (!url.pathname.startsWith("/organizacao")) return;
+      const relative = `${url.pathname}${url.search}${url.hash}`;
+      const nextHref = appendOrganizationIdToHref(relative, resolvedOrgId ?? null);
+      if (nextHref && nextHref !== relative) {
+        anchor.setAttribute("href", nextHref);
+      }
+    };
+
+    // Canonicalize existing anchors so right-click/new-tab also use /org and /org-hub.
+    document.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => normalizeHref(anchor));
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          if (node instanceof HTMLAnchorElement) {
+            normalizeHref(node);
+          }
+          node.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((anchor) => normalizeHref(anchor));
+        });
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     const handleClick = (event: MouseEvent) => {
       if (event.defaultPrevented) return;
@@ -38,10 +70,9 @@ export default function OrganizationLinkInterceptor({
       }
       if (url.origin !== window.location.origin) return;
       if (!url.pathname.startsWith("/organizacao")) return;
-      if (url.searchParams.has("organizationId")) return;
 
       const relative = `${url.pathname}${url.search}${url.hash}`;
-      const nextHref = appendOrganizationIdToHref(relative, resolvedOrgId);
+      const nextHref = appendOrganizationIdToHref(relative, resolvedOrgId ?? null);
       if (nextHref === relative) return;
 
       event.preventDefault();
@@ -49,7 +80,10 @@ export default function OrganizationLinkInterceptor({
     };
 
     document.addEventListener("click", handleClick, true);
-    return () => document.removeEventListener("click", handleClick, true);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("click", handleClick, true);
+    };
   }, [resolvedOrgId, router]);
 
   return null;

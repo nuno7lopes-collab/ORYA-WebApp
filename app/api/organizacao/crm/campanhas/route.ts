@@ -6,11 +6,18 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { campaignChannelsToList, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
-import { CrmCampaignChannel, CrmCampaignStatus, OrganizationMemberRole } from "@prisma/client";
+import {
+  CrmCampaignApprovalState,
+  CrmCampaignChannel,
+  CrmCampaignStatus,
+  OrganizationMemberRole,
+  Prisma,
+} from "@prisma/client";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -53,6 +60,11 @@ async function _GET(req: NextRequest) {
     if (!crmAccess.ok) {
       return fail(ctx, 403, crmAccess.error);
     }
+    if (!isCrmCampaignsEnabled()) {
+      return fail(ctx, 403, "Campanhas CRM desativadas.", "FEATURE_DISABLED", false, {
+        feature: "CRM_CAMPAIGNS",
+      });
+    }
 
     const campaigns = await prisma.crmCampaign.findMany({
       where: { organizationId: organization.id },
@@ -62,7 +74,14 @@ async function _GET(req: NextRequest) {
         name: true,
         description: true,
         status: true,
+        approvalState: true,
+        approvalSubmittedAt: true,
+        approvalExpiresAt: true,
+        approvedAt: true,
+        rejectedAt: true,
+        cancelledAt: true,
         channel: true,
+        channels: true,
         payload: true,
         scheduledAt: true,
         sentAt: true,
@@ -78,11 +97,12 @@ async function _GET(req: NextRequest) {
 
     const items = campaigns.map((campaign) => {
       const payload = campaign.payload && typeof campaign.payload === "object" ? (campaign.payload as Record<string, unknown>) : null;
-      const channels = normalizeCampaignChannels(payload?.channels);
+      const channelsConfig = normalizeCampaignChannels(campaign.channels ?? payload?.channels);
       const { payload: _payload, ...rest } = campaign;
       return {
         ...rest,
-        channels: campaignChannelsToList(channels),
+        channels: campaignChannelsToList(channelsConfig),
+        channelsConfig,
       };
     });
 
@@ -131,6 +151,11 @@ async function _POST(req: NextRequest) {
     if (!crmAccess.ok) {
       return fail(ctx, 403, crmAccess.error);
     }
+    if (!isCrmCampaignsEnabled()) {
+      return fail(ctx, 403, "Campanhas CRM desativadas.", "FEATURE_DISABLED", false, {
+        feature: "CRM_CAMPAIGNS",
+      });
+    }
 
     const payload = (await req.json().catch(() => null)) as {
       name?: unknown;
@@ -139,6 +164,7 @@ async function _POST(req: NextRequest) {
       channel?: unknown;
       channels?: unknown;
       payload?: unknown;
+      audienceSnapshot?: unknown;
       scheduledAt?: unknown;
     } | null;
 
@@ -160,6 +186,10 @@ async function _POST(req: NextRequest) {
       ...rawPayload,
       channels: channelConfig,
     };
+    const audienceSnapshot =
+      payload?.audienceSnapshot && typeof payload.audienceSnapshot === "object" && !Array.isArray(payload.audienceSnapshot)
+        ? (payload.audienceSnapshot as Prisma.InputJsonValue)
+        : ({} as Prisma.InputJsonValue);
     const scheduledAtRaw = payload?.scheduledAt;
     let scheduledAt: Date | null = null;
 
@@ -190,7 +220,10 @@ async function _POST(req: NextRequest) {
         description,
         segmentId,
         channel,
-        payload: campaignPayload as any,
+        channels: channelConfig as Prisma.InputJsonValue,
+        approvalState: CrmCampaignApprovalState.DRAFT,
+        payload: campaignPayload as Prisma.InputJsonValue,
+        audienceSnapshot,
         scheduledAt,
         status: scheduledAt ? CrmCampaignStatus.SCHEDULED : CrmCampaignStatus.DRAFT,
         createdByUserId: user.id,
@@ -200,7 +233,10 @@ async function _POST(req: NextRequest) {
         name: true,
         description: true,
         status: true,
+        approvalState: true,
         channel: true,
+        channels: true,
+        scheduledAt: true,
         createdAt: true,
         updatedAt: true,
       },

@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
@@ -95,7 +97,7 @@ export default function CrmCustomerDetailPage() {
   const params = useParams();
   const customerId = typeof params?.customerId === "string" ? params.customerId : "";
   const { data, isLoading, mutate } = useSWR<CustomerDetailResponse>(
-    customerId ? `/api/organizacao/crm/clientes/${customerId}` : null,
+    customerId ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customerId}`) : null,
     fetcher,
   );
 
@@ -111,7 +113,7 @@ export default function CrmCustomerDetailPage() {
     if (customer) {
       setTagInput(customer.tags.join(", "));
     }
-  }, [customer?.id]);
+  }, [customer?.id, customer?.tags]);
 
   const interactions = useMemo(() => data?.interactions ?? [], [data]);
   const notes = useMemo(() => data?.notes ?? [], [data]);
@@ -125,7 +127,7 @@ export default function CrmCustomerDetailPage() {
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean);
-      const res = await fetch(`/api/organizacao/crm/clientes/${customer.id}/tags`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customer.id}/tags`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tags }),
@@ -144,7 +146,7 @@ export default function CrmCustomerDetailPage() {
     setNoteSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/organizacao/crm/clientes/${customer.id}/notas`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/clientes/${customer.id}/notas`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: noteBody.trim() }),
@@ -165,7 +167,7 @@ export default function CrmCustomerDetailPage() {
     setConsentSaving((prev) => ({ ...prev, [key]: true }));
     setError(null);
     try {
-      const res = await fetch(`/api/organizacao/consentimentos/${customer.id}`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/consentimentos/${customer.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, granted }),
@@ -262,7 +264,7 @@ export default function CrmCustomerDetailPage() {
               const snapshot = customer.consents?.[type] ?? null;
               const status = snapshot?.status ?? null;
               const label = CONSENT_STATUS_LABELS[status ?? ""] ?? "Indefinido";
-              const key = `${customer.userId}:${type}`;
+              const key = `${customer.id}:${type}`;
               const isSaving = Boolean(consentSaving[key]);
               const isGranted = status === "GRANTED";
               return (

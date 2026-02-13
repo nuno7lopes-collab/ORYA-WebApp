@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { rebuildCrmCustomers } from "@/lib/crm/rebuild";
+import { rebuildCrmContacts } from "@/lib/crm/rebuild";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logInfo } from "@/lib/observability/logger";
@@ -23,7 +23,7 @@ async function _POST(req: NextRequest) {
     }
 
     const orgParam = parseOrganizationId(req.nextUrl.searchParams.get("organizationId"));
-    const result = await rebuildCrmCustomers({ organizationId: orgParam ?? null });
+    const result = await rebuildCrmContacts({ organizationId: orgParam ?? null });
     logInfo("cron.crm.rebuild", { organizationId: orgParam ?? null, ...result });
     await recordCronHeartbeat("crm-rebuild", { status: "SUCCESS", startedAt });
     return jsonWrap({ ok: true, ...result }, { status: 200 });

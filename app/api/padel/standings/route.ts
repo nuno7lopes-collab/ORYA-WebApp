@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -9,16 +9,86 @@ import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   computePadelStandingsByGroup,
+  computePadelStandingsByGroupForPlayers,
   normalizePadelPointsTable,
   normalizePadelTieBreakRules,
+  type PadelStandingEntityType,
+  type PadelStandingRow,
 } from "@/domain/padel/standings";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { logError } from "@/lib/observability/logger";
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+
+type StandingsApiRow = {
+  groupLabel: string;
+  rank: number;
+  entityId: number;
+  pairingId: number | null;
+  playerId: number | null;
+  points: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  setDiff: number;
+  gameDiff: number;
+  setsFor: number;
+  setsAgainst: number;
+  gamesFor: number;
+  gamesAgainst: number;
+  label: string | null;
+  players: Array<{ id: number | null; name: string | null; username: string | null }> | null;
+};
+
+function tieBreakRulesForFormat(format: string | null) {
+  if (format === "NON_STOP") {
+    return normalizePadelTieBreakRules(["POINTS", "HEAD_TO_HEAD", "GAME_DIFFERENCE", "GAMES_FOR", "COIN_TOSS"]);
+  }
+  if (format === "AMERICANO" || format === "MEXICANO") {
+    return normalizePadelTieBreakRules(["POINTS", "GAME_DIFFERENCE", "GAMES_FOR", "HEAD_TO_HEAD", "COIN_TOSS"]);
+  }
+  return null;
+}
+
+function toApiRows(
+  standingsByGroup: Record<string, PadelStandingRow[]>,
+  entityType: PadelStandingEntityType,
+  labels: Map<number, { label: string | null; players: Array<{ id: number | null; name: string | null; username: string | null }> | null }>,
+) {
+  const rows: StandingsApiRow[] = [];
+  Object.entries(standingsByGroup).forEach(([groupLabel, groupRows]) => {
+    groupRows.forEach((row, idx) => {
+      const meta = labels.get(row.entityId);
+      rows.push({
+        groupLabel,
+        rank: idx + 1,
+        entityId: row.entityId,
+        pairingId: entityType === "PAIRING" ? row.entityId : null,
+        playerId: entityType === "PLAYER" ? row.entityId : null,
+        points: row.points,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+        setDiff: row.setDiff,
+        gameDiff: row.gameDiff,
+        setsFor: row.setsFor,
+        setsAgainst: row.setsAgainst,
+        gamesFor: row.gamesFor,
+        gamesAgainst: row.gamesAgainst,
+        label: meta?.label ?? null,
+        players: meta?.players ?? null,
+      });
+    });
+  });
+  return rows;
+}
 
 async function _GET(req: NextRequest) {
   try {
+    const mobileGate = enforceMobileVersionGate(req);
+    if (mobileGate) return mobileGate;
+
     const supabase = await createSupabaseServer();
     const {
       data: { user },
@@ -35,7 +105,14 @@ async function _GET(req: NextRequest) {
       select: {
         organizationId: true,
         status: true,
-        padelTournamentConfig: { select: { ruleSetId: true, advancedSettings: true, lifecycleStatus: true } },
+        padelTournamentConfig: {
+          select: {
+            ruleSetId: true,
+            advancedSettings: true,
+            lifecycleStatus: true,
+            format: true,
+          },
+        },
         accessPolicies: {
           orderBy: { policyVersion: "desc" },
           take: 1,
@@ -74,9 +151,13 @@ async function _GET(req: NextRequest) {
       if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
     }
 
+    const format = event.padelTournamentConfig?.format ?? null;
+    const entityType: PadelStandingEntityType = format === "AMERICANO" || format === "MEXICANO" ? "PLAYER" : "PAIRING";
+
     const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId });
     const pointsTable: PadelPointsTable = normalizePadelPointsTable(ruleSnapshot.pointsTable);
-    const tieBreakRules = normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules);
+    const tieBreakRules =
+      tieBreakRulesForFormat(format) ?? normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules);
 
     const matches = await prisma.eventMatchSlot.findMany({
       where: { eventId, roundType: "GROUPS", ...matchCategoryFilter },
@@ -90,73 +171,136 @@ async function _GET(req: NextRequest) {
         status: true,
       },
     });
-    const standingsByGroup = computePadelStandingsByGroup(matches, pointsTable, tieBreakRules);
-    const pairingIds = new Set<number>();
-    Object.values(standingsByGroup).forEach((rows) => {
-      rows.forEach((row) => {
-        if (Number.isFinite(row.pairingId)) pairingIds.add(row.pairingId);
-      });
-    });
 
-    const pairingRows = pairingIds.size
-      ? await prisma.padelPairing.findMany({
-          where: { id: { in: Array.from(pairingIds) } },
-          select: {
-            id: true,
-            slots: {
-              select: {
-                slot_role: true,
-                playerProfile: { select: { fullName: true, displayName: true } },
-              },
-            },
-          },
-        })
-      : [];
-
-    const pairingMeta = new Map<
+    const drawOrderSeed = `${eventId}:${Number.isFinite(categoryId) ? categoryId : "all"}:${format ?? "UNKNOWN"}`;
+    let standingsByGroup: Record<string, PadelStandingRow[]> = {};
+    const labelByEntityId = new Map<
       number,
-      { label: string | null; players: Array<{ name: string | null; username: string | null }> }
+      { label: string | null; players: Array<{ id: number | null; name: string | null; username: string | null }> | null }
     >();
 
-    const formatPairingLabel = (pairing: (typeof pairingRows)[number]) => {
-      const sortedSlots = [...(pairing.slots ?? [])].sort((a, b) => {
-        if (a.slot_role === b.slot_role) return 0;
-        if (a.slot_role === "CAPTAIN") return -1;
-        if (b.slot_role === "CAPTAIN") return 1;
-        return 0;
+    if (entityType === "PLAYER") {
+      const pairingIds = new Set<number>();
+      matches.forEach((match) => {
+        if (typeof match.pairingAId === "number") pairingIds.add(match.pairingAId);
+        if (typeof match.pairingBId === "number") pairingIds.add(match.pairingBId);
       });
-      const players = sortedSlots.map((slot) => ({
-        name: slot.playerProfile?.fullName ?? slot.playerProfile?.displayName ?? null,
-        username: slot.playerProfile?.displayName ?? null,
-      }));
-      const names = players
-        .map((p) => p.name || p.username)
-        .filter(Boolean) as string[];
-      const label = names.length ? names.join(" / ") : `Dupla ${pairing.id}`;
-      return { label, players };
-    };
 
-    pairingRows.forEach((pairing) => {
-      pairingMeta.set(pairing.id, formatPairingLabel(pairing));
-    });
+      const pairings = pairingIds.size
+        ? await prisma.padelPairing.findMany({
+            where: { id: { in: Array.from(pairingIds) } },
+            select: {
+              id: true,
+              slots: {
+                select: {
+                  playerProfileId: true,
+                  playerProfile: { select: { id: true, fullName: true, displayName: true } },
+                },
+              },
+            },
+          })
+        : [];
+      const pairingPlayers = new Map<number, number[]>();
+      pairings.forEach((pairing) => {
+        const playerIds = pairing.slots
+          .map((slot) => slot.playerProfileId)
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+        pairingPlayers.set(pairing.id, playerIds);
+      });
+      standingsByGroup = computePadelStandingsByGroupForPlayers(matches, pairingPlayers, pointsTable, tieBreakRules, {
+        drawOrderSeed,
+      });
 
-    const standings = Object.fromEntries(
-      Object.entries(standingsByGroup).map(([label, rows]) => [
-        label,
-        rows.map((row) => ({
-          pairingId: row.pairingId,
-          points: row.points,
-          wins: row.wins,
-          losses: row.losses,
-          setsFor: row.setsFor,
-          setsAgainst: row.setsAgainst,
-          label: pairingMeta.get(row.pairingId)?.label ?? null,
-          players: pairingMeta.get(row.pairingId)?.players ?? null,
-        })),
+      const playerIds = new Set<number>();
+      Object.values(standingsByGroup).forEach((rows) => {
+        rows.forEach((row) => {
+          if (typeof row.entityId === "number") playerIds.add(row.entityId);
+        });
+      });
+      const players = playerIds.size
+        ? await prisma.padelPlayerProfile.findMany({
+            where: { id: { in: Array.from(playerIds) } },
+            select: { id: true, fullName: true, displayName: true },
+          })
+        : [];
+      players.forEach((player) => {
+        const displayName = player.fullName ?? player.displayName ?? null;
+        labelByEntityId.set(player.id, {
+          label: displayName || `Jogador ${player.id}`,
+          players: [{ id: player.id, name: player.fullName ?? player.displayName ?? null, username: player.displayName ?? null }],
+        });
+      });
+    } else {
+      standingsByGroup = computePadelStandingsByGroup(matches, pointsTable, tieBreakRules, { drawOrderSeed });
+      const pairingIds = new Set<number>();
+      Object.values(standingsByGroup).forEach((rows) => {
+        rows.forEach((row) => {
+          if (typeof row.entityId === "number") pairingIds.add(row.entityId);
+        });
+      });
+      const pairingRows = pairingIds.size
+        ? await prisma.padelPairing.findMany({
+            where: { id: { in: Array.from(pairingIds) } },
+            select: {
+              id: true,
+              slots: {
+                select: {
+                  slot_role: true,
+                  playerProfile: { select: { id: true, fullName: true, displayName: true } },
+                },
+              },
+            },
+          })
+        : [];
+      pairingRows.forEach((pairing) => {
+        const sortedSlots = [...(pairing.slots ?? [])].sort((a, b) => {
+          if (a.slot_role === b.slot_role) return 0;
+          if (a.slot_role === "CAPTAIN") return -1;
+          if (b.slot_role === "CAPTAIN") return 1;
+          return 0;
+        });
+        const players = sortedSlots.map((slot) => ({
+          id: slot.playerProfile?.id ?? null,
+          name: slot.playerProfile?.fullName ?? slot.playerProfile?.displayName ?? null,
+          username: slot.playerProfile?.displayName ?? null,
+        }));
+        const names = players.map((p) => p.name || p.username).filter(Boolean) as string[];
+        labelByEntityId.set(pairing.id, {
+          label: names.length ? names.join(" / ") : `Dupla ${pairing.id}`,
+          players,
+        });
+      });
+    }
+
+    const rows = toApiRows(standingsByGroup, entityType, labelByEntityId);
+    const groups = Object.fromEntries(
+      Object.entries(standingsByGroup).map(([groupLabel, groupRows]) => [
+        groupLabel,
+        groupRows.map((row, idx) => {
+          const meta = labelByEntityId.get(row.entityId);
+          return {
+            rank: idx + 1,
+            entityId: row.entityId,
+            pairingId: entityType === "PAIRING" ? row.entityId : null,
+            playerId: entityType === "PLAYER" ? row.entityId : null,
+            points: row.points,
+            wins: row.wins,
+            draws: row.draws,
+            losses: row.losses,
+            setDiff: row.setDiff,
+            gameDiff: row.gameDiff,
+            setsFor: row.setsFor,
+            setsAgainst: row.setsAgainst,
+            gamesFor: row.gamesFor,
+            gamesAgainst: row.gamesAgainst,
+            label: meta?.label ?? null,
+            players: meta?.players ?? null,
+          };
+        }),
       ]),
     );
 
-    return jsonWrap({ ok: true, standings });
+    return jsonWrap({ ok: true, entityType, rows, groups });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });

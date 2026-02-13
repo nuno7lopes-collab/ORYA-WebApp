@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { cn } from "@/lib/utils";
@@ -113,7 +115,7 @@ export default function EventAttendeesPanel({
       if (statuses.length) params.set("status", statuses.join(","));
       if (cursor) params.set("cursor", cursor);
       params.set("pageSize", "50");
-      return `/api/organizacao/events/${eventId}/attendees?${params.toString()}`;
+      return resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${eventId}/attendees?${params.toString()}`);
     },
     [eventId, search, statuses],
   );
@@ -169,7 +171,7 @@ export default function EventAttendeesPanel({
     if (!confirmed) return;
     setRefundBusy((prev) => ({ ...prev, [purchaseId]: true }));
     try {
-      const res = await fetch(`/api/organizacao/events/${eventId}/refund`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/events/${eventId}/refund`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ purchaseId, reason: "CANCELLED" }),

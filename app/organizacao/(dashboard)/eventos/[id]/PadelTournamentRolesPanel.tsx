@@ -24,14 +24,14 @@ type RolesResponse = {
 };
 
 const ROLE_LABELS: Record<string, string> = {
-  DIRECTOR: "Diretor",
+  DIRETOR_PROVA: "Diretor de prova",
   REFEREE: "Árbitro",
   SCOREKEEPER: "Marcador",
   STREAMER: "Streaming",
 };
 
 export default function PadelTournamentRolesPanel({ eventId }: { eventId: number }) {
-  const [role, setRole] = useState("DIRECTOR");
+  const [role, setRole] = useState("DIRETOR_PROVA");
   const [identifier, setIdentifier] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +43,10 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
     fetcher,
   );
 
-  const roles = useMemo(() => data?.roles ?? ["DIRECTOR", "REFEREE", "SCOREKEEPER", "STREAMER"], [data]);
+  const roles = useMemo(
+    () => data?.roles ?? ["DIRETOR_PROVA", "REFEREE", "SCOREKEEPER", "STREAMER"],
+    [data],
+  );
   const items = Array.isArray(data?.items) ? data?.items ?? [] : [];
   const canManage = Boolean(data?.canManage);
 

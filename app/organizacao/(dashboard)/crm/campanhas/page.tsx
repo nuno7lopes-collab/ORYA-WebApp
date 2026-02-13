@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
@@ -20,8 +22,10 @@ type CampaignRow = {
   name: string;
   description: string | null;
   status: string;
+  approvalState?: string;
   channel: string;
   channels?: string[];
+  channelsConfig?: { inApp: boolean; email: boolean };
   scheduledAt: string | null;
   sentAt: string | null;
   sentCount: number;
@@ -36,6 +40,8 @@ type CampaignRow = {
 type CampaignListResponse = {
   ok: boolean;
   items: CampaignRow[];
+  errorCode?: string;
+  message?: string;
 };
 
 type SegmentRow = {
@@ -57,15 +63,16 @@ function formatDate(value: string | null) {
 
 export default function CrmCampanhasPage() {
   const { data, isLoading, mutate } = useSWR<CampaignListResponse>(
-    "/api/organizacao/crm/campanhas",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/campanhas"),
     fetcher,
   );
   const { data: segmentsData } = useSWR<SegmentListResponse>(
-    "/api/organizacao/crm/segmentos",
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/segmentos"),
     fetcher,
   );
   const segments = segmentsData?.items ?? [];
   const campaigns = data?.items ?? [];
+  const campaignsDisabled = data?.ok === false && data?.errorCode === "FEATURE_DISABLED";
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -80,6 +87,7 @@ export default function CrmCampanhasPage() {
   const [emailSubject, setEmailSubject] = useState("");
   const [saving, setSaving] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [actioningId, setActioningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const hasChannel = channelInApp || channelEmail;
@@ -106,6 +114,7 @@ export default function CrmCampanhasPage() {
         description: description.trim() || null,
         segmentId: segmentId || null,
         channel: "IN_APP",
+        channels: { inApp: channelInApp, email: channelEmail },
         scheduledAt: scheduledAtValue,
         payload: {
           title: title.trim() || undefined,
@@ -116,7 +125,7 @@ export default function CrmCampanhasPage() {
           channels: { inApp: channelInApp, email: channelEmail },
         },
       };
-      const res = await fetch("/api/organizacao/crm/campanhas", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/campanhas"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -145,7 +154,7 @@ export default function CrmCampanhasPage() {
     setSendingId(campaignId);
     setError(null);
     try {
-      const res = await fetch(`/api/organizacao/crm/campanhas/${campaignId}/enviar`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/campanhas/${campaignId}/enviar`), {
         method: "POST",
       });
       if (!res.ok) throw new Error("Falha ao enviar campanha");
@@ -157,6 +166,31 @@ export default function CrmCampanhasPage() {
     }
   };
 
+  const handleCampaignAction = async (
+    campaignId: string,
+    action: "submit" | "approve" | "reject" | "cancel",
+    body?: Record<string, unknown>,
+  ) => {
+    setActioningId(campaignId);
+    setError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/campanhas/${campaignId}/${action}`), {
+        method: "POST",
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message ?? json?.error ?? "Falha na ação da campanha");
+      }
+      await mutate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao processar ação");
+    } finally {
+      setActioningId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -164,6 +198,18 @@ export default function CrmCampanhasPage() {
         <h1 className={DASHBOARD_TITLE}>Campanhas</h1>
         <p className={DASHBOARD_MUTED}>Envios in-app e email com segmentação e métricas básicas.</p>
       </header>
+
+      {campaignsDisabled ? (
+        <section className={cn(DASHBOARD_CARD, "p-6")}>
+          <h2 className="text-sm font-semibold text-white">Campanhas indisponíveis</h2>
+          <p className="mt-2 text-[12px] text-white/65">
+            Esta funcionalidade está desativada por feature flag no ambiente atual.
+          </p>
+        </section>
+      ) : null}
+
+      {!campaignsDisabled ? (
+        <>
 
       {error ? (
         <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-[12px] text-rose-100">
@@ -302,7 +348,9 @@ export default function CrmCampanhasPage() {
         </div>
         <div className="grid gap-3">
           {campaigns.map((campaign) => {
-            const canSend = ["DRAFT", "PAUSED", "SCHEDULED"].includes(campaign.status);
+            const canSend =
+              ["DRAFT", "PAUSED", "SCHEDULED"].includes(campaign.status) &&
+              (campaign.approvalState ?? "DRAFT") === "APPROVED";
             return (
               <div key={campaign.id} className={cn(DASHBOARD_CARD, "p-4")}
               >
@@ -311,12 +359,11 @@ export default function CrmCampanhasPage() {
                     <p className="text-sm font-semibold text-white">{campaign.name}</p>
                     <p className="text-[12px] text-white/60">{campaign.description || "Sem descrição"}</p>
                     <p className="text-[11px] text-white/45">Segmento: {campaign.segment?.name || "Manual"}</p>
-                    <p className="text-[11px] text-white/45">
-                      Canais: {campaign.channels?.length ? campaign.channels.join(" + ") : campaign.channel}
-                    </p>
+                    <p className="text-[11px] text-white/45">Canais: {campaign.channels?.join(" + ") || campaign.channel}</p>
                   </div>
                   <div className="text-right text-[11px] text-white/60">
                     <p>Status: {campaign.status}</p>
+                    <p>Aprovação: {campaign.approvalState ?? "DRAFT"}</p>
                     <p>Enviado: {formatDate(campaign.sentAt)}</p>
                     <p>Agendado: {formatDate(campaign.scheduledAt)}</p>
                   </div>
@@ -328,6 +375,47 @@ export default function CrmCampanhasPage() {
                   <span>Falhas: {campaign.failedCount}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  {["DRAFT", "REJECTED"].includes(campaign.approvalState ?? "DRAFT") &&
+                  !["SENT", "SENDING", "CANCELLED"].includes(campaign.status) ? (
+                    <button
+                      type="button"
+                      className={CTA_NEUTRAL}
+                      onClick={() => handleCampaignAction(campaign.id, "submit")}
+                      disabled={actioningId === campaign.id}
+                    >
+                      {actioningId === campaign.id ? "A submeter..." : "Submeter aprovação"}
+                    </button>
+                  ) : null}
+                  {(campaign.approvalState ?? "") === "SUBMITTED" ? (
+                    <>
+                      <button
+                        type="button"
+                        className={CTA_NEUTRAL}
+                        onClick={() => handleCampaignAction(campaign.id, "approve")}
+                        disabled={actioningId === campaign.id}
+                      >
+                        {actioningId === campaign.id ? "A aprovar..." : "Aprovar"}
+                      </button>
+                      <button
+                        type="button"
+                        className={CTA_NEUTRAL}
+                        onClick={() => handleCampaignAction(campaign.id, "reject")}
+                        disabled={actioningId === campaign.id}
+                      >
+                        {actioningId === campaign.id ? "A rejeitar..." : "Rejeitar"}
+                      </button>
+                    </>
+                  ) : null}
+                  {!["SENT", "SENDING", "CANCELLED"].includes(campaign.status) ? (
+                    <button
+                      type="button"
+                      className={CTA_NEUTRAL}
+                      onClick={() => handleCampaignAction(campaign.id, "cancel")}
+                      disabled={actioningId === campaign.id}
+                    >
+                      {actioningId === campaign.id ? "A cancelar..." : "Cancelar"}
+                    </button>
+                  ) : null}
                   {canSend ? (
                     <button
                       type="button"
@@ -347,6 +435,8 @@ export default function CrmCampanhasPage() {
           ) : null}
         </div>
       </section>
+        </>
+      ) : null}
     </div>
   );
 }

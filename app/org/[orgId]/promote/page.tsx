@@ -1,18 +1,10 @@
-import { redirect } from "next/navigation";
-import { buildLegacyOrgHref } from "../_lib/legacyRedirect";
+import DashboardClient from "@/app/organizacao/DashboardClient";
 
 export default async function OrgPromotePage({
-  params,
   searchParams,
 }: {
-  params: Promise<{ orgId: string }>;
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const { orgId } = await params;
-  const target = await buildLegacyOrgHref({
-    orgId: Number(orgId),
-    legacyPath: "/organizacao/promote",
-    searchParams,
-  });
-  redirect(target);
+  const section = typeof searchParams?.section === "string" ? searchParams.section : "marketing";
+  return <DashboardClient hasOrganization defaultObjective="promote" defaultSection={section} />;
 }

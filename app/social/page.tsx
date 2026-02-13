@@ -7,7 +7,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { useSearchParams } from "next/navigation";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -136,7 +136,8 @@ export default function SocialHubPage() {
   const { user, isLoggedIn } = useUser();
   const searchParams = useSearchParams();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
-  const orgFallbackHref = appendOrganizationIdToHref("/organizacao", getOrganizationIdFromBrowser());
+  const orgId = getOrganizationIdFromBrowser();
+  const orgFallbackHref = orgId ? buildOrgHref(orgId, "/overview") : buildOrgHubHref("/organizations");
   const [activeTab, setActiveTab] = useState<HubTab>(
     searchParams?.get("tab") === "notifications" ? "notifications" : "social",
   );
@@ -405,7 +406,7 @@ export default function SocialHubPage() {
       } else if (action.type === "accept_org_invite" || action.type === "decline_org_invite") {
         const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
         if (inviteId) {
-          await fetch("/api/organizacao/organizations/members/invites", {
+          await fetch("/api/org-hub/organizations/members/invites", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ inviteId, action: action.type === "accept_org_invite" ? "ACCEPT" : "DECLINE" }),

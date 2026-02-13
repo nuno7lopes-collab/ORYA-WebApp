@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import useSWR from "swr";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -41,7 +43,7 @@ const CATEGORY_CARDS = [
 export default function OrganizationCategoriesPage() {
   const { user, isLoading: userLoading } = useUser();
   const { data } = useSWR<EventsResponse>(
-    user ? "/api/organizacao/events/list" : null,
+    user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/events/list") : null,
     fetcher,
     { revalidateOnFocus: false }
   );

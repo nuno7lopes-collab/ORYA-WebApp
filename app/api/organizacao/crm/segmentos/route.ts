@@ -119,6 +119,7 @@ async function _POST(req: NextRequest) {
     const payload = (await req.json().catch(() => null)) as {
       name?: unknown;
       description?: unknown;
+      definition?: unknown;
       rules?: unknown;
     } | null;
 
@@ -128,7 +129,15 @@ async function _POST(req: NextRequest) {
     }
 
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
-    const rules = normalizeSegmentDefinition(payload?.rules ?? null);
+    if (
+      !payload ||
+      (!Object.prototype.hasOwnProperty.call(payload, "definition") &&
+        !Object.prototype.hasOwnProperty.call(payload, "rules"))
+    ) {
+      return fail(ctx, 400, "Definição inválida.");
+    }
+
+    const rules = normalizeSegmentDefinition(payload?.definition ?? payload?.rules ?? null);
 
     const segment = await prisma.crmSegment.create({
       data: {

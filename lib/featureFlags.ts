@@ -8,3 +8,7 @@ export function isWidgetsEnabled() {
 export function isPublicApiEnabled() {
   return env.publicApiEnabled;
 }
+
+export function isCrmCampaignsEnabled() {
+  return env.crmCampaignsEnabled;
+}

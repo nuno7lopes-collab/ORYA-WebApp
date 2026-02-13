@@ -23,11 +23,15 @@ const METADATA_ORG_ALLOWLIST = new Set<string>([
   "app/api/organizacao/payouts/webhook/route.ts",
 ]);
 
-function listOrgRoutes(): string[] {
-  const raw = execSync('rg --files -g "route.ts" app/api/organizacao', { stdio: "pipe" })
+function listRoutes(root: string): string[] {
+  const raw = execSync(`rg --files -g "route.ts" ${root}`, { stdio: "pipe" })
     .toString()
     .trim();
   return raw ? raw.split("\n").map((line) => line.trim()).filter(Boolean) : [];
+}
+
+function listOrgRoutes(): string[] {
+  return [...listRoutes("app/api/organizacao"), ...listRoutes("app/api/org")];
 }
 
 function usesPrisma(content: string) {

@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { BACKGROUND_CATALOG } from "@/lib/theme/catalog";
 
-const ORG_PREFIXES = ["/organizacao"];
+const ORG_PREFIXES = ["/org", "/org-hub"];
 const EVENT_NON_SLUG_SEGMENTS = new Set(["nova"]);
 const LANDING_PREFIXES = ["/landing"];
 const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%)";

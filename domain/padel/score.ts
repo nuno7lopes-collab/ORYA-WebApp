@@ -1,15 +1,23 @@
+export type PadelScoreMode = "SETS" | "TIMED_GAMES";
+
 export type PadelSetScore = { teamA: number; teamB: number };
 
 export type PadelMatchStats = {
+  mode: PadelScoreMode;
   sets: PadelSetScore[];
   aSets: number;
   bSets: number;
   aGames: number;
   bGames: number;
-  winner: "A" | "B";
+  winner: "A" | "B" | null;
+  isDraw: boolean;
+  resultType: "NORMAL" | "WALKOVER" | "RETIREMENT" | "INJURY" | "BYE_NEUTRAL";
+  endedAt: Date | null;
+  endedByBuzzer: boolean;
 };
 
 export type PadelScoreRules = {
+  scoreMode: PadelScoreMode;
   setsToWin: number;
   maxSets: number;
   gamesToWinSet: number;
@@ -20,9 +28,11 @@ export type PadelScoreRules = {
   superTieBreakWinBy: number;
   superTieBreakOnlyDecider: boolean;
   allowExtendedGames: boolean;
+  allowTimedDraw: boolean;
 };
 
 export const DEFAULT_PADEL_SCORE_RULES: PadelScoreRules = {
+  scoreMode: "SETS",
   setsToWin: 2,
   maxSets: 3,
   gamesToWinSet: 6,
@@ -33,6 +43,7 @@ export const DEFAULT_PADEL_SCORE_RULES: PadelScoreRules = {
   superTieBreakWinBy: 2,
   superTieBreakOnlyDecider: true,
   allowExtendedGames: false,
+  allowTimedDraw: true,
 };
 
 const WALKOVER_SET_COUNT = 2;
@@ -47,18 +58,30 @@ const clampInt = (raw: unknown, fallback: number, min: number, max: number) => {
   return value;
 };
 
+function parseDate(raw: unknown): Date | null {
+  if (typeof raw !== "string") return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseNonNegativeInt(raw: unknown): number | null {
+  const parsed = typeof raw === "string" || typeof raw === "number" ? Number(raw) : NaN;
+  if (!Number.isFinite(parsed)) return null;
+  const value = Math.floor(parsed);
+  if (value < 0) return null;
+  return value;
+}
+
 export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
   if (!raw || typeof raw !== "object") return null;
   const input = raw as Record<string, unknown>;
+  const scoreModeRaw = typeof input.scoreMode === "string" ? input.scoreMode.trim().toUpperCase() : "";
+  const scoreMode: PadelScoreMode = scoreModeRaw === "TIMED_GAMES" ? "TIMED_GAMES" : "SETS";
+
   const setsToWin = clampInt(input.setsToWin, DEFAULT_PADEL_SCORE_RULES.setsToWin, 1, 5);
   const maxSetsFallback = Math.max(DEFAULT_PADEL_SCORE_RULES.maxSets, setsToWin * 2 - 1);
   const maxSets = clampInt(input.maxSets, maxSetsFallback, setsToWin, 9);
-  const gamesToWinSet = clampInt(
-    input.gamesToWinSet,
-    DEFAULT_PADEL_SCORE_RULES.gamesToWinSet,
-    1,
-    9,
-  );
+  const gamesToWinSet = clampInt(input.gamesToWinSet, DEFAULT_PADEL_SCORE_RULES.gamesToWinSet, 1, 9);
   const tieBreakAtRaw = input.tieBreakAt;
   const tieBreakAt =
     tieBreakAtRaw === null
@@ -68,12 +91,7 @@ export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
     typeof input.allowSuperTieBreak === "boolean"
       ? input.allowSuperTieBreak
       : DEFAULT_PADEL_SCORE_RULES.allowSuperTieBreak;
-  const superTieBreakTo = clampInt(
-    input.superTieBreakTo,
-    DEFAULT_PADEL_SCORE_RULES.superTieBreakTo,
-    5,
-    20,
-  );
+  const superTieBreakTo = clampInt(input.superTieBreakTo, DEFAULT_PADEL_SCORE_RULES.superTieBreakTo, 5, 20);
   const superTieBreakWinBy = clampInt(
     input.superTieBreakWinBy,
     DEFAULT_PADEL_SCORE_RULES.superTieBreakWinBy,
@@ -88,12 +106,15 @@ export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
     typeof input.allowExtendedGames === "boolean"
       ? input.allowExtendedGames
       : DEFAULT_PADEL_SCORE_RULES.allowExtendedGames;
+  const allowTimedDraw =
+    typeof input.allowTimedDraw === "boolean" ? input.allowTimedDraw : DEFAULT_PADEL_SCORE_RULES.allowTimedDraw;
   const tieBreakTo =
     tieBreakAt === null
       ? null
       : clampInt(input.tieBreakTo, (tieBreakAt ?? gamesToWinSet) + 1, (tieBreakAt ?? 0) + 1, 15);
 
   return {
+    scoreMode,
     setsToWin,
     maxSets,
     gamesToWinSet,
@@ -104,6 +125,7 @@ export function normalizePadelScoreRules(raw: unknown): PadelScoreRules | null {
     superTieBreakWinBy,
     superTieBreakOnlyDecider,
     allowExtendedGames,
+    allowTimedDraw,
   };
 }
 
@@ -189,13 +211,52 @@ export function computePadelMatchStats(rawSets: unknown, rules?: PadelScoreRules
   }
   if (aSets === bSets) return null;
   if (rules && aSets !== rules.setsToWin && bSets !== rules.setsToWin) return null;
+  const winner = aSets > bSets ? "A" : "B";
   return {
+    mode: "SETS",
     sets,
     aSets,
     bSets,
     aGames,
     bGames,
-    winner: aSets > bSets ? "A" : "B",
+    winner,
+    isDraw: false,
+    resultType: "NORMAL",
+    endedAt: null,
+    endedByBuzzer: false,
+  };
+}
+
+function computePadelTimedGamesStats(score: Record<string, unknown>, rules?: PadelScoreRules): PadelMatchStats | null {
+  const gamesA =
+    parseNonNegativeInt(score.gamesA) ??
+    parseNonNegativeInt((score.timedGames as Record<string, unknown> | null)?.gamesA ?? null);
+  const gamesB =
+    parseNonNegativeInt(score.gamesB) ??
+    parseNonNegativeInt((score.timedGames as Record<string, unknown> | null)?.gamesB ?? null);
+  if (gamesA == null || gamesB == null) return null;
+
+  const allowDraw = typeof score.allowDraw === "boolean" ? score.allowDraw : (rules?.allowTimedDraw ?? true);
+  const endedByBuzzer = score.endedByBuzzer === true;
+  const endedAt =
+    parseDate(score.endedAt) ??
+    parseDate((score.timedGames as Record<string, unknown> | null)?.endedAt ?? null);
+
+  if (!allowDraw && gamesA === gamesB) return null;
+  const winner = gamesA === gamesB ? null : gamesA > gamesB ? "A" : "B";
+
+  return {
+    mode: "TIMED_GAMES",
+    sets: [],
+    aSets: 0,
+    bSets: 0,
+    aGames: gamesA,
+    bGames: gamesB,
+    winner,
+    isDraw: winner == null,
+    resultType: "NORMAL",
+    endedAt,
+    endedByBuzzer,
   };
 }
 
@@ -205,13 +266,39 @@ export function resolvePadelMatchStats(
   rules?: PadelScoreRules,
 ): PadelMatchStats | null {
   const scoreObj = score && typeof score === "object" && !Array.isArray(score) ? (score as Record<string, unknown>) : null;
+
+  if (scoreObj?.resultType === "BYE_NEUTRAL") {
+    return {
+      mode: "TIMED_GAMES",
+      sets: [],
+      aSets: 0,
+      bSets: 0,
+      aGames: 0,
+      bGames: 0,
+      winner: null,
+      isDraw: true,
+      resultType: "BYE_NEUTRAL",
+      endedAt: parseDate(typeof scoreObj.endedAt === "string" ? scoreObj.endedAt : null),
+      endedByBuzzer: false,
+    };
+  }
+
+  const modeRaw = typeof scoreObj?.mode === "string" ? scoreObj.mode.trim().toUpperCase() : "";
+  const scoreMode: PadelScoreMode =
+    modeRaw === "TIMED_GAMES" ? "TIMED_GAMES" : rules?.scoreMode === "TIMED_GAMES" ? "TIMED_GAMES" : "SETS";
+
+  if (scoreMode === "TIMED_GAMES" && scoreObj) {
+    const timed = computePadelTimedGamesStats(scoreObj, rules);
+    if (timed) return timed;
+  }
+
   const scoreSetsRaw = Array.isArray(scoreSets)
     ? scoreSets
     : Array.isArray((scoreObj as { sets?: unknown } | null)?.sets)
       ? (scoreObj as { sets?: unknown }).sets
       : null;
-  const stats = computePadelMatchStats(scoreSetsRaw, rules);
-  if (stats) return stats;
+  const setStats = computePadelMatchStats(scoreSetsRaw, rules);
+  if (setStats) return setStats;
 
   const winnerSide = scoreObj?.winnerSide;
   const resultType = scoreObj?.resultType;
@@ -219,10 +306,15 @@ export function resolvePadelMatchStats(
     scoreObj?.walkover === true || resultType === "WALKOVER" || resultType === "RETIREMENT" || resultType === "INJURY";
   if (!isWalkover) return null;
   if (winnerSide !== "A" && winnerSide !== "B") return null;
-  return computePadelMatchStats(buildWalkoverSets(winnerSide, rules), rules);
+  const walkoverSets = computePadelMatchStats(buildWalkoverSets(winnerSide, rules), rules);
+  if (!walkoverSets) return null;
+  return {
+    ...walkoverSets,
+    resultType: resultType === "RETIREMENT" ? "RETIREMENT" : resultType === "INJURY" ? "INJURY" : "WALKOVER",
+  };
 }
 
 export function resolvePadelWinnerFromSets(rawSets: unknown): "A" | "B" | null {
   const stats = computePadelMatchStats(rawSets);
-  return stats ? stats.winner : null;
+  return stats && !stats.isDraw ? stats.winner : null;
 }

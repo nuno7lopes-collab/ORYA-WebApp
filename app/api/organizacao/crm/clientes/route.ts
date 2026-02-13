@@ -26,6 +26,16 @@ function parseBoolean(value: string | null) {
   return null;
 }
 
+function parseInteger(
+  value: string | null,
+  options: { fallback: number; min: number; max: number },
+) {
+  if (!value) return options.fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return options.fallback;
+  return Math.min(options.max, Math.max(options.min, Math.floor(parsed)));
+}
+
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -51,8 +61,16 @@ async function _GET(req: NextRequest) {
     const params = req.nextUrl.searchParams;
     const query = params.get("q")?.trim() ?? "";
     const tags = params.get("tags")?.split(",").map((tag) => tag.trim()).filter(Boolean) ?? [];
-    const limit = Math.min(Math.max(1, Number(params.get("limit") ?? 20)), MAX_LIMIT);
-    const page = Math.max(1, Number(params.get("page") ?? 1));
+    const limit = parseInteger(params.get("limit"), {
+      fallback: 20,
+      min: 1,
+      max: MAX_LIMIT,
+    });
+    const page = parseInteger(params.get("page"), {
+      fallback: 1,
+      min: 1,
+      max: 10_000,
+    });
     const minSpent = parseNumber(params.get("minSpentCents"));
     const maxSpent = parseNumber(params.get("maxSpentCents"));
     const lastActivityDays = parseNumber(params.get("lastActivityDays"));
@@ -84,7 +102,7 @@ async function _GET(req: NextRequest) {
       filters.push({ totalSpentCents: { lte: maxSpent } });
     }
 
-    if (lastActivityDays !== null) {
+    if (lastActivityDays !== null && lastActivityDays > 0) {
       const since = new Date(Date.now() - lastActivityDays * 24 * 60 * 60 * 1000);
       filters.push({ lastActivityAt: { gte: since } });
     }

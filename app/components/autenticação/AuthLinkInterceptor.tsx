@@ -5,7 +5,7 @@ import { useAuthModal } from "./AuthModalContext";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 
-const PROTECTED_PREFIXES = ["/organizacao", "/me"];
+const PROTECTED_PREFIXES = ["/org", "/org-hub", "/me"];
 
 function isProtectedPath(pathname: string) {
   return PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));

@@ -70,6 +70,8 @@ const PADEL_FORMATS = [
   { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
   { value: "CAMPEONATO_LIGA", label: "Campeonato liga" },
   { value: "NON_STOP", label: "Non-stop" },
+  { value: "AMERICANO", label: "Americano" },
+  { value: "MEXICANO", label: "Mexicano" },
 ];
 
 const ELIGIBILITY_OPTIONS = [

@@ -23,6 +23,8 @@ import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import StoreAdminSubnav from "@/components/store/StoreAdminSubnav";
 import { ORG_SHELL_GUTTER } from "@/app/organizacao/layoutTokens";
 import { ModuleIcon } from "@/app/organizacao/moduleIcons";
+import { normalizeOrganizationPathname } from "@/app/organizacao/topbarRouteUtils";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
@@ -106,16 +108,19 @@ export default function OrganizationTopBar({
   orgOptions,
   user,
   role,
+  crmCampaignsEnabled = false,
 }: {
   activeOrg: ActiveOrg | null;
   orgOptions: OrgOption[];
   user: UserInfo | null;
   role?: string | null;
+  crmCampaignsEnabled?: boolean;
 }) {
   type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const normalizedPathname = useMemo(() => normalizeOrganizationPathname(pathname), [pathname]);
   const orgMenuRef = useRef<HTMLDetailsElement | null>(null);
   const userMenuRef = useRef<HTMLDetailsElement | null>(null);
   const lastScrollYRef = useRef(0);
@@ -127,9 +132,7 @@ export default function OrganizationTopBar({
   const orgDisplay = activeOrg?.name ?? "Organização";
   const orgAvatar = activeOrg?.avatarUrl ?? null;
   const userLabel = user?.name || user?.email || "Utilizador";
-  const dashboardHref = activeOrg?.id
-    ? `/organizacao/overview?organizationId=${activeOrg.id}`
-    : "/organizacao/overview";
+  const dashboardHref = activeOrg?.id ? buildOrgHref(activeOrg.id, "/overview") : buildOrgHubHref("/organizations");
 
   const moduleState = useMemo(() => {
     const primary = resolvePrimaryModule(
@@ -141,59 +144,64 @@ export default function OrganizationTopBar({
 
   const currentApp = useMemo(() => {
     const setApp = (label: string, moduleKey: string | null) => ({ label, moduleKey });
+    const resolveManageApp = () => {
+      if (sectionParam === "inscricoes") return setApp("Formulários", "INSCRICOES");
+      if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
+      if (sectionParam === "padel-club") return setApp("Gestão de Clube Padel", "TORNEIOS");
+      if (sectionParam === "padel-tournaments") return setApp("Torneios de Padel", "TORNEIOS");
+      return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
+    };
     const tabParam = searchParams?.get("tab");
     const sectionParam = searchParams?.get("section");
-    if (pathname === "/organizacao") {
+    if (normalizedPathname === "/organizacao") {
       if (!tabParam || tabParam === "overview" || tabParam === "create") return setApp("Dashboard", null);
-      if (tabParam === "manage") {
-        if (sectionParam === "inscricoes") return setApp("Formulários", "INSCRICOES");
-        if (sectionParam === "reservas") return setApp("Reservas", "RESERVAS");
-        if (sectionParam === "padel-club") return setApp("Padel Clube", "TORNEIOS");
-        if (sectionParam === "padel-tournaments") return setApp("Padel Torneios", "TORNEIOS");
-        return setApp(OPERATION_LABELS[moduleState.primary], moduleState.primary);
-      }
+      if (tabParam === "manage") return resolveManageApp();
       if (tabParam === "promote") return setApp("Promoções", "MARKETING");
       if (tabParam === "analyze") return setApp("Finanças", "FINANCEIRO");
       if (tabParam === "profile") return setApp("Perfil público", "PERFIL_PUBLICO");
       return setApp("Dashboard", null);
     }
-    if (pathname?.startsWith("/organizacao/eventos")) return setApp("Eventos", "EVENTOS");
+    if (normalizedPathname === "/organizacao/manage") return resolveManageApp();
+    if (normalizedPathname === "/organizacao/promote") return setApp("Promoções", "MARKETING");
+    if (normalizedPathname === "/organizacao/analyze") return setApp("Finanças", "FINANCEIRO");
+    if (normalizedPathname === "/organizacao/profile") return setApp("Perfil público", "PERFIL_PUBLICO");
+    if (normalizedPathname?.startsWith("/organizacao/eventos")) return setApp("Eventos", "EVENTOS");
     if (
-      pathname?.startsWith("/organizacao/torneios") ||
-      pathname?.startsWith("/organizacao/padel") ||
-      pathname?.startsWith("/organizacao/tournaments")
+      normalizedPathname?.startsWith("/organizacao/torneios") ||
+      normalizedPathname?.startsWith("/organizacao/padel") ||
+      normalizedPathname?.startsWith("/organizacao/tournaments")
     ) {
       return setApp("Padel", "TORNEIOS");
     }
-    if (pathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
-    if (pathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
-    if (pathname?.startsWith("/organizacao/chat")) {
+    if (normalizedPathname?.startsWith("/organizacao/reservas")) return setApp("Reservas", "RESERVAS");
+    if (normalizedPathname?.startsWith("/organizacao/inscricoes")) return setApp("Formulários", "INSCRICOES");
+    if (normalizedPathname?.startsWith("/organizacao/chat")) {
       return setApp("Chat interno", "MENSAGENS");
     }
-    if (pathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");
-    if (pathname?.startsWith("/organizacao/crm")) return setApp("CRM", "CRM");
-    if (pathname?.startsWith("/organizacao/loja") || pathname?.startsWith("/org/")) {
-      if (pathname?.includes("/loja")) return setApp("Loja", "LOJA");
+    if (normalizedPathname?.startsWith("/organizacao/scan")) return setApp("Check-in", "CHECKIN");
+    if (normalizedPathname?.startsWith("/organizacao/crm")) return setApp("CRM", "CRM");
+    if (normalizedPathname?.startsWith("/organizacao/loja")) {
+      if (normalizedPathname?.includes("/loja")) return setApp("Loja", "LOJA");
     }
-    if (pathname?.startsWith("/organizacao/staff") || pathname?.startsWith("/organizacao/treinadores")) {
+    if (normalizedPathname?.startsWith("/organizacao/staff") || normalizedPathname?.startsWith("/organizacao/treinadores")) {
       return setApp("Equipa", "STAFF");
     }
-    if (pathname?.startsWith("/organizacao/settings")) return setApp("Definições", "DEFINICOES");
+    if (normalizedPathname?.startsWith("/organizacao/settings")) return setApp("Definições", "DEFINICOES");
     if (
-      pathname?.startsWith("/organizacao/faturacao") ||
-      pathname?.startsWith("/organizacao/pagamentos") ||
-      (pathname?.startsWith("/organizacao/tournaments/") && pathname?.endsWith("/finance"))
+      normalizedPathname?.startsWith("/organizacao/faturacao") ||
+      normalizedPathname?.startsWith("/organizacao/pagamentos") ||
+      (normalizedPathname?.startsWith("/organizacao/tournaments/") && normalizedPathname?.endsWith("/finance"))
     ) {
       return setApp("Finanças", "FINANCEIRO");
     }
-    if (pathname?.startsWith("/organizacao/organizations")) return setApp("Organizações", null);
-    if (pathname?.startsWith("/organizacao/clube")) return setApp("Clube", null);
+    if (normalizedPathname?.startsWith("/organizacao/organizations")) return setApp("Organizações", null);
+    if (normalizedPathname?.startsWith("/organizacao/clube")) return setApp("Clube", null);
     return setApp("Dashboard", null);
-  }, [moduleState.primary, pathname, searchParams]);
+  }, [moduleState.primary, normalizedPathname, searchParams]);
 
   const activeObjective = useMemo<ObjectiveTab | null>(() => {
     const tabParam = searchParams?.get("tab");
-    if (pathname === "/organizacao") {
+    if (normalizedPathname === "/organizacao") {
       if (!tabParam || tabParam === "overview" || tabParam === "create") return "create";
       if (tabParam === "manage") return "manage";
       if (tabParam === "promote") return "promote";
@@ -201,30 +209,35 @@ export default function OrganizationTopBar({
       if (tabParam === "profile") return "profile";
       return "create";
     }
+    if (normalizedPathname === "/organizacao/manage") return "manage";
+    if (normalizedPathname === "/organizacao/promote") return "promote";
+    if (normalizedPathname === "/organizacao/analyze") return "analyze";
+    if (normalizedPathname === "/organizacao/profile") return "profile";
     if (
-      pathname?.startsWith("/organizacao/inscricoes") ||
-      pathname?.startsWith("/organizacao/eventos") ||
-      pathname?.startsWith("/organizacao/torneios") ||
-      pathname?.startsWith("/organizacao/reservas") ||
-      pathname?.startsWith("/organizacao/padel") ||
-      pathname?.startsWith("/organizacao/tournaments") ||
-      pathname?.startsWith("/organizacao/scan") ||
-      pathname?.startsWith("/organizacao/crm")
+      normalizedPathname?.startsWith("/organizacao/inscricoes") ||
+      normalizedPathname?.startsWith("/organizacao/eventos") ||
+      normalizedPathname?.startsWith("/organizacao/torneios") ||
+      normalizedPathname?.startsWith("/organizacao/reservas") ||
+      normalizedPathname?.startsWith("/organizacao/padel") ||
+      normalizedPathname?.startsWith("/organizacao/tournaments") ||
+      normalizedPathname?.startsWith("/organizacao/scan") ||
+      normalizedPathname?.startsWith("/organizacao/crm")
     ) {
       return "manage";
     }
-    if (pathname?.startsWith("/organizacao/promo")) return "promote";
+    if (normalizedPathname?.startsWith("/organizacao/promo")) return "promote";
     if (
-      pathname?.startsWith("/organizacao/faturacao") ||
-      pathname?.startsWith("/organizacao/pagamentos")
+      normalizedPathname?.startsWith("/organizacao/faturacao") ||
+      normalizedPathname?.startsWith("/organizacao/pagamentos")
     ) {
       return "analyze";
     }
     return null;
-  }, [pathname, searchParams]);
+  }, [normalizedPathname, searchParams]);
 
   const activeObjectiveSection = useMemo(() => {
     const sectionParam = searchParams?.get("section");
+    const tabParam = searchParams?.get("tab");
     const padelParam = searchParams?.get("padel");
     const eventIdParam = searchParams?.get("eventId");
     const hasEventId = eventIdParam ? Number.isFinite(Number(eventIdParam)) : false;
@@ -232,63 +245,64 @@ export default function OrganizationTopBar({
     const isPadelTournamentsSection = sectionParam === "padel-tournaments";
     const padelFallback = isPadelTournamentsSection || hasEventId ? "calendar" : "clubs";
     const isPadelSection = isPadelClubSection || isPadelTournamentsSection;
-    if (pathname?.startsWith("/organizacao/crm")) {
-      if (pathname?.startsWith("/organizacao/crm/segmentos")) return "crm-segmentos";
-      if (pathname?.startsWith("/organizacao/crm/campanhas")) return "crm-campanhas";
-      if (pathname?.startsWith("/organizacao/crm/loyalty")) return "crm-loyalty";
+    if (normalizedPathname?.startsWith("/organizacao/crm")) {
+      if (normalizedPathname?.startsWith("/organizacao/crm/segmentos")) return "crm-segmentos";
+      if (normalizedPathname?.startsWith("/organizacao/crm/campanhas")) return "crm-campanhas";
+      if (normalizedPathname?.startsWith("/organizacao/crm/loyalty")) return "crm-loyalty";
       return "crm-clientes";
     }
     if (sectionParam && !isPadelSection) return sectionParam;
     if (!activeObjective) return null;
     if (activeObjective === "manage") {
       if (isPadelSection) return padelParam ?? padelFallback;
-      if (pathname?.startsWith("/organizacao/reservas")) {
-        if (pathname?.startsWith("/organizacao/reservas/novo")) return "servicos";
-        if (pathname?.startsWith("/organizacao/reservas/servicos")) return "servicos";
-        if (pathname?.startsWith("/organizacao/reservas/clientes")) return "clientes";
-        if (pathname?.startsWith("/organizacao/reservas/profissionais")) return "profissionais";
-        if (pathname?.startsWith("/organizacao/reservas/recursos")) return "recursos";
-        if (pathname?.startsWith("/organizacao/reservas/politicas")) return "politicas";
+      if (normalizedPathname?.startsWith("/organizacao/reservas")) {
+        if (normalizedPathname?.startsWith("/organizacao/reservas/novo")) return "servicos";
+        if (normalizedPathname?.startsWith("/organizacao/reservas/servicos")) return "servicos";
+        if (normalizedPathname?.startsWith("/organizacao/reservas/clientes")) return "clientes";
+        if (normalizedPathname?.startsWith("/organizacao/reservas/profissionais")) return "profissionais";
+        if (normalizedPathname?.startsWith("/organizacao/reservas/recursos")) return "recursos";
+        if (normalizedPathname?.startsWith("/organizacao/reservas/politicas")) return "politicas";
         if (searchParams?.get("tab") === "availability") return "disponibilidade";
         return "agenda";
       }
-      if (pathname?.startsWith("/organizacao/inscricoes")) {
-        const formTab = searchParams?.get("tab");
-        if (formTab === "respostas") return "respostas";
-        if (formTab === "definicoes") return "definicoes";
+      if (normalizedPathname?.startsWith("/organizacao/inscricoes")) {
+        if (tabParam === "respostas") return "respostas";
+        if (tabParam === "definicoes") return "definicoes";
         return "inscricoes";
       }
-      if (pathname?.startsWith("/organizacao/scan")) return "checkin";
-      if (pathname?.startsWith("/organizacao/padel/torneios/novo")) return "torneios-criar";
-      if (pathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
-      if (pathname?.startsWith("/organizacao/eventos/novo")) return "create";
+      if (normalizedPathname?.startsWith("/organizacao/scan")) return "checkin";
+      if (normalizedPathname?.startsWith("/organizacao/padel/torneios/novo")) return "torneios-criar";
+      if (normalizedPathname?.startsWith("/organizacao/padel")) return padelParam ?? padelFallback;
+      if (normalizedPathname?.startsWith("/organizacao/eventos/novo")) return "create";
       if (
-        pathname?.startsWith("/organizacao/padel/torneios/novo") ||
-        pathname?.startsWith("/organizacao/torneios/novo")
+        normalizedPathname?.startsWith("/organizacao/padel/torneios/novo") ||
+        normalizedPathname?.startsWith("/organizacao/torneios/novo")
       ) {
         return "torneios-criar";
       }
       if (
-        pathname?.startsWith("/organizacao/padel/torneios") ||
-        pathname?.startsWith("/organizacao/torneios") ||
-        pathname?.startsWith("/organizacao/tournaments")
+        normalizedPathname?.startsWith("/organizacao/padel/torneios") ||
+        normalizedPathname?.startsWith("/organizacao/torneios") ||
+        normalizedPathname?.startsWith("/organizacao/tournaments")
       ) {
         return "torneios";
       }
-      if (pathname?.startsWith("/organizacao/eventos")) return "eventos";
+      if (normalizedPathname?.startsWith("/organizacao/eventos")) return "eventos";
       return moduleState.primary === "RESERVAS" ? "reservas" : "eventos";
     }
-    if (activeObjective === "analyze") return "financas";
+    if (activeObjective === "analyze") {
+      if (sectionParam === "invoices" || tabParam === "invoices") return "invoices";
+      if (sectionParam === "ops" || tabParam === "ops") return "ops";
+      if (sectionParam === "vendas" || tabParam === "vendas") return "vendas";
+      return "financas";
+    }
     if (activeObjective === "promote") return "overview";
     if (activeObjective === "profile") return "perfil";
     return "overview";
-  }, [activeObjective, moduleState.primary, pathname, searchParams]);
-  const isDashboardOverview = pathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
-  const isStoreRoute = Boolean(
-    pathname?.startsWith("/organizacao/loja") ||
-      (pathname?.startsWith("/org/") && pathname?.includes("/loja")),
-  );
-  const isCrmRoute = pathname?.startsWith("/organizacao/crm");
+  }, [activeObjective, moduleState.primary, normalizedPathname, searchParams]);
+  const isDashboardOverview = normalizedPathname === "/organizacao" && (!searchParams?.get("tab") || searchParams?.get("tab") === "overview");
+  const isStoreRoute = Boolean(normalizedPathname?.startsWith("/organizacao/loja"));
+  const isCrmRoute = normalizedPathname?.startsWith("/organizacao/crm");
 
   const objectiveModules = useMemo(() => {
     const rawModules = Array.isArray(activeOrg?.modules) ? activeOrg?.modules : [];
@@ -302,7 +316,7 @@ export default function OrganizationTopBar({
     ? MODULE_ICON_GRADIENTS[currentApp.moduleKey] ?? "from-white/15 via-white/5 to-white/10"
     : null;
 
-  const orgMeUrl = activeOrg?.id ? `/api/organizacao/me?organizationId=${activeOrg.id}` : null;
+  const orgMeUrl = activeOrg?.id ? `/api/org/${activeOrg.id}/me` : null;
   const { data: orgData, error: orgDataError, mutate: mutateOrgData } = useSWR<OrganizationMeResponse>(
     orgMeUrl,
     fetcher,
@@ -375,7 +389,7 @@ export default function OrganizationTopBar({
       items.push({
         key: "email",
         label: officialEmail ? "Email por verificar" : "Email obrigatório",
-        href: "/organizacao/settings",
+        href: activeOrg?.id ? buildOrgHref(activeOrg.id, "/settings") : buildOrgHubHref("/organizations"),
         tone: "danger",
       });
     }
@@ -383,12 +397,12 @@ export default function OrganizationTopBar({
       items.push({
         key: "stripe",
         label: "Stripe recomendado",
-        href: "/organizacao/analyze?section=financas",
+        href: activeOrg?.id ? buildOrgHref(activeOrg.id, "/finance") : buildOrgHubHref("/organizations"),
         tone: "warning",
       });
     }
     return items;
-  }, [orgData]);
+  }, [activeOrg?.id, orgData]);
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
@@ -454,7 +468,7 @@ export default function OrganizationTopBar({
     if (switchingOrgId) return;
     setSwitchingOrgId(orgId);
     try {
-      const res = await fetch("/api/organizacao/organizations/switch", {
+      const res = await fetch("/api/org-hub/organizations/switch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: orgId }),
@@ -470,7 +484,7 @@ export default function OrganizationTopBar({
         /* ignore */
       }
       if (orgMenuRef.current) orgMenuRef.current.removeAttribute("open");
-      router.replace(`/organizacao/overview?organizationId=${orgId}`);
+      router.replace(buildOrgHref(orgId, "/overview"));
       router.refresh();
     } catch (err) {
       console.error("[topbar][org switch] erro", err);
@@ -508,7 +522,7 @@ export default function OrganizationTopBar({
   return (
     <div
       className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-transform duration-300 ease-out",
+        "fixed inset-x-0 top-0 z-[70] transition-transform duration-300 ease-out",
         isVisible ? "translate-y-0" : "-translate-y-full",
       )}
     >
@@ -548,12 +562,12 @@ export default function OrganizationTopBar({
           <div className="order-3 flex w-full min-w-0 items-center gap-2 lg:order-none lg:flex-1">
             {isStoreRoute ? (
               <StoreAdminSubnav
-                baseHref={activeOrg?.id ? `/org/${activeOrg.id}/loja` : "/organizacao/organizations"}
+                baseHref={activeOrg?.id ? buildOrgHref(activeOrg.id, "/store") : buildOrgHubHref("/organizations")}
                 variant="topbar"
                 className="w-full max-w-full"
               />
             ) : isCrmRoute ? (
-              <CrmSubnav variant="topbar" className="max-w-full" />
+              <CrmSubnav variant="topbar" className="max-w-full" campaignsEnabled={crmCampaignsEnabled} />
             ) : activeObjective && !isDashboardOverview ? (
               <ObjectiveSubnav
                 objective={activeObjective}
@@ -645,13 +659,13 @@ export default function OrganizationTopBar({
                 <div className="orya-menu-divider mb-2" />
                 <div className="orya-menu-list">
                   <Link
-                    href="/organizacao/become"
+                    href={buildOrgHubHref("/create")}
                     className="orya-menu-item text-[12px] text-white/70"
                   >
                     Criar organização
                   </Link>
                   <Link
-                    href="/organizacao/organizations"
+                    href={buildOrgHubHref("/organizations")}
                     className="orya-menu-item text-[12px] text-white/70"
                   >
                     Gerir organizações

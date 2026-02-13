@@ -12,6 +12,21 @@ O plano é decisão-completo: o implementador não precisa escolher arquitetura,
 - Âmbito: WebApp organização, APIs, mobile, widgets públicos, testes/ops.
 - RBAC global: manter `rolePack` global `TOURNAMENT_DIRECTOR`; no Padel, papel operacional canónico é `DIRETOR_PROVA`.
 
+## 2.1) Estado de execução técnica (2026-02-13)
+- Implementado nesta ronda (hard-cut parcial real):
+  - `AMERICANO`/`MEXICANO` removidos de `FORMAT_NOT_OPERATIONAL` na geração (`/api/padel/matches/generate` + `domain/padel/autoGenerateMatches.ts`).
+  - score canónico com `mode=TIMED_GAMES` + `BYE_NEUTRAL` (`domain/padel/score.ts`, `lib/padel/validation.ts`, `/api/padel/matches`).
+  - standings canónico com `entityType` e `rows`/`groups` (PLAYER para `AMERICANO`/`MEXICANO`, PAIRING restantes) em `/api/padel/standings`.
+  - live público com estado de timer autoritativo (`timerState`, `serverNow`, `remainingMs`) em `/api/padel/live`.
+  - endpoints de timer live: `POST /api/padel/live/timer/start`, `POST /api/padel/live/timer/stop`, `POST /api/padel/live/timer/next-round`.
+  - hard-cut de claims legacy: `/api/padel/calendar` com `type=resource_claim` devolve `410 RESOURCE_CLAIM_WRITE_MOVED_TO_COMMIT`; write canónico em `/api/padel/calendar/claims/commit`.
+  - enforcer de `ttlAt` para snapshots de courts parceiros em `domain/padel/partnershipSchedulePolicy.ts`.
+  - gate de versão mobile (`x-client-platform=mobile`, `x-app-version`) com `426 UPGRADE_REQUIRED` em endpoints breaking.
+  - snapshot de rating no fecho oficial (`COMPLETED`) integrado no lifecycle (`/api/padel/tournaments/lifecycle`).
+  - carry assimétrico no ranking e regra de rei único 1.00 reforçada no read-model.
+- Testes desta ronda:
+  - `vitest` Padel/ops: `33 files`, `95 tests`, tudo verde.
+
 ## 3) Princípios de execução
 - SSOT-first: nenhuma implementação fora de contrato normativo (`docs/ssot_registry_v1.md` + `docs/padel.md`).
 - Fail-closed: qualquer formato/regra/ação não operacional devolve erro explícito, sem fallback silencioso.

@@ -1,4 +1,5 @@
 import { createApiClient } from "@orya/shared";
+import Constants from "expo-constants";
 import { supabase } from "./supabase";
 import { getActiveSession } from "./session";
 import { getMobileEnv } from "./env";
@@ -8,6 +9,17 @@ const SLOW_REQUEST_MS = 1500;
 const OFFLINE_COOLDOWN_MS = 8000;
 const isDev = typeof __DEV__ !== "undefined" && __DEV__;
 let offlineUntil = 0;
+const MOBILE_CLIENT_PLATFORM = "mobile";
+
+const resolveMobileAppVersion = () => {
+  const fromExpoConfig = Constants.expoConfig?.version;
+  const fromManifest = (Constants.manifest2 as { runtimeVersion?: string } | null | undefined)?.runtimeVersion;
+  const fromNative = (Constants as unknown as { nativeAppVersion?: string }).nativeAppVersion;
+  const candidate = fromExpoConfig || fromManifest || fromNative || "0.0.0";
+  return String(candidate);
+};
+
+const MOBILE_APP_VERSION = resolveMobileAppVersion();
 
 const formatError = (err: unknown) => {
   if (err instanceof Error) return err.message;
@@ -102,6 +114,13 @@ const parseResponseBody = async (res: Response) => {
   }
 };
 
+const withClientHeaders = (headers?: RequestInit["headers"]): Headers => {
+  const next = new Headers(headers ?? undefined);
+  if (!next.has("x-client-platform")) next.set("x-client-platform", MOBILE_CLIENT_PLATFORM);
+  if (!next.has("x-app-version")) next.set("x-app-version", MOBILE_APP_VERSION);
+  return next;
+};
+
 const withTimeout = async <T>(fn: (signal?: AbortSignal) => Promise<T>, signal?: AbortSignal) => {
   if (signal) return fn(signal);
   const controller = new AbortController();
@@ -139,6 +158,8 @@ const requestRawOnce = async <T>(path: string, init: RequestInit = {}): Promise<
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...headersFromInit,
+    "x-client-platform": headersFromInit["x-client-platform"] ?? MOBILE_CLIENT_PLATFORM,
+    "x-app-version": headersFromInit["x-app-version"] ?? MOBILE_APP_VERSION,
   };
   if (accessToken && !hasAuthorizationHeader(init.headers)) {
     headers.Authorization = `Bearer ${accessToken}`;
@@ -165,7 +186,12 @@ export const api = {
     }
     try {
       const result = await withTimeout(
-        (signal) => baseApi.request<T>(path, { ...init, signal: init?.signal ?? signal }),
+        (signal) =>
+          baseApi.request<T>(path, {
+            ...init,
+            headers: withClientHeaders(init?.headers),
+            signal: init?.signal ?? signal,
+          }),
         init?.signal,
       );
       if (isDev) {
@@ -198,7 +224,12 @@ export const api = {
         : undefined;
       try {
         const result = await withTimeout(
-          (signal) => baseApi.request<T>(path, { ...retryInit, signal: retryInit?.signal ?? signal }),
+          (signal) =>
+            baseApi.request<T>(path, {
+              ...retryInit,
+              headers: withClientHeaders(retryInit?.headers),
+              signal: retryInit?.signal ?? signal,
+            }),
           retryInit?.signal,
         );
         if (isDev) {

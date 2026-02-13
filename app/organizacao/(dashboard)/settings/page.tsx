@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { isValidPhone, sanitizePhone } from "@/lib/phone";
@@ -13,6 +13,7 @@ import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { cn } from "@/lib/utils";
 import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import type { GeoAutocompleteItem } from "@/lib/geo/provider";
+import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 type OrganizationMeResponse = {
   ok: boolean;
@@ -63,14 +64,16 @@ type OrganizationSettingsPageProps = {
 
 export default function OrganizationSettingsPage({ embedded }: OrganizationSettingsPageProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useUser();
   const { openModal } = useAuthModal();
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
-  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationId = parseOrgIdFromPathnameStrict(pathname) ?? organizationIdFromQuery;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
-      ? `/api/organizacao/me?organizationId=${organizationId}`
+      ? `/api/org/${organizationId}/me`
       : null;
   const { data, isLoading, mutate } = useSWR<OrganizationMeResponse>(
     orgMeUrl,
@@ -82,7 +85,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
   const organization = data?.organization ?? null;
   const profile = data?.profile ?? null;
-  const redirectTo = "/organizacao/settings";
+  const redirectTo = organizationId ? buildOrgHref(organizationId, "/settings") : "/org-hub/organizations";
 
   const [addressQuery, setAddressQuery] = useState("");
   const [addressId, setAddressId] = useState<string | null>(null);
@@ -241,7 +244,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         setOrgMessage("Seleciona uma organização primeiro.");
         return;
       }
-      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
+      const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -283,7 +286,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     setOfficialEmailSaving(true);
     setOfficialEmailMessage(null);
     try {
-      const res = await fetch("/api/organizacao/organizations/settings/official-email", {
+      const res = await fetch("/api/org-hub/organizations/settings/official-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ organizationId: organization.id, email: normalizedEmail }),
@@ -322,9 +325,9 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       return;
     }
     setDangerLoading(true);
-    setDangerFeedback(null);
+      setDangerFeedback(null);
     try {
-      const res = await fetch(`/api/organizacao/organizations/${organization.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/org-hub/organizations/${organization.id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
         setDangerFeedback(json?.error || "Não foi possível apagar a organização.");
@@ -332,7 +335,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         setDangerFeedback("Organização apagada. Redirecionámos-te para gerir outras.");
         setDangerConfirm("");
         setDangerDialogOpen(false);
-        router.push("/organizacao/organizations");
+        router.push("/org-hub/organizations");
       }
     } catch (err) {
       console.error("[organização/settings] delete", err);

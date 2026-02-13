@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
 import ObjectiveSubnav from "@/app/organizacao/ObjectiveSubnav";
@@ -39,7 +41,7 @@ export default function ClubeCaixaPage() {
   const searchParams = useSearchParams();
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
-  const { data } = useSWR<FinanceResponse>("/api/organizacao/club/finance/overview", fetcher);
+  const { data } = useSWR<FinanceResponse>(resolveCanonicalOrgApiPath("/api/org/[orgId]/club/finance/overview"), fetcher);
 
   const bookings = data?.bookings;
   const recentBookings = data?.recentBookings ?? [];

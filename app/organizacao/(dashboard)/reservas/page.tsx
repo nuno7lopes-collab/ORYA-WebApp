@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -497,7 +499,7 @@ export default function ReservasDashboardPage() {
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
-      ? `/api/organizacao/me?organizationId=${organizationId}`
+      ? `/api/org/${organizationId}/me`
       : null;
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtId, setSelectedPadelCourtId] = useState<number | null>(null);
@@ -509,10 +511,10 @@ export default function ReservasDashboardPage() {
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
   const [drawerBooking, setDrawerBooking] = useState<BookingItem | null>(null);
-  const participantsKey = drawerBooking ? `/api/organizacao/reservas/${drawerBooking.id}/participants` : null;
+  const participantsKey = drawerBooking ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${drawerBooking.id}/participants`) : null;
   const splitKey =
     drawerBooking && organizationId && Number.isFinite(organizationId)
-      ? `/api/organizacao/reservas/${drawerBooking.id}/split?organizationId=${organizationId}`
+      ? `/api/org/${organizationId}/reservas/${drawerBooking.id}/split`
       : null;
   const { data: participantsData, mutate: mutateParticipants } = useSWR<{
     ok: boolean;
@@ -589,7 +591,7 @@ export default function ReservasDashboardPage() {
   const { data: servicesData, isLoading: servicesLoading, mutate: mutateServices } = useSWR<{
     ok: boolean;
     items: ServiceItem[];
-  }>("/api/organizacao/servicos", fetcher);
+  }>(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), fetcher);
   const { data: orgData, mutate: mutateOrg } = useSWR<{
     ok: boolean;
     organization?: {
@@ -982,7 +984,7 @@ export default function ReservasDashboardPage() {
       setClientLoading(true);
       try {
         const res = await fetch(
-          `/api/organizacao/reservas/clientes?q=${encodeURIComponent(query)}`,
+          resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/clientes?q=${encodeURIComponent(query)}`),
           { signal: controller.signal },
         );
         const json = await res.json().catch(() => null);
@@ -1122,9 +1124,9 @@ export default function ReservasDashboardPage() {
     { ok: boolean; items: BookingItem[] }
   >(
     !requiresPadelClubSelection
-      ? `/api/organizacao/reservas?from=${encodeURIComponent(rangeStartIso)}&to=${encodeURIComponent(
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas?from=${encodeURIComponent(rangeStartIso)}&to=${encodeURIComponent(
           rangeEndIso,
-        )}${padelClubQuery}${padelCourtQuery}`
+        )}${padelClubQuery}${padelCourtQuery}`)
       : null,
     fetcher,
   );
@@ -1140,9 +1142,9 @@ export default function ReservasDashboardPage() {
     items: BookingItem[];
   }>(
     !requiresPadelClubSelection
-      ? `/api/organizacao/reservas?from=${encodeURIComponent(
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas?from=${encodeURIComponent(
           upcomingRange.start.toISOString(),
-        )}&to=${encodeURIComponent(upcomingRange.end.toISOString())}${padelClubQuery}${padelCourtQuery}`
+        )}&to=${encodeURIComponent(upcomingRange.end.toISOString())}${padelClubQuery}${padelCourtQuery}`)
       : null,
     fetcher,
   );
@@ -1151,11 +1153,11 @@ export default function ReservasDashboardPage() {
   const shouldLoadResources = canFilterByResource;
 
   const { data: professionalsData } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
-    shouldLoadProfessionals ? "/api/organizacao/reservas/profissionais" : null,
+    shouldLoadProfessionals ? resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais") : null,
     fetcher,
   );
   const { data: resourcesData } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    shouldLoadResources ? "/api/organizacao/reservas/recursos" : null,
+    shouldLoadResources ? resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos") : null,
     fetcher,
   );
 
@@ -1189,7 +1191,7 @@ export default function ReservasDashboardPage() {
 
   const delayKey =
     organizationId && Number.isFinite(organizationId)
-      ? `/api/organizacao/reservas/delays?scopeType=${delayScope.scopeType}&scopeId=${delayScope.scopeId}&organizationId=${organizationId}`
+      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/delays?scopeType=${delayScope.scopeType}&scopeId=${delayScope.scopeId}&organizationId=${organizationId}`)
       : null;
   const { data: delayData, mutate: mutateDelay } = useSWR<{ ok: boolean; delay: { id: number; delayMinutes: number; reason: string | null; effectiveFrom: string } | null }>(
     delayKey,
@@ -1461,7 +1463,7 @@ export default function ReservasDashboardPage() {
       if (!organizationId || Number.isNaN(organizationId)) {
         throw new Error("Seleciona uma organização primeiro.");
       }
-      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
+      const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reservationAssignmentMode: mode }),
@@ -1488,7 +1490,7 @@ export default function ReservasDashboardPage() {
 
     setCancelingId(bookingId);
     try {
-      const res = await fetch(`/api/organizacao/reservas/${bookingId}/cancel`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${bookingId}/cancel`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -1529,7 +1531,7 @@ export default function ReservasDashboardPage() {
     setRescheduleError(null);
     setRescheduleNotice(null);
     try {
-      const res = await fetch(`/api/organizacao/reservas/${drawerBooking.id}/reschedule`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${drawerBooking.id}/reschedule`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startsAt: startsAt.toISOString() }),
@@ -1566,8 +1568,8 @@ export default function ReservasDashboardPage() {
     try {
       const url =
         organizationId && Number.isFinite(organizationId)
-          ? `/api/organizacao/reservas/${drawerBooking.id}/invites?organizationId=${organizationId}`
-          : `/api/organizacao/reservas/${drawerBooking.id}/invites`;
+          ? `/api/org/${organizationId}/reservas/${drawerBooking.id}/invites`
+          : resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${drawerBooking.id}/invites`);
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1684,7 +1686,7 @@ export default function ReservasDashboardPage() {
     setSplitState((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
     try {
       const res = await fetch(
-        `/api/organizacao/reservas/${splitState.bookingId}/split?organizationId=${organizationId}`,
+        `/api/org/${organizationId}/reservas/${splitState.bookingId}/split`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1717,7 +1719,7 @@ export default function ReservasDashboardPage() {
       const delayMinutes = Number.isFinite(Number(overrideMinutes))
         ? Math.max(0, Math.round(Number(overrideMinutes)))
         : Math.max(0, Math.round(Number(delayMinutesDraft)));
-      const res = await fetch("/api/organizacao/reservas/delays", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/delays"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1750,7 +1752,7 @@ export default function ReservasDashboardPage() {
     if (!confirmed) return;
     setNoShowBusy(true);
     try {
-      const res = await fetch(`/api/organizacao/reservas/${bookingId}/no-show`, {
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${bookingId}/no-show`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -1828,7 +1830,7 @@ export default function ReservasDashboardPage() {
     setServiceSaving(true);
     setServiceError(null);
     try {
-      const res = await fetch("/api/organizacao/servicos", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1960,7 +1962,7 @@ export default function ReservasDashboardPage() {
             : null,
       };
 
-      const res = await fetch("/api/organizacao/reservas", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1983,7 +1985,7 @@ export default function ReservasDashboardPage() {
 
       mutateBookings();
 
-      const checkoutRes = await fetch(`/api/organizacao/reservas/${bookingId}/checkout`, {
+      const checkoutRes = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${bookingId}/checkout`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

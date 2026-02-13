@@ -21,6 +21,7 @@ import {
   buildPadelDefaultCategories,
   sortPadelCategories,
 } from "@/domain/padelDefaultCategories";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 
 type PadelClub = {
   id: number;
@@ -1203,7 +1204,7 @@ export default function PadelHubClient({
   }, [calendarViewTouched]);
 
   const { data: organizationStaff } = useSWR<OrganizationStaffResponse>(
-    organizationId ? `/api/organizacao/organizations/members?organizationId=${organizationId}` : null,
+    organizationId ? `/api/org-hub/organizations/members?organizationId=${organizationId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -2910,7 +2911,7 @@ export default function PadelHubClient({
         setStaffMessage(staffForm.id ? "Membro atualizado." : "Membro adicionado.");
         if (staffMode === "external" && emailToSend && organizationId) {
           // Tentar enviar convite de organização (staff) para criar conta
-          const inviteRes = await fetch("/api/organizacao/organizations/members/invites", {
+          const inviteRes = await fetch("/api/org-hub/organizations/members/invites", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -3616,7 +3617,10 @@ export default function PadelHubClient({
         label: "Criar torneio",
         description: "Abrir wizard Padel.",
         shortcut: "G",
-        run: () => router.push("/organizacao/padel/torneios/novo"),
+        run: () =>
+          router.push(
+            organizationId ? buildOrgHref(organizationId, "/padel/tournaments/new") : buildOrgHubHref("/organizations"),
+          ),
       },
       {
         id: "open-tournaments",
@@ -3654,7 +3658,8 @@ export default function PadelHubClient({
         description: "Abrir painel live.",
         run: () => {
           if (!eventId) return;
-          window.open(`/organizacao/padel/torneios/${eventId}/live`, "_blank");
+          if (!organizationId) return;
+          window.open(buildOrgHref(organizationId, `/padel/tournaments/${eventId}/live`), "_blank");
         },
         enabled: Boolean(eventId),
       },
@@ -3729,13 +3734,13 @@ export default function PadelHubClient({
   }, [commandActions, commandQuery]);
 
   const isClubTool = toolMode === "CLUB";
-  const toolBadge = isClubTool ? "Ferramenta A · Clube" : "Ferramenta B · Torneios";
+  const toolBadge = isClubTool ? "Gestão de Clube Padel" : "Torneios de Padel";
   const toolTitle = isClubTool ? "Configuração Padel + Atalhos" : "Gestão de Torneios Padel";
   const toolSubtitle = isClubTool
     ? "Clubes, courts, equipa local, comunidade e atalhos cross-module."
     : "Formatos, categorias, equipas, calendário e operação competitiva.";
   const toolSwitchHref = isClubTool ? "/organizacao/padel/torneios" : "/organizacao/padel/clube";
-  const toolSwitchLabel = isClubTool ? "Abrir Ferramenta B" : "Abrir Ferramenta A";
+  const toolSwitchLabel = isClubTool ? "Abrir Torneios de Padel" : "Abrir Gestão de Clube Padel";
 
   return (
     <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101b39]/70 to-[#050810]/90 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
@@ -3824,13 +3829,13 @@ export default function PadelHubClient({
         <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Dependências da Ferramenta A</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Dependências da Gestão de Clube</p>
               <p className="text-sm text-white/70">
-                Clubes, courts e staff são geridos na Ferramenta A e consumidos aqui.
+                Clubes, courts e staff são geridos na Gestão de Clube Padel e consumidos aqui.
               </p>
             </div>
             <Link href="/organizacao/padel/clube" className={CTA_PAD_SECONDARY_SM}>
-              Abrir Ferramenta A
+              Abrir Gestão de Clube Padel
             </Link>
           </div>
         </div>
@@ -7182,7 +7187,10 @@ export default function PadelHubClient({
                     {eventId && (
                       <button
                         type="button"
-                        onClick={() => window.open(`/organizacao/padel/torneios/${eventId}/live`, "_blank")}
+                        onClick={() => {
+                          if (!organizationId) return;
+                          window.open(buildOrgHref(organizationId, `/padel/tournaments/${eventId}/live`), "_blank");
+                        }}
                         className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
                       >
                         LiveHub

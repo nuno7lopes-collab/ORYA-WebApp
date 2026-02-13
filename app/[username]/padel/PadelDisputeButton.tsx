@@ -32,7 +32,7 @@ export default function PadelDisputeButton({
       const res = await fetch(`/api/padel/matches/${matchId}/dispute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: trimmed }),
+        body: JSON.stringify({ reason: trimmed, confirmationSource: "WEB_PUBLIC" }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {

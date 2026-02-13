@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { NotificationType, OrganizationMemberRole } from "@prisma/client";
 import { listEffectiveOrganizationMemberUserIdsByRoles } from "@/lib/organizationMembers";
@@ -34,7 +34,7 @@ export async function notifyOrganizationBookingChangeResponse(params: BookingCha
     );
     if (recipients.length === 0) return;
 
-    const ctaUrl = appendOrganizationIdToHref("/organizacao/reservas", organizationId);
+    const ctaUrl = buildOrgHref(organizationId, "/bookings");
     const timeLabel = proposedStartsAt.toLocaleString("pt-PT", {
       day: "2-digit",
       month: "short",

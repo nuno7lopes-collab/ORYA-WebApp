@@ -23,7 +23,7 @@ export default async function LegacyOrganizationStorePage({ searchParams }: Page
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/organizacao");
+    redirect("/login");
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
@@ -32,7 +32,7 @@ export default async function LegacyOrganizationStorePage({ searchParams }: Page
   });
 
   if (!organization) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   const resolved = (await searchParams) ?? {};

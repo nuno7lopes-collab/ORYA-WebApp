@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
@@ -69,7 +71,7 @@ export default function RefundsPanel() {
       if (from) params.set("from", normalizeQueryDate(from));
       if (to) params.set("to", normalizeQueryDate(to));
       if (cursor) params.set("cursor", String(cursor));
-      return `/api/organizacao/refunds/list?${params.toString()}`;
+      return resolveCanonicalOrgApiPath(`/api/org/[orgId]/refunds/list?${params.toString()}`);
     },
     [reason, search, from, to],
   );

@@ -86,7 +86,7 @@ export default async function OrgStorePage({ params, searchParams }: PageProps) 
   const resolvedParams = await params;
   const orgId = Number(resolvedParams.orgId);
   if (!Number.isFinite(orgId) || orgId <= 0) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   const resolvedSearchParams = (await searchParams) ?? {};
@@ -99,7 +99,7 @@ export default async function OrgStorePage({ params, searchParams }: PageProps) 
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/organizacao");
+    redirect("/login");
   }
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
@@ -108,7 +108,7 @@ export default async function OrgStorePage({ params, searchParams }: PageProps) 
   });
 
   if (!organization) {
-    redirect("/organizacao/organizations");
+    redirect("/org-hub/organizations");
   }
 
   const store = (await prisma.store.findFirst({

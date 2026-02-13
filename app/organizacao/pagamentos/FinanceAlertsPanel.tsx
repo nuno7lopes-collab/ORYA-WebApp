@@ -40,7 +40,7 @@ export default function FinanceAlertsPanel({ organization, canEdit = false, onSa
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch(`/api/organizacao/me?organizationId=${organizationId}`, {
+      const res = await fetch(`/api/org/${organizationId}/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

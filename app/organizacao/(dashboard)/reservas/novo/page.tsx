@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -49,7 +51,7 @@ export default function NovoServicoPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/organizacao/servicos", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

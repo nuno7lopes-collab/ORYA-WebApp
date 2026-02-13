@@ -6,6 +6,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { BookingInviteStatus } from "@prisma/client";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { getBookingState, isBookingConfirmed } from "@/lib/reservas/bookingState";
 
 function errorCodeForStatus(status: number) {
@@ -282,7 +283,7 @@ async function _POST(
       const guestLabel = invite.targetName || invite.targetContact || "Convidado";
       const responseLabel = response === BookingInviteStatus.ACCEPTED ? "aceitou" : "recusou";
       const message = `${guestLabel} ${responseLabel} o convite para ${serviceTitle}.`;
-      const ticketUrl = `${getAppBaseUrl().replace(/\/+$/, "")}/organizacao/reservas`;
+      const ticketUrl = `${getAppBaseUrl().replace(/\/+$/, "")}${buildOrgHref(organization.id, "/bookings")}`;
       await queueImportantUpdateEmail({
         dedupeKey: `booking_invite_response:${invite.id}:${response}`,
         recipient: officialEmail,

@@ -284,7 +284,7 @@ export function NewOrganizationEventPage({
   const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
-      ? `/api/organizacao/me?organizationId=${organizationId}`
+      ? `/api/org/${organizationId}/me`
       : null;
   const { data: organizationStatus } = useSWR<{
     ok?: boolean;
@@ -1237,6 +1237,8 @@ export function NewOrganizationEventPage({
     { value: "DUPLA_ELIMINACAO", label: "Dupla eliminação" },
     { value: "NON_STOP", label: "Non-stop" },
     { value: "CAMPEONATO_LIGA", label: "Campeonato/Liga" },
+    { value: "AMERICANO", label: "Americano" },
+    { value: "MEXICANO", label: "Mexicano" },
   ];
   const normalizeRegistrationValue = (value: string) => {
     if (!value) return null;
@@ -1249,44 +1251,6 @@ export function NewOrganizationEventPage({
   const selectedStartDate = startDateInput ? parseInputDate(startDateInput) : null;
   const selectedEndDate = endDateInput ? parseInputDate(endDateInput) : null;
   const minEndDate = selectedStartDate ?? today;
-
-  const createPartnerCourts = async (clubId: number, club: PadelPublicClub) => {
-    const courtsSource =
-      Array.isArray(club.courts) && club.courts.length > 0
-        ? club.courts.map((court, idx) => ({
-            name: court.name || `Court ${idx + 1}`,
-            indoor: Boolean(court.indoor),
-            surface: court.surface ?? "",
-            displayOrder: idx + 1,
-          }))
-        : Array.from({ length: Math.max(1, club.courtsCount ?? 1) }).map((_, idx) => ({
-            name: `Court ${idx + 1}`,
-            indoor: false,
-            surface: "",
-            displayOrder: idx + 1,
-          }));
-
-    const createdIds: number[] = [];
-    for (const court of courtsSource) {
-      const res = await fetch(`/api/padel/clubs/${clubId}/courts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: court.name,
-          description: "",
-          surface: court.surface,
-          indoor: court.indoor,
-          isActive: true,
-          displayOrder: court.displayOrder,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (res.ok && json?.court?.id) {
-        createdIds.push(json.court.id);
-      }
-    }
-    return createdIds;
-  };
 
   const createPartnerClubFromDirectory = async (club: PadelPublicClub) => {
     if (!organizationIdFromStatus) {
@@ -1333,6 +1297,11 @@ export function NewOrganizationEventPage({
         return;
       }
       const savedClub = json.club as { id?: number };
+      const syncedCourtIds = Array.isArray(json?.partnerCourtSync?.localCourtIds)
+        ? json.partnerCourtSync.localCourtIds
+            .map((id: unknown) => (typeof id === "number" ? id : Number(id)))
+            .filter((id: number) => Number.isFinite(id))
+        : [];
       if (!savedClub.id) {
         setPadelDirectoryError("Erro ao criar clube parceiro.");
         return;
@@ -1343,9 +1312,20 @@ export function NewOrganizationEventPage({
       setPadelClubSourceTouched(true);
       setSelectedPadelClubId(savedClub.id);
       clearErrorsForFields(["padel"]);
-      const createdCourtIds = await createPartnerCourts(savedClub.id, club);
-      if (createdCourtIds.length > 0) {
-        setSelectedPadelCourtIds(createdCourtIds);
+      if (syncedCourtIds.length > 0) {
+        setSelectedPadelCourtIds(syncedCourtIds);
+      } else {
+        const courtsRes = await fetch(`/api/padel/clubs/${savedClub.id}/courts`);
+        const courtsJson = await courtsRes.json().catch(() => null);
+        const activeCourtIds = Array.isArray(courtsJson?.items)
+          ? courtsJson.items
+              .filter((court: { id?: unknown; isActive?: boolean }) => court?.isActive !== false)
+              .map((court: { id?: unknown }) => (typeof court.id === "number" ? court.id : Number(court.id)))
+              .filter((id: number) => Number.isFinite(id))
+          : [];
+        if (activeCourtIds.length > 0) {
+          setSelectedPadelCourtIds(activeCourtIds);
+        }
       }
     } catch (err) {
       setPadelDirectoryError("Erro ao criar clube parceiro.");
@@ -2506,7 +2486,7 @@ export function NewOrganizationEventPage({
             : undefined,
     };
 
-      const res = await fetch(`/api/organizacao/events/create?organizationId=${activeOrganizationId}`, {
+      const res = await fetch(`/api/org/${activeOrganizationId}/events/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3199,7 +3179,7 @@ export function NewOrganizationEventPage({
                 ) : locationSuggestions.length === 0 ? (
                   <div className="space-y-1 px-3 py-2 text-sm text-white/65">
                     <p>Sem sugestões para este texto.</p>
-                    <p className="text-[12px] text-white/50">Tenta rua + cidade, por exemplo: "Rua de Ceuta Porto".</p>
+                    <p className="text-[12px] text-white/50">Tenta rua + cidade, por exemplo: &quot;Rua de Ceuta Porto&quot;.</p>
                   </div>
                 ) : (
                   locationSuggestions.map((suggestion) => {

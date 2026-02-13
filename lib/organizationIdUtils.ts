@@ -9,6 +9,46 @@ export function parseOrganizationId(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+export type OrgRouteParams = { orgId: number };
+
+type QueryInput = URLSearchParams | Record<string, string | number | boolean | null | undefined> | undefined;
+
+function normalizeSubpath(subpath: string | undefined) {
+  if (!subpath || subpath === "/") return "";
+  return subpath.startsWith("/") ? subpath : `/${subpath}`;
+}
+
+function mergeQuery(query?: QueryInput) {
+  if (!query) return "";
+  const params = new URLSearchParams(query instanceof URLSearchParams ? query : undefined);
+  if (!(query instanceof URLSearchParams)) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value === null || typeof value === "undefined") continue;
+      params.set(key, String(value));
+    }
+  }
+  const built = params.toString();
+  return built ? `?${built}` : "";
+}
+
+export function buildOrgHref(orgId: number, subpath: string = "", query?: QueryInput): string {
+  const validOrgId = parseOrganizationId(orgId);
+  if (!validOrgId) {
+    return `/org-hub/organizations${mergeQuery(query)}`;
+  }
+  return `/org/${validOrgId}${normalizeSubpath(subpath)}${mergeQuery(query)}`;
+}
+
+export function buildOrgHubHref(subpath: string = "", query?: QueryInput): string {
+  return `/org-hub${normalizeSubpath(subpath)}${mergeQuery(query)}`;
+}
+
+export function parseOrgIdFromPathnameStrict(pathname: string | null | undefined): number | null {
+  if (!pathname) return null;
+  const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
+  return parseOrganizationId(canonicalMatch?.[1] ?? null);
+}
+
 const ORG_COOKIE_NAME = "orya_organization";
 const ORG_STORAGE_KEY = "orya_last_organization_id";
 
@@ -52,22 +92,13 @@ export function resolveOrganizationIdForUi(input: {
 }
 
 export function parseOrganizationIdFromPathname(pathname: string | null | undefined): number | null {
-  if (!pathname) return null;
-  const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
-  if (canonicalMatch?.[1]) {
-    return parseOrganizationId(canonicalMatch[1]);
-  }
-  const legacyMatch = pathname.match(/^\/organizacao\/([^/]+)(?:\/|$)/i);
-  if (legacyMatch?.[1]) {
-    return parseOrganizationId(legacyMatch[1]);
-  }
-  return null;
+  return parseOrgIdFromPathnameStrict(pathname);
 }
 
-function resolveCanonicalOrgHref(
+export function resolveCanonicalOrgHref(
   pathname: string,
   currentSearch: URLSearchParams,
-  organizationId: number,
+  organizationId: number | null,
 ): { pathname: string; search: URLSearchParams } | null {
   if (!pathname.startsWith("/organizacao")) return null;
 
@@ -75,24 +106,40 @@ function resolveCanonicalOrgHref(
   const nextSearch = new URLSearchParams(currentSearch);
   nextSearch.delete("organizationId");
 
+  if (suffix === "/organizations") {
+    return { pathname: buildOrgHubHref("/organizations"), search: nextSearch };
+  }
+
+  if (suffix === "/become") {
+    return { pathname: buildOrgHubHref("/create"), search: nextSearch };
+  }
+
+  if ((suffix === "" || suffix === "/" || suffix === "/overview") && (!organizationId || !Number.isFinite(organizationId))) {
+    return { pathname: buildOrgHubHref("/organizations"), search: nextSearch };
+  }
+
+  if (!organizationId || !Number.isFinite(organizationId)) return null;
+
   if (suffix === "" || suffix === "/" || suffix === "/overview") {
     const tab = nextSearch.get("tab");
     const section = nextSearch.get("section");
     nextSearch.delete("tab");
     nextSearch.delete("section");
     if (tab === "manage") {
-      return { pathname: `/org/${organizationId}/manage`, search: nextSearch };
+      return { pathname: buildOrgHref(organizationId, "/operations"), search: nextSearch };
     }
     if (tab === "promote") {
-      return { pathname: `/org/${organizationId}/promote`, search: nextSearch };
+      return { pathname: buildOrgHref(organizationId, "/marketing"), search: nextSearch };
     }
     if (tab === "profile") {
-      return { pathname: `/org/${organizationId}/profile`, search: nextSearch };
+      return { pathname: buildOrgHref(organizationId, "/profile"), search: nextSearch };
     }
     if (tab === "analyze") {
       if (section === "financas" || section === "invoices") {
-        if (section === "invoices") nextSearch.set("tab", "invoices");
-        return { pathname: `/org/${organizationId}/financas`, search: nextSearch };
+        return {
+          pathname: section === "invoices" ? buildOrgHref(organizationId, "/finance/invoices") : buildOrgHref(organizationId, "/finance"),
+          search: nextSearch,
+        };
       }
       if (section === "ops") {
         nextSearch.set("tab", "ops");
@@ -101,52 +148,67 @@ function resolveCanonicalOrgHref(
       } else {
         nextSearch.set("tab", "overview");
       }
-      return { pathname: `/org/${organizationId}/analytics`, search: nextSearch };
+      return { pathname: buildOrgHref(organizationId, "/analytics"), search: nextSearch };
     }
-    return { pathname: `/org/${organizationId}/overview`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/overview"), search: nextSearch };
   }
 
   if (suffix === "/manage") {
-    return { pathname: `/org/${organizationId}/manage`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/operations"), search: nextSearch };
   }
 
-  if (suffix === "/promote") {
-    return { pathname: `/org/${organizationId}/promote`, search: nextSearch };
+  if (suffix === "/promote" || suffix === "/promo") {
+    return { pathname: buildOrgHref(organizationId, "/marketing"), search: nextSearch };
   }
 
   if (suffix === "/profile") {
-    return { pathname: `/org/${organizationId}/profile`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/profile"), search: nextSearch };
+  }
+
+  if (suffix === "/profile/seguidores") {
+    return { pathname: buildOrgHref(organizationId, "/profile/followers"), search: nextSearch };
   }
 
   if (suffix === "/scan") {
-    if (!nextSearch.get("tab")) {
-      nextSearch.set("tab", "scanner");
-    }
-    return { pathname: `/org/${organizationId}/checkin`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/check-in"), search: nextSearch };
   }
 
-  if (suffix === "/reservas" || suffix.startsWith("/reservas/")) {
-    return { pathname: `/org/${organizationId}/servicos`, search: nextSearch };
+  if (suffix === "/chat" || suffix === "/mensagens") {
+    return { pathname: buildOrgHref(organizationId, "/chat"), search: nextSearch };
+  }
+
+  if (suffix === "/chat/preview") {
+    return { pathname: buildOrgHref(organizationId, "/chat/preview"), search: nextSearch };
+  }
+
+  if (suffix === "/settings/verify") {
+    return { pathname: buildOrgHref(organizationId, "/settings/verify"), search: nextSearch };
   }
 
   if (suffix === "/settings" || suffix.startsWith("/settings/") || suffix.startsWith("/owner/confirm")) {
-    return { pathname: `/org/${organizationId}/settings`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/settings"), search: nextSearch };
   }
 
-  if (suffix === "/pagamentos" || suffix.startsWith("/pagamentos/") || suffix === "/faturacao") {
-    return { pathname: `/org/${organizationId}/financas`, search: nextSearch };
+  if (suffix === "/pagamentos" || suffix === "/faturacao") {
+    return { pathname: buildOrgHref(organizationId, "/finance"), search: nextSearch };
+  }
+
+  if (suffix === "/pagamentos/invoices") {
+    return { pathname: buildOrgHref(organizationId, "/finance/invoices"), search: nextSearch };
   }
 
   if (suffix === "/estatisticas") {
-    return { pathname: `/org/${organizationId}/analytics`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/analytics"), search: nextSearch };
   }
 
   if (suffix === "/analyze") {
     const section = nextSearch.get("section");
     nextSearch.delete("section");
     if (section === "financas" || section === "invoices") {
-      if (section === "invoices") nextSearch.set("tab", "invoices");
-      return { pathname: `/org/${organizationId}/financas`, search: nextSearch };
+      return {
+        pathname: section === "invoices" ? buildOrgHref(organizationId, "/finance/invoices") : buildOrgHref(organizationId, "/finance"),
+        search: nextSearch,
+      };
     }
     if (section === "ops") {
       nextSearch.set("tab", "ops");
@@ -155,26 +217,148 @@ function resolveCanonicalOrgHref(
     } else if (!nextSearch.get("tab")) {
       nextSearch.set("tab", "overview");
     }
-    return { pathname: `/org/${organizationId}/analytics`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/analytics"), search: nextSearch };
   }
 
-  if (suffix === "/profile/seguidores") {
-    return { pathname: `/org/${organizationId}/perfil/seguidores`, search: nextSearch };
+  if (suffix === "/eventos") {
+    return { pathname: buildOrgHref(organizationId, "/events"), search: nextSearch };
+  }
+
+  if (suffix === "/eventos/novo") {
+    return { pathname: buildOrgHref(organizationId, "/events/new"), search: nextSearch };
+  }
+
+  if (suffix.startsWith("/eventos/")) {
+    return { pathname: buildOrgHref(organizationId, `/events/${suffix.slice("/eventos/".length)}`), search: nextSearch };
+  }
+
+  if (suffix === "/reservas") {
+    return { pathname: buildOrgHref(organizationId, "/bookings"), search: nextSearch };
+  }
+  if (suffix === "/reservas/novo") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/new"), search: nextSearch };
+  }
+  if (suffix === "/reservas/servicos") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/services"), search: nextSearch };
+  }
+  if (suffix === "/reservas/clientes") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/customers"), search: nextSearch };
+  }
+  if (suffix === "/reservas/profissionais") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/professionals"), search: nextSearch };
+  }
+  if (suffix.startsWith("/reservas/profissionais/")) {
+    return {
+      pathname: buildOrgHref(organizationId, `/bookings/professionals/${suffix.slice("/reservas/profissionais/".length)}`),
+      search: nextSearch,
+    };
+  }
+  if (suffix === "/reservas/recursos") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/resources"), search: nextSearch };
+  }
+  if (suffix.startsWith("/reservas/recursos/")) {
+    return {
+      pathname: buildOrgHref(organizationId, `/bookings/resources/${suffix.slice("/reservas/recursos/".length)}`),
+      search: nextSearch,
+    };
+  }
+  if (suffix === "/reservas/politicas") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/policies"), search: nextSearch };
+  }
+
+  if (suffix === "/inscricoes") {
+    return { pathname: buildOrgHref(organizationId, "/forms"), search: nextSearch };
+  }
+  if (suffix.startsWith("/inscricoes/")) {
+    return { pathname: buildOrgHref(organizationId, `/forms/${suffix.slice("/inscricoes/".length)}`), search: nextSearch };
+  }
+
+  if (suffix === "/staff") {
+    return { pathname: buildOrgHref(organizationId, "/team"), search: nextSearch };
+  }
+  if (suffix === "/treinadores") {
+    return { pathname: buildOrgHref(organizationId, "/trainers"), search: nextSearch };
+  }
+  if (suffix === "/clube/membros") {
+    return { pathname: buildOrgHref(organizationId, "/club/members"), search: nextSearch };
+  }
+  if (suffix === "/clube/caixa") {
+    return { pathname: buildOrgHref(organizationId, "/club/cash"), search: nextSearch };
+  }
+
+  if (suffix === "/padel") {
+    return { pathname: buildOrgHref(organizationId, "/padel"), search: nextSearch };
+  }
+  if (suffix === "/padel/clube") {
+    return { pathname: buildOrgHref(organizationId, "/padel/clubs"), search: nextSearch };
+  }
+  if (suffix === "/padel/torneios") {
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
+  }
+  if (suffix === "/padel/torneios/novo") {
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/new"), search: nextSearch };
+  }
+  if (suffix.startsWith("/padel/torneios/")) {
+    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/padel/torneios/".length)}`), search: nextSearch };
+  }
+
+  if (suffix === "/torneios") {
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
+  }
+  if (suffix === "/torneios/novo") {
+    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/new"), search: nextSearch };
+  }
+  if (suffix.startsWith("/torneios/")) {
+    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/torneios/".length)}`), search: nextSearch };
+  }
+  if (suffix.startsWith("/tournaments/")) {
+    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/tournaments/".length)}`), search: nextSearch };
+  }
+
+  if (suffix === "/crm") {
+    return { pathname: buildOrgHref(organizationId, "/crm"), search: nextSearch };
+  }
+  if (suffix === "/crm/clientes") {
+    return { pathname: buildOrgHref(organizationId, "/crm/customers"), search: nextSearch };
+  }
+  if (suffix.startsWith("/crm/clientes/")) {
+    return { pathname: buildOrgHref(organizationId, `/crm/customers/${suffix.slice("/crm/clientes/".length)}`), search: nextSearch };
+  }
+  if (suffix === "/crm/segmentos") {
+    return { pathname: buildOrgHref(organizationId, "/crm/segments"), search: nextSearch };
+  }
+  if (suffix.startsWith("/crm/segmentos/")) {
+    return { pathname: buildOrgHref(organizationId, `/crm/segments/${suffix.slice("/crm/segmentos/".length)}`), search: nextSearch };
+  }
+  if (suffix === "/crm/campanhas") {
+    return { pathname: buildOrgHref(organizationId, "/crm/campaigns"), search: nextSearch };
+  }
+  if (suffix === "/crm/relatorios") {
+    return { pathname: buildOrgHref(organizationId, "/crm/reports"), search: nextSearch };
+  }
+  if (suffix === "/crm/loyalty") {
+    return { pathname: buildOrgHref(organizationId, "/crm/loyalty"), search: nextSearch };
   }
 
   if (suffix === "/loja") {
-    return { pathname: `/org/${organizationId}/loja`, search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/store"), search: nextSearch };
   }
 
   return null;
 }
 
 export function appendOrganizationIdToHref(href: string, organizationId: number | null): string {
-  if (!organizationId || !Number.isFinite(organizationId)) return href;
   try {
     const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
     const base = isAbsolute ? undefined : "http://local";
     const url = new URL(href, base);
+    if (url.pathname.startsWith("/org/") || url.pathname.startsWith("/org-hub")) {
+      url.searchParams.delete("organizationId");
+      url.searchParams.delete("org");
+      if (isAbsolute) return url.toString();
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+
     const canonical = resolveCanonicalOrgHref(url.pathname, url.searchParams, organizationId);
     if (canonical) {
       url.pathname = canonical.pathname;
@@ -182,6 +366,7 @@ export function appendOrganizationIdToHref(href: string, organizationId: number 
       if (isAbsolute) return url.toString();
       return `${url.pathname}${url.search}${url.hash}`;
     }
+    if (!organizationId || !Number.isFinite(organizationId)) return href;
     if (!url.pathname.startsWith("/organizacao")) return href;
     if (url.searchParams.has("organizationId")) return href;
     url.searchParams.set("organizationId", String(organizationId));
@@ -193,23 +378,5 @@ export function appendOrganizationIdToHref(href: string, organizationId: number 
 }
 
 export function setOrganizationIdInHref(href: string, organizationId: number | null): string {
-  if (!organizationId || !Number.isFinite(organizationId)) return href;
-  try {
-    const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
-    const base = isAbsolute ? undefined : "http://local";
-    const url = new URL(href, base);
-    const canonical = resolveCanonicalOrgHref(url.pathname, url.searchParams, organizationId);
-    if (canonical) {
-      url.pathname = canonical.pathname;
-      url.search = canonical.search.toString() ? `?${canonical.search.toString()}` : "";
-      if (isAbsolute) return url.toString();
-      return `${url.pathname}${url.search}${url.hash}`;
-    }
-    if (!url.pathname.startsWith("/organizacao")) return href;
-    url.searchParams.set("organizationId", String(organizationId));
-    if (isAbsolute) return url.toString();
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return href;
-  }
+  return appendOrganizationIdToHref(href, organizationId);
 }

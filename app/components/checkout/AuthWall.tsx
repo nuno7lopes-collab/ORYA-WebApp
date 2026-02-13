@@ -5,7 +5,7 @@ import FormField from "./FormField";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { sanitizeUsername, validateUsername } from "@/lib/username";
 import { isReservedUsernameAllowed } from "@/lib/reservedUsernames";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 
 type AuthWallProps = {
   onAuthenticated?: (userId: string) => void;

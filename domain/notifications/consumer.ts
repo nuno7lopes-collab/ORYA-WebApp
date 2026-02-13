@@ -1,10 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { enqueueNotification } from "@/domain/notifications/outbox";
 import { shouldNotify } from "@/domain/notifications/prefs";
-import { resolveNotificationContent, resolvePayloadKind, resolveRoleLabel, resolvePushPayload, validateNotificationInput } from "@/domain/notifications/registry";
+import {
+  resolveCampaignId,
+  resolveNotificationContent,
+  resolvePayloadKind,
+  resolveRoleLabel,
+  resolvePushPayload,
+  validateNotificationInput,
+} from "@/domain/notifications/registry";
 import { deliverApnsPush } from "@/lib/push/apns";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
-import { NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
+import { CrmDeliveryStatus, NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type EventLogRecord = {
@@ -172,6 +179,25 @@ async function maybeSendPush(
       }
     }),
   );
+}
+
+async function linkCrmCampaignNotification(params: {
+  campaignId: string | null;
+  userId: string;
+  notificationId: string;
+}) {
+  if (!params.campaignId) return;
+  await prisma.crmCampaignDelivery.updateMany({
+    where: {
+      campaignId: params.campaignId,
+      userId: params.userId,
+      notificationId: null,
+      status: { in: [CrmDeliveryStatus.SENT, CrmDeliveryStatus.OPENED, CrmDeliveryStatus.CLICKED] },
+    },
+    data: {
+      notificationId: params.notificationId,
+    },
+  });
 }
 
 export async function deliverNotificationOutboxItem(item: {
@@ -1055,6 +1081,7 @@ export async function deliverNotificationOutboxItem(item: {
     const inviteId = readString(data.inviteId);
     const ticketId = readString(data.ticketId);
     const priority = (data.priority as NotificationPriority) ?? "NORMAL";
+    const campaignId = type === NotificationType.CRM_CAMPAIGN ? resolveCampaignId(data) : null;
 
     const [actor, organization, event] = await Promise.all([
       fromUserId
@@ -1131,6 +1158,13 @@ export async function deliverNotificationOutboxItem(item: {
       inviteId: inviteId ?? undefined,
       sourceEventId,
     });
+    if (type === NotificationType.CRM_CAMPAIGN) {
+      await linkCrmCampaignNotification({
+        campaignId,
+        userId: item.userId,
+        notificationId: notification.id,
+      });
+    }
 
     const pushPayload = resolvePushPayload(registryInput);
     await maybeSendPush(

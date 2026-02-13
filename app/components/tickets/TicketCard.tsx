@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { getEventCoverUrl } from "@/lib/eventCover";
-import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 
 export type TicketCardProps = {
   id: string;

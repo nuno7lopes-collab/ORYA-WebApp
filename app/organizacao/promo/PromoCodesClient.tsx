@@ -1,5 +1,7 @@
 "use client";
 
+import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -140,11 +142,11 @@ export default function PromoCodesClient() {
   const searchParams = useSearchParams();
   const orgId = parseOrganizationId(searchParams?.get("organizationId")) ?? getOrganizationIdFromBrowser();
   const loginRedirectHref = appendOrganizationIdToHref("/organizacao/promo", orgId);
-  const { data, mutate } = useSWR<ListResponse>(user ? "/api/organizacao/promo" : null, fetcher);
+  const { data, mutate } = useSWR<ListResponse>(user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/promo") : null, fetcher);
   const viewerRole = data?.viewerRole ?? null;
   const isPromoterOnly = viewerRole === "PROMOTER";
   const { data: membersData } = useSWR<{ ok: boolean; items: MemberLite[] }>(
-    user && !isPromoterOnly ? "/api/organizacao/organizations/members" : null,
+    user && !isPromoterOnly ? "/api/org-hub/organizations/members" : null,
     fetcher,
   );
 
@@ -266,7 +268,7 @@ export default function PromoCodesClient() {
         minCartValueCents: form.minCart ? Math.round(Number(form.minCart) * 100) : null,
         promoterUserId: form.promoterUserId === "none" ? null : form.promoterUserId,
       };
-      const res = await fetch("/api/organizacao/promo", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/promo"), {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingId ? { id: editingId, ...payload } : payload),
@@ -318,7 +320,7 @@ export default function PromoCodesClient() {
 
   const handleDelete = async (id: number) => {
     try {
-      const res = await fetch("/api/organizacao/promo", {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/promo"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -341,7 +343,7 @@ export default function PromoCodesClient() {
 
   const handleToggle = async (id: number, active: boolean) => {
     try {
-      await fetch("/api/organizacao/promo", {
+      await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/promo"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, active }),
@@ -359,7 +361,7 @@ export default function PromoCodesClient() {
     setDetailError(null);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/organizacao/promo/${promoId}`);
+      const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/promo/${promoId}`));
       const json: PromoDetailResponse = await res.json();
       if (!res.ok || json.ok === false) {
         setDetailError(json && "error" in json ? json.error || "Erro ao carregar detalhe." : "Erro ao carregar detalhe.");

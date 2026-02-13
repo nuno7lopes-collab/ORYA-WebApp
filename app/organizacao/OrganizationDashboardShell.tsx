@@ -10,9 +10,10 @@ import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import OrganizationLinkInterceptor from "@/app/organizacao/OrganizationLinkInterceptor";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import {
-  appendOrganizationIdToHref,
+  buildOrgHref,
+  buildOrgHubHref,
   parseOrganizationId,
-  setOrganizationIdInHref,
+  parseOrgIdFromPathnameStrict,
 } from "@/lib/organizationIdUtils";
 
 export type OrganizationShellOrgOption = {
@@ -83,12 +84,7 @@ const DashboardShellSkeleton = () => (
 );
 
 function parseOrganizationIdFromPathnameSafe(pathname: string | null | undefined): number | null {
-  if (!pathname) return null;
-  const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
-  if (canonicalMatch?.[1]) return parseOrganizationId(canonicalMatch[1]);
-  const legacyMatch = pathname.match(/^\/organizacao\/([^/]+)(?:\/|$)/i);
-  if (legacyMatch?.[1]) return parseOrganizationId(legacyMatch[1]);
-  return null;
+  return parseOrgIdFromPathnameStrict(pathname);
 }
 
 export default function OrganizationDashboardShell({
@@ -96,6 +92,7 @@ export default function OrganizationDashboardShell({
   orgOptions,
   user,
   role,
+  crmCampaignsEnabled = false,
   isSuspended,
   emailVerification,
   platformOfficialEmail,
@@ -105,6 +102,7 @@ export default function OrganizationDashboardShell({
   orgOptions: OrganizationShellOrgOption[];
   user: OrganizationShellUser | null;
   role?: string | null;
+  crmCampaignsEnabled?: boolean;
   isSuspended: boolean;
   emailVerification?: { isVerified: boolean; email: string | null } | null;
   platformOfficialEmail?: string | null;
@@ -135,7 +133,7 @@ export default function OrganizationDashboardShell({
     if (!emailGateActive || isSettingsRoute || emailGateDismissed) return;
     let isMounted = true;
     let interval: ReturnType<typeof setInterval> | null = null;
-    const orgMeUrl = activeOrg?.id ? `/api/organizacao/me?organizationId=${activeOrg.id}` : null;
+    const orgMeUrl = activeOrg?.id ? `/api/org/${activeOrg.id}/me` : null;
     const checkEmailVerification = async () => {
       try {
         if (!orgMeUrl) return;
@@ -170,8 +168,7 @@ export default function OrganizationDashboardShell({
   }, [activeOrg?.id, emailGateActive, emailGateDismissed, isSettingsRoute, router]);
 
   useEffect(() => {
-    const requestedOrgId =
-      parseOrganizationId(searchParams?.get("organizationId")) ?? parseOrganizationIdFromPathnameSafe(pathname);
+    const requestedOrgId = parseOrganizationIdFromPathnameSafe(pathname);
     if (!requestedOrgId) return;
     if (activeOrg?.id === requestedOrgId) return;
     if (syncInFlightRef.current) return;
@@ -187,7 +184,7 @@ export default function OrganizationDashboardShell({
 
     const syncOrgContext = async () => {
       try {
-        const res = await fetch("/api/organizacao/organizations/switch", {
+        const res = await fetch("/api/org-hub/organizations/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ organizationId: requestedOrgId }),
@@ -203,13 +200,9 @@ export default function OrganizationDashboardShell({
         if (cancelled) return;
         const fallbackOrgId = activeOrg?.id ?? null;
         if (fallbackOrgId && fallbackOrgId !== requestedOrgId) {
-          const currentParams = new URLSearchParams(searchParams?.toString());
-          currentParams.set("organizationId", String(fallbackOrgId));
-          const query = currentParams.toString();
-          const target = query ? `${pathname}?${query}` : pathname ?? "/organizacao";
-          router.replace(setOrganizationIdInHref(target, fallbackOrgId));
+          router.replace(buildOrgHref(fallbackOrgId, "/overview"));
         } else {
-          router.replace("/organizacao/organizations");
+          router.replace(buildOrgHubHref("/organizations"));
         }
       } finally {
         syncInFlightRef.current = false;
@@ -221,17 +214,6 @@ export default function OrganizationDashboardShell({
     return () => {
       cancelled = true;
     };
-  }, [activeOrg?.id, pathname, router, searchParams]);
-
-  useEffect(() => {
-    if (!activeOrg?.id) return;
-    const currentParams = new URLSearchParams(searchParams?.toString());
-    const existing = currentParams.get("organizationId");
-    if (existing) return;
-    currentParams.set("organizationId", String(activeOrg.id));
-    const query = currentParams.toString();
-    const target = query ? `${pathname}?${query}` : pathname;
-    router.replace(target);
   }, [activeOrg?.id, pathname, router, searchParams]);
 
   const handleEmailVerificationInfo = () => {
@@ -249,12 +231,18 @@ export default function OrganizationDashboardShell({
       message: "Confirma a caixa de entrada e o spam para desbloquear o painel.",
     });
   };
-  const settingsHref = appendOrganizationIdToHref("/organizacao/settings", activeOrg?.id ?? null);
+  const settingsHref = activeOrg?.id ? buildOrgHref(activeOrg.id, "/settings") : buildOrgHubHref("/organizations");
 
   return (
     <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
       <OrganizationLinkInterceptor organizationId={activeOrg?.id ?? null} />
-      <OrganizationTopBar activeOrg={activeOrg} orgOptions={orgOptions} user={user} role={role} />
+      <OrganizationTopBar
+        activeOrg={activeOrg}
+        orgOptions={orgOptions}
+        user={user}
+        role={role}
+        crmCampaignsEnabled={crmCampaignsEnabled}
+      />
       {emailGateToast ? (
         <div
           className={cn(
