@@ -131,17 +131,48 @@ export const respondOrganizationInvite = async (
   action: "ACCEPT" | "DECLINE",
   accessToken?: string | null,
 ) => {
+  return respondWorkforceInvite(
+    {
+      inviteType: "ORGANIZATION_MEMBER",
+      inviteId,
+      action,
+    },
+    accessToken,
+  );
+};
+
+export const respondWorkforceInvite = async (
+  params: {
+    inviteType: "ORGANIZATION_MEMBER" | "CLUB_STAFF" | "TEAM_MEMBER";
+    inviteId: string;
+    action: "ACCEPT" | "DECLINE";
+    organizationId?: number | null;
+    padelClubId?: number | null;
+    teamId?: number | null;
+    token?: string | null;
+  },
+  accessToken?: string | null,
+) => {
+  const { inviteType, inviteId, action, organizationId = null, padelClubId = null, teamId = null, token = null } = params;
   if (!inviteId) {
     throw new ApiError(400, "Convite inválido.");
   }
   requireAccessToken(accessToken);
-  const response = await api.requestWithAccessToken<unknown>(
-    "/api/org-hub/organizations/members/invites",
-    accessToken,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ inviteId, action }),
-    },
-  );
+  const endpoint =
+    inviteType === "CLUB_STAFF" && Number.isFinite(padelClubId)
+      ? `/api/padel/clubs/${padelClubId}/staff/invites`
+      : inviteType === "TEAM_MEMBER" && Number.isFinite(teamId)
+        ? `/api/padel/teams/${teamId}/invites`
+        : "/api/org-hub/organizations/members/invites";
+
+  const body =
+    inviteType === "ORGANIZATION_MEMBER"
+      ? { inviteId, action, organizationId, token }
+      : { inviteId, action, token };
+
+  const response = await api.requestWithAccessToken<unknown>(endpoint, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
   return unwrapApiResponse<{ ok?: boolean }>(response);
 };

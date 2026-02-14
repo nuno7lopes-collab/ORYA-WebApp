@@ -328,10 +328,6 @@ export default async function PadelProfilePage({ params }: PageProps) {
     profile: {
       fullName: resolvedProfile.fullName,
       username: resolvedProfile.username,
-      contactPhone: resolvedProfile.contactPhone ?? null,
-      gender: resolvedProfile.gender ?? null,
-      padelLevel: resolvedProfile.padelLevel ?? null,
-      padelPreferredSide: resolvedProfile.padelPreferredSide ?? null,
     },
     email: padelUser?.email ?? null,
   });
@@ -725,6 +721,25 @@ export default async function PadelProfilePage({ params }: PageProps) {
     tournamentsPlayed,
     currentWinStreak,
   });
+  const playerHistory = await prisma.padelPlayerHistoryProjection.findMany({
+    where: {
+      playerProfile: {
+        userId: resolvedProfile.id,
+      },
+    },
+    select: {
+      id: true,
+      finalPosition: true,
+      wonTitle: true,
+      bracketSnapshot: true,
+      event: { select: { id: true, title: true, slug: true, startsAt: true, endsAt: true } },
+      category: { select: { id: true, label: true } },
+      partnerPlayerProfile: { select: { id: true, fullName: true, displayName: true } },
+    },
+    orderBy: [{ event: { endsAt: "desc" } }, { event: { startsAt: "desc" } }, { id: "desc" }],
+    take: 80,
+  });
+  const officialTitles = playerHistory.filter((item) => item.wonTitle);
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -787,6 +802,66 @@ export default async function PadelProfilePage({ params }: PageProps) {
                   subtitle="Jogos terminados."
                   tone="default"
                 />
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Histórico oficial</p>
+                  <h2 className="mt-2 text-sm font-semibold text-white/95">Títulos oficiais</h2>
+                  <p className="text-[12px] text-white/70">Projeção canónica por torneio/categoria/jogador.</p>
+                </div>
+                <p className="text-[11px] text-white/60">{officialTitles.length} título(s)</p>
+              </div>
+
+              {officialTitles.length === 0 ? (
+                <div className="mt-4 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+                  Ainda sem títulos oficiais registados.
+                </div>
+              ) : (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {officialTitles.map((item) => (
+                    <span
+                      key={`official-title-${item.id}`}
+                      className="rounded-full border border-amber-300/40 bg-amber-500/10 px-3 py-1 text-[11px] text-amber-50"
+                    >
+                      {item.event.title}
+                      {item.category?.label ? ` · ${item.category.label}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-4 space-y-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Histórico competitivo</p>
+                {playerHistory.length === 0 && (
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
+                    Sem histórico competitivo projetado.
+                  </div>
+                )}
+                {playerHistory.map((item) => (
+                  <article key={`history-row-${item.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/80">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-white">{item.event.title}</p>
+                      <span className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white/70">
+                        Posição final {item.finalPosition ?? "—"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-white/60">
+                      {item.category?.label ? `${item.category.label}` : "Sem categoria"}
+                      {item.partnerPlayerProfile
+                        ? ` · Parceiro ${item.partnerPlayerProfile.displayName || item.partnerPlayerProfile.fullName || "Jogador"}`
+                        : ""}
+                    </p>
+                    <details className="mt-2 rounded-lg border border-white/10 bg-black/35 px-3 py-2">
+                      <summary className="cursor-pointer text-[11px] text-white/75">Ver snapshot de bracket</summary>
+                      <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-[10px] text-white/60">
+                        {JSON.stringify(item.bracketSnapshot ?? {}, null, 2)}
+                      </pre>
+                    </details>
+                  </article>
+                ))}
               </div>
             </section>
 

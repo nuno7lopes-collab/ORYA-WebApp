@@ -10,7 +10,7 @@ import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
-import { fetchOrganizationInvites, respondOrganizationInvite } from "../../features/notifications/api";
+import { fetchOrganizationInvites, respondWorkforceInvite } from "../../features/notifications/api";
 import type { OrganizationInvite } from "../../features/notifications/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
@@ -49,6 +49,17 @@ const formatInvitedBy = (invite: OrganizationInvite) => {
 
 const formatOrgName = (invite: OrganizationInvite) => {
   return invite.organization?.publicName || invite.organization?.businessName || "Organização";
+};
+
+const formatInviteContext = (invite: OrganizationInvite) => {
+  const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";
+  if (inviteType === "CLUB_STAFF") {
+    return invite.padelClub?.name ? `Staff do clube ${invite.padelClub.name}` : "Staff de clube";
+  }
+  if (inviteType === "TEAM_MEMBER") {
+    return invite.team?.name ? `Membro da equipa ${invite.team.name}` : "Membro de equipa";
+  }
+  return "Membro da organização";
 };
 
 export default function OrganizationInvitesScreen() {
@@ -100,11 +111,21 @@ export default function OrganizationInvitesScreen() {
   const invites = useMemo(() => invitesQuery.data ?? [], [invitesQuery.data]);
 
   const handleRespond = useCallback(
-    async (inviteId: string, action: "ACCEPT" | "DECLINE") => {
+    async (invite: OrganizationInvite, action: "ACCEPT" | "DECLINE") => {
       if (pendingId) return;
-      setPendingId(inviteId);
+      setPendingId(invite.id);
       try {
-        await respondOrganizationInvite(inviteId, action, session?.access_token ?? null);
+        await respondWorkforceInvite(
+          {
+            inviteType: invite.inviteType ?? "ORGANIZATION_MEMBER",
+            inviteId: invite.id,
+            action,
+            organizationId: invite.organizationId,
+            padelClubId: invite.padelClubId ?? null,
+            teamId: invite.teamId ?? null,
+          },
+          session?.access_token ?? null,
+        );
         await queryClient.invalidateQueries({
           queryKey: ["org-invites", session?.user?.id ?? "anon"],
         });
@@ -122,6 +143,7 @@ export default function OrganizationInvitesScreen() {
       const orgName = formatOrgName(item);
       const invitedBy = formatInvitedBy(item);
       const roleLabel = formatRoleLabel(item.role);
+      const contextLabel = formatInviteContext(item);
       const statusLabel = STATUS_LABELS[item.status] ?? item.status;
       const canRespond = item.status === "PENDING" && item.canRespond !== false;
       const avatarUrl = item.organization?.brandingAvatarUrl || item.invitedBy?.avatarUrl || null;
@@ -179,13 +201,14 @@ export default function OrganizationInvitesScreen() {
               <Text className="text-white/70 text-xs">
                 Convidou-te para seres {roleLabel}. · {invitedBy}
               </Text>
+              <Text className="text-white/55 text-[11px]">{contextLabel}</Text>
               {expiresLabel ? (
                 <Text className="text-white/45 text-[11px]">Expira em {expiresLabel}</Text>
               ) : null}
               {canRespond ? (
                 <View style={styles.actionsRow}>
                   <Pressable
-                    onPress={() => handleRespond(item.id, "DECLINE")}
+                    onPress={() => handleRespond(item, "DECLINE")}
                     disabled={pendingId === item.id}
                     style={({ pressed }) => [
                       styles.actionButton,
@@ -200,7 +223,7 @@ export default function OrganizationInvitesScreen() {
                     <Text style={[styles.actionText, styles.actionTextSecondary]}>Recusar</Text>
                   </Pressable>
                   <Pressable
-                    onPress={() => handleRespond(item.id, "ACCEPT")}
+                    onPress={() => handleRespond(item, "ACCEPT")}
                     disabled={pendingId === item.id}
                     style={({ pressed }) => [
                       styles.actionButton,
@@ -233,8 +256,8 @@ export default function OrganizationInvitesScreen() {
       <TopAppHeader scrollState={topBar} variant="title" title="Convites" leftSlot={backButton} />
       <View style={{ flex: 1, paddingTop: topPadding, paddingHorizontal: 20, paddingBottom: tabBarPadding }}>
         <View style={{ marginBottom: 14 }}>
-          <Text className="text-white text-2xl font-semibold">Convites de organização</Text>
-          <Text className="text-white/60 text-sm">Aceita ou recusa convites pendentes.</Text>
+          <Text className="text-white text-2xl font-semibold">Convites ORYA</Text>
+          <Text className="text-white/60 text-sm">Aceita ou recusa convites pendentes de organização, clube e equipa.</Text>
         </View>
 
         {invitesQuery.isError ? (

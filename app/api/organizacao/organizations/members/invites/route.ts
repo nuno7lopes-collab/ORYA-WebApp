@@ -704,11 +704,15 @@ async function _PATCH(req: NextRequest) {
         if (isExpired) {
           throw new Error("INVITE_EXPIRED");
         }
-        if (!isTargetUser && !matchesToken) {
+        // Token é apenas localizador do convite; não autoriza aceitação sem identidade compatível.
+        if (!isTargetUser) {
           throw new Error("FORBIDDEN");
         }
 
         const role = invite.role as OrganizationMemberRole;
+        if (role === "TRAINER" && !viewerUsername) {
+          throw new Error("TRAINER_USERNAME_REQUIRED");
+        }
         const rolePackPolicy = resolveRolePackForRole({
           role,
           rolePackRaw: invite.rolePack ?? null,
@@ -958,6 +962,9 @@ async function _PATCH(req: NextRequest) {
       }
       if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
         return fail(400, err.message);
+      }
+      if (err.message === "TRAINER_USERNAME_REQUIRED") {
+        return fail(409, "TRAINER_USERNAME_REQUIRED");
       }
       if (["INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
         return fail(400, err.message);

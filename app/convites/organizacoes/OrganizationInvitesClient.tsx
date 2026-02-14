@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { OrganizationMemberRole } from "@prisma/client";
 import { RoleBadge } from "@/app/org/_shared/RoleBadge";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { cn } from "@/lib/utils";
@@ -12,13 +11,16 @@ import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/l
 import { resolveLocale, t } from "@/lib/i18n";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+type InviteType = "ORGANIZATION_MEMBER" | "CLUB_STAFF" | "TEAM_MEMBER";
 
 type InviteItem = {
   id: string;
+  inviteType?: InviteType;
   organizationId: number;
-  role: OrganizationMemberRole;
+  role: string;
   status: InviteStatus;
   canRespond: boolean;
+  targetIdentifier?: string | null;
   expiresAt: string | null;
   createdAt: string | null;
   invitedBy: {
@@ -37,6 +39,10 @@ type InviteItem = {
     brandingCoverUrl: string | null;
     addressRef?: { formattedAddress: string | null; canonical: Record<string, unknown> | null } | null;
   } | null;
+  padelClubId?: number | null;
+  padelClub?: { id: number; name: string } | null;
+  teamId?: number | null;
+  team?: { id: number; name: string } | null;
 };
 
 type InvitesResponse = {
@@ -69,6 +75,38 @@ const pickCanonicalField = (
 
 const resolveCanonicalCity = (canonical?: Record<string, unknown> | null) =>
   pickCanonicalField(canonical, ["city", "locality", "addressLine2", "region", "state"]);
+
+const INVITE_TYPE_LABEL: Record<InviteType, string> = {
+  ORGANIZATION_MEMBER: "Organização",
+  CLUB_STAFF: "Staff do clube",
+  TEAM_MEMBER: "Equipa",
+};
+
+type OrgBadgeRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
+const isOrganizationBadgeRole = (role: string): role is OrgBadgeRole =>
+  ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER", "PROMOTER"].includes(role);
+
+const resolveInviteContextLabel = (invite: InviteItem) => {
+  const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";
+  if (inviteType === "CLUB_STAFF") {
+    return invite.padelClub?.name ? `Clube ${invite.padelClub.name}` : "Convite para staff de clube";
+  }
+  if (inviteType === "TEAM_MEMBER") {
+    return invite.team?.name ? `Equipa ${invite.team.name}` : "Convite para equipa";
+  }
+  return invite.organization?.publicName ?? invite.organization?.businessName ?? "Convite de organização";
+};
+
+const resolveInviteActionEndpoint = (invite: InviteItem) => {
+  const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";
+  if (inviteType === "CLUB_STAFF" && invite.padelClubId) {
+    return `/api/padel/clubs/${invite.padelClubId}/staff/invites`;
+  }
+  if (inviteType === "TEAM_MEMBER" && invite.teamId) {
+    return `/api/padel/teams/${invite.teamId}/invites`;
+  }
+  return "/api/org-hub/organizations/members/invites";
+};
 
 export default function OrganizationInvitesClient({
   initialInviteId,
@@ -106,15 +144,19 @@ export default function OrganizationInvitesClient({
     setActionMessage(null);
     setActionLoading((prev) => ({ ...prev, [invite.id]: true }));
     try {
-      const res = await fetch("/api/org-hub/organizations/members/invites", {
+      const endpoint = resolveInviteActionEndpoint(invite);
+      const baseBody = {
+        inviteId: invite.id,
+        token: tokenParam ?? null,
+        action,
+      } as Record<string, unknown>;
+      if ((invite.inviteType ?? "ORGANIZATION_MEMBER") === "ORGANIZATION_MEMBER") {
+        baseBody.organizationId = invite.organizationId;
+      }
+      const res = await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          organizationId: invite.organizationId,
-          inviteId: invite.id,
-          token: tokenParam ?? null,
-          action,
-        }),
+        body: JSON.stringify(baseBody),
       });
       const payload = await res.json();
       if (!res.ok || !payload?.ok) {
@@ -196,6 +238,7 @@ export default function OrganizationInvitesClient({
 
         <div className="grid gap-4">
           {invites.map((invite) => {
+            const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";
             const orgName =
               invite.organization?.publicName ?? invite.organization?.businessName ?? t("orgInvitesFallbackOrg", locale);
             const orgHandle = invite.organization?.username ? `@${invite.organization.username}` : null;
@@ -220,6 +263,7 @@ export default function OrganizationInvitesClient({
                       ? t("orgInvitesStatusDeclined", locale)
                       : t("orgInvitesStatusCancelled", locale);
             const statusClass = STATUS_STYLES[invite.status];
+            const inviteContextLabel = resolveInviteContextLabel(invite);
             const coverUrl = getProfileCoverUrl(invite.organization?.brandingCoverUrl ?? null, {
               width: 1200,
               height: 400,
@@ -269,7 +313,13 @@ export default function OrganizationInvitesClient({
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <RoleBadge role={invite.role} subtle />
+                    {inviteType === "ORGANIZATION_MEMBER" && isOrganizationBadgeRole(invite.role) ? (
+                      <RoleBadge role={invite.role} subtle />
+                    ) : (
+                      <span className="rounded-full border border-white/20 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/80">
+                        {INVITE_TYPE_LABEL[inviteType]}
+                      </span>
+                    )}
                     <span className={cn("rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.2em]", statusClass)}>
                       {statusLabel}
                     </span>
@@ -281,6 +331,7 @@ export default function OrganizationInvitesClient({
                     <p>
                       {t("orgInvitesInvitedBy", locale).replace("{name}", invitedByName)}
                     </p>
+                    <p className="text-xs text-white/55">{inviteContextLabel}</p>
                     {invite.expiresAt && invite.status === "PENDING" && (
                       <p className="text-xs text-white/50">
                         {t("orgInvitesExpires", locale).replace(

@@ -20,10 +20,13 @@ describe("padel final hard-cut guardrails", () => {
 
   it("expõe gestão operacional de parcerias no hub de clube", () => {
     const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
+    const subnav = readLocal("app/org/_components/subnav/PadelClubSubnav.tsx");
     expect(hub).toContain("\"partnerships\"");
     expect(hub).toContain("Parcerias operacionais");
     expect(hub).toContain("/api/padel/partnerships/agreements");
     expect(hub).toContain("runPartnershipAction");
+    expect(subnav).toContain("label: \"Parcerias\"");
+    expect(subnav).toContain("/padel/parcerias");
   });
 
   it("força contrato canónico de standings em público/widget/mobile", () => {
@@ -166,6 +169,7 @@ describe("padel final hard-cut guardrails", () => {
     expect(invitePairing).toContain("ensurePadelRatingActionAllowed");
     expect(assumePairing).toContain("ensurePadelRatingActionAllowed");
     expect(claimPairing).toContain("error: ratingGate.error");
+    expect(claimPairing).toContain("CLAIM_WINDOW_EXPIRED");
   });
 
   it("remove consumo de SSE legado em /api/padel/live nos clientes ativos", () => {
@@ -240,5 +244,98 @@ describe("padel final hard-cut guardrails", () => {
     ]) {
       expect(content).toContain('export * from "@/app/api/organizacao/padel/');
     }
+  });
+
+  it("higieniza mensagens técnicas/legacy no UI Padel", () => {
+    const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
+    const tabs = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    const uiError = readLocal("lib/uiErrorMessage.ts");
+
+    expect(uiError).toContain("sanitizeUiErrorMessage");
+    expect(uiError).toContain("LEGACY_ROUTE_REMOVED");
+    expect(hub).toContain("sanitizeUiErrorMessage(");
+    expect(tabs).toContain("sanitizeUiErrorMessage(");
+    expect(hub).not.toContain("padelOverviewRes.error ||");
+    expect(hub).not.toContain("json?.error ||");
+    expect(tabs).not.toContain("json?.error ||");
+  });
+
+  it("expõe backfill interno idempotente para contexto de rating e histórico competitivo", () => {
+    const backfillRoute = readLocal("app/api/internal/ops/padel/backfill/route.ts");
+    expect(backfillRoute).toContain("requireInternalSecret");
+    expect(backfillRoute).toContain("backfillPadelRatingEventContextForEvent");
+    expect(backfillRoute).toContain("rebuildPadelPlayerHistoryProjectionForEvent");
+    expect(backfillRoute).toContain("rebuildMissingRatings");
+  });
+
+  it("hard-cut de workforce bloqueia caminhos email-only e força fluxo de convite", () => {
+    const staffRoute = readLocal("app/api/padel/clubs/[id]/staff/route.ts");
+    const teamMembersRoute = readLocal("app/api/padel/teams/[id]/members/route.ts");
+    const staffInvitesRoute = readLocal("app/api/padel/clubs/[id]/staff/invites/route.ts");
+    const teamInvitesRoute = readLocal("app/api/padel/teams/[id]/invites/route.ts");
+
+    expect(staffRoute).toContain("USE_STAFF_INVITE_FLOW");
+    expect(staffRoute).toContain("USER_REQUIRED");
+    expect(staffRoute).not.toContain("email-only");
+    expect(teamMembersRoute).toContain("USE_TEAM_INVITE_FLOW");
+    expect(staffInvitesRoute).toContain("export const PATCH = withApiEnvelope(_PATCH);");
+    expect(teamInvitesRoute).toContain("export const PATCH = withApiEnvelope(_PATCH);");
+  });
+
+  it("aceitação de convite org exige identidade compatível e trainer com username", () => {
+    const orgMemberInvites = readLocal("app/api/organizacao/organizations/members/invites/route.ts");
+    expect(orgMemberInvites).toContain("Token é apenas localizador do convite");
+    expect(orgMemberInvites).toContain("if (!isTargetUser)");
+    expect(orgMemberInvites).toContain("TRAINER_USERNAME_REQUIRED");
+  });
+
+  it("hard-cut legacy de convites e hygiene interno one-shot ficam explícitos", () => {
+    const legacyInvites = readLocal("app/api/organizacao/invites/route.ts");
+    const hygiene = readLocal("app/api/internal/ops/padel/workforce-hygiene/route.ts");
+    expect(legacyInvites).toContain("LEGACY_ROUTE_REMOVED");
+    expect(legacyInvites).toContain("/api/org-hub/invites");
+    expect(hygiene).toContain("requireInternalSecret");
+    expect(hygiene).toContain("padel_club_staff");
+    expect(hygiene).toContain("duplicateClubUserPairs");
+  });
+
+  it("org-hub/invites agrega convites workforce com tipo explícito", () => {
+    const orgHubInvites = readLocal("app/api/org-hub/invites/route.ts");
+    expect(orgHubInvites).toContain("inviteType: \"ORGANIZATION_MEMBER\"");
+    expect(orgHubInvites).toContain("inviteType: \"CLUB_STAFF\"");
+    expect(orgHubInvites).toContain("inviteType: \"TEAM_MEMBER\"");
+    expect(orgHubInvites).toContain("prisma.padelClubStaffInvite.findMany");
+    expect(orgHubInvites).toContain("prisma.padelTeamMemberInvite.findMany");
+  });
+
+  it("aceitação staff/equipa não depende de membership prévio da organização", () => {
+    const staffInvitesRoute = readLocal("app/api/padel/clubs/[id]/staff/invites/route.ts");
+    const teamInvitesRoute = readLocal("app/api/padel/teams/[id]/invites/route.ts");
+    expect(staffInvitesRoute).toContain("resolveGroupMemberForOrg");
+    expect(staffInvitesRoute).not.toContain("getActiveOrganizationForUser");
+    expect(staffInvitesRoute).toContain("if (!isTargetUser)");
+    expect(teamInvitesRoute).toContain("resolveGroupMemberForOrg");
+    expect(teamInvitesRoute).not.toContain("getActiveOrganizationForUser");
+    expect(teamInvitesRoute).toContain("if (!isTargetUser)");
+  });
+
+  it("social web trata ações de convite workforce para endpoints canónicos", () => {
+    const social = readLocal("app/social/page.tsx");
+    expect(social).toContain("accept_club_staff_invite");
+    expect(social).toContain("decline_club_staff_invite");
+    expect(social).toContain("accept_team_member_invite");
+    expect(social).toContain("decline_team_member_invite");
+    expect(social).toContain("/api/padel/clubs/${padelClubId}/staff/invites");
+    expect(social).toContain("/api/padel/teams/${teamId}/invites");
+  });
+
+  it("mobile notifications executa ações workforce de staff/equipa", () => {
+    const mobileNotifications = readLocal("apps/mobile/app/notifications/index.tsx");
+    expect(mobileNotifications).toContain("accept_club_staff_invite");
+    expect(mobileNotifications).toContain("decline_club_staff_invite");
+    expect(mobileNotifications).toContain("accept_team_member_invite");
+    expect(mobileNotifications).toContain("decline_team_member_invite");
+    expect(mobileNotifications).toContain('inviteType: "CLUB_STAFF"');
+    expect(mobileNotifications).toContain('inviteType: "TEAM_MEMBER"');
   });
 });

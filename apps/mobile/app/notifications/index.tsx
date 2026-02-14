@@ -33,7 +33,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   muteNotificationTarget,
-  respondOrganizationInvite,
+  respondWorkforceInvite,
 } from "../../features/notifications/api";
 import { acceptFollowRequest, declineFollowRequest, followUser, unfollowUser } from "../../features/network/api";
 import { acceptInvite as acceptPairingInvite, declineInvite as declinePairingInvite } from "../../features/tournaments/api";
@@ -590,13 +590,83 @@ export default function NotificationsScreen() {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
             setNotificationStatusLabel(item, "Aceite");
-            await respondOrganizationInvite(inviteId, "ACCEPT", session?.access_token ?? null);
+            await respondWorkforceInvite(
+              { inviteType: "ORGANIZATION_MEMBER", inviteId, action: "ACCEPT" },
+              session?.access_token ?? null,
+            );
           }
         } else if (action.type === "decline_org_invite") {
           const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
           if (inviteId) {
             setNotificationStatusLabel(item, "Recusado");
-            await respondOrganizationInvite(inviteId, "DECLINE", session?.access_token ?? null);
+            await respondWorkforceInvite(
+              { inviteType: "ORGANIZATION_MEMBER", inviteId, action: "DECLINE" },
+              session?.access_token ?? null,
+            );
+          }
+        } else if (action.type === "accept_club_staff_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          const padelClubIdRaw = action.payload?.padelClubId;
+          const padelClubId =
+            typeof padelClubIdRaw === "number"
+              ? padelClubIdRaw
+              : typeof padelClubIdRaw === "string" && Number.isFinite(Number(padelClubIdRaw))
+                ? Number(padelClubIdRaw)
+                : null;
+          if (inviteId && Number.isFinite(padelClubId)) {
+            setNotificationStatusLabel(item, "Aceite");
+            await respondWorkforceInvite(
+              { inviteType: "CLUB_STAFF", inviteId, action: "ACCEPT", padelClubId },
+              session?.access_token ?? null,
+            );
+          }
+        } else if (action.type === "decline_club_staff_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          const padelClubIdRaw = action.payload?.padelClubId;
+          const padelClubId =
+            typeof padelClubIdRaw === "number"
+              ? padelClubIdRaw
+              : typeof padelClubIdRaw === "string" && Number.isFinite(Number(padelClubIdRaw))
+                ? Number(padelClubIdRaw)
+                : null;
+          if (inviteId && Number.isFinite(padelClubId)) {
+            setNotificationStatusLabel(item, "Recusado");
+            await respondWorkforceInvite(
+              { inviteType: "CLUB_STAFF", inviteId, action: "DECLINE", padelClubId },
+              session?.access_token ?? null,
+            );
+          }
+        } else if (action.type === "accept_team_member_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          const teamIdRaw = action.payload?.teamId;
+          const teamId =
+            typeof teamIdRaw === "number"
+              ? teamIdRaw
+              : typeof teamIdRaw === "string" && Number.isFinite(Number(teamIdRaw))
+                ? Number(teamIdRaw)
+                : null;
+          if (inviteId && Number.isFinite(teamId)) {
+            setNotificationStatusLabel(item, "Aceite");
+            await respondWorkforceInvite(
+              { inviteType: "TEAM_MEMBER", inviteId, action: "ACCEPT", teamId },
+              session?.access_token ?? null,
+            );
+          }
+        } else if (action.type === "decline_team_member_invite") {
+          const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+          const teamIdRaw = action.payload?.teamId;
+          const teamId =
+            typeof teamIdRaw === "number"
+              ? teamIdRaw
+              : typeof teamIdRaw === "string" && Number.isFinite(Number(teamIdRaw))
+                ? Number(teamIdRaw)
+                : null;
+          if (inviteId && Number.isFinite(teamId)) {
+            setNotificationStatusLabel(item, "Recusado");
+            await respondWorkforceInvite(
+              { inviteType: "TEAM_MEMBER", inviteId, action: "DECLINE", teamId },
+              session?.access_token ?? null,
+            );
           }
         } else if (action.type === "accept_pairing_invite") {
           const pairingId = Number(action.payload?.pairingId);

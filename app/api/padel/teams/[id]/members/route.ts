@@ -116,6 +116,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     userId = profile?.id ?? "";
   }
 
+  if (!userId && email) {
+    return jsonWrap({ ok: false, error: "USE_TEAM_INVITE_FLOW" }, { status: 409 });
+  }
   if (!userId) return jsonWrap({ ok: false, error: "USER_NOT_FOUND" }, { status: 404 });
 
   const roleRaw = typeof body.role === "string" ? body.role.trim().toUpperCase() : "";

@@ -1,22 +1,12 @@
-import { Gender, PadelPreferredSide } from "@prisma/client";
-
 export type PadelOnboardingMissing = {
   fullName?: true;
   username?: true;
   email?: true;
-  phone?: true;
-  gender?: true;
-  level?: true;
-  preferredSide?: true;
 };
 
 type PadelOnboardingProfile = {
   fullName?: string | null;
   username?: string | null;
-  contactPhone?: string | null;
-  gender?: Gender | null;
-  padelLevel?: string | null;
-  padelPreferredSide?: PadelPreferredSide | null;
 };
 
 export function getPadelOnboardingMissing(params: {
@@ -28,13 +18,9 @@ export function getPadelOnboardingMissing(params: {
 
   const fullName = profile?.fullName?.trim() ?? "";
   const username = profile?.username?.trim() ?? "";
-  const phone = profile?.contactPhone?.trim() ?? "";
-
   if (!fullName) missing.fullName = true;
   if (!username) missing.username = true;
   if (!email?.trim()) missing.email = true;
-  if (!phone) missing.phone = true;
-  if (!profile?.gender) missing.gender = true;
 
   return missing;
 }

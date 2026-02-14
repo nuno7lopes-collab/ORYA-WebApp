@@ -11,7 +11,6 @@ import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
 import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
 import { computeMatchSlots } from "@/lib/padel/capacityRecommendation";
 import { Avatar } from "@/components/ui/avatar";
-import { ActionBar } from "@/components/ui/action-bar";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ContextDrawer } from "@/components/ui/context-drawer";
 import { useToast } from "@/components/ui/toast-provider";
@@ -23,6 +22,7 @@ import {
 } from "@/domain/padelDefaultCategories";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type PadelClub = {
   id: number;
@@ -64,8 +64,8 @@ type PadelClubCourt = {
 type PadelClubStaff = {
   id: number;
   padelClubId: number;
-  userId: string | null;
-  email: string | null;
+  userId: string;
+  user?: { id: string; username: string | null; fullName: string | null; avatarUrl: string | null } | null;
   fullName?: string | null;
   role: string;
   inheritToEvents: boolean;
@@ -231,26 +231,21 @@ type PadelEventsResponse = {
   error?: string;
 };
 
+type PadelPartnershipAgreementSummary = {
+  id: number;
+  status: string;
+};
+
+type PadelPartnershipsResponse = {
+  ok: boolean;
+  items?: PadelPartnershipAgreementSummary[];
+  error?: string;
+};
+
 type PadelEventCategoryLink = {
   id: number;
   padelCategoryId: number | null;
   category?: { id: number; label: string } | null;
-};
-
-type PadelOverviewResponse = {
-  ok: boolean;
-  range?: string;
-  currency?: string | null;
-  totalTickets?: number;
-  totalRevenueCents?: number;
-  grossCents?: number;
-  platformFeeCents?: number;
-  processorFeeCents?: number;
-  feesCents?: number;
-  netRevenueCents?: number;
-  eventsWithSalesCount?: number;
-  activeEventsCount?: number;
-  error?: string;
 };
 
 type PadelOpsSummaryResponse = {
@@ -331,73 +326,10 @@ type CalendarResponse = {
   bufferMinutes?: number | null;
 };
 
-type PartnershipStatus = "PENDING" | "APPROVED" | "PAUSED" | "REVOKED" | "EXPIRED";
-
-type PartnershipAgreement = {
-  id: number;
-  ownerOrganizationId: number;
-  partnerOrganizationId: number;
-  ownerClubId: number;
-  partnerClubId: number | null;
-  status: PartnershipStatus;
-  startsAt: string | null;
-  endsAt: string | null;
-  approvedAt: string | null;
-  revokedAt: string | null;
-  notes: string | null;
-  createdAt: string;
-  policy?: {
-    priorityMode: string;
-    ownerOverrideAllowed: boolean;
-    autoCompensationOnOverride: boolean;
-    hardStopMinutesBeforeBooking: number;
-  } | null;
-  windowsCount?: number;
-  activeWindowsCount?: number;
-  activeGrantsCount?: number;
-};
-
-type PartnershipOverride = {
-  id: number;
-  agreementId: number;
-  eventId: number | null;
-  reasonCode: string;
-  reason: string;
-  executionStatus: string | null;
-  createdAt: string;
-  executedAt: string | null;
-};
-
-type PartnershipCompensationCase = {
-  id: number;
-  agreementId: number;
-  overrideId: number | null;
-  status: string;
-  reasonCode: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type PartnershipsResponse = {
-  ok: boolean;
-  items?: PartnershipAgreement[];
-  error?: string;
-};
-
-type PartnershipOverridesResponse = {
-  ok: boolean;
-  items?: PartnershipOverride[];
-  compensationCases?: PartnershipCompensationCase[];
-  error?: string;
-};
-
 const PADEL_TABS = [
-  "create",
   "tournaments",
   "calendar",
-  "manage",
   "clubs",
-  "partnerships",
   "courts",
   "categories",
   "teams",
@@ -411,7 +343,6 @@ type PadelToolMode = "CLUB" | "TOURNAMENTS";
 
 const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
   "clubs",
-  "partnerships",
   "courts",
   "players",
   "community",
@@ -419,27 +350,12 @@ const CLUB_TOOL_TABS: ReadonlyArray<PadelTab> = [
   "lessons",
 ];
 const TOURNAMENTS_TOOL_TABS: ReadonlyArray<PadelTab> = [
-  "create",
   "tournaments",
   "calendar",
-  "manage",
+  "categories",
+  "teams",
   "players",
 ];
-const TAB_LABELS: Record<PadelTab, string> = {
-  create: "Criar torneio",
-  tournaments: "Torneios",
-  calendar: "Calendário",
-  manage: "Gestão",
-  clubs: "Clubes",
-  partnerships: "Parcerias",
-  courts: "Campos",
-  categories: "Categorias",
-  players: "Jogadores",
-  teams: "Equipas",
-  community: "Comunidade",
-  trainers: "Treinadores",
-  lessons: "Aulas",
-};
 const TOOL_SECTION_BY_MODE: Record<PadelToolMode, "padel-club" | "padel-tournaments"> = {
   CLUB: "padel-club",
   TOURNAMENTS: "padel-tournaments",
@@ -452,26 +368,39 @@ const OPERATION_MODE_STORAGE_KEY = "orya_padel_operation_mode";
 
 const resolvePadelTabParam = (value: string | null, toolMode: PadelToolMode): PadelTab | null => {
   if (!value) return null;
-  const normalized = value.trim().toLowerCase() as PadelTab;
-  if (!PADEL_TABS.includes(normalized)) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "manage") {
+    return toolMode === "TOURNAMENTS" ? "categories" : null;
+  }
+  if (normalized === "partnerships") {
+    return toolMode === "CLUB" ? "clubs" : null;
+  }
+  if (normalized === "create") {
+    return toolMode === "TOURNAMENTS" ? "tournaments" : null;
+  }
+  if (!PADEL_TABS.includes(normalized as PadelTab)) return null;
+  const resolved = normalized as PadelTab;
   if (toolMode === "TOURNAMENTS") {
-    if (normalized === "categories" || normalized === "teams") return "manage";
     if (
-      normalized === "clubs" ||
-      normalized === "partnerships" ||
-      normalized === "courts" ||
-      normalized === "community" ||
-      normalized === "trainers" ||
-      normalized === "lessons"
+      resolved === "clubs" ||
+      resolved === "courts" ||
+      resolved === "community" ||
+      resolved === "trainers" ||
+      resolved === "lessons"
     ) {
       return null;
     }
-    return normalized;
+    return resolved;
   }
-  if (normalized === "create" || normalized === "tournaments" || normalized === "calendar" || normalized === "manage") {
+  if (
+    resolved === "tournaments" ||
+    resolved === "calendar" ||
+    resolved === "categories" ||
+    resolved === "teams"
+  ) {
     return null;
   }
-  return normalized;
+  return resolved;
 };
 
 type Props = {
@@ -558,22 +487,6 @@ const badge = (tone: "green" | "amber" | "slate" = "slate") =>
         ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
         : "border-white/15 bg-white/10 text-white/70"
   }`;
-
-const PARTNERSHIP_STATUS_LABEL: Record<PartnershipStatus, string> = {
-  PENDING: "Pendente",
-  APPROVED: "Aprovado",
-  PAUSED: "Pausado",
-  REVOKED: "Revogado",
-  EXPIRED: "Expirado",
-};
-
-const PARTNERSHIP_STATUS_TONE: Record<PartnershipStatus, string> = {
-  PENDING: "border-amber-300/60 bg-amber-500/10 text-amber-100",
-  APPROVED: "border-emerald-300/60 bg-emerald-500/12 text-emerald-100",
-  PAUSED: "border-orange-300/60 bg-orange-500/10 text-orange-100",
-  REVOKED: "border-rose-300/60 bg-rose-500/12 text-rose-100",
-  EXPIRED: "border-slate-300/40 bg-slate-500/10 text-slate-100",
-};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -1267,9 +1180,6 @@ export default function PadelHubClient({
   const [clubDialog, setClubDialog] = useState<{ club: PadelClub; nextActive: boolean } | null>(null);
   const [deleteClubDialog, setDeleteClubDialog] = useState<PadelClub | null>(null);
   const [deleteCourtDialog, setDeleteCourtDialog] = useState<PadelClubCourt | null>(null);
-  const [partnershipActionBusy, setPartnershipActionBusy] = useState<number | null>(null);
-  const [partnershipError, setPartnershipError] = useState<string | null>(null);
-  const [partnershipMessage, setPartnershipMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1299,6 +1209,9 @@ export default function PadelHubClient({
     : buildOrgHubHref("/organizations");
   const tournamentsCreateHref = organizationId
     ? buildOrgHref(organizationId, "/padel/tournaments/create")
+    : buildOrgHubHref("/organizations");
+  const partnershipsHref = organizationId
+    ? buildOrgHref(organizationId, "/padel/parcerias", { tab: "manage", section: "padel-club", padel: "partnerships" })
     : buildOrgHubHref("/organizations");
   const orgOverviewHref = organizationId ? buildOrgHref(organizationId, "/overview") : buildOrgHubHref("/organizations");
 
@@ -1358,8 +1271,8 @@ export default function PadelHubClient({
     fetcher,
     { revalidateOnFocus: false },
   );
-  const { data: padelOverviewRes } = useSWR<PadelOverviewResponse>(
-    buildOrgApiPath("/analytics/overview", { range: "30d", templateType: "PADEL" }),
+  const { data: partnershipsRes } = useSWR<PadelPartnershipsResponse>(
+    organizationId ? `/api/padel/partnerships/agreements?organizationId=${organizationId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -1383,24 +1296,6 @@ export default function PadelHubClient({
   );
   const { data: opsSummaryRes } = useSWR<PadelOpsSummaryResponse>(
     eventId ? `/api/padel/ops/summary?eventId=${eventId}` : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-  const {
-    data: partnershipsRes,
-    isLoading: partnershipsLoading,
-    mutate: mutatePartnerships,
-  } = useSWR<PartnershipsResponse>(
-    organizationId ? `/api/padel/partnerships/agreements?organizationId=${organizationId}` : null,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-  const {
-    data: partnershipOverridesRes,
-    isLoading: partnershipOverridesLoading,
-    mutate: mutatePartnershipOverrides,
-  } = useSWR<PartnershipOverridesResponse>(
-    organizationId ? `/api/padel/partnerships/overrides?organizationId=${organizationId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -1558,6 +1453,10 @@ export default function PadelHubClient({
     setLastAction(null);
   };
 
+  const runPartnershipAction = () => {
+    router.push(partnershipsHref);
+  };
+
   const setPadelEventId = (nextId: number | null) => {
     const params = new URLSearchParams(searchParams?.toString() || "");
     if (nextId && Number.isFinite(nextId)) {
@@ -1595,6 +1494,14 @@ export default function PadelHubClient({
     if (!padelEventsRes?.ok || !Array.isArray(padelEventsRes.items)) return [];
     return padelEventsRes.items;
   }, [padelEventsRes]);
+  const partnerships = useMemo(() => {
+    if (!partnershipsRes?.ok || !Array.isArray(partnershipsRes.items)) return [];
+    return partnershipsRes.items;
+  }, [partnershipsRes]);
+  const pendingPartnershipsCount = useMemo(
+    () => partnerships.filter((agreement) => agreement.status === "PENDING").length,
+    [partnerships],
+  );
   const sortedPadelEvents = useMemo(() => {
     return [...padelEvents].sort((a, b) => {
       const aStart = a.startsAt ? new Date(a.startsAt).getTime() : 0;
@@ -1614,26 +1521,7 @@ export default function PadelHubClient({
     () => padelEvents.filter((event) => (event.status || "").toUpperCase() === "PUBLISHED").length,
     [padelEvents],
   );
-  const padelEventsError = padelEventsRes?.ok === false ? padelEventsRes.error || "Erro ao carregar torneios." : null;
-  const partnershipAgreements = useMemo(() => {
-    if (!partnershipsRes?.ok || !Array.isArray(partnershipsRes.items)) return [];
-    return partnershipsRes.items;
-  }, [partnershipsRes]);
-  const partnershipOverrides = useMemo(() => {
-    if (!partnershipOverridesRes?.ok || !Array.isArray(partnershipOverridesRes.items)) return [];
-    return partnershipOverridesRes.items;
-  }, [partnershipOverridesRes]);
-  const partnershipCompensationCases = useMemo(() => {
-    if (!partnershipOverridesRes?.ok || !Array.isArray(partnershipOverridesRes.compensationCases)) return [];
-    return partnershipOverridesRes.compensationCases;
-  }, [partnershipOverridesRes]);
-  const partnershipPendingCompensationCount = useMemo(
-    () =>
-      partnershipCompensationCases.filter(
-        (item) => item.status === "PENDING_COMPENSATION" || item.status === "OPEN",
-      ).length,
-    [partnershipCompensationCases],
-  );
+  const padelEventsError = padelEventsRes?.ok === false ? sanitizeUiErrorMessage(padelEventsRes.error, "Erro ao carregar torneios.") : null;
 
   useEffect(() => {
     if (!entryEventId) return;
@@ -1651,19 +1539,6 @@ export default function PadelHubClient({
     () => padelEvents.find((event) => event.id === eventId) || null,
     [padelEvents, eventId],
   );
-  const padelOverview = padelOverviewRes?.ok ? padelOverviewRes : null;
-  const padelOverviewError =
-    padelOverviewRes && padelOverviewRes.ok === false ? padelOverviewRes.error || "Sem acesso a KPIs." : null;
-  const overviewCurrency = padelOverview?.currency || "EUR";
-  const overviewRevenueLabel = padelOverview
-    ? formatCurrency(padelOverview.totalRevenueCents ?? 0, overviewCurrency)
-    : "—";
-  const overviewGrossLabel = padelOverview
-    ? formatCurrency(padelOverview.grossCents ?? 0, overviewCurrency)
-    : "—";
-  const overviewFeesLabel = padelOverview
-    ? formatCurrency(padelOverview.feesCents ?? 0, overviewCurrency)
-    : "—";
   const opsSummary = opsSummaryRes?.ok ? opsSummaryRes.summary ?? null : null;
   const opsAlerts = useMemo(() => {
     if (!opsSummary) return [];
@@ -1774,95 +1649,10 @@ export default function PadelHubClient({
     });
   }, [players, search, genderFilter, levelFilter, historyFilter, noShowFilter]);
 
-  const quickLinks = useMemo(() => {
-    if (toolMode === "TOURNAMENTS") {
-      return [
-        { label: "Torneios", href: toolTournamentsHref, desc: "Lista, estados e operação live." },
-        {
-          label: "Check-in",
-          href: organizationId ? buildOrgHref(organizationId, "/check-in") : buildOrgHubHref("/organizations"),
-          desc: "Entradas e QR em tempo real.",
-        },
-        {
-          label: "Inscrições",
-          href: organizationId ? buildOrgHref(organizationId, "/forms") : buildOrgHubHref("/organizations"),
-          desc: "Duplas, pagamentos e status.",
-        },
-        {
-          label: "Finanças",
-          href: organizationId ? buildOrgHref(organizationId, "/finance") : buildOrgHubHref("/organizations"),
-          desc: "Receitas e reconciliação.",
-        },
-      ];
-    }
-    return [
-      {
-        label: "Reservas",
-        href: organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations"),
-        desc: "Agenda, aulas e bookings.",
-      },
-      {
-        label: "CRM",
-        href: organizationId ? buildOrgHref(organizationId, "/crm/customers") : buildOrgHubHref("/organizations"),
-        desc: "Clientes, tags e segmentos.",
-      },
-      {
-        label: "Treinadores",
-        href: organizationId ? buildOrgHref(organizationId, "/team/trainers") : buildOrgHubHref("/organizations"),
-        desc: "Perfis públicos e gestão.",
-      },
-      {
-        label: "Loja",
-        href: organizationId ? buildOrgHref(organizationId, "/store") : buildOrgHubHref("/organizations"),
-        desc: "Produtos e stock.",
-      },
-    ];
-  }, [organizationId, toolMode, toolTournamentsHref]);
-
-  const partnershipsError =
-    (partnershipsRes && partnershipsRes.ok === false ? partnershipsRes.error : null) ||
-    (partnershipOverridesRes && partnershipOverridesRes.ok === false ? partnershipOverridesRes.error : null);
-
-  const runPartnershipAction = async (agreementId: number, action: "approve" | "pause" | "revoke") => {
-    setPartnershipError(null);
-    setPartnershipMessage(null);
-    setPartnershipActionBusy(agreementId);
-    try {
-      const endpoint = `/api/padel/partnerships/agreements/${agreementId}/${action}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        const err = typeof json?.error === "string" ? json.error : "Não foi possível atualizar a parceria.";
-        setPartnershipError(err);
-        toast(err, "err");
-        return;
-      }
-      const msg =
-        action === "approve"
-          ? "Parceria aprovada."
-          : action === "pause"
-            ? "Parceria pausada."
-            : "Parceria revogada.";
-      setPartnershipMessage(msg);
-      toast(msg, "ok");
-      await Promise.all([mutatePartnerships(), mutatePartnershipOverrides()]);
-    } catch (err) {
-      console.error("[padel/partnerships] action", err);
-      setPartnershipError("Erro inesperado ao atualizar parceria.");
-      toast("Erro ao atualizar parceria", "err");
-    } finally {
-      setPartnershipActionBusy(null);
-    }
-  };
-
   const trainers = trainersRes?.items ?? [];
-  const trainersError = trainersRes?.ok === false ? trainersRes.error || "Erro ao carregar treinadores." : null;
+  const trainersError = trainersRes?.ok === false ? sanitizeUiErrorMessage(trainersRes.error, "Erro ao carregar treinadores.") : null;
   const services = servicesRes?.items ?? [];
-  const lessonsError = servicesRes?.ok === false ? servicesRes.error || "Erro ao carregar aulas." : null;
+  const lessonsError = servicesRes?.ok === false ? sanitizeUiErrorMessage(servicesRes.error, "Erro ao carregar aulas.") : null;
   const lessonServices = useMemo(() => {
     return services.filter((service) => {
       const kind = (service.kind ?? "").trim().toUpperCase();
@@ -2016,7 +1806,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setCategoryError(json?.error || "Erro ao guardar categoria.");
+        setCategoryError(sanitizeUiErrorMessage(json?.error, "Erro ao guardar categoria."));
         return;
       }
       setCategoryMessage("Categoria atualizada.");
@@ -2053,7 +1843,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setCategoryError(json?.error || "Erro ao criar categoria.");
+        setCategoryError(sanitizeUiErrorMessage(json?.error, "Erro ao criar categoria."));
         return;
       }
       setCategoryMessage("Categoria criada.");
@@ -2124,7 +1914,7 @@ export default function PadelHubClient({
       const res = await fetch(`/api/padel/categories/my?id=${category.id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setCategoryError(json?.error || "Erro ao apagar categoria.");
+        setCategoryError(sanitizeUiErrorMessage(json?.error, "Erro ao apagar categoria."));
         return;
       }
       setCategories((prev) => prev.filter((entry) => entry.id !== category.id));
@@ -2164,7 +1954,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível atualizar o treinador.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível atualizar o treinador."));
       }
       if (mutateTrainers) await mutateTrainers();
       const message =
@@ -2206,7 +1996,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível criar o perfil.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível criar o perfil."));
       }
       setNewTrainerUsername("");
       setTrainerMessage("Perfil de treinador criado.");
@@ -2258,7 +2048,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível criar a aula.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível criar a aula."));
       }
       setLessonTitle("");
       setLessonPrice("20");
@@ -2299,7 +2089,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível criar a equipa.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível criar a equipa."));
       }
       setTeamName("");
       setTeamLevel("");
@@ -2342,7 +2132,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível registar a equipa.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível registar a equipa."));
       }
       setEntryMessage("Equipa registada no torneio.");
       toast("Equipa registada.", "ok");
@@ -2377,7 +2167,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error || "Não foi possível publicar.");
+        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível publicar."));
       }
       setPostTitle("");
       setPostBody("");
@@ -2610,9 +2400,9 @@ export default function PadelHubClient({
         const list = renumberCourts(courtsJson.items as PadelClubCourt[]);
         setCourts(list);
         syncActiveCountOnClub(clubId, list);
-      } else setCourtError(courtsJson?.error || "Erro ao carregar campos.");
+      } else setCourtError(sanitizeUiErrorMessage(courtsJson?.error, "Erro ao carregar campos."));
       if (staffRes.ok && Array.isArray(staffJson?.items)) setStaff(staffJson.items as PadelClubStaff[]);
-      else setStaffError(staffJson?.error || "Erro ao carregar equipa.");
+      else setStaffError(sanitizeUiErrorMessage(staffJson?.error, "Erro ao carregar equipa."));
     } catch (err) {
       console.error("[padel/clubs] load courts/staff", err);
       setCourtError("Erro ao carregar campos.");
@@ -2759,7 +2549,7 @@ export default function PadelHubClient({
           savedClub = json.club as PadelClub;
           break;
         }
-        const errMsg = json?.error || "Erro ao guardar clube.";
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Erro ao guardar clube.");
         lastError = errMsg;
         const lower = errMsg.toLowerCase();
         if (lower.includes("slug") || lower.includes("já existe") || lower.includes("duplic")) {
@@ -2842,7 +2632,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setClubError(json?.error || "Erro ao definir default.");
+        setClubError(sanitizeUiErrorMessage(json?.error, "Erro ao definir default."));
       } else {
         const saved = json.club as PadelClub;
         setClubs((prev) => prev.map((c) => ({ ...c, isDefault: c.id === saved.id })));
@@ -2903,7 +2693,7 @@ export default function PadelHubClient({
       });
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          setCourtError(json?.error || "Erro ao guardar campo.");
+          setCourtError(sanitizeUiErrorMessage(json?.error, "Erro ao guardar campo."));
         } else {
           const court = json.court as PadelClubCourt;
           setCourts((prev) => {
@@ -2960,7 +2750,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setClubError(json?.error || "Erro ao atualizar estado do clube.");
+        setClubError(sanitizeUiErrorMessage(json?.error, "Erro ao atualizar estado do clube."));
       } else {
         const saved = json.club as PadelClub;
         setClubs((prev) => prev.map((c) => (c.id === saved.id ? saved : c)));
@@ -2982,7 +2772,7 @@ export default function PadelHubClient({
       const res = await fetch(`/api/padel/clubs?id=${club.id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setClubError(json?.error || "Erro ao apagar clube.");
+        setClubError(sanitizeUiErrorMessage(json?.error, "Erro ao apagar clube."));
       } else {
         setClubs((prev) => prev.filter((c) => c.id !== club.id));
         if (drawerClubId === club.id) {
@@ -3048,7 +2838,7 @@ export default function PadelHubClient({
           return nextList;
         });
       } else {
-        setCourtError(json?.error || "Erro ao apagar campo.");
+        setCourtError(sanitizeUiErrorMessage(json?.error, "Erro ao apagar campo."));
       }
     } catch (err) {
       console.error("[padel/clubs/courts] delete", err);
@@ -3071,31 +2861,30 @@ export default function PadelHubClient({
   const handleEditStaff = (member: PadelClubStaff) => {
     setStaffForm({
       id: member.id,
-      email: member.email || "",
+      email: "",
       staffMemberId: member.userId || "",
       role: member.role,
       inheritToEvents: member.inheritToEvents,
     });
-    setStaffMode(member.userId ? "existing" : "external");
+    setStaffMode("existing");
   };
 
   const handleSubmitStaff = async () => {
     if (!selectedClub) return;
     const selectedMember = staffMode === "existing" ? staffOptions.find((m) => m.userId === staffForm.staffMemberId) : null;
-    const emailToSend =
-      staffMode === "existing" ? selectedMember?.email ?? "" : staffForm.email.trim();
     if (staffMode === "existing" && !selectedMember) {
       setStaffError("Escolhe um membro do staff global.");
       return;
     }
-    if (staffMode === "external" && !emailToSend) {
-      setStaffError("Indica o email do contacto externo.");
+    const inviteEmail = staffForm.email.trim().toLowerCase();
+    if (staffMode === "external" && !inviteEmail) {
+      setStaffError("Indica o email para convite.");
       return;
     }
     const duplicate =
       staffMode === "existing"
         ? staff.some((s) => s.userId && s.userId === selectedMember?.userId && s.id !== staffForm.id)
-        : staff.some((s) => s.email && s.email.toLowerCase() === emailToSend.toLowerCase() && s.id !== staffForm.id);
+        : false;
     if (duplicate) {
       setStaffError("Já tens este contacto associado ao clube.");
       return;
@@ -3104,13 +2893,32 @@ export default function PadelHubClient({
     setStaffMessage(null);
     setStaffInviteNotice(null);
     try {
+      if (staffMode === "external") {
+        const inviteRes = await fetch(`/api/padel/clubs/${selectedClub.id}/staff/invites`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identifier: inviteEmail,
+            role: staffForm.role,
+            inheritToEvents: staffForm.inheritToEvents,
+          }),
+        });
+        const inviteJson = await inviteRes.json().catch(() => null);
+        if (!inviteRes.ok || inviteJson?.ok === false) {
+          setStaffError(sanitizeUiErrorMessage(inviteJson?.error, "Erro ao enviar convite."));
+          return;
+        }
+        setStaffInviteNotice("Convite enviado. O utilizador terá de aceitar para entrar no clube.");
+        resetStaffForm();
+        return;
+      }
+
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/staff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: staffForm.id,
-          email: emailToSend,
-          userId: staffMode === "existing" ? selectedMember?.userId : null,
+          userId: selectedMember?.userId,
           role: staffForm.role,
           padelRole: staffForm.role,
           inheritToEvents: staffForm.inheritToEvents,
@@ -3118,32 +2926,17 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setStaffError(json?.error || "Erro ao guardar membro.");
-      } else {
-        const member = json.staff as PadelClubStaff;
-        setStaff((prev) => {
-          const exists = prev.some((s) => s.id === member.id);
-          if (exists) return prev.map((s) => (s.id === member.id ? member : s));
-          return [member, ...prev];
-        });
-        setStaffMessage(staffForm.id ? "Membro atualizado." : "Membro adicionado.");
-        if (staffMode === "external" && emailToSend && organizationId) {
-          // Tentar enviar convite de organização (staff) para criar conta
-          const inviteRes = await fetch("/api/org-hub/organizations/members/invites", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              organizationId,
-              identifier: emailToSend,
-              role: "STAFF",
-            }),
-          }).catch(() => null);
-          if (inviteRes && inviteRes.ok) {
-            setStaffInviteNotice("Convite enviado para criar conta. Ao registar-se, fica ligado como staff do clube.");
-          }
-        }
-        resetStaffForm();
+        setStaffError(sanitizeUiErrorMessage(json?.error, "Erro ao guardar membro."));
+        return;
       }
+      const member = json.staff as PadelClubStaff;
+      setStaff((prev) => {
+        const exists = prev.some((s) => s.id === member.id);
+        if (exists) return prev.map((s) => (s.id === member.id ? member : s));
+        return [member, ...prev];
+      });
+      setStaffMessage(staffForm.id ? "Membro atualizado." : "Membro adicionado.");
+      resetStaffForm();
     } catch (err) {
       console.error("[padel/clubs/staff] save", err);
       setStaffError("Erro inesperado ao guardar membro.");
@@ -3466,7 +3259,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setCalendarError(json?.error || "Não foi possível guardar.");
+        setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível guardar."));
       } else {
         const prev =
           type === "block"
@@ -3542,7 +3335,7 @@ export default function PadelHubClient({
       const res = await fetch(`/api/padel/calendar?type=${type}&id=${id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setCalendarError(json?.error || "Não foi possível remover.");
+        setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível remover."));
       } else {
         setCalendarMessage("Removido.");
         resetCalendarForms();
@@ -3575,7 +3368,7 @@ export default function PadelHubClient({
       });
       const delayJson = await delayRes.json().catch(() => null);
       if (!delayRes.ok || delayJson?.ok === false) {
-        const errMsg = delayJson?.error || "Não foi possível marcar atraso.";
+        const errMsg = sanitizeUiErrorMessage(delayJson?.error, "Não foi possível marcar atraso.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
         return;
@@ -3647,7 +3440,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        const errMsg = json?.error || "Não foi possível auto-agendar.";
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível auto-agendar.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
         return;
@@ -3720,7 +3513,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        const errMsg = json?.error || "Não foi possível simular.";
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível simular.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
         return;
@@ -3804,7 +3597,7 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        const errMsg = json?.error || "Não foi possível guardar preferências.";
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível guardar preferências.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
         return;
@@ -3839,6 +3632,7 @@ export default function PadelHubClient({
           router.push(
             tournamentsCreateHref,
           ),
+        enabled: toolMode === "TOURNAMENTS",
       },
       {
         id: "open-tournaments",
@@ -3846,6 +3640,7 @@ export default function PadelHubClient({
         description: "Lista e gestão de torneios.",
         shortcut: "T",
         run: () => setPadelSection("tournaments"),
+        enabled: toolMode === "TOURNAMENTS",
       },
       {
         id: "open-calendar",
@@ -3853,15 +3648,23 @@ export default function PadelHubClient({
         description: "Agenda e auto-schedule.",
         shortcut: "C",
         run: () => setPadelSection("calendar"),
-        enabled: Boolean(eventId),
+        enabled: toolMode === "TOURNAMENTS",
       },
       {
-        id: "open-settings",
-        label: "Gestão",
-        description: "Regras, waitlist, monitor.",
+        id: "open-categories",
+        label: "Categorias",
+        description: "Níveis, género e regras de entrada.",
         shortcut: "S",
-        run: () => setPadelSection("manage"),
-        enabled: Boolean(eventId),
+        run: () => setPadelSection("categories"),
+        enabled: toolMode === "TOURNAMENTS",
+      },
+      {
+        id: "open-teams",
+        label: "Equipas",
+        description: "Equipas, interclubes e registos.",
+        shortcut: "E",
+        run: () => setPadelSection("teams"),
+        enabled: toolMode === "TOURNAMENTS",
       },
       {
         id: "open-players",
@@ -3871,11 +3674,45 @@ export default function PadelHubClient({
         run: () => setPadelSection("players"),
       },
       {
+        id: "open-clubs",
+        label: "Clubes",
+        description: "Lista e gestão de clubes.",
+        run: () => setPadelSection("clubs"),
+        enabled: toolMode === "CLUB",
+      },
+      {
+        id: "open-courts",
+        label: "Campos",
+        description: "Configurar courts e disponibilidade.",
+        run: () => setPadelSection("courts"),
+        enabled: toolMode === "CLUB",
+      },
+      {
+        id: "open-community",
+        label: "Comunidade",
+        description: "Feed e publicações do clube.",
+        run: () => setPadelSection("community"),
+        enabled: toolMode === "CLUB",
+      },
+      {
+        id: "open-trainers",
+        label: "Treinadores",
+        description: "Perfis e estado de aprovação.",
+        run: () => setPadelSection("trainers"),
+        enabled: toolMode === "CLUB",
+      },
+      {
+        id: "open-lessons",
+        label: "Aulas",
+        description: "Serviços de treino e sessões.",
+        run: () => setPadelSection("lessons"),
+        enabled: toolMode === "CLUB",
+      },
+      {
         id: "open-partnerships",
-        label: "Parcerias",
-        description: "Acordos, janelas e compensações.",
-        shortcut: "P",
-        run: () => setPadelSection("partnerships"),
+        label: "Parcerias operacionais",
+        description: "Acordos, claims e overrides entre clubes.",
+        run: () => runPartnershipAction(),
         enabled: toolMode === "CLUB",
       },
       {
@@ -3919,11 +3756,11 @@ export default function PadelHubClient({
         description: "Abrir painel de alertas.",
         shortcut: "O",
         run: () => setShowOpsDrawer(true),
-        enabled: Boolean(eventId),
+        enabled: Boolean(eventId) && toolMode === "TOURNAMENTS",
       },
     ];
     return actions.filter((action) => action.enabled !== false);
-  }, [eventId, organizationId, previewAutoSchedule, router, runAutoSchedule, selectedEvent?.slug, setPadelSection, toolMode, tournamentsCreateHref]);
+  }, [eventId, organizationId, previewAutoSchedule, router, runAutoSchedule, runPartnershipAction, selectedEvent?.slug, setPadelSection, toolMode, tournamentsCreateHref]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -3959,278 +3796,9 @@ export default function PadelHubClient({
     });
   }, [commandActions, commandQuery]);
 
-  const isClubTool = toolMode === "CLUB";
-  const toolBadge = isClubTool ? "Gestão de Clube Padel" : "Torneios de Padel";
-  const toolTitle = isClubTool ? "Configuração Padel + Atalhos" : "Gestão de Torneios Padel";
-  const toolSubtitle = isClubTool
-    ? "Clubes, courts, equipa local, comunidade e atalhos cross-module."
-    : "Formatos, categorias, equipas, calendário e operação competitiva.";
-  const toolSwitchHref = isClubTool ? toolTournamentsHref : toolClubHref;
-  const toolSwitchLabel = isClubTool ? "Abrir Torneios de Padel" : "Abrir Gestão de Clube Padel";
-
   return (
     <div className="space-y-5 rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#101b39]/70 to-[#050810]/90 px-4 py-6 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl md:px-6">
-      <header className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-            {toolBadge}
-          </div>
-          <h1 className="text-3xl font-semibold text-white drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">{toolTitle}</h1>
-          <p className="text-sm text-white/70">{toolSubtitle}</p>
-        </div>
-        <ActionBar className="border-white/15 bg-white/6">
-          <Link
-            href={toolSwitchHref}
-            className={CTA_PAD_SECONDARY_SM}
-          >
-            {toolSwitchLabel}
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowCommandPalette(true)}
-            className={CTA_PAD_SECONDARY_SM}
-            aria-label="Abrir command palette"
-          >
-            Comandos ⌘K
-          </button>
-          {!isClubTool && eventId && (
-            <button
-              type="button"
-              onClick={() => setShowOpsDrawer(true)}
-              className={CTA_PAD_SECONDARY_SM}
-              aria-label="Abrir painel operacional"
-            >
-              Ops hoje
-            </button>
-          )}
-          {!isClubTool && (
-            <Link href={tournamentsCreateHref} className={CTA_PAD_SECONDARY_SM}>
-              Criar torneio
-            </Link>
-          )}
-        </ActionBar>
-      </header>
-
-      {isClubTool ? (
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Modo de operação</p>
-              <p className="text-sm text-white/70">
-                Ajusta o fluxo de clubes conforme tens clube próprio ou organizas em clubes parceiros.
-              </p>
-            </div>
-            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-              {isClubOwnerMode ? "Clube próprio" : "Organizador"}
-            </span>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setOperationMode("CLUB_OWNER")}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
-                isClubOwnerMode
-                  ? "border-cyan-300/60 bg-cyan-400/10 text-white shadow-[0_0_0_1px_rgba(107,255,255,0.35)]"
-                  : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
-              }`}
-            >
-              <p className="text-sm font-semibold">Tenho clube</p>
-              <p className="text-[12px] text-white/60">Cria clube principal, campos e equipa local.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => setOperationMode("ORGANIZER")}
-              className={`rounded-2xl border px-4 py-3 text-left transition ${
-                !isClubOwnerMode
-                  ? "border-amber-300/60 bg-amber-400/10 text-white shadow-[0_0_0_1px_rgba(251,191,36,0.35)]"
-                  : "border-white/12 bg-white/5 text-white/70 hover:border-white/25"
-              }`}
-            >
-              <p className="text-sm font-semibold">Organizo em clubes parceiros</p>
-              <p className="text-[12px] text-white/60">Gere clubes parceiros e usa-os em torneios.</p>
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Dependências da Gestão de Clube</p>
-              <p className="text-sm text-white/70">
-                Clubes, courts e staff são geridos na Gestão de Clube Padel e consumidos aqui.
-              </p>
-            </div>
-            <Link href={toolClubHref} className={CTA_PAD_SECONDARY_SM}>
-              Abrir Gestão de Clube Padel
-            </Link>
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-3 lg:grid-cols-[2fr_3fr]">
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">KPIs 30 dias</p>
-              <p className="text-sm text-white/70">Receita, inscrições e atividade do torneio.</p>
-            </div>
-            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-              Padel
-            </span>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Receita líquida</p>
-              <p className="text-xl font-semibold text-white">{overviewRevenueLabel}</p>
-              <p className="text-[11px] text-white/60">
-                {padelOverview ? `${padelOverview.totalTickets ?? 0} inscrições` : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Receita bruta</p>
-              <p className="text-xl font-semibold text-white">{overviewGrossLabel}</p>
-              <p className="text-[11px] text-white/60">
-                {padelOverview ? `${padelOverview.eventsWithSalesCount ?? 0} eventos com vendas` : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Taxas</p>
-              <p className="text-xl font-semibold text-white">{overviewFeesLabel}</p>
-              <p className="text-[11px] text-white/60">Plataforma + processamento</p>
-            </div>
-            <div className="rounded-xl border border-white/12 bg-black/40 p-3">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Eventos ativos</p>
-              <p className="text-xl font-semibold text-white">
-                {padelOverview ? padelOverview.activeEventsCount ?? 0 : "—"}
-              </p>
-              <p className="text-[11px] text-white/60">Publicados agora</p>
-            </div>
-          </div>
-          {padelOverviewError && (
-            <p className="mt-3 text-[11px] text-amber-200">{padelOverviewError}</p>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atalhos rápidos</p>
-              <p className="text-sm text-white/70">Acesso direto a módulos-chave.</p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {quickLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-xl border border-white/12 bg-black/35 px-3 py-3 text-left transition hover:border-white/30 hover:bg-white/5"
-              >
-                <p className="text-sm font-semibold text-white">{link.label}</p>
-                <p className="text-[11px] text-white/60">{link.desc}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Áreas da ferramenta</p>
-            <p className="text-sm text-white/70">
-              {isClubTool
-                ? "Operação de clube e comunidade, sem duplicar módulos core."
-                : "Operação competitiva e calendário de torneios."}
-            </p>
-          </div>
-          <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-            {allowedTabs.length} áreas
-          </span>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {allowedTabs.map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <button
-                key={`padel-tab-${tab}`}
-                type="button"
-                onClick={() => setPadelSection(tab)}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  active
-                    ? "border-cyan-300/70 bg-cyan-400/15 text-white shadow-[0_0_0_1px_rgba(107,255,255,0.35)]"
-                    : "border-white/20 bg-white/5 text-white/75 hover:border-white/35"
-                }`}
-              >
-                {TAB_LABELS[tab]}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/70 to-[#050912]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)] sm:grid-cols-5">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Calendário</p>
-          <p className="text-2xl font-semibold">Jogos & bloqueios</p>
-          <p className="text-[12px] text-white/60">Agenda por campo.</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-            {isClubOwnerMode ? "Clubes" : "Clubes parceiros"}
-          </p>
-          <p className="text-2xl font-semibold">{clubs.length}</p>
-          <p className="text-[12px] text-white/60">
-            {hasActiveClub
-              ? "Ativos."
-              : isClubOwnerMode
-                ? "Define pelo menos um."
-                : "Adiciona o primeiro parceiro."}
-          </p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Categorias</p>
-          <p className="text-2xl font-semibold">{categories.length}</p>
-          <p className="text-[12px] text-white/60">Níveis e géneros.</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Campos ativos</p>
-          <p className="text-2xl font-semibold">{Number.isFinite(totalActiveCourts) ? totalActiveCourts : "—"}</p>
-          <p className="text-[12px] text-white/60">Sugestão no wizard.</p>
-        </div>
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
-          <p className="text-2xl font-semibold">{players.length}</p>
-          <p className="text-[12px] text-white/60">Roster via inscrições.</p>
-        </div>
-      </div>
-
       {switchingTab && <PadelTabSkeleton />}
-
-      {!switchingTab && activeTab === "create" && (
-        <div className="grid gap-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-5 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0 lg:grid-cols-[1.2fr_1fr]">
-          <div className="space-y-3">
-            <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Criar torneio</p>
-            <h2 className="text-2xl font-semibold text-white">Wizard dedicado para Padel</h2>
-            <p className="text-sm text-white/70">
-              Define formato, categorias, preços, courts e publicação num fluxo único. Sem estados impossíveis.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Link href={tournamentsCreateHref} className={CTA_PAD_PRIMARY_SM}>
-                Abrir wizard
-              </Link>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-4 text-sm text-white/70">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Checklist rápido</p>
-            <ul className="mt-3 space-y-2 text-[12px] text-white/70">
-              <li>Clube e timezone confirmados.</li>
-              <li>Categorias com preços e capacidade.</li>
-              <li>Duração e intervalos para auto-schedule.</li>
-              <li>Regras e inscrições prontas para publicar.</li>
-            </ul>
-          </div>
-        </div>
-      )}
 
       {!switchingTab && activeTab === "tournaments" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
@@ -4533,7 +4101,7 @@ export default function PadelHubClient({
                               });
                               const json = await res.json().catch(() => null);
                               if (!res.ok || json?.ok === false) {
-                                const errMsg = json?.error || "Não foi possível mover.";
+                                const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível mover.");
                                 if (res.status === 409 || errMsg.toLowerCase().includes("conflito")) {
                                   setCalendarWarning(errMsg);
                                   toast(errMsg, "warn");
@@ -4771,8 +4339,8 @@ export default function PadelHubClient({
                                             });
                                             const json = await res.json().catch(() => null);
                                             if (!res.ok || json?.ok === false) {
-                                              setCalendarError(json?.error || "Não foi possível ajustar.");
-                                              toast(json?.error || "Não foi possível ajustar.", "err");
+                                              setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."));
+                                              toast(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."), "err");
                                             } else {
                                               setLastAction({
                                                 type: "match",
@@ -4826,8 +4394,8 @@ export default function PadelHubClient({
                                             });
                                             const json = await res.json().catch(() => null);
                                             if (!res.ok || json?.ok === false) {
-                                              setCalendarError(json?.error || "Não foi possível ajustar.");
-                                              toast(json?.error || "Não foi possível ajustar.", "err");
+                                              setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."));
+                                              toast(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."), "err");
                                             } else {
                                               setLastAction({
                                                 type: "match",
@@ -5244,8 +4812,8 @@ export default function PadelHubClient({
                       .then((res) => res.json().then((json) => ({ res, json })))
                       .then(({ res, json }) => {
                         if (!res.ok || json?.ok === false) {
-                          setCalendarError(json?.error || "Não foi possível desfazer.");
-                          toast(json?.error || "Não foi possível desfazer.", "err");
+                          setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."));
+                          toast(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."), "err");
                         } else {
                           setCalendarMessage("Desfeito.");
                           toast("Desfeito", "ok");
@@ -5349,8 +4917,8 @@ export default function PadelHubClient({
                       .then((res) => res.json().then((json) => ({ res, json })))
                       .then(({ res, json }) => {
                         if (!res.ok || json?.ok === false) {
-                          setCalendarError(json?.error || "Não foi possível desfazer.");
-                          toast(json?.error || "Não foi possível desfazer.", "err");
+                          setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."));
+                          toast(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."), "err");
                         } else {
                           setCalendarMessage("Desfeito.");
                           toast("Desfeito", "ok");
@@ -5412,6 +4980,27 @@ export default function PadelHubClient({
                 className={CTA_PAD_PRIMARY}
               >
                 Novo clube
+              </button>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-cyan-300/30 bg-cyan-500/8 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-cyan-100/80">Parcerias operacionais</p>
+                <p className="text-sm text-white/85">
+                  {partnerships.length} acordos registados
+                  {pendingPartnershipsCount > 0 ? ` · ${pendingPartnershipsCount} pendentes` : ""}
+                </p>
+                <p className="text-[12px] text-white/65">
+                  Gestão dedicada de acordos, claims e overrides entre organizações.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={runPartnershipAction}
+                className="rounded-full border border-cyan-200/60 bg-cyan-400/15 px-4 py-2 text-sm font-semibold text-cyan-50 hover:border-cyan-100/80"
+              >
+                Abrir parcerias
               </button>
             </div>
           </div>
@@ -5782,7 +5371,7 @@ export default function PadelHubClient({
                       {
                         key: "external",
                         label: "Contacto externo",
-                        desc: "Email + role só para este clube. Podes convidar depois.",
+                        desc: "Envia convite por email. Só entra no clube após aceitar com conta ORYA.",
                       },
                     ].map((opt) => (
                       <button
@@ -5842,7 +5431,7 @@ export default function PadelHubClient({
                           placeholder="Email do contacto"
                         />
                         <div className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                          Sem conta ORYA: guardamos só email + role. Podes convidar mais tarde.
+                          O email recebe convite e a pessoa só entra quando aceitar com conta ORYA.
                         </div>
                       </div>
                     </div>
@@ -5911,7 +5500,7 @@ export default function PadelHubClient({
                         className="flex items-center justify-between rounded-md border border-white/10 bg-black/40 px-2 py-1.5"
                       >
                         <div className="space-y-0.5">
-                          <p className="text-sm text-white">{s.email || s.userId || "Sem contacto"}</p>
+                          <p className="text-sm text-white">{s.user?.fullName || s.user?.username || s.userId}</p>
                           <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
                             <span className="rounded-full border border-white/20 bg-white/5 px-2 py-[2px]">{s.role}</span>
                             <span
@@ -5923,12 +5512,9 @@ export default function PadelHubClient({
                             >
                               {s.inheritToEvents ? "Herdado" : "Só clube"}
                             </span>
-                            <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[2px]">
-                              {s.userId ? "Global" : "Externo"}
-                            </span>
-                            {!s.userId && (
-                              <span className="rounded-full border border-amber-300/50 bg-amber-400/10 px-2 py-[2px] text-amber-50">
-                                Pendente
+                            {s.user?.username && (
+                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[2px]">
+                                @{s.user.username}
                               </span>
                             )}
                           </div>
@@ -5950,168 +5536,7 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {!switchingTab && activeTab === "partnerships" && (
-        <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Parcerias operacionais</p>
-              <p className="text-sm text-white/70">
-                Acordos aprovados são o único caminho canónico para operar em clube parceiro.
-              </p>
-            </div>
-            <span className={badge("slate")}>
-              {partnershipAgreements.length} acordos · {partnershipPendingCompensationCount} compensações pendentes
-            </span>
-          </div>
-
-          {(partnershipsError || partnershipError) && (
-            <p className="text-[12px] text-amber-200">{partnershipError || partnershipsError}</p>
-          )}
-          {!partnershipError && partnershipMessage && (
-            <p className="text-[12px] text-emerald-200">{partnershipMessage}</p>
-          )}
-
-          {(partnershipsLoading || partnershipOverridesLoading) && (
-            <div className="grid gap-3 md:grid-cols-2">
-              <SkeletonBlock className="h-28" />
-              <SkeletonBlock className="h-28" />
-            </div>
-          )}
-
-          {!partnershipsLoading && partnershipAgreements.length === 0 && (
-            <div className="rounded-xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
-              Sem acordos ainda. Cria acordo via API de parcerias e faz aprovação para disponibilizar janelas.
-            </div>
-          )}
-
-          {!partnershipsLoading && partnershipAgreements.length > 0 && (
-            <div className="space-y-2">
-              {partnershipAgreements.map((agreement) => {
-                const status = (agreement.status || "PENDING") as PartnershipStatus;
-                const statusLabel = PARTNERSHIP_STATUS_LABEL[status] ?? status;
-                const statusTone = PARTNERSHIP_STATUS_TONE[status] ?? PARTNERSHIP_STATUS_TONE.PENDING;
-                const pendingCases = partnershipCompensationCases.filter(
-                  (item) =>
-                    item.agreementId === agreement.id &&
-                    (item.status === "PENDING_COMPENSATION" || item.status === "OPEN"),
-                ).length;
-                const recentOverride = partnershipOverrides.find((item) => item.agreementId === agreement.id) ?? null;
-                return (
-                  <article
-                    key={`partnership-${agreement.id}`}
-                    className="rounded-xl border border-white/12 bg-black/25 px-3 py-3 text-sm text-white/80"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-white">Acordo #{agreement.id}</p>
-                        <p className="text-[12px] text-white/60">
-                          Clube dono #{agreement.ownerClubId}
-                          {agreement.partnerClubId ? ` · Clube parceiro #${agreement.partnerClubId}` : ""}
-                          {agreement.activeWindowsCount != null ? ` · Janelas ativas ${agreement.activeWindowsCount}` : ""}
-                        </p>
-                        <p className="text-[12px] text-white/55">
-                          {agreement.policy?.priorityMode ? `Prioridade ${agreement.policy.priorityMode}` : "Sem política configurada"}
-                          {agreement.policy?.autoCompensationOnOverride ? " · Compensação auto ativa" : ""}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span className={`rounded-full border px-2 py-1 text-[11px] ${statusTone}`}>{statusLabel}</span>
-                        {pendingCases > 0 && <span className={badge("amber")}>{pendingCases} pendente(s)</span>}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Link
-                        href={buildOrgHref(organizationId, `/padel/parcerias/${agreement.id}`)}
-                        className="rounded-full border border-white/25 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white/85 hover:border-white/45"
-                      >
-                        Workspace
-                      </Link>
-                      {(status === "PENDING" || status === "PAUSED") && (
-                        <button
-                          type="button"
-                          disabled={partnershipActionBusy === agreement.id}
-                          onClick={() => runPartnershipAction(agreement.id, "approve")}
-                          className={CTA_PAD_PRIMARY_SM}
-                        >
-                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Aprovar"}
-                        </button>
-                      )}
-                      {status === "APPROVED" && (
-                        <button
-                          type="button"
-                          disabled={partnershipActionBusy === agreement.id}
-                          onClick={() => runPartnershipAction(agreement.id, "pause")}
-                          className="rounded-full border border-amber-300/60 bg-amber-500/10 px-3 py-1.5 text-[12px] font-semibold text-amber-100 hover:border-amber-200/80 disabled:opacity-60"
-                        >
-                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Pausar"}
-                        </button>
-                      )}
-                      {status !== "REVOKED" && status !== "EXPIRED" && (
-                        <button
-                          type="button"
-                          disabled={partnershipActionBusy === agreement.id}
-                          onClick={() => runPartnershipAction(agreement.id, "revoke")}
-                          className="rounded-full border border-rose-300/60 bg-rose-500/10 px-3 py-1.5 text-[12px] font-semibold text-rose-100 hover:border-rose-200/80 disabled:opacity-60"
-                        >
-                          {partnershipActionBusy === agreement.id ? "A atualizar…" : "Revogar"}
-                        </button>
-                      )}
-                      {recentOverride && (
-                        <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-                          Último override: {recentOverride.reasonCode}
-                          {recentOverride.executionStatus ? ` (${recentOverride.executionStatus})` : ""}
-                        </span>
-                      )}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="grid gap-3 lg:grid-cols-2">
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Casos de compensação</p>
-              <div className="mt-2 space-y-2 text-[12px]">
-                {partnershipCompensationCases.length === 0 && (
-                  <p className="text-white/60">Sem casos ativos.</p>
-                )}
-                {partnershipCompensationCases.slice(0, 8).map((item) => (
-                  <div key={`comp-case-${item.id}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-white/85">Caso #{item.id} · Acordo #{item.agreementId}</p>
-                    <p className="text-white/60">
-                      Estado: {item.status}
-                      {item.reasonCode ? ` · ${item.reasonCode}` : ""}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/12 bg-black/25 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Overrides</p>
-              <div className="mt-2 space-y-2 text-[12px]">
-                {partnershipOverrides.length === 0 && (
-                  <p className="text-white/60">Sem overrides registados.</p>
-                )}
-                {partnershipOverrides.slice(0, 8).map((item) => (
-                  <div key={`override-${item.id}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-white/85">
-                      Override #{item.id} · Acordo #{item.agreementId}
-                    </p>
-                    <p className="text-white/60">
-                      {item.reasonCode}
-                      {item.executionStatus ? ` · ${item.executionStatus}` : ""}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!switchingTab && activeTab === "manage" && (
+      {!switchingTab && activeTab === "categories" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -6628,7 +6053,7 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {!switchingTab && activeTab === "manage" && (
+      {!switchingTab && activeTab === "teams" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -7515,7 +6940,7 @@ export default function PadelHubClient({
                   A carregar métricas operacionais…
                 </div>
               )}
-              {eventId && (
+              {eventId && toolMode === "TOURNAMENTS" && (
                 <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Alertas</p>
                   {opsAlerts.length === 0 && (
@@ -7537,7 +6962,7 @@ export default function PadelHubClient({
                   Abre um torneio para ver métricas operacionais e alertas.
                 </div>
               )}
-              {eventId && (
+              {eventId && toolMode === "TOURNAMENTS" && (
                 <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Atalhos</p>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -7557,10 +6982,17 @@ export default function PadelHubClient({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setPadelSection("manage")}
+                      onClick={() => setPadelSection("categories")}
                       className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
                     >
-                      Gestão
+                      Categorias
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPadelSection("teams")}
+                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
+                    >
+                      Equipas
                     </button>
                     {selectedEvent?.slug && (
                       <button

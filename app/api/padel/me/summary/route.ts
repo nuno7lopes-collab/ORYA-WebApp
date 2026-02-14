@@ -57,9 +57,8 @@ async function _GET() {
   const missing = getPadelOnboardingMissing({
     profile: profile
       ? {
-          ...profile,
-          padelLevel: padelProfile.level,
-          padelPreferredSide: padelProfile.preferredSide,
+          fullName: profile.fullName,
+          username: profile.username,
         }
       : null,
     email: user.email ?? null,

@@ -28,6 +28,18 @@ const clampLimit = (raw: string | null) => {
   return Math.min(Math.max(1, Math.floor(parsed)), 200);
 };
 
+const normalizeTierFilter = (raw: string | null) => {
+  if (!raw) return null;
+  const normalized = raw.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const normalizeCityFilter = (raw: string | null) => {
+  if (!raw) return null;
+  const normalized = raw.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+};
+
 async function ensureUser() {
   const supabase = await createSupabaseServer();
   const {
@@ -52,6 +64,13 @@ async function _GET(req: NextRequest) {
   const limit = clampLimit(req.nextUrl.searchParams.get("limit"));
   const periodDaysRaw = Number(req.nextUrl.searchParams.get("periodDays"));
   const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
+  const tierFilter = normalizeTierFilter(req.nextUrl.searchParams.get("tier"));
+  const cityFilter = normalizeCityFilter(req.nextUrl.searchParams.get("city"));
+  const clubIdRaw = Number(req.nextUrl.searchParams.get("clubId"));
+  const clubIdFilter = Number.isFinite(clubIdRaw) && clubIdRaw > 0 ? Math.floor(clubIdRaw) : null;
+  if (req.nextUrl.searchParams.get("clubId") && !clubIdFilter) {
+    return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  }
   const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
 
   if (eventId) {
@@ -86,10 +105,29 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const filteredPlayerIds =
+      tierFilter || clubIdFilter || cityFilter
+        ? (
+            await prisma.padelRatingEvent.findMany({
+              where: {
+                eventId: eId,
+                ...(since ? { createdAt: { gte: since } } : {}),
+                ...(tierFilter ? { tier: tierFilter } : {}),
+                ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+                ...(cityFilter ? { city: cityFilter } : {}),
+              },
+              select: { playerId: true },
+              distinct: ["playerId"],
+              take: 2000,
+            })
+          ).map((row) => row.playerId)
+        : null;
+
     const entries = await prisma.padelRankingEntry.findMany({
       where: {
         eventId: eId,
         ...(since ? { createdAt: { gte: since } } : {}),
+        ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
       },
       include: { player: true },
       orderBy: [{ points: "desc" }, { playerId: "asc" }],
@@ -107,7 +145,18 @@ async function _GET(req: NextRequest) {
       },
     }));
 
-    return jsonWrap({ ok: true, items }, { status: 200 });
+    const bootstrap = items.length === 0;
+    return jsonWrap(
+      {
+        ok: true,
+        items,
+        meta: {
+          bootstrap,
+          reason: bootstrap ? "NO_RATING_DATA" : null,
+        },
+      },
+      { status: 200 },
+    );
   }
 
   if (scope === "organization") {
@@ -121,6 +170,24 @@ async function _GET(req: NextRequest) {
     });
     if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
+    const filteredPlayerIds =
+      tierFilter || clubIdFilter || cityFilter
+        ? (
+            await prisma.padelRatingEvent.findMany({
+              where: {
+                organizationId,
+                ...(since ? { createdAt: { gte: since } } : {}),
+                ...(tierFilter ? { tier: tierFilter } : {}),
+                ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+                ...(cityFilter ? { city: cityFilter } : {}),
+              },
+              select: { playerId: true },
+              distinct: ["playerId"],
+              take: 5000,
+            })
+          ).map((row) => row.playerId)
+        : null;
+
     const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
     const leaderRating = leader._max.rating ?? 1200;
 
@@ -128,6 +195,7 @@ async function _GET(req: NextRequest) {
       where: {
         organizationId,
         ...(since ? { lastActivityAt: { gte: since } } : {}),
+        ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
       },
       include: {
         player: {
@@ -157,16 +225,44 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return jsonWrap({ ok: true, items }, { status: 200 });
+    const bootstrap = items.length === 0;
+    return jsonWrap(
+      {
+        ok: true,
+        items,
+        meta: {
+          bootstrap,
+          reason: bootstrap ? "NO_RATING_DATA" : null,
+        },
+      },
+      { status: 200 },
+    );
   }
 
   const leader = await prisma.padelRatingProfile.aggregate({ _max: { rating: true } });
   const leaderRating = leader._max.rating ?? 1200;
+  const filteredPlayerIds =
+    tierFilter || clubIdFilter || cityFilter
+      ? (
+          await prisma.padelRatingEvent.findMany({
+            where: {
+              ...(since ? { createdAt: { gte: since } } : {}),
+              ...(tierFilter ? { tier: tierFilter } : {}),
+              ...(clubIdFilter ? { clubId: clubIdFilter } : {}),
+              ...(cityFilter ? { city: cityFilter } : {}),
+            },
+            select: { playerId: true },
+            distinct: ["playerId"],
+            take: 5000,
+          })
+        ).map((row) => row.playerId)
+      : null;
 
   const profiles = await prisma.padelRatingProfile.findMany({
     where: {
       ...(since ? { lastActivityAt: { gte: since } } : {}),
       leaderboardEligible: true,
+      ...(filteredPlayerIds ? { playerId: { in: filteredPlayerIds } } : {}),
     },
     include: {
       player: {
@@ -196,7 +292,18 @@ async function _GET(req: NextRequest) {
     };
   });
 
-  return jsonWrap({ ok: true, items }, { status: 200 });
+  const bootstrap = items.length === 0;
+  return jsonWrap(
+    {
+      ok: true,
+      items,
+      meta: {
+        bootstrap,
+        reason: bootstrap ? "NO_RATING_DATA" : null,
+      },
+    },
+    { status: 200 },
+  );
 }
 
 async function _POST(req: NextRequest) {
@@ -235,7 +342,7 @@ async function _POST(req: NextRequest) {
   });
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const tier = typeof body.tier === "string" ? body.tier : null;
+  const tier = normalizeTierFilter(typeof body.tier === "string" ? body.tier : null);
 
   const result = await prisma.$transaction(async (tx) => {
     return rebuildPadelRatingsForEvent({

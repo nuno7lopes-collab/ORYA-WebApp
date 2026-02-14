@@ -47,7 +47,9 @@ async function _GET(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
@@ -81,11 +83,23 @@ async function _GET(req: NextRequest) {
   const staff = await prisma.padelClubStaff.findMany({
     where: { padelClubId: club.id, deletedAt: null },
     orderBy: [{ createdAt: "desc" }],
+    include: {
+      user: {
+        select: { id: true, username: true, fullName: true, avatarUrl: true },
+      },
+    },
   });
 
   const normalized = staff.map((item) => ({
-    ...item,
+    id: item.id,
+    padelClubId: item.padelClubId,
+    userId: item.userId,
     role: normalizePadelClubStaffRole(item.role) ?? item.role,
+    inheritToEvents: item.inheritToEvents,
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    user: item.user,
   }));
 
   return jsonWrap({ ok: true, items: normalized }, { status: 200 });
@@ -96,7 +110,9 @@ async function _POST(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -136,13 +152,11 @@ async function _POST(req: NextRequest) {
 
   const staffId = typeof body.id === "number" ? body.id : null;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-  const userId = typeof body.userId === "string" ? body.userId : null;
+  const username = typeof body.username === "string" ? body.username.trim() : "";
+  let userId = typeof body.userId === "string" ? body.userId.trim() : "";
   const inheritToEvents = typeof body.inheritToEvents === "boolean" ? body.inheritToEvents : true;
   const padelRole = normalizePadelClubStaffRole(body.padelRole ?? body.role);
 
-  if (!email && !userId) {
-    return jsonWrap({ ok: false, error: "Indica o email ou userId do staff." }, { status: 400 });
-  }
   if (!padelRole) {
     return jsonWrap(
       { ok: false, error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}` },
@@ -150,33 +164,42 @@ async function _POST(req: NextRequest) {
     );
   }
 
-  try {
-    // Se recebermos email mas não userId, tentar ligar a uma conta existente
-    let resolvedUserId = userId;
-    if (!resolvedUserId && email) {
-      const foundUser = await prisma.users.findFirst({
-        where: { email: email.toLowerCase() },
-        select: { id: true },
-      });
-      if (foundUser) resolvedUserId = foundUser.id;
-    }
+  if (!userId && username) {
+    const profile = await prisma.profile.findFirst({
+      where: { username: { equals: username.startsWith("@") ? username.slice(1) : username, mode: "insensitive" } },
+      select: { id: true },
+    });
+    userId = profile?.id ?? "";
+  }
 
-    // Evitar duplicados (mesmo userId ou mesmo email no clube)
+  if (!userId && email) {
+    const foundUser = await prisma.users.findFirst({
+      where: { email: email.toLowerCase() },
+      select: { id: true },
+    });
+    if (foundUser) userId = foundUser.id;
+  }
+
+  if (!userId && email) {
+    return jsonWrap({ ok: false, error: "USE_STAFF_INVITE_FLOW" }, { status: 409 });
+  }
+
+  if (!userId) {
+    return jsonWrap({ ok: false, error: "USER_REQUIRED" }, { status: 400 });
+  }
+
+  try {
     const existing = await prisma.padelClubStaff.findFirst({
       where: {
         padelClubId: club.id,
         deletedAt: null,
-        OR: [
-          resolvedUserId ? { userId: resolvedUserId } : undefined,
-          email ? { email } : undefined,
-        ].filter(Boolean) as { userId?: string; email?: string | null }[],
+        userId,
       },
     });
 
     const data = {
       padelClubId: club.id,
-      email: email || null,
-      userId: resolvedUserId,
+      userId,
       role: padelRole,
       inheritToEvents,
     };
@@ -187,9 +210,13 @@ async function _POST(req: NextRequest) {
       staff = await prisma.padelClubStaff.update({
         where: { id: targetId, padelClubId: club.id },
         data: { ...data, deletedAt: null, isActive: true },
+        include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true } } },
       });
     } else {
-      staff = await prisma.padelClubStaff.create({ data });
+      staff = await prisma.padelClubStaff.create({
+        data,
+        include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true } } },
+      });
     }
 
     return jsonWrap({ ok: true, staff }, { status: staffId ? 200 : 201 });
@@ -205,7 +232,9 @@ async function _DELETE(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
@@ -253,6 +282,7 @@ async function _DELETE(req: NextRequest) {
 
   return jsonWrap({ ok: true }, { status: 200 });
 }
+
 export const GET = withApiEnvelope(_GET);
 export const POST = withApiEnvelope(_POST);
 export const DELETE = withApiEnvelope(_DELETE);

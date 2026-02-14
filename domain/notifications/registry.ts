@@ -122,6 +122,8 @@ export const NOTIFICATION_CATEGORY_BY_TYPE: Record<NotificationType, Notificatio
   TICKET_TRANSFER_ACCEPTED: "events",
   TICKET_TRANSFER_DECLINED: "events",
   CLUB_INVITE: "network",
+  CLUB_STAFF_INVITE: "network",
+  TEAM_MEMBER_INVITE: "network",
   NEW_EVENT_FROM_FOLLOWED_ORGANIZATION: "network",
   CHAT_AVAILABLE: "chat",
   CHAT_OPEN: "chat",
@@ -246,6 +248,23 @@ const resolvePairingId = (payload: Record<string, unknown> | null | undefined) =
   return null;
 };
 
+const resolveInviteIdFromPayload = (payload: Record<string, unknown> | null | undefined) => {
+  if (!payload) return null;
+  const raw = payload.inviteId;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+};
+
+const resolveNumericPayloadId = (
+  payload: Record<string, unknown> | null | undefined,
+  key: string,
+) => {
+  if (!payload) return null;
+  const raw = payload[key];
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw))) return Number(raw);
+  return null;
+};
+
 const resolveViewerRole = (payload: Record<string, unknown> | null | undefined) => {
   if (!payload) return "INVITED";
   const raw = payload.viewerRole;
@@ -339,6 +358,72 @@ const registry: Record<NotificationType, RegistryEntry> = {
             { type: "decline_org_invite", label: "Recusar", style: "secondary", payload: { inviteId: ctx.inviteId } },
           ]
         : undefined,
+    }),
+  },
+  CLUB_STAFF_INVITE: {
+    category: "network",
+    required: ["organizationId"],
+    build: (ctx) => ({
+      title: ctx.organizationName ?? "Clube Padel",
+      body: "tens um convite pendente para staff de clube.",
+      ctaUrl: "/convites/organizacoes",
+      ctaLabel: "Gerir convites",
+      actions:
+        resolveInviteIdFromPayload(ctx.payload) && resolveNumericPayloadId(ctx.payload, "padelClubId")
+          ? [
+              {
+                type: "accept_club_staff_invite",
+                label: "Aceitar",
+                style: "primary",
+                payload: {
+                  inviteId: resolveInviteIdFromPayload(ctx.payload) as string,
+                  padelClubId: resolveNumericPayloadId(ctx.payload, "padelClubId") as number,
+                },
+              },
+              {
+                type: "decline_club_staff_invite",
+                label: "Recusar",
+                style: "secondary",
+                payload: {
+                  inviteId: resolveInviteIdFromPayload(ctx.payload) as string,
+                  padelClubId: resolveNumericPayloadId(ctx.payload, "padelClubId") as number,
+                },
+              },
+            ]
+          : undefined,
+    }),
+  },
+  TEAM_MEMBER_INVITE: {
+    category: "network",
+    required: ["organizationId"],
+    build: (ctx) => ({
+      title: ctx.organizationName ?? "Equipa Padel",
+      body: "tens um convite pendente para membro de equipa.",
+      ctaUrl: "/convites/organizacoes",
+      ctaLabel: "Gerir convites",
+      actions:
+        resolveInviteIdFromPayload(ctx.payload) && resolveNumericPayloadId(ctx.payload, "teamId")
+          ? [
+              {
+                type: "accept_team_member_invite",
+                label: "Aceitar",
+                style: "primary",
+                payload: {
+                  inviteId: resolveInviteIdFromPayload(ctx.payload) as string,
+                  teamId: resolveNumericPayloadId(ctx.payload, "teamId") as number,
+                },
+              },
+              {
+                type: "decline_team_member_invite",
+                label: "Recusar",
+                style: "secondary",
+                payload: {
+                  inviteId: resolveInviteIdFromPayload(ctx.payload) as string,
+                  teamId: resolveNumericPayloadId(ctx.payload, "teamId") as number,
+                },
+              },
+            ]
+          : undefined,
     }),
   },
   NEW_EVENT_FROM_FOLLOWED_ORGANIZATION: {

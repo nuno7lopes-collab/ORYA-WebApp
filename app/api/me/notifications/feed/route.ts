@@ -324,6 +324,8 @@ export async function _GET(req: NextRequest) {
       const orgAvatarTypes = new Set([
         "ORGANIZATION_INVITE",
         "CLUB_INVITE",
+        "CLUB_STAFF_INVITE",
+        "TEAM_MEMBER_INVITE",
         "ORGANIZATION_TRANSFER",
         "NEW_EVENT_FROM_FOLLOWED_ORGANIZATION",
         "EVENT_INVITE",

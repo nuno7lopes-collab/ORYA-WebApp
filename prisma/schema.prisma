@@ -84,7 +84,12 @@ model Profile {
   padelPairingsPlayer1                                             PadelPairing[]          @relation("PadelPairingPlayer1")
   padelPairingsPlayer2                                             PadelPairing[]          @relation("PadelPairingPlayer2")
   padelWaitlistEntries                                             PadelWaitlistEntry[]
+  padelClubStaffAssignments                                        PadelClubStaff[]
+  padelClubStaffInvitesSent                                        PadelClubStaffInvite[]  @relation("PadelClubStaffInviteInviter")
+  padelClubStaffInvitesReceived                                    PadelClubStaffInvite[]  @relation("PadelClubStaffInviteTarget")
   padelTeamMembers                                                 PadelTeamMember[]
+  padelTeamMemberInvitesSent                                       PadelTeamMemberInvite[] @relation("PadelTeamMemberInviteInviter")
+  padelTeamMemberInvitesReceived                                   PadelTeamMemberInvite[] @relation("PadelTeamMemberInviteTarget")
   padelCommunityPosts                                              PadelCommunityPost[]
   padelCommunityReactions                                          PadelCommunityReaction[]
   padelCommunityComments                                           PadelCommunityComment[]
@@ -245,8 +250,10 @@ model Organization {
   padelDefaultRuleSet     PadelRuleSet?                   @relation("OrganizationPadelDefaultRuleSet", fields: [padelDefaultRuleSetId], references: [id], onUpdate: NoAction, map: "organizations_padel_default_rule_set_fk")
   padelCategories         PadelCategory[]
   padelClubs              PadelClub[]
+  padelClubStaffInvites   PadelClubStaffInvite[]
   padelPairings           PadelPairing[]
   padelTeams              PadelTeam[]
+  padelTeamMemberInvites  PadelTeamMemberInvite[]
   padelCommunityPosts     PadelCommunityPost[]
   padelPlayers            PadelPlayerProfile[]
   padelTournamentParticipants PadelTournamentParticipant[]
@@ -255,6 +262,7 @@ model Organization {
   padelRatingProfiles     PadelRatingProfile[]
   padelRatingEvents       PadelRatingEvent[]
   padelRatingSanctions    PadelRatingSanction[]
+  padelPlayerHistoryProjections PadelPlayerHistoryProjection[]
   padelTournamentTierApprovals PadelTournamentTierApproval[]
   reservationProfessionals ReservationProfessional[]
   reservationResources    ReservationResource[]
@@ -1812,6 +1820,7 @@ model Event {
   padelTournamentTierApproval       PadelTournamentTierApproval?
   padelTournamentRoleAssignments    PadelTournamentRoleAssignment[]
   padelCategoryLinks                PadelEventCategoryLink[]
+  padelPlayerHistoryProjections     PadelPlayerHistoryProjection[]
   padelCourtBlocks                  CalendarBlock[]
   padelAvailabilities               CalendarAvailability[]
   padelWaitlistEntries              PadelWaitlistEntry[]
@@ -2739,6 +2748,8 @@ model PadelPlayerProfile {
   ratingSanctions PadelRatingSanction[]
   availabilities CalendarAvailability[]
   crmContactPadelLinks CrmContactPadel[]
+  historyProjections PadelPlayerHistoryProjection[]
+  partnerHistoryProjections PadelPlayerHistoryProjection[] @relation("PadelPlayerHistoryProjectionPartner")
 
   @@index([organizationId, crmContactId], map: "padel_player_profiles_org_crm_contact_idx")
   @@map("padel_player_profiles")
@@ -2766,6 +2777,7 @@ model PadelClub {
   deletedAt           DateTime?               @map("deleted_at") @db.Timestamptz(6)
   courts              PadelClubCourt[]
   staff               PadelClubStaff[]
+  staffInvites        PadelClubStaffInvite[]
   calendarBlocks      CalendarBlock[]
   agendaItems         AgendaItem[]
   organization           Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -2812,8 +2824,7 @@ model PadelClubStaff {
   env                     String                         @default("prod")
   id              Int       @id @default(autoincrement())
   padelClubId     Int       @map("padel_club_id")
-  userId          String?   @map("user_id") @db.Uuid
-  email           String?   @db.Citext
+  userId          String    @map("user_id") @db.Uuid
   role            PadelClubStaffRole
   inheritToEvents Boolean   @default(true) @map("inherit_to_events")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2821,9 +2832,42 @@ model PadelClubStaff {
   isActive        Boolean   @default(true) @map("is_active")
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
   club            PadelClub @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user            Profile   @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([padelClubId], map: "padel_club_staff_club_idx")
+  @@index([userId], map: "padel_club_staff_user_idx")
   @@map("padel_club_staff")
+  @@schema("app_v3")
+}
+
+model PadelClubStaffInvite {
+  env                     String                         @default("prod")
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int                @map("organization_id")
+  padelClubId      Int                @map("padel_club_id")
+  invitedByUserId  String             @map("invited_by_user_id") @db.Uuid
+  targetIdentifier String             @map("target_identifier") @db.Citext
+  targetUserId     String?            @map("target_user_id") @db.Uuid
+  role             PadelClubStaffRole
+  inheritToEvents  Boolean            @default(true) @map("inherit_to_events")
+  token            String             @unique @db.Uuid
+  expiresAt        DateTime           @map("expires_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?          @map("accepted_at") @db.Timestamptz(6)
+  declinedAt       DateTime?          @map("declined_at") @db.Timestamptz(6)
+  cancelledAt      DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  createdAt        DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime?          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  club             PadelClub          @relation(fields: [padelClubId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invitedBy        Profile            @relation("PadelClubStaffInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  targetUser       Profile?           @relation("PadelClubStaffInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_club_staff_invites_org_idx")
+  @@index([padelClubId], map: "padel_club_staff_invites_club_idx")
+  @@index([targetIdentifier], map: "padel_club_staff_invites_identifier_idx")
+  @@index([targetUserId], map: "padel_club_staff_invites_target_idx")
+  @@index([expiresAt], map: "padel_club_staff_invites_expires_idx")
+  @@map("padel_club_staff_invites")
   @@schema("app_v3")
 }
 
@@ -2853,6 +2897,7 @@ model PadelCategory {
   waitlistEntries   PadelWaitlistEntry[]
   padelTeams        PadelTeam[]
   padelTeamEntries  PadelTeamEntry[]
+  historyProjections PadelPlayerHistoryProjection[]
 
   @@map("padel_categories")
   @@schema("app_v3")
@@ -3016,6 +3061,7 @@ model PadelTeam {
   category        PadelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   members         PadelTeamMember[]
   entries         PadelTeamEntry[]
+  invites         PadelTeamMemberInvite[]
 
   @@index([organizationId], map: "padel_teams_org_idx")
   @@index([padelClubId], map: "padel_teams_club_idx")
@@ -3040,6 +3086,36 @@ model PadelTeamMember {
   @@index([teamId], map: "padel_team_members_team_idx")
   @@index([userId], map: "padel_team_members_user_idx")
   @@map("padel_team_members")
+  @@schema("app_v3")
+}
+
+model PadelTeamMemberInvite {
+  env                     String                         @default("prod")
+  id               String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   Int                   @map("organization_id")
+  teamId           Int                   @map("team_id")
+  invitedByUserId  String                @map("invited_by_user_id") @db.Uuid
+  targetIdentifier String                @map("target_identifier") @db.Citext
+  targetUserId     String?               @map("target_user_id") @db.Uuid
+  role             PadelTeamRole         @default(PLAYER)
+  token            String                @unique @db.Uuid
+  expiresAt        DateTime              @map("expires_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?             @map("accepted_at") @db.Timestamptz(6)
+  declinedAt       DateTime?             @map("declined_at") @db.Timestamptz(6)
+  cancelledAt      DateTime?             @map("cancelled_at") @db.Timestamptz(6)
+  createdAt        DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime?             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  team             PadelTeam             @relation(fields: [teamId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  invitedBy        Profile               @relation("PadelTeamMemberInviteInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  targetUser       Profile?              @relation("PadelTeamMemberInviteTarget", fields: [targetUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId], map: "padel_team_member_invites_org_idx")
+  @@index([teamId], map: "padel_team_member_invites_team_idx")
+  @@index([targetIdentifier], map: "padel_team_member_invites_identifier_idx")
+  @@index([targetUserId], map: "padel_team_member_invites_target_idx")
+  @@index([expiresAt], map: "padel_team_member_invites_expires_idx")
+  @@map("padel_team_member_invites")
   @@schema("app_v3")
 }
 
@@ -3530,6 +3606,34 @@ model PadelRankingEntry {
   @@schema("app_v3")
 }
 
+model PadelPlayerHistoryProjection {
+  env                  String              @default("prod")
+  id                   Int                 @id @default(autoincrement())
+  organizationId       Int                 @map("organization_id")
+  eventId              Int                 @map("event_id")
+  categoryId           Int?                @map("category_id")
+  playerProfileId      Int                 @map("player_profile_id")
+  partnerPlayerProfileId Int?              @map("partner_player_profile_id")
+  finalPosition        Int?                @map("final_position")
+  wonTitle             Boolean             @default(false) @map("won_title")
+  bracketSnapshot      Json?               @map("bracket_snapshot")
+  computedAt           DateTime            @default(now()) @map("computed_at") @db.Timestamptz(6)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  event                Event               @relation(fields: [eventId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category             PadelCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  playerProfile        PadelPlayerProfile  @relation(fields: [playerProfileId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  partnerPlayerProfile PadelPlayerProfile? @relation("PadelPlayerHistoryProjectionPartner", fields: [partnerPlayerProfileId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([eventId, categoryId, playerProfileId], map: "padel_player_history_event_category_player_uq")
+  @@index([organizationId], map: "padel_player_history_org_idx")
+  @@index([playerProfileId], map: "padel_player_history_player_idx")
+  @@index([eventId], map: "padel_player_history_event_idx")
+  @@map("padel_player_history_projection")
+  @@schema("app_v3")
+}
+
 /// Acordo de parceria entre organização dona do clube e organização parceira
 model PadelPartnershipAgreement {
   env                   String                         @default("prod")
@@ -3787,6 +3891,9 @@ model PadelRatingEvent {
   eventId          Int?      @map("event_id")
   matchId          Int?      @map("match_id")
   playerId         Int       @map("player_id")
+  tier             String?   @map("tier")
+  clubId           Int?      @map("club_id")
+  city             String?   @map("city")
   opponentAvgRating Float?   @map("opponent_avg_rating")
   preRating        Float     @map("pre_rating")
   preRd            Float     @map("pre_rd")
@@ -3808,6 +3915,9 @@ model PadelRatingEvent {
   @@index([organizationId], map: "padel_rating_events_org_idx")
   @@index([eventId], map: "padel_rating_events_event_idx")
   @@index([matchId], map: "padel_rating_events_match_idx")
+  @@index([organizationId, tier], map: "padel_rating_events_org_tier_idx")
+  @@index([organizationId, clubId], map: "padel_rating_events_org_club_idx")
+  @@index([organizationId, city], map: "padel_rating_events_org_city_idx")
   @@index([playerId, createdAt], map: "padel_rating_events_player_created_idx")
   @@map("padel_rating_events")
   @@schema("app_v3")
@@ -5539,6 +5649,8 @@ enum NotificationType {
   TICKET_TRANSFER_ACCEPTED
   TICKET_TRANSFER_DECLINED
   CLUB_INVITE
+  CLUB_STAFF_INVITE
+  TEAM_MEMBER_INVITE
   NEW_EVENT_FROM_FOLLOWED_ORGANIZATION
   CHAT_AVAILABLE
   CHAT_OPEN

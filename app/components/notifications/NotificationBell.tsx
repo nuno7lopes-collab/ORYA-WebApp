@@ -28,7 +28,15 @@ type NotificationDto = {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const INVITE_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "EVENT_INVITE", "PAIRING_INVITE"]);
+const INVITE_TYPES = new Set([
+  "ORGANIZATION_INVITE",
+  "CLUB_INVITE",
+  "CLUB_STAFF_INVITE",
+  "TEAM_MEMBER_INVITE",
+  "ORGANIZATION_TRANSFER",
+  "EVENT_INVITE",
+  "PAIRING_INVITE",
+]);
 
 export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
   const { user } = useUser();
@@ -69,6 +77,8 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       ORGANIZATION_INVITE: t("notificationsTypeOrganizationInvite", locale),
       ORGANIZATION_TRANSFER: t("notificationsTypeOrganizationTransfer", locale),
       CLUB_INVITE: t("notificationsTypeClubInvite", locale),
+      CLUB_STAFF_INVITE: t("notificationsTypeClubInvite", locale),
+      TEAM_MEMBER_INVITE: t("notificationsTypeOrganizationInvite", locale),
       PAIRING_INVITE: t("notificationsTypePairingInvite", locale),
       EVENT_SALE: t("notificationsTypeEventSale", locale),
       EVENT_PAYOUT_STATUS: t("notificationsTypeEventPayout", locale),

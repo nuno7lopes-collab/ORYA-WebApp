@@ -41,6 +41,7 @@ export type NotificationsPage = {
 
 export type OrganizationInvite = {
   id: string;
+  inviteType?: "ORGANIZATION_MEMBER" | "CLUB_STAFF" | "TEAM_MEMBER";
   organizationId: number;
   role: string;
   status: "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
@@ -59,5 +60,15 @@ export type OrganizationInvite = {
     username?: string | null;
     brandingAvatarUrl?: string | null;
     brandingCoverUrl?: string | null;
+  } | null;
+  padelClubId?: number | null;
+  padelClub?: {
+    id: number;
+    name?: string | null;
+  } | null;
+  teamId?: number | null;
+  team?: {
+    id: number;
+    name?: string | null;
   } | null;
 };

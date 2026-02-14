@@ -8,6 +8,7 @@ import type { User } from "@supabase/supabase-js";
 import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
 import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { linkPendingWorkforceInvitesToUser } from "@/lib/workforceInvites";
 
 type SupabaseUserMetadata = {
   full_name?: string;
@@ -165,6 +166,15 @@ async function _GET() {
           : "PRIVATE";
 
     const onboardingDone = resolvedProfile.onboardingDone || hasUserOnboardingData;
+
+    if (emailConfirmed) {
+      await linkPendingWorkforceInvitesToUser({
+        userId,
+        email: user.email ?? null,
+      }).catch((err) => {
+        console.warn("[auth/me] workforce invite link failed:", err);
+      });
+    }
 
     const safeProfile: ApiAuthMeResponse["profile"] = {
       id: resolvedProfile.id,

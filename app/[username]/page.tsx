@@ -1588,10 +1588,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     profile: {
       fullName: resolvedProfile.fullName,
       username: resolvedProfile.username,
-      contactPhone: resolvedProfile.contactPhone ?? null,
-      gender: resolvedProfile.gender ?? null,
-      padelLevel: resolvedProfile.padelLevel ?? null,
-      padelPreferredSide: resolvedProfile.padelPreferredSide ?? null,
     },
     email: padelUser?.email ?? null,
   });

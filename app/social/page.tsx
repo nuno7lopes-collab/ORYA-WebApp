@@ -85,11 +85,26 @@ const SOCIAL_TYPES = new Set([
   "FRIEND_GOING_TO_EVENT",
 ]);
 
-const REQUEST_TYPES = new Set(["ORGANIZATION_INVITE", "CLUB_INVITE", "PAIRING_INVITE", "EVENT_INVITE"]);
+const REQUEST_TYPES = new Set([
+  "ORGANIZATION_INVITE",
+  "CLUB_INVITE",
+  "CLUB_STAFF_INVITE",
+  "TEAM_MEMBER_INVITE",
+  "PAIRING_INVITE",
+  "EVENT_INVITE",
+]);
 
 const NOTIFICATION_FILTERS: Record<NotificationFilter, string[]> = {
   all: [],
-  invites: ["ORGANIZATION_INVITE", "CLUB_INVITE", "ORGANIZATION_TRANSFER", "PAIRING_INVITE", "EVENT_INVITE"],
+  invites: [
+    "ORGANIZATION_INVITE",
+    "CLUB_INVITE",
+    "CLUB_STAFF_INVITE",
+    "TEAM_MEMBER_INVITE",
+    "ORGANIZATION_TRANSFER",
+    "PAIRING_INVITE",
+    "EVENT_INVITE",
+  ],
   social: ["FOLLOWED_YOU", "FOLLOW_REQUEST", "FOLLOW_ACCEPT", "FRIEND_GOING_TO_EVENT"],
 };
 
@@ -98,6 +113,8 @@ const NOTIFICATION_LABELS: Record<string, string> = {
   ORGANIZATION_TRANSFER: "Transferência",
   PAIRING_INVITE: "Dupla",
   CLUB_INVITE: "Clube",
+  CLUB_STAFF_INVITE: "Staff clube",
+  TEAM_MEMBER_INVITE: "Equipa",
   EVENT_SALE: "Venda",
   EVENT_PAYOUT_STATUS: "Pagamento",
   STRIPE_STATUS: "Stripe",
@@ -414,6 +431,52 @@ export default function SocialHubPage() {
           setNotificationStatus((prev) => ({
             ...prev,
             [item.id]: action.type === "accept_org_invite" ? "Aceite" : "Recusado",
+          }));
+        }
+      } else if (action.type === "accept_club_staff_invite" || action.type === "decline_club_staff_invite") {
+        const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+        const padelClubIdRaw = action.payload?.padelClubId;
+        const padelClubId =
+          typeof padelClubIdRaw === "number"
+            ? padelClubIdRaw
+            : typeof padelClubIdRaw === "string" && Number.isFinite(Number(padelClubIdRaw))
+              ? Number(padelClubIdRaw)
+              : null;
+        if (inviteId && Number.isFinite(padelClubId)) {
+          await fetch(`/api/padel/clubs/${padelClubId}/staff/invites`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inviteId,
+              action: action.type === "accept_club_staff_invite" ? "ACCEPT" : "DECLINE",
+            }),
+          });
+          setNotificationStatus((prev) => ({
+            ...prev,
+            [item.id]: action.type === "accept_club_staff_invite" ? "Aceite" : "Recusado",
+          }));
+        }
+      } else if (action.type === "accept_team_member_invite" || action.type === "decline_team_member_invite") {
+        const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
+        const teamIdRaw = action.payload?.teamId;
+        const teamId =
+          typeof teamIdRaw === "number"
+            ? teamIdRaw
+            : typeof teamIdRaw === "string" && Number.isFinite(Number(teamIdRaw))
+              ? Number(teamIdRaw)
+              : null;
+        if (inviteId && Number.isFinite(teamId)) {
+          await fetch(`/api/padel/teams/${teamId}/invites`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inviteId,
+              action: action.type === "accept_team_member_invite" ? "ACCEPT" : "DECLINE",
+            }),
+          });
+          setNotificationStatus((prev) => ({
+            ...prev,
+            [item.id]: action.type === "accept_team_member_invite" ? "Aceite" : "Recusado",
           }));
         }
       } else if (action.type === "open") {
