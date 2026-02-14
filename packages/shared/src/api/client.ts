@@ -31,14 +31,22 @@ export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
     const accessToken = getAccessToken ? await getAccessToken() : null;
     const hasAuthHeader = hasAuthorizationHeader(init.headers);
     const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
-    const headers = {
+    const headers = new Headers({
       "Content-Type": "application/json",
       ...defaultHeaders,
-      ...(accessToken && !hasAuthHeader
-        ? { Authorization: `Bearer ${accessToken}` }
-        : {}),
-      ...(init.headers ?? {}),
-    };
+    });
+
+    if (accessToken && !hasAuthHeader) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+
+    if (init.headers) {
+      const initHeaders = new Headers(init.headers);
+      initHeaders.forEach((value, key) => {
+        headers.set(key, value);
+      });
+    }
+
     const res = await fetch(url, { ...init, headers });
     if (!res.ok) {
       const text = await res.text().catch(() => "");

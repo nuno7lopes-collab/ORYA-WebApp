@@ -27,10 +27,15 @@ import {
 import { checkPadelCategoryPlayerCapacity } from "@/domain/padelCategoryCapacity";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
-import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
+import { ensurePadelPlayerProfileId, isPadelClaimWindowExpiredError } from "@/domain/padel/playerProfile";
 import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
-const ensurePlayerProfile = (params: { organizationId: number; userId: string }) =>
+const ensurePlayerProfile = (params: {
+  organizationId: number;
+  userId: string;
+  claimKey?: string | null;
+  retroactiveClaimMonths?: number | null;
+}) =>
   ensurePadelPlayerProfileId(prisma, params);
 
 // Claim endpoint para convites (Padel v2).
@@ -197,6 +202,30 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
   });
 
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  const isInactiveRegistration =
+    pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
+  if (isInactiveRegistration || pairing.pairingStatus === "CANCELLED") {
+    return jsonWrap({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
+  }
+  if (pairing.player2UserId) {
+    if (pairing.player2UserId === user.id) {
+      const lifecycleStatus = mapRegistrationToPairingLifecycle(
+        pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
+        pairing.payment_mode,
+      );
+      const pairingPayload = {
+        ...pairing,
+        lifecycleStatus,
+        paymentMode: pairing.payment_mode,
+        slots: pairing.slots.map(({ slot_role, ...slotRest }) => ({
+          ...slotRest,
+          slotRole: slot_role,
+        })),
+      };
+      return jsonWrap({ ok: true, pairing: pairingPayload }, { status: 200 });
+    }
+    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
+  }
   const ratingGate = await ensurePadelRatingActionAllowed({
     organizationId: pairing.organizationId,
     userId: user.id,
@@ -210,14 +239,6 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
       },
       { status: 423 },
     );
-  }
-  const isInactiveRegistration =
-    pairing.registration?.status ? INACTIVE_REGISTRATION_STATUSES.includes(pairing.registration.status) : false;
-  if (isInactiveRegistration || pairing.pairingStatus === "CANCELLED") {
-    return jsonWrap({ ok: false, error: "PAIRING_CANCELLED" }, { status: 400 });
-  }
-  if (pairing.player2UserId) {
-    return jsonWrap({ ok: false, error: "INVITE_ALREADY_USED" }, { status: 409 });
   }
 
   const [event, windowConfig] = await Promise.all([
@@ -424,7 +445,12 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
   }
 
   try {
-    const playerProfileId = await ensurePlayerProfile({ organizationId: pairing.organizationId, userId: user.id });
+    const playerProfileId = await ensurePlayerProfile({
+      organizationId: pairing.organizationId,
+      userId: user.id,
+      claimKey: `PAIRING_CLAIM:${pairing.id}:${user.id}`,
+      retroactiveClaimMonths: 6,
+    });
     const { pairing: updated, shouldEnsureEntries, nextRegistrationStatus } = await prisma.$transaction(async (tx) => {
       const nextRegistrationStatus = resolvePartnerActionStatus({
         partnerPaid: pendingSlot.paymentStatus === PadelPairingPaymentStatus.PAID,
@@ -498,6 +524,9 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
     };
     return jsonWrap({ ok: true, pairing: pairingPayload }, { status: 200 });
   } catch (err) {
+    if (isPadelClaimWindowExpiredError(err)) {
+      return jsonWrap({ ok: false, error: "CLAIM_WINDOW_EXPIRED" }, { status: 409 });
+    }
     console.error("[padel/pairings][claim][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

@@ -13,7 +13,7 @@ import {
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
   DASHBOARD_TITLE,
-} from "@/app/organizacao/dashboardUi";
+} from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 

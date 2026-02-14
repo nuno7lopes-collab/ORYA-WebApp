@@ -28,7 +28,7 @@ import {
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
   DASHBOARD_TITLE,
-} from "@/app/organizacao/dashboardUi";
+} from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -597,6 +597,20 @@ export default function ReservasDashboardPage() {
   const [inviteSaving, setInviteSaving] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
+  function showServiceDrawer() {
+    setDrawerBooking(null);
+    setCreateSlot(null);
+    setCreateServiceId(null);
+    setCheckout(null);
+    setPaymentError(null);
+    setCreateError(null);
+    setServiceSaving(false);
+    setServiceError(null);
+    setServiceDrawerOpen(true);
+  }
+  const showServiceDrawerRef = useRef<() => void>(() => {});
+  showServiceDrawerRef.current = showServiceDrawer;
+
   const { data: servicesData, isLoading: servicesLoading, mutate: mutateServices } = useSWR<{
     ok: boolean;
     items: ServiceItem[];
@@ -934,7 +948,7 @@ export default function ReservasDashboardPage() {
     const createParam = searchParams.get("create");
     if (createParam === "service") {
       if (serviceInitRef.current) return;
-      openServiceDrawer();
+      showServiceDrawerRef.current();
       serviceInitRef.current = true;
       return;
     }
@@ -945,9 +959,9 @@ export default function ReservasDashboardPage() {
     if (bookingsFocusInitRef.current === bookingsFocus) return;
     bookingsFocusInitRef.current = bookingsFocus;
     if (bookingsFocus === "prices") {
-      openServiceDrawer();
+      showServiceDrawerRef.current();
     }
-  }, [bookingsFocus, openServiceDrawer]);
+  }, [bookingsFocus]);
 
   useEffect(() => {
     if (!createSlot) return;
@@ -1815,18 +1829,6 @@ export default function ReservasDashboardPage() {
     setServicePrice("20");
   };
 
-  const openServiceDrawer = () => {
-    setDrawerBooking(null);
-    setCreateSlot(null);
-    setCreateServiceId(null);
-    setCheckout(null);
-    setPaymentError(null);
-    setCreateError(null);
-    setServiceSaving(false);
-    setServiceError(null);
-    setServiceDrawerOpen(true);
-  };
-
   const handleCreateService = async () => {
     if (serviceSaving) return;
     const title = serviceTitle.trim();
@@ -1876,7 +1878,7 @@ export default function ReservasDashboardPage() {
 
   const openCreateDrawer = (startsAt: Date) => {
     if (!servicesLoading && activeServices.length === 0) {
-      openServiceDrawer();
+      showServiceDrawer();
       return;
     }
     const initialServiceId = activeServices[0]?.id ?? null;
@@ -2054,7 +2056,7 @@ export default function ReservasDashboardPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={CTA_PRIMARY} onClick={openServiceDrawer}>
+            <button type="button" className={CTA_PRIMARY} onClick={showServiceDrawer}>
               Novo serviço
             </button>
           </div>
@@ -2622,7 +2624,7 @@ export default function ReservasDashboardPage() {
           <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Ações rápidas</h3>
-              <button type="button" onClick={openServiceDrawer} className="text-[11px] text-[#6BFFFF]">
+              <button type="button" onClick={showServiceDrawer} className="text-[11px] text-[#6BFFFF]">
                 Novo serviço
               </button>
             </div>
@@ -2707,7 +2709,7 @@ export default function ReservasDashboardPage() {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Catalogo</h3>
               <div className="flex items-center gap-2 text-[11px]">
-                <button type="button" onClick={openServiceDrawer} className="text-[#6BFFFF]">
+                <button type="button" onClick={showServiceDrawer} className="text-[#6BFFFF]">
                   Novo serviço
                 </button>
                 <Link href="/organizacao/reservas/servicos" className="text-white/50">
@@ -2721,7 +2723,7 @@ export default function ReservasDashboardPage() {
                 <p className="text-[12px] text-white/50">Cria o teu primeiro serviço.</p>
                 <button
                   type="button"
-                  onClick={openServiceDrawer}
+                  onClick={showServiceDrawer}
                   className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
                 >
                   Criar agora
@@ -3456,7 +3458,7 @@ export default function ReservasDashboardPage() {
                     <p>Sem serviços ativos.</p>
                     <button
                       type="button"
-                      onClick={openServiceDrawer}
+                      onClick={showServiceDrawer}
                       className="mt-2 rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
                     >
                       Criar serviço

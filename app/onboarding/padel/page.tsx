@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { sanitizeRedirectPath } from "@/lib/auth/redirects";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type PadelOnboardingResponse = {
   ok: boolean;
@@ -124,7 +125,7 @@ function PadelOnboardingContent() {
         const res = await fetch(`/api/padel/onboarding?${params.toString()}`);
         const data = (await res.json().catch(() => null)) as PadelOnboardingResponse | null;
         if (!res.ok || !data?.ok) {
-          throw new Error(data?.error || "Nao foi possivel carregar.");
+          throw new Error(sanitizeUiErrorMessage(data?.error, "Nao foi possivel carregar."));
         }
         setContext(data);
         setFullName(data.profile.fullName ?? "");
@@ -181,7 +182,7 @@ function PadelOnboardingContent() {
                 ? "Telemovel invalido."
                 : data?.error === "GENDER_REQUIRED"
                   ? "Seleciona o género."
-                : data?.error || "Nao foi possivel guardar.";
+                : sanitizeUiErrorMessage(data?.error, "Nao foi possivel guardar.");
           throw new Error(message);
         }
       if (typeof window !== "undefined") {

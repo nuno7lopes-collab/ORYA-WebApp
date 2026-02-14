@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { resolveLocale, t } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type Props = {
   eventId: number;
@@ -103,7 +104,7 @@ export default function PadelSignupInline({
         return;
       }
       if (!json?.pairing?.id) {
-        throw new Error(json?.error || t("padelSignupErrorDefault", locale));
+        throw new Error(sanitizeUiErrorMessage(json?.error, t("padelSignupErrorDefault", locale)));
       }
       const pairingId = json.pairing.id as number;
       if (mode === "SPLIT") {

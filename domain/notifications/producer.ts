@@ -252,15 +252,26 @@ export async function notifyMatchChanged(params: {
   matchId: number;
   startAt?: Date | null;
   courtId?: number | null;
+  scheduleVersion?: string | null;
+  reason?: string | null;
+  delayStatus?: string | null;
 }) {
   const dedupeKey = buildDedupe("MATCH_CHANGED", [
     params.matchId,
     params.startAt ? params.startAt.toISOString() : null,
     params.courtId ?? null,
+    params.scheduleVersion ?? null,
   ]);
   return queue("MATCH_CHANGED", dedupeKey, {
     userId: params.userId,
-    payload: { matchId: params.matchId, startAt: params.startAt ?? null, courtId: params.courtId ?? null },
+    payload: {
+      matchId: params.matchId,
+      startAt: params.startAt ?? null,
+      courtId: params.courtId ?? null,
+      scheduleVersion: params.scheduleVersion ?? null,
+      reason: params.reason ?? null,
+      delayStatus: params.delayStatus ?? null,
+    },
   });
 }
 

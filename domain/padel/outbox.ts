@@ -519,6 +519,8 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
       id: true,
       eventId: true,
       status: true,
+      score: true,
+      updatedAt: true,
       roundType: true,
       roundLabel: true,
       groupLabel: true,
@@ -607,11 +609,18 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
         ]);
 
   const matchCourtId = updated.courtId ?? updated.courtNumber ?? null;
+  const scorePayload =
+    updated.score && typeof updated.score === "object" ? (updated.score as Record<string, unknown>) : {};
+  const delayReason = typeof scorePayload.delayReason === "string" ? scorePayload.delayReason : null;
+  const delayStatus = typeof scorePayload.delayStatus === "string" ? scorePayload.delayStatus : null;
   await queueMatchChanged({
     userIds: involvedUserIds,
     matchId: updated.id,
     startAt: updated.startTime ?? null,
     courtId: matchCourtId,
+    scheduleVersion: updated.updatedAt?.toISOString?.() ?? null,
+    reason: delayReason,
+    delayStatus,
   });
 
   const resolvedWinnerSide = updated.winnerSide === "A" || updated.winnerSide === "B" ? updated.winnerSide : null;

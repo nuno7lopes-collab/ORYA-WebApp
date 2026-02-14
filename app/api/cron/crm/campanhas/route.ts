@@ -12,7 +12,6 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
-import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 
@@ -113,15 +112,6 @@ async function _POST(req: NextRequest) {
     if (!requireInternalSecret(req)) {
       return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
     }
-    if (!isCrmCampaignsEnabled()) {
-      logInfo("cron.crm.campanhas.skipped", { reason: "CRM_CAMPAIGNS_DISABLED" });
-      await recordCronHeartbeat("crm-campanhas", { status: "SUCCESS", startedAt });
-      return jsonWrap(
-        { ok: true, processed: 0, sent: 0, skipped: true, reason: "CRM_CAMPAIGNS_DISABLED" },
-        { status: 200 },
-      );
-    }
-
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
     const now = new Date();
     const approvalSla = await processApprovalSla(now, limit * 2);

@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
-import { DASHBOARD_LABEL, DASHBOARD_TITLE, DASHBOARD_MUTED, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { DASHBOARD_LABEL, DASHBOARD_TITLE, DASHBOARD_MUTED, CTA_SECONDARY } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 

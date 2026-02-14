@@ -33,6 +33,8 @@ const MISSING_API_ALLOWLIST = new Set([
 
 const ORPHAN_API_ALLOWLIST = new Set<string>([
   "/api/messages/attachments/presign",
+  // Deprecated hard-cut bridge: canonical live endpoint is /api/live/events/[slug].
+  "/api/livehub/[slug]",
 ]);
 
 const UI_ROOTS = [

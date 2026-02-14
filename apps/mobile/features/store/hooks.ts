@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addStoreBundle,
@@ -21,7 +21,7 @@ import {
   updateStoreBundle,
   updateStoreCartItem,
 } from "./api";
-import type { StoreCheckoutPayload } from "./types";
+import type { StoreCart, StoreCartResponse, StoreCheckoutPayload } from "./types";
 import { useStoreCartStore } from "./cartStore";
 
 function cartKey(storeId: number) {
@@ -50,21 +50,53 @@ export function useStoreProduct(username: string | null, slug: string | null, en
 
 export function useStoreCart(storeId: number | null, enabled = true) {
   const setCart = useStoreCartStore((state) => state.setCart);
-  return useQuery({
+  const cartQuery = useQuery({
     queryKey: storeId ? cartKey(storeId) : ["store", "cart", "unknown"],
-    queryFn: async () => {
-      const result = await fetchStoreCart(storeId ?? 0);
-      setCart(result.cart);
-      return result;
-    },
+    queryFn: () => fetchStoreCart(storeId ?? 0),
     enabled: enabled && typeof storeId === "number" && storeId > 0,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (!cartQuery.data?.cart) return;
+    setCart(cartQuery.data.cart);
+  }, [cartQuery.data?.cart, setCart]);
+
+  return cartQuery;
 }
 
 export function useStoreCartMutations(storeId: number | null) {
   const queryClient = useQueryClient();
+
+  const syncCartStore = (payload: StoreCartResponse | undefined) => {
+    if (!payload?.cart) return;
+    useStoreCartStore.getState().setCart(payload.cart);
+  };
+
+  const updateCachedCart = (updater: (cart: StoreCart) => StoreCart) => {
+    if (!storeId) return;
+    queryClient.setQueryData<StoreCartResponse>(cartKey(storeId), (current) => {
+      if (!current?.cart) return current;
+      const next: StoreCartResponse = {
+        ...current,
+        cart: updater(current.cart),
+      };
+      syncCartStore(next);
+      return next;
+    });
+  };
+
+  const restoreCachedCart = (payload: StoreCartResponse | undefined) => {
+    if (!storeId || !payload) return;
+    queryClient.setQueryData<StoreCartResponse>(cartKey(storeId), payload);
+    syncCartStore(payload);
+  };
+
+  const markCartStaleInBackground = () => {
+    if (!storeId) return;
+    void queryClient.invalidateQueries({ queryKey: cartKey(storeId), refetchType: "inactive" });
+  };
 
   const refresh = async () => {
     if (!storeId) return;
@@ -77,11 +109,45 @@ export function useStoreCartMutations(storeId: number | null) {
   });
   const updateItem = useMutation({
     mutationFn: updateStoreCartItem,
-    onSuccess: refresh,
+    onMutate: async (input) => {
+      if (!storeId) return { previous: undefined as StoreCartResponse | undefined };
+      await queryClient.cancelQueries({ queryKey: cartKey(storeId) });
+      const previous = queryClient.getQueryData<StoreCartResponse>(cartKey(storeId));
+      if (typeof input.quantity === "number") {
+        updateCachedCart((cart) => ({
+          ...cart,
+          items: cart.items.map((item) =>
+            item.id === input.itemId ? { ...item, quantity: Math.max(1, Math.floor(input.quantity)) } : item,
+          ),
+        }));
+      }
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      restoreCachedCart(context?.previous);
+    },
+    onSettled: () => {
+      markCartStaleInBackground();
+    },
   });
   const removeItem = useMutation({
     mutationFn: removeStoreCartItem,
-    onSuccess: refresh,
+    onMutate: async (input) => {
+      if (!storeId) return { previous: undefined as StoreCartResponse | undefined };
+      await queryClient.cancelQueries({ queryKey: cartKey(storeId) });
+      const previous = queryClient.getQueryData<StoreCartResponse>(cartKey(storeId));
+      updateCachedCart((cart) => ({
+        ...cart,
+        items: cart.items.filter((item) => item.id !== input.itemId),
+      }));
+      return { previous };
+    },
+    onError: (_error, _input, context) => {
+      restoreCachedCart(context?.previous);
+    },
+    onSettled: () => {
+      markCartStaleInBackground();
+    },
   });
   const addBundle = useMutation({
     mutationFn: addStoreBundle,
@@ -243,9 +309,10 @@ export function useStoreDigitalDownloadMutation() {
 }
 
 export function useStoreTotals(storeId: number | null, enabled = true) {
-  const cart = useStoreCart(storeId, enabled);
+  const cart = useStoreCartStore((state) => state.cart);
   return useMemo(() => {
-    const source = cart.data?.cart;
+    const source =
+      enabled && typeof storeId === "number" && storeId > 0 && cart?.storeId === storeId ? cart : null;
     if (!source) {
       return {
         subtotalCents: 0,
@@ -269,5 +336,5 @@ export function useStoreTotals(storeId: number | null, enabled = true) {
       itemCount: standaloneCount + bundlesCount,
       requiresShipping: requiresShippingStandalone || requiresShippingBundle,
     };
-  }, [cart.data?.cart]);
+  }, [cart, enabled, storeId]);
 }

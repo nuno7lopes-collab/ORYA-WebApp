@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDate, formatTime, resolveLocale, t } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type PairingSlot = {
   playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
@@ -140,7 +141,7 @@ const fetchMatches = async (eventId: number) => {
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.ok) {
-    throw new Error(data?.error || "MATCHES_ERROR");
+    throw new Error(sanitizeUiErrorMessage(data?.error, "Não foi possível carregar o calendário."));
   }
   return (Array.isArray(data?.items) ? data.items : []) as LiveMatch[];
 };

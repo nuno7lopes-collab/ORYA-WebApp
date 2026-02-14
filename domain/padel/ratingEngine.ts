@@ -1,5 +1,6 @@
 import { Prisma, PadelRatingSanctionType } from "@prisma/client";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { pickCanonicalField } from "@/lib/location/eventLocation";
 
 type DbClient = Prisma.TransactionClient;
 
@@ -22,6 +23,18 @@ const TIER_MULTIPLIERS: Record<string, number> = {
   MAJOR: 2,
 };
 
+function normalizeTierContext(rawTier: string | null | undefined) {
+  if (!rawTier) return null;
+  const normalized = rawTier.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeCityContext(rawCity: string | null | undefined) {
+  if (!rawCity) return null;
+  const normalized = rawCity.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export type RatingProfileState = {
   id: number;
   organizationId: number;
@@ -39,6 +52,13 @@ export type RebuildResult = {
   processedMatches: number;
   processedPlayers: number;
   rankingRows: number;
+};
+
+export type PadelRatingEventContext = {
+  organizationId: number | null;
+  tier: string | null;
+  clubId: number | null;
+  city: string | null;
 };
 
 function g(phi: number) {
@@ -208,6 +228,94 @@ async function ensureProfile(tx: DbClient, organizationId: number, playerId: num
   });
 }
 
+export async function resolvePadelRatingEventContext(params: {
+  tx: DbClient;
+  eventId: number;
+  tier?: string | null;
+}): Promise<PadelRatingEventContext | null> {
+  const { tx, eventId, tier } = params;
+  const eventContext = await tx.event.findUnique({
+    where: { id: eventId },
+    select: {
+      id: true,
+      organizationId: true,
+      addressRef: { select: { canonical: true } },
+      padelTournamentConfig: { select: { padelClubId: true, advancedSettings: true } },
+    },
+  });
+  if (!eventContext) return null;
+
+  const advancedSettings = (eventContext.padelTournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? null;
+  const contextTier =
+    normalizeTierContext(tier) ??
+    normalizeTierContext(typeof advancedSettings?.tournamentTier === "string" ? advancedSettings.tournamentTier : null);
+  const contextClubId =
+    typeof eventContext.padelTournamentConfig?.padelClubId === "number"
+      ? eventContext.padelTournamentConfig.padelClubId
+      : null;
+  const contextCity = normalizeCityContext(
+    pickCanonicalField(
+      eventContext.addressRef?.canonical ?? null,
+      "city",
+      "locality",
+      "addressLine2",
+      "region",
+      "state",
+    ),
+  );
+
+  return {
+    organizationId: eventContext.organizationId ?? null,
+    tier: contextTier,
+    clubId: contextClubId,
+    city: contextCity,
+  };
+}
+
+export async function backfillPadelRatingEventContextForEvent(params: {
+  tx: DbClient;
+  organizationId: number;
+  eventId: number;
+  tier?: string | null;
+}) {
+  const { tx, organizationId, eventId, tier } = params;
+  const context = await resolvePadelRatingEventContext({ tx, eventId, tier });
+  if (!context || context.organizationId !== organizationId) {
+    return { ok: false as const, error: "EVENT_NOT_FOUND" };
+  }
+
+  const data: Prisma.PadelRatingEventUpdateManyMutationInput = {};
+  if (context.tier) data.tier = context.tier;
+  if (typeof context.clubId === "number") data.clubId = context.clubId;
+  if (context.city) data.city = context.city;
+  if (Object.keys(data).length === 0) {
+    return {
+      ok: true as const,
+      updated: 0,
+      context: {
+        tier: context.tier,
+        clubId: context.clubId,
+        city: context.city,
+      },
+    };
+  }
+
+  const updated = await tx.padelRatingEvent.updateMany({
+    where: { eventId },
+    data,
+  });
+
+  return {
+    ok: true as const,
+    updated: updated.count,
+    context: {
+      tier: context.tier,
+      clubId: context.clubId,
+      city: context.city,
+    },
+  };
+}
+
 export async function rebuildPadelRatingsForEvent(params: {
   tx: DbClient;
   organizationId: number;
@@ -216,6 +324,10 @@ export async function rebuildPadelRatingsForEvent(params: {
   tier?: string | null;
 }) {
   const { tx, organizationId, eventId, tier } = params;
+  const context = await resolvePadelRatingEventContext({ tx, eventId, tier });
+  const contextTier = context?.tier ?? null;
+  const contextClubId = context?.clubId ?? null;
+  const contextCity = context?.city ?? null;
 
   const matches = await tx.eventMatchSlot.findMany({
     where: {
@@ -244,7 +356,7 @@ export async function rebuildPadelRatingsForEvent(params: {
     orderBy: [{ actualEndAt: "asc" }, { plannedEndAt: "asc" }, { updatedAt: "asc" }, { id: "asc" }],
   });
 
-  const tierMultiplier = resolveTierMultiplier(tier);
+  const tierMultiplier = resolveTierMultiplier(contextTier);
   const playerProfiles = new Map<number, RatingProfileState>();
   const processedPlayers = new Set<number>();
   let processedMatches = 0;
@@ -330,6 +442,9 @@ export async function rebuildPadelRatingsForEvent(params: {
             eventId,
             matchId: match.id,
             playerId,
+            tier: contextTier ?? undefined,
+            clubId: contextClubId ?? undefined,
+            city: contextCity ?? undefined,
             opponentAvgRating,
             preRating: current.rating,
             preRd: current.rd,
@@ -343,7 +458,11 @@ export async function rebuildPadelRatingsForEvent(params: {
             gamesAgainst,
             tierMultiplier,
             carryMultiplier,
-            metadata: {},
+            metadata: {
+              contextTier,
+              contextClubId,
+              contextCity,
+            },
           },
         });
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CTA_PRIMARY } from "@/app/organizacao/dashboardUi";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
@@ -47,7 +48,7 @@ export default function EventLivePrepClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setMessage(json?.error || "Erro ao guardar Live.");
+        setMessage(sanitizeUiErrorMessage(json?.error, "Erro ao guardar Live."));
         return;
       }
       setMessage("Live atualizado.");
@@ -69,7 +70,7 @@ export default function EventLivePrepClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setTournamentMessage(json?.error || "Erro ao criar torneio.");
+        setTournamentMessage(sanitizeUiErrorMessage(json?.error, "Erro ao criar torneio."));
         return;
       }
       setCurrentTournamentId(json.tournamentId);

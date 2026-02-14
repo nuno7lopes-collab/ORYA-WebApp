@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type Props = {
   agreementId: number | null;
@@ -91,6 +92,7 @@ type WorkspaceResponse = {
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const resolveActionError = (raw: unknown, fallback: string) => sanitizeUiErrorMessage(raw, fallback);
 
 function toLocalDateTime(value: string | null | undefined) {
   if (!value) return "";
@@ -194,7 +196,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Ação falhou.");
+        setActionFeedback(resolveActionError(json?.error, "Ação falhou."));
         return;
       }
       setActionFeedback(`Acordo ${action} com sucesso.`);
@@ -224,7 +226,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar janela.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar janela."));
         return;
       }
       setActionFeedback("Janela criada.");
@@ -246,7 +248,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível atualizar janela.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível atualizar janela."));
         return;
       }
       await mutate();
@@ -266,7 +268,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível remover janela.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível remover janela."));
         return;
       }
       await mutate();
@@ -293,7 +295,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar grant.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar grant."));
         return;
       }
       setGrantUserId("");
@@ -315,7 +317,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível revogar grant.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível revogar grant."));
         return;
       }
       await mutate();
@@ -347,7 +349,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar override.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar override."));
         return;
       }
       setActionFeedback("Override criado.");
@@ -386,7 +388,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const createdJson = await createRes.json().catch(() => null);
       if (!createRes.ok || !createdJson?.ok || !createdJson?.override?.id) {
-        setActionFeedback(typeof createdJson?.error === "string" ? createdJson.error : "Não foi possível criar override contextual.");
+        setActionFeedback(resolveActionError(createdJson?.error, "Não foi possível criar override contextual."));
         return;
       }
 
@@ -398,7 +400,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const executeJson = await executeRes.json().catch(() => null);
       if (!executeRes.ok || !executeJson?.ok) {
-        setActionFeedback(typeof executeJson?.error === "string" ? executeJson.error : "Override criado, mas falhou execução.");
+        setActionFeedback(resolveActionError(executeJson?.error, "Override criado, mas falhou execução."));
         await mutate();
         return;
       }
@@ -422,7 +424,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível executar override.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível executar override."));
         return;
       }
       setActionFeedback("Override executado.");
@@ -444,7 +446,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível atualizar caso.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível atualizar caso."));
         return;
       }
       await mutate();
@@ -483,7 +485,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar claim.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar claim."));
         return;
       }
       setClaimStartsAt("");
@@ -511,7 +513,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível atualizar claim.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível atualizar claim."));
         return;
       }
       await mutate();
@@ -544,7 +546,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(typeof json?.error === "string" ? json.error : "Não foi possível ajustar janela da claim.");
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível ajustar janela da claim."));
         return;
       }
       setEditingClaimId(null);

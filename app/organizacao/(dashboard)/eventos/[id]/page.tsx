@@ -384,7 +384,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
   const hubClubHref = isPadelEvent ? `/organizacao/padel/clube?section=padel-club&padel=clubs` : null;
   const hubCourtsHref = isPadelEvent ? `/organizacao/padel/clube?section=padel-club&padel=courts` : null;
-  const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=manage` : null;
+  const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
 
   const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];
   const activePadelLinkIds = activePadelLinks.map((link) => link.id);

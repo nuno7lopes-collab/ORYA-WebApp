@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { resolveLocale, t } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type StandingRow = {
   entityId: number;
@@ -33,7 +34,7 @@ const fetchStandings = async (eventId: number) => {
   });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.ok) {
-    throw new Error(data?.error || "STANDINGS_ERROR");
+    throw new Error(sanitizeUiErrorMessage(data?.error, "Não foi possível carregar a classificação."));
   }
   return {
     entityType: (data?.entityType === "PLAYER" ? "PLAYER" : "PAIRING") as StandingEntityType,

@@ -6,6 +6,7 @@ import { useCheckout, type DadosCheckout } from "./contextoCheckout";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/org/_shared/dashboardUi";
 import { getTicketCopy } from "./checkoutCopy";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type Wave = {
   id: string;
@@ -413,7 +414,7 @@ export default function Step1Bilhete() {
             return null;
           }
           if (!json?.pairing?.id) {
-            throw new Error(json?.error || "Falha ao preparar inscrição Padel.");
+            throw new Error(sanitizeUiErrorMessage(json?.error, "Falha ao preparar inscrição Padel."));
           }
           const inviteToken = typeof json?.pairing?.partnerInviteToken === "string" ? json.pairing.partnerInviteToken : null;
           const slug = typeof safeDados?.slug === "string" ? safeDados.slug : safeDados?.additional?.slug;

@@ -30,11 +30,9 @@ runPadelCleanup({
   orphanGraceHours: orphanGraceHours ?? undefined,
 })
   .then((result) => {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(result, null, 2));
   })
   .catch((err) => {
-    // eslint-disable-next-line no-console
     console.error("padel_cleanup_failed", err);
     process.exit(1);
   });

@@ -92,7 +92,7 @@ Pages (16):
 
 ## orgs
 
-API routes (139):
+API routes (151):
 - /api/organizacao/agenda
 - /api/organizacao/agenda/soft-blocks
 - /api/organizacao/analytics/buyers
@@ -108,12 +108,24 @@ API routes (139):
 - /api/organizacao/consentimentos
 - /api/organizacao/consentimentos/[userId]
 - /api/organizacao/crm/campanhas
+- /api/organizacao/crm/campanhas/[campaignId]
+- /api/organizacao/crm/campanhas/[campaignId]/approve
+- /api/organizacao/crm/campanhas/[campaignId]/cancel
 - /api/organizacao/crm/campanhas/[campaignId]/enviar
+- /api/organizacao/crm/campanhas/[campaignId]/reject
+- /api/organizacao/crm/campanhas/[campaignId]/submit
 - /api/organizacao/crm/clientes
 - /api/organizacao/crm/clientes/[customerId]
 - /api/organizacao/crm/clientes/[customerId]/notas
 - /api/organizacao/crm/clientes/[customerId]/tags
+- /api/organizacao/crm/config
+- /api/organizacao/crm/journeys
+- /api/organizacao/crm/journeys/[id]
+- /api/organizacao/crm/journeys/[id]/pause
+- /api/organizacao/crm/journeys/[id]/publish
 - /api/organizacao/crm/relatorios
+- /api/organizacao/crm/saved-views
+- /api/organizacao/crm/saved-views/[id]
 - /api/organizacao/crm/segmentos
 - /api/organizacao/crm/segmentos/[segmentId]
 - /api/organizacao/crm/segmentos/[segmentId]/preview
@@ -233,7 +245,7 @@ API routes (139):
 - /api/organizacao/venues/recent
 - /api/organizations/search
 
-Pages (62):
+Pages (65):
 - /organizacao
 - /organizacao/analyze
 - /organizacao/become
@@ -247,6 +259,7 @@ Pages (62):
 - /organizacao/crm/campanhas
 - /organizacao/crm/clientes
 - /organizacao/crm/clientes/[customerId]
+- /organizacao/crm/journeys
 - /organizacao/crm/loyalty
 - /organizacao/crm/relatorios
 - /organizacao/crm/segmentos
@@ -267,6 +280,8 @@ Pages (62):
 - /organizacao/overview
 - /organizacao/padel
 - /organizacao/padel/clube
+- /organizacao/padel/parcerias
+- /organizacao/padel/parcerias/[agreementId]
 - /organizacao/padel/torneios
 - /organizacao/padel/torneios/novo
 - /organizacao/pagamentos
@@ -365,7 +380,7 @@ Pages (19):
 
 API routes (0):
 
-Pages (11):
+Pages (10):
 - /[username]/loja
 - /[username]/loja/carrinho
 - /[username]/loja/checkout
@@ -375,12 +390,11 @@ Pages (11):
 - /me/compras/loja
 - /me/compras/loja/[orderId]
 - /me/loja
-- /org/[orgId]/loja
 - /organizacao/loja
 
 ## padel
 
-API routes (86):
+API routes (106):
 - /api/organizacao/padel/analytics
 - /api/organizacao/padel/audit
 - /api/organizacao/padel/broadcast
@@ -412,6 +426,7 @@ API routes (86):
 - /api/organizacao/tournaments/list
 - /api/padel/calendar
 - /api/padel/calendar/auto-schedule
+- /api/padel/calendar/claims/commit
 - /api/padel/categories/my
 - /api/padel/clubs
 - /api/padel/clubs/[id]/courts
@@ -422,6 +437,9 @@ API routes (86):
 - /api/padel/discover
 - /api/padel/event-categories
 - /api/padel/live
+- /api/padel/live/timer/next-round
+- /api/padel/live/timer/start
+- /api/padel/live/timer/stop
 - /api/padel/matches
 - /api/padel/matches/[id]/delay
 - /api/padel/matches/[id]/dispute
@@ -429,6 +447,7 @@ API routes (86):
 - /api/padel/matches/[id]/walkover
 - /api/padel/matches/assign
 - /api/padel/matches/generate
+- /api/padel/me/history
 - /api/padel/me/matches
 - /api/padel/me/summary
 - /api/padel/onboarding
@@ -448,11 +467,23 @@ API routes (86):
 - /api/padel/pairings/invite-status
 - /api/padel/pairings/my
 - /api/padel/pairings/open
+- /api/padel/partnerships/agreements
+- /api/padel/partnerships/agreements/[id]/approve
+- /api/padel/partnerships/agreements/[id]/grants
+- /api/padel/partnerships/agreements/[id]/pause
+- /api/padel/partnerships/agreements/[id]/revoke
+- /api/padel/partnerships/agreements/[id]/windows
+- /api/padel/partnerships/compensation-cases
+- /api/padel/partnerships/overrides
+- /api/padel/partnerships/overrides/[id]/execute
+- /api/padel/partnerships/workspace/[id]/calendar
 - /api/padel/players
 - /api/padel/public/calendar
 - /api/padel/public/clubs
 - /api/padel/public/open-pairings
 - /api/padel/rankings
+- /api/padel/rankings/rebuild
+- /api/padel/rankings/sanctions
 - /api/padel/rulesets
 - /api/padel/standings
 - /api/padel/teams
@@ -462,19 +493,38 @@ API routes (86):
 - /api/padel/tournaments/lifecycle
 - /api/padel/tournaments/roles
 - /api/padel/tournaments/seeds
+- /api/padel/tournaments/tier-approvals/[id]/approve
+- /api/padel/tournaments/tier-approvals/[id]/reject
+- /api/padel/tournaments/tier-approvals/request
 - /api/tournaments/[id]
 - /api/tournaments/[id]/live
 - /api/tournaments/[id]/monitor
 - /api/tournaments/[id]/structure
 - /api/tournaments/list
 
-Pages (20):
+Pages (36):
 - /[username]/padel
 - /descobrir/torneios
 - /onboarding/padel
+- /org/[orgId]/padel/clubs
+- /org/[orgId]/padel/clubs/community
+- /org/[orgId]/padel/clubs/courts
+- /org/[orgId]/padel/clubs/lessons
+- /org/[orgId]/padel/clubs/players
+- /org/[orgId]/padel/clubs/trainers
+- /org/[orgId]/padel/parcerias
+- /org/[orgId]/padel/parcerias/[agreementId]
+- /org/[orgId]/padel/tournaments
+- /org/[orgId]/padel/tournaments/calendar
+- /org/[orgId]/padel/tournaments/categories
+- /org/[orgId]/padel/tournaments/create
+- /org/[orgId]/padel/tournaments/players
+- /org/[orgId]/padel/tournaments/teams
 - /organizacao/categorias/padel
 - /organizacao/padel
 - /organizacao/padel/clube
+- /organizacao/padel/parcerias
+- /organizacao/padel/parcerias/[agreementId]
 - /organizacao/padel/torneios
 - /organizacao/padel/torneios/novo
 - /organizacao/torneios
@@ -532,10 +582,9 @@ API routes (38):
 - /api/servicos/[id]/slots
 - /api/servicos/list
 
-Pages (15):
+Pages (14):
 - /descobrir/reservas
 - /me/reservas
-- /org/[orgId]/servicos
 - /organizacao/reservas
 - /organizacao/reservas/[id]
 - /organizacao/reservas/clientes
@@ -551,23 +600,45 @@ Pages (15):
 
 ## crm
 
-API routes (10):
+API routes (22):
 - /api/organizacao/crm/campanhas
+- /api/organizacao/crm/campanhas/[campaignId]
+- /api/organizacao/crm/campanhas/[campaignId]/approve
+- /api/organizacao/crm/campanhas/[campaignId]/cancel
 - /api/organizacao/crm/campanhas/[campaignId]/enviar
+- /api/organizacao/crm/campanhas/[campaignId]/reject
+- /api/organizacao/crm/campanhas/[campaignId]/submit
 - /api/organizacao/crm/clientes
 - /api/organizacao/crm/clientes/[customerId]
 - /api/organizacao/crm/clientes/[customerId]/notas
 - /api/organizacao/crm/clientes/[customerId]/tags
+- /api/organizacao/crm/config
+- /api/organizacao/crm/journeys
+- /api/organizacao/crm/journeys/[id]
+- /api/organizacao/crm/journeys/[id]/pause
+- /api/organizacao/crm/journeys/[id]/publish
 - /api/organizacao/crm/relatorios
+- /api/organizacao/crm/saved-views
+- /api/organizacao/crm/saved-views/[id]
 - /api/organizacao/crm/segmentos
 - /api/organizacao/crm/segmentos/[segmentId]
 - /api/organizacao/crm/segmentos/[segmentId]/preview
 
-Pages (8):
+Pages (18):
+- /org/[orgId]/crm
+- /org/[orgId]/crm/campaigns
+- /org/[orgId]/crm/customers
+- /org/[orgId]/crm/customers/[customerId]
+- /org/[orgId]/crm/journeys
+- /org/[orgId]/crm/loyalty
+- /org/[orgId]/crm/reports
+- /org/[orgId]/crm/segments
+- /org/[orgId]/crm/segments/[segmentId]
 - /organizacao/crm
 - /organizacao/crm/campanhas
 - /organizacao/crm/clientes
 - /organizacao/crm/clientes/[customerId]
+- /organizacao/crm/journeys
 - /organizacao/crm/loyalty
 - /organizacao/crm/relatorios
 - /organizacao/crm/segmentos
@@ -575,7 +646,7 @@ Pages (8):
 
 ## ops_outbox
 
-API routes (42):
+API routes (44):
 - /api/cron/analytics/rollup
 - /api/cron/bookings/cleanup
 - /api/cron/creditos/expire
@@ -586,6 +657,7 @@ API routes (42):
 - /api/cron/operations
 - /api/cron/padel/expire
 - /api/cron/padel/matchmaking
+- /api/cron/padel/partnership-grants/revoke
 - /api/cron/padel/reminders
 - /api/cron/padel/split-reminders
 - /api/cron/padel/tournament-eve
@@ -604,6 +676,7 @@ API routes (42):
 - /api/internal/ops/health
 - /api/internal/ops/outbox/replay
 - /api/internal/ops/outbox/summary
+- /api/internal/ops/padel/backfill
 - /api/internal/ops/padel/cleanup
 - /api/internal/ops/padel/integrity
 - /api/internal/ops/slo

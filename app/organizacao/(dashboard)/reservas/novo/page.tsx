@@ -12,7 +12,7 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-} from "@/app/organizacao/dashboardUi";
+} from "@/app/org/_shared/dashboardUi";
 
 type LocationMode = "FIXED" | "CHOOSE_AT_BOOKING";
 const DEFAULT_DURATION_MINUTES = 60;

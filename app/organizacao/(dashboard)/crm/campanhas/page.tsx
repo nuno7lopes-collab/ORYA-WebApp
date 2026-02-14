@@ -72,7 +72,6 @@ export default function CrmCampanhasPage() {
   );
   const segments = segmentsData?.items ?? [];
   const campaigns = data?.items ?? [];
-  const campaignsDisabled = data?.ok === false && data?.errorCode === "FEATURE_DISABLED";
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -198,18 +197,6 @@ export default function CrmCampanhasPage() {
         <h1 className={DASHBOARD_TITLE}>Campanhas</h1>
         <p className={DASHBOARD_MUTED}>Envios in-app e email com segmentação e métricas básicas.</p>
       </header>
-
-      {campaignsDisabled ? (
-        <section className={cn(DASHBOARD_CARD, "p-6")}>
-          <h2 className="text-sm font-semibold text-white">Campanhas indisponíveis</h2>
-          <p className="mt-2 text-[12px] text-white/65">
-            Esta funcionalidade está desativada por feature flag no ambiente atual.
-          </p>
-        </section>
-      ) : null}
-
-      {!campaignsDisabled ? (
-        <>
 
       {error ? (
         <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-[12px] text-rose-100">
@@ -435,8 +422,6 @@ export default function CrmCampanhasPage() {
           ) : null}
         </div>
       </section>
-        </>
-      ) : null}
     </div>
   );
 }

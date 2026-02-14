@@ -112,9 +112,7 @@ async function main() {
       AND (ai.professional_id IS NULL OR ai.court_id IS NULL);
   `);
 
-  // eslint-disable-next-line no-console
   console.log("agenda_items booking backfill result:", bookingResult);
-  // eslint-disable-next-line no-console
   console.log("agenda_items class_sessions backfill result:", classSessionResult);
 }
 

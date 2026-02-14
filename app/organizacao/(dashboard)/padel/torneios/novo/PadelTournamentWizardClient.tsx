@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { trackEvent } from "@/lib/analytics";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { computeMatchSlots, estimateMaxTeamsForSlots } from "@/lib/padel/capacityRecommendation";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import type { Prisma } from "@prisma/client";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -546,7 +547,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        const message = json?.message || json?.error || json?.errorCode || "Falha ao criar torneio.";
+        const message = sanitizeUiErrorMessage(
+          json?.message ?? json?.error ?? json?.errorCode,
+          "Falha ao criar torneio.",
+        );
         throw new Error(message);
       }
       const eventId = json?.data?.event?.id ?? json?.event?.id;
@@ -576,7 +580,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           };
           const missingLabel = missing.length
             ? missing.map((code: string) => missingLabels[code] || code).join(", ")
-            : publishJson?.error || "Não foi possível publicar.";
+            : sanitizeUiErrorMessage(publishJson?.error, "Não foi possível publicar.");
           setError(`Publicação bloqueada: ${missingLabel}.`);
           setDraftEventId(eventId);
           return;
@@ -585,7 +589,11 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
 
       router.push(appendOrganizationIdToHref(`/organizacao/padel/torneios/${eventId}`, organizationId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar torneio.");
+      setError(
+        err instanceof Error
+          ? sanitizeUiErrorMessage(err.message, "Erro ao criar torneio.")
+          : "Erro ao criar torneio.",
+      );
     } finally {
       setSavingMode(null);
     }
@@ -849,7 +857,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             </div>
             <Link
               href={appendOrganizationIdToHref(
-                "/organizacao/padel/torneios?section=padel-tournaments&padel=manage",
+                "/organizacao/padel/torneios?section=padel-tournaments&padel=categories",
                 organizationId,
               )}
               className="text-[12px] text-white/70 underline"

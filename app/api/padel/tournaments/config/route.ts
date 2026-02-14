@@ -265,6 +265,7 @@ async function _POST(req: NextRequest) {
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
   const enabledFormats = hasEnabledFormats ? filterPadelFormats(body.enabledFormats) : null;
   const groupsBody = body.groups && typeof body.groups === "object" ? (body.groups as Record<string, unknown>) : null;
+  const hasGroupsConfig = Object.prototype.hasOwnProperty.call(body, "groups");
   const hasManualAssignments =
     groupsBody && Object.prototype.hasOwnProperty.call(groupsBody, "manualAssignments");
   let manualAssignments: Record<string, string> | null | undefined = undefined;
@@ -573,8 +574,28 @@ async function _POST(req: NextRequest) {
           enabledFormats: true,
           isInterclub: true,
           teamSize: true,
+          lifecycleStatus: true,
         },
       });
+      const lifecycleLocked =
+        existing?.lifecycleStatus &&
+        ["LOCKED", "LIVE", "COMPLETED"].includes(existing.lifecycleStatus);
+      const hasCompetitiveConfigChange =
+        hasFormat ||
+        hasEnabledFormats ||
+        hasRuleSetId ||
+        hasDefaultCategoryId ||
+        hasEligibilityType ||
+        hasSplitDeadlineHours ||
+        hasGroupsConfig ||
+        hasScheduleDefaults ||
+        hasScoreRules ||
+        hasIsInterclub ||
+        hasTeamSize ||
+        hasNumberOfCourts;
+      if (lifecycleLocked && hasCompetitiveConfigChange) {
+        throw new Error("TOURNAMENT_CONFIG_LOCKED");
+      }
       const formatEffective = format ?? existing?.format ?? null;
       if (!formatEffective) {
         throw new Error("MISSING_FIELDS");
@@ -691,7 +712,7 @@ async function _POST(req: NextRequest) {
     const advancedSettings = (config.advancedSettings ?? {}) as Record<string, unknown>;
     const registrationEndsAtRaw =
       typeof advancedSettings.registrationEndsAt === "string" ? advancedSettings.registrationEndsAt : null;
-    const registrationEndsAt =
+    const registrationEndsAtDate =
       registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
         ? new Date(registrationEndsAtRaw)
         : null;
@@ -709,7 +730,7 @@ async function _POST(req: NextRequest) {
         event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
           ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)
           : null;
-      const targetDeadline = registrationEndsAt ?? fallbackDeadline;
+      const targetDeadline = registrationEndsAtDate ?? fallbackDeadline;
       if (targetDeadline) {
         if (event.tournament?.id) {
           const currentDeadline = event.tournament.inscriptionDeadlineAt;
@@ -751,6 +772,9 @@ async function _POST(req: NextRequest) {
       }
       if (err.message === "FORMAT_CHANGE_CONFIRMATION_REQUIRED") {
         return jsonWrap({ ok: false, error: "FORMAT_CHANGE_CONFIRMATION_REQUIRED" }, { status: 409 });
+      }
+      if (err.message === "TOURNAMENT_CONFIG_LOCKED") {
+        return jsonWrap({ ok: false, error: "TOURNAMENT_CONFIG_LOCKED" }, { status: 409 });
       }
       if (err.message === "TEAM_SIZE_REQUIRED") {
         return jsonWrap({ ok: false, error: "TEAM_SIZE_REQUIRED" }, { status: 400 });

@@ -6,7 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule, PadelRegistrationStatus } from "@prisma/client";
+import { OrganizationModule, PadelRegistrationStatus, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { computePadelIntegritySummary } from "@/domain/padel/integrity";
 
@@ -67,6 +67,11 @@ async function _GET(req: NextRequest) {
     delayedMatchesCount,
     refundPendingCount,
     pairings,
+    overrideCount,
+    pendingCompensationCount,
+    activeSanctions,
+    delayPolicyRows,
+    conflictingClaimRows,
   ] = await Promise.all([
     prisma.padelRegistration.count({
       where: {
@@ -111,6 +116,38 @@ async function _GET(req: NextRequest) {
         slots: { select: { slotStatus: true, paymentStatus: true } },
       },
     }),
+    prisma.padelPartnershipOverride.count({
+      where: { eventId },
+    }),
+    prisma.padelPartnershipCompensationCase.count({
+      where: { eventId, status: "OPEN" },
+    }),
+    prisma.padelRatingSanction.groupBy({
+      by: ["type"],
+      where: { organizationId: event.organizationId, status: "ACTIVE" },
+      _count: { _all: true },
+    }),
+    prisma.$queryRaw<Array<{ policy: string | null; count: bigint }>>(Prisma.sql`
+      SELECT COALESCE(score->>'delayPolicy', 'UNSPECIFIED') AS policy, COUNT(*)::bigint AS count
+      FROM app_v3.padel_matches
+      WHERE event_id = ${eventId}
+        AND score IS NOT NULL
+        AND COALESCE(score->>'delayStatus', '') IN ('DELAYED', 'RESCHEDULED')
+      GROUP BY COALESCE(score->>'delayPolicy', 'UNSPECIFIED')
+    `),
+    prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM app_v3.agenda_resource_claims a
+      JOIN app_v3.agenda_resource_claims b
+        ON a.id < b.id
+       AND a.event_id = b.event_id
+       AND a.resource_type = b.resource_type
+       AND a.resource_id = b.resource_id
+       AND tstzrange(a.starts_at, a.ends_at, '[)') && tstzrange(b.starts_at, b.ends_at, '[)')
+      WHERE a.event_id = ${eventId}
+        AND a.status = 'CLAIMED'::app_v3."AgendaResourceClaimStatus"
+        AND b.status = 'CLAIMED'::app_v3."AgendaResourceClaimStatus"
+    `),
   ]);
 
   const integritySummary = computePadelIntegritySummary(
@@ -142,6 +179,16 @@ async function _GET(req: NextRequest) {
   const pendingCount = pendingSplitCount;
   const activeTotal = pendingCount + confirmedCount;
   const conversionRate = activeTotal > 0 ? confirmedCount / activeTotal : null;
+  const sanctionsByType = activeSanctions.reduce<Record<string, number>>((acc, row) => {
+    acc[row.type] = row._count._all;
+    return acc;
+  }, {});
+  const delayPolicyBreakdown = delayPolicyRows.reduce<Record<string, number>>((acc, row) => {
+    const key = row.policy || "UNSPECIFIED";
+    acc[key] = Number(row.count);
+    return acc;
+  }, {});
+  const conflictingClaimsCount = Number(conflictingClaimRows[0]?.count ?? 0);
 
   return jsonWrap(
     {
@@ -155,7 +202,12 @@ async function _GET(req: NextRequest) {
         waitlistCount,
         liveMatchesCount,
         delayedMatchesCount,
+        delaysByPolicy: delayPolicyBreakdown,
         refundPendingCount,
+        conflictsClaimsCount: conflictingClaimsCount,
+        overridesCount: overrideCount,
+        pendingCompensationCount,
+        rankingSanctionsActive: sanctionsByType,
         invalidStateCount: integritySummary.counts.total,
         updatedAt: now.toISOString(),
       },

@@ -817,7 +817,7 @@ All errors follow the global error envelope.
 Example:
 ```json
 {
-  "errorCode": "SCHEDULE_CONFLICT",
+  "errorCode": "AGENDA_CONFLICT",
   "message": "Requested slot conflicts with an existing block",
   "retryable": false,
   "correlationId": "corr_abc"
@@ -2409,6 +2409,17 @@ D03) Agenda Engine e conflitos (FECHADO)
 Regra base: **quem marca primeiro ocupa**. Nada sobrepõe automaticamente.  
 Conflitos ficam bloqueados; quem chega depois tem de se adaptar.
 
+Aditamento normativo (2026-02-14):
+	•	Regra de conflito em camadas:
+		–	hard constraints (segurança/compliance/manutenção/hard block) prevalecem sempre;
+		–	fora hard constraints, aplica-se `first_confirmed_wins`;
+		–	em empate técnico no mesmo instante/lote, aplicar prioridade: `HARD_BLOCK > MATCH (reasonCode=MATCH_SLOT) > BOOKING > CLASS_SESSION > SOFT_BLOCK`;
+		–	tie-break final determinístico: `confirmedAt` asc e depois `claimId` asc (fallback `createdAt` quando necessário).
+	•	Unidade temporal canónica do motor: blocos de **5 minutos**.
+	•	Projeção UI pode usar grelha de 15 minutos por default, sem alterar a regra canónica do motor.
+	•	Buffer técnico global não é obrigatório por defeito; aplica-se por política/configuração de contexto.
+	•	O core de scheduling/agenda não depende de feature flag de produto para ativação funcional em runtime (kill switches operacionais continuam permitidos).
+
 Override **só manual** por Owner/Admin, com auditoria e notificações.  
 Se o override mexer numa reserva de utilizador, requer **pedido + aceitação** (ver 9.2).
 
@@ -2417,11 +2428,15 @@ MatchSlot bloqueia novas marcações no mesmo horário/campo.
 Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; requer override explícito.
 
 D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
-	•	Calendário único de clube:
-		–	reservas, aulas e torneios partilham o mesmo calendário operacional.
-		–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
-	•	Visibilidade de calendário:
-		–	Utilizador: mês atual + 3 meses; passado oculto.
+		•	Calendário único de clube:
+			–	reservas, aulas e torneios partilham o mesmo calendário operacional.
+			–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
+		•	Agenda pessoal (utilizador):
+			–	é timeline unificada (projeção), não write-model de ocupação.
+			–	inclui `Booking` de serviço e itens de bilhete/evento em tipos separados.
+			–	labels canónicas: `RESERVA_SERVICO` e `BILHETE_EVENTO`.
+		•	Visibilidade de calendário:
+			–	Utilizador: mês atual + 3 meses; passado oculto.
 		–	Organização: até fim do ano + 2 anos; passado em leitura.
 	•	Permissões:
 		–	Owner/Admin: tudo.
@@ -2984,8 +2999,10 @@ D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
 		–	guardrails globais: pontos/regra 1–5000; max/dia 20000; max/user 200000; custo reward 100–500000
 
 D14) Multi-Organizações (empresa mãe → filiais)
-	•	OrganizationGroup (mãe) agrega Organizations (filiais)
-	•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
+		•	OrganizationGroup (mãe) agrega Organizations (filiais)
+		•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
+		•	A mãe atua como control plane administrativo do grupo para regras globais de agenda.
+		•	A mãe pode aplicar hard blocks globais; filial pode solicitar remoção, mas aprovação final é sempre da mãe (auditável).
 
 D15) Macro + Micro Analytics (obrigatório)
 	•	dashboards financeiros e operacionais com drill-down por dimensões
@@ -3034,9 +3051,10 @@ D18.04) C01 com enforcement obrigatório (FECHADO)
 	•	Se existir caminho paralelo sem validação de conflito, é bug arquitetural.
 
 D18.05) sourceType e AgendaSourceType unificados (FECHADO)
-	•	Separação Finance/Agenda mantém-se obrigatória.
-	•	`AgendaSourceType` oficial para ocupação operacional: `MATCH`, `BOOKING`, `CLASS_SESSION`, `SOFT_BLOCK`, `HARD_BLOCK`.
-	•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
+		•	Separação Finance/Agenda mantém-se obrigatória.
+		•	`AgendaSourceType` oficial para ocupação operacional: `MATCH`, `BOOKING`, `CLASS_SESSION`, `SOFT_BLOCK`, `HARD_BLOCK`.
+		•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
+		•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
 
 D18.06) Verdade transacional de inscrição Padel (FECHADO)
 	•	`PadelRegistration` é a única verdade transacional de inscrição Padel.

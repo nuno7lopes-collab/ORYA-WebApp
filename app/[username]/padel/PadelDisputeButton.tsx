@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type DisputeStatus = "OPEN" | "RESOLVED" | null;
 
@@ -43,7 +44,7 @@ export default function PadelDisputeButton({
               ? "So podes contestar resultados finais."
               : json?.error === "DISPUTE_ALREADY_OPEN"
                 ? "Este jogo ja esta em disputa."
-                : json?.error || "Erro ao enviar contestacao.";
+                : sanitizeUiErrorMessage(json?.error, "Erro ao enviar contestacao.");
         setError(message);
         return;
       }

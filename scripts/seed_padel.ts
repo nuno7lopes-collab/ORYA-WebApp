@@ -940,19 +940,24 @@ async function main() {
   });
 
   const scheduleResult = computeAutoSchedulePlan({
-    unscheduledMatches: matches.map((match) => ({
-      id: match.id,
-      plannedDurationMinutes: match.plannedDurationMinutes,
-      courtId: match.courtId,
-      pairingAId: match.pairingAId,
-      pairingBId: match.pairingBId,
-      roundLabel: match.roundLabel,
-      roundType: match.roundType,
-      groupLabel: match.groupLabel,
-    })),
+    unscheduledMatches: matches.map((match) => {
+      const sideA = typeof match.pairingAId === "number" ? pairingPlayers.get(match.pairingAId) : null;
+      const sideB = typeof match.pairingBId === "number" ? pairingPlayers.get(match.pairingBId) : null;
+      return {
+        id: match.id,
+        plannedDurationMinutes: match.plannedDurationMinutes,
+        courtId: match.courtId,
+        sideAProfileIds: sideA?.profileIds ?? [],
+        sideBProfileIds: sideB?.profileIds ?? [],
+        sideAEmails: sideA?.emails ?? [],
+        sideBEmails: sideB?.emails ?? [],
+        roundLabel: match.roundLabel,
+        roundType: match.roundType,
+        groupLabel: match.groupLabel,
+      };
+    }),
     scheduledMatches: [],
     courts: allCourts.map((court) => ({ id: court.id, name: court.name })),
-    pairingPlayers,
     availabilities: [],
     courtBlocks: [],
     config: {

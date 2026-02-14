@@ -17,9 +17,17 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 import { rebuildPadelRatingsForEvent } from "@/domain/padel/ratingEngine";
+import { rebuildPadelPlayerHistoryProjectionForEvent } from "@/domain/padel/playerHistoryProjection";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const GOVERNED_TIERS = new Set(["OURO", "MAJOR"]);
+const TIERS_GATED_LIFECYCLE_STATES = new Set<PadelTournamentLifecycleStatus>([
+  PadelTournamentLifecycleStatus.PUBLISHED,
+  PadelTournamentLifecycleStatus.LOCKED,
+  PadelTournamentLifecycleStatus.LIVE,
+  PadelTournamentLifecycleStatus.COMPLETED,
+]);
 
 const parseLifecycle = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -27,6 +35,14 @@ const parseLifecycle = (value: unknown) => {
   return Object.values(PadelTournamentLifecycleStatus).includes(normalized as PadelTournamentLifecycleStatus)
     ? (normalized as PadelTournamentLifecycleStatus)
     : null;
+};
+
+const normalizeTier = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return null;
+  if (normalized === "GOLD") return "OURO";
+  return normalized;
 };
 
 const getRequestMeta = (req: NextRequest) => {
@@ -160,6 +176,28 @@ async function _POST(req: NextRequest) {
   });
   if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
+  if (TIERS_GATED_LIFECYCLE_STATES.has(nextStatus)) {
+    const configForTier = await prisma.padelTournamentConfig.findUnique({
+      where: { eventId: event.id },
+      select: { advancedSettings: true },
+    });
+    const advanced = (configForTier?.advancedSettings ?? {}) as Record<string, unknown>;
+    const requestedTier = normalizeTier(advanced.tournamentTier);
+    if (requestedTier && GOVERNED_TIERS.has(requestedTier)) {
+      const approval = await prisma.padelTournamentTierApproval.findUnique({
+        where: { eventId: event.id },
+        select: { status: true, approvedTier: true },
+      });
+      const approvedTier = normalizeTier(approval?.approvedTier ?? null);
+      if (!approval || approval.status !== "APPROVED" || approvedTier !== requestedTier) {
+        return jsonWrap(
+          { ok: false, error: "TIER_APPROVAL_REQUIRED", tier: requestedTier },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   if (nextStatus === PadelTournamentLifecycleStatus.PUBLISHED) {
     const [config, categoryLinks, directorCount] = await Promise.all([
       prisma.padelTournamentConfig.findUnique({
@@ -290,13 +328,14 @@ async function _POST(req: NextRequest) {
     );
 
     let ratingSnapshot: { processedMatches: number; processedPlayers: number; rankingRows: number } | null = null;
+    let historyProjection: { rows: number } | null = null;
     if (nextStatus === PadelTournamentLifecycleStatus.COMPLETED) {
       const configForTier = await tx.padelTournamentConfig.findUnique({
         where: { eventId: event.id },
         select: { advancedSettings: true },
       });
       const advanced = (configForTier?.advancedSettings ?? {}) as Record<string, unknown>;
-      const tier = typeof advanced.tournamentTier === "string" ? advanced.tournamentTier : null;
+      const tier = normalizeTier(advanced.tournamentTier);
       ratingSnapshot = await rebuildPadelRatingsForEvent({
         tx,
         organizationId: event.organizationId!,
@@ -304,9 +343,17 @@ async function _POST(req: NextRequest) {
         actorUserId: user.id,
         tier,
       });
+      const historyResult = await rebuildPadelPlayerHistoryProjectionForEvent({
+        tx,
+        organizationId: event.organizationId!,
+        eventId: event.id,
+      });
+      if (historyResult.ok) {
+        historyProjection = { rows: historyResult.rows };
+      }
     }
 
-    return { updatedConfig, ratingSnapshot };
+    return { updatedConfig, ratingSnapshot, historyProjection };
   });
 
   await recordOrganizationAuditSafe({
@@ -386,6 +433,7 @@ async function _POST(req: NextRequest) {
       lifecycle: updated.updatedConfig,
       eventStatus: nextEventStatus,
       ...(updated.ratingSnapshot ? { ratingSnapshot: updated.ratingSnapshot } : {}),
+      ...(updated.historyProjection ? { historyProjection: updated.historyProjection } : {}),
     },
     { status: 200 },
   );

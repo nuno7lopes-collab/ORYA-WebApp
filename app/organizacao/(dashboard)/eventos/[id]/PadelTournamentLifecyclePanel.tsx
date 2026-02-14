@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { formatDateTime } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import {
   TOURNAMENT_LIFECYCLE_LABELS,
   TOURNAMENT_LIFECYCLE_ORDER,
@@ -80,7 +81,7 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Não foi possível atualizar o estado.");
+        setError(sanitizeUiErrorMessage(json?.error, "Não foi possível atualizar o estado."));
         return;
       }
       setMessage("Estado atualizado.");

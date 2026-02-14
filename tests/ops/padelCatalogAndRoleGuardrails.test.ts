@@ -48,6 +48,14 @@ describe("padel format catalog guardrails (D18.11)", () => {
     expect(catalog).toContain("padel_format.AMERICANO");
     expect(catalog).toContain("padel_format.MEXICANO");
   });
+
+  it("create de evento padel falha fechado sem fallback de formato", () => {
+    const createRoute = readLocal("app/api/organizacao/events/create/route.ts");
+    expect(createRoute).toContain("INVALID_FORMAT");
+    expect(createRoute).toContain("parsePadelFormat");
+    expect(createRoute).not.toContain("resolvePadelFormat");
+    expect(createRoute).not.toContain("TODOS_CONTRA_TODOS");
+  });
 });
 
 describe("padel club staff role guardrails (D18.09)", () => {
@@ -176,6 +184,12 @@ describe("padel ranking v2 guardrails (N6)", () => {
     expect(rankings).toContain("prisma.padelRatingProfile");
     expect(rankings).toContain("prisma.padelRankingEntry");
     expect(rankings).toContain("computeVisualLevel");
+    expect(rankings).toContain("tierFilter");
+    expect(rankings).toContain("clubIdFilter");
+    expect(rankings).toContain("cityFilter");
+    expect(engine).toContain("tier: contextTier");
+    expect(engine).toContain("clubId: contextClubId");
+    expect(engine).toContain("city: contextCity");
   });
 
   it("expõe rotas canónicas de rebuild e sanções", () => {
@@ -185,5 +199,18 @@ describe("padel ranking v2 guardrails (N6)", () => {
     expect(rebuild).toContain("export const POST = withApiEnvelope(_POST);");
     expect(sanctions).toContain("applyPadelRatingSanction");
     expect(sanctions).toContain("export const POST = withApiEnvelope(_POST);");
+  });
+
+  it("governa tiers OURO/MAJOR com approval e gate de lifecycle", () => {
+    const request = readLocal("app/api/padel/tournaments/tier-approvals/request/route.ts");
+    const approve = readLocal("app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts");
+    const reject = readLocal("app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts");
+    const lifecycle = readLocal("app/api/padel/tournaments/lifecycle/route.ts");
+    expect(request).toContain("TIER_APPROVAL_NOT_REQUIRED");
+    expect(request).toContain("tx.padelTournamentTierApproval.upsert");
+    expect(approve).toContain("status: \"APPROVED\"");
+    expect(reject).toContain("status: \"REJECTED\"");
+    expect(lifecycle).toContain("TIER_APPROVAL_REQUIRED");
+    expect(lifecycle).toContain("GOVERNED_TIERS");
   });
 });

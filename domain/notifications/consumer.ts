@@ -836,13 +836,19 @@ export async function deliverNotificationOutboxItem(item: {
         ? new Date(payload.startAt)
         : match.plannedStartAt ?? match.startTime ?? null;
     const validStartAt = startAt && !Number.isNaN(startAt.getTime()) ? startAt : null;
+    const reason = typeof payload.reason === "string" ? payload.reason.trim() || null : null;
+    const delayStatus = typeof payload.delayStatus === "string" ? payload.delayStatus.trim().toUpperCase() : null;
     const courtLabel = match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra";
     const teamA = pairingLabel(match.pairingA as Parameters<typeof pairingLabel>[0]);
     const teamB = pairingLabel(match.pairingB as Parameters<typeof pairingLabel>[0]);
-    const title = validStartAt ? "Horário atualizado" : "Jogo adiado";
+    const title = validStartAt
+      ? delayStatus === "RESCHEDULED"
+        ? "Jogo reagendado"
+        : "Horário atualizado"
+      : "Jogo adiado";
     const body = validStartAt
-      ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}`
-      : `${teamA} vs ${teamB} · Novo horário a definir.`;
+      ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}${reason ? ` · Motivo: ${reason}` : ""}`
+      : `${teamA} vs ${teamB} · Novo horário a definir.${reason ? ` Motivo: ${reason}.` : ""}`;
     const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
 
     const notification = await createNotificationRecord({

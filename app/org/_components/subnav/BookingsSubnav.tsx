@@ -13,7 +13,6 @@ export default function BookingsSubnav({ orgId, className }: { orgId: number | n
         { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/bookings", { bookings: "overview" }) },
         { id: "services", label: "Services", href: buildOrgHref(orgId, "/bookings/services") },
         { id: "availability", label: "Availability", href: buildOrgHref(orgId, "/bookings", { tab: "availability", bookings: "availability" }) },
-        { id: "prices", label: "Prices", href: buildOrgHref(orgId, "/bookings", { bookings: "prices" }) },
         { id: "customers", label: "Customers", href: buildOrgHref(orgId, "/bookings/customers") },
         { id: "professionals", label: "Professionals", href: buildOrgHref(orgId, "/bookings/professionals") },
         { id: "resources", label: "Resources", href: buildOrgHref(orgId, "/bookings/resources") },

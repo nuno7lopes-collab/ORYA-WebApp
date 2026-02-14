@@ -6,11 +6,9 @@ import ToolSubnavShell from "./ToolSubnavShell";
 export default function CrmToolSubnav({
   orgId,
   className,
-  campaignsEnabled = false,
 }: {
   orgId: number | null;
   className?: string;
-  campaignsEnabled?: boolean;
 }) {
   if (!orgId) return null;
 
@@ -24,7 +22,6 @@ export default function CrmToolSubnav({
           id: "campaigns",
           label: "Campaigns",
           href: buildOrgHref(orgId, "/crm/campaigns"),
-          hidden: !campaignsEnabled,
         },
         { id: "journeys", label: "Journeys", href: buildOrgHref(orgId, "/crm/journeys") },
         { id: "reports", label: "Reports", href: buildOrgHref(orgId, "/crm/reports") },

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatTime, resolveLocale, t } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type PairingSlot = {
   playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
@@ -193,7 +194,7 @@ function OpsPanel({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("opsRequestFailed", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("opsRequestFailed", locale)));
         return false;
       }
       return true;

@@ -22,7 +22,7 @@ import {
   CTA_PRIMARY,
   CTA_SECONDARY,
   CTA_SUCCESS,
-} from "@/app/organizacao/dashboardUi";
+} from "@/app/org/_shared/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
@@ -449,16 +449,17 @@ const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions)
 const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
   date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
 
-const mapTabToObjective = (tab?: string | null): ObjectiveTab => {
-  if (OBJECTIVE_TABS.includes((tab as ObjectiveTab) || "create")) {
-    return (tab as ObjectiveTab) || "create";
+const mapTabToObjective = (
+  tab: string | null | undefined,
+  fallbackObjective: ObjectiveTab = "create",
+): ObjectiveTab => {
+  if (tab && OBJECTIVE_TABS.includes(tab as ObjectiveTab)) {
+    return tab as ObjectiveTab;
   }
-  switch (tab) {
-    case "overview":
-      return "create";
-    default:
-      return "create";
+  if (tab === "overview" && fallbackObjective === "create") {
+    return "create";
   }
+  return fallbackObjective;
 };
 
 type DashboardClientDefaults = {
@@ -537,7 +538,7 @@ function OrganizacaoPageInner({
   const sectionParamRaw = searchParams?.get("section") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
   const profileParamRaw = searchParams?.get("profile") ?? null;
-  const activeObjective = mapTabToObjective(tabParamRaw);
+  const activeObjective = mapTabToObjective(tabParamRaw, defaultObjective ?? "create");
   const normalizedSectionParam = sectionParamRaw;
   const normalizedDefaultSection = defaultSection;
   const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;

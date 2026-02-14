@@ -1,5 +1,4 @@
 import { StoreStatus } from "@prisma/client";
-import { env } from "@/lib/env";
 
 type StoreLike = {
   status?: StoreStatus | null;
@@ -20,7 +19,7 @@ export function isStoreFeatureEnabled() {
 }
 
 export function isStoreDigitalEnabled() {
-  return env.storeDigitalEnabled;
+  return true;
 }
 
 export function resolveStoreState(store: StoreLike): StoreResolvedState {

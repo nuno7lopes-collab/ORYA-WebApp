@@ -1,6 +1,6 @@
 # ORYA Planning Registry (NÃO-NORMATIVO)
 
-Atualizado: 2026-02-12
+Atualizado: 2026-02-13
 
 ## Propósito
 - Este documento agrega planeamento, backlog e itens “a fazer”.
@@ -10,6 +10,7 @@ Atualizado: 2026-02-12
 ## Regra de Migração para o SSOT
 - Um item deste documento só entra no SSOT após aprovação explícita do owner.
 - Quando aprovado, deve ser convertido em regra/decisão/contrato com linguagem normativa e identificador claro (`D*`, `C*`, `I*`).
+- Decisões aprovadas em revisões de domínio (ex.: Reservas/Calendário) devem ser consolidadas no SSOT antes de serem tratadas como fechadas a nível de plataforma.
 
 ## Estados de Revisão
 - `PENDENTE_OWNER`: ainda não revisto.
@@ -94,6 +95,17 @@ Atualizado: 2026-02-12
   Estado: `MIGRADO_PARA_SSOT`
 - Item: Streaming integrado avançado.
   Referência SSOT: `D18.16`
+  Estado: `MIGRADO_PARA_SSOT`
+
+### P2.1 Operação interna Padel (N9)
+- Item: backfill canónico idempotente para contexto de rating e histórico competitivo.
+  Contrato operacional: `POST /api/internal/ops/padel/backfill`.
+  Estado: `MIGRADO_PARA_SSOT`
+- Item: observabilidade operacional de torneio (claims, overrides, compensações, delays, sanções).
+  Contratos operacionais: `GET /api/padel/ops/summary`, `GET /api/internal/ops/padel/integrity`.
+  Estado: `MIGRADO_PARA_SSOT`
+- Item: limpeza/reprocessamento interno por evento.
+  Contrato operacional: `POST /api/internal/ops/padel/cleanup`.
   Estado: `MIGRADO_PARA_SSOT`
 
 ## Bloco P3 — Integração Entre Ferramentas (Planeamento)

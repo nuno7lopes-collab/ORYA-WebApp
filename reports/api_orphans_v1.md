@@ -1,14 +1,14 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-13T12:31:47.210Z
+Generated: 2026-02-14T00:21:26.217Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 626
-- Covered by UI: 476
+- API routes total: 648
+- Covered by UI: 477
 - Orphan (no UI): 0
-- Orphan allowlisted: 1
-- Exempt (internal/cron/webhook): 149
+- Orphan allowlisted: 2
+- Exempt (internal/cron/webhook): 169
 - UI endpoints missing API: 0
 
 ## UI endpoints missing API routes
@@ -18,6 +18,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - none
 
 ## API orphan allowlist matches
+- /api/livehub/[slug] (app/api/livehub/[slug]/route.ts)
 - /api/messages/attachments/presign (app/api/messages/attachments/presign/route.ts)
 
 ## Exempt routes (internal/cron/webhook)
@@ -49,6 +50,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/internal/ops/health (app/api/internal/ops/health/route.ts)
 - /api/internal/ops/outbox/replay (app/api/internal/ops/outbox/replay/route.ts)
 - /api/internal/ops/outbox/summary (app/api/internal/ops/outbox/summary/route.ts)
+- /api/internal/ops/padel/backfill (app/api/internal/ops/padel/backfill/route.ts)
 - /api/internal/ops/padel/cleanup (app/api/internal/ops/padel/cleanup/route.ts)
 - /api/internal/ops/padel/integrity (app/api/internal/ops/padel/integrity/route.ts)
 - /api/internal/ops/slo (app/api/internal/ops/slo/route.ts)
@@ -63,6 +65,19 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/internal/reprocess/stripe-event (app/api/internal/reprocess/stripe-event/route.ts)
 - /api/internal/worker/operations (app/api/internal/worker/operations/route.ts)
 - /api/org-system/payouts/webhook (app/api/org-system/payouts/webhook/route.ts)
+- /api/org/[orgId]/padel/analytics (app/api/org/[orgId]/padel/analytics/route.ts)
+- /api/org/[orgId]/padel/audit (app/api/org/[orgId]/padel/audit/route.ts)
+- /api/org/[orgId]/padel/broadcast (app/api/org/[orgId]/padel/broadcast/route.ts)
+- /api/org/[orgId]/padel/courts (app/api/org/[orgId]/padel/courts/route.ts)
+- /api/org/[orgId]/padel/exports/analytics (app/api/org/[orgId]/padel/exports/analytics/route.ts)
+- /api/org/[orgId]/padel/exports/bracket (app/api/org/[orgId]/padel/exports/bracket/route.ts)
+- /api/org/[orgId]/padel/exports/calendario (app/api/org/[orgId]/padel/exports/calendario/route.ts)
+- /api/org/[orgId]/padel/exports/inscritos (app/api/org/[orgId]/padel/exports/inscritos/route.ts)
+- /api/org/[orgId]/padel/exports/resultados (app/api/org/[orgId]/padel/exports/resultados/route.ts)
+- /api/org/[orgId]/padel/imports/inscritos (app/api/org/[orgId]/padel/imports/inscritos/route.ts)
+- /api/org/[orgId]/padel/pairings/swap (app/api/org/[orgId]/padel/pairings/swap/route.ts)
+- /api/org/[orgId]/padel/waitlist (app/api/org/[orgId]/padel/waitlist/route.ts)
+- /api/org/[orgId]/padel/waitlist/promote (app/api/org/[orgId]/padel/waitlist/promote/route.ts)
 - /api/organizacao/padel/analytics (app/api/organizacao/padel/analytics/route.ts)
 - /api/organizacao/padel/audit (app/api/organizacao/padel/audit/route.ts)
 - /api/organizacao/padel/broadcast (app/api/organizacao/padel/broadcast/route.ts)
@@ -116,6 +131,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/matches/[id]/walkover (app/api/padel/matches/[id]/walkover/route.ts)
 - /api/padel/matches/assign (app/api/padel/matches/assign/route.ts)
 - /api/padel/matches/generate (app/api/padel/matches/generate/route.ts)
+- /api/padel/me/history (app/api/padel/me/history/route.ts)
 - /api/padel/me/matches (app/api/padel/me/matches/route.ts)
 - /api/padel/me/summary (app/api/padel/me/summary/route.ts)
 - /api/padel/onboarding (app/api/padel/onboarding/route.ts)
@@ -141,8 +157,10 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/partnerships/agreements/[id]/pause (app/api/padel/partnerships/agreements/[id]/pause/route.ts)
 - /api/padel/partnerships/agreements/[id]/revoke (app/api/padel/partnerships/agreements/[id]/revoke/route.ts)
 - /api/padel/partnerships/agreements/[id]/windows (app/api/padel/partnerships/agreements/[id]/windows/route.ts)
+- /api/padel/partnerships/compensation-cases (app/api/padel/partnerships/compensation-cases/route.ts)
 - /api/padel/partnerships/overrides (app/api/padel/partnerships/overrides/route.ts)
 - /api/padel/partnerships/overrides/[id]/execute (app/api/padel/partnerships/overrides/[id]/execute/route.ts)
+- /api/padel/partnerships/workspace/[id]/calendar (app/api/padel/partnerships/workspace/[id]/calendar/route.ts)
 - /api/padel/players (app/api/padel/players/route.ts)
 - /api/padel/public/calendar (app/api/padel/public/calendar/route.ts)
 - /api/padel/public/clubs (app/api/padel/public/clubs/route.ts)
@@ -159,6 +177,9 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/tournaments/lifecycle (app/api/padel/tournaments/lifecycle/route.ts)
 - /api/padel/tournaments/roles (app/api/padel/tournaments/roles/route.ts)
 - /api/padel/tournaments/seeds (app/api/padel/tournaments/seeds/route.ts)
+- /api/padel/tournaments/tier-approvals/[id]/approve (app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts)
+- /api/padel/tournaments/tier-approvals/[id]/reject (app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts)
+- /api/padel/tournaments/tier-approvals/request (app/api/padel/tournaments/tier-approvals/request/route.ts)
 - /api/stripe/webhook (app/api/stripe/webhook/route.ts)
 - /api/tournaments/[id] (app/api/tournaments/[id]/route.ts)
 - /api/tournaments/[id]/live (app/api/tournaments/[id]/live/route.ts)

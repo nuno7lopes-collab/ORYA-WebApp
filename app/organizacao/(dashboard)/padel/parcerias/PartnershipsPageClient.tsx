@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type Props = {
   organizationId: number | null;
@@ -58,6 +60,14 @@ export default function PartnershipsPageClient({ organizationId }: Props) {
   const { data, mutate, isLoading } = useSWR<AgreementsResponse>(baseUrl, fetcher, {
     revalidateOnFocus: false,
   });
+  const resolveWorkspaceHref = (agreementId: number) => {
+    if (!organizationId) return "#";
+    return buildOrgHref(organizationId, `/padel/parcerias/${agreementId}`, {
+      tab: "manage",
+      section: "padel-club",
+      padel: "partnerships",
+    });
+  };
 
   const items = Array.isArray(data?.items) ? data.items : [];
 
@@ -83,7 +93,7 @@ export default function PartnershipsPageClient({ organizationId }: Props) {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setFeedback(typeof json?.error === "string" ? json.error : "Não foi possível criar o pedido.");
+        setFeedback(sanitizeUiErrorMessage(json?.error, "Não foi possível criar o pedido."));
         return;
       }
       setOwnerClubId("");
@@ -165,7 +175,7 @@ export default function PartnershipsPageClient({ organizationId }: Props) {
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link
-                    href={`/organizacao/padel/parcerias/${item.id}${organizationId ? `?organizationId=${organizationId}` : ""}`}
+                    href={resolveWorkspaceHref(item.id)}
                     className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/85 hover:border-white/40"
                   >
                     Abrir workspace
@@ -179,4 +189,3 @@ export default function PartnershipsPageClient({ organizationId }: Props) {
     </div>
   );
 }
-

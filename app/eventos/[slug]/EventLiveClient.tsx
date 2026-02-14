@@ -11,6 +11,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { Avatar } from "@/components/ui/avatar";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { resolveLocale, t } from "@/lib/i18n";
 import type { Prisma } from "@prisma/client";
 
@@ -603,7 +604,7 @@ function OrganizationMatchEditor({
         onUpdated();
         return;
       }
-      setError(json?.error || t("matchSaveError", locale));
+      setError(sanitizeUiErrorMessage(json?.error, t("matchSaveError", locale)));
       return;
     }
     if (json?.match?.updatedAt) {
@@ -682,7 +683,7 @@ function OrganizationMatchEditor({
         onUpdated();
         return;
       }
-      setError(json?.error || t("matchOverrideError", locale));
+      setError(sanitizeUiErrorMessage(json?.error, t("matchOverrideError", locale)));
       return;
     }
     if (json?.match?.updatedAt) {
@@ -724,7 +725,7 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchDisputeMarkError", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchDisputeMarkError", locale)));
         return;
       }
       if (json?.match?.updatedAt) {
@@ -770,7 +771,7 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchDisputeResolveError", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchDisputeResolveError", locale)));
         return;
       }
       if (json?.match?.updatedAt) {
@@ -798,7 +799,7 @@ function OrganizationMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchUndoUnavailable", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchUndoUnavailable", locale)));
         return;
       }
       if (json?.match?.updatedAt) {
@@ -1032,7 +1033,7 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchOverrideError", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchOverrideError", locale)));
         return;
       }
       setInfo(t("matchOverrideApplied", locale));
@@ -1065,7 +1066,7 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchDisputeMarkError", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchDisputeMarkError", locale)));
         return;
       }
       setInfo(t("matchDisputeMarked", locale));
@@ -1099,7 +1100,7 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchDisputeResolveError", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchDisputeResolveError", locale)));
         return;
       }
       setInfo(t("matchDisputeResolved", locale));
@@ -1122,7 +1123,7 @@ function PadelMatchEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setError(json?.error || t("matchUndoUnavailable", locale));
+        setError(sanitizeUiErrorMessage(json?.error, t("matchUndoUnavailable", locale)));
         return;
       }
       setInfo(t("matchUndoSuccess", locale));
@@ -3057,7 +3058,7 @@ export default function EventLiveClient({
             );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setStartMessage(json?.error || t("liveOpsStartError", locale));
+        setStartMessage(sanitizeUiErrorMessage(json?.error, t("liveOpsStartError", locale)));
         return;
       }
       setStartMessage(t("liveOpsStartSuccess", locale));

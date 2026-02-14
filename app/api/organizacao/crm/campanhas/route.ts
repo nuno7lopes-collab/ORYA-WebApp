@@ -17,7 +17,6 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 
 const READ_ROLES = Object.values(OrganizationMemberRole);
 
@@ -60,12 +59,6 @@ async function _GET(req: NextRequest) {
     if (!crmAccess.ok) {
       return fail(ctx, 403, crmAccess.error);
     }
-    if (!isCrmCampaignsEnabled()) {
-      return fail(ctx, 403, "Campanhas CRM desativadas.", "FEATURE_DISABLED", false, {
-        feature: "CRM_CAMPAIGNS",
-      });
-    }
-
     const campaigns = await prisma.crmCampaign.findMany({
       where: { organizationId: organization.id },
       orderBy: { createdAt: "desc" },
@@ -151,12 +144,6 @@ async function _POST(req: NextRequest) {
     if (!crmAccess.ok) {
       return fail(ctx, 403, crmAccess.error);
     }
-    if (!isCrmCampaignsEnabled()) {
-      return fail(ctx, 403, "Campanhas CRM desativadas.", "FEATURE_DISABLED", false, {
-        feature: "CRM_CAMPAIGNS",
-      });
-    }
-
     const payload = (await req.json().catch(() => null)) as {
       name?: unknown;
       description?: unknown;

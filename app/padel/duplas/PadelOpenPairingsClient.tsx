@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -48,7 +49,7 @@ export default function PadelOpenPairingsClient() {
   );
 
   const items = Array.isArray(data?.items) ? data?.items : [];
-  const errorLabel = data?.ok === false ? data?.error || "Erro ao carregar duplas." : null;
+  const errorLabel = data?.ok === false ? sanitizeUiErrorMessage(data?.error, "Erro ao carregar duplas.") : null;
 
   return (
     <div className="space-y-6">

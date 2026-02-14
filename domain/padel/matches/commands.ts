@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { EventMatchSlot, Prisma, SourceType } from "@prisma/client";
+import { EventMatchSlot, Prisma, PrismaClient, SourceType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
@@ -196,5 +196,17 @@ export async function deletePadelMatch(
     });
 
     return { outboxEventId };
+  });
+}
+
+export async function reassignWinnerParticipantOnMatchSlots(params: {
+  tx: Prisma.TransactionClient | PrismaClient;
+  sourceParticipantId: number;
+  targetParticipantId: number;
+}) {
+  const { tx, sourceParticipantId, targetParticipantId } = params;
+  return tx.eventMatchSlot.updateMany({
+    where: { winnerParticipantId: sourceParticipantId },
+    data: { winnerParticipantId: targetParticipantId },
   });
 }

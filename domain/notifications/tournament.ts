@@ -30,10 +30,13 @@ export async function queueMatchChanged(params: {
   matchId: number;
   startAt?: Date | null;
   courtId?: number | null;
+  scheduleVersion?: string | null;
+  reason?: string | null;
+  delayStatus?: string | null;
 }) {
-  const { userIds, matchId, startAt = null, courtId = null } = params;
+  const { userIds, matchId, startAt = null, courtId = null, scheduleVersion = null, reason = null, delayStatus = null } = params;
   // Use the same dedupe hash as scheduling dedupe so we never send twice for identical change.
-  const dedupeKey = dedupeMatchChange(matchId, startAt, courtId);
+  const dedupeKey = dedupeMatchChange(matchId, startAt, courtId, scheduleVersion);
   await Promise.all(
     userIds.map((userId) =>
       notifyMatchChanged({
@@ -41,6 +44,9 @@ export async function queueMatchChanged(params: {
         matchId,
         startAt,
         courtId,
+        scheduleVersion,
+        reason,
+        delayStatus,
         // force so the shared dedupeKey applies across recipients
       }),
     ),

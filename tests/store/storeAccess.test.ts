@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { StoreStatus } from "@prisma/client";
-import { canCheckout, isPublicStore, isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { canCheckout, isPublicStore, isStoreDigitalEnabled, isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
 
 describe("storeAccess resolveStoreState", () => {
   const activeBase = {
@@ -29,5 +29,6 @@ describe("storeAccess resolveStoreState", () => {
 
   it("keeps store feature permanently enabled", () => {
     expect(isStoreFeatureEnabled()).toBe(true);
+    expect(isStoreDigitalEnabled()).toBe(true);
   });
 });

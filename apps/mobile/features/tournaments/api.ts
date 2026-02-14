@@ -148,6 +148,27 @@ export type PadelRankingRow = {
   player: { id: number; fullName: string | null; level: string | null };
 };
 
+export type PadelHistoryRow = {
+  id: number;
+  organizationId: number;
+  eventId: number;
+  categoryId: number | null;
+  playerProfileId: number;
+  finalPosition: number | null;
+  wonTitle: boolean;
+  computedAt: string | null;
+  event: {
+    id: number;
+    title: string | null;
+    slug: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+  } | null;
+  category?: { id: number; label: string | null } | null;
+  partner?: { id: number; name: string | null } | null;
+  bracketSnapshot?: Record<string, unknown> | null;
+};
+
 export type PublicTournamentListItem = {
   id: number;
   slug: string | null;
@@ -317,16 +338,31 @@ export const fetchPadelRankings = async (params?: {
   scope?: "global" | "organization";
   limit?: number;
   periodDays?: number;
+  tier?: string;
+  clubId?: number;
+  city?: string;
 }): Promise<PadelRankingRow[]> => {
   const query = new URLSearchParams();
   if (params?.scope) query.set("scope", params.scope);
   if (typeof params?.limit === "number") query.set("limit", String(params.limit));
   if (typeof params?.periodDays === "number") query.set("periodDays", String(params.periodDays));
+  if (params?.tier) query.set("tier", params.tier);
+  if (typeof params?.clubId === "number") query.set("clubId", String(params.clubId));
+  if (params?.city) query.set("city", params.city);
   const response = await api.request<unknown>(
     `/api/padel/rankings${query.toString() ? `?${query.toString()}` : ""}`,
   );
   const unwrapped = unwrapApiResponse<{ items?: PadelRankingRow[] }>(response);
   return parseItems<PadelRankingRow>(unwrapped, "items");
+};
+
+export const fetchPadelHistory = async (): Promise<{ titles: PadelHistoryRow[]; history: PadelHistoryRow[] }> => {
+  const response = await api.request<unknown>("/api/padel/me/history");
+  const unwrapped = unwrapApiResponse<{ titles?: PadelHistoryRow[]; history?: PadelHistoryRow[] }>(response);
+  return {
+    titles: parseItems<PadelHistoryRow>(unwrapped, "titles"),
+    history: parseItems<PadelHistoryRow>(unwrapped, "history"),
+  };
 };
 
 export const fetchTournamentsList = async (limit = 12): Promise<PublicTournamentListItem[]> => {

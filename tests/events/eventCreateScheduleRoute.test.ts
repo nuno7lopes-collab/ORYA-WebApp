@@ -133,4 +133,26 @@ describe("organization events create route schedule invariants", () => {
     expect(body.ok).toBe(false);
     expect(JSON.stringify(body)).toContain("A data/hora de fim tem de ser depois do início");
   });
+
+  it("rejects padel create when format is missing/invalid", async () => {
+    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Torneio sem formato",
+        startsAt: "2026-03-01T10:00:00.000Z",
+        endsAt: "2026-03-01T11:00:00.000Z",
+        addressId: "addr-1",
+        templateType: "PADEL",
+        padel: {},
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("INVALID_FORMAT");
+  });
 });

@@ -48,7 +48,7 @@ export default function StoreCartScreen() {
   const canCheckout = session?.user?.id && storeId && totals.itemCount > 0;
 
   const adjustItemQuantity = async (itemId: number, nextQuantity: number) => {
-    if (!storeId) return;
+    if (!storeId || mutations.busy) return;
     setInlineError(null);
     try {
       if (nextQuantity <= 0) {
@@ -62,7 +62,7 @@ export default function StoreCartScreen() {
   };
 
   const adjustBundleQuantity = async (bundleKey: string, nextQuantity: number) => {
-    if (!storeId) return;
+    if (!storeId || mutations.busy) return;
     setInlineError(null);
     try {
       if (nextQuantity <= 0) {
@@ -153,6 +153,7 @@ export default function StoreCartScreen() {
                   </View>
                   <View className="flex-row items-center gap-2">
                     <Pressable
+                      disabled={mutations.busy}
                       onPress={() => adjustBundleQuantity(bundle.bundleKey, bundle.quantity - 1)}
                       className="h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/5"
                     >
@@ -160,6 +161,7 @@ export default function StoreCartScreen() {
                     </Pressable>
                     <Text className="min-w-[22px] text-center text-white text-sm font-semibold">{bundle.quantity}</Text>
                     <Pressable
+                      disabled={mutations.busy}
                       onPress={() => adjustBundleQuantity(bundle.bundleKey, bundle.quantity + 1)}
                       className="h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/5"
                     >
@@ -193,6 +195,7 @@ export default function StoreCartScreen() {
                   </View>
                   <View className="flex-row items-center gap-2">
                     <Pressable
+                      disabled={mutations.busy}
                       onPress={() => adjustItemQuantity(item.id, item.quantity - 1)}
                       className="h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/5"
                     >
@@ -200,6 +203,7 @@ export default function StoreCartScreen() {
                     </Pressable>
                     <Text className="min-w-[22px] text-center text-white text-sm font-semibold">{item.quantity}</Text>
                     <Pressable
+                      disabled={mutations.busy}
                       onPress={() => adjustItemQuantity(item.id, item.quantity + 1)}
                       className="h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/5"
                     >

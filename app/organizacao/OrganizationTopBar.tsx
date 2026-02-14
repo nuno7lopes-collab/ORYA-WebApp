@@ -127,13 +127,11 @@ export default function OrganizationTopBar({
   orgOptions,
   user,
   role,
-  crmCampaignsEnabled = false,
 }: {
   activeOrg: ActiveOrg | null;
   orgOptions: OrgOption[];
   user: UserInfo | null;
   role?: string | null;
-  crmCampaignsEnabled?: boolean;
 }) {
   type RoleBadgeRole = ComponentProps<typeof RoleBadge>["role"];
   const router = useRouter();
@@ -171,13 +169,7 @@ export default function OrganizationTopBar({
     if (activeTool === "finance") return <FinanceSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "analytics") return <AnalyticsSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "crm") {
-      return (
-        <CrmToolSubnav
-          orgId={orgId}
-          className="w-full max-w-full"
-          campaignsEnabled={crmCampaignsEnabled}
-        />
-      );
+      return <CrmToolSubnav orgId={orgId} className="w-full max-w-full" />;
     }
     if (activeTool === "store") return <StoreToolSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "forms") return <FormsSubnav orgId={orgId} className="w-full max-w-full" />;
@@ -191,7 +183,7 @@ export default function OrganizationTopBar({
     if (activeTool === "profile") return <ProfileSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "settings") return <SettingsSubnav orgId={orgId} className="w-full max-w-full" />;
     return null;
-  }, [activeOrg?.id, activeTool, crmCampaignsEnabled]);
+  }, [activeOrg?.id, activeTool]);
 
   const orgMeUrl = activeOrg?.id ? `/api/org/${activeOrg.id}/me` : null;
   const { data: orgData, error: orgDataError, mutate: mutateOrgData } = useSWR<OrganizationMeResponse>(

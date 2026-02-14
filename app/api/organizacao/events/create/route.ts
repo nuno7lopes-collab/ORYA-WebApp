@@ -12,7 +12,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { clampDeadlineHours } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
 import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
-import { isPadelFormat, parsePadelFormat, resolvePadelFormat } from "@/domain/padel/formatCatalog";
+import { isPadelFormat, parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -154,10 +154,11 @@ const ADDRESS_SELECT = {
 } satisfies Prisma.AddressSelect;
 
 async function generateUniqueSlug(baseSlug: string) {
-  const existing = await prisma.event.findMany({
+  const existingRaw = await prisma.event.findMany({
     where: { slug: { startsWith: baseSlug } },
     select: { slug: true },
   });
+  const existing = Array.isArray(existingRaw) ? existingRaw : [];
 
   if (existing.length === 0) return baseSlug;
 
@@ -484,13 +485,6 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const baseSlug = slugify(title) || "evento";
-    const slug = await generateUniqueSlug(baseSlug);
-    const resaleMode: ResaleMode =
-      resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
-        ? (resaleModeRaw as ResaleMode)
-        : ResaleMode.ALWAYS;
-
     // Validar configuração de padel antes de criar o evento
     let padelConfigInput: PadelConfigInput = null;
     let padelClubId: number | null = null;
@@ -504,6 +498,7 @@ async function _POST(req: NextRequest) {
     let teamSize: number | null = null;
     let resolvedCourtIds: number[] = [];
     let resolvedStaffIds: number[] = [];
+    let requestedPadelFormat: padel_format | null = null;
     const categoryConfigMap = new Map<
       number,
       { capacityTeams: number | null; format: padel_format | null; pricePerPlayerCents: number | null; currency: string | null }
@@ -511,6 +506,10 @@ async function _POST(req: NextRequest) {
 
     if (padelRequested && organization) {
       padelConfigInput = (body.padel ?? {}) as PadelConfigInput;
+      requestedPadelFormat = parsePadelFormat(padelConfigInput?.format);
+      if (!requestedPadelFormat) {
+        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
+      }
       padelClubId =
         typeof padelConfigInput?.padelClubId === "number" && Number.isFinite(padelConfigInput.padelClubId)
           ? padelConfigInput.padelClubId
@@ -765,6 +764,13 @@ async function _POST(req: NextRequest) {
       }
     }
 
+    const baseSlug = slugify(title) || "evento";
+    const slug = await generateUniqueSlug(baseSlug);
+    const resaleMode: ResaleMode =
+      resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
+        ? (resaleModeRaw as ResaleMode)
+        : ResaleMode.ALWAYS;
+
     if (templateType === "PADEL" && padelCategoryIds.length > 0) {
       ticketTypesData = ticketTypesData.map((ticket) => ({
         ...ticket,
@@ -866,7 +872,10 @@ async function _POST(req: NextRequest) {
       const lifecycleNow = new Date();
       const lifecycleStatus = eventStatus === EventStatus.PUBLISHED ? "PUBLISHED" : "DRAFT";
       const computedCourts = Math.max(1, courtIds.length || padelConfigInput.numberOfCourts || 1);
-      const padelFormat = resolvePadelFormat(padelConfigInput.format);
+      if (!requestedPadelFormat) {
+        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
+      }
+      const padelFormat = requestedPadelFormat;
       const baseAdvanced = { ...((advancedSettings as Record<string, unknown>) ?? {}) };
       if (!Object.prototype.hasOwnProperty.call(baseAdvanced, "competitionState")) {
         baseAdvanced.competitionState = "DEVELOPMENT";
@@ -961,7 +970,7 @@ async function _POST(req: NextRequest) {
     }
 
     if (templateType === "PADEL" && padelCategoryIds.length > 0) {
-      const linkFormat = parsePadelFormat(padelConfigInput?.format) ?? undefined;
+      const linkFormat = requestedPadelFormat ?? undefined;
       const linkData = padelCategoryIds.map((categoryId) => {
         const config = categoryConfigMap.get(categoryId);
         const pricePerPlayerCents =
@@ -1013,9 +1022,10 @@ async function _POST(req: NextRequest) {
         ? new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
         : null;
       const inscriptionDeadlineAt = registrationEndsAt ?? fallbackDeadline ?? null;
-      const requestedFormat =
-        typeof padelConfigInput?.format === "string" ? padelConfigInput.format : null;
-      const padelFormat = resolvePadelFormat(requestedFormat);
+      const padelFormat = requestedPadelFormat;
+      if (!padelFormat) {
+        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
+      }
       try {
         await createTournamentForEvent({
           eventId: event.id,

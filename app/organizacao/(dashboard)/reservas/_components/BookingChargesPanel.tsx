@@ -4,7 +4,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
+import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 

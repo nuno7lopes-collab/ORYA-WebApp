@@ -7,7 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { EventStatus } from "@prisma/client";
 import { getUserFollowStatus } from "@/domain/social/follows";
-import { toPublicEventCard, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
+import { toPublicEventCard } from "@/domain/events/publicEventCard";
 import { PUBLIC_EVENT_STATUSES } from "@/domain/events/publicStatus";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
@@ -15,6 +15,20 @@ import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 const normalizeVisibility = (value: unknown) =>
   value === "PUBLIC" || value === "PRIVATE" || value === "FOLLOWERS" ? value : "PUBLIC";
 const MAX_LIMIT = 12;
+const isProfileEventCardRenderable = (event: { title?: string | null; startsAt?: string | null }) =>
+  Boolean(event.title?.trim()) && Boolean(event.startsAt);
+const withAbsoluteCoverUrl = <T extends { coverImageUrl?: string | null }>(event: T, origin: string): T => {
+  const rawCover = event.coverImageUrl?.trim();
+  if (!rawCover) return event;
+
+  if (/^[a-z][a-z\d+\-.]*:/i.test(rawCover) || rawCover.startsWith("//")) {
+    return rawCover === event.coverImageUrl ? event : { ...event, coverImageUrl: rawCover };
+  }
+
+  const normalizedOrigin = origin.replace(/\/+$/, "");
+  const normalizedPath = rawCover.startsWith("/") ? rawCover : `/${rawCover}`;
+  return { ...event, coverImageUrl: `${normalizedOrigin}${normalizedPath}` };
+};
 
 function parseLimit(raw: string | null) {
   if (!raw) return 6;
@@ -89,6 +103,7 @@ async function fetchSupabaseProfileById(
 }
 
 async function _GET(req: NextRequest) {
+  const origin = req.nextUrl.origin;
   const usernameRaw = req.nextUrl.searchParams.get("username");
   if (!usernameRaw) {
     return jsonWrap({ error: "INVALID_USERNAME" }, { status: 400 });
@@ -177,10 +192,12 @@ async function _GET(req: NextRequest) {
       type: "user",
       upcoming: upcoming
         .map((event) => toPublicEventCard({ event, ownerProfile }))
-        .filter((event) => isPublicEventCardComplete(event)),
+        .filter((event) => isProfileEventCardRenderable(event))
+        .map((event) => withAbsoluteCoverUrl(event, origin)),
       past: past
         .map((event) => toPublicEventCard({ event, ownerProfile }))
-        .filter((event) => isPublicEventCardComplete(event)),
+        .filter((event) => isProfileEventCardRenderable(event))
+        .map((event) => withAbsoluteCoverUrl(event, origin)),
       locked: false,
       privacy: { isPrivate, canView },
     });
@@ -251,10 +268,12 @@ async function _GET(req: NextRequest) {
         type: "user",
         upcoming: upcoming
           .map((event) => toPublicEventCard({ event, ownerProfile }))
-          .filter((event) => isPublicEventCardComplete(event)),
+          .filter((event) => isProfileEventCardRenderable(event))
+          .map((event) => withAbsoluteCoverUrl(event, origin)),
         past: past
           .map((event) => toPublicEventCard({ event, ownerProfile }))
-          .filter((event) => isPublicEventCardComplete(event)),
+          .filter((event) => isProfileEventCardRenderable(event))
+          .map((event) => withAbsoluteCoverUrl(event, origin)),
         locked: false,
         privacy: { isPrivate, canView },
       });
@@ -322,10 +341,12 @@ async function _GET(req: NextRequest) {
     type: "organization",
     upcoming: upcoming
       .map((event) => toPublicEventCard({ event, ownerProfile }))
-      .filter((event) => isPublicEventCardComplete(event)),
+      .filter((event) => isProfileEventCardRenderable(event))
+      .map((event) => withAbsoluteCoverUrl(event, origin)),
     past: past
       .map((event) => toPublicEventCard({ event, ownerProfile }))
-      .filter((event) => isPublicEventCardComplete(event)),
+      .filter((event) => isProfileEventCardRenderable(event))
+      .map((event) => withAbsoluteCoverUrl(event, origin)),
     locked: false,
     privacy: { isPrivate: false, canView: true },
   });

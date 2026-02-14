@@ -13,7 +13,6 @@ import { OrganizationStatus } from "@prisma/client";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
-import { isCrmCampaignsEnabled } from "@/lib/featureFlags";
 
 type OrganizationSwitcherOption = {
   organizationId: number;
@@ -151,7 +150,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
   const officialEmailNormalized = normalizeOfficialEmail(officialEmail);
   const isEmailVerified = Boolean(officialEmailNormalized && officialEmailVerifiedAt);
   const platformOfficialEmail = await getPlatformOfficialEmail();
-  const crmCampaignsEnabled = isCrmCampaignsEnabled();
 
   const userInfo = user
     ? {
@@ -200,7 +198,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         orgOptions={orgOptions}
         user={userInfo}
         role={activeRole}
-        crmCampaignsEnabled={crmCampaignsEnabled}
         isSuspended={isSuspended}
         emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmailNormalized } : null}
         platformOfficialEmail={platformOfficialEmail}

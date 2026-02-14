@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { resolveLocale, t } from "@/lib/i18n";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -85,7 +86,8 @@ export default function PadelRankingsClient({
   });
 
   const items = Array.isArray(data?.items) ? data?.items : [];
-  const errorLabel = data?.ok === false ? data?.error || t("rankingLoadError", resolvedLocale) : null;
+  const errorLabel =
+    data?.ok === false ? sanitizeUiErrorMessage(data?.error, t("rankingLoadError", resolvedLocale)) : null;
   const top = items.slice(0, 3);
   const rest = items.slice(3);
 

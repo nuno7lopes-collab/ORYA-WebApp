@@ -6,6 +6,7 @@ import { formatCurrency, formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
 import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 type Pairing = {
   id: number;
@@ -756,7 +757,7 @@ export default function PadelTournamentTabs({
       case "GENERATION_FAILED":
         return "Falha ao gerar jogos. Verifica inscrições e configuração.";
       default:
-        return value;
+        return sanitizeUiErrorMessage(value, "Não foi possível gerar os jogos.");
     }
   };
 
@@ -1487,7 +1488,7 @@ export default function PadelTournamentTabs({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setConfigMessage(json?.error || "Erro ao gerar seeds.");
+        setConfigMessage(sanitizeUiErrorMessage(json?.error, "Erro ao gerar seeds."));
         setTimeout(() => setConfigMessage(null), 2500);
         return;
       }
@@ -1670,7 +1671,7 @@ export default function PadelTournamentTabs({
       if (!res.ok || !json?.ok) {
         setDisputeError((prev) => ({
           ...prev,
-          [matchId]: json?.error || "Erro ao resolver disputa.",
+          [matchId]: sanitizeUiErrorMessage(json?.error, "Erro ao resolver disputa."),
         }));
         return;
       }
@@ -1702,7 +1703,10 @@ export default function PadelTournamentTabs({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.url) {
-        updateResultDraft(matchId, { uploading: false, error: json?.error || "Erro ao fazer upload." });
+        updateResultDraft(matchId, {
+          uploading: false,
+          error: sanitizeUiErrorMessage(json?.error, "Erro ao fazer upload."),
+        });
         return;
       }
       updateResultDraft(matchId, { photoUrl: json.url, uploading: false });

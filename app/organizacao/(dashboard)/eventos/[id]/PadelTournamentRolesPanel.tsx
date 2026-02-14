@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/organizacao/dashboardUi";
 import { Avatar } from "@/components/ui/avatar";
+import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -70,7 +71,7 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        const code = json?.error || "Erro ao atribuir role.";
+        const code = typeof json?.error === "string" ? json.error : null;
         const msg =
           code === "USER_NOT_MEMBER"
             ? "Utilizador não é membro da organização."
@@ -78,7 +79,7 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
               ? "Role já atribuída."
               : code === "USER_NOT_FOUND"
                 ? "Utilizador não encontrado."
-                : code;
+                : sanitizeUiErrorMessage(code, "Erro ao atribuir role.");
         setError(msg);
         return;
       }
@@ -102,7 +103,7 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
       const res = await fetch(`/api/padel/tournaments/roles?id=${id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Erro ao remover role.");
+        setError(sanitizeUiErrorMessage(json?.error, "Erro ao remover role."));
         return;
       }
       setMessage("Role removida.");

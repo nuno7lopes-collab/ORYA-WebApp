@@ -92,7 +92,6 @@ export default function OrganizationDashboardShell({
   orgOptions,
   user,
   role,
-  crmCampaignsEnabled = false,
   isSuspended,
   emailVerification,
   platformOfficialEmail,
@@ -102,7 +101,6 @@ export default function OrganizationDashboardShell({
   orgOptions: OrganizationShellOrgOption[];
   user: OrganizationShellUser | null;
   role?: string | null;
-  crmCampaignsEnabled?: boolean;
   isSuspended: boolean;
   emailVerification?: { isVerified: boolean; email: string | null } | null;
   platformOfficialEmail?: string | null;
@@ -241,7 +239,6 @@ export default function OrganizationDashboardShell({
         orgOptions={orgOptions}
         user={user}
         role={role}
-        crmCampaignsEnabled={crmCampaignsEnabled}
       />
       {emailGateToast ? (
         <div

@@ -31,8 +31,8 @@
   - Execução em `2026-02-12`: `vitest` em suites Padel/ops (`27 files`, `62 tests`, tudo verde).
 
 ## 2) Veredicto executivo (direto)
-- Estado do documento de produto: **fechado em decisão**.
-- Estado da implementação: **execução técnica faseada** (F0..F6), com contratos já definidos neste documento.
+- `estado_decisao`: **FECHADO_FINAL** (escopo Padel).
+- `estado_execucao`: **EM_EXECUCAO** (F0..F6), com contratos já definidos neste documento.
 - Não existem ambiguidades de produto abertas neste documento.
 - O trabalho remanescente é implementação, migração/higienização e hardening técnico.
 
@@ -238,7 +238,7 @@ Estas decisões ficam mantidas e fechadas; o que falta é execução técnica fa
 | 12.1 | Fechado | Onboarding obrigatório antes de ficar ativo (campos mandatórios). |
 | 13 | Fechado | Sincronização obrigatória campo + profissional (ambos livres). |
 | 14 | Fechado | Política padrão de atraso: `CASCADE_SAME_COURT`. |
-| 15 | Fechado | Buffer com default 10 min e alta configurabilidade por organização/torneio, com guardrails canónicos. |
+| 15 | Fechado | Buffer com default 10 min no contexto Padel e alta configurabilidade por organização/torneio, com guardrails canónicos (não é regra global obrigatória de todos os domínios). |
 | 16 | Fechado | Reorganização do catálogo e contratos em camadas versionadas, com snapshot por torneio. |
 | 17 | Fechado | `AMERICANO` e `MEXICANO` entram com implementação 100% da lógica. |
 | 18 | Fechado | Regras de qualificação em grupos configuráveis por torneio, sem quebrar autoagendamento. |
@@ -257,7 +257,9 @@ Estas decisões ficam mantidas e fechadas; o que falta é execução técnica fa
 | 31 | Fechado | Relatórios consolidados na mãe + drill-down por filial. |
 
 ### 8.2 Pendências finais (estado atual)
-- Nenhuma pendência aberta.
+- `estado_decisao`: **FECHADO_FINAL** (apenas para escopo Padel deste documento).
+- `estado_execucao`: **EM_EXECUCAO** (entregas por fase).
+- Dependências transversais de Agenda/Reservas seguem o estado oficial dos respetivos documentos e do SSOT.
 
 ### 8.3 Fechos adicionais desta ronda (owner)
 - `R1` Fechado (`1A`): Courts de clube parceiro seguem modelo híbrido canónico
