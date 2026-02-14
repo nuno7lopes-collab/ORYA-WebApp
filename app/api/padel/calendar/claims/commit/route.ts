@@ -7,6 +7,7 @@ import {
   AgendaResourceClaimType,
   OrganizationMemberRole,
   OrganizationModule,
+  PadelPartnershipStatus,
   Prisma,
   SourceType,
 } from "@prisma/client";
@@ -28,6 +29,11 @@ type ClaimInput = {
   sourceType: SourceType;
   sourceId: string;
   metadata: Prisma.JsonObject;
+};
+
+type ResolvedClaimInput = ClaimInput & {
+  authorityOrgId: number;
+  resourceKey: string;
 };
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -95,6 +101,176 @@ function mapPrismaError(err: unknown) {
     return { status: 409, error: "RESOURCE_CLAIM_CONFLICT" };
   }
   return null;
+}
+
+function parsePositiveInt(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const normalized = Math.floor(parsed);
+  return normalized > 0 ? normalized : null;
+}
+
+function buildResourceKey(params: {
+  resourceType: AgendaResourceClaimType;
+  authorityOrgId: number;
+  resourceId: string;
+}) {
+  return `${params.resourceType}:${params.authorityOrgId}:${params.resourceId}`;
+}
+
+function rangesOverlap(aStart: Date, aEnd: Date, bStart: Date | null, bEnd: Date | null) {
+  const startB = bStart ?? new Date(-8640000000000000);
+  const endB = bEnd ?? new Date(8640000000000000);
+  return aStart < endB && startB < aEnd;
+}
+
+async function resolveClaimAuthorities(params: {
+  organizationId: number;
+  claims: ClaimInput[];
+}): Promise<{ ok: true; claims: ResolvedClaimInput[] } | { ok: false; status: number; error: string }> {
+  const { organizationId, claims } = params;
+  const courtIdSet = new Set<number>();
+  const clubIdSet = new Set<number>();
+
+  for (const claim of claims) {
+    if (claim.resourceType === AgendaResourceClaimType.COURT || claim.resourceType === AgendaResourceClaimType.CLUB) {
+      const parsed = parsePositiveInt(claim.resourceId);
+      if (!parsed) {
+        return { ok: false, status: 400, error: "INVALID_RESOURCE_ID" };
+      }
+      if (claim.resourceType === AgendaResourceClaimType.COURT) courtIdSet.add(parsed);
+      if (claim.resourceType === AgendaResourceClaimType.CLUB) clubIdSet.add(parsed);
+    }
+  }
+
+  const courts: Array<{ id: number; padelClubId: number; club: { organizationId: number } }> =
+    courtIdSet.size > 0
+      ? await prisma.padelClubCourt.findMany({
+          where: { id: { in: Array.from(courtIdSet) }, isActive: true, deletedAt: null },
+          select: {
+            id: true,
+            padelClubId: true,
+            club: { select: { organizationId: true } },
+          },
+        })
+      : [];
+
+  const clubs: Array<{ id: number; organizationId: number }> =
+    clubIdSet.size > 0
+      ? await prisma.padelClub.findMany({
+          where: { id: { in: Array.from(clubIdSet) }, isActive: true, deletedAt: null },
+          select: { id: true, organizationId: true },
+        })
+      : [];
+
+  const courtById = new Map<number, { id: number; padelClubId: number; club: { organizationId: number } }>(
+    courts.map((court) => [court.id, court]),
+  );
+  const clubById = new Map<number, { id: number; organizationId: number }>(
+    clubs.map((club) => [club.id, club]),
+  );
+
+  const ownerClubIdsForForeignClaims = new Set<number>();
+  let minStart: Date | null = null;
+  let maxEnd: Date | null = null;
+
+  for (const claim of claims) {
+    if (!minStart || claim.startsAt < minStart) minStart = claim.startsAt;
+    if (!maxEnd || claim.endsAt > maxEnd) maxEnd = claim.endsAt;
+    if (claim.resourceType === AgendaResourceClaimType.COURT) {
+      const courtId = parsePositiveInt(claim.resourceId);
+      if (!courtId) return { ok: false, status: 400, error: "INVALID_RESOURCE_ID" };
+      const court = courtById.get(courtId);
+      if (!court) return { ok: false, status: 404, error: "RESOURCE_NOT_FOUND" };
+      if (court.club.organizationId !== organizationId) {
+        ownerClubIdsForForeignClaims.add(court.padelClubId);
+      }
+    } else if (claim.resourceType === AgendaResourceClaimType.CLUB) {
+      const clubId = parsePositiveInt(claim.resourceId);
+      if (!clubId) return { ok: false, status: 400, error: "INVALID_RESOURCE_ID" };
+      const club = clubById.get(clubId);
+      if (!club) return { ok: false, status: 404, error: "RESOURCE_NOT_FOUND" };
+      if (club.organizationId !== organizationId) {
+        ownerClubIdsForForeignClaims.add(club.id);
+      }
+    }
+  }
+
+  const agreements =
+    ownerClubIdsForForeignClaims.size > 0 && minStart && maxEnd
+      ? await prisma.padelPartnershipAgreement.findMany({
+          where: {
+            ownerClubId: { in: Array.from(ownerClubIdsForForeignClaims) },
+            partnerOrganizationId: organizationId,
+            status: PadelPartnershipStatus.APPROVED,
+            revokedAt: null,
+            AND: [
+              { OR: [{ startsAt: null }, { startsAt: { lte: maxEnd } }] },
+              { OR: [{ endsAt: null }, { endsAt: { gte: minStart } }] },
+            ],
+          },
+          select: {
+            id: true,
+            ownerOrganizationId: true,
+            ownerClubId: true,
+            startsAt: true,
+            endsAt: true,
+          },
+        })
+      : [];
+
+  const resolvedClaims: ResolvedClaimInput[] = [];
+  for (const claim of claims) {
+    let authorityOrgId = organizationId;
+
+    if (claim.resourceType === AgendaResourceClaimType.COURT) {
+      const courtId = parsePositiveInt(claim.resourceId);
+      if (!courtId) return { ok: false, status: 400, error: "INVALID_RESOURCE_ID" };
+      const court = courtById.get(courtId);
+      if (!court) return { ok: false, status: 404, error: "RESOURCE_NOT_FOUND" };
+      authorityOrgId = court.club.organizationId;
+      if (authorityOrgId !== organizationId) {
+        const allowed = agreements.some(
+          (agreement) =>
+            agreement.ownerClubId === court.padelClubId &&
+            agreement.ownerOrganizationId === authorityOrgId &&
+            rangesOverlap(claim.startsAt, claim.endsAt, agreement.startsAt, agreement.endsAt),
+        );
+        if (!allowed) {
+          return { ok: false, status: 403, error: "SHARED_RESOURCE_NOT_ALLOWED" };
+        }
+      }
+    } else if (claim.resourceType === AgendaResourceClaimType.CLUB) {
+      const clubId = parsePositiveInt(claim.resourceId);
+      if (!clubId) return { ok: false, status: 400, error: "INVALID_RESOURCE_ID" };
+      const club = clubById.get(clubId);
+      if (!club) return { ok: false, status: 404, error: "RESOURCE_NOT_FOUND" };
+      authorityOrgId = club.organizationId;
+      if (authorityOrgId !== organizationId) {
+        const allowed = agreements.some(
+          (agreement) =>
+            agreement.ownerClubId === club.id &&
+            agreement.ownerOrganizationId === authorityOrgId &&
+            rangesOverlap(claim.startsAt, claim.endsAt, agreement.startsAt, agreement.endsAt),
+        );
+        if (!allowed) {
+          return { ok: false, status: 403, error: "SHARED_RESOURCE_NOT_ALLOWED" };
+        }
+      }
+    }
+
+    resolvedClaims.push({
+      ...claim,
+      authorityOrgId,
+      resourceKey: buildResourceKey({
+        resourceType: claim.resourceType,
+        authorityOrgId,
+        resourceId: claim.resourceId,
+      }),
+    });
+  }
+
+  return { ok: true, claims: resolvedClaims };
 }
 
 async function ensureOrganization(req: NextRequest) {
@@ -167,10 +343,19 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_RESOURCE_CLAIM" }, { status: 400 });
   }
 
+  const resolvedClaimsResult = await resolveClaimAuthorities({
+    organizationId: auth.organizationId,
+    claims,
+  });
+  if (!resolvedClaimsResult.ok) {
+    return jsonWrap({ ok: false, error: resolvedClaimsResult.error }, { status: resolvedClaimsResult.status });
+  }
+  const resolvedClaims = resolvedClaimsResult.claims;
+
   const lockKeys = Array.from(
     new Set(
-      claims
-        .map((claim) => `${auth.organizationId}:${claim.resourceType}:${claim.resourceId}`)
+      resolvedClaims
+        .map((claim) => claim.resourceKey)
         .sort((a, b) => a.localeCompare(b)),
     ),
   );
@@ -183,12 +368,10 @@ async function _POST(req: NextRequest) {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
       }
 
-      for (const claim of claims) {
+      for (const claim of resolvedClaims) {
         const conflict = await tx.agendaResourceClaim.findFirst({
           where: {
-            organizationId: auth.organizationId,
-            resourceType: claim.resourceType,
-            resourceId: claim.resourceId,
+            resourceKey: claim.resourceKey,
             status: AgendaResourceClaimStatus.CLAIMED,
             startsAt: { lt: claim.endsAt },
             endsAt: { gt: claim.startsAt },
@@ -201,6 +384,8 @@ async function _POST(req: NextRequest) {
             endsAt: true,
             resourceType: true,
             resourceId: true,
+            authorityOrgId: true,
+            resourceKey: true,
           },
         });
         if (conflict) {
@@ -212,14 +397,16 @@ async function _POST(req: NextRequest) {
       }
 
       await tx.agendaResourceClaim.createMany({
-        data: claims.map((claim) => ({
+        data: resolvedClaims.map((claim) => ({
           bundleId,
           organizationId: auth.organizationId,
+          authorityOrgId: claim.authorityOrgId,
           eventId: event.id,
           sourceType: claim.sourceType,
           sourceId: claim.sourceId,
           resourceType: claim.resourceType,
           resourceId: claim.resourceId,
+          resourceKey: claim.resourceKey,
           startsAt: claim.startsAt,
           endsAt: claim.endsAt,
           status: AgendaResourceClaimStatus.CLAIMED,
@@ -249,6 +436,8 @@ async function _POST(req: NextRequest) {
           endsAt: claim.endsAt,
           sourceType: claim.sourceType,
           sourceId: claim.sourceId,
+          authorityOrgId: claim.authorityOrgId,
+          resourceKey: claim.resourceKey,
         })),
       },
       ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
@@ -321,20 +510,20 @@ async function _PATCH(req: NextRequest) {
             sourceType: true,
             sourceId: true,
             bundleId: true,
+            authorityOrgId: true,
+            resourceKey: true,
           },
         });
         if (!claim) {
           throw Object.assign(new Error("CLAIM_NOT_FOUND"), { status: 404 });
         }
 
-        const lockKey = `${auth.organizationId}:${claim.resourceType}:${claim.resourceId}`;
+        const lockKey = claim.resourceKey;
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
         const conflict = await tx.agendaResourceClaim.findFirst({
           where: {
-            organizationId: auth.organizationId,
-            resourceType: claim.resourceType,
-            resourceId: claim.resourceId,
+            resourceKey: claim.resourceKey,
             status: AgendaResourceClaimStatus.CLAIMED,
             id: { not: claim.id },
             startsAt: { lt: endsAt },
@@ -348,6 +537,8 @@ async function _PATCH(req: NextRequest) {
             endsAt: true,
             resourceType: true,
             resourceId: true,
+            authorityOrgId: true,
+            resourceKey: true,
           },
         });
         if (conflict) {
@@ -374,6 +565,8 @@ async function _PATCH(req: NextRequest) {
           endsAt: updated.endsAt,
           resourceType: updated.resourceType,
           resourceId: updated.resourceId,
+          authorityOrgId: updated.authorityOrgId,
+          resourceKey: updated.resourceKey,
           sourceType: updated.sourceType,
           sourceId: updated.sourceId,
         },
@@ -441,6 +634,8 @@ async function _PATCH(req: NextRequest) {
       sourceType: true,
       sourceId: true,
       bundleId: true,
+      authorityOrgId: true,
+      resourceKey: true,
     },
     orderBy: [{ startsAt: "asc" }, { id: "asc" }],
     take: 200,

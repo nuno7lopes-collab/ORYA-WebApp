@@ -1,5 +1,7 @@
+import { PLATFORM_SUPPORT_EMAIL } from "@/lib/platformContact";
+
 const LAST_UPDATED = "9 de fevereiro de 2026";
-const SUPPORT_EMAIL = "support@orya.pt";
+const SUPPORT_EMAIL = PLATFORM_SUPPORT_EMAIL;
 
 export default function LegalTermsPage() {
   return (

@@ -216,7 +216,25 @@ async function ensureOrganization() {
     return updated;
   }
 
-  const group = await prisma.organizationGroup.create({ data: {} });
+  const ownerFromEnv =
+    seedActorUserIdFromEnv &&
+    (await prisma.profile.findUnique({
+      where: { id: seedActorUserIdFromEnv },
+      select: { id: true },
+    }));
+  const fallbackOwner =
+    ownerFromEnv ??
+    (await prisma.profile.findFirst({
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    }));
+  if (!fallbackOwner) {
+    throw new Error("Nao existe profile para owner do group.");
+  }
+
+  const group = await prisma.organizationGroup.create({
+    data: { ownerUserId: fallbackOwner.id },
+  });
   const created = await prisma.organization.create({
     data: {
       groupId: group.id,
@@ -1093,7 +1111,7 @@ async function reseedCampaigns(
         title: "Volta ao Top Padel",
         body: "Temos slots livres no teu nivel esta semana.",
         ctaLabel: "Reservar agora",
-        ctaUrl: "/organizacao/reservas",
+        ctaUrl: `/org/${organizationId}/bookings`,
         channels: { inApp: true, email: true },
       } as Prisma.InputJsonValue,
       audienceSnapshot: {
@@ -1530,12 +1548,12 @@ async function main() {
       savedViews: savedViewsCount,
     },
     urls: {
-      crmClientes: `/organizacao/crm/clientes?organizationId=${organization.id}`,
-      crmSegmentos: `/organizacao/crm/segmentos?organizationId=${organization.id}`,
-      crmCampanhas: `/organizacao/crm/campanhas?organizationId=${organization.id}`,
-      crmJourneys: `/organizacao/crm/journeys?organizationId=${organization.id}`,
-      crmRelatorios: `/organizacao/crm/relatorios?organizationId=${organization.id}`,
-      crmLoyalty: `/organizacao/crm/loyalty?organizationId=${organization.id}`,
+      crmClientes: `/org/${organization.id}/crm/customers`,
+      crmSegmentos: `/org/${organization.id}/crm/segments`,
+      crmCampanhas: `/org/${organization.id}/crm/campaigns`,
+      crmJourneys: `/org/${organization.id}/crm/journeys`,
+      crmRelatorios: `/org/${organization.id}/crm/reports`,
+      crmLoyalty: `/org/${organization.id}/crm/loyalty`,
     },
   };
 

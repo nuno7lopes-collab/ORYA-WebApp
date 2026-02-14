@@ -40,7 +40,7 @@ vi.mock("@/lib/organizationAudit", () => ({ recordOrganizationAuditSafe }));
 vi.mock("@/domain/padelPairingHold", () => ({ cancelActiveHold }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let swapPOST: typeof import("@/app/api/organizacao/padel/pairings/swap/route").POST;
+let swapPOST: typeof import("@/app/api/org/[orgId]/padel/pairings/swap/route").POST;
 let cancelPOST: typeof import("@/app/api/padel/pairings/[id]/cancel/route").POST;
 
 beforeEach(async () => {
@@ -60,7 +60,7 @@ beforeEach(async () => {
   prisma.padelTournamentConfig.findUnique.mockReset();
   prisma.$transaction.mockClear();
   vi.resetModules();
-  swapPOST = (await import("@/app/api/organizacao/padel/pairings/swap/route")).POST;
+  swapPOST = (await import("@/app/api/org/[orgId]/padel/pairings/swap/route")).POST;
   cancelPOST = (await import("@/app/api/padel/pairings/[id]/cancel/route")).POST;
 });
 
@@ -129,7 +129,7 @@ describe("critical audit payloads", () => {
       },
     ]);
 
-    const req = new NextRequest("http://localhost/api/organizacao/padel/pairings/swap", {
+    const req = new NextRequest("http://localhost/api/org/1/padel/pairings/swap", {
       method: "POST",
       body: JSON.stringify({ eventId: 10, pairingAId: 1, pairingBId: 2 }),
     });

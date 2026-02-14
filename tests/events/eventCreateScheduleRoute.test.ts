@@ -23,7 +23,7 @@ vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 vi.mock("@/lib/organizationWriteAccess", () => ({ ensureOrganizationEmailVerified }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let POST: typeof import("@/app/api/organizacao/events/create/route").POST;
+let POST: typeof import("@/app/api/org/[orgId]/events/create/route").POST;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -70,12 +70,12 @@ beforeEach(async () => {
     stripePayoutsEnabled: false,
   });
 
-  POST = (await import("@/app/api/organizacao/events/create/route")).POST;
+  POST = (await import("@/app/api/org/[orgId]/events/create/route")).POST;
 });
 
 describe("organization events create route schedule invariants", () => {
   it("rejects EXTERNAL org requesting PLATFORM payout mode", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -96,7 +96,7 @@ describe("organization events create route schedule invariants", () => {
   });
 
   it("rejects when endsAt is missing", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -115,7 +115,7 @@ describe("organization events create route schedule invariants", () => {
   });
 
   it("rejects when endsAt is before startsAt", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -135,7 +135,7 @@ describe("organization events create route schedule invariants", () => {
   });
 
   it("rejects padel create when format is missing/invalid", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/events/create", {
+    const req = new NextRequest("http://localhost/api/org/1/events/create", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

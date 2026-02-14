@@ -24,20 +24,20 @@ vi.mock("@/lib/prisma", () => {
   return { prisma };
 });
 
-let GET: typeof import("@/app/api/organizacao/finance/exports/ledger/route").GET;
+let GET: typeof import("@/app/api/org/[orgId]/finance/exports/ledger/route").GET;
 
 beforeEach(async () => {
   vi.resetModules();
   ledgerEntries.mockReset();
   ensureMemberModuleAccess.mockReset();
   getActiveOrganizationForUser.mockReset();
-  GET = (await import("@/app/api/organizacao/finance/exports/ledger/route")).GET;
+  GET = (await import("@/app/api/org/[orgId]/finance/exports/ledger/route")).GET;
 });
 
 describe("ledger export route", () => {
   it("bloqueia sem membership", async () => {
     getActiveOrganizationForUser.mockResolvedValue({ organization: null, membership: null });
-    const req = new NextRequest("http://localhost/api/organizacao/finance/exports/ledger?from=2024-01-01&to=2024-01-31");
+    const req = new NextRequest("http://localhost/api/org/1/finance/exports/ledger?from=2024-01-01&to=2024-01-31");
     const res = await GET(req);
     expect(res.status).toBe(403);
   });
@@ -61,7 +61,7 @@ describe("ledger export route", () => {
         correlationId: "corr1",
       },
     ]);
-    const req = new NextRequest("http://localhost/api/organizacao/finance/exports/ledger?from=2024-01-01&to=2024-01-31");
+    const req = new NextRequest("http://localhost/api/org/1/finance/exports/ledger?from=2024-01-01&to=2024-01-31");
     const res = await GET(req);
     const text = await res.text();
     expect(res.status).toBe(200);

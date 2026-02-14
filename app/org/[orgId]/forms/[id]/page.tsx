@@ -1,1 +1,1 @@
-export { default } from "@/app/organizacao/(dashboard)/inscricoes/[id]/page";
+export { default } from "@/app/org/_internal/core/(dashboard)/inscricoes/[id]/page";

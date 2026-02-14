@@ -69,60 +69,9 @@ export function resolveCanonicalOrgApiPath(
   ) {
     return input;
   }
-  if (!pathname.startsWith("/api/organizacao")) {
+  if (pathname.startsWith("/api/organizacao")) {
+    // Hard-cut global: callers must use canonical namespaces explicitly.
     return input;
   }
-
-  const suffix = pathname.slice("/api/organizacao".length) || "/";
-  const nextSearch = new URLSearchParams(parsed.searchParams);
-
-  // Padel/tournaments stay on legacy namespace during current migration cycle.
-  if (/^\/(padel|tournaments|torneios)(\/|$)/i.test(suffix)) {
-    return input;
-  }
-
-  if (suffix === "/become") {
-    parsed.pathname = "/api/org-hub/become";
-    parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
-    return isAbsolute
-      ? parsed.toString()
-      : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  }
-  if (suffix.startsWith("/organizations")) {
-    parsed.pathname = `/api/org-hub${suffix}`;
-    parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
-    return isAbsolute
-      ? parsed.toString()
-      : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  }
-  if (suffix === "/invites" || suffix.startsWith("/invites/")) {
-    parsed.pathname = `/api/org-hub${suffix}`;
-    parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
-    return isAbsolute
-      ? parsed.toString()
-      : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  }
-  if (suffix === "/payouts/webhook") {
-    parsed.pathname = "/api/org-system/payouts/webhook";
-    parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
-    return isAbsolute
-      ? parsed.toString()
-      : `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  }
-
-  const orgIdFromQuery =
-    parseOrganizationId(nextSearch.get("organizationId")) ??
-    parseOrganizationId(nextSearch.get("org"));
-  const resolvedOrgId =
-    parseOrganizationId(explicitOrgId) ?? orgIdFromQuery ?? resolveCurrentOrgId();
-  if (!resolvedOrgId) return input;
-
-  nextSearch.delete("organizationId");
-  nextSearch.delete("org");
-
-  parsed.pathname = `/api/org/${resolvedOrgId}${mapLegacySuffix(suffix)}`;
-  parsed.search = nextSearch.toString() ? `?${nextSearch.toString()}` : "";
-  return isAbsolute
-    ? parsed.toString()
-    : `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  return input;
 }

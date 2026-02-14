@@ -29,8 +29,8 @@ vi.mock("@/lib/supabaseServer", () => ({
   })),
 }));
 
-let requestPost: typeof import("@/app/api/organizacao/organizations/settings/official-email/route").POST;
-let confirmPost: typeof import("@/app/api/organizacao/organizations/settings/official-email/confirm/route").POST;
+let requestPost: typeof import("@/app/api/org-hub/organizations/settings/official-email/route").POST;
+let confirmPost: typeof import("@/app/api/org-hub/organizations/settings/official-email/confirm/route").POST;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -44,8 +44,8 @@ beforeEach(async () => {
   prisma.organizationOfficialEmailRequest.findUnique.mockReset();
   prisma.organizationOfficialEmailRequest.update.mockReset();
   prisma.$transaction.mockClear();
-  requestPost = (await import("@/app/api/organizacao/organizations/settings/official-email/route")).POST;
-  confirmPost = (await import("@/app/api/organizacao/organizations/settings/official-email/confirm/route")).POST;
+  requestPost = (await import("@/app/api/org-hub/organizations/settings/official-email/route")).POST;
+  confirmPost = (await import("@/app/api/org-hub/organizations/settings/official-email/confirm/route")).POST;
 });
 
 describe("official email flow", () => {
@@ -65,7 +65,7 @@ describe("official email flow", () => {
       expiresAt: new Date("2026-01-01T00:00:00Z"),
     });
 
-    const req = new NextRequest("http://localhost/api/organizacao/organizations/settings/official-email", {
+    const req = new NextRequest("http://localhost/api/org-hub/organizations/settings/official-email", {
       method: "POST",
       body: JSON.stringify({ organizationId: 1, email: "team@org.pt" }),
     });
@@ -89,7 +89,7 @@ describe("official email flow", () => {
       username: "org",
     });
 
-    const req = new NextRequest("http://localhost/api/organizacao/organizations/settings/official-email", {
+    const req = new NextRequest("http://localhost/api/org-hub/organizations/settings/official-email", {
       method: "POST",
       body: JSON.stringify({ organizationId: 1, email: "team@org.pt" }),
     });
@@ -108,7 +108,7 @@ describe("official email flow", () => {
       expiresAt: new Date(Date.now() + 10000),
     });
 
-    const req = new NextRequest("http://localhost/api/organizacao/organizations/settings/official-email/confirm", {
+    const req = new NextRequest("http://localhost/api/org-hub/organizations/settings/official-email/confirm", {
       method: "POST",
       body: JSON.stringify({ token: "token-1" }),
     });

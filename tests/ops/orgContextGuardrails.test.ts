@@ -20,7 +20,7 @@ const CONTEXT_TOKENS = [
 const ALLOWLIST = new Set<string>([]);
 
 const METADATA_ORG_ALLOWLIST = new Set<string>([
-  "app/api/organizacao/payouts/webhook/route.ts",
+  "app/api/org-system/payouts/webhook/route.ts",
 ]);
 
 function listRoutes(root: string): string[] {
@@ -31,7 +31,7 @@ function listRoutes(root: string): string[] {
 }
 
 function listOrgRoutes(): string[] {
-  return [...listRoutes("app/api/organizacao"), ...listRoutes("app/api/org")];
+  return listRoutes("app/api/org");
 }
 
 function usesPrisma(content: string) {

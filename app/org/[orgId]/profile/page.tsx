@@ -1,4 +1,4 @@
-import DashboardClient from "@/app/organizacao/DashboardClient";
+import DashboardClient from "@/app/org/_internal/core/DashboardClient";
 import { redirect } from "next/navigation";
 
 type SearchParamsInput =

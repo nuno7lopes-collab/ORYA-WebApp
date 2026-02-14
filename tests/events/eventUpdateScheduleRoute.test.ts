@@ -14,7 +14,7 @@ vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer }));
 vi.mock("@/lib/security", () => ({ ensureAuthenticated, isUnauthenticatedError }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let POST: typeof import("@/app/api/organizacao/events/update/route").POST;
+let POST: typeof import("@/app/api/org/[orgId]/events/update/route").POST;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -40,7 +40,7 @@ beforeEach(async () => {
     endsAt: null,
   });
 
-  POST = (await import("@/app/api/organizacao/events/update/route")).POST;
+  POST = (await import("@/app/api/org/[orgId]/events/update/route")).POST;
 });
 
 describe("organization events update route schedule invariants", () => {
@@ -69,7 +69,7 @@ describe("organization events update route schedule invariants", () => {
       _count: { tickets: 0, reservations: 0, saleLines: 0 },
     });
 
-    const req = new NextRequest("http://localhost/api/organizacao/events/update", {
+    const req = new NextRequest("http://localhost/api/org/1/events/update", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -87,7 +87,7 @@ describe("organization events update route schedule invariants", () => {
   });
 
   it("fails closed when event has missing endsAt", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/events/update", {
+    const req = new NextRequest("http://localhost/api/org/1/events/update", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

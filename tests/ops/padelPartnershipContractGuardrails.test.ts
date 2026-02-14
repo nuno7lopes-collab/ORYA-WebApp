@@ -20,6 +20,8 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(schema).toContain("executionStatus       String?   @map(\"execution_status\")");
     expect(schema).toContain("model AgendaResourceClaim {");
     expect(schema).toContain("bundleId     String?                 @map(\"bundle_id\") @db.Uuid");
+    expect(schema).toContain("authorityOrgId Int                   @map(\"authority_org_id\")");
+    expect(schema).toContain("resourceKey  String                  @map(\"resource_key\") @db.Text");
     expect(schema).toContain("enum PadelPartnershipStatus {");
     expect(schema).toContain("enum PadelPartnershipPriorityMode {");
     expect(schema).toContain("enum PadelPartnershipCompensationStatus {");
@@ -62,6 +64,9 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(commitRoute).toContain("pg_advisory_xact_lock");
     expect(commitRoute).toContain("bundleId");
     expect(commitRoute).toContain("RESOURCE_CLAIM_CONFLICT");
+    expect(commitRoute).toContain("resourceKey");
+    expect(commitRoute).toContain("authorityOrgId");
+    expect(commitRoute).toContain("SHARED_RESOURCE_NOT_ALLOWED");
     expect(commitRoute).toContain("PADEL_CALENDAR_CLAIMS_COMMIT");
     expect(commitRoute).toContain("CLAIM_ID_REQUIRED_FOR_WINDOW_UPDATE");
     expect(commitRoute).toContain("PADEL_CALENDAR_CLAIMS_WINDOW_UPDATE");

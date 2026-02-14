@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
-import { normalizeOrganizationPathname } from "@/app/organizacao/topbarRouteUtils";
+import { normalizeOrganizationPathname } from "@/app/org/_internal/core/topbarRouteUtils";
 import ToolSubnavShell from "./ToolSubnavShell";
 
 export default function EventsSubnav({ orgId, className }: { orgId: number | null; className?: string }) {

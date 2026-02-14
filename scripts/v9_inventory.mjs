@@ -419,7 +419,7 @@ function main() {
 
   const featurePatterns = {
     users: [/^\/api\/auth/, /^\/api\/users/, /^\/api\/profiles/, /^\/api\/me(\/|$)/, /^\/api\/social/],
-    orgs: [/^\/api\/organizacao/, /^\/api\/organizations/],
+    orgs: [/^\/api\/org\//, /^\/api\/organizations/, /^\/api\/org-hub\//, /^\/api\/org-system\//],
     payments: [/^\/api\/payments/, /^\/api\/checkout/, /^\/api\/stripe/, /^\/api\/webhooks\/stripe/, /^\/api\/organizacao\/payouts/, /^\/api\/admin\/payments/, /^\/api\/admin\/payouts/, /^\/api\/organizacao\/finance/, /^\/api\/organizacao\/pagamentos/],
     tickets: [/^\/api\/tickets/, /^\/api\/eventos/, /^\/api\/public\/v1\/events/],
     store: [/^\/api\/store/, /^\/api\/me\/store/, /^\/api\/organizacao\/loja/],

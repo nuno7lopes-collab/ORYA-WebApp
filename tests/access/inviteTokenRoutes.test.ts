@@ -30,7 +30,7 @@ vi.mock("@/lib/invites/inviteTokens", () => ({
 }));
 
 import { POST as publicInviteToken } from "@/app/api/eventos/[slug]/invite-token/route";
-import { POST as orgInviteToken } from "@/app/api/organizacao/events/[id]/invite-token/route";
+import { POST as orgInviteToken } from "@/app/api/org/[orgId]/events/[id]/invite-token/route";
 
 beforeEach(() => {
   evaluateEventAccess.mockReset();
@@ -57,7 +57,7 @@ describe("invite token routes access", () => {
       organization: { officialEmail: "a@b.com", officialEmailVerifiedAt: new Date() },
     });
     evaluateEventAccess.mockResolvedValue({ allowed: false, reasonCode: "INVITE_TOKEN_NOT_ALLOWED" });
-    const req = new NextRequest("http://localhost/api/organizacao/events/1/invite-token", {
+    const req = new NextRequest("http://localhost/api/org/1/events/1/invite-token", {
       method: "POST",
       body: JSON.stringify({ email: "a@b.com" }),
     });

@@ -122,7 +122,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
   1. Hard constraints bloqueiam sempre (`HARD_BLOCK`, compliance, manutencao, seguranca).
   2. Fora hard constraints, aplica-se `first_confirmed_wins`.
   3. Quando houver empate tecnico no mesmo instante/lote de confirmacao, aplicar prioridade por tipo:
-     - `HARD_BLOCK` > `MATCH` (com `reasonCode=MATCH_SLOT`) > `BOOKING` > `CLASS_SESSION` > `SOFT_BLOCK`.
+     - `HARD_BLOCK` > `MATCH` (com `reasonCode=MATCH_SLOT`) > `BOOKING` > `SOFT_BLOCK` (reservado, fora do v1 operacional).
 - Tie-break final deterministico:
   - menor `confirmedAt` vence,
   - depois menor `claimId` vence,
@@ -132,13 +132,34 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
   - porque bloqueou,
   - qual regra aplicada.
 
-### 4.5 Taxonomia `MATCH` vs `MATCH_SLOT` (em revisao owner)
-- Recomendacao aplicada para alinhamento documental (aguarda teu ok final):
+### 4.5 Taxonomia `MATCH` vs `MATCH_SLOT` (decisao fechada)
+- Regra final:
   - `sourceType` canónico: `MATCH` (unico).
   - `MATCH_SLOT` fica como `reasonCode`/contexto de bloqueio, nao como novo `sourceType`.
 - Motivo:
   - evita duplicacao de taxonomia,
   - preserva compatibilidade com SSOT/C01 e `AgendaSourceType` atual.
+
+### 4.6 Hard block operacional (decisao fechada)
+- Hard block e bloqueio temporal real com escopo:
+  - `GLOBAL_ORG`,
+  - `RESOURCE`,
+  - `PROFESSIONAL`.
+- Ao criar hard block:
+  - novas confirmacoes ficam bloqueadas imediatamente na janela afetada.
+- Ao remover hard block:
+  - a janela volta a aceitar novas confirmacoes automaticamente.
+- Se houver ocupacoes confirmadas na janela:
+  - abre-se resolucao operacional de pendencias (troca aceite ou cancelamento+reembolso total),
+  - hard block so fecha quando todas as pendencias forem resolvidas.
+- Se nao houver impacto em cliente:
+  - pode haver realocacao operacional automatica (auditada).
+
+### 4.7 Motivo e auditoria de hard block (decisao fechada)
+- `reasonCode` obrigatorio.
+- Texto livre opcional.
+- Catalogo de reason codes extensivel por organizacao, com fallback generico.
+- Trilho obrigatorio: `createdBy/updatedBy`, timestamps e before/after.
 
 ## 5) Calendarios que o produto deve expor
 
@@ -158,7 +179,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 - Foco operacional por evento.
 - Deve continuar alinhado com regras Padel existentes.
 
-### 5.5 Calendario pessoal do utilizador
+### 5.5 Timeline pessoal do utilizador
 - Definicao operacional:
   - timeline pessoal consolidada de compromissos (nao e write-model).
 - Semantica clara entre:
@@ -272,6 +293,9 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 ### F6) Operacao e observabilidade
 - metricas (conflict rate, override rate, expiracao snapshot, backlog de compensacao),
 - runbooks e SLO/SLA.
+- Regra de desenvolvimento (normativa):
+  - em `APP_ENV=dev`, manter apenas observabilidade minima essencial (logs de erro + auditoria de acoes criticas);
+  - alertas operacionais ativos, SLO/SLA formais e dashboards avancados ficam para fase pre-prod/prod.
 
 ## 11) Criterios de sucesso (go-live gate)
 - 0 conflitos duplos no mesmo `resourceKey` e janela para claims `CLAIMED`.
@@ -301,7 +325,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 10. **D10 APROVADO_OWNER (A)**: mae com visao global total.
 11. **D11 APROVADO_OWNER (A)**: filtros completos (filial/profissional/recurso/tipo) para evitar confusao.
 12. **D12 APROVADO_OWNER (A + regra de governanca B)**: mae pode aplicar hard blocks; filiais continuam com equipa e gestao propria; filial pode pedir remocao, mas aprovacao final e sempre da mae.
-13. **D13 APROVADO_OWNER (A)**: agenda pessoal inclui booking de servico.
+13. **D13 APROVADO_OWNER (A)**: timeline pessoal inclui booking de servico.
 16. **D16 APROVADO_OWNER (A)**: override exige motivo padrao + texto.
 17. **D17 APROVADO_OWNER (A com politica de notificacao por impacto)**: audit/evento sempre; notificacao apenas quando ha impacto real em clientes/inscritos/staff afetado.
 19. **D19 APROVADO_OWNER (custom)**: unidade temporal canónica de 5 minutos.
@@ -323,7 +347,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 15. **D15 APROVADO_OWNER (A ajustado)**: timeline pessoal unica com filtros por tipo; eventos de bilhete sao timeline pessoal (nao ocupacao de recurso no motor).
 18. **D18 APROVADO_OWNER (B)**: bypass de hard-stop so para OWNER/ADMIN, com motivo e auditoria reforcada; para impacto alto, confirmacao adicional.
 22. **D22 APROVADO_OWNER (A)**: motor fica sem `PENDING_CLAIM` em v1 (`CLAIMED/RELEASED/CANCELLED` apenas).
-24. **D24 APROVADO_OWNER (A)**: no-show mantem historico auditavel e liberta ocupacao futura.
+24. **D24 APROVADO_OWNER (A ajustado)**: no-show mantem historico auditavel e liberta ocupacao futura; reversao por `OWNER/ADMIN` ate `T+24h`, sem motivo obrigatorio.
 27. **D27 APROVADO_OWNER (A)**: versao explicita de contrato API (`v1`, `v2`) obrigatoria.
 28. **D28 APROVADO_OWNER (A faseado)**: SLO alvo p95 de commit: fase inicial `<=500ms`, alvo final `<=300ms`.
 29. **D29 APROVADO_OWNER (A+B)**: alertas em tempo real + relatorio semanal.
@@ -335,14 +359,21 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 ### 13.3 Clarificacoes normativas ja assumidas apos esta ronda
 - "Quem confirma primeiro ocupa" e a regra base da agenda multi-modulo.
 - Mudancas de horario de ocupacao ja confirmada (reserva/jogo/aula) passam por fluxo de alteracao (override ou change request), nunca por overwrite silencioso.
+- Quando a mudanca impacta cliente confirmado, existem duas vias validas: pedido de troca (aceitacao do cliente) ou cancelamento com reembolso total imediato.
+- Hard block bloqueia novas confirmacoes de imediato na janela afetada; ao remover, a janela reabre automaticamente.
+- Hard block com impacto em cliente so fecha apos resolver todas as pendencias operacionais.
+- Limite de pre-reserva pendente por identidade (`user`/`guestEmail`) = 1.
+- Assignment canónico por servico: `PROFESSIONAL_ONLY`, `RESOURCE_ONLY`, `PROFESSIONAL_AND_RESOURCE`.
+- Auto-selecao de recurso: menor capacidade valida -> menor prioridade -> menor id.
+- Prioridade operacional e opcional por configuracao (servico/recurso/profissional), com default neutro.
+- Overbooking proibido por default nesta fase.
+- No-show sem fee financeiro por default (foco operacional/CRM), mantendo reversao ate `T+24h`.
+- Reservas manuais via backoffice ficam fora do contrato v1; ocupacao offline deve ser representada por `HARD_BLOCK` auditavel.
 - Calendario geral da mae e derivado automaticamente dos eventos de agenda das filiais, sem dupla verdade.
 - Calendario da mae e visao administrativa global (todas as filiais), com filtros para reduzir ruido.
 
-### 13.4 Estado oficial (modelo 10C)
-- `estado_decisao`: **EM_REVISAO_OWNER**.
-- `estado_execucao`: **EM_EXECUCAO** (hardening tecnico e migracoes ainda em curso).
-- Promocao para `estado_decisao=FECHADO_FINAL` so quando disseres explicitamente `FECHADO`.
-- Este documento usa obrigatoriamente os dois eixos (decisao + execucao).
+### 13.4 Nota de manutenção
+- Este documento é vivo e evolui por decisões explícitas do owner.
 
 ## 14) Glossario operacional (termos que geraram duvida)
 
@@ -355,7 +386,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 ### 14.2 "No-show"
 - Significa: a sessao/jogo/reserva estava marcada mas a pessoa nao compareceu.
 - E estado operacional/financeiro, nao mecanismo de agendamento.
-- Regra fechada: manter historico e auditoria; nao bloquear ocupacoes futuras por si so.
+- Regra acordada: marcar apos inicio, manter historico e auditoria, nao bloquear ocupacoes futuras por si so; reversao ate `T+24h` por `OWNER/ADMIN`.
 
 ## 15) Verificacao anti-ambiguidade dos 8 principios centrais
 

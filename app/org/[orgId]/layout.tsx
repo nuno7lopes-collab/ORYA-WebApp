@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import OrganizationAuthLayout from "@/app/organizacao/layout";
-import OrganizationDashboardLayout from "@/app/organizacao/(dashboard)/layout";
+import OrganizationAuthLayout from "@/app/org/_internal/core/layout";
+import OrganizationDashboardLayout from "@/app/org/_internal/core/(dashboard)/layout";
 
 export default async function OrgScopedLayout({ children }: { children: ReactNode }) {
   return (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { normalizeOrganizationPathname } from "@/app/organizacao/topbarRouteUtils";
+import { normalizeOrganizationPathname } from "@/app/org/_internal/core/topbarRouteUtils";
 
 export type ToolSubnavItem = {
   id: string;

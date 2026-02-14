@@ -1,4 +1,4 @@
-import OrganizationScanPage from "@/app/organizacao/(dashboard)/scan/page";
+import OrganizationScanPage from "@/app/org/_internal/core/(dashboard)/scan/page";
 import { redirect } from "next/navigation";
 
 type SearchParamsInput =

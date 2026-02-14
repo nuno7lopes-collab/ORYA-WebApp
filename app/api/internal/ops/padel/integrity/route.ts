@@ -69,8 +69,7 @@ async function _GET(req: NextRequest) {
         JOIN app_v3.agenda_resource_claims b
           ON a.id < b.id
          AND a.event_id = b.event_id
-         AND a.resource_type = b.resource_type
-         AND a.resource_id = b.resource_id
+         AND a.resource_key = b.resource_key
          AND tstzrange(a.starts_at, a.ends_at, '[)') && tstzrange(b.starts_at, b.ends_at, '[)')
         WHERE a.event_id = ${eventId}
           AND a.status = 'CLAIMED'::app_v3."AgendaResourceClaimStatus"

@@ -2,12 +2,23 @@ import fs from "fs";
 import path from "path";
 
 const ROOT = process.cwd();
-const API_ROOT = path.join(ROOT, "app", "api", "organizacao");
+const API_ROOT = path.join(ROOT, "app", "api", "org");
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 
 const ALLOWLIST = new Set([
-  "app/api/organizacao/payouts/webhook/route.ts",
-  "app/api/organizacao/invites/route.ts",
+  "app/api/org/[orgId]/crm/campanhas/[campaignId]/approve/route.ts",
+  "app/api/org/[orgId]/crm/campanhas/[campaignId]/cancel/route.ts",
+  "app/api/org/[orgId]/crm/campanhas/[campaignId]/reject/route.ts",
+  "app/api/org/[orgId]/crm/campanhas/[campaignId]/route.ts",
+  "app/api/org/[orgId]/crm/campanhas/[campaignId]/submit/route.ts",
+  "app/api/org/[orgId]/crm/config/route.ts",
+  "app/api/org/[orgId]/crm/journeys/[id]/pause/route.ts",
+  "app/api/org/[orgId]/crm/journeys/[id]/publish/route.ts",
+  "app/api/org/[orgId]/crm/journeys/[id]/route.ts",
+  "app/api/org/[orgId]/crm/journeys/route.ts",
+  "app/api/org/[orgId]/crm/saved-views/[id]/route.ts",
+  "app/api/org/[orgId]/crm/saved-views/route.ts",
+  "app/api/org/[orgId]/route.ts",
 ]);
 
 const REQUIRED_MARKERS = [

@@ -23,8 +23,8 @@ describe("store legacy hard-cut", () => {
     expect(files).toEqual([]);
   });
 
-  it("removes /api/organizacao/loja/** namespace", () => {
-    const files = listRoutes("app/api/organizacao/loja");
+  it("removes /api/org/1/loja/** namespace", () => {
+    const files = listRoutes("app/api/org/[orgId]/loja");
     expect(files).toEqual([]);
   });
 

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import PadelTournamentWizardClient from "@/app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient";
+import PadelTournamentWizardClient from "@/app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient";
 
 export default async function OrgPadelTournamentCreatePage({
   params,

@@ -26,6 +26,20 @@ export function isSameOrigin(
     const originUrl = new URL(origin);
     const reqUrl = new URL(req.nextUrl.origin);
     if (originUrl.origin === reqUrl.origin) return true;
+
+    // In local/dev proxies, req.nextUrl may resolve to loopback.
+    // Accept the incoming host/proto headers as canonical request origin.
+    const forwardedHostRaw = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
+    const forwardedHost = forwardedHostRaw.split(",")[0]?.trim().toLowerCase() || "";
+    const forwardedProtoRaw = req.headers.get("x-forwarded-proto") || "";
+    const forwardedProto = forwardedProtoRaw.split(",")[0]?.trim().toLowerCase() || "";
+    const originHostWithPort = originUrl.host.toLowerCase();
+    const originProto = originUrl.protocol.replace(/:$/, "").toLowerCase();
+
+    if (forwardedHost && originHostWithPort === forwardedHost) {
+      if (!forwardedProto || forwardedProto === originProto) return true;
+    }
+
     const originHost = originUrl.hostname;
     const reqHost = reqUrl.hostname;
     const isLocalhost =

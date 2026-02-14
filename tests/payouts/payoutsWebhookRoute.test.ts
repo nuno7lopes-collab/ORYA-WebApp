@@ -20,7 +20,7 @@ vi.mock("@/lib/stripeKeys", () => ({ getStripePayoutsWebhookSecret }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 vi.mock("@/lib/observability/logger", () => ({ logError, logInfo, logWarn }));
 
-import { POST } from "@/app/api/organizacao/payouts/webhook/route";
+import { POST } from "@/app/api/org-system/payouts/webhook/route";
 
 function makeAccountUpdatedEvent(input: {
   accountId: string;
@@ -48,7 +48,7 @@ function makeAccountUpdatedEvent(input: {
 }
 
 function makeRequest() {
-  return new NextRequest("http://localhost/api/organizacao/payouts/webhook", {
+  return new NextRequest("http://localhost/api/org-system/payouts/webhook", {
     method: "POST",
     headers: { "stripe-signature": "sig_test" },
     body: "{}",
@@ -69,7 +69,7 @@ describe("payout webhook route", () => {
   });
 
   it("devolve 400 sem assinatura", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/payouts/webhook", {
+    const req = new NextRequest("http://localhost/api/org-system/payouts/webhook", {
       method: "POST",
       body: "{}",
     });

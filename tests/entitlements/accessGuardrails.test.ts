@@ -33,7 +33,7 @@ describe("access entitlement guardrails", () => {
         "-g '!domain/padel/cleanup.ts'",
         "-g '!app/api/stripe/webhook/route.ts'",
         "-g '!app/api/internal/worker/operations/route.ts'",
-        "-g '!app/api/organizacao/events/[[]id[]]/refund/route.ts'",
+        "-g '!app/api/org/[orgId]/events/[[]id[]]/refund/route.ts'",
         "-g '!app/api/admin/eventos/purge/route.ts'",
       ].join(" "),
       "Entitlement writes outside canonical modules",

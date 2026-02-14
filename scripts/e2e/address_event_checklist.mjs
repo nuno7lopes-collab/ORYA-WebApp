@@ -168,7 +168,7 @@ async function main() {
       const title = `E2E Apple Address ${Date.now()}`;
       const payload = buildEventPayloadFromAddress(state.addressDetails, title);
       const { response, payload: createPayload, raw } = await api(
-        `/api/organizacao/events/create?organizationId=${ORG_ID}`,
+        `/api/org/${ORG_ID}/events/create`,
         { method: "POST", body: payload },
       );
       assert(response.ok, `HTTP ${response.status}`);
@@ -182,7 +182,7 @@ async function main() {
   }
 
   await runStep("List organization events", async () => {
-    const { response, payload } = await api(`/api/organizacao/events/list?organizationId=${ORG_ID}`);
+    const { response, payload } = await api(`/api/org/${ORG_ID}/events/list`);
     assert(response.ok, `HTTP ${response.status}`);
     const items = Array.isArray(payload?.items) ? payload.items : [];
     const found = items.find((item) => item && item.id === state.eventId);
@@ -199,7 +199,7 @@ async function main() {
       state.addressDetails,
       `E2E Apple Address Updated ${Date.now()}`,
     );
-    const { response, payload: updatePayload, raw } = await api("/api/organizacao/events/update", {
+    const { response, payload: updatePayload, raw } = await api(`/api/org/${ORG_ID}/events/update`, {
       method: "POST",
       body: {
         eventId: state.eventId,
@@ -230,7 +230,7 @@ async function main() {
   if (state.createdEvent && !KEEP_EVENT) {
     await runStep("Cleanup: archive test event", async () => {
       assert(state.eventId, "eventId ausente para cleanup.");
-      const { response } = await api("/api/organizacao/events/update", {
+      const { response } = await api(`/api/org/${ORG_ID}/events/update`, {
         method: "POST",
         body: { eventId: state.eventId, archive: true },
       });

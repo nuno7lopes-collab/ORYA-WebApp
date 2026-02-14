@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PLATFORM_SECURITY_EMAIL, PLATFORM_SUPPORT_EMAIL } from "@/lib/platformContact";
 
 type FooterLink = { label: string; href?: string; external?: boolean };
 
@@ -26,8 +27,8 @@ const ACCOUNT_LINKS: FooterLink[] = [
 ];
 
 const SUPPORT_LINKS: FooterLink[] = [
-  { label: "support@orya.pt", href: "mailto:support@orya.pt" },
-  { label: "security@orya.pt", href: "mailto:security@orya.pt" },
+  { label: PLATFORM_SUPPORT_EMAIL, href: `mailto:${PLATFORM_SUPPORT_EMAIL}` },
+  { label: PLATFORM_SECURITY_EMAIL, href: `mailto:${PLATFORM_SECURITY_EMAIL}` },
 ];
 
 const SOCIAL_LINKS: FooterLink[] = [

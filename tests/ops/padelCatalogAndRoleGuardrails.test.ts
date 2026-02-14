@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const FORMAT_FILES = [
-  "app/api/organizacao/events/create/route.ts",
+  "app/api/org/[orgId]/events/create/route.ts",
   "app/api/padel/tournaments/config/route.ts",
   "app/api/padel/discover/route.ts",
   "app/api/padel/event-categories/route.ts",
@@ -50,7 +50,7 @@ describe("padel format catalog guardrails (D18.11)", () => {
   });
 
   it("create de evento padel falha fechado sem fallback de formato", () => {
-    const createRoute = readLocal("app/api/organizacao/events/create/route.ts");
+    const createRoute = readLocal("app/api/org/[orgId]/events/create/route.ts");
     expect(createRoute).toContain("INVALID_FORMAT");
     expect(createRoute).toContain("parsePadelFormat");
     expect(createRoute).not.toContain("resolvePadelFormat");
@@ -90,13 +90,13 @@ describe("padel tournament role guardrails (D18.09)", () => {
     expect(schema).toContain("DIRETOR_PROVA");
     expect(schema).not.toContain("\n  DIRECTOR\n");
 
-    const panel = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx");
+    const panel = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx");
     expect(panel).toContain("DIRETOR_PROVA");
   });
 
   it("remove legacy DIRECTOR do runtime Padel", () => {
     const files = [
-      "app/organizacao/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx",
+      "app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx",
       "app/api/padel/clubs/[id]/staff/route.ts",
       "app/api/padel/tournaments/roles/route.ts",
     ];
@@ -111,11 +111,11 @@ describe("padel tournament role guardrails (D18.09)", () => {
 describe("padel ui naming guardrails (N7)", () => {
   it("remove labels legacy na navegação organizacional Padel", () => {
     const files = [
-      "app/organizacao/objectiveNav.ts",
-      "app/organizacao/DashboardClient.tsx",
-      "app/organizacao/OrganizationBreadcrumb.tsx",
-      "app/organizacao/OrganizationTopBar.tsx",
-      "app/organizacao/(dashboard)/padel/PadelHubClient.tsx",
+      "app/org/_internal/core/objectiveNav.ts",
+      "app/org/_internal/core/DashboardClient.tsx",
+      "app/org/_internal/core/OrganizationBreadcrumb.tsx",
+      "app/org/_internal/core/OrganizationTopBar.tsx",
+      "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx",
     ];
 
     for (const file of files) {
@@ -135,7 +135,7 @@ describe("padel lifecycle governance guardrails (N5)", () => {
   });
 
   it("auto-atribui DIRETOR_PROVA no create de evento padel", () => {
-    const content = readLocal("app/api/organizacao/events/create/route.ts");
+    const content = readLocal("app/api/org/[orgId]/events/create/route.ts");
     expect(content).toContain("padelTournamentRoleAssignment.upsert");
     expect(content).toContain("PadelTournamentRole.DIRETOR_PROVA");
   });
@@ -156,7 +156,7 @@ describe("padel lifecycle governance guardrails (N5)", () => {
   it("UI operacional usa endpoint dedicado para incidentes especiais", () => {
     const live = readLocal("app/eventos/[slug]/EventLiveClient.tsx");
     const monitor = readLocal("app/eventos/[slug]/monitor/PadelMonitorClient.tsx");
-    const tabs = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    const tabs = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
     expect(live).toContain("/walkover");
     expect(monitor).toContain("/walkover");
     expect(tabs).toContain("/walkover");

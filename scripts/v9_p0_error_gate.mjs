@@ -7,7 +7,7 @@ const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.j
 const ALLOW_PLAIN_TEXT = new Set([
   "app/api/stripe/webhook/route.ts",
   "app/api/webhooks/stripe/route.ts",
-  "app/api/organizacao/payouts/webhook/route.ts",
+  "app/api/org-system/payouts/webhook/route.ts",
 ]);
 
 function extractP0Routes() {

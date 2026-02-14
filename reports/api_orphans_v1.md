@@ -1,14 +1,14 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-14T00:21:26.217Z
+Generated: 2026-02-14T22:53:22.921Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 648
-- Covered by UI: 477
+- API routes total: 535
+- Covered by UI: 375
 - Orphan (no UI): 0
 - Orphan allowlisted: 2
-- Exempt (internal/cron/webhook): 169
+- Exempt (internal/cron/webhook): 158
 - UI endpoints missing API: 0
 
 ## UI endpoints missing API routes
@@ -53,6 +53,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/internal/ops/padel/backfill (app/api/internal/ops/padel/backfill/route.ts)
 - /api/internal/ops/padel/cleanup (app/api/internal/ops/padel/cleanup/route.ts)
 - /api/internal/ops/padel/integrity (app/api/internal/ops/padel/integrity/route.ts)
+- /api/internal/ops/padel/workforce-hygiene (app/api/internal/ops/padel/workforce-hygiene/route.ts)
 - /api/internal/ops/slo (app/api/internal/ops/slo/route.ts)
 - /api/internal/outbox/dlq (app/api/internal/outbox/dlq/route.ts)
 - /api/internal/outbox/replay (app/api/internal/outbox/replay/route.ts)
@@ -78,36 +79,22 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/org/[orgId]/padel/pairings/swap (app/api/org/[orgId]/padel/pairings/swap/route.ts)
 - /api/org/[orgId]/padel/waitlist (app/api/org/[orgId]/padel/waitlist/route.ts)
 - /api/org/[orgId]/padel/waitlist/promote (app/api/org/[orgId]/padel/waitlist/promote/route.ts)
-- /api/organizacao/padel/analytics (app/api/organizacao/padel/analytics/route.ts)
-- /api/organizacao/padel/audit (app/api/organizacao/padel/audit/route.ts)
-- /api/organizacao/padel/broadcast (app/api/organizacao/padel/broadcast/route.ts)
-- /api/organizacao/padel/courts (app/api/organizacao/padel/courts/route.ts)
-- /api/organizacao/padel/exports/analytics (app/api/organizacao/padel/exports/analytics/route.ts)
-- /api/organizacao/padel/exports/bracket (app/api/organizacao/padel/exports/bracket/route.ts)
-- /api/organizacao/padel/exports/calendario (app/api/organizacao/padel/exports/calendario/route.ts)
-- /api/organizacao/padel/exports/inscritos (app/api/organizacao/padel/exports/inscritos/route.ts)
-- /api/organizacao/padel/exports/resultados (app/api/organizacao/padel/exports/resultados/route.ts)
-- /api/organizacao/padel/imports/inscritos (app/api/organizacao/padel/imports/inscritos/route.ts)
-- /api/organizacao/padel/pairings/swap (app/api/organizacao/padel/pairings/swap/route.ts)
-- /api/organizacao/padel/waitlist (app/api/organizacao/padel/waitlist/route.ts)
-- /api/organizacao/padel/waitlist/promote (app/api/organizacao/padel/waitlist/promote/route.ts)
-- /api/organizacao/payouts/webhook (app/api/organizacao/payouts/webhook/route.ts)
-- /api/organizacao/tournaments/[id] (app/api/organizacao/tournaments/[id]/route.ts)
-- /api/organizacao/tournaments/[id]/featured-match (app/api/organizacao/tournaments/[id]/featured-match/route.ts)
-- /api/organizacao/tournaments/[id]/finance (app/api/organizacao/tournaments/[id]/finance/route.ts)
-- /api/organizacao/tournaments/[id]/generate (app/api/organizacao/tournaments/[id]/generate/route.ts)
-- /api/organizacao/tournaments/[id]/live (app/api/organizacao/tournaments/[id]/live/route.ts)
-- /api/organizacao/tournaments/[id]/matches/[matchId]/edit (app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts)
-- /api/organizacao/tournaments/[id]/matches/[matchId]/notify (app/api/organizacao/tournaments/[id]/matches/[matchId]/notify/route.ts)
-- /api/organizacao/tournaments/[id]/matches/[matchId]/result (app/api/organizacao/tournaments/[id]/matches/[matchId]/result/route.ts)
-- /api/organizacao/tournaments/[id]/matches/[matchId]/undo (app/api/organizacao/tournaments/[id]/matches/[matchId]/undo/route.ts)
-- /api/organizacao/tournaments/[id]/matches/schedule (app/api/organizacao/tournaments/[id]/matches/schedule/route.ts)
-- /api/organizacao/tournaments/[id]/participants (app/api/organizacao/tournaments/[id]/participants/route.ts)
-- /api/organizacao/tournaments/[id]/rules (app/api/organizacao/tournaments/[id]/rules/route.ts)
-- /api/organizacao/tournaments/[id]/sponsors (app/api/organizacao/tournaments/[id]/sponsors/route.ts)
-- /api/organizacao/tournaments/[id]/structure (app/api/organizacao/tournaments/[id]/structure/route.ts)
-- /api/organizacao/tournaments/create (app/api/organizacao/tournaments/create/route.ts)
-- /api/organizacao/tournaments/list (app/api/organizacao/tournaments/list/route.ts)
+- /api/org/[orgId]/tournaments/[id] (app/api/org/[orgId]/tournaments/[id]/route.ts)
+- /api/org/[orgId]/tournaments/[id]/featured-match (app/api/org/[orgId]/tournaments/[id]/featured-match/route.ts)
+- /api/org/[orgId]/tournaments/[id]/finance (app/api/org/[orgId]/tournaments/[id]/finance/route.ts)
+- /api/org/[orgId]/tournaments/[id]/generate (app/api/org/[orgId]/tournaments/[id]/generate/route.ts)
+- /api/org/[orgId]/tournaments/[id]/live (app/api/org/[orgId]/tournaments/[id]/live/route.ts)
+- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/edit (app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/edit/route.ts)
+- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/notify (app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/notify/route.ts)
+- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/result (app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/result/route.ts)
+- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/undo (app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/undo/route.ts)
+- /api/org/[orgId]/tournaments/[id]/matches/schedule (app/api/org/[orgId]/tournaments/[id]/matches/schedule/route.ts)
+- /api/org/[orgId]/tournaments/[id]/participants (app/api/org/[orgId]/tournaments/[id]/participants/route.ts)
+- /api/org/[orgId]/tournaments/[id]/rules (app/api/org/[orgId]/tournaments/[id]/rules/route.ts)
+- /api/org/[orgId]/tournaments/[id]/sponsors (app/api/org/[orgId]/tournaments/[id]/sponsors/route.ts)
+- /api/org/[orgId]/tournaments/[id]/structure (app/api/org/[orgId]/tournaments/[id]/structure/route.ts)
+- /api/org/[orgId]/tournaments/create (app/api/org/[orgId]/tournaments/create/route.ts)
+- /api/org/[orgId]/tournaments/list (app/api/org/[orgId]/tournaments/list/route.ts)
 - /api/padel/calendar (app/api/padel/calendar/route.ts)
 - /api/padel/calendar/auto-schedule (app/api/padel/calendar/auto-schedule/route.ts)
 - /api/padel/calendar/claims/commit (app/api/padel/calendar/claims/commit/route.ts)
@@ -115,6 +102,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/clubs (app/api/padel/clubs/route.ts)
 - /api/padel/clubs/[id]/courts (app/api/padel/clubs/[id]/courts/route.ts)
 - /api/padel/clubs/[id]/staff (app/api/padel/clubs/[id]/staff/route.ts)
+- /api/padel/clubs/[id]/staff/invites (app/api/padel/clubs/[id]/staff/invites/route.ts)
 - /api/padel/community/posts (app/api/padel/community/posts/route.ts)
 - /api/padel/community/posts/[id]/comments (app/api/padel/community/posts/[id]/comments/route.ts)
 - /api/padel/community/posts/[id]/reactions (app/api/padel/community/posts/[id]/reactions/route.ts)
@@ -171,6 +159,7 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/padel/rulesets (app/api/padel/rulesets/route.ts)
 - /api/padel/standings (app/api/padel/standings/route.ts)
 - /api/padel/teams (app/api/padel/teams/route.ts)
+- /api/padel/teams/[id]/invites (app/api/padel/teams/[id]/invites/route.ts)
 - /api/padel/teams/[id]/members (app/api/padel/teams/[id]/members/route.ts)
 - /api/padel/teams/entries (app/api/padel/teams/entries/route.ts)
 - /api/padel/tournaments/config (app/api/padel/tournaments/config/route.ts)
@@ -201,7 +190,7 @@ CSV: reports/api_ui_coverage_v1.csv
 ### P0 exempt (internal/cron/webhook)
 - /api/padel/pairings/[id]/checkout (app/api/padel/pairings/[id]/checkout/route.ts)
 - /api/padel/matches/[id]/dispute (app/api/padel/matches/[id]/dispute/route.ts)
-- /api/organizacao/payouts/webhook (app/api/organizacao/payouts/webhook/route.ts)
+- /api/org-system/payouts/webhook (app/api/org-system/payouts/webhook/route.ts)
 - /api/internal/reconcile (app/api/internal/reconcile/route.ts)
 - /api/internal/outbox/dlq (app/api/internal/outbox/dlq/route.ts)
 - /api/internal/outbox/replay (app/api/internal/outbox/replay/route.ts)
@@ -223,20 +212,20 @@ CSV: reports/api_ui_coverage_v1.csv
 - /api/cobrancas/[token]/checkout (files: app/cobrancas/[token]/ChargeClient.tsx)
 - /api/servicos/[id]/checkout (files: app/[username]/_components/ReservasBookingClient.tsx, apps/mobile/app/checkout/index.tsx)
 - /api/servicos/[id]/creditos/checkout (files: apps/mobile/features/services/api.ts)
-- /api/organizacao/reservas/[id]/checkout (files: lib/canonicalOrgApiPath.ts)
+- /api/org/[orgId]/reservas/[id]/checkout (files: app/org/_internal/core/(dashboard)/reservas/page.tsx)
 - /api/public/store/checkout (files: apps/mobile/features/store/api.ts, components/storefront/StorefrontCheckoutClient.tsx)
 - /api/admin/payments/refund (files: app/admin/(protected)/finance/page.tsx, app/admin/(protected)/tickets/page.tsx)
 - /api/admin/payments/dispute (files: app/admin/(protected)/finance/page.tsx)
 - /api/admin/payments/reprocess (files: app/admin/(protected)/finance/page.tsx, app/admin/components/PaymentTools.tsx)
 - /api/admin/refunds/list (files: app/admin/(protected)/finance/page.tsx)
 - /api/admin/refunds/retry (files: app/admin/(protected)/finance/page.tsx)
-- /api/organizacao/refunds/list (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/events/[id]/refund (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/payouts/status (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/payouts/list (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/payouts/summary (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/payouts/settings (files: lib/canonicalOrgApiPath.ts)
-- /api/organizacao/payouts/connect (files: lib/canonicalOrgApiPath.ts)
+- /api/org/[orgId]/refunds/list (files: app/org/_internal/core/pagamentos/RefundsPanel.tsx)
+- /api/org/[orgId]/events/[id]/refund (files: app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx)
+- /api/org/[orgId]/payouts/status (files: app/components/checkin/CheckinScanner.tsx, app/eventos/[slug]/EventLiveClient.tsx, app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx, app/org/_internal/core/DashboardClient.tsx, lib/canonicalOrgApiPath.ts)
+- /api/org/[orgId]/payouts/list (files: app/org/_internal/core/pagamentos/PayoutsPanel.tsx)
+- /api/org/[orgId]/payouts/summary (files: app/components/checkin/CheckinScanner.tsx, app/eventos/[slug]/EventLiveClient.tsx, app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx, app/org/_internal/core/DashboardClient.tsx, lib/canonicalOrgApiPath.ts)
+- /api/org/[orgId]/payouts/settings (files: app/components/checkin/CheckinScanner.tsx, app/eventos/[slug]/EventLiveClient.tsx, app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx, app/org/_internal/core/DashboardClient.tsx, lib/canonicalOrgApiPath.ts)
+- /api/org/[orgId]/payouts/connect (files: app/components/checkin/CheckinScanner.tsx, app/eventos/[slug]/EventLiveClient.tsx, app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx, app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx, app/org/_internal/core/DashboardClient.tsx, lib/canonicalOrgApiPath.ts)
 
 ### P0 missing UI usage
 - none

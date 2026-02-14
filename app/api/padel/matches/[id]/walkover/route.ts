@@ -203,7 +203,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         body: `Jogo #${matchId}: ${resultType} confirmado por REFEREE.`,
         organizationId,
         eventId: match.eventId,
-        ctaUrl: `/organizacao/eventos/${match.eventId}`,
+        ctaUrl: `/org/${organizationId}/events/${match.eventId}`,
         dedupeKey: `padel_incident_referee_notify:${matchId}:${resultType}:${authority.confirmedByRole}`,
         payload: {
           kind: "PADEL_INCIDENT_REFEREE_CONFIRMED",

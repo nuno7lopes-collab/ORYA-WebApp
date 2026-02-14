@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { GET as getInternal } from "@/app/api/internal/ops/feed/route";
-import { GET as getOrg } from "@/app/api/organizacao/ops/feed/route";
+import { GET as getOrg } from "@/app/api/org/[orgId]/ops/feed/route";
 import { prisma } from "@/lib/prisma";
 
 vi.mock("@/lib/prisma", () => {
@@ -55,7 +55,7 @@ describe("ops feed routes", () => {
     prismaMock.activityFeedItem.findMany.mockResolvedValueOnce([
       { id: "item-2", organizationId: 10 } as any,
     ]);
-    const req = new NextRequest("http://localhost/api/organizacao/ops/feed");
+    const req = new NextRequest("http://localhost/api/org/1/ops/feed");
     const res = await getOrg(req);
     const body = await res.json();
     expect(body.ok).toBe(true);

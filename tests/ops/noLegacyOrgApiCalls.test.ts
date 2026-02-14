@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 const ALLOWLIST_PREFIXES = [
-  "app/api/organizacao/",
+  "app/api/org/[orgId]/",
   "app/api/org/",
   "app/api/org-hub/",
   "app/api/org-system/",
@@ -11,8 +11,8 @@ const ALLOWLIST_PREFIXES = [
 ];
 
 const ALLOWLIST_FILES = new Set([
-  "app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx",
-  "app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx",
+  "app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx",
+  "app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx",
 ]);
 
 const ALLOWLIST_LINE_PATTERNS = [

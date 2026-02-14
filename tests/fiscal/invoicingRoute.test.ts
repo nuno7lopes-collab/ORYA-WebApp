@@ -38,8 +38,8 @@ vi.mock("@/lib/prisma", () => {
   return { prisma };
 });
 
-let GET: typeof import("@/app/api/organizacao/finance/invoicing/route").GET;
-let POST: typeof import("@/app/api/organizacao/finance/invoicing/route").POST;
+let GET: typeof import("@/app/api/org/[orgId]/finance/invoicing/route").GET;
+let POST: typeof import("@/app/api/org/[orgId]/finance/invoicing/route").POST;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -48,8 +48,8 @@ beforeEach(async () => {
   getActiveOrganizationForUser.mockReset();
   recordOutboxEvent.mockClear();
   appendEventLog.mockClear();
-  GET = (await import("@/app/api/organizacao/finance/invoicing/route")).GET;
-  POST = (await import("@/app/api/organizacao/finance/invoicing/route")).POST;
+  GET = (await import("@/app/api/org/[orgId]/finance/invoicing/route")).GET;
+  POST = (await import("@/app/api/org/[orgId]/finance/invoicing/route")).POST;
 });
 
 describe("finance invoicing route", () => {
@@ -59,7 +59,7 @@ describe("finance invoicing route", () => {
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    const req = new NextRequest("http://localhost/api/organizacao/finance/invoicing", {
+    const req = new NextRequest("http://localhost/api/org/1/finance/invoicing", {
       method: "POST",
       body: JSON.stringify({ invoicingMode: "MANUAL_OUTSIDE_ORYA", acknowledged: false }),
     });
@@ -73,7 +73,7 @@ describe("finance invoicing route", () => {
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    const req = new NextRequest("http://localhost/api/organizacao/finance/invoicing", {
+    const req = new NextRequest("http://localhost/api/org/1/finance/invoicing", {
       method: "POST",
       body: JSON.stringify({
         invoicingMode: "EXTERNAL_SOFTWARE",
@@ -102,7 +102,7 @@ describe("finance invoicing route", () => {
       membership: { role: "ADMIN", rolePack: null },
     });
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
-    const req = new NextRequest("http://localhost/api/organizacao/finance/invoicing");
+    const req = new NextRequest("http://localhost/api/org/1/finance/invoicing");
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);

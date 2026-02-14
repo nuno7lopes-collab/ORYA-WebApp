@@ -56,7 +56,7 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
   }
 
-  const [ownerCourts, windows, grants, overrides, cases, blocks, claims] = await Promise.all([
+  const [ownerCourts, windows, grants, overrides, cases, blocks] = await Promise.all([
     prisma.padelClubCourt.findMany({
       where: {
         padelClubId: agreement.ownerClubId,
@@ -102,31 +102,36 @@ async function _GET(req: NextRequest) {
       },
       orderBy: [{ startAt: "asc" }, { id: "asc" }],
     }),
-    prisma.agendaResourceClaim.findMany({
-      where: {
-        organizationId: agreement.partnerOrganizationId,
-        resourceType: "COURT",
-        startsAt: { lt: rangeEnd },
-        endsAt: { gt: rangeStart },
-      },
-      select: {
-        id: true,
-        bundleId: true,
-        status: true,
-        sourceType: true,
-        sourceId: true,
-        resourceId: true,
-        startsAt: true,
-        endsAt: true,
-        metadata: true,
-      },
-      orderBy: [{ startsAt: "asc" }, { id: "asc" }],
-    }),
   ]);
 
   const ownerCourtIds = ownerCourts.map((court) => court.id);
-  const courtIdSet = new Set(ownerCourtIds.map((id) => String(id)));
-  const filteredClaims = claims.filter((claim) => courtIdSet.has(claim.resourceId));
+  const sharedResourceKeys = ownerCourtIds.map((courtId) => `COURT:${agreement.ownerOrganizationId}:${courtId}`);
+  const claims =
+    sharedResourceKeys.length > 0
+      ? await prisma.agendaResourceClaim.findMany({
+          where: {
+            resourceKey: { in: sharedResourceKeys },
+            startsAt: { lt: rangeEnd },
+            endsAt: { gt: rangeStart },
+          },
+          select: {
+            id: true,
+            bundleId: true,
+            status: true,
+            sourceType: true,
+            sourceId: true,
+            organizationId: true,
+            authorityOrgId: true,
+            resourceId: true,
+            resourceKey: true,
+            startsAt: true,
+            endsAt: true,
+            metadata: true,
+          },
+          orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+        })
+      : [];
+  const filteredClaims = claims;
 
   const matches = ownerCourtIds.length
     ? await prisma.eventMatchSlot.findMany({
@@ -206,6 +211,9 @@ async function _GET(req: NextRequest) {
     endAt: toIso(claim.endsAt),
     sourceType: claim.sourceType,
     sourceId: claim.sourceId,
+    organizationId: claim.organizationId,
+    authorityOrgId: claim.authorityOrgId,
+    resourceKey: claim.resourceKey,
     metadata: claim.metadata,
   }));
 
@@ -225,6 +233,9 @@ async function _GET(req: NextRequest) {
           status: claim.status,
           sourceType: claim.sourceType,
           sourceId: claim.sourceId,
+          organizationId: claim.organizationId,
+          authorityOrgId: claim.authorityOrgId,
+          resourceKey: claim.resourceKey,
           courtId: Number(claim.resourceId),
           startAt: toIso(claim.startsAt),
           endAt: toIso(claim.endsAt),

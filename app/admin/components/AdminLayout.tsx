@@ -30,6 +30,7 @@ const navGroups = [
     items: [
       { href: "/admin/eventos", label: "Eventos" },
       { href: "/admin/tickets", label: "Bilhetes" },
+      { href: "/admin/suporte", label: "Suporte" },
     ],
   },
   {

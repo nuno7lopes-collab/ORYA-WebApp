@@ -1,6 +1,6 @@
 # V9 Inventory — Pages/Routes
 
-Total: 246
+Total: 249
 
 | Route | File | Group | Flow Tags |
 | --- | --- | --- | --- |
@@ -25,6 +25,8 @@ Total: 246
 | /admin/payouts | app/admin/(protected)/payouts/page.tsx | (protected) | admin |
 | /admin/refunds | app/admin/(protected)/refunds/page.tsx | (protected) | admin |
 | /admin/settings | app/admin/(protected)/settings/page.tsx | (protected) | admin |
+| /admin/suporte | app/admin/(protected)/suporte/page.tsx | (protected) | admin |
+| /admin/suporte/[id] | app/admin/(protected)/suporte/[id]/page.tsx | (protected) | admin |
 | /admin/tickets | app/admin/(protected)/tickets/page.tsx | (protected) | admin |
 | /admin/utilizadores | app/admin/(protected)/utilizadores/page.tsx | (protected) | admin |
 | /agora | app/agora/page.tsx | - | public |
@@ -81,6 +83,71 @@ Total: 246
 | /org-hub | app/org-hub/page.tsx | - | public |
 | /org-hub/create | app/org-hub/create/page.tsx | - | public |
 | /org-hub/organizations | app/org-hub/organizations/page.tsx | - | public |
+| /org/_internal/core | app/org/_internal/core/(dashboard)/page.tsx | (dashboard) | public |
+| /org/_internal/core/analyze | app/org/_internal/core/(dashboard)/analyze/page.tsx | (dashboard) | public |
+| /org/_internal/core/become | app/org/_internal/core/become/page.tsx | - | public |
+| /org/_internal/core/categorias | app/org/_internal/core/(dashboard)/categorias/page.tsx | (dashboard) | public |
+| /org/_internal/core/categorias/padel | app/org/_internal/core/(dashboard)/categorias/padel/page.tsx | (dashboard) | padel |
+| /org/_internal/core/chat | app/org/_internal/core/(dashboard)/chat/page.tsx | (dashboard) | public |
+| /org/_internal/core/chat/preview | app/org/_internal/core/(dashboard)/chat/preview/page.tsx | (dashboard) | public |
+| /org/_internal/core/clube/caixa | app/org/_internal/core/(dashboard)/clube/caixa/page.tsx | (dashboard) | public |
+| /org/_internal/core/clube/membros | app/org/_internal/core/(dashboard)/clube/membros/page.tsx | (dashboard) | public |
+| /org/_internal/core/crm | app/org/_internal/core/(dashboard)/crm/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/campanhas | app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/clientes | app/org/_internal/core/(dashboard)/crm/clientes/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/clientes/[customerId] | app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/journeys | app/org/_internal/core/(dashboard)/crm/journeys/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/loyalty | app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/relatorios | app/org/_internal/core/(dashboard)/crm/relatorios/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/segmentos | app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx | (dashboard) | crm |
+| /org/_internal/core/crm/segmentos/[segmentId] | app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx | (dashboard) | crm |
+| /org/_internal/core/estatisticas | app/org/_internal/core/estatisticas/page.tsx | - | public |
+| /org/_internal/core/eventos | app/org/_internal/core/(dashboard)/eventos/page.tsx | (dashboard) | public |
+| /org/_internal/core/eventos/[id] | app/org/_internal/core/(dashboard)/eventos/[id]/page.tsx | (dashboard) | public |
+| /org/_internal/core/eventos/[id]/edit | app/org/_internal/core/(dashboard)/eventos/[id]/edit/page.tsx | (dashboard) | public |
+| /org/_internal/core/eventos/[id]/live | app/org/_internal/core/(dashboard)/eventos/[id]/live/page.tsx | (dashboard) | public |
+| /org/_internal/core/eventos/novo | app/org/_internal/core/(dashboard)/eventos/novo/page.tsx | (dashboard) | public |
+| /org/_internal/core/faturacao | app/org/_internal/core/faturacao/page.tsx | - | public |
+| /org/_internal/core/inscricoes | app/org/_internal/core/(dashboard)/inscricoes/page.tsx | (dashboard) | public |
+| /org/_internal/core/inscricoes/[id] | app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx | (dashboard) | public |
+| /org/_internal/core/loja | app/org/_internal/core/(dashboard)/loja/page.tsx | (dashboard) | loja |
+| /org/_internal/core/manage | app/org/_internal/core/(dashboard)/manage/page.tsx | (dashboard) | public |
+| /org/_internal/core/mensagens | app/org/_internal/core/(dashboard)/mensagens/page.tsx | (dashboard) | public |
+| /org/_internal/core/organizations | app/org/_internal/core/(dashboard)/organizations/page.tsx | (dashboard) | public |
+| /org/_internal/core/overview | app/org/_internal/core/(dashboard)/overview/page.tsx | (dashboard) | public |
+| /org/_internal/core/padel | app/org/_internal/core/(dashboard)/padel/page.tsx | (dashboard) | padel |
+| /org/_internal/core/padel/clube | app/org/_internal/core/(dashboard)/padel/clube/page.tsx | (dashboard) | padel |
+| /org/_internal/core/padel/parcerias | app/org/_internal/core/(dashboard)/padel/parcerias/page.tsx | (dashboard) | padel |
+| /org/_internal/core/padel/parcerias/[agreementId] | app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/page.tsx | (dashboard) | padel |
+| /org/_internal/core/padel/torneios | app/org/_internal/core/(dashboard)/padel/torneios/page.tsx | (dashboard) | padel |
+| /org/_internal/core/padel/torneios/novo | app/org/_internal/core/(dashboard)/padel/torneios/novo/page.tsx | (dashboard) | padel |
+| /org/_internal/core/pagamentos | app/org/_internal/core/pagamentos/page.tsx | - | public |
+| /org/_internal/core/pagamentos/invoices | app/org/_internal/core/pagamentos/invoices/page.tsx | - | public |
+| /org/_internal/core/profile | app/org/_internal/core/(dashboard)/profile/page.tsx | (dashboard) | public |
+| /org/_internal/core/promo | app/org/_internal/core/promo/page.tsx | - | public |
+| /org/_internal/core/promote | app/org/_internal/core/(dashboard)/promote/page.tsx | (dashboard) | public |
+| /org/_internal/core/reservas | app/org/_internal/core/(dashboard)/reservas/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/[id] | app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/clientes | app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/novo | app/org/_internal/core/(dashboard)/reservas/novo/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/politicas | app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/profissionais | app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/profissionais/[id] | app/org/_internal/core/(dashboard)/reservas/profissionais/[id]/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/recursos | app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/recursos/[id] | app/org/_internal/core/(dashboard)/reservas/recursos/[id]/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/reservas/servicos | app/org/_internal/core/(dashboard)/reservas/servicos/page.tsx | (dashboard) | reservas |
+| /org/_internal/core/scan | app/org/_internal/core/(dashboard)/scan/page.tsx | (dashboard) | public |
+| /org/_internal/core/settings | app/org/_internal/core/(dashboard)/settings/page.tsx | (dashboard) | public |
+| /org/_internal/core/settings/verify | app/org/_internal/core/(dashboard)/settings/verify/page.tsx | (dashboard) | public |
+| /org/_internal/core/staff | app/org/_internal/core/(dashboard)/staff/page.tsx | (dashboard) | public |
+| /org/_internal/core/torneios | app/org/_internal/core/(dashboard)/torneios/page.tsx | (dashboard) | public |
+| /org/_internal/core/torneios/[id] | app/org/_internal/core/(dashboard)/torneios/[id]/page.tsx | (dashboard) | public |
+| /org/_internal/core/torneios/[id]/edit | app/org/_internal/core/(dashboard)/torneios/[id]/edit/page.tsx | (dashboard) | public |
+| /org/_internal/core/torneios/[id]/live | app/org/_internal/core/(dashboard)/torneios/[id]/live/page.tsx | (dashboard) | public |
+| /org/_internal/core/torneios/novo | app/org/_internal/core/(dashboard)/torneios/novo/page.tsx | (dashboard) | public |
+| /org/_internal/core/tournaments/[id]/finance | app/org/_internal/core/(dashboard)/tournaments/[id]/finance/page.tsx | (dashboard) | public |
+| /org/_internal/core/tournaments/[id]/live | app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx | (dashboard) | public |
+| /org/_internal/core/treinadores | app/org/_internal/core/(dashboard)/treinadores/page.tsx | (dashboard) | public |
 | /org/[orgId] | app/org/[orgId]/page.tsx | - | public |
 | /org/[orgId]/[...slug] | app/org/[orgId]/[...slug]/page.tsx | - | public |
 | /org/[orgId]/analytics | app/org/[orgId]/analytics/page.tsx | - | public |
@@ -160,71 +227,6 @@ Total: 246
 | /org/[orgId]/store | app/org/[orgId]/store/page.tsx | - | public |
 | /org/[orgId]/team | app/org/[orgId]/team/page.tsx | - | public |
 | /org/[orgId]/team/trainers | app/org/[orgId]/team/trainers/page.tsx | - | public |
-| /organizacao | app/organizacao/(dashboard)/page.tsx | (dashboard) | organizacao |
-| /organizacao/analyze | app/organizacao/(dashboard)/analyze/page.tsx | (dashboard) | organizacao |
-| /organizacao/become | app/organizacao/become/page.tsx | - | organizacao |
-| /organizacao/categorias | app/organizacao/(dashboard)/categorias/page.tsx | (dashboard) | organizacao |
-| /organizacao/categorias/padel | app/organizacao/(dashboard)/categorias/padel/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/chat | app/organizacao/(dashboard)/chat/page.tsx | (dashboard) | organizacao |
-| /organizacao/chat/preview | app/organizacao/(dashboard)/chat/preview/page.tsx | (dashboard) | organizacao |
-| /organizacao/clube/caixa | app/organizacao/(dashboard)/clube/caixa/page.tsx | (dashboard) | organizacao |
-| /organizacao/clube/membros | app/organizacao/(dashboard)/clube/membros/page.tsx | (dashboard) | organizacao |
-| /organizacao/crm | app/organizacao/(dashboard)/crm/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/campanhas | app/organizacao/(dashboard)/crm/campanhas/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/clientes | app/organizacao/(dashboard)/crm/clientes/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/clientes/[customerId] | app/organizacao/(dashboard)/crm/clientes/[customerId]/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/journeys | app/organizacao/(dashboard)/crm/journeys/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/loyalty | app/organizacao/(dashboard)/crm/loyalty/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/relatorios | app/organizacao/(dashboard)/crm/relatorios/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/segmentos | app/organizacao/(dashboard)/crm/segmentos/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/crm/segmentos/[segmentId] | app/organizacao/(dashboard)/crm/segmentos/[segmentId]/page.tsx | (dashboard) | organizacao, crm |
-| /organizacao/estatisticas | app/organizacao/estatisticas/page.tsx | - | organizacao |
-| /organizacao/eventos | app/organizacao/(dashboard)/eventos/page.tsx | (dashboard) | organizacao |
-| /organizacao/eventos/[id] | app/organizacao/(dashboard)/eventos/[id]/page.tsx | (dashboard) | organizacao |
-| /organizacao/eventos/[id]/edit | app/organizacao/(dashboard)/eventos/[id]/edit/page.tsx | (dashboard) | organizacao |
-| /organizacao/eventos/[id]/live | app/organizacao/(dashboard)/eventos/[id]/live/page.tsx | (dashboard) | organizacao |
-| /organizacao/eventos/novo | app/organizacao/(dashboard)/eventos/novo/page.tsx | (dashboard) | organizacao |
-| /organizacao/faturacao | app/organizacao/faturacao/page.tsx | - | organizacao |
-| /organizacao/inscricoes | app/organizacao/(dashboard)/inscricoes/page.tsx | (dashboard) | organizacao |
-| /organizacao/inscricoes/[id] | app/organizacao/(dashboard)/inscricoes/[id]/page.tsx | (dashboard) | organizacao |
-| /organizacao/loja | app/organizacao/(dashboard)/loja/page.tsx | (dashboard) | organizacao, loja |
-| /organizacao/manage | app/organizacao/(dashboard)/manage/page.tsx | (dashboard) | organizacao |
-| /organizacao/mensagens | app/organizacao/(dashboard)/mensagens/page.tsx | (dashboard) | organizacao |
-| /organizacao/organizations | app/organizacao/(dashboard)/organizations/page.tsx | (dashboard) | organizacao |
-| /organizacao/overview | app/organizacao/(dashboard)/overview/page.tsx | (dashboard) | organizacao |
-| /organizacao/padel | app/organizacao/(dashboard)/padel/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/padel/clube | app/organizacao/(dashboard)/padel/clube/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/padel/parcerias | app/organizacao/(dashboard)/padel/parcerias/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/padel/parcerias/[agreementId] | app/organizacao/(dashboard)/padel/parcerias/[agreementId]/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/padel/torneios | app/organizacao/(dashboard)/padel/torneios/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/padel/torneios/novo | app/organizacao/(dashboard)/padel/torneios/novo/page.tsx | (dashboard) | organizacao, padel |
-| /organizacao/pagamentos | app/organizacao/pagamentos/page.tsx | - | organizacao |
-| /organizacao/pagamentos/invoices | app/organizacao/pagamentos/invoices/page.tsx | - | organizacao |
-| /organizacao/profile | app/organizacao/(dashboard)/profile/page.tsx | (dashboard) | organizacao |
-| /organizacao/promo | app/organizacao/promo/page.tsx | - | organizacao |
-| /organizacao/promote | app/organizacao/(dashboard)/promote/page.tsx | (dashboard) | organizacao |
-| /organizacao/reservas | app/organizacao/(dashboard)/reservas/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/[id] | app/organizacao/(dashboard)/reservas/[id]/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/clientes | app/organizacao/(dashboard)/reservas/clientes/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/novo | app/organizacao/(dashboard)/reservas/novo/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/politicas | app/organizacao/(dashboard)/reservas/politicas/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/profissionais | app/organizacao/(dashboard)/reservas/profissionais/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/profissionais/[id] | app/organizacao/(dashboard)/reservas/profissionais/[id]/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/recursos | app/organizacao/(dashboard)/reservas/recursos/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/recursos/[id] | app/organizacao/(dashboard)/reservas/recursos/[id]/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/reservas/servicos | app/organizacao/(dashboard)/reservas/servicos/page.tsx | (dashboard) | organizacao, reservas |
-| /organizacao/scan | app/organizacao/(dashboard)/scan/page.tsx | (dashboard) | organizacao |
-| /organizacao/settings | app/organizacao/(dashboard)/settings/page.tsx | (dashboard) | organizacao |
-| /organizacao/settings/verify | app/organizacao/(dashboard)/settings/verify/page.tsx | (dashboard) | organizacao |
-| /organizacao/staff | app/organizacao/(dashboard)/staff/page.tsx | (dashboard) | organizacao |
-| /organizacao/torneios | app/organizacao/(dashboard)/torneios/page.tsx | (dashboard) | organizacao |
-| /organizacao/torneios/[id] | app/organizacao/(dashboard)/torneios/[id]/page.tsx | (dashboard) | organizacao |
-| /organizacao/torneios/[id]/edit | app/organizacao/(dashboard)/torneios/[id]/edit/page.tsx | (dashboard) | organizacao |
-| /organizacao/torneios/[id]/live | app/organizacao/(dashboard)/torneios/[id]/live/page.tsx | (dashboard) | organizacao |
-| /organizacao/torneios/novo | app/organizacao/(dashboard)/torneios/novo/page.tsx | (dashboard) | organizacao |
-| /organizacao/tournaments/[id]/finance | app/organizacao/(dashboard)/tournaments/[id]/finance/page.tsx | (dashboard) | organizacao |
-| /organizacao/tournaments/[id]/live | app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx | (dashboard) | organizacao |
-| /organizacao/treinadores | app/organizacao/(dashboard)/treinadores/page.tsx | (dashboard) | organizacao |
 | /organization-terms | app/organization-terms/page.tsx | - | public |
 | /padel/duplas | app/padel/duplas/page.tsx | - | padel |
 | /padel/rankings | app/padel/rankings/page.tsx | - | padel |
@@ -242,6 +244,7 @@ Total: 246
 | /servicos/[id] | app/servicos/[id]/page.tsx | - | public |
 | /signup | app/signup/page.tsx | - | login |
 | /social | app/social/page.tsx | - | social |
+| /suporte | app/suporte/page.tsx | - | public |
 | /termos | app/termos/page.tsx | - | public |
 | /termos-organizacao | app/termos-organizacao/page.tsx | - | public |
 | /terms | app/terms/page.tsx | - | public |

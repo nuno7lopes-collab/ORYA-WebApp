@@ -19,7 +19,7 @@ vi.mock("@/lib/supabaseServer", () => ({
   })),
 }));
 
-let POST: typeof import("@/app/api/organizacao/tournaments/create/route").POST;
+let POST: typeof import("@/app/api/org/[orgId]/tournaments/create/route").POST;
 
 beforeEach(async () => {
   createTournamentForEvent.mockReset();
@@ -28,12 +28,12 @@ beforeEach(async () => {
   prisma.event.findUnique.mockReset();
   prisma.profile.findUnique.mockReset();
   vi.resetModules();
-  POST = (await import("@/app/api/organizacao/tournaments/create/route")).POST;
+  POST = (await import("@/app/api/org/[orgId]/tournaments/create/route")).POST;
 });
 
 describe("tournament create route", () => {
   it("rejeita payload sem eventId", async () => {
-    const req = new NextRequest("http://localhost/api/organizacao/tournaments/create", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/create", {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -61,7 +61,7 @@ describe("tournament create route", () => {
     prisma.profile.findUnique.mockResolvedValue({ onboardingDone: true, fullName: "A", username: "a" });
     getActiveOrganizationForUser.mockResolvedValue({ membership: null });
 
-    const req = new NextRequest("http://localhost/api/organizacao/tournaments/create", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/create", {
       method: "POST",
       body: JSON.stringify({ eventId: 1 }),
     });
@@ -89,7 +89,7 @@ describe("tournament create route", () => {
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
     createTournamentForEvent.mockResolvedValue({ ok: true, tournamentId: 10, created: true });
 
-    const req = new NextRequest("http://localhost/api/organizacao/tournaments/create", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/create", {
       method: "POST",
       body: JSON.stringify({ eventId: 1 }),
     });

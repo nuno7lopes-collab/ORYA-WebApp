@@ -569,7 +569,7 @@ function startDeferredServices() {
       process.env.STRIPE_FORWARD_URL || `${baseUrl}/api/stripe/webhook`;
     const connectForwardTo =
       process.env.STRIPE_CONNECT_FORWARD_URL ||
-      `${baseUrl}/api/organizacao/payouts/webhook`;
+      `${baseUrl}/api/org-system/payouts/webhook`;
 
     const stripeEnv = sanitizeStripeCliEnv(process.env);
 

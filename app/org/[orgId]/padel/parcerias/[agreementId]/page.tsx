@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import PartnershipWorkspaceClient from "@/app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient";
+import PartnershipWorkspaceClient from "@/app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient";
 
 export default async function OrgPadelPartnershipWorkspacePage({
   params,

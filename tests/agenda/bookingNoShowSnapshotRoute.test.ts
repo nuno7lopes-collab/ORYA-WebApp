@@ -89,7 +89,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: prismaMockShape,
 }));
 
-import { POST } from "@/app/api/organizacao/reservas/[id]/no-show/route";
+import { POST } from "@/app/api/org/[orgId]/reservas/[id]/no-show/route";
 import { prisma } from "@/lib/prisma";
 
 const prismaMock = vi.mocked(prisma);
@@ -164,7 +164,7 @@ describe("booking no-show snapshot route", () => {
     });
 
     const res = await POST(
-      new Request("http://localhost/api/organizacao/reservas/7/no-show", {
+      new Request("http://localhost/api/org/1/reservas/7/no-show", {
         method: "POST",
       }),
       { params: Promise.resolve({ id: "7" }) },

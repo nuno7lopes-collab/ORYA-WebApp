@@ -17,7 +17,7 @@ describe("canonical org UI href guardrail", () => {
       "-n",
       "['\"]/organizacao",
       "app/org",
-      "app/organizacao/OrganizationTopBar.tsx",
+      "app/org/_internal/core/OrganizationTopBar.tsx",
       "app/org/_components/subnav",
       "--glob",
       "*.ts",

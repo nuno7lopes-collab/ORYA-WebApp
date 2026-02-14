@@ -26,7 +26,7 @@ function runRg(command: string, shell = "/bin/zsh") {
 
 describe("store legacy guardrails", () => {
   it("blocks legacy API namespace usage across runtime", () => {
-    const output = runRg('rg -n "/api/me/store|/api/organizacao/loja|/api/store/" app components lib apps/mobile -S');
+    const output = runRg('rg -n "/api/me/store|/api/org/1/loja|/api/store/" app components lib apps/mobile -S');
 
     if (output) {
       throw new Error(`Legacy API namespaces found:\n${output}`);

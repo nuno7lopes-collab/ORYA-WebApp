@@ -78,7 +78,7 @@ describe("finance read-model guardrails", () => {
         "\"purchaseId\\\\s*=.*Date\\\\.now\\\\(\"",
         "app/api/servicos/[id]/checkout/route.ts",
         "app/api/servicos/[id]/creditos/checkout/route.ts",
-        "app/api/organizacao/reservas/[id]/checkout/route.ts",
+        "app/api/org/[orgId]/reservas/[id]/checkout/route.ts",
         "domain/padelSecondCharge.ts",
         "-S",
       ].join(" "),

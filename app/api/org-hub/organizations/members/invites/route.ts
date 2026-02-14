@@ -1,1 +1,982 @@
-export * from "@/app/api/organizacao/organizations/members/invites/route";
+import { NextRequest } from "next/server";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
+import { createSupabaseServer } from "@/lib/supabaseServer";
+import { prisma } from "@/lib/prisma";
+import { createNotification } from "@/lib/notifications";
+import { NotificationType } from "@prisma/client";
+import { canManageMembers, isOrgOwner as hasOrgOwnerAccess } from "@/lib/organizationPermissions";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
+import { OrganizationModule } from "@prisma/client";
+import { ensureUserIsOrganization, setSoleOwner } from "@/lib/organizationRoles";
+import { resolveGroupMemberForOrg, setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
+import { getEffectiveOrganizationMember } from "@/lib/organizationMembers";
+import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
+import { sendEmail } from "@/lib/emailClient";
+import { resolveOrganizationIdStrict } from "@/lib/organizationId";
+import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { appendEventLog } from "@/domain/eventLog/append";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { respondError, respondOk } from "@/lib/http/envelope";
+import { resolveUserIdentifier } from "@/lib/userResolver";
+import { resolveRolePackForRole } from "@/lib/organizationRolePackPolicy";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const resolveIp = (req: NextRequest) => {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
+  return null;
+};
+
+const INVITE_EXPIRY_DAYS = 14;
+
+type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+
+const serializeInvite = (
+  invite: {
+    id: string;
+    organizationId: number;
+    targetIdentifier: string;
+    targetUserId: string | null;
+    role: string;
+    rolePack: string | null;
+    token: string;
+    expiresAt: Date;
+    acceptedAt: Date | null;
+    declinedAt: Date | null;
+    cancelledAt: Date | null;
+    createdAt: Date | null;
+    invitedBy?: {
+      id: string;
+      username: string | null;
+      fullName: string | null;
+      avatarUrl: string | null;
+      visibility?: string | null;
+      isDeleted?: boolean | null;
+    } | null;
+    targetUser?: {
+      id: string;
+      username: string | null;
+      fullName: string | null;
+      avatarUrl: string | null;
+      visibility?: string | null;
+      isDeleted?: boolean | null;
+    } | null;
+  },
+  viewer?: { id: string; username?: string | null; email?: string | null },
+) => {
+  const now = Date.now();
+  const isExpired = !!invite.expiresAt && invite.expiresAt.getTime() < now;
+  const status: InviteStatus = invite.cancelledAt
+    ? "CANCELLED"
+    : invite.acceptedAt
+      ? "ACCEPTED"
+      : invite.declinedAt
+        ? "DECLINED"
+        : isExpired
+          ? "EXPIRED"
+          : "PENDING";
+
+  const normalizedTarget = invite.targetIdentifier.toLowerCase();
+  const canRespond =
+    !!viewer &&
+    (invite.targetUserId === viewer.id ||
+      (viewer.username && viewer.username.toLowerCase() === normalizedTarget) ||
+      (viewer.email && viewer.email.toLowerCase() === normalizedTarget));
+
+  return {
+    id: invite.id,
+    organizationId: invite.organizationId,
+    role: invite.role,
+    rolePack: invite.rolePack ?? null,
+    targetIdentifier: invite.targetIdentifier,
+    targetUserId: invite.targetUserId,
+    status,
+    expiresAt: invite.expiresAt?.toISOString() ?? null,
+    createdAt: invite.createdAt?.toISOString() ?? null,
+    acceptedAt: invite.acceptedAt?.toISOString() ?? null,
+    declinedAt: invite.declinedAt?.toISOString() ?? null,
+    cancelledAt: invite.cancelledAt?.toISOString() ?? null,
+    invitedBy: sanitizeProfileVisibility(invite.invitedBy ?? null),
+    targetUser: sanitizeProfileVisibility(invite.targetUser ?? null),
+    canRespond,
+  };
+};
+
+async function sendInviteEmail(invite: {
+  id: string;
+  organizationId: number;
+  targetIdentifier: string;
+  role: string;
+  token: string;
+  organization?: { publicName: string | null } | null;
+}) {
+  const normalized = invite.targetIdentifier.toLowerCase();
+  if (!normalized.includes("@")) return;
+
+  const origin = "https://orya.pt";
+  const acceptUrl = `${origin}/convites/organizacoes?invite=${invite.id}&token=${invite.token}`;
+  const roleLabel =
+    invite.role === "OWNER" ? "Owner" : invite.role === "CO_OWNER" ? "Co-owner" : invite.role.toUpperCase();
+  const orgName = invite.organization?.publicName ?? "ORYA";
+
+  try {
+    await sendEmail({
+      to: normalized,
+      subject: `Convite para a organização ${orgName}`,
+      html: `
+        <div style="font-family: Inter, system-ui, -apple-system, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #050915; color: #f6f8ff; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08);">
+          <h2 style="margin: 0 0 12px; font-size: 22px;">Convite para ${orgName}</h2>
+          <p style="margin: 0 0 12px;">Papel: <strong>${roleLabel}</strong></p>
+          <p style="margin: 0 0 16px;">Entra e aceita o convite.</p>
+          <a href="${acceptUrl}" style="display: inline-block; margin-top: 8px; padding: 12px 18px; background: linear-gradient(90deg,#7cf2ff,#7b7bff,#ff7ddb); color: #0b0f1c; text-decoration: none; font-weight: 700; border-radius: 999px;">Abrir convite</a>
+          <p style="margin: 16px 0 0; font-size: 12px; color: rgba(255,255,255,0.7);">Link direto: <a href="${acceptUrl}" style="color: #8fd6ff;">${acceptUrl}</a></p>
+        </div>
+      `,
+      text: `Convite para a organização ${orgName} como ${roleLabel}. Abre: ${acceptUrl}`,
+    });
+  } catch (err) {
+    console.warn("[invite][email] falhou", err);
+  }
+}
+
+function errorCodeForStatus(status: number) {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 403) return "FORBIDDEN";
+  if (status === 404) return "NOT_FOUND";
+  if (status === 409) return "CONFLICT";
+  if (status === 410) return "GONE";
+  if (status === 413) return "PAYLOAD_TOO_LARGE";
+  if (status === 422) return "VALIDATION_FAILED";
+  if (status === 400) return "BAD_REQUEST";
+  return "INTERNAL_ERROR";
+}
+async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return fail(401, "UNAUTHENTICATED");
+    }
+
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { username: true },
+    });
+
+    const url = new URL(req.url);
+    const eventIdRaw = url.searchParams.get("eventId");
+    const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
+    const orgResolutionReason = orgResolution.ok ? null : orgResolution.reason;
+    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
+    if (!organizationId && orgResolutionReason === "MISSING" && eventIdRaw) {
+      const eventId = Number(eventIdRaw);
+      if (eventId && !Number.isNaN(eventId)) {
+        const ev = await prisma.event.findUnique({
+          where: { id: eventId },
+          select: { organizationId: true },
+        });
+        organizationId = ev?.organizationId ?? null;
+      }
+    }
+    if (!organizationId) {
+      if (orgResolutionReason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolutionReason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
+    const managerAccess = membership
+      ? await ensureMemberModuleAccess({
+          organizationId,
+          userId: user.id,
+          role: membership.role,
+          rolePack: membership.rolePack,
+          moduleKey: OrganizationModule.STAFF,
+          required: "EDIT",
+        })
+      : { ok: false };
+    const isManager = managerAccess.ok;
+
+    const viewerEmail = user.email?.toLowerCase() ?? null;
+    const viewerUsername = profile?.username ?? null;
+
+    // Se não é manager, só pode ver convites dirigidos a si
+    if (!isManager) {
+      const inviteForUser = await prisma.organizationMemberInvite.findFirst({
+        where: {
+          organizationId,
+          cancelledAt: null,
+          acceptedAt: null,
+          OR: [
+            { targetUserId: user.id },
+            ...(viewerEmail
+              ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+              : []),
+            ...(viewerUsername
+              ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+              : []),
+          ],
+        },
+      });
+      if (!inviteForUser) {
+        return fail(403, "FORBIDDEN");
+      }
+    }
+
+    const invites = await prisma.organizationMemberInvite.findMany({
+      where: {
+        organizationId,
+        ...(isManager
+          ? {}
+          : {
+              OR: [
+                { targetUserId: user.id },
+                ...(viewerEmail
+                  ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+                  : []),
+                ...(viewerUsername
+                  ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+                  : []),
+              ],
+            }),
+      },
+      include: {
+        invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true, visibility: true, isDeleted: true } },
+        targetUser: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+            visibility: true,
+            isDeleted: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    const viewer = { id: user.id, username: viewerUsername, email: viewerEmail };
+    return respondOk(ctx, { viewerRole: membership?.role ?? null,
+        organizationId,
+        items: invites.map((inv) => serializeInvite(inv, viewer)),
+      },
+      { status: 200 },
+    );
+  } catch (err) {
+    console.error("[organização/members/invites][GET]", err);
+    return fail(500, "INTERNAL_ERROR");
+  }
+}
+
+async function _POST(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return fail(401, "UNAUTHENTICATED");
+    }
+
+    const body = await req.json().catch(() => null);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok) {
+      if (orgResolution.reason === "CONFLICT") {
+        return fail(400, "ORGANIZATION_ID_CONFLICT");
+      }
+      if (orgResolution.reason === "INVALID") {
+        return fail(400, "INVALID_ORGANIZATION_ID");
+      }
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    const organizationId = orgResolution.organizationId;
+    const identifier = typeof body?.identifier === "string" ? body.identifier.trim() : null;
+    const roleRaw = typeof body?.role === "string" ? body.role.toUpperCase() : null;
+    const rolePackProvided =
+      body && typeof body === "object" && Object.prototype.hasOwnProperty.call(body, "rolePack");
+    const rolePackRaw =
+      rolePackProvided && body && typeof body === "object"
+        ? (body as Record<string, unknown>).rolePack
+        : undefined;
+
+    if (!organizationId || !identifier || !roleRaw) {
+      return fail(400, "INVALID_PAYLOAD");
+    }
+
+    if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
+      return fail(400, "INVALID_ROLE");
+    }
+    const rolePackPolicy = resolveRolePackForRole({
+      role: roleRaw as OrganizationMemberRole,
+      rolePackRaw,
+      rolePackProvided,
+    });
+    if (!rolePackPolicy.ok) {
+      return fail(400, rolePackPolicy.errorCode);
+    }
+    const normalizedRolePack = rolePackPolicy.rolePack;
+
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
+    if (!membership) {
+      return fail(403, "FORBIDDEN");
+    }
+    const staffAccess = await ensureMemberModuleAccess({
+      organizationId,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.STAFF,
+      required: "EDIT",
+    });
+    if (!staffAccess.ok) {
+      return fail(403, "FORBIDDEN");
+    }
+    const manageAllowed = canManageMembers(membership.role ?? null, null, roleRaw as OrganizationMemberRole);
+    if (!manageAllowed) {
+      return fail(403, "FORBIDDEN");
+    }
+    if (roleRaw === "OWNER" && !hasOrgOwnerAccess(membership.role)) {
+      return fail(403, "ONLY_OWNER_CAN_SET_OWNER");
+    }
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { officialEmail: true, officialEmailVerifiedAt: true },
+    });
+    const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
+      reasonCode: "ORG_MEMBER_INVITES",
+      organizationId,
+    });
+    if (!emailGate.ok) {
+      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+    }
+
+    const resolved = await resolveUserIdentifier(identifier);
+    const viewerProfile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { username: true },
+    });
+    const targetUserId = resolved?.userId ?? null;
+
+    // Bloquear convites para quem já é membro
+    if (targetUserId) {
+      const existingMember = await getEffectiveOrganizationMember({
+        organizationId,
+        userId: targetUserId,
+      });
+      if (existingMember) {
+        return fail(400, "Utilizador já é membro desta organização.");
+      }
+    }
+
+    const normalizedIdentifier = identifier.toLowerCase();
+    const expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+
+    const invite = await prisma.$transaction(async (tx) => {
+      await tx.organizationMemberInvite.updateMany({
+        where: {
+          organizationId,
+          acceptedAt: null,
+          cancelledAt: null,
+          declinedAt: null,
+          OR: [
+            { targetIdentifier: { equals: normalizedIdentifier, mode: Prisma.QueryMode.insensitive } },
+            ...(targetUserId ? [{ targetUserId }] : []),
+          ],
+        },
+        data: { cancelledAt: new Date() },
+      });
+
+      const created = await tx.organizationMemberInvite.create({
+        data: {
+          organizationId,
+          invitedByUserId: user.id,
+          targetIdentifier: identifier,
+          targetUserId,
+          role: roleRaw as OrganizationMemberRole,
+          rolePack: normalizedRolePack,
+          token: crypto.randomUUID(),
+          expiresAt,
+        },
+        include: {
+          invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true, visibility: true } },
+          targetUser: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+              avatarUrl: true,
+              visibility: true,
+            },
+          },
+          organization: { select: { id: true, publicName: true } },
+        },
+      });
+
+      await recordOrganizationAudit(tx, {
+        organizationId,
+        groupId: membership?.groupId ?? null,
+        actorUserId: user.id,
+        action: "INVITE_CREATED",
+        entityType: "organization_member_invite",
+        entityId: created.id,
+        correlationId: created.id,
+        toUserId: targetUserId,
+        metadata: {
+          inviteId: created.id,
+          role: created.role,
+          rolePack: created.rolePack ?? null,
+          target: created.targetIdentifier,
+        },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
+      });
+
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.invite.created",
+          dedupeKey: `org.invite.created:${organizationId}:${created.id}`,
+          payload: {
+            inviteId: created.id,
+            organizationId,
+            role: created.role,
+            rolePack: created.rolePack ?? null,
+            targetUserId: created.targetUserId,
+          },
+          correlationId: created.id,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId,
+          eventType: "organization.invite.created",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            inviteId: created.id,
+            role: created.role,
+            rolePack: created.rolePack ?? null,
+            target: created.targetIdentifier,
+          },
+          actorUserId: user.id,
+          sourceId: String(organizationId),
+          correlationId: created.id,
+        },
+        tx,
+      );
+
+      return created;
+    });
+
+    const viewer = {
+      id: user.id,
+      username: viewerProfile?.username ?? null,
+      email: user.email ? user.email.toLowerCase() : null,
+    };
+
+    // Notificação para o alvo (se user conhecido)
+    if (targetUserId) {
+      await createNotification({
+        userId: targetUserId,
+        type: NotificationType.ORGANIZATION_INVITE,
+        title: "Convite para organização",
+        body: `Foste convidado para a organização ${invite.organization?.publicName ?? "ORYA"}.`,
+        ctaUrl: "/convites/organizacoes",
+        ctaLabel: "Ver convites",
+        senderVisibility: "PUBLIC",
+        fromUserId: user.id,
+        organizationId,
+        inviteId: invite.id,
+        payload: {
+          organizationId,
+          role: roleRaw,
+          actor: { id: user.id, username: viewerProfile?.username },
+        },
+      }).catch((err) => console.warn("[notification][invite] falhou", err));
+    }
+
+    await sendInviteEmail(
+      {
+        id: invite.id,
+        organizationId: invite.organizationId,
+        targetIdentifier: invite.targetIdentifier,
+        role: invite.role,
+        token: invite.token,
+        organization: invite.organization,
+      },
+    );
+
+    return respondOk(ctx, { invite: serializeInvite(invite, viewer) }, { status: 201 });
+  } catch (err) {
+    console.error("[organização/members/invites][POST]", err);
+    return fail(500, "INTERNAL_ERROR");
+  }
+}
+
+async function _PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
+  try {
+    const supabase = await createSupabaseServer();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return fail(401, "UNAUTHENTICATED");
+    }
+
+    const body = await req.json().catch(() => null);
+    const orgResolution = resolveOrganizationIdStrict({
+      req,
+      body: body && typeof body === "object" ? (body as Record<string, unknown>) : null,
+      allowFallback: false,
+    });
+    if (!orgResolution.ok && orgResolution.reason === "CONFLICT") {
+      return fail(400, "ORGANIZATION_ID_CONFLICT");
+    }
+    if (!orgResolution.ok && orgResolution.reason === "INVALID") {
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+    let organizationId = orgResolution.ok ? orgResolution.organizationId : null;
+    const inviteId = typeof body?.inviteId === "string" ? body.inviteId : null;
+    const tokenFromBody = typeof body?.token === "string" ? body.token : null;
+    const action = typeof body?.action === "string" ? body.action.toUpperCase() : null;
+
+    if (!action) {
+      return fail(400, "INVALID_PAYLOAD");
+    }
+
+    if (!inviteId && !tokenFromBody) {
+      return fail(400, "NEED_INVITE_ID_OR_TOKEN");
+    }
+
+    if (!["CANCEL", "ACCEPT", "DECLINE"].includes(action)) {
+      return fail(400, "UNKNOWN_ACTION");
+    }
+
+    if (!organizationId && action !== "ACCEPT" && action !== "DECLINE") {
+      return fail(400, "INVALID_ORGANIZATION_ID");
+    }
+
+    const invite = await prisma.organizationMemberInvite.findFirst({
+      where: {
+        ...(organizationId ? { organizationId } : {}),
+        ...(inviteId ? { id: inviteId } : {}),
+        ...(tokenFromBody ? { token: tokenFromBody } : {}),
+      },
+      include: {
+        invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true, visibility: true } },
+        targetUser: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+            visibility: true,
+          },
+        },
+      },
+    });
+
+    if (!invite) {
+      return fail(404, "INVITE_NOT_FOUND");
+    }
+
+    if (!organizationId) {
+      organizationId = invite.organizationId;
+    }
+
+    const membership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
+    const managerAccess = membership
+      ? await ensureMemberModuleAccess({
+          organizationId,
+          userId: user.id,
+          role: membership.role,
+          rolePack: membership.rolePack,
+          moduleKey: OrganizationModule.STAFF,
+          required: "EDIT",
+        })
+      : { ok: false };
+    const isManager = managerAccess.ok;
+
+    if (action === "CANCEL") {
+      const organization = await prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { officialEmail: true, officialEmailVerifiedAt: true },
+      });
+      const emailGate = ensureOrganizationEmailVerified(organization ?? {}, {
+        reasonCode: "ORG_MEMBER_INVITES",
+        organizationId,
+      });
+      if (!emailGate.ok) {
+        return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      }
+    }
+
+    const viewerProfile = await prisma.profile.findUnique({
+      where: { id: user.id },
+      select: { username: true, roles: true },
+    });
+    const viewerEmail = user.email?.toLowerCase() ?? null;
+    const viewerUsername = viewerProfile?.username ?? null;
+
+    const normalizedTarget = invite.targetIdentifier.toLowerCase();
+    const isTargetUser =
+      invite.targetUserId === user.id ||
+      (viewerEmail && normalizedTarget === viewerEmail) ||
+      (viewerUsername && normalizedTarget === viewerUsername.toLowerCase());
+    const matchesToken = tokenFromBody ? invite.token === tokenFromBody : false;
+
+    const isPending = !invite.acceptedAt && !invite.declinedAt && !invite.cancelledAt;
+    const isExpired = invite.expiresAt && invite.expiresAt.getTime() < Date.now();
+
+    const isOwnerManager = membership?.role === "OWNER";
+
+    const updated = await prisma.$transaction(async (tx) => {
+      if (action === "CANCEL") {
+        if (!isManager) {
+          throw new Error("FORBIDDEN");
+        }
+        if (invite.role === "OWNER" && !isOwnerManager) {
+          throw new Error("ONLY_OWNER_CAN_CANCEL_OWNER_INVITE");
+        }
+        await tx.organizationMemberInvite.update({
+          where: { id: invite.id },
+          data: { cancelledAt: new Date() },
+        });
+      } else if (action === "ACCEPT") {
+        if (!isPending) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
+        if (isExpired) {
+          throw new Error("INVITE_EXPIRED");
+        }
+        // Token é apenas localizador do convite; não autoriza aceitação sem identidade compatível.
+        if (!isTargetUser) {
+          throw new Error("FORBIDDEN");
+        }
+
+        const role = invite.role as OrganizationMemberRole;
+        if (role === "TRAINER" && !viewerUsername) {
+          throw new Error("TRAINER_USERNAME_REQUIRED");
+        }
+        const rolePackPolicy = resolveRolePackForRole({
+          role,
+          rolePackRaw: invite.rolePack ?? null,
+          rolePackProvided: invite.rolePack !== null,
+          allowDefaultForLegacy: true,
+        });
+        if (!rolePackPolicy.ok) {
+          throw new Error(rolePackPolicy.errorCode);
+        }
+        const normalizedRolePack = rolePackPolicy.rolePack;
+        const currentMember = await getEffectiveOrganizationMember({
+          organizationId,
+          userId: user.id,
+          client: tx,
+        });
+
+        if (currentMember) {
+          await tx.organizationMemberInvite.update({
+            where: { id: invite.id },
+            data: {
+              acceptedAt: new Date(),
+              declinedAt: null,
+              cancelledAt: null,
+              targetUserId: user.id,
+            },
+          });
+          const normalizedIdentifiers = [
+            invite.targetIdentifier.toLowerCase(),
+            viewerEmail,
+            viewerUsername?.toLowerCase() ?? null,
+          ].filter(Boolean) as string[];
+          if (normalizedIdentifiers.length > 0) {
+            await tx.organizationMemberInvite.updateMany({
+              where: {
+                organizationId,
+                id: { not: invite.id },
+                acceptedAt: null,
+                declinedAt: null,
+                cancelledAt: null,
+                OR: [
+                  { targetUserId: user.id },
+                  ...normalizedIdentifiers.map((identifier) => ({
+                    targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
+                  })),
+                ],
+              },
+              data: { cancelledAt: new Date() },
+            });
+          }
+          await ensureUserIsOrganization(tx, user.id);
+        } else {
+          if (role === "OWNER") {
+            await setSoleOwner(tx, organizationId, user.id, invite.invitedByUserId);
+          } else {
+            await setGroupMemberRoleForOrg({
+              organizationId,
+              userId: user.id,
+              role,
+              rolePack: normalizedRolePack,
+              client: tx,
+            });
+          }
+
+          await tx.organizationMemberInvite.update({
+            where: { id: invite.id },
+            data: {
+              acceptedAt: new Date(),
+              declinedAt: null,
+              cancelledAt: null,
+              targetUserId: user.id,
+            },
+          });
+
+          await ensureUserIsOrganization(tx, user.id);
+
+          const normalizedIdentifiers = [
+            invite.targetIdentifier.toLowerCase(),
+            viewerEmail,
+            viewerUsername?.toLowerCase() ?? null,
+          ].filter(Boolean) as string[];
+
+          if (normalizedIdentifiers.length > 0) {
+            await tx.organizationMemberInvite.updateMany({
+              where: {
+                organizationId,
+                id: { not: invite.id },
+                acceptedAt: null,
+                declinedAt: null,
+                cancelledAt: null,
+                OR: [
+                  { targetUserId: user.id },
+                  ...normalizedIdentifiers.map((identifier) => ({
+                    targetIdentifier: { equals: identifier, mode: Prisma.QueryMode.insensitive },
+                  })),
+                ],
+              },
+              data: { cancelledAt: new Date() },
+            });
+          }
+        }
+      } else if (action === "DECLINE") {
+        if (!isTargetUser && !matchesToken && !isManager) {
+          throw new Error("FORBIDDEN");
+        }
+        if (!isPending) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
+        await tx.organizationMemberInvite.update({
+          where: { id: invite.id },
+          data: { declinedAt: new Date(), acceptedAt: null, cancelledAt: null, targetUserId: user.id },
+        });
+      } else {
+        throw new Error("UNKNOWN_ACTION");
+      }
+
+      const updatedInvite = await tx.organizationMemberInvite.findUnique({
+        where: { id: invite.id },
+        select: {
+          id: true,
+          organizationId: true,
+          role: true,
+          rolePack: true,
+          token: true,
+          targetIdentifier: true,
+          targetUserId: true,
+          expiresAt: true,
+          acceptedAt: true,
+          declinedAt: true,
+          cancelledAt: true,
+          createdAt: true,
+          invitedBy: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+          targetUser: {
+            select: {
+              id: true,
+              username: true,
+              fullName: true,
+              avatarUrl: true,
+            },
+          },
+          organization: { select: { id: true, publicName: true } },
+        },
+      });
+      if (!updatedInvite) {
+        throw new Error("INVITE_NOT_FOUND");
+      }
+
+      const auditAction =
+        action === "CANCEL"
+          ? "INVITE_CANCELLED"
+          : action === "ACCEPT"
+            ? "INVITE_ACCEPTED"
+            : "INVITE_DECLINED";
+
+      await recordOrganizationAudit(tx, {
+        organizationId,
+        groupId: membership?.groupId ?? null,
+        actorUserId: user.id,
+        action: auditAction,
+        entityType: "organization_member_invite",
+        entityId: updatedInvite.id,
+        correlationId: updatedInvite.id,
+        toUserId: updatedInvite.targetUserId ?? null,
+        metadata: {
+          inviteId: updatedInvite.id,
+          role: updatedInvite.role,
+          rolePack: updatedInvite.rolePack ?? null,
+          target: updatedInvite.targetIdentifier,
+        },
+        ip: resolveIp(req),
+        userAgent: req.headers.get("user-agent"),
+      });
+
+      const outbox = await recordOutboxEvent(
+        {
+          eventType: "organization.invite.updated",
+          dedupeKey: `org.invite.updated:${updatedInvite.id}:${auditAction}`,
+          payload: {
+            inviteId: updatedInvite.id,
+            organizationId,
+            action: auditAction,
+            role: updatedInvite.role,
+            rolePack: updatedInvite.rolePack ?? null,
+          },
+          correlationId: updatedInvite.id,
+        },
+        tx,
+      );
+
+      await appendEventLog(
+        {
+          eventId: outbox.eventId,
+          organizationId,
+          eventType: "organization.invite.updated",
+          idempotencyKey: outbox.eventId,
+          payload: {
+            inviteId: updatedInvite.id,
+            action: auditAction,
+            role: updatedInvite.role,
+            rolePack: updatedInvite.rolePack ?? null,
+            target: updatedInvite.targetIdentifier,
+          },
+          actorUserId: user.id,
+          sourceId: String(organizationId),
+          correlationId: updatedInvite.id,
+        },
+        tx,
+      );
+
+      return updatedInvite;
+    }).catch((err: unknown) => {
+      if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
+        throw err;
+      }
+      if (err instanceof Error && err.message === "FORBIDDEN") {
+        throw err;
+      }
+      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE", "INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
+        throw err;
+      }
+      throw err;
+    });
+
+    if (!updated) {
+      return fail(404, "INVITE_NOT_FOUND");
+    }
+
+    if (action === "ACCEPT") {
+      // Evitar propagação de erros de transação
+    }
+
+    const viewer = { id: user.id, username: viewerUsername, email: viewerEmail };
+
+    return respondOk(ctx, { invite: serializeInvite(updated, viewer) }, { status: 200 });
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message === "LAST_OWNER_BLOCK") {
+      return fail(400, "Não podes remover o último Owner. Adiciona outro Owner antes.");
+    }
+    if (err instanceof Error) {
+      if (err.message === "FORBIDDEN") {
+        return fail(403, "FORBIDDEN");
+      }
+      if (err.message === "ONLY_OWNER_CAN_SET_OWNER" || err.message === "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE") {
+        return fail(403, err.message);
+      }
+      if (err.message === "INVITE_NOT_FOUND") {
+        return fail(404, "INVITE_NOT_FOUND");
+      }
+      if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
+        return fail(400, err.message);
+      }
+      if (err.message === "TRAINER_USERNAME_REQUIRED") {
+        return fail(409, "TRAINER_USERNAME_REQUIRED");
+      }
+      if (["INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
+        return fail(400, err.message);
+      }
+      if (err.message === "UNKNOWN_ACTION") {
+        return fail(400, "UNKNOWN_ACTION");
+      }
+    }
+    console.error("[organização/members/invites][PATCH]", err);
+    return fail(500, "INTERNAL_ERROR");
+  }
+}
+export const GET = withApiEnvelope(_GET);
+export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

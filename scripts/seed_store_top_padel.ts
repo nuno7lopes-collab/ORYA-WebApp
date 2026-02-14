@@ -150,7 +150,17 @@ async function ensureOrganization() {
     });
   }
 
-  const group = await prisma.organizationGroup.create({ data: {} });
+  const fallbackOwner = await prisma.profile.findFirst({
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (!fallbackOwner) {
+    throw new Error("Nao existe profile para owner do group.");
+  }
+
+  const group = await prisma.organizationGroup.create({
+    data: { ownerUserId: fallbackOwner.id },
+  });
   return prisma.organization.create({
     data: {
       groupId: group.id,

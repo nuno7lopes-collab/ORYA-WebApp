@@ -363,7 +363,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         body: `Jogo #${match.id}: disputa resolvida (${resolutionStatus}).`,
         organizationId: match.event.organizationId,
         eventId: match.event.id,
-        ctaUrl: `/organizacao/eventos/${match.event.id}`,
+        ctaUrl: `/org/${match.event.organizationId}/events/${match.event.id}`,
         dedupeKey: `padel_dispute_referee_notify:${match.id}:${resolutionStatus}`,
         payload: {
           kind: "PADEL_DISPUTE_REFEREE_RESOLVED",

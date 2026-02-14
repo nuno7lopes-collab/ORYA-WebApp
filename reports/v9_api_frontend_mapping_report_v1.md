@@ -15,11 +15,18 @@ CSV: reports/v9_api_frontend_mapping_v1.csv
 - /api/cron/operations
 
 ## External/Webhook endpoints (no UI required)
-- /api/organizacao/payouts/webhook
+- /api/org-system/payouts/webhook
 - /api/stripe/webhook
 - /api/webhooks/stripe
 
 ## Endpoints referenced in p0_endpoints manifest without frontend usage
 - Nota: lista calculada por strings `/api/...` no frontend; endpoints aqui podem ser mobile/server-only.
 - /api/servicos/[id]/creditos/checkout
-- /api/padel/pairings/[id]/checkout
+- /api/organizacao/reservas/[id]/checkout
+- /api/organizacao/refunds/list
+- /api/organizacao/events/[id]/refund
+- /api/organizacao/payouts/status
+- /api/organizacao/payouts/list
+- /api/organizacao/payouts/summary
+- /api/organizacao/payouts/settings
+- /api/organizacao/payouts/connect

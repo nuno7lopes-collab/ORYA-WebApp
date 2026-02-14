@@ -26,30 +26,30 @@ afterEach(() => {
 });
 
 describe("resolveCanonicalOrgApiPath", () => {
-  it("maps legacy org scoped endpoints to /api/org/:orgId preserving PT segments", () => {
+  it("does not rewrite legacy /api/organizacao endpoints (hard-cut fail-closed)", () => {
     setBrowserContext("/org/99/overview");
     expect(resolveCanonicalOrgApiPath("/api/organizacao/reservas?organizationId=42&from=2026-02-01")).toBe(
-      "/api/org/42/reservas?from=2026-02-01",
+      "/api/organizacao/reservas?organizationId=42&from=2026-02-01",
     );
     expect(resolveCanonicalOrgApiPath("/api/organizacao/inscricoes/10?organizationId=7")).toBe(
-      "/api/org/7/inscricoes/10",
+      "/api/organizacao/inscricoes/10?organizationId=7",
     );
     expect(resolveCanonicalOrgApiPath("/api/organizacao/servicos/5?organizationId=7")).toBe(
-      "/api/org/7/servicos/5",
+      "/api/organizacao/servicos/5?organizationId=7",
     );
     expect(resolveCanonicalOrgApiPath("/api/organizacao/checkin?organizationId=7")).toBe(
-      "/api/org/7/checkin",
+      "/api/organizacao/checkin?organizationId=7",
     );
   });
 
-  it("maps legacy hub/system endpoints to canonical namespaces", () => {
+  it("does not rewrite legacy hub/system aliases", () => {
     setBrowserContext("/org/42/overview");
     expect(resolveCanonicalOrgApiPath("/api/organizacao/organizations/members")).toBe(
-      "/api/org-hub/organizations/members",
+      "/api/organizacao/organizations/members",
     );
-    expect(resolveCanonicalOrgApiPath("/api/organizacao/become")).toBe("/api/org-hub/become");
+    expect(resolveCanonicalOrgApiPath("/api/organizacao/become")).toBe("/api/organizacao/become");
     expect(resolveCanonicalOrgApiPath("/api/organizacao/payouts/webhook")).toBe(
-      "/api/org-system/payouts/webhook",
+      "/api/organizacao/payouts/webhook",
     );
   });
 
@@ -64,7 +64,7 @@ describe("resolveCanonicalOrgApiPath", () => {
     );
   });
 
-  it("does not rewrite padel/tournaments legacy routes", () => {
+  it("passes through legacy padel/tournaments routes unchanged", () => {
     setBrowserContext("/org/11/overview");
     expect(resolveCanonicalOrgApiPath("/api/organizacao/padel/waitlist?eventId=90&organizationId=11")).toBe(
       "/api/organizacao/padel/waitlist?eventId=90&organizationId=11",

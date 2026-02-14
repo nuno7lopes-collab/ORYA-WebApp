@@ -581,7 +581,7 @@ async function main() {
           entityType: "CLUBE",
           status: OrganizationStatus.ACTIVE,
           primaryModule: OrganizationModule.TORNEIOS,
-          group: { create: {} },
+          group: { create: { ownerUserId: userId } },
         },
         });
   }
@@ -1001,7 +1001,7 @@ async function main() {
     scheduled: scheduleResult.scheduled.length,
     skipped: scheduleResult.skipped.length,
   });
-  console.log("Open:", `/organizacao/torneios?eventId=${event.id}`);
+  console.log("Open:", `/org/${organization.id}/padel/tournaments?eventId=${event.id}`);
   console.log("Public:", `/eventos/${eventSlug}`);
 }
 

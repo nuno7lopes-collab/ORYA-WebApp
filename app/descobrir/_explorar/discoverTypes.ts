@@ -15,7 +15,7 @@ export type ExploreItem = {
     lat: number | null;
     lng: number | null;
     formattedAddress: string | null;
-    source: "APPLE_MAPS" | "MANUAL" | null;
+    source: "APPLE_MAPS" | null;
     components: Record<string, unknown> | null;
     overrides: Record<string, unknown> | null;
   };

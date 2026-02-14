@@ -473,7 +473,7 @@ const ensureAddresses = async () => {
         canonical,
         latitude: entry.lat,
         longitude: entry.lng,
-        sourceProvider: AddressSourceProvider.MANUAL,
+        sourceProvider: AddressSourceProvider.APPLE_MAPS,
         confidenceScore: 20,
         validationStatus: AddressValidationStatus.RAW,
       },
@@ -483,7 +483,7 @@ const ensureAddresses = async () => {
         canonical,
         latitude: entry.lat,
         longitude: entry.lng,
-        sourceProvider: AddressSourceProvider.MANUAL,
+        sourceProvider: AddressSourceProvider.APPLE_MAPS,
         confidenceScore: 20,
         validationStatus: AddressValidationStatus.RAW,
         addressHash,
@@ -929,9 +929,16 @@ async function main() {
 
     const orgAddressId = pickAddressId(i % 3 === 0 && portoAddresses.length > 0);
 
+    const owner = users[i % users.length];
+    if (!owner) {
+      throw new Error("Nao existe utilizador para owner da organizacao.");
+    }
+
     let organization: { id: number; username: string | null } | null = existing;
     if (!existing) {
-      const group = await prisma.organizationGroup.create({ data: { env: seedEnv } });
+      const group = await prisma.organizationGroup.create({
+        data: { env: seedEnv, ownerUserId: owner.id },
+      });
       organization = await prisma.organization.create({
         data: {
           env: seedEnv,
@@ -967,10 +974,7 @@ async function main() {
       throw new Error("Nao foi possivel criar/atualizar organizacao.");
     }
 
-    const owner = users[i % users.length];
-    if (owner) {
-      await ensureOwnerGroupMembership(organization.id, owner.id);
-    }
+    await ensureOwnerGroupMembership(organization.id, owner.id);
 
     organizations.push({ id: organization.id, username: organization.username ?? username });
   }

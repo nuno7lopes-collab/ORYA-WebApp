@@ -6,7 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import OrganizationsHubClient from "@/app/organizacao/organizations/OrganizationsHubClient";
+import OrganizationsHubClient from "@/app/org/_internal/core/organizations/OrganizationsHubClient";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -5,7 +5,7 @@
 export const CANONICAL_ORG_UI_ENDPOINTS = [
   "/api/org/[orgId]/agenda",
   "/api/org/[orgId]/agenda/soft-blocks",
-  "/api/org-hub/become",
+  "/api/org-hub/organizations",
   "/api/org/[orgId]/consentimentos",
   "/api/org/[orgId]/events/[id]/invite-token",
   "/api/org/[orgId]/faturacao",

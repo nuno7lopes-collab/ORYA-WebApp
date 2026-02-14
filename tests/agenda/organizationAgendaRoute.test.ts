@@ -25,7 +25,7 @@ vi.mock("@/lib/security", () => ({
   ensureAuthenticated: vi.fn(async () => ({ id: "u1" })),
 }));
 
-let GET: typeof import("@/app/api/organizacao/agenda/route").GET;
+let GET: typeof import("@/app/api/org/[orgId]/agenda/route").GET;
 
 beforeEach(async () => {
   getAgendaItemsForOrganization.mockReset();
@@ -35,13 +35,13 @@ beforeEach(async () => {
   prismaMock.padelClub.findFirst.mockReset();
   prismaMock.padelClubCourt.findFirst.mockReset();
   vi.resetModules();
-  GET = (await import("@/app/api/organizacao/agenda/route")).GET;
+  GET = (await import("@/app/api/org/[orgId]/agenda/route")).GET;
 });
 
 describe("organization agenda route", () => {
   it("bloqueia sem membership", async () => {
     getActiveOrganizationForUser.mockResolvedValue({ organization: null, membership: null });
-    const req = new NextRequest("http://localhost/api/organizacao/agenda?from=2024-01-01&to=2024-01-31");
+    const req = new NextRequest("http://localhost/api/org/1/agenda?from=2024-01-01&to=2024-01-31");
     const res = await GET(req);
     expect(res.status).toBe(403);
   });
@@ -57,7 +57,7 @@ describe("organization agenda route", () => {
       { kind: "EVENT", eventId: 1, title: "E1", startsAt: new Date(), endsAt: new Date() },
     ]);
 
-    const req = new NextRequest("http://localhost/api/organizacao/agenda?from=2024-01-01&to=2024-01-31");
+    const req = new NextRequest("http://localhost/api/org/1/agenda?from=2024-01-01&to=2024-01-31");
     const res = await GET(req);
     const body = await res.json();
     expect(res.status).toBe(200);

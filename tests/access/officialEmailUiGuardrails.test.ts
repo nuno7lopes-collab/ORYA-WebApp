@@ -4,13 +4,13 @@ import path from "path";
 
 const ROOT = process.cwd();
 const UI_FILES = [
-  "app/organizacao/(dashboard)/settings/page.tsx",
+  "app/org/_internal/core/(dashboard)/settings/page.tsx",
   "app/admin/(protected)/organizacoes/page.tsx",
   "app/[username]/page.tsx",
-  "app/organizacao/OrganizationTopBar.tsx",
-  "app/organizacao/OrganizationDashboardShell.tsx",
-  "app/organizacao/DashboardClient.tsx",
-  "app/organizacao/(dashboard)/eventos/novo/page.tsx",
+  "app/org/_internal/core/OrganizationTopBar.tsx",
+  "app/org/_internal/core/OrganizationDashboardShell.tsx",
+  "app/org/_internal/core/DashboardClient.tsx",
+  "app/org/_internal/core/(dashboard)/eventos/novo/page.tsx",
 ];
 
 const bannedPatterns: Array<{ pattern: RegExp; label: string }> = [

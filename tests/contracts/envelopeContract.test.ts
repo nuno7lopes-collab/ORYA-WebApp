@@ -43,20 +43,20 @@ describe("p0 guardrails", () => {
     "app/api/checkout/status/route.ts",
     "app/api/servicos/[id]/checkout/route.ts",
     "app/api/servicos/[id]/creditos/checkout/route.ts",
-    "app/api/organizacao/reservas/[id]/checkout/route.ts",
+    "app/api/org/[orgId]/reservas/[id]/checkout/route.ts",
     "app/api/padel/pairings/[id]/checkout/route.ts",
     "app/api/admin/payments/refund/route.ts",
     "app/api/admin/payments/dispute/route.ts",
     "app/api/admin/payments/reprocess/route.ts",
     "app/api/admin/refunds/list/route.ts",
     "app/api/admin/refunds/retry/route.ts",
-    "app/api/organizacao/refunds/list/route.ts",
-    "app/api/organizacao/payouts/status/route.ts",
-    "app/api/organizacao/payouts/list/route.ts",
-    "app/api/organizacao/payouts/summary/route.ts",
-    "app/api/organizacao/payouts/settings/route.ts",
-    "app/api/organizacao/payouts/connect/route.ts",
-    "app/api/organizacao/payouts/webhook/route.ts",
+    "app/api/org/[orgId]/refunds/list/route.ts",
+    "app/api/org/[orgId]/payouts/status/route.ts",
+    "app/api/org/[orgId]/payouts/list/route.ts",
+    "app/api/org/[orgId]/payouts/summary/route.ts",
+    "app/api/org/[orgId]/payouts/settings/route.ts",
+    "app/api/org/[orgId]/payouts/connect/route.ts",
+    "app/api/org-system/payouts/webhook/route.ts",
     "app/api/internal/reconcile/route.ts",
     "app/api/internal/outbox/dlq/route.ts",
     "app/api/internal/outbox/replay/route.ts",
@@ -80,7 +80,7 @@ describe("p0 guardrails", () => {
 
   it("plain text signature errors only allowed in webhook files", () => {
     const repo = readFileSync(resolve(process.cwd(), "app/api/stripe/webhook/route.ts"), "utf8") +
-      readFileSync(resolve(process.cwd(), "app/api/organizacao/payouts/webhook/route.ts"), "utf8");
+      readFileSync(resolve(process.cwd(), "app/api/org-system/payouts/webhook/route.ts"), "utf8");
     expect(repo).toContain("respondPlainText");
 
     const allFiles = p0Paths.map((p) => readFileSync(resolve(process.cwd(), p), "utf8")).join("\n");

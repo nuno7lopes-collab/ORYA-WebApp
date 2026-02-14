@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeOrganizationPathname,
   resolveOrganizationTool,
-} from "@/app/organizacao/topbarRouteUtils";
+} from "@/app/org/_internal/core/topbarRouteUtils";
 
 describe("normalizeOrganizationPathname", () => {
   it("normalizes canonical /org base routes", () => {

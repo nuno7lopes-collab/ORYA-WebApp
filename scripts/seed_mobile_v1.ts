@@ -409,9 +409,16 @@ async function main() {
       select: { id: true, username: true },
     });
 
+    const owner = users[i % users.length];
+    if (!owner) {
+      throw new Error("Nao existe utilizador para owner da organizacao.");
+    }
+
     let organization: { id: number; username: string | null } | null = existing;
     if (!existing) {
-      const group = await prisma.organizationGroup.create({ data: { env: seedEnv } });
+      const group = await prisma.organizationGroup.create({
+        data: { env: seedEnv, ownerUserId: owner.id },
+      });
       organization = await prisma.organization.create({
         data: {
           env: seedEnv,
@@ -447,10 +454,7 @@ async function main() {
       throw new Error("Nao foi possivel criar/atualizar organizacao.");
     }
 
-    const owner = users[i % users.length];
-    if (owner) {
-      await ensureOwnerGroupMembership(organization.id, owner.id);
-    }
+    await ensureOwnerGroupMembership(organization.id, owner.id);
 
     organizations.push({ id: organization.id, username: organization.username ?? username });
   }

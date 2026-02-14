@@ -6,10 +6,10 @@ const TOURNAMENT_MATCH_GUARD = "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN";
 const INTERCLUB_GUARD = "INTERCLUB_TEAM_ENGINE_REQUIRED";
 
 const ROUTE_WRITE_FILES = [
-  "app/api/organizacao/tournaments/[id]/matches/schedule/route.ts",
-  "app/api/organizacao/tournaments/[id]/matches/[matchId]/edit/route.ts",
-  "app/api/organizacao/tournaments/[id]/matches/[matchId]/undo/route.ts",
-  "app/api/organizacao/tournaments/[id]/matches/[matchId]/result/route.ts",
+  "app/api/org/[orgId]/tournaments/[id]/matches/schedule/route.ts",
+  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/edit/route.ts",
+  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/undo/route.ts",
+  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/result/route.ts",
 ];
 
 const DOMAIN_WRITE_FILES = [

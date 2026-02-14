@@ -1,4 +1,4 @@
-import OrganizationChatPage from "@/app/organizacao/(dashboard)/chat/page";
+import OrganizationChatPage from "@/app/org/_internal/core/(dashboard)/chat/page";
 
 type SearchParamsInput =
   | Record<string, string | string[] | undefined>

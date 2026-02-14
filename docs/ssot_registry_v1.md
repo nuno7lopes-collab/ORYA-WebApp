@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-12
+Atualizado: 2026-02-14
 
 ## 00 Authority
 
@@ -74,13 +74,52 @@ Atualizado: 2026-02-12
 | --- | --- | --- | --- | --- | --- | --- |
 | SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | web legado passa a `301`; API legado passa a `410`; consumo frontend/mobile passa para `/org` e `/api/org*` |
 | SSOT-2026-02-13-ORG-HARDCUT-SUBNAV | Nuno | 2026-02-13 | hard-cut de legacy web + subnav dedicada por ferramenta | FECHADO | remover superfície legacy `/organizacao/*` e eliminar subnav partilhada no dashboard | `/organizacao/*` passa a `410`; slugs PT legacy em `/org/:orgId/*` passam a `410`; topbar resolve `toolKey -> subnav` 1:1; padel dividido em club/tournaments |
+| SSOT-2026-02-14-MULTIORG-GOVERNANCE | Nuno | 2026-02-14 | Group governance, onboarding atómico e owner transfer por Group | FECHADO | fechar contratos multi-org sem dupla verdade e com enforcement transacional | `Group.ownerUserId` vira fonte única; join/exit/transfer por `/api/org-hub/groups/*`; `/api/org-hub/become` e owner transfer por org ficam `410` |
+| SSOT-2026-02-14-SUPPORT-V1 | Nuno | 2026-02-14 | suporte v1 (form público + consola admin) | FECHADO | padronizar operação de suporte e trilha auditável | `POST /api/support/tickets`; admin em `/admin/suporte`; assunto canónico `[TICKET-<numero>] ...`; inbound email direto não abre ticket |
+| SSOT-2026-02-14-LEGACY-HARDCUT-GLOBAL | Nuno | 2026-02-14 | hard-cut físico global de namespaces legacy org | FECHADO | eliminar convivência física legacy e fechar canonicidade end-to-end | remover `app/api/organizacao/**` e `app/organizacao/**`; consumo interno só em `/api/org*`, `/api/org-hub/*`, `/api/org-system/*`, `/org/*`, `/org-hub/*` |
 ---
+
+
+## 00.7 Organização Canónica (12 Grupos)
+- Estado: **FECHADO**.
+- Fonte de reconstrução: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md`.
+- Hash fonte (SHA-256): `a97773f4b85d780c20f89a81fe772fd1725d6e91a96ae86d2539630c3604d68e`.
+- Mapping: `docs/ssot_canonical_groups_mapping_v1.json` (SHA-256: `e1ea184bc82774b89ce4878b17e72314a356ee6bcc7195f371179889267b3bb7`).
+- Integridade: `4170/4170` linhas cobertas.
+- IDs normativos mapeados: `139` (blocos extraídos: `138`).
+- Gerado em: `2026-02-14T22:22:01.474Z`.
+
+### 00.7.1 Ordem Canónica
+- G01: Governação SSOT e Invariantes (`22` itens)
+- G02: Segurança, Tenancy, Compliance e Legal (`10` itens)
+- G03: Identidade, Auth, Sessao/Cookies e Mobile Access (`6` itens)
+- G04: Organizacoes, Multi-org, RBAC e Equipa (`11` itens)
+- G05: Financas, Fees, Pricing, Payouts e Refunds (`23` itens)
+- G06: Eventos, Bilhetes, Acesso e Check-in (`8` itens)
+- G07: Reservas, Agenda e Calendario Operacional (`6` itens)
+- G08: Padel e Torneios (`22` itens)
+- G09: CRM, Notificacoes e Suporte (`4` itens)
+- G10: Loja, Promocoes e Loyalty (`3` itens)
+- G11: Discovery, Search, Analytics e Ops Feed (`4` itens)
+- G12: Infra, Jobs, Outbox, Observabilidade e Release Gates (`20` itens)
 
 ## 01 Global Invariants (I*)
 
 Esta secção define os invariantes imutáveis da plataforma ORYA.
 Estas regras DEVEM ser cumpridas em todos os momentos. Qualquer implementação
 que viole um ou mais invariantes é considerada incorreta, mesmo que funcional.
+
+
+## G01) Governação SSOT e Invariantes
+
+### Escopo estrutural
+- 00 Authority
+- 03 Canonical Vocabulary
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G01.001 (origem: I01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:88`.
 
 ### I01 — Fonte Única de Verdade (SSOT)
 Cada domínio tem exatamente uma fonte autoritativa de verdade:
@@ -94,6 +133,10 @@ tratados como autoritativos.
 
 ---
 
+
+#### G01.002 (origem: I02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:100`.
+
 ### I02 — Ledger é Append-Only e Determinístico
 Registos `LedgerEntry` são imutáveis e append-only.
 DEVEM:
@@ -105,6 +148,10 @@ Qualquer correção é expressa por entries compensatórias, nunca por mutação
 
 ---
 
+
+#### G01.003 (origem: I03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:111`.
+
 ### I03 — Payments são Máquinas de Estado, não Saldos
 `Payment` representa ciclo de vida e intenção, não a verdade monetária.
 A verdade financeira final deriva exclusivamente do ledger.
@@ -113,6 +160,10 @@ Fees do processor PODEM ser desconhecidas na criação e DEVEM ser reconciliadas
 depois, sem mutar entries históricas.
 
 ---
+
+
+#### G01.004 (origem: I04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:120`.
 
 ### I04 — Entitlement é a Prova Canónica de Acesso
 Um `Entitlement` é a única prova de que um utilizador (ou guest) tem acesso
@@ -123,6 +174,10 @@ são prova de acesso.
 
 ---
 
+
+#### G01.005 (origem: I05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:129`.
+
 ### I05 — Contexto Explícito de Organização (Multi-Tenancy)
 Todos os dados de domínio DEVEM estar scoped a um `orgId` explícito, por:
 - via direta (row-level), ou
@@ -132,6 +187,10 @@ Nenhuma query, job, webhook ou tarefa assíncrona pode operar sem contexto
 explícito de organização.
 
 ---
+
+
+#### G01.006 (origem: I06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:139`.
 
 ### I06 — Idempotência é Obrigatória para Operações com Side Effects
 Qualquer operação que:
@@ -144,6 +203,10 @@ DEVE ser idempotente e segura para retry.
 
 ---
 
+
+#### G01.007 (origem: I07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:150`.
+
 ### I07 — Assíncrono é Explícito e Observável
 Todo o trabalho assíncrono DEVE:
 - ser acionado via outbox ou queue durável
@@ -153,6 +216,10 @@ Todo o trabalho assíncrono DEVE:
 Execução fire-and-forget é proibida.
 
 ---
+
+
+#### G01.008 (origem: I08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:160`.
 
 ### I08 — Sistemas Externos Não São Confiáveis
 Sistemas externos (payment processors, providers de email, scanners,
@@ -166,6 +233,10 @@ contra a verdade interna.
 
 ---
 
+
+#### G01.009 (origem: I09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:172`.
+
 ### I09 — Fail Closed em Autorização e Acesso
 Em caso de incerteza, falta de dados ou lag de reconciliação:
 - acesso é negado
@@ -175,6 +246,10 @@ Em caso de incerteza, falta de dados ou lag de reconciliação:
 O sistema falha sempre em fail-closed, nunca em fail-open.
 
 ---
+
+
+#### G01.010 (origem: I10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:182`.
 
 ### I10 — Decisões FECHADO São Vinculativas
 Qualquer secção ou regra marcada como FECHADO é final.
@@ -196,6 +271,294 @@ Any violation of these rules is considered a critical security defect.
 
 ---
 
+
+#### G01.015 (origem: C-G05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:558`.
+
+### C-G05 — Padrão de Envelope de Erro
+Todos os contratos DEVEM usar uma estrutura de erro consistente contendo:
+- errorCode (stable, machine-readable)
+- message (human-readable)
+- retryable (boolean)
+- correlationId
+
+Erros sem classificação são proibidos.
+
+---
+
+### 03.2 sourceType Canónico e Separação de Enums
+Resumo normativo:
+- `sourceType` canónico e separação de enums são definidos em **7.5** (ver 7.5; bloco canónico único).
+- Nesta secção não se duplicam enums/listas; apenas referência de vocabulário.
+
+### 03.3 Estados Canónicos de Entitlement
+Resumo normativo:
+- Estados canónicos de entitlement e regra de consumo como metadata são definidos em **7.2** e **7.3** (ver 7.2 e 7.3; blocos canónicos únicos).
+- Nesta secção não se duplicam enums/listas; apenas referência de vocabulário.
+
+### 03.4 Contract Signatures (shape canónico)
+12.6.1 Contract Signatures (MVP) (FECHADO)
+Objetivo: reduzir drift FE/BE e entre módulos. Assinaturas mínimas (shape), sem impor transporte (REST/GRPC).
+
+- Finanças.createCheckout(input)
+  - input: {orgId, sourceType, sourceId, customerIdentityId?, pricingSnapshotHash?, idempotencyKey}
+  - output: {paymentId, status, clientSecret?, pricingSnapshotHash}
+
+- Finanças.getPayment(paymentId)
+  - output: {paymentId, status, amounts, currency, pricingSnapshotHash, processorFeesStatus, processorFeesActual?}
+
+- Eventos.validateInviteToken(input)
+  - input: {eventId, inviteToken, identityRef?}
+  - output: {allow, reasonCode?, constraints:{expiresAt, requiresIdentityMatch}}
+
+- UsernameRegistry.resolveUsername(username)
+  - output: {ownerType, ownerId, canonicalUsername}
+
+- Checkin.consume(input)
+  - input: {qrPayload, scannerIdentityRef, eventId, deviceId?}
+  - output: {allow, reasonCode?, entitlementId?, consumedAt?, policyVersionApplied, duplicate?:{duplicateOfConsumedAt, duplicateCount?}}
+
+- Address.searchAutocomplete(query, context?)
+  - output: {items:[{placeId, label, lat?, lng?}]}
+
+- Address.resolvePlace(placeId)
+  - output: {placeId, label, lat, lng, components?}
+
+### 03.5 Naming Canónico de Contratos (FECHADO)
+- Em contratos/API/EventLog/Outbox, os nomes canónicos são:
+  - `orgId`
+  - `customerIdentityId`
+- Semântica de domínio para "reserva":
+  - UI pode usar "Reserva" como categoria de produto.
+  - Domínio técnico mantém separação explícita entre `Booking` (serviço) e `TicketReservation` (bilhete/evento).
+- Em persistência DB, `organizationId` é permitido como detalhe físico de storage.
+- Payload externo aceita apenas shape canónico (`orgId` + `customerIdentityId`).
+- Código de domínio novo NÃO deve introduzir aliases sem revisão normativa.
+
+### 03.6 Auth `errorCode` Canonical Set (legacy auth spec migrated)
+Conjunto canónico mínimo para endpoints de autenticação:
+- `FORBIDDEN`
+- `INVALID_EMAIL`
+- `RATE_LIMITED`
+- `UNAUTHENTICATED`
+- `MISSING_CREDENTIALS`
+- `INVALID_CREDENTIALS`
+- `EMAIL_NOT_CONFIRMED`
+- `EMAIL_EXISTS`
+- `WEAK_PASSWORD`
+- `USERNAME_INVALID`
+- `USERNAME_TAKEN`
+- `OTP_GENERATION_FAILED`
+- `RESET_LINK_FAILED`
+- `EMAIL_SEND_FAILED`
+- `MISSING_TOKENS`
+- `INVALID_SESSION`
+- `APPLE_IDENTITY_MISSING`
+- `APPLE_IDENTITY_INVALID`
+- `ALREADY_LINKED`
+- `LOGOUT_FAILED`
+- `CLEAR_FAILED`
+- `SERVER_ERROR`
+
+Regra:
+- Producers MAY acrescentar novos `errorCode` sem breaking change (minor), desde que mantenham backward compatibility.
+- Consumers MUST tolerar códigos desconhecidos e usar fallback de UX seguro.
+
+⸻
+
+## 04 Contracts (C-G*, C01..C18, CAUTH.01, C02 addons)
+
+6) Contratos de Integração v3.0 (mínimos obrigatórios)
+
+Regra: módulos verticais consomem horizontais via contratos. Contratos são tratados como APIs internas versionadas.
+
+---
+
+## Regras de Execução de Contratos (GLOBAL, NORMATIVE)
+
+Esta secção define as regras de execução e compatibilidade que se aplicam
+a todos os contratos internos e externos (C01–C18, CAUTH.01, C02.X01 e futuras adições).
+
+Estas regras são obrigatórias e sobrepõem preferências locais de implementação.
+
+---
+
+
+#### G01.011 (origem: C-G01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:666`.
+
+### C-G01 — Ownership Explícito de Contrato
+Todo contrato DEVE definir:
+- um único domínio/equipa owner
+- um ou mais consumers conhecidos
+
+O owner é responsável por compatibilidade, versionamento e ciclo de vida.
+
+---
+
+
+#### G01.012 (origem: C-G02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:675`.
+
+### C-G02 — Versionamento de Contrato
+Contratos usam versionamento semântico:
+
+- MAJOR: breaking change
+- MINOR: alteração aditiva backward-compatible
+- PATCH: clarificação não comportamental ou bug fix
+
+A versão é explícita e nunca inferida.
+
+---
+
+
+#### G01.013 (origem: C-G03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:686`.
+
+### C-G03 — Compatibilidade Retroativa é Obrigatória
+Consumers DEVEM:
+- tolerar unknown fields
+- não depender da ordem dos fields
+- não assumir default values sem documentação explícita
+
+Producers NÃO PODEM:
+- remover fields em versões minor
+- alterar semântica de field sem major version
+
+---
+
+
+#### G01.014 (origem: C-G04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:698`.
+
+### C-G04 — Semântica de Idempotência
+Se um contrato aciona side effects, DEVE definir:
+- a idempotency key
+- o comportamento de retry
+- as garantias de tratamento de duplicados
+
+Idempotência aplica-se a retries, crashes e falhas de rede.
+
+---
+
+### C-G05 — Padrão de Envelope de Erro
+Todos os contratos DEVEM usar uma estrutura de erro consistente contendo:
+- errorCode (stable, machine-readable)
+- message (human-readable)
+- retryable (boolean)
+- correlationId
+
+Erros sem classificação são proibidos.
+
+---
+
+
+#### G01.016 (origem: C-G06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:719`.
+
+### C-G06 — Premissas de Tempo e Ordenação
+Contratos NÃO PODEM assumir:
+- entrega in-order
+- single delivery
+- clocks sincronizados
+
+Se ordenação importar, o contrato DEVE definir explicitamente chaves de
+ordenação ou lógica de reconciliação.
+
+---
+
+
+#### G01.017 (origem: C-G07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:730`.
+
+### C-G07 — Obrigações de Observabilidade
+Cada contrato DEVE emitir:
+- metrics de sucesso/falha
+- metrics de latência (p50, p95)
+- logs estruturados com correlationId
+
+Falha silenciosa é proibida.
+
+---
+
+
+#### G01.018 (origem: C-G08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:740`.
+
+### C-G08 — Testes de Compatibilidade
+Qualquer alteração de contrato DEVE incluir:
+- testes de backward compatibility
+- replay de pelo menos um payload histórico
+- validação explícita do comportamento de idempotência
+
+---
+
+
+#### G01.019 (origem: C-G09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:748`.
+
+### C-G09 — Documentação é Executável
+Cada contrato DEVE incluir:
+- payloads de exemplo
+- casos de erro de exemplo
+- transições de estado explícitas (quando aplicável)
+
+Contratos ambíguos são considerados incompletos.
+
+---
+
+
+#### G01.020 (origem: D00)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2347`.
+
+D00) Fora de scope (v1–v3): API pública (terceiros)
+	•	Não vamos expor API pública/SDK para terceiros nesta fase.
+	•	Endpoint(s) públicos **first‑party** (ex.: páginas públicas/agenda) são permitidos, read‑only e rate‑limited.
+	•	Qualquer “Public API” com chaves/SDK é **futuro**: sem documentação externa, sem onboarding de parceiros e **desativado por defeito** em prod até decisão explícita.
+	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API” aberta.
+
+
+#### G01.021 (origem: D02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2397`.
+
+D02) Owners (fontes de verdade) — semântica blindada
+	•	Ticketing / Sessions / Página pública base / Entitlements de acesso: Eventos
+	•	Convites (EventInvite + InviteToken) + EventAccessPolicy: Eventos
+	•	Competição / Registos / Brackets / Matches / Resultados: Padel Torneios
+	•	Agenda / Disponibilidade / Booking / No-show / MatchSlots: Reservas
+	•	Pagamentos / Fees / Ledger / Refund / Payout / Invoice: Finanças
+	•	Check-in / Presence logs / Scanner: Check-in
+	•	Customer + Consent + Timeline + Segmentos: CRM
+	•	Roles + Scopes + Auditoria RBAC: Equipa
+	•	Moradas: Address Service
+	•	Analytics: Derivado (Ledger + EventLog); não é owner de estado transaccional
+
+Regra: nenhum domínio duplica estado de outro owner. Integração só via contratos.
+
+**Regra de negócio (fundamental):** **só ORGANIZAÇÕES** podem ser donas de coisas que se vendem/operam (Eventos, Loja/Produtos, Serviços/Reservas). Utilizadores **nunca** “criam/vendem em nome próprio”; apenas atuam como membros de uma Organização no **Painel da Organização** (RBAC). No lado do utilizador, mesmo sendo dono/admin, vê a Organização apenas como público.
+
+
+#### G01.022 (origem: D09.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2873`.
+
+D09.02) UX Operacional Global (B2B)
+	•	Blueprint de UX global (Unified Search, Context Drawer, Command Palette, Ops mode e padrões visuais) é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.2).
+
+
+## G02) Segurança, Tenancy, Compliance e Legal
+
+### Escopo estrutural
+- 02 Security / Tenancy / Compliance
+- 19.1 Legal & Compliance
+- 19.2 Trust & Safety
+- 19.4 Governanca de Dados
+- 19.5 Account Security
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G02.001 (origem: T01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:202`.
+
 ### T01 — Explicit Organization Scoping (MANDATORY)
 All domain entities MUST be scoped to an organization via:
 - a direct `orgId` field, or
@@ -206,6 +569,10 @@ exist without an organization context.
 
 ---
 
+
+#### G02.002 (origem: T02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:212`.
+
 ### T02 — Query Enforcement
 All read and write queries MUST:
 - include `orgId` as a mandatory filter, OR
@@ -214,6 +581,10 @@ All read and write queries MUST:
 Queries without explicit organization scoping are forbidden.
 
 ---
+
+
+#### G02.003 (origem: T03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:221`.
 
 ### T03 — Global Tables (Explicit Exceptions)
 Only the following categories MAY exist without `orgId`:
@@ -227,6 +598,10 @@ Global tables MUST:
 
 ---
 
+
+#### G02.004 (origem: T04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:233`.
+
 ### T04 — Background Jobs & Async Processing
 All background jobs, workers, and outbox processors MUST:
 - execute within a resolved `orgId` context
@@ -237,6 +612,10 @@ organization at a time.
 
 ---
 
+
+#### G02.005 (origem: T05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:243`.
+
 ### T05 — Webhooks & External Callbacks
 Inbound webhooks MUST:
 - be resolved to an internal entity
@@ -246,6 +625,10 @@ Inbound webhooks MUST:
 Webhook handling without organization resolution is forbidden.
 
 ---
+
+
+#### G02.006 (origem: T06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:253`.
 
 ### T06 — Authorization Is Org-Bound
 Authorization checks MUST always evaluate:
@@ -258,6 +641,10 @@ and documented as such.
 
 ---
 
+
+#### G02.007 (origem: T07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:264`.
+
 ### T07 — Service Roles & Elevated Access
 Service roles MAY bypass user-level RBAC but MUST NOT bypass
 organization isolation.
@@ -269,6 +656,10 @@ All service-role access MUST:
 
 ---
 
+
+#### G02.008 (origem: T08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:275`.
+
 ### T08 — Testing & Verification
 The platform MUST include automated tests that:
 - attempt cross-org access
@@ -278,6 +669,10 @@ The platform MUST include automated tests that:
 Tenancy enforcement MUST be continuously tested.
 
 ---
+
+
+#### G02.009 (origem: T09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:285`.
 
 ### T09 — Failure Mode
 On any ambiguity or missing organization context:
@@ -552,325 +947,423 @@ Any new feature MUST be evaluated against this threat model.
 ## 03 Canonical Vocabulary (termos, enums, sourceType, error envelope)
 
 ### 03.1 Error Envelope Canónico
-### C-G05 — Padrão de Envelope de Erro
-Todos os contratos DEVEM usar uma estrutura de erro consistente contendo:
-- errorCode (stable, machine-readable)
-- message (human-readable)
-- retryable (boolean)
-- correlationId
 
-Erros sem classificação são proibidos.
+#### G02.010 (origem: CAUTH.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2122`.
 
----
+CAUTH.01) Official Email Gate (organização) — **FECHADO**
 
-### 03.2 sourceType Canónico e Separação de Enums
-Resumo normativo:
-- `sourceType` canónico e separação de enums são definidos em **7.5** (ver 7.5; bloco canónico único).
-- Nesta secção não se duplicam enums/listas; apenas referência de vocabulário.
-
-### 03.3 Estados Canónicos de Entitlement
-Resumo normativo:
-- Estados canónicos de entitlement e regra de consumo como metadata são definidos em **7.2** e **7.3** (ver 7.2 e 7.3; blocos canónicos únicos).
-- Nesta secção não se duplicam enums/listas; apenas referência de vocabulário.
-
-### 03.4 Contract Signatures (shape canónico)
-12.6.1 Contract Signatures (MVP) (FECHADO)
-Objetivo: reduzir drift FE/BE e entre módulos. Assinaturas mínimas (shape), sem impor transporte (REST/GRPC).
-
-- Finanças.createCheckout(input)
-  - input: {orgId, sourceType, sourceId, customerIdentityId?, pricingSnapshotHash?, idempotencyKey}
-  - output: {paymentId, status, clientSecret?, pricingSnapshotHash}
-
-- Finanças.getPayment(paymentId)
-  - output: {paymentId, status, amounts, currency, pricingSnapshotHash, processorFeesStatus, processorFeesActual?}
-
-- Eventos.validateInviteToken(input)
-  - input: {eventId, inviteToken, identityRef?}
-  - output: {allow, reasonCode?, constraints:{expiresAt, requiresIdentityMatch}}
-
-- UsernameRegistry.resolveUsername(username)
-  - output: {ownerType, ownerId, canonicalUsername}
-
-- Checkin.consume(input)
-  - input: {qrPayload, scannerIdentityRef, eventId, deviceId?}
-  - output: {allow, reasonCode?, entitlementId?, consumedAt?, policyVersionApplied, duplicate?:{duplicateOfConsumedAt, duplicateCount?}}
-
-- Address.searchAutocomplete(query, context?)
-  - output: {items:[{placeId, label, lat?, lng?}]}
-
-- Address.resolvePlace(placeId)
-  - output: {placeId, label, lat, lng, components?}
-
-### 03.5 Naming Canónico de Contratos (FECHADO)
-- Em contratos/API/EventLog/Outbox, os nomes canónicos são:
-  - `orgId`
-  - `customerIdentityId`
-- Em persistência DB, `organizationId` é permitido como detalhe físico de storage.
-- Payload externo aceita apenas shape canónico (`orgId` + `customerIdentityId`).
-- Código de domínio novo NÃO deve introduzir aliases sem revisão normativa.
-
-### 03.6 Auth `errorCode` Canonical Set (legacy auth spec migrated)
-Conjunto canónico mínimo para endpoints de autenticação:
-- `FORBIDDEN`
-- `INVALID_EMAIL`
-- `RATE_LIMITED`
-- `UNAUTHENTICATED`
-- `MISSING_CREDENTIALS`
-- `INVALID_CREDENTIALS`
-- `EMAIL_NOT_CONFIRMED`
-- `EMAIL_EXISTS`
-- `WEAK_PASSWORD`
-- `USERNAME_INVALID`
-- `USERNAME_TAKEN`
-- `OTP_GENERATION_FAILED`
-- `RESET_LINK_FAILED`
-- `EMAIL_SEND_FAILED`
-- `MISSING_TOKENS`
-- `INVALID_SESSION`
-- `APPLE_IDENTITY_MISSING`
-- `APPLE_IDENTITY_INVALID`
-- `ALREADY_LINKED`
-- `LOGOUT_FAILED`
-- `CLEAR_FAILED`
-- `SERVER_ERROR`
-
-Regra:
-- Producers MAY acrescentar novos `errorCode` sem breaking change (minor), desde que mantenham backward compatibility.
-- Consumers MUST tolerar códigos desconhecidos e usar fallback de UX seguro.
-
-⸻
-
-## 04 Contracts (C-G*, C01..C18, CAUTH.01, C02 addons)
-
-6) Contratos de Integração v3.0 (mínimos obrigatórios)
-
-Regra: módulos verticais consomem horizontais via contratos. Contratos são tratados como APIs internas versionadas.
-
----
-
-## Regras de Execução de Contratos (GLOBAL, NORMATIVE)
-
-Esta secção define as regras de execução e compatibilidade que se aplicam
-a todos os contratos internos e externos (C01–C18, CAUTH.01, C02.X01 e futuras adições).
-
-Estas regras são obrigatórias e sobrepõem preferências locais de implementação.
-
----
-
-### C-G01 — Ownership Explícito de Contrato
-Todo contrato DEVE definir:
-- um único domínio/equipa owner
-- um ou mais consumers conhecidos
-
-O owner é responsável por compatibilidade, versionamento e ciclo de vida.
-
----
-
-### C-G02 — Versionamento de Contrato
-Contratos usam versionamento semântico:
-
-- MAJOR: breaking change
-- MINOR: alteração aditiva backward-compatible
-- PATCH: clarificação não comportamental ou bug fix
-
-A versão é explícita e nunca inferida.
-
----
-
-### C-G03 — Compatibilidade Retroativa é Obrigatória
-Consumers DEVEM:
-- tolerar unknown fields
-- não depender da ordem dos fields
-- não assumir default values sem documentação explícita
-
-Producers NÃO PODEM:
-- remover fields em versões minor
-- alterar semântica de field sem major version
-
----
-
-### C-G04 — Semântica de Idempotência
-Se um contrato aciona side effects, DEVE definir:
-- a idempotency key
-- o comportamento de retry
-- as garantias de tratamento de duplicados
-
-Idempotência aplica-se a retries, crashes e falhas de rede.
-
----
-
-### C-G05 — Padrão de Envelope de Erro
-Todos os contratos DEVEM usar uma estrutura de erro consistente contendo:
-- errorCode (stable, machine-readable)
-- message (human-readable)
-- retryable (boolean)
-- correlationId
-
-Erros sem classificação são proibidos.
-
----
-
-### C-G06 — Premissas de Tempo e Ordenação
-Contratos NÃO PODEM assumir:
-- entrega in-order
-- single delivery
-- clocks sincronizados
-
-Se ordenação importar, o contrato DEVE definir explicitamente chaves de
-ordenação ou lógica de reconciliação.
-
----
-
-### C-G07 — Obrigações de Observabilidade
-Cada contrato DEVE emitir:
-- metrics de sucesso/falha
-- metrics de latência (p50, p95)
-- logs estruturados com correlationId
-
-Falha silenciosa é proibida.
-
----
-
-### C-G08 — Testes de Compatibilidade
-Qualquer alteração de contrato DEVE incluir:
-- testes de backward compatibility
-- replay de pelo menos um payload histórico
-- validação explícita do comportamento de idempotência
-
----
-
-### C-G09 — Documentação é Executável
-Cada contrato DEVE incluir:
-- payloads de exemplo
-- casos de erro de exemplo
-- transições de estado explícitas (quando aplicável)
-
-Contratos ambíguos são considerados incompletos.
-
----
-
-C01) Reservas ↔ Padel (agenda e slots)
-
-Padel cria slots/bloqueios via contrato; Reservas responde com conflitos/sugestões.
-
-Representação canónica de MatchSlot
-	•	CalendarBlock/Override: kind=BLOCK, reason=MATCH_SLOT, resourceId=courtId, start/end
-	•	Padel nunca escreve no calendário diretamente
-
-Resposta do contrato
-	•	conflitos hard detectados
-	•	sugestões de horários alternativos (Fase 1)
-	•	optimização/yield (Fase 3)
+Regras:
+	•	`CAUTH.01` é o contrato canónico do gate de email oficial verificado para ações sensíveis da organização.
+	•	Escopo: validação de acesso em mutações B2B sensíveis (ex.: payouts, exports financeiros, settings críticos).
+	•	Condição canónica de verificação:
+		–	`normalize(officialEmail)` existe;
+		–	`officialEmailVerifiedAt != null`.
+	•	Normalização canónica:
+		–	`trim + NFKC + lowercase`;
+		–	valor persistido em `Organization.officialEmail` já normalizado.
+	•	Códigos canónicos de erro:
+		–	`OFFICIAL_EMAIL_REQUIRED`
+		–	`OFFICIAL_EMAIL_NOT_VERIFIED`
+	•	Envelope externo de erro usa `errorCode` (nunca `error`).
+	•	Fail mode: fail-closed (403) sem side effects.
 
 ---
 
 ### Contract Execution Addendum (NORMATIVE)
 
-**Contract ID:** C01  
-**Contract Name:** Reservas ↔ Padel (agenda e slots)  
-**Current Version:** v3.0.0  
-**Owner:** Domain: Reservas (Agenda Engine)  
-**Primary Consumers:** Padel (Torneios), ORYA-WebApp (org dashboard), internal workers
+**Contract ID:** CAUTH.01  
+**Contract Name:** Official Email Gate (organização)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Security/RBAC + Organization Settings  
+**Primary Consumers:** APIs `/org/*`, Finance ops, RBAC write paths
 
 ---
 
 #### Purpose
-Define a interface canónica para criação/atualização de slots/bloqueios na agenda a partir do domínio Padel, com deteção de conflitos.
+Definir o gate canónico de email oficial verificado para ações sensíveis de organização.
 
 ---
 
 #### Idempotency
-- **Idempotency Key:** idempotencyKey
-- **Scope:** per orgId + sourceType/sourceId
-- **Guarantee:** repeated requests with the same key MUST NOT produce
-  duplicate side effects.
-
-If idempotency cannot be guaranteed, the contract is considered invalid.
+- **Idempotency Key:** N/A (validação sem side effects)
+- **Scope:** per request
+- **Guarantee:** validações repetidas com o mesmo input devolvem o mesmo resultado lógico.
 
 ---
 
 #### Input Payload (Example)
 ```json
 {
-  "orgId": "org_123",
-  "resourceId": "court_45",
-  "startAt": "2026-02-01T10:00:00Z",
-  "endAt": "2026-02-01T11:30:00Z",
-  "reason": "MATCH_SLOT",
-  "sourceType": "MATCH",
-  "sourceId": "match_789",
-  "idempotencyKey": "slot:match_789"
+  "organizationId": 123,
+  "officialEmail": "finance@org.pt",
+  "officialEmailVerifiedAt": "2026-01-27T10:00:00Z",
+  "reasonCode": "PAYOUTS_SETTINGS",
+  "requestId": "req_abc",
+  "correlationId": "corr_abc"
 }
 ```
 
 #### Output / Response (Example)
 ```json
 {
-  "accepted": true,
-  "conflicts": [],
-  "correlationId": "corr_abc"
+  "ok": true
 }
 ```
 
 #### Error Cases
-All errors follow the global error envelope.
-Example:
 ```json
 {
-  "errorCode": "AGENDA_CONFLICT",
-  "message": "Requested slot conflicts with an existing block",
-  "retryable": false,
-  "correlationId": "corr_abc"
+  "ok": false,
+  "requestId": "req_abc",
+  "correlationId": "corr_abc",
+  "errorCode": "OFFICIAL_EMAIL_NOT_VERIFIED",
+  "message": "Email oficial por verificar para esta ação.",
+  "email": "finance@org.pt",
+  "verifyUrl": "/org/:orgId/settings?tab=official-email",
+  "nextStepUrl": "/org/:orgId/settings?tab=official-email",
+  "reasonCode": "PAYOUTS_SETTINGS",
+  "retryable": false
 }
 ```
 
 ---
 
 #### Ordering & Duplication
-This contract MUST tolerate:
-- duplicate delivery
-- out-of-order delivery
-
-If ordering is required, the following key is authoritative:
-startAt
+Este contrato tolera chamadas duplicadas.
+Ordering não é aplicável para validação do gate.
 
 ---
 
 #### Side Effects
-This contract MAY trigger:
-☐ ledger entries
-☐ entitlement issuance
-☐ emails / notifications
+☐ ledger entries  
+☐ entitlement issuance  
+☐ emails / notifications  
 ☐ downstream async jobs
-
-All side effects MUST be idempotent and observable.
 
 ---
 
 #### Observability
-This contract MUST emit:
-- success/failure counters
-- latency metrics (p50, p95)
-- structured logs with correlationId and orgId
+Obrigatório em logs e métricas:
+- `requestId`
+- `correlationId`
+- `organizationId`
+- `reasonCode`
 
 ---
 
 #### Compatibility Rules
-- Fields may only be added as OPTIONAL in minor versions.
-- Fields may only be removed or redefined in major versions.
-- Consumers MUST tolerate unknown fields.
+- Erros externos DEVEM usar `errorCode` canónico.
+- Campos novos podem ser aditivos (minor), sem quebrar consumers.
 
 ---
 
 #### Failure Mode
-On uncertainty or partial failure:
-- the contract MUST fail closed
-- no irreversible side effects may be committed
+Sem email oficial válido/verificado: bloquear ação (403), sem side effects.
+
+
+## G03) Identidade, Auth, Sessao/Cookies e Mobile Access
+
+### Escopo estrutural
+- 02.1.1 Authentication Security Controls
+- Auth API Baseline
+- Mobile-only constraints
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G03.001 (origem: C12)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1955`.
+
+C12) Identity/Auth (SSOT + claim/merge) — **FECHADO**
+
+Regras:
+	•	Tipos: `USER` e `GUEST_EMAIL`.
+	•	Email normalizado: `trim + NFKC + lowercase`; hash HMAC para dedupe.
+	•	Guest checkout cria/usa `Identity(GUEST_EMAIL)` por email normalizado.
+	•	Email verificado → **claim automático** para `Identity(USER)`:
+		–	mover Entitlements para o USER
+		–	criar registo de merge (auditável)
+		–	**não** alterar LedgerEntry nem Payment histórico
+	•	Merge é idempotente e nunca destrói histórico; identidade antiga fica como tombstone.
 
 ---
 
-#### Notes
-N/A
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C12  
+**Contract Name:** Identity/Auth (SSOT + claim/merge)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Identity/Auth  
+**Primary Consumers:** Finanças, Entitlements, CRM, Check‑in, Org/RBAC
+
+#### Idempotency
+- **Idempotency Key:** `emailHash + userId` (claim)  
+- **Scope:** global
+
+#### Failure Mode
+Sem email verificado → claim bloqueado (fail‑closed).
+
+---
+
+
+#### G03.002 (origem: CAUTH.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2232`.
+
+CAUTH.02) Public Auth API Contract Baseline (legacy auth spec migrated) — **FECHADO**
+
+Regras:
+	•	Endpoints públicos de autenticação abrangidos:
+		–	`POST /api/auth/login`
+		–	`POST /api/auth/send-otp`
+		–	`POST /api/auth/password/reset-request`
+		–	`POST /api/auth/refresh`
+		–	`POST /api/auth/apple/link`
+		–	`GET /api/auth/me`
+		–	`POST /api/auth/logout`
+		–	`POST /api/auth/clear`
+		–	`GET|POST /api/auth/check-email`
+	•	Todos os erros externos usam envelope canónico (`errorCode`, `message`, `retryable`, `correlationId`).
+	•	`send-otp` e `check-email` seguem política anti-enumeração (resposta genérica, sem leak de existência de conta).
+	•	`/api/auth/refresh` é o único contrato canónico para sincronizar sessão com cookies HttpOnly.
+	•	`/api/auth/me` é o read-model canónico de estado de autenticação no server.
+	•	Auth UI/UX (modal, cooldowns, componentes) é não-normativo e vive em `docs/planning_registry_v1.md`.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** CAUTH.02
+**Contract Name:** Public Auth API Contract Baseline
+**Current Version:** v1.0.0
+**Owner:** Domain: Identity/Auth
+**Primary Consumers:** WebApp auth UI, Mobile auth clients, internal session middlewares
+
+#### Purpose
+Definir baseline contratual dos endpoints públicos de autenticação, com anti-enumeração e envelope canónico.
+
+#### Idempotency
+- **Idempotency Key:** N/A (operações de sessão/auth sem side-effects financeiros)
+- **Scope:** per request
+
+#### Failure Mode
+Em dúvida de autorização/origem/sessão: fail-closed, sem side effects irreversíveis.
+
+
+#### G03.005 (origem: DORG.08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2320`.
+
+DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
+	•	Normalização canónica obrigatória:
+		–	lowercase + trim + colapsar espaços + Unicode NFC.
+	•	Regras de username após normalização:
+		–	mínimo 4 caracteres, máximo 15.
+		–	lista de reserved words + blacklist obrigatória.
+		–	hold de 15 dias após rename/release.
+	•	Confusables/homoglyphs:
+		–	fora do MVP para resolução avançada;
+		–	no MVP: charset permitido + bloquear mistura de scripts.
+	•	Qualquer escrita de username deve passar por `UsernameRegistry` (sem bypass direto em tabelas de profile/org).
+
+
+#### G03.006 (origem: DORG.09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2332`.
+
+DORG.09) Perfil Mobile — UI/UX baseline (FECHADO)
+	•	Escopo: perfil de Utilizador (view pública/própria) + perfil público de Organização (view pública).
+	•	Padrão comum:
+		–	App Bar sticky, Hero com avatar/badges, CTA primário visível, Stats row, secções sticky, estados loading/empty/error.
+		–	acessibilidade mínima: touch targets >= 44pt, contraste AA, dynamic type.
+	•	Utilizador:
+		–	stats `Seguidores` + `A seguir`.
+		–	CTA `Follow/Unfollow` (outro user) e `Editar Perfil` (próprio).
+	•	Organização:
+		–	stats apenas `Seguidores`.
+		–	CTA primário derivado do módulo ativo (`Ver eventos`/`Reservar`/`Ver loja`/`Contactar`).
+	•	Ordem canónica de blocos org:
+		–	`HERO -> ABOUT -> EVENTS_AGENDA -> STORE -> SERVICES -> FORMS -> GALLERY -> FAQ -> CONTACT`.
+	•	Layout de perfil público de organização é controlado por `OrgPublicProfileLayout` versionado (edição apenas no painel org).
+
+
+#### G03.003 (origem: D01.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2380`.
+
+D01.02) Mensagens & Chat — decisões de produto (FECHADO)
+	•	Mensagens para utilizador final **apenas na app** (sem chat na web).  
+	•	“Inbox” único de Mensagens: eventos + reservas/serviços + chats com organizações + chats entre utilizadores.  
+	•	Escopo `b2c` é **mobile-only** por contrato backend (HTTP + WebSocket): clientes não‑mobile recebem `MOBILE_APP_REQUIRED`; versões mobile fora da gate recebem `UPGRADE_REQUIRED`.  
+	•	Chat de evento segue D01.01 e é suportado integralmente no `b2c` (inbox, mensagens, read, notifications, delete, realtime).  
+	•	Chat de reservas/serviços: canal **só ativa** com a 1ª mensagem (não criar canal vazio).  
+	•	Chat de serviço (pré‑reserva): **apenas via pedido**; pedido **aprovado por staff** da organização.  
+	•	Chat org‑contact (cliente → organização): **pedido obrigatório**, aprovado por staff.  
+	•	Reserva: organização pode iniciar chat no **detalhe da reserva** (1ª mensagem cria canal).  
+	•	Chat interno da organização: **só canais** (sem mensagens diretas internas); admins criam por defeito; canais automáticos do sistema (Ops, evento, reserva).  
+	•	Canais cliente‑profissional: cliente vê o profissional; admins podem ver/escrever; identidade padrão para admins é “Organização”; identidade pessoal opcional quando necessário; admins **não aparecem** como membros visíveis ao cliente.  
+	•	Mensagens entre utilizadores: só entre amigos/seguidores confirmados; pedidos de mensagem para desconhecidos; grupos por convite.  
+	•	Notificações: push em todas as mensagens por defeito; opção de silenciar por conversa.  
+	•	Conteúdo: **texto-only**. Upload/presign de anexos está desativado e payloads com anexos são rejeitados (`ATTACHMENTS_DISABLED`).  
+	•	“Anular envio”: janela de **2 minutos**.  
+	•	Retenção: mensagens guardadas e chats de evento/reserva read‑only após fecho. Exceção única (one-off de migração): purge destrutivo de mensagens históricas com anexos + ficheiros/metadata para convergir para texto-only; não é política contínua.
+
+
+#### G03.004 (origem: D17)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3069`.
+
+D17) Integrações Apple — guardrails normativos (FECHADO)
+	•	Sign in with Apple é método suportado e obrigatório em iOS quando existirem logins de terceiros.
+	•	Push iOS usa APNs com token-based auth.
+	•	Universal links e share sheet iOS são suportados para superfícies públicas relevantes.
+	•	Apple Wallet/PassKit em v1.x mantém validação **online** por `EntitlementQrToken` (`tokenHash`), com updates/revogação por jobs idempotentes.
+	•	Offline signed QR permanece fora de v1.x e só pode entrar com payload assinado/versionado, rotação de chaves e revocation list sincronizada.
+	•	Address provider canónico continua em D11 (Apple Maps via Address Service).
+	•	Certificados/keys Apple vivem em AWS Secrets Manager com rotação e mínimo privilégio.
+	•	Detalhe de roadmap/fases Apple fica em `docs/planning_registry_v1.md` (P7.4).
+
+
+## G04) Organizacoes, Multi-org, RBAC e Equipa
+
+### Escopo estrutural
+- 10.1 Multi-Organizacoes & Group Governance
+- 11 RBAC v2
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G04.001 (origem: C13)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1986`.
+
+C13) Org Context + RBAC (resolução e step‑up) — **FECHADO**
+
+Regras:
+	•	`orgId` é obrigatório no path (`/org/:orgId/*`) ou header `X-ORYA-ORG-ID`.
+	•	Cookies/lastUsedOrg **só** para redirect de UI (nunca para autorização).
+	•	Qualquer operação sem `orgId` resolve para **403** com `ORG_CONTEXT_REQUIRED`.
+	•	Step‑up obrigatório em ações críticas (refunds, alterações de fee policy, export PII, cancelamentos).
+	•	Service roles não podem bypassar isolamento de org.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C13  
+**Contract Name:** Org Context + RBAC (resolução e step‑up)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Security/RBAC  
+**Primary Consumers:** Todos os módulos B2B
+
+#### Failure Mode
+Ambiguidade de org → fail‑closed (403) + audit log.
+
+---
+
+
+#### G04.006 (origem: DORG.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2285`.
+
+DORG.01) Membership de Organização — fonte única de verdade (FECHADO)
+	•	Fonte única canónica: `OrganizationGroupMember` + `OrganizationGroupMemberOrganizationOverride`.
+	•	`OrganizationMember` é legado e não pode ser usado por código de runtime.
+	•	Leituras/escritas de membership (listar, promover, remover, contar owners, resolver permissões) devem passar pelo modelo de grupo.
+	•	DB hygiene: tabela legacy `organization_members` removida por migração de cut-line.
+
+
+#### G04.007 (origem: DORG.03A)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2291`.
+
+DORG.03A) Módulos da Organização — fonte única + fail-closed (FECHADO)
+	•	Fonte única de ativação de módulos: `OrganizationModuleEntry.enabled=true`.
+	•	`RBAC` e `module enabled` são validações separadas e cumulativas:
+		–	sem membership/permissão => negar;
+		–	módulo desativado => negar, mesmo que o utilizador tenha role.
+	•	No perfil público da organização, um módulo só aparece se:
+		–	estiver ativo, e
+		–	tiver conteúdo publicável.
+	•	Toggle de módulo afeta dashboard e perfil público de forma determinística (sem bypass por URL direta).
+
+
+#### G04.008 + G04.009 (origem: DORG.04A + DORG.05A)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2301`.
+
+DORG.04A + DORG.05A) Contexto de organização explícito e header canónico (FECHADO)
+	•	APIs de organização aceitam `organizationId` apenas por:
+		–	path (`/org/:id`), ou
+		–	query (`organizationId`), ou
+		–	header canónico `x-orya-org-id`.
+	•	Cookie não é fonte de verdade para mutações API (apenas fallback UI quando explicitamente permitido).
+	•	Header legado `x-org-id` está descontinuado; único header válido é `x-orya-org-id`.
+
+
+#### G04.010 (origem: DORG.06A)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2309`.
+
+DORG.06A) Notificações Stripe Status — dedupe por organização + estado (FECHADO)
+	•	Notificações `STRIPE_STATUS` usam dedupe key com fingerprint de estado:
+		–	`accountId`, `charges_enabled`, `payouts_enabled`, `requirements_due`.
+	•	Dedupe é por utilizador + organização + fingerprint; retries não podem gerar spam.
+
+
+#### G04.011 (origem: DORG.07A)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2314`.
+
+DORG.07A) Webhook Stripe Connect — fail-closed por mapeamento org (FECHADO)
+	•	`account.updated` só atualiza organização se o mapeamento for inequívoco.
+	•	Se não houver organização mapeada, ou houver mismatch `organizationId` ↔ `stripeAccountId`, a resposta é erro (não-200).
+	•	Atualização parcial/silenciosa é proibida; `update_count != 1` é erro operacional.
+	•	Webhook externo nunca é tratado como verdade sem reconciliação com estado interno.
+
+
+#### G04.002 (origem: D05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2717`.
+
+D05) RBAC mínimo viável + Role Packs
+
+Introduzir já: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
+Com mapa fixo para roles/scopes (Secção 11).
+
+
+#### G04.003 (origem: D05.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2722`.
+
+D05.01) Resolução de organização é determinística
+	•	Em B2B, organizationId vem da rota (/org/:orgId/...) como fonte primária.
+	•	Cookie pode existir apenas como conveniência (redirect inicial), não como base de autorização.
+	•	RBAC avalia sempre com orgId explícito.
+	•	Qualquer fallback (cookie/lastUsedAt) é permitido apenas para redirect/UI. Nunca para autorização.
+	•	Alias legado web removido (hard-cut): `/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
+	•	Namespace legado API: `/api/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
+
+
+#### G04.004 (origem: D05.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2730`.
+
+D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
+	•	Exige reautenticação/2FA recente + `reasonCode` obrigatório para:
+		–	refunds;
+		–	cancelamento de evento/torneio (soft-cancel);
+		–	alteração de fee policy/overrides;
+		–	exportação com PII.
+	•	Todas as ações acima geram `AuditLog` com before/after (payload minimizado RGPD).
+
+
+#### G04.005 (origem: D14)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3053`.
+
+D14) Multi-Organizações (empresa mãe → filiais)
+		•	OrganizationGroup (mãe) agrega Organizations (filiais)
+		•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
+		•	A mãe atua como control plane administrativo do grupo para regras globais de agenda.
+		•	A mãe pode aplicar hard blocks globais; filial pode solicitar remoção, mas aprovação final é sempre da mãe (auditável).
+
+
+## G05) Financas, Fees, Pricing, Payouts e Refunds
+
+### Escopo estrutural
+- P0 endpoints financeiros
+- F1/F2 flows
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G05.001 (origem: C02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:880`.
+
 C02) Finanças ↔ Todos (checkout/refunds) — gateway único
 
 Todos criam checkout via Finanças; estado pago/refund/chargeback/payout vem sempre de Finanças.
@@ -893,11 +1386,19 @@ Compatibilidade:
 	•	No domínio canónico, o shape é `orgId` + `customerIdentityId`.
 	•	Aliases legados em payload externo são proibidos (hard-cut).
 
+
+#### G05.002 (origem: C02.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:902`.
+
 C02.01) Eventos ↔ Finanças (convites) — resolução determinística
 • Objetivo: evitar UI/backend drift em convites e tornar o checkout por convite 100% contratual.
 • Entrada: { eventId, inviteToken?, email?, username? }
 • Saída: { allowCheckout, constraints: { guestCheckoutAllowed, inviteIdentityMatch, ticketTypeScope? }, resolvedIdentity }
 • Regra: Eventos define a policy e Finanças valida/impõe as constraints no createCheckout.
+
+
+#### G05.003 (origem: C02.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:908`.
 
 C02.02) Checkout API Hard-Cut (sem adapters legacy) — **FECHADO**
 - Endpoints canónicos:
@@ -1021,6 +1522,513 @@ On uncertainty or partial failure:
 
 #### Notes
 Entitlements são emitidos após `Payment=SUCCEEDED` e persistência do ledger base do pagamento; não dependem de `processorFeesStatus=FINAL`.
+
+#### G05.005 (origem: C10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1818`.
+
+C10) Stripe Webhooks ↔ Finanças (ingestão e reconciliação) — **FECHADO**
+Regras:
+	•	Endpoint canónico: `/api/stripe/webhook` (alias `/api/webhooks/stripe` deve apontar para o mesmo handler).
+	•	Assinatura Stripe obrigatória; rejeitar se `livemode` não corresponder ao modo esperado.
+	•	Dedupe obrigatório por `stripeEventId` (idempotencyKey global).
+	•	Resolver `orgId` por `stripeAccountId` (Connect) ou metadata `orgId` no PaymentIntent/Charge.
+	•	Se `orgId` não for resolvido → guardar evento + DLQ + alerta (sem side‑effects).
+	•	Persistir evento bruto (`StripeEvent`) com: `stripeEventId`, `type`, `account`, `created`, `livemode`, `requestId?`, `correlationId`.
+	•	Canonicalização obrigatória:
+		–	eventos externos de disputa do processor são normalizados para eventos internos `payment.dispute_opened` e `payment.dispute_closed`
+		–	só eventos internos canónicos podem mutar `Payment`/`Entitlement`/`Ticket`
+	•	Mapeamento mínimo (SSOT):
+		–	`payment_intent.succeeded` → Payment.SUCCEEDED + ledger + entitlements
+		–	`payment_intent.processing` → Payment.PROCESSING
+		–	`payment_intent.payment_failed` → Payment.FAILED
+		–	`payment_intent.canceled` → Payment.CANCELLED
+		–	`charge.refunded` → Payment.REFUNDED/PARTIAL_REFUND + reversões de ledger
+		–	`charge.dispute.created` → Payment.DISPUTED + Entitlement.SUSPENDED
+		–	`charge.dispute.closed` → CHARGEBACK_WON/LOST + entitlement update + ledger
+		–	`balance.available` → trigger reconciliação (fees finais)
+		–	`payout.paid` / `payout.failed` → atualizar read‑model de Payout (não controla payout)
+	•	Estados terminais não regredem; apenas transições permitidas pelo state machine (D04.09).
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C10  
+**Contract Name:** Stripe Webhooks ↔ Finanças (ingestão e reconciliação)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Finanças  
+**Primary Consumers:** Webhook handler, Finance workers, Entitlement issuance, Ledger
+
+#### Purpose
+Garantir ingestão idempotente de eventos Stripe e reconciliação determinística do estado financeiro.
+
+#### Idempotency
+- **Idempotency Key:** stripeEventId  
+- **Scope:** global  
+- **Guarantee:** replays não duplicam side‑effects.
+
+#### Input Payload (Example)
+```json
+{
+  "id": "evt_123",
+  "type": "payment_intent.succeeded",
+  "livemode": true,
+  "data": {"object": {"id": "pi_456"}},
+  "created": 1769900000
+}
+```
+
+#### Output / Response (Example)
+```json
+{"status":"ACK","stripeEventId":"evt_123"}
+```
+
+#### Error Cases
+- `INVALID_SIGNATURE`
+- `LIVEMODE_MISMATCH`
+- `ORG_UNRESOLVED` (armazenar + DLQ + alerta; **sem side‑effects**)
+
+#### Ordering & Duplication
+Tolerar duplicados e out‑of‑order.  
+Eventos antigos não podem reverter estados terminais.
+
+#### Side Effects
+☑ ledger entries  
+☑ entitlement issuance  
+☑ downstream async jobs  
+☑ notifications (quando aplicável)
+
+#### Observability
+Logs e métricas com `stripeEventId`, `stripeAccountId`, `orgId`, `paymentId`, `correlationId`.
+
+#### Failure Mode
+Assinatura inválida → 400.  
+Org não resolvida → 200 (ACK) + DLQ + alerta; nenhum side‑effect.
+
+---
+
+
+#### G05.006 (origem: C14)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2010`.
+
+C14) Payout Release + Risk Holds (ops) — **FECHADO**
+
+Regras:
+	•	ORYA **não** controla payouts em Stripe Standard; controla **gating operacional**.
+	•	Release interno é **read‑model** + alerta; não altera Stripe.
+	•	Pré‑requisitos para “allow new checkouts”:
+		–	`onboardingStatus=COMPLETE`
+		–	sem `risk.hold=true`
+		–	thresholds 19.2.2 não excedidos
+	•	Se bloqueado: `payoutsBlocked=true`, emitir `risk.flagged` + Ops alert.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C14  
+**Contract Name:** Payout Release + Risk Holds  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Ops/Finanças  
+**Primary Consumers:** Admin Ops UI
+
+#### Idempotency
+- **Idempotency Key:** payoutId ou balance_transaction.id  
+- **Scope:** por org
+
+---
+
+
+#### G05.007 (origem: C15)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2037`.
+
+C15) Money & Rounding (pricing determinístico) — **FECHADO**
+
+Regras:
+	•	Fee modes permitidos em v1: `ADDED | INCLUDED`.
+	•	`ABSORBED` é fora de scope v1 (não permitido em runtime).
+	•	Todos os montantes são **inteiros** em minor units (sem floats).
+	•	Rounding: `round_half_up` em cada passo relevante.
+	•	Ordem canónica:
+		1) `gross = sum(lineItems)`
+		2) `discounts` → `subtotal`
+		3) `taxes` (se aplicável) sobre `subtotal`
+		4) `platformFee` (base: `subtotal` por default; override via FeePolicyVersion)
+		5) `total = subtotal + taxes + fee` (se `feeMode=ADDED`)
+	•	`pricingSnapshot` é imutável; qualquer cálculo posterior deriva do snapshot + Ledger.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C15  
+**Contract Name:** Money & Rounding (pricing determinístico)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Finanças  
+**Primary Consumers:** Finanças, Events, Store, Reservations, Padel
+
+---
+
+
+#### G05.004 (origem: C02.X01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2271`.
+
+### C02.X01 Addon — Stripe Onboarding (Standard)
+C02.X01) Stripe Onboarding (Standard) — **FECHADO**
+- Activação de vendas/payouts exige Organization completar onboarding KYC no Stripe.
+- Implementação: Finanças gera `account_link` (Stripe-hosted) e guarda estado:
+  - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
+- Guardrail:
+  - se status != COMPLETE → bloquear criação de checkouts pagos (permitir apenas rascunhos/testes).
+
+⸻
+
+## 05 Domain Decisions (D*)
+
+4) Decisions Locked (não avançar sem isto)
+
+
+#### G05.008 (origem: D04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2500`.
+
+D04) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
+
+> **FECHADO (SSOT):** SSOT financeiro = `Payment` (state machine) + `LedgerEntry` (linhas imutáveis).  
+> Tudo o resto (SaleSummary, dashboards, exports) é **derivado**.
+
+Princípios
+- Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
+- **Finanças é o único gateway lógico**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
+  Endpoints especializados de checkout são permitidos **apenas** se delegarem ao domínio Finanças e respeitarem idempotência/policies canónicas.
+- Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
+- “Pago” só existe quando `Payment.status == SUCCEEDED`.
+
+
+#### G05.009 (origem: D04.00)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2512`.
+
+D04.00) Stripe Connect — Account Type (FECHADO)
+- ORYA usa **Stripe Connect Standard** como tipo de conta por defeito para Organizações.
+- A conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
+- A ORYA não cria nem gere contas Custom nesta fase.
+- Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
+
+
+#### G05.010 (origem: D04.00.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2518`.
+
+D04.00.01) Stripe Funds Flow (FECHADO)
+Objetivo: definir de forma única como o dinheiro flui e onde a ORYA consegue (ou não) aplicar “risk holds”.
+
+Decisão (v1.x):
+- Modelo: **Destination Charges + Application Fee** (Stripe Connect Standard).
+- A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
+  - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
+  - `transfer_data.destination` = `Organization.stripeAccountId`
+
+Implicações (normativas):
+- Refunds são iniciados pela ORYA (Finanças) e são idempotentes.
+- Disputes/chargebacks afectam `Payment/Entitlements` conforme D04.09 e Secções 7/8.
+- “Risk hold” em v1.x é **operacional** (step‑up, limits, bloqueio temporário de criação de eventos/checkout); não assume controlo directo de payouts.
+- Se for necessário controlo fino de payouts/transferências (hold real de fundos), isso é **fora v1.x** e requer revisão do flow (ou mudança de account type/contrato).
+
+Regra: nenhum módulo assume “payout control” fora do que este flow permite.
+
+
+#### G05.011 (origem: D04.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2535`.
+
+D04.01 Política de Fee (Admin) (FECHADO)
+- Config por organização (default) + overrides por `sourceType` (e opcionalmente por `sourceId`).
+- Limites opcionais: min/max, arredondamentos, feeMode (`INCLUDED | ADDED` em v1).
+- `ABSORBED` é fora de scope v1 e exige decisão normativa futura para activação.
+- Qualquer alteração gera nova versão (`feePolicyVersion`), nunca edita retroativamente.
+
+
+#### G05.012 (origem: D04.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2541`.
+
+D04.02 PricingSnapshot (obrigatório) (FECHADO)
+- `pricingSnapshot` é gravado no momento do checkout e nunca muda.
+- Deve incluir, no mínimo:
+  - currency, gross, discounts, taxes (se existirem), platformFee, netToOrgPending (calculado **sem** fees reais do processador)
+  - `processorFeesStatus: PENDING | FINAL`
+  - `processorFeesActual` (nullable até reconciliação Stripe; quando FINAL, é obrigatório)
+  - feeMode resolvido (como a fee é aplicada)
+  - referências: `feePolicyVersion`, `promoPolicyVersion` (se houver), `sourceType/sourceId`
+  - lineItems com preços unitários e quantidades (para auditoria)
+- Regra: **qualquer cálculo futuro** usa o snapshot + o Ledger (SSOT), nunca re‑calcula com regras novas.
+- `netToOrgFinal` **não** vive no snapshot inicial; é sempre derivado de `SUM(entries.amountSigned)` quando `processorFeesStatus=FINAL`.
+- **Proibição de estimativas:** campos do tipo `*Estimate*` são legados e **não** podem ser usados como verdade nem para decisões.  
+  Só `processorFeesActual` (quando FINAL) e o Ledger são canónicos.
+
+
+#### G05.013 (origem: D04.03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2555`.
+
+D04.03 Fee determinística + versionamento (obrigatório) (FECHADO)
+- Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
+- `Payment.feePolicyVersion` obrigatório (incremental ou hash do snapshot).
+- LedgerEntryType (MVP v1.x) — FECHADO
+  - `GROSS`
+  - `PLATFORM_FEE`
+  - `PROCESSOR_FEES_FINAL`
+  - `PROCESSOR_FEES_ADJUSTMENT`
+  - `DISPUTE_FEE`
+  - `DISPUTE_FEE_REVERSAL`
+  - `REFUND_GROSS`
+  - `REFUND_PLATFORM_FEE_REVERSAL`
+  - `REFUND_PROCESSOR_FEES_REVERSAL`
+  - `CHARGEBACK_GROSS`
+  - `CHARGEBACK_PLATFORM_FEE_REVERSAL`
+- Norma de sinais (obrigatória)
+  - `GROSS` é positivo (+)
+  - `PLATFORM_FEE` é negativo (-)
+  - `PROCESSOR_FEES_FINAL` é negativo (-)
+  - `PROCESSOR_FEES_ADJUSTMENT` pode ser + ou - (depende do delta)
+  - `DISPUTE_FEE` é negativo (-)
+  - `DISPUTE_FEE_REVERSAL` é positivo (+)
+  - `REFUND_GROSS` é negativo (-)
+  - `REFUND_PLATFORM_FEE_REVERSAL` é positivo (+)
+  - `REFUND_PROCESSOR_FEES_REVERSAL` é positivo (+)
+  - `CHARGEBACK_GROSS` é negativo (-)
+  - `CHARGEBACK_PLATFORM_FEE_REVERSAL` é positivo (+)
+- Regra FECHADA
+  - `netToOrgFinal = SUM(entries.amountSigned)` por `paymentId` quando `processorFeesStatus=FINAL`.
+  - `netToOrgPending = gross - platformFee` (informativo; não é canónico; sem fees reais do processador).
+  - Refund/chargeback geram entries adicionais no mesmo `paymentId` (append-only); o `netToOrgFinal = SUM(entries.amountSigned)` continua verdadeiro após refund/chargeback.
+- Alterações no Admin não afectam pagamentos antigos.
+
+
+#### G05.014 (origem: D04.04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2588`.
+
+D04.04 Ledger SSOT (imutável) + reconciliação (FECHADO)
+- `LedgerEntry` é append‑only (sem update/delete).
+- Cada entrada tem: `entryType`, `amount`, `currency`, `paymentId`, `sourceType/sourceId`, `createdAt`, `causationId`, `correlationId`.
+- Regras:
+  - entradas são geradas apenas por Finanças (write‑owner)
+  - replays são idempotentes (mesma causationId não duplica)
+- Reconciliação (FECHADO):
+  - Fonte única do fee real: `stripe.balance_transaction.fee` (ou equivalente do processor).
+  - Transição:
+    - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
+    - `processorFeesStatus=FINAL` quando existir
+  - Entries:
+    - criar `PROCESSOR_FEES_FINAL` quando chega o `balance_transaction`
+    - criar `PROCESSOR_FEES_ADJUSTMENT` se, em reconciliações futuras, o fee real mudar (delta)
+  - Append-only sempre: nunca editar entries antigas.
+  - divergências geram `LedgerReconciliationIssue` (ver 12.4.x)
+
+
+#### G05.015 (origem: D04.05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2605`.
+
+D04.05 SaleSummary (se existir) — read model derivado
+- Pode existir para performance/UX, mas:
+  - nunca decide estados (pago/reembolsado)
+  - é re‑gerável a partir de Ledger + Payment
+  - falhas são reparáveis por replay (EventLog/Jobs)
+- Definição (read‑model):
+  - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
+  - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
+- Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
+
+
+#### G05.016 (origem: D04.06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2615`.
+
+D04.06 FeeMode e pricing têm um resolvedor único (FECHADO)
+- `computePricing()` (Finanças) decide de forma determinística e versionada:
+  - platform default
+  - org default
+  - override por `sourceType`
+  - override por `sourceId` (opcional)
+- Regra: nenhum módulo força feeMode “por fora”. Se Eventos quiserem “INCLUDED sempre”, isso é configurado como override por `sourceType=TICKET_ORDER` e fica escrito em policy versionada.
+
+
+#### G05.017 (origem: D04.07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2623`.
+
+D04.07 Regras de FREE_CHECKOUT (FECHADO)
+- Um checkout é “free” se:
+  - `totalAmount == 0` (após promos/fees) **ou**
+  - `scenario == FREE_CHECKOUT` (explicitamente resolvido por Finanças)
+- Limites e anti‑abuso aplicam-se ao free checkout independentemente de qualquer flag no evento.
+- Bilhetes 0€ só existem por decisão explícita:
+  - `Event.allowZeroPriceTickets` (default false) **ou** policy por TicketType (recomendado).
+
+
+#### G05.018 (origem: D04.07.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2631`.
+
+D04.07.01 Guardrails de FREE_CHECKOUT (FECHADO)
+- Anti‑abuso é **normativo** e vive em Finanças (não em Eventos):
+  - Limite por `Identity` e por `eventId+ticketTypeId`: default `max=1` (configurável por policy, com guardrails globais).
+  - Rate limit por IP/device + janela (ex.: 10 tentativas/5 min) + cooldown progressivo em falhas.
+  - Step‑up em casos suspeitos: captcha/turnstile, obrigar login, ou bloquear por 15–60 min (policy).
+  - Dedupe por idempotencyKey e por `Identity+sourceId` (não existe “free checkout repetido”).
+  - Audit + EventLog obrigatórios: `free_checkout.denied` com reasonCode (sem PII).
+- Regra: o mesmo conjunto de guardrails aplica-se a `totalAmount==0` e a `scenario==FREE_CHECKOUT`.
+- Precedência de guardrails:
+  - FREE_CHECKOUT só é permitido se cumprir simultaneamente A1, A3 e D04.07.01.
+  - Em conflito de limites, aplica-se sempre o limite mais restritivo.
+
+
+#### G05.019 (origem: D04.08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2643`.
+
+D04.08 Deprecação de `Event.isFree` (anti‑desync) (FECHADO)
+Regra:
+- `Event.isFree` deixa de existir como “fonte de decisão”.
+- A única regra de “free” é a de D04.07.
+- Para UI (“evento grátis”) é sempre derivado:
+  - `derivedIsFree = (min(TicketType.price) == 0 AND não existe TicketType.price > 0)` **ou**
+  - `Event.pricingMode = FREE_ONLY` (flag explícita, se precisares)
+- Qualquer gating (checkout/login/anti‑abuso) **nunca** usa `Event.isFree`.
+
+Implementação:
+- Remover leituras do flag em UI/checkout.
+- Se o campo ainda existir por compatibilidade, marcá-lo como deprecated e preenchê-lo apenas como read model.
+- Assert em Finanças: se `totalAmount > 0` então `scenario != FREE_CHECKOUT`.
+
+
+#### G05.020 (origem: D04.09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2657`.
+
+D04.09 Refunds, cancelamentos e chargebacks (FECHADO)
+Cancelamento de evento:
+- Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
+- Stripe Connect Standard:
+  - o organizador paga os processing fees (quando Stripe não os devolve)
+  - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
+- O refund é idempotente e auditável (`RefundPolicyVersion` se houver regras variáveis).
+
+Refund manual (suporte):
+- Só por casos definidos (evento cancelado, falha grave, denúncias, problema técnico confirmado).
+- Não existe “refund porque faltaste”.
+ 
+Refund parcial (FECHADO):
+- `Payment=PARTIAL_REFUND` quando apenas alguns lineItems são reembolsados.
+- Ledger adiciona `REFUND_GROSS` + reversões aplicáveis **por item** (append-only; pode haver múltiplos parciais).
+- Em `sourceType=TICKET_ORDER`, revoga apenas os entitlements dos itens refundados (resto mantém ACTIVE).
+
+Chargeback / dispute:
+- Evento Stripe `dispute.created` → `Payment` entra em estado de disputa e:
+  - Entitlements associados → `SUSPENDED` (bloqueia entrada) até resolução
+- Resolução:
+  - `dispute.won` → `Payment=CHARGEBACK_WON` + reactivar entitlements (se ainda fizer sentido temporalmente)
+  - `dispute.lost` → `Payment=CHARGEBACK_LOST` + `Entitlement=REVOKED` + ledger com `CHARGEBACK_*` (e `DISPUTE_FEE` se aplicável)
+- Fee de disputa (FECHADO):
+  - `DISPUTE_FEE` é debitado à organização por defeito.
+  - Se o processor reembolsar a fee num `CHARGEBACK_WON`, criar `DISPUTE_FEE_REVERSAL` (positivo).
+- `Ticket.status=DISPUTED` entra em `dispute.created` (ou `charge.dispute.created`) e bloqueia entrada.
+- `dispute.won` → volta a `ACTIVE` (se não houver refund/chargeback aplicado).
+- `dispute.lost` → `CHARGEBACK_LOST` (estado final canónico).
+
+
+#### G05.021 (origem: D04.10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2687`.
+
+D04.10) Revenda — state machine e atomicidade (FECHADO)
+- Estado canónico:
+  - `TicketStatus`: `ACTIVE | RESALE_LISTED | TRANSFERRED | REFUNDED | DISPUTED | CHARGEBACK_LOST | CANCELLED`
+  - `ResaleStatus`: `LISTED | SOLD | CANCELLED`
+- Pré-condições de listagem:
+  - só tickets `ACTIVE`;
+  - ticket com `consumedAt != null` não pode entrar em revenda;
+  - para multi-sessão, revenda só é permitida quando todos os entitlements transferíveis ainda não foram consumidos.
+- Atomicidade de compra:
+  - compra de revenda é transação única: `payment succeeded` -> `owner` canónico atualizado -> entitlements do owner antigo revogados/reemitidos para o novo owner -> listing fechado.
+  - falha em qualquer passo implica rollback total.
+- Locks e constraints:
+  - lock transacional obrigatório (`SELECT ... FOR UPDATE`) no `Ticket` e no `TicketResale`;
+  - máximo 1 listing ativo por ticket (constraint única para status ativo).
+- Preço e anti-scalping:
+  - `maxResalePrice` por evento/ticketType (default: preço original);
+  - `resaleFeePolicyVersion` congelada no `Payment`.
+- Disputes/refunds (sem reversão automática):
+  - chargeback/refund do comprador da revenda -> entitlement do novo owner `SUSPENDED` + `Ticket.status=DISPUTED`;
+  - não existe reversão automática de owner;
+  - qualquer reversão de owner é apenas manual/admin com `AuditLog`.
+- Resolução:
+  - `dispute.won` -> entitlement `ACTIVE` + ticket `ACTIVE` (se temporalmente válido);
+  - `dispute.lost` -> `Ticket=CHARGEBACK_LOST` + entitlement `REVOKED`;
+  - refund confirmado -> `Ticket=REFUNDED` + entitlement `REVOKED`.
+- Integração operacional:
+  - jobs idempotentes obrigatórios para `entitlements.suspend_on_dispute_opened` e `ticket.mark_disputed`.
+
+⸻
+
+
+#### G05.022 (origem: D09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2824`.
+
+D09) Merchant of Record + fiscalidade (decisão “top”)
+	•	MoR por defeito é a Organização (Connected Account)
+	•	Organização é responsável por IVA / fatura ao consumidor final
+	•	ORYA cobra fee de plataforma e emite fatura B2B da fee à Organização (ou documento equivalente)
+	•	Excepção futura (enterprise): ORYA como MoR só por contrato/config explícita (fora v1.x)
+
+
+#### G05.023 (origem: D09.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2830`.
+
+D09.01) Faturação “não obrigatória” (posição v3) — sem risco para a ORYA
+
+Regra:
+	•	ORYA não obriga a emitir fatura dentro da ORYA.
+	•	ORYA obriga SEMPRE a:
+		•	registo de movimentos (ledger + exports)
+		•	exports (CSV/PDF) por período
+		•	configuração explícita: “Como esta organização emite faturação?”
+		•	“0€ tickets” não podem existir “por acidente”.
+		•	Anti-abuso é central em Finanças (rate limits, 1 por user por event, etc.).
+
+Config “Emissão de faturação” (OrganizationSettings):
+	•	Software externo (recomendado) — campo para “nome do software” + notas
+	•	Manual / fora da ORYA — checklist de responsabilidade + confirmação
+	•	Integrações opcionais PT são fora de escopo atual e só entram por decisão explícita no planning.
+
+Objetivo:
+	•	ser tooling de gestão, não “motor de incumprimento”
+	•	proteger ORYA legalmente sem matar adoção
+
+Acesso e Convites (obrigatório v1)
+	•	O evento define EventAccessPolicy.
+	•	Convites são regidos por policy + EventInvite (ou equivalente).
+	•	Checkout e página pública respeitam apenas a policy canónica.
+	•	UI deve reflectir exactamente as regras (sem “promessas”).
+
+	Acesso Público — Deprecação de campos legacy (sem fallback)
+
+Regra:
+	•	EventAccessPolicy é a única fonte de verdade.
+	•	Campos legacy (ex.: inviteOnly / publicAccessMode / publicTicketTypeIds) ficam READ-ONLY (deprecated) e deixam de ser lidos por UI/API.
+	•	Se existir payload antigo, converte-se para EventAccessPolicy na escrita (write-path), nunca na leitura (read-path).
+
+Migração:
+	1) Backfill único: para cada Event, gerar EventAccessPolicy canónica.
+	2) Rollout controlado:
+		•	Passo 1: ler ambos, comparar e alertar divergências sem alterar UX.
+		•	Passo 2: UI/API lê apenas policy canónica; legacy apenas para export/debug.
+		•	Passo 3: remover fallback e remover campos legacy do schema.
+
+Guardrail:
+	•	Architecture test falha se algum módulo importar/ler os campos legacy.
+
+
+## G06) Eventos, Bilhetes, Acesso e Check-in
+
+### Escopo estrutural
+- Section 7 Entitlements e sourceType
+- Section 8 Check-in
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G06.001 (origem: C03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1030`.
+
 C03) Check-in ↔ Eventos/Reservas/Padel — via Entitlement unificado
 
 Check-in valida QR e resolve origem:
@@ -1136,30 +2144,188 @@ On uncertainty or partial failure:
 
 #### Notes
 Consumo é metadata (consumedAt), nunca estado.
-C04) CRM ↔ Todos (timeline)
 
-CRM recebe eventos a partir do EventLog (não ponto-a-ponto).
+#### G06.002 (origem: D01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2353`.
+
+D01) Evento base obrigatório para torneios
+
+Todo torneio de Padel tem eventId obrigatório.
+	•	Eventos: tickets, SEO, página pública base, sessões, entitlements
+	•	Padel Torneios: competição, matches, bracket/standings, live ops
+
+
+#### G06.003 (origem: D01.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2359`.
+
+D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
+	•	`endsAt` é **obrigatório** em toda a stack (criação, edição, ingestão, seed).  
+	•	Regra: `endsAt` **tem de ser depois** de `startsAt` (nunca antes).  
+	•	Não existe fallback runtime para `endsAt`; payload inválido falha e deve ser corrigido na origem.  
+	•	Evento publicado **nunca** pode regressar a `DRAFT`. `DRAFT` nunca é público.  
+	•	Chat de evento: `open_at = startsAt`, `read_only_at = endsAt + 24h`, `close_at = endsAt + 24h`.  
+	•	Chat de evento (acesso) — **presença** obrigatória: **Entitlement + check-in consumido**.  
+	•	Definição: **check‑in consumido = entitlement consumido** (`CheckinResultCode.OK` ou `ALREADY_USED`).  
+	•	Entitlement mantém-se como prova única de acesso ao evento; o chat é uma feature de presença.  
+	•	Entrada no chat é por **convite com aceitação explícita**; convite emitido após entitlement consumido (check‑in/claim) se dentro da janela.  
+	•	Convites de chat **expiram** e **não podem ser aceites** após `endsAt + 24h` (janela de participantes).  
+	•	Chat de evento aparece em “Mensagens” **apenas após** convite aceite.  
+	•	CTA “Entrar no chat” na página do evento **e** no bilhete/carteira, apenas após entitlement consumido.  
+	•	Notificação do chat enviada após entitlement consumido (respeita preferências do utilizador).  
+	•	Chat de evento é **exclusivo da app** (não existe chat de evento na web para users).  
+	•	Até `endsAt + 24h` mantém escrita para participantes com acesso; após isso fica **read‑only**.  
+	•	Discovery: eventos `PAST`/`CANCELLED` **não** entram em listas públicas.  
+	•	Mobile checkout: CTA **bloqueado** se `status != ACTIVE` **ou** `endsAt < now`.  
+	•	Wallet: separação “Ativos/Histórico” **baseada em `endsAt`** (ou janela de check‑in).
+	•	Higiene legacy: migração one-shot corrige `endsAt` inválido e aplica constraint DB `endsAt > startsAt`.
+
+
+#### G06.004 (origem: D07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2742`.
+
+D07) sourceType canónico (Finanças/ledger/check-in)
+
+Todos os checkouts e entitlements usam sourceType canónico e unificado (Secção 7).
+
+
+#### G06.005 (origem: D08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2746`.
+
+D08) EventAccessPolicy (acesso + convites + identidade + claim entitlements) — definição final
+
+> **FECHADO (SSOT):** `EventAccessPolicy` é a única fonte de verdade para:
+> 1) modo de acesso (public/invite/unlisted), 2) checkout como convidado, 3) convites por token, 4) compatibilidade de identidade, e 5) check‑in (ver Secção 8).
+
+
+#### G06.006 (origem: D08.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2751`.
+
+D08.01) EventAccessPolicy é a única verdade de acesso (FECHADO)
+- Substitui qualquer combo de flags legacy (`public_access_mode`, `invite_only`, etc.).
+- Modelo canónico (mínimo):
+  - `mode: PUBLIC | INVITE_ONLY | UNLISTED`
+  - `guestCheckoutAllowed: boolean`
+  - `inviteTokenAllowed: boolean`
+  - `inviteIdentityMatch: EMAIL | USERNAME | BOTH`
+  - `inviteTokenTTL: duration` (obrigatório se `inviteTokenAllowed=true`)
+  - `checkin: { requiresEntitlementForEntry, methods[...] }` (ver Secção 8)
+- **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH`.  
+  `inviteIdentityMatch=USERNAME` **não** suporta tokens (apenas convites por username existente).
+- **Regra de integridade:** convites por username só podem ser emitidos para utilizadores existentes.  
+  Para pessoas sem conta, usar convite por email.
+- **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
+
+
+#### G06.007 (origem: D08.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2766`.
+
+D08.02) Convites por token (guest checkout) — versão final (FECHADO)
+
+Convites permitem checkout como convidado via token **na WebApp e no site público**.  
+A app mobile é **login‑only** (sem guest checkout).
+
+Regras fechadas
+1) InviteToken one‑time + expira
+- guardar `tokenHash` (nunca token em claro)
+- `expiresAt` (ex.: 7 dias; ou conforme `inviteTokenTTL`)
+- `usedAt` + `usedByIdentityId`
+
+2) Match obrigatório de identidade
+- o token fica associado a `emailNormalizado` (e opcionalmente username, se usares BOTH)
+- no checkout guest, o email tem de bater certo (case‑insensitive, normalizado)
+- se `inviteIdentityMatch=USERNAME`, `inviteTokenAllowed` tem de ser **false** (sem tokens)
+
+3) Scope do token
+- token é válido só para 1 evento e (opcional) 1 `ticketTypeId` (controlo fino)
+
+4) Rate limit + anti‑enumeração
+- limitar tentativas por IP/device
+- respostas indistinguíveis (“token inválido” sem detalhes)
+
+5) Entitlement final (SSOT) + claim posterior (FECHADO)
+- compra gera `Entitlement` com `ownerIdentityId = Identity(GUEST_EMAIL)`
+- quando o user criar conta e verificar o mesmo email → claim automático (Secção 7.7)
+- **Propriedade do acesso nunca é OR entre campos.** Resolver sempre via `Entitlement.ownerIdentityId`.
+
+6) Eventos VIP (login obrigatório)
+- Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
+- App mobile é sempre login obrigatório (independente de `guestCheckoutAllowed`).
+
+7) Guest Ticket Link (acesso sem conta) — FECHADO
+- Após compra guest, emitir `GuestTicketAccessToken` (guardar **apenas** `tokenHash`).
+- Email de compra deve incluir link `/guest/tickets/[token]`.
+- Expiração: `expiresAt = fim da janela de check‑in` (default: abre `startsAt - 6h`, fecha `endsAt + 6h`; se `endsAt` faltar, fecha `startsAt + 24h`).
+- Segurança: token único + hash, sem PII no link; rate limit em rotas de QR.
+- Se falhar emissão do token, usar fallback seguro (`/`).
+
+UX operacional detalhada de convite/checkout guest é **não‑normativa** e vive em `docs/planning_registry_v1.md` (P7.1).
+
+⸻
+
+
+#### G06.008 (origem: D08.03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2809`.
+
+D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
+- `EventAccessPolicy` é versionada (`policyVersion`) e cada alteração cria **nova versão** (append‑only; sem editar retroativamente).
+- **Lock após a primeira venda/entitlement**: quando existir qualquer `Payment.status=SUCCEEDED` ou qualquer `Entitlement` emitido para o evento:
+  - Campos **bloqueados** (não podem tornar-se mais restritivos nem mudar de semântica): `mode`, `guestCheckoutAllowed`, `inviteTokenAllowed`, `inviteIdentityMatch`, `requiresEntitlementForEntry`.
+  - Permitido apenas:
+    - **Relaxar** regras (ex.: INVITE_ONLY → UNLISTED/PUBLIC) se não quebrar direitos já emitidos.
+    - Ajustar `inviteTokenTTL` apenas para **novos** convites (tokens já emitidos mantêm o seu `expiresAt`).
+    - **Adicionar** métodos de check‑in (nunca remover) para compatibilidade operacional.
+    - Reentrada/undo só podem **relaxar**:
+      – `checkin.allowReentry`: apenas `false → true`
+      – `maxEntries`, `reentryWindowMinutes`, `undoWindowMinutes`: apenas aumentar
+- Snapshot aplicado:
+  - `Entitlement.policyVersionApplied` passa a **obrigatório** para `sourceType=TICKET_ORDER|PADEL_REGISTRATION|BOOKING` quando associado a um evento.
+  - Check-in valida por defeito contra `policyVersionApplied` armazenado no Entitlement. A policy corrente só pode relaxar regras ou adicionar métodos; nunca pode apertar constraints após emissão.
+
+
+## G07) Reservas, Agenda e Calendario Operacional
+
+### Escopo estrutural
+- D03 Agenda Engine
+- D11 Address Service
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G07.001 (origem: C01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:758`.
+
+C01) Reservas ↔ Padel (agenda e slots)
+
+Padel cria slots/bloqueios via contrato; Reservas responde com conflitos/sugestões.
+
+Representação canónica de MatchSlot
+	•	CalendarBlock/Override: kind=BLOCK, reason=MATCH_SLOT, resourceId=courtId, start/end
+	•	Padel nunca escreve no calendário diretamente
+
+Resposta do contrato
+	•	conflitos hard detectados
+	•	sugestões de horários alternativos (Fase 1)
+	•	optimização/yield (Fase 3)
 
 ---
 
 ### Contract Execution Addendum (NORMATIVE)
 
-**Contract ID:** C04  
-**Contract Name:** CRM ↔ Todos (timeline)  
+**Contract ID:** C01  
+**Contract Name:** Reservas ↔ Padel (agenda e slots)  
 **Current Version:** v3.0.0  
-**Owner:** Domain: CRM  
-**Primary Consumers:** EventLog consumers, ORYA-WebApp, internal workers
+**Owner:** Domain: Reservas (Agenda Engine)  
+**Primary Consumers:** Padel (Torneios), ORYA-WebApp (org dashboard), internal workers
 
 ---
 
 #### Purpose
-Define a ingestão de eventos para timeline e segmentação CRM.
+Define a interface canónica para criação/atualização de slots/bloqueios na agenda a partir do domínio Padel, com deteção de conflitos.
 
 ---
 
 #### Idempotency
-- **Idempotency Key:** eventId
-- **Scope:** global
+- **Idempotency Key:** idempotencyKey
+- **Scope:** per orgId + sourceType/sourceId
 - **Guarantee:** repeated requests with the same key MUST NOT produce
   duplicate side effects.
 
@@ -1170,18 +2336,22 @@ If idempotency cannot be guaranteed, the contract is considered invalid.
 #### Input Payload (Example)
 ```json
 {
-  "eventId": "evtlog_123",
-  "eventType": "BOOKING_CONFIRMED",
   "orgId": "org_123",
-  "identityId": "id_456",
-  "correlationId": "corr_abc"
+  "resourceId": "court_45",
+  "startAt": "2026-02-01T10:00:00Z",
+  "endAt": "2026-02-01T11:30:00Z",
+  "reason": "MATCH_SLOT",
+  "sourceType": "MATCH",
+  "sourceId": "match_789",
+  "idempotencyKey": "slot:match_789"
 }
 ```
 
 #### Output / Response (Example)
 ```json
 {
-  "status": "INGESTED",
+  "accepted": true,
+  "conflicts": [],
   "correlationId": "corr_abc"
 }
 ```
@@ -1191,8 +2361,122 @@ All errors follow the global error envelope.
 Example:
 ```json
 {
-  "errorCode": "EVENTLOG_NOT_FOUND",
-  "message": "No event found for the given eventId",
+  "errorCode": "AGENDA_CONFLICT",
+  "message": "Requested slot conflicts with an existing block",
+  "retryable": false,
+  "correlationId": "corr_abc"
+}
+```
+
+---
+
+#### Ordering & Duplication
+This contract MUST tolerate:
+- duplicate delivery
+- out-of-order delivery
+
+If ordering is required, the following key is authoritative:
+startAt
+
+---
+
+#### Side Effects
+This contract MAY trigger:
+☐ ledger entries
+☐ entitlement issuance
+☐ emails / notifications
+☐ downstream async jobs
+
+All side effects MUST be idempotent and observable.
+
+---
+
+#### Observability
+This contract MUST emit:
+- success/failure counters
+- latency metrics (p50, p95)
+- structured logs with correlationId and orgId
+
+---
+
+#### Compatibility Rules
+- Fields may only be added as OPTIONAL in minor versions.
+- Fields may only be removed or redefined in major versions.
+- Consumers MUST tolerate unknown fields.
+
+---
+
+#### Failure Mode
+On uncertainty or partial failure:
+- the contract MUST fail closed
+- no irreversible side effects may be committed
+
+---
+
+#### Notes
+N/A
+
+#### G07.002 (origem: C07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1482`.
+
+C07) Address Service ↔ Todos (moradas e localizações)
+	•	criação/normalização de moradas passa pelo Address Service
+	•	módulos guardam apenas addressId (ou placeId) e nunca strings “soltas” como fonte de verdade
+	•	migração: adapters para eliminar “várias verdades” existentes
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C07  
+**Contract Name:** Address Service ↔ Todos (moradas e localizações)  
+**Current Version:** v3.0.0  
+**Owner:** Domain: Address Service  
+**Primary Consumers:** Events, Reservations, Store, Services, Padel, ORYA-WebApp
+
+---
+
+#### Purpose
+Define a normalização e resolução de moradas via Address Service (SSOT).
+
+---
+
+#### Idempotency
+- **Idempotency Key:** placeId
+- **Scope:** per placeId
+- **Guarantee:** repeated requests with the same key MUST NOT produce
+  duplicate side effects.
+
+If idempotency cannot be guaranteed, the contract is considered invalid.
+
+---
+
+#### Input Payload (Example)
+```json
+{
+  "placeId": "apple:place_123",
+  "label": "Club ORYA, Lisboa",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Output / Response (Example)
+```json
+{
+  "addressId": "addr_123",
+  "formattedAddress": "Rua X, Lisboa",
+  "geo": {"lat": 38.72, "lng": -9.14},
+  "correlationId": "corr_abc"
+}
+```
+
+#### Error Cases
+All errors follow the global error envelope.
+Example:
+```json
+{
+  "errorCode": "ADDRESS_NOT_RESOLVED",
+  "message": "Unable to resolve placeId",
   "retryable": true,
   "correlationId": "corr_abc"
 }
@@ -1244,119 +2528,165 @@ On uncertainty or partial failure:
 ---
 
 #### Notes
-Ingestão é idempotente e tolera replays.
-C05) Notificações ↔ Todos
+Deduplicação por canonical+geo evita duplicados.
 
-Triggers por eventos do sistema + templates + opt-in + logs.
+#### G07.003 (origem: D03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2413`.
 
----
+D03) Agenda Engine e conflitos (FECHADO)
 
-### Contract Execution Addendum (NORMATIVE)
+Regra base: **quem marca primeiro ocupa**. Nada sobrepõe automaticamente.  
+Conflitos ficam bloqueados; quem chega depois tem de se adaptar.
 
-**Contract ID:** C05  
-**Contract Name:** Notificações ↔ Todos  
-**Current Version:** v3.0.0  
-**Owner:** Domain: Notificações  
-**Primary Consumers:** Events, Finance, CRM, Padel, ORYA-WebApp, internal workers
+Aditamento normativo (2026-02-14):
+		•	Regra de conflito em camadas:
+			–	hard constraints (segurança/compliance/manutenção/hard block) prevalecem sempre;
+			–	fora hard constraints, aplica-se `first_confirmed_wins`;
+			–	em empate técnico no mesmo instante/lote, aplicar prioridade: `HARD_BLOCK > MATCH (reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
+			–	tie-break final determinístico: `confirmedAt` asc e depois `claimId` asc (fallback `createdAt` quando necessário).
+	•	`SOFT_BLOCK` fica reservado na taxonomia e não participa no write-path operacional de Reservas no v1.
+	•	Unidade temporal canónica do motor: blocos de **5 minutos**.
+	•	Projeção UI pode usar grelha de 15 minutos por default, sem alterar a regra canónica do motor.
+	•	Buffer técnico global não é obrigatório por defeito; aplica-se por política/configuração de contexto.
+	•	Capacidade canónica por modo: `SINGLE`, `FIXED_N`, `UNBOUNDED`; `UNBOUNDED` só em tipos de recurso autorizados por policy (allow-list).
+	•	Assignment canónico por serviço:
+		–	`PROFESSIONAL_ONLY`,
+		–	`RESOURCE_ONLY`,
+		–	`PROFESSIONAL_AND_RESOURCE`.
+		•	Auto-seleção de recurso (quando aplicável): menor capacidade válida, depois menor prioridade, depois menor `id`.
+		•	Prioridade operacional é opcional por configuração (`serviço`/`recurso`/`profissional`) e tem default neutro.
+		•	Overbooking: proibido por default nesta fase.
+		•	O core de scheduling/agenda não depende de feature flag de produto para ativação funcional em runtime (kill switches operacionais continuam permitidos).
+		•	Limite de pré-reserva pendente por identidade (`user` autenticado ou `guestEmail`): 1 ativa de cada vez.
+		•	Criação manual de reservas por backoffice não faz parte do contrato canónico v1; ocupação offline deve ser modelada por `HARD_BLOCK` auditável.
+		•	Hard block operacional:
+		–	escopos permitidos: `GLOBAL_ORG`, `RESOURCE`, `PROFESSIONAL`;
+		–	ao criar hard block, novas confirmações ficam bloqueadas imediatamente na janela afetada;
+		–	ao remover hard block, a janela reabre automaticamente para novas confirmações.
+	•	Hard block com impacto em reservas confirmadas:
+		–	abre pendências operacionais obrigatórias (troca aceite ou cancelamento + reembolso total imediato);
+		–	só fecha quando todas as pendências associadas estiverem resolvidas.
+	•	Hard block exige `reasonCode` obrigatório e texto livre opcional.
+	•	Catálogo de `reasonCode` é extensível por organização, com fallback genérico.
+	•	Toda ação de hard block é auditável (`createdBy/updatedBy`, timestamps, before/after).
 
----
+Override **só manual** por Owner/Admin, com auditoria e notificações.  
+Se o override mexer numa reserva de utilizador, existem duas vias válidas:
+- **pedido + aceitação** do cliente; ou
+- **cancelamento com reembolso total imediato** por decisão da organização.
 
-#### Purpose
-Define o disparo e entrega de notificações (in-app/push) a partir de eventos do sistema.
 
----
+#### G07.004 (origem: D03.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2455`.
 
-#### Idempotency
-- **Idempotency Key:** sourceEventId
-- **Scope:** per identity + eventId
-- **Guarantee:** repeated requests with the same key MUST NOT produce
-  duplicate side effects.
+D03.01 MatchSlot (Padel)
+MatchSlot bloqueia novas marcações no mesmo horário/campo.  
+Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; requer override explícito.
 
-If idempotency cannot be guaranteed, the contract is considered invalid.
 
----
+#### G07.005 (origem: D03.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2459`.
 
-#### Input Payload (Example)
-```json
-{
-  "eventId": "evtlog_123",
-  "eventType": "payment.succeeded",
-  "orgId": "org_123",
-  "identityId": "id_456",
-  "channel": "PUSH",
-  "templateKey": "PAYMENT_SUCCEEDED",
-  "correlationId": "corr_abc"
-}
-```
+D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
+		•	Calendário único de clube:
+			–	reservas, aulas e torneios partilham o mesmo calendário operacional.
+			–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
+		•	Agenda pessoal (utilizador):
+			–	é timeline unificada (projeção), não write-model de ocupação.
+			–	inclui `Booking` de serviço e itens de bilhete/evento em tipos separados.
+			–	labels canónicas: `RESERVA_SERVICO` e `BILHETE_EVENTO`.
+		•	Visibilidade de calendário:
+			–	Utilizador: mês atual + 3 meses; passado oculto.
+		–	Organização: até fim do ano + 2 anos; passado em leitura.
+	•	Permissões:
+		–	Owner/Admin: tudo.
+		–	Staff: apenas recursos atribuídos.
+		–	Trainer: aulas próprias em recursos atribuídos.
+		•	Override/mudança de reserva:
+			–	org pede mudança com default T-4h.
+			–	a janela da org pode ser parametrizada por policy versionada, com guardrails canónicos.
+			–	user responde até 24h ou T-2h (o que ocorrer primeiro).
+			–	sem resposta = recusado; reserva mantém-se.
+			–	cancelamento pelo org = refund total automático.
+		•	Aplicação de hard block:
+			–	bloqueia novas confirmações imediatamente;
+			–	se houver impacto em clientes confirmados, exige resolução de pendências antes do fecho do bloqueio.
+			•	Guest booking e aulas recorrentes:
+				–	guest booking permitido apenas por policy e cria Entitlement canónico.
+				–	telefone é opcional; identidade guest canónica por email.
+				–	OTP por telemóvel não é obrigatório nesta fase.
+				–	`ClassSeries + ClassSession` fica fora do v1 operacional de Reservas nesta fase.
+		•	Snapshot e remediação operacional:
+			–	ações que dependem de snapshot seguem fail-closed.
+			–	backfill automático é obrigatório com SLO definido por operação.
+			–	casos não recuperados automaticamente seguem runbook auditável de remediação.
+		•	No-show:
+			–	marcado apenas após início;
+			–	sem fee financeiro por default nesta fase (foco operacional/CRM);
+			–	reversão permitida até `T+24h` por `OWNER/ADMIN`, sem motivo obrigatório, com auditoria.
+		•	Disponibilidade pública:
+			–	existe contrato público canónico único de disponibilidade (`GET /api/public/agenda`).
+			–	superfícies legadas de disponibilidade devem convergir para o contrato único e ser desativadas.
 
-#### Output / Response (Example)
-```json
-{
-  "status": "QUEUED",
-  "notificationId": "notif_789",
-  "correlationId": "corr_abc"
-}
-```
 
-#### Error Cases
-All errors follow the global error envelope.
-Example:
-```json
-{
-  "errorCode": "PUSH_TOKEN_NOT_FOUND",
-  "message": "No push token available for identity",
-  "retryable": false,
-  "correlationId": "corr_abc"
-}
-```
+#### G07.006 (origem: D11)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2933`.
 
----
+D11) Moradas — Address Service (SSOT) + Apple Maps como provider único
 
-#### Ordering & Duplication
-This contract MUST tolerate:
-- duplicate delivery
-- out-of-order delivery
+> **FECHADO (SSOT):** Todos os módulos consomem e escrevem moradas **apenas** via Address Service. Nunca há “moradas por módulo”.
 
-If ordering is required, the following key is authoritative:
-NONE
+Regra
+- Todos os módulos (Eventos / Reservas / Loja / Serviços / Padel) consomem e escrevem moradas APENAS via Address Service (SSOT).
+- O SSOT guarda SEMPRE:
+  - `addressId`
+  - `formattedAddress` (para UI)
+  - `canonical` (estruturado: `countryCode` ISO‑3166‑1, region, locality, postalCode, street, number, etc.)
+  - `geo` (lat, lng)
+  - `sourceProvider` (canónico nesta fase: `APPLE_MAPS`)
+  - `sourceProviderPlaceId` (quando existir)
+  - `confidenceScore` + `validationStatus` (`RAW | NORMALIZED | VERIFIED`)
+- Nunca há “moradas locais” por módulo. Só referências a `addressId`.
 
----
+Provider (decisão FECHADO)
+- **Provider único:** Apple Maps (autocomplete + geocode/reverse) via server token.
+- Regra: o client **não** usa providers como fonte de verdade; tudo passa pelo Address Service (protege keys, rate limits e consistência).
+- `IP geolocation` pode ser usado apenas como sinal auxiliar (país/cidade aproximada, ranking e defaults), nunca como morada canónica.
+- Sem multi-provider e sem provider manual de localização nesta fase.
+- Exceção permitida: reverse geocode **no device** apenas como hint de UX (não é SSOT). A normalização e persistência continuam no backend.
 
-#### Side Effects
-This contract MAY trigger:
-☐ ledger entries
-☐ entitlement issuance
-☑ emails / notifications
-☑ downstream async jobs
+Proteções (obrigatório)
+- Rate limiting por IP/user/org + quotas por módulo (para não estourar limites Apple).
+- Cache em 2 níveis:
+  - Redis (TTL curto) por query (autocomplete) e por placeId/geo (geocode)
+  - cache persistente por `addressId` (TTL longo) e dedupe por canonical+geo
+- Circuit breaker do provider Apple:
+  - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → entrar em `cooldownMinutes` (ex.: 10)
+  - durante cooldown, re-test Apple em background (probe) e só volta quando estabilizar
+- Quotas “hard” por organização e por módulo:
+  - ao exceder quota → degrade gracioso (só `resolvePlace` por placeId já em cache; sem autocomplete novo)
+  - emitir `ops.alert` com orgId + módulo + métrica de consumo
+- Em falha de geocode Apple:
+  - write-path dependente de morada fica em `PENDING_GEOCODE` (estado do domínio consumidor) e entra em retry automático idempotente;
+  - é proibido promover IP a coordenada/morada canónica.
+- Em conflito entre sinais Apple/IP, prevalece Apple.
 
-All side effects MUST be idempotent and observable.
+Detalhe de implementação/execução do Address Service é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.3).
 
----
+⸻
 
-#### Observability
-This contract MUST emit:
-- success/failure counters
-- latency metrics (p50, p95)
-- structured logs with correlationId and orgId
 
----
+## G08) Padel e Torneios
 
-#### Compatibility Rules
-- Fields may only be added as OPTIONAL in minor versions.
-- Fields may only be removed or redefined in major versions.
-- Consumers MUST tolerate unknown fields.
+### Escopo estrutural
+- Padel Tournament Core
+- Split Payment Padel
 
----
+### Blocos normativos (conteúdo integral, ordem estável)
 
-#### Failure Mode
-On uncertainty or partial failure:
-- the contract MUST fail closed
-- no irreversible side effects may be committed
+#### G08.001 (origem: C06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1366`.
 
----
-
-#### Notes
-Envio real ocorre apenas via consumer idempotente.
 C06) Inscrições Padel vs Bilhetes (coexistência simples e eficaz)
 	•	inscrição Padel é competitiva (Padel)
 	•	bilhete é acesso/presença (Eventos)
@@ -1473,1453 +2803,9 @@ On uncertainty or partial failure:
 
 #### Notes
 Inscrição e bilhete permanecem entidades distintas; Entitlement é o acesso.
-C07) Address Service ↔ Todos (moradas e localizações)
-	•	criação/normalização de moradas passa pelo Address Service
-	•	módulos guardam apenas addressId (ou placeId) e nunca strings “soltas” como fonte de verdade
-	•	migração: adapters para eliminar “várias verdades” existentes
 
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C07  
-**Contract Name:** Address Service ↔ Todos (moradas e localizações)  
-**Current Version:** v3.0.0  
-**Owner:** Domain: Address Service  
-**Primary Consumers:** Events, Reservations, Store, Services, Padel, ORYA-WebApp
-
----
-
-#### Purpose
-Define a normalização e resolução de moradas via Address Service (SSOT).
-
----
-
-#### Idempotency
-- **Idempotency Key:** placeId
-- **Scope:** per placeId
-- **Guarantee:** repeated requests with the same key MUST NOT produce
-  duplicate side effects.
-
-If idempotency cannot be guaranteed, the contract is considered invalid.
-
----
-
-#### Input Payload (Example)
-```json
-{
-  "placeId": "apple:place_123",
-  "label": "Club ORYA, Lisboa",
-  "correlationId": "corr_abc"
-}
-```
-
-#### Output / Response (Example)
-```json
-{
-  "addressId": "addr_123",
-  "formattedAddress": "Rua X, Lisboa",
-  "geo": {"lat": 38.72, "lng": -9.14},
-  "correlationId": "corr_abc"
-}
-```
-
-#### Error Cases
-All errors follow the global error envelope.
-Example:
-```json
-{
-  "errorCode": "ADDRESS_NOT_RESOLVED",
-  "message": "Unable to resolve placeId",
-  "retryable": true,
-  "correlationId": "corr_abc"
-}
-```
-
----
-
-#### Ordering & Duplication
-This contract MUST tolerate:
-- duplicate delivery
-- out-of-order delivery
-
-If ordering is required, the following key is authoritative:
-NONE
-
----
-
-#### Side Effects
-This contract MAY trigger:
-☐ ledger entries
-☐ entitlement issuance
-☐ emails / notifications
-☐ downstream async jobs
-
-All side effects MUST be idempotent and observable.
-
----
-
-#### Observability
-This contract MUST emit:
-- success/failure counters
-- latency metrics (p50, p95)
-- structured logs with correlationId and orgId
-
----
-
-#### Compatibility Rules
-- Fields may only be added as OPTIONAL in minor versions.
-- Fields may only be removed or redefined in major versions.
-- Consumers MUST tolerate unknown fields.
-
----
-
-#### Failure Mode
-On uncertainty or partial failure:
-- the contract MUST fail closed
-- no irreversible side effects may be committed
-
----
-
-#### Notes
-Deduplicação por canonical+geo evita duplicados.
-C08) Loyalty ↔ CRM/Finanças/Promoções
-	•	pontos gerados por eventos (compra, presença, actividade)
-	•	redemptions obedecem a guardrails globais + política da organização
-	•	pontos não alteram ledger financeiro (não é dinheiro) — mas podem gerar descontos via Promoções
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C08  
-**Contract Name:** Loyalty ↔ CRM/Finanças/Promoções  
-**Current Version:** v3.0.0  
-**Owner:** Domain: Loyalty  
-**Primary Consumers:** CRM, Finance, Promotions, ORYA-WebApp
-
----
-
-#### Purpose
-Define emissão e resgate de pontos de fidelização a partir de eventos canónicos.
-
----
-
-#### Idempotency
-- **Idempotency Key:** eventId
-- **Scope:** per identity + eventId
-- **Guarantee:** repeated requests with the same key MUST NOT produce
-  duplicate side effects.
-
-If idempotency cannot be guaranteed, the contract is considered invalid.
-
----
-
-#### Input Payload (Example)
-```json
-{
-  "eventId": "evtlog_123",
-  "eventType": "LOYALTY_EARNED",
-  "orgId": "org_123",
-  "identityId": "id_456",
-  "points": 100,
-  "sourceRef": {"sourceType": "BOOKING", "sourceId": "bk_789"},
-  "correlationId": "corr_abc"
-}
-```
-
-#### Output / Response (Example)
-```json
-{
-  "status": "APPLIED",
-  "balance": 1200,
-  "correlationId": "corr_abc"
-}
-```
-
-#### Error Cases
-All errors follow the global error envelope.
-Example:
-```json
-{
-  "errorCode": "LOYALTY_POLICY_VIOLATION",
-  "message": "Points award violates policy",
-  "retryable": false,
-  "correlationId": "corr_abc"
-}
-```
-
----
-
-#### Ordering & Duplication
-This contract MUST tolerate:
-- duplicate delivery
-- out-of-order delivery
-
-If ordering is required, the following key is authoritative:
-NONE
-
----
-
-#### Side Effects
-This contract MAY trigger:
-☐ ledger entries
-☐ entitlement issuance
-☐ emails / notifications
-☐ downstream async jobs
-
-All side effects MUST be idempotent and observable.
-
----
-
-#### Observability
-This contract MUST emit:
-- success/failure counters
-- latency metrics (p50, p95)
-- structured logs with correlationId and orgId
-
----
-
-#### Compatibility Rules
-- Fields may only be added as OPTIONAL in minor versions.
-- Fields may only be removed or redefined in major versions.
-- Consumers MUST tolerate unknown fields.
-
----
-
-#### Failure Mode
-On uncertainty or partial failure:
-- the contract MUST fail closed
-- no irreversible side effects may be committed
-
----
-
-#### Notes
-Pontos não alteram ledger financeiro.
-C09) Activity Feed ↔ EventLog/Chat
-	•	consumer do EventLog transforma eventos seleccionados em:
-	•	ActivityItem (UI)
-	•	mensagem automática no canal “Ops” (Chat interno)
-
-⸻
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C09  
-**Contract Name:** Activity Feed ↔ EventLog/Chat  
-**Current Version:** v3.0.0  
-**Owner:** Domain: Ops Feed / Chat  
-**Primary Consumers:** Ops UI, Chat interno, ORYA-WebApp
-
----
-
-#### Purpose
-Define a materialização do Activity Feed a partir do EventLog e a publicação no canal Ops.
-
----
-
-#### Idempotency
-- **Idempotency Key:** eventId
-- **Scope:** global
-- **Guarantee:** repeated requests with the same key MUST NOT produce
-  duplicate side effects.
-
-If idempotency cannot be guaranteed, the contract is considered invalid.
-
----
-
-#### Input Payload (Example)
-```json
-{
-  "eventId": "evtlog_123",
-  "eventType": "payment.succeeded",
-  "orgId": "org_123",
-  "correlationId": "corr_abc"
-}
-```
-
-#### Output / Response (Example)
-```json
-{
-  "status": "POSTED",
-  "activityItemId": "act_456",
-  "correlationId": "corr_abc"
-}
-```
-
-#### Error Cases
-All errors follow the global error envelope.
-Example:
-```json
-{
-  "errorCode": "OPS_CHANNEL_UNAVAILABLE",
-  "message": "Unable to post to Ops channel",
-  "retryable": true,
-  "correlationId": "corr_abc"
-}
-```
-
----
-
-#### Ordering & Duplication
-This contract MUST tolerate:
-- duplicate delivery
-- out-of-order delivery
-
-If ordering is required, the following key is authoritative:
-createdAt
-
----
-
-#### Side Effects
-This contract MAY trigger:
-☐ ledger entries
-☐ entitlement issuance
-☐ emails / notifications
-☑ downstream async jobs
-
-All side effects MUST be idempotent and observable.
-
----
-
-#### Observability
-This contract MUST emit:
-- success/failure counters
-- latency metrics (p50, p95)
-- structured logs with correlationId and orgId
-
----
-
-#### Compatibility Rules
-- Fields may only be added as OPTIONAL in minor versions.
-- Fields may only be removed or redefined in major versions.
-- Consumers MUST tolerate unknown fields.
-
----
-
-#### Failure Mode
-On uncertainty or partial failure:
-- the contract MUST fail closed
-- no irreversible side effects may be committed
-
----
-
-#### Notes
-Consumer dedupe por eventId; replays não duplicam items.
-
-C10) Stripe Webhooks ↔ Finanças (ingestão e reconciliação) — **FECHADO**
-Regras:
-	•	Endpoint canónico: `/api/stripe/webhook` (alias `/api/webhooks/stripe` deve apontar para o mesmo handler).
-	•	Assinatura Stripe obrigatória; rejeitar se `livemode` não corresponder ao modo esperado.
-	•	Dedupe obrigatório por `stripeEventId` (idempotencyKey global).
-	•	Resolver `orgId` por `stripeAccountId` (Connect) ou metadata `orgId` no PaymentIntent/Charge.
-	•	Se `orgId` não for resolvido → guardar evento + DLQ + alerta (sem side‑effects).
-	•	Persistir evento bruto (`StripeEvent`) com: `stripeEventId`, `type`, `account`, `created`, `livemode`, `requestId?`, `correlationId`.
-	•	Canonicalização obrigatória:
-		–	eventos externos de disputa do processor são normalizados para eventos internos `payment.dispute_opened` e `payment.dispute_closed`
-		–	só eventos internos canónicos podem mutar `Payment`/`Entitlement`/`Ticket`
-	•	Mapeamento mínimo (SSOT):
-		–	`payment_intent.succeeded` → Payment.SUCCEEDED + ledger + entitlements
-		–	`payment_intent.processing` → Payment.PROCESSING
-		–	`payment_intent.payment_failed` → Payment.FAILED
-		–	`payment_intent.canceled` → Payment.CANCELLED
-		–	`charge.refunded` → Payment.REFUNDED/PARTIAL_REFUND + reversões de ledger
-		–	`charge.dispute.created` → Payment.DISPUTED + Entitlement.SUSPENDED
-		–	`charge.dispute.closed` → CHARGEBACK_WON/LOST + entitlement update + ledger
-		–	`balance.available` → trigger reconciliação (fees finais)
-		–	`payout.paid` / `payout.failed` → atualizar read‑model de Payout (não controla payout)
-	•	Estados terminais não regredem; apenas transições permitidas pelo state machine (D04.09).
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C10  
-**Contract Name:** Stripe Webhooks ↔ Finanças (ingestão e reconciliação)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Finanças  
-**Primary Consumers:** Webhook handler, Finance workers, Entitlement issuance, Ledger
-
-#### Purpose
-Garantir ingestão idempotente de eventos Stripe e reconciliação determinística do estado financeiro.
-
-#### Idempotency
-- **Idempotency Key:** stripeEventId  
-- **Scope:** global  
-- **Guarantee:** replays não duplicam side‑effects.
-
-#### Input Payload (Example)
-```json
-{
-  "id": "evt_123",
-  "type": "payment_intent.succeeded",
-  "livemode": true,
-  "data": {"object": {"id": "pi_456"}},
-  "created": 1769900000
-}
-```
-
-#### Output / Response (Example)
-```json
-{"status":"ACK","stripeEventId":"evt_123"}
-```
-
-#### Error Cases
-- `INVALID_SIGNATURE`
-- `LIVEMODE_MISMATCH`
-- `ORG_UNRESOLVED` (armazenar + DLQ + alerta; **sem side‑effects**)
-
-#### Ordering & Duplication
-Tolerar duplicados e out‑of‑order.  
-Eventos antigos não podem reverter estados terminais.
-
-#### Side Effects
-☑ ledger entries  
-☑ entitlement issuance  
-☑ downstream async jobs  
-☑ notifications (quando aplicável)
-
-#### Observability
-Logs e métricas com `stripeEventId`, `stripeAccountId`, `orgId`, `paymentId`, `correlationId`.
-
-#### Failure Mode
-Assinatura inválida → 400.  
-Org não resolvida → 200 (ACK) + DLQ + alerta; nenhum side‑effect.
-
----
-
-C11) EventLog + Outbox (schema canónico e versionamento) — **FECHADO**
-
-Regras:
-	•	`eventType` em formato `domain.action` (lowercase, sem espaços).
-	•	`eventVersion` obrigatório (semver).
-	•	Campos mínimos do EventLog:
-		–	`eventId` (UUID), `eventType`, `eventVersion`, `orgId`
-		–	`subjectType`, `subjectId`
-		–	`actorIdentityId?`, `causationId`, `correlationId`
-		–	`payload` (PII minimizado), `createdAt`
-	•	PII: sem email/telefone em claro; usar `identityId`/hash.
-	•	Qualquer mutação com side‑effects escreve **EventLog + Outbox** na mesma transação.
-	•	Outbox é append‑only e garante at‑least‑once; consumers são idempotentes.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C11  
-**Contract Name:** EventLog + Outbox (schema e versionamento)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Ops/Platform  
-**Primary Consumers:** Workers, CRM, Activity Feed, Search, Analytics
-
-#### Purpose
-Garantir trilho auditável, versionado e compatível para todos os eventos internos.
-
-#### Idempotency
-- **Idempotency Key:** eventId  
-- **Scope:** global
-
-#### Input Payload (Example)
-```json
-{
-  "eventId": "evt_abc",
-  "eventType": "payment.succeeded",
-  "eventVersion": "1.0.0",
-  "orgId": "org_123",
-  "subjectType": "PAYMENT",
-  "subjectId": "pay_456",
-  "correlationId": "corr_789"
-}
-```
-
-#### Ordering & Duplication
-At‑least‑once; consumidores idempotentes; ordering não garantido.
-
-#### Side Effects
-☑ downstream async jobs  
-☑ materializações (read‑models)
-
-#### Observability
-EventLog é fonte para métricas e auditoria; payload com PII minimizado.
-
----
-
-C12) Identity/Auth (SSOT + claim/merge) — **FECHADO**
-
-Regras:
-	•	Tipos: `USER` e `GUEST_EMAIL`.
-	•	Email normalizado: `trim + NFKC + lowercase`; hash HMAC para dedupe.
-	•	Guest checkout cria/usa `Identity(GUEST_EMAIL)` por email normalizado.
-	•	Email verificado → **claim automático** para `Identity(USER)`:
-		–	mover Entitlements para o USER
-		–	criar registo de merge (auditável)
-		–	**não** alterar LedgerEntry nem Payment histórico
-	•	Merge é idempotente e nunca destrói histórico; identidade antiga fica como tombstone.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C12  
-**Contract Name:** Identity/Auth (SSOT + claim/merge)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Identity/Auth  
-**Primary Consumers:** Finanças, Entitlements, CRM, Check‑in, Org/RBAC
-
-#### Idempotency
-- **Idempotency Key:** `emailHash + userId` (claim)  
-- **Scope:** global
-
-#### Failure Mode
-Sem email verificado → claim bloqueado (fail‑closed).
-
----
-
-C13) Org Context + RBAC (resolução e step‑up) — **FECHADO**
-
-Regras:
-	•	`orgId` é obrigatório no path (`/org/:orgId/*`) ou header `X-ORYA-ORG-ID`.
-	•	Cookies/lastUsedOrg **só** para redirect de UI (nunca para autorização).
-	•	Qualquer operação sem `orgId` resolve para **403** com `ORG_CONTEXT_REQUIRED`.
-	•	Step‑up obrigatório em ações críticas (refunds, alterações de fee policy, export PII, cancelamentos).
-	•	Service roles não podem bypassar isolamento de org.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C13  
-**Contract Name:** Org Context + RBAC (resolução e step‑up)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Security/RBAC  
-**Primary Consumers:** Todos os módulos B2B
-
-#### Failure Mode
-Ambiguidade de org → fail‑closed (403) + audit log.
-
----
-
-C14) Payout Release + Risk Holds (ops) — **FECHADO**
-
-Regras:
-	•	ORYA **não** controla payouts em Stripe Standard; controla **gating operacional**.
-	•	Release interno é **read‑model** + alerta; não altera Stripe.
-	•	Pré‑requisitos para “allow new checkouts”:
-		–	`onboardingStatus=COMPLETE`
-		–	sem `risk.hold=true`
-		–	thresholds 19.2.2 não excedidos
-	•	Se bloqueado: `payoutsBlocked=true`, emitir `risk.flagged` + Ops alert.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C14  
-**Contract Name:** Payout Release + Risk Holds  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Ops/Finanças  
-**Primary Consumers:** Admin Ops UI
-
-#### Idempotency
-- **Idempotency Key:** payoutId ou balance_transaction.id  
-- **Scope:** por org
-
----
-
-C15) Money & Rounding (pricing determinístico) — **FECHADO**
-
-Regras:
-	•	Fee modes permitidos em v1: `ADDED | INCLUDED`.
-	•	`ABSORBED` é fora de scope v1 (não permitido em runtime).
-	•	Todos os montantes são **inteiros** em minor units (sem floats).
-	•	Rounding: `round_half_up` em cada passo relevante.
-	•	Ordem canónica:
-		1) `gross = sum(lineItems)`
-		2) `discounts` → `subtotal`
-		3) `taxes` (se aplicável) sobre `subtotal`
-		4) `platformFee` (base: `subtotal` por default; override via FeePolicyVersion)
-		5) `total = subtotal + taxes + fee` (se `feeMode=ADDED`)
-	•	`pricingSnapshot` é imutável; qualquer cálculo posterior deriva do snapshot + Ledger.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C15  
-**Contract Name:** Money & Rounding (pricing determinístico)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Finanças  
-**Primary Consumers:** Finanças, Events, Store, Reservations, Padel
-
----
-
-C16) Search Index (read‑model derivado) — **FECHADO**
-
-Regras:
-	•	Index é read‑model derivado do EventLog (não é owner).
-	•	Jobs idempotentes por `sourceType+sourceId+version`.
-	•	Unpublish/disable → remoção/soft‑delete no index.
-	•	Rebuild completo por job (reprodutível).
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C16  
-**Contract Name:** Search Index (read‑model derivado)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Search/Discovery  
-**Primary Consumers:** Discover UI, Public Search
-
----
-
-C17) CRM Ingest + Dedupe (read‑model) — **FECHADO**
-
-Regras:
-	•	CRM ingere **apenas** a partir do EventLog.
-	•	Idempotência por `eventId`; se existir `externalId`, dedupe por `(orgId, externalId)`.
-	•	Rebuild diário reprodutível; nunca confiar em contadores incrementais sem replay.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C17  
-**Contract Name:** CRM Ingest + Dedupe  
-**Current Version:** v1.0.0  
-**Owner:** Domain: CRM  
-**Primary Consumers:** CRM UI, Analytics, Ops
-
----
-
-C18) Media/Uploads (SSOT de ficheiros) — **FECHADO**
-
-Regras:
-	•	Todo upload cria `MediaAsset` com owner, orgId, checksum e metadata.
-	•	Acesso por URLs assinadas com TTL (sem public‑by‑default).
-	•	Apagar asset remove acesso e invalida URLs; logs/audit obrigatórios.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** C18  
-**Contract Name:** Media/Uploads (SSOT de ficheiros)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Platform/Storage  
-**Primary Consumers:** Events, Store, Org Profile, Mobile/Web
-
----
-
-CAUTH.01) Official Email Gate (organização) — **FECHADO**
-
-Regras:
-	•	`CAUTH.01` é o contrato canónico do gate de email oficial verificado para ações sensíveis da organização.
-	•	Escopo: validação de acesso em mutações B2B sensíveis (ex.: payouts, exports financeiros, settings críticos).
-	•	Condição canónica de verificação:
-		–	`normalize(officialEmail)` existe;
-		–	`officialEmailVerifiedAt != null`.
-	•	Normalização canónica:
-		–	`trim + NFKC + lowercase`;
-		–	valor persistido em `Organization.officialEmail` já normalizado.
-	•	Códigos canónicos de erro:
-		–	`OFFICIAL_EMAIL_REQUIRED`
-		–	`OFFICIAL_EMAIL_NOT_VERIFIED`
-	•	Envelope externo de erro usa `errorCode` (nunca `error`).
-	•	Fail mode: fail-closed (403) sem side effects.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** CAUTH.01  
-**Contract Name:** Official Email Gate (organização)  
-**Current Version:** v1.0.0  
-**Owner:** Domain: Security/RBAC + Organization Settings  
-**Primary Consumers:** APIs `/org/*`, Finance ops, RBAC write paths
-
----
-
-#### Purpose
-Definir o gate canónico de email oficial verificado para ações sensíveis de organização.
-
----
-
-#### Idempotency
-- **Idempotency Key:** N/A (validação sem side effects)
-- **Scope:** per request
-- **Guarantee:** validações repetidas com o mesmo input devolvem o mesmo resultado lógico.
-
----
-
-#### Input Payload (Example)
-```json
-{
-  "organizationId": 123,
-  "officialEmail": "finance@org.pt",
-  "officialEmailVerifiedAt": "2026-01-27T10:00:00Z",
-  "reasonCode": "PAYOUTS_SETTINGS",
-  "requestId": "req_abc",
-  "correlationId": "corr_abc"
-}
-```
-
-#### Output / Response (Example)
-```json
-{
-  "ok": true
-}
-```
-
-#### Error Cases
-```json
-{
-  "ok": false,
-  "requestId": "req_abc",
-  "correlationId": "corr_abc",
-  "errorCode": "OFFICIAL_EMAIL_NOT_VERIFIED",
-  "message": "Email oficial por verificar para esta ação.",
-  "email": "finance@org.pt",
-  "verifyUrl": "/org/:orgId/settings?tab=official-email",
-  "nextStepUrl": "/org/:orgId/settings?tab=official-email",
-  "reasonCode": "PAYOUTS_SETTINGS",
-  "retryable": false
-}
-```
-
----
-
-#### Ordering & Duplication
-Este contrato tolera chamadas duplicadas.
-Ordering não é aplicável para validação do gate.
-
----
-
-#### Side Effects
-☐ ledger entries  
-☐ entitlement issuance  
-☐ emails / notifications  
-☐ downstream async jobs
-
----
-
-#### Observability
-Obrigatório em logs e métricas:
-- `requestId`
-- `correlationId`
-- `organizationId`
-- `reasonCode`
-
----
-
-#### Compatibility Rules
-- Erros externos DEVEM usar `errorCode` canónico.
-- Campos novos podem ser aditivos (minor), sem quebrar consumers.
-
----
-
-#### Failure Mode
-Sem email oficial válido/verificado: bloquear ação (403), sem side effects.
-
-CAUTH.02) Public Auth API Contract Baseline (legacy auth spec migrated) — **FECHADO**
-
-Regras:
-	•	Endpoints públicos de autenticação abrangidos:
-		–	`POST /api/auth/login`
-		–	`POST /api/auth/send-otp`
-		–	`POST /api/auth/password/reset-request`
-		–	`POST /api/auth/refresh`
-		–	`POST /api/auth/apple/link`
-		–	`GET /api/auth/me`
-		–	`POST /api/auth/logout`
-		–	`POST /api/auth/clear`
-		–	`GET|POST /api/auth/check-email`
-	•	Todos os erros externos usam envelope canónico (`errorCode`, `message`, `retryable`, `correlationId`).
-	•	`send-otp` e `check-email` seguem política anti-enumeração (resposta genérica, sem leak de existência de conta).
-	•	`/api/auth/refresh` é o único contrato canónico para sincronizar sessão com cookies HttpOnly.
-	•	`/api/auth/me` é o read-model canónico de estado de autenticação no server.
-	•	Auth UI/UX (modal, cooldowns, componentes) é não-normativo e vive em `docs/planning_registry_v1.md`.
-
----
-
-### Contract Execution Addendum (NORMATIVE)
-
-**Contract ID:** CAUTH.02
-**Contract Name:** Public Auth API Contract Baseline
-**Current Version:** v1.0.0
-**Owner:** Domain: Identity/Auth
-**Primary Consumers:** WebApp auth UI, Mobile auth clients, internal session middlewares
-
-#### Purpose
-Definir baseline contratual dos endpoints públicos de autenticação, com anti-enumeração e envelope canónico.
-
-#### Idempotency
-- **Idempotency Key:** N/A (operações de sessão/auth sem side-effects financeiros)
-- **Scope:** per request
-
-#### Failure Mode
-Em dúvida de autorização/origem/sessão: fail-closed, sem side effects irreversíveis.
-
-### C02.X01 Addon — Stripe Onboarding (Standard)
-C02.X01) Stripe Onboarding (Standard) — **FECHADO**
-- Activação de vendas/payouts exige Organization completar onboarding KYC no Stripe.
-- Implementação: Finanças gera `account_link` (Stripe-hosted) e guarda estado:
-  - `onboardingStatus = PENDING | COMPLETE | RESTRICTED`
-- Guardrail:
-  - se status != COMPLETE → bloquear criação de checkouts pagos (permitir apenas rascunhos/testes).
-
-⸻
-
-## 05 Domain Decisions (D*)
-
-4) Decisions Locked (não avançar sem isto)
-
-DORG.01) Membership de Organização — fonte única de verdade (FECHADO)
-	•	Fonte única canónica: `OrganizationGroupMember` + `OrganizationGroupMemberOrganizationOverride`.
-	•	`OrganizationMember` é legado e não pode ser usado por código de runtime.
-	•	Leituras/escritas de membership (listar, promover, remover, contar owners, resolver permissões) devem passar pelo modelo de grupo.
-	•	DB hygiene: tabela legacy `organization_members` removida por migração de cut-line.
-
-DORG.03A) Módulos da Organização — fonte única + fail-closed (FECHADO)
-	•	Fonte única de ativação de módulos: `OrganizationModuleEntry.enabled=true`.
-	•	`RBAC` e `module enabled` são validações separadas e cumulativas:
-		–	sem membership/permissão => negar;
-		–	módulo desativado => negar, mesmo que o utilizador tenha role.
-	•	No perfil público da organização, um módulo só aparece se:
-		–	estiver ativo, e
-		–	tiver conteúdo publicável.
-	•	Toggle de módulo afeta dashboard e perfil público de forma determinística (sem bypass por URL direta).
-
-DORG.04A + DORG.05A) Contexto de organização explícito e header canónico (FECHADO)
-	•	APIs de organização aceitam `organizationId` apenas por:
-		–	path (`/org/:id`), ou
-		–	query (`organizationId`), ou
-		–	header canónico `x-orya-org-id`.
-	•	Cookie não é fonte de verdade para mutações API (apenas fallback UI quando explicitamente permitido).
-	•	Header legado `x-org-id` está descontinuado; único header válido é `x-orya-org-id`.
-
-DORG.06A) Notificações Stripe Status — dedupe por organização + estado (FECHADO)
-	•	Notificações `STRIPE_STATUS` usam dedupe key com fingerprint de estado:
-		–	`accountId`, `charges_enabled`, `payouts_enabled`, `requirements_due`.
-	•	Dedupe é por utilizador + organização + fingerprint; retries não podem gerar spam.
-
-DORG.07A) Webhook Stripe Connect — fail-closed por mapeamento org (FECHADO)
-	•	`account.updated` só atualiza organização se o mapeamento for inequívoco.
-	•	Se não houver organização mapeada, ou houver mismatch `organizationId` ↔ `stripeAccountId`, a resposta é erro (não-200).
-	•	Atualização parcial/silenciosa é proibida; `update_count != 1` é erro operacional.
-	•	Webhook externo nunca é tratado como verdade sem reconciliação com estado interno.
-
-DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
-	•	Normalização canónica obrigatória:
-		–	lowercase + trim + colapsar espaços + Unicode NFC.
-	•	Regras de username após normalização:
-		–	mínimo 4 caracteres, máximo 15.
-		–	lista de reserved words + blacklist obrigatória.
-		–	hold de 15 dias após rename/release.
-	•	Confusables/homoglyphs:
-		–	fora do MVP para resolução avançada;
-		–	no MVP: charset permitido + bloquear mistura de scripts.
-	•	Qualquer escrita de username deve passar por `UsernameRegistry` (sem bypass direto em tabelas de profile/org).
-
-DORG.09) Perfil Mobile — UI/UX baseline (FECHADO)
-	•	Escopo: perfil de Utilizador (view pública/própria) + perfil público de Organização (view pública).
-	•	Padrão comum:
-		–	App Bar sticky, Hero com avatar/badges, CTA primário visível, Stats row, secções sticky, estados loading/empty/error.
-		–	acessibilidade mínima: touch targets >= 44pt, contraste AA, dynamic type.
-	•	Utilizador:
-		–	stats `Seguidores` + `A seguir`.
-		–	CTA `Follow/Unfollow` (outro user) e `Editar Perfil` (próprio).
-	•	Organização:
-		–	stats apenas `Seguidores`.
-		–	CTA primário derivado do módulo ativo (`Ver eventos`/`Reservar`/`Ver loja`/`Contactar`).
-	•	Ordem canónica de blocos org:
-		–	`HERO -> ABOUT -> EVENTS_AGENDA -> STORE -> SERVICES -> FORMS -> GALLERY -> FAQ -> CONTACT`.
-	•	Layout de perfil público de organização é controlado por `OrgPublicProfileLayout` versionado (edição apenas no painel org).
-
-D00) Fora de scope (v1–v3): API pública (terceiros)
-	•	Não vamos expor API pública/SDK para terceiros nesta fase.
-	•	Endpoint(s) públicos **first‑party** (ex.: páginas públicas/agenda) são permitidos, read‑only e rate‑limited.
-	•	Qualquer “Public API” com chaves/SDK é **futuro**: sem documentação externa, sem onboarding de parceiros e **desativado por defeito** em prod até decisão explícita.
-	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API” aberta.
-
-D01) Evento base obrigatório para torneios
-
-Todo torneio de Padel tem eventId obrigatório.
-	•	Eventos: tickets, SEO, página pública base, sessões, entitlements
-	•	Padel Torneios: competição, matches, bracket/standings, live ops
-
-D01.01) Schedule de Evento — invariantes de tempo (FECHADO)
-	•	`endsAt` é **obrigatório** em toda a stack (criação, edição, ingestão, seed).  
-	•	Regra: `endsAt` **tem de ser depois** de `startsAt` (nunca antes).  
-	•	Não existe fallback runtime para `endsAt`; payload inválido falha e deve ser corrigido na origem.  
-	•	Evento publicado **nunca** pode regressar a `DRAFT`. `DRAFT` nunca é público.  
-	•	Chat de evento: `open_at = startsAt`, `read_only_at = endsAt + 24h`, `close_at = endsAt + 24h`.  
-	•	Chat de evento (acesso) — **presença** obrigatória: **Entitlement + check-in consumido**.  
-	•	Definição: **check‑in consumido = entitlement consumido** (`CheckinResultCode.OK` ou `ALREADY_USED`).  
-	•	Entitlement mantém-se como prova única de acesso ao evento; o chat é uma feature de presença.  
-	•	Entrada no chat é por **convite com aceitação explícita**; convite emitido após entitlement consumido (check‑in/claim) se dentro da janela.  
-	•	Convites de chat **expiram** e **não podem ser aceites** após `endsAt + 24h` (janela de participantes).  
-	•	Chat de evento aparece em “Mensagens” **apenas após** convite aceite.  
-	•	CTA “Entrar no chat” na página do evento **e** no bilhete/carteira, apenas após entitlement consumido.  
-	•	Notificação do chat enviada após entitlement consumido (respeita preferências do utilizador).  
-	•	Chat de evento é **exclusivo da app** (não existe chat de evento na web para users).  
-	•	Até `endsAt + 24h` mantém escrita para participantes com acesso; após isso fica **read‑only**.  
-	•	Discovery: eventos `PAST`/`CANCELLED` **não** entram em listas públicas.  
-	•	Mobile checkout: CTA **bloqueado** se `status != ACTIVE` **ou** `endsAt < now`.  
-	•	Wallet: separação “Ativos/Histórico” **baseada em `endsAt`** (ou janela de check‑in).
-	•	Higiene legacy: migração one-shot corrige `endsAt` inválido e aplica constraint DB `endsAt > startsAt`.
-
-D01.02) Mensagens & Chat — decisões de produto (FECHADO)
-	•	Mensagens para utilizador final **apenas na app** (sem chat na web).  
-	•	“Inbox” único de Mensagens: eventos + reservas/serviços + chats com organizações + chats entre utilizadores.  
-	•	Escopo `b2c` é **mobile-only** por contrato backend (HTTP + WebSocket): clientes não‑mobile recebem `MOBILE_APP_REQUIRED`; versões mobile fora da gate recebem `UPGRADE_REQUIRED`.  
-	•	Chat de evento segue D01.01 e é suportado integralmente no `b2c` (inbox, mensagens, read, notifications, delete, realtime).  
-	•	Chat de reservas/serviços: canal **só ativa** com a 1ª mensagem (não criar canal vazio).  
-	•	Chat de serviço (pré‑reserva): **apenas via pedido**; pedido **aprovado por staff** da organização.  
-	•	Chat org‑contact (cliente → organização): **pedido obrigatório**, aprovado por staff.  
-	•	Reserva: organização pode iniciar chat no **detalhe da reserva** (1ª mensagem cria canal).  
-	•	Chat interno da organização: **só canais** (sem mensagens diretas internas); admins criam por defeito; canais automáticos do sistema (Ops, evento, reserva).  
-	•	Canais cliente‑profissional: cliente vê o profissional; admins podem ver/escrever; identidade padrão para admins é “Organização”; identidade pessoal opcional quando necessário; admins **não aparecem** como membros visíveis ao cliente.  
-	•	Mensagens entre utilizadores: só entre amigos/seguidores confirmados; pedidos de mensagem para desconhecidos; grupos por convite.  
-	•	Notificações: push em todas as mensagens por defeito; opção de silenciar por conversa.  
-	•	Conteúdo: **texto-only**. Upload/presign de anexos está desativado e payloads com anexos são rejeitados (`ATTACHMENTS_DISABLED`).  
-	•	“Anular envio”: janela de **2 minutos**.  
-	•	Retenção: mensagens guardadas e chats de evento/reserva read‑only após fecho. Exceção única (one-off de migração): purge destrutivo de mensagens históricas com anexos + ficheiros/metadata para convergir para texto-only; não é política contínua.
-
-D02) Owners (fontes de verdade) — semântica blindada
-	•	Ticketing / Sessions / Página pública base / Entitlements de acesso: Eventos
-	•	Convites (EventInvite + InviteToken) + EventAccessPolicy: Eventos
-	•	Competição / Registos / Brackets / Matches / Resultados: Padel Torneios
-	•	Agenda / Disponibilidade / Booking / No-show / MatchSlots: Reservas
-	•	Pagamentos / Fees / Ledger / Refund / Payout / Invoice: Finanças
-	•	Check-in / Presence logs / Scanner: Check-in
-	•	Customer + Consent + Timeline + Segmentos: CRM
-	•	Roles + Scopes + Auditoria RBAC: Equipa
-	•	Moradas: Address Service
-	•	Analytics: Derivado (Ledger + EventLog); não é owner de estado transaccional
-
-Regra: nenhum domínio duplica estado de outro owner. Integração só via contratos.
-
-**Regra de negócio (fundamental):** **só ORGANIZAÇÕES** podem ser donas de coisas que se vendem/operam (Eventos, Loja/Produtos, Serviços/Reservas). Utilizadores **nunca** “criam/vendem em nome próprio”; apenas atuam como membros de uma Organização no **Painel da Organização** (RBAC). No lado do utilizador, mesmo sendo dono/admin, vê a Organização apenas como público.
-
-D03) Agenda Engine e conflitos (FECHADO)
-
-Regra base: **quem marca primeiro ocupa**. Nada sobrepõe automaticamente.  
-Conflitos ficam bloqueados; quem chega depois tem de se adaptar.
-
-Aditamento normativo (2026-02-14):
-	•	Regra de conflito em camadas:
-		–	hard constraints (segurança/compliance/manutenção/hard block) prevalecem sempre;
-		–	fora hard constraints, aplica-se `first_confirmed_wins`;
-		–	em empate técnico no mesmo instante/lote, aplicar prioridade: `HARD_BLOCK > MATCH (reasonCode=MATCH_SLOT) > BOOKING > CLASS_SESSION > SOFT_BLOCK`;
-		–	tie-break final determinístico: `confirmedAt` asc e depois `claimId` asc (fallback `createdAt` quando necessário).
-	•	Unidade temporal canónica do motor: blocos de **5 minutos**.
-	•	Projeção UI pode usar grelha de 15 minutos por default, sem alterar a regra canónica do motor.
-	•	Buffer técnico global não é obrigatório por defeito; aplica-se por política/configuração de contexto.
-	•	O core de scheduling/agenda não depende de feature flag de produto para ativação funcional em runtime (kill switches operacionais continuam permitidos).
-
-Override **só manual** por Owner/Admin, com auditoria e notificações.  
-Se o override mexer numa reserva de utilizador, requer **pedido + aceitação** (ver 9.2).
-
-D03.01 MatchSlot (Padel)
-MatchSlot bloqueia novas marcações no mesmo horário/campo.  
-Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; requer override explícito.
-
-D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
-		•	Calendário único de clube:
-			–	reservas, aulas e torneios partilham o mesmo calendário operacional.
-			–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
-		•	Agenda pessoal (utilizador):
-			–	é timeline unificada (projeção), não write-model de ocupação.
-			–	inclui `Booking` de serviço e itens de bilhete/evento em tipos separados.
-			–	labels canónicas: `RESERVA_SERVICO` e `BILHETE_EVENTO`.
-		•	Visibilidade de calendário:
-			–	Utilizador: mês atual + 3 meses; passado oculto.
-		–	Organização: até fim do ano + 2 anos; passado em leitura.
-	•	Permissões:
-		–	Owner/Admin: tudo.
-		–	Staff: apenas recursos atribuídos.
-		–	Trainer: aulas próprias em recursos atribuídos.
-	•	Override/mudança de reserva:
-		–	org pede mudança até T-4h.
-		–	user responde até 24h ou T-2h (o que ocorrer primeiro).
-		–	sem resposta = recusado; reserva mantém-se.
-		–	cancelamento pelo org = refund total automático.
-	•	Guest booking e aulas recorrentes:
-		–	guest booking permitido apenas por policy e cria Entitlement canónico.
-		–	aulas recorrentes usam `ClassSeries + ClassSession` com bloqueio explícito na Agenda Engine.
-
-D04) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
-
-> **FECHADO (SSOT):** SSOT financeiro = `Payment` (state machine) + `LedgerEntry` (linhas imutáveis).  
-> Tudo o resto (SaleSummary, dashboards, exports) é **derivado**.
-
-Princípios
-- Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
-- **Finanças é o único gateway lógico**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
-  Endpoints especializados de checkout são permitidos **apenas** se delegarem ao domínio Finanças e respeitarem idempotência/policies canónicas.
-- Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
-- “Pago” só existe quando `Payment.status == SUCCEEDED`.
-
-D04.00) Stripe Connect — Account Type (FECHADO)
-- ORYA usa **Stripe Connect Standard** como tipo de conta por defeito para Organizações.
-- A conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
-- A ORYA não cria nem gere contas Custom nesta fase.
-- Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
-
-D04.00.01) Stripe Funds Flow (FECHADO)
-Objetivo: definir de forma única como o dinheiro flui e onde a ORYA consegue (ou não) aplicar “risk holds”.
-
-Decisão (v1.x):
-- Modelo: **Destination Charges + Application Fee** (Stripe Connect Standard).
-- A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
-  - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
-  - `transfer_data.destination` = `Organization.stripeAccountId`
-
-Implicações (normativas):
-- Refunds são iniciados pela ORYA (Finanças) e são idempotentes.
-- Disputes/chargebacks afectam `Payment/Entitlements` conforme D04.09 e Secções 7/8.
-- “Risk hold” em v1.x é **operacional** (step‑up, limits, bloqueio temporário de criação de eventos/checkout); não assume controlo directo de payouts.
-- Se for necessário controlo fino de payouts/transferências (hold real de fundos), isso é **fora v1.x** e requer revisão do flow (ou mudança de account type/contrato).
-
-Regra: nenhum módulo assume “payout control” fora do que este flow permite.
-
-D04.01 Política de Fee (Admin) (FECHADO)
-- Config por organização (default) + overrides por `sourceType` (e opcionalmente por `sourceId`).
-- Limites opcionais: min/max, arredondamentos, feeMode (`INCLUDED | ADDED` em v1).
-- `ABSORBED` é fora de scope v1 e exige decisão normativa futura para activação.
-- Qualquer alteração gera nova versão (`feePolicyVersion`), nunca edita retroativamente.
-
-D04.02 PricingSnapshot (obrigatório) (FECHADO)
-- `pricingSnapshot` é gravado no momento do checkout e nunca muda.
-- Deve incluir, no mínimo:
-  - currency, gross, discounts, taxes (se existirem), platformFee, netToOrgPending (calculado **sem** fees reais do processador)
-  - `processorFeesStatus: PENDING | FINAL`
-  - `processorFeesActual` (nullable até reconciliação Stripe; quando FINAL, é obrigatório)
-  - feeMode resolvido (como a fee é aplicada)
-  - referências: `feePolicyVersion`, `promoPolicyVersion` (se houver), `sourceType/sourceId`
-  - lineItems com preços unitários e quantidades (para auditoria)
-- Regra: **qualquer cálculo futuro** usa o snapshot + o Ledger (SSOT), nunca re‑calcula com regras novas.
-- `netToOrgFinal` **não** vive no snapshot inicial; é sempre derivado de `SUM(entries.amountSigned)` quando `processorFeesStatus=FINAL`.
-- **Proibição de estimativas:** campos do tipo `*Estimate*` são legados e **não** podem ser usados como verdade nem para decisões.  
-  Só `processorFeesActual` (quando FINAL) e o Ledger são canónicos.
-
-D04.03 Fee determinística + versionamento (obrigatório) (FECHADO)
-- Fee calculada em Finanças durante `createCheckout` e congelada no `Payment`.
-- `Payment.feePolicyVersion` obrigatório (incremental ou hash do snapshot).
-- LedgerEntryType (MVP v1.x) — FECHADO
-  - `GROSS`
-  - `PLATFORM_FEE`
-  - `PROCESSOR_FEES_FINAL`
-  - `PROCESSOR_FEES_ADJUSTMENT`
-  - `DISPUTE_FEE`
-  - `DISPUTE_FEE_REVERSAL`
-  - `REFUND_GROSS`
-  - `REFUND_PLATFORM_FEE_REVERSAL`
-  - `REFUND_PROCESSOR_FEES_REVERSAL`
-  - `CHARGEBACK_GROSS`
-  - `CHARGEBACK_PLATFORM_FEE_REVERSAL`
-- Norma de sinais (obrigatória)
-  - `GROSS` é positivo (+)
-  - `PLATFORM_FEE` é negativo (-)
-  - `PROCESSOR_FEES_FINAL` é negativo (-)
-  - `PROCESSOR_FEES_ADJUSTMENT` pode ser + ou - (depende do delta)
-  - `DISPUTE_FEE` é negativo (-)
-  - `DISPUTE_FEE_REVERSAL` é positivo (+)
-  - `REFUND_GROSS` é negativo (-)
-  - `REFUND_PLATFORM_FEE_REVERSAL` é positivo (+)
-  - `REFUND_PROCESSOR_FEES_REVERSAL` é positivo (+)
-  - `CHARGEBACK_GROSS` é negativo (-)
-  - `CHARGEBACK_PLATFORM_FEE_REVERSAL` é positivo (+)
-- Regra FECHADA
-  - `netToOrgFinal = SUM(entries.amountSigned)` por `paymentId` quando `processorFeesStatus=FINAL`.
-  - `netToOrgPending = gross - platformFee` (informativo; não é canónico; sem fees reais do processador).
-  - Refund/chargeback geram entries adicionais no mesmo `paymentId` (append-only); o `netToOrgFinal = SUM(entries.amountSigned)` continua verdadeiro após refund/chargeback.
-- Alterações no Admin não afectam pagamentos antigos.
-
-D04.04 Ledger SSOT (imutável) + reconciliação (FECHADO)
-- `LedgerEntry` é append‑only (sem update/delete).
-- Cada entrada tem: `entryType`, `amount`, `currency`, `paymentId`, `sourceType/sourceId`, `createdAt`, `causationId`, `correlationId`.
-- Regras:
-  - entradas são geradas apenas por Finanças (write‑owner)
-  - replays são idempotentes (mesma causationId não duplica)
-- Reconciliação (FECHADO):
-  - Fonte única do fee real: `stripe.balance_transaction.fee` (ou equivalente do processor).
-  - Transição:
-    - `processorFeesStatus=PENDING` enquanto não existir `balance_transaction`
-    - `processorFeesStatus=FINAL` quando existir
-  - Entries:
-    - criar `PROCESSOR_FEES_FINAL` quando chega o `balance_transaction`
-    - criar `PROCESSOR_FEES_ADJUSTMENT` se, em reconciliações futuras, o fee real mudar (delta)
-  - Append-only sempre: nunca editar entries antigas.
-  - divergências geram `LedgerReconciliationIssue` (ver 12.4.x)
-
-D04.05 SaleSummary (se existir) — read model derivado
-- Pode existir para performance/UX, mas:
-  - nunca decide estados (pago/reembolsado)
-  - é re‑gerável a partir de Ledger + Payment
-  - falhas são reparáveis por replay (EventLog/Jobs)
-- Definição (read‑model):
-  - `SaleSummary`: resumo por compra (`purchaseId`/`paymentIntentId`), totais/fees (`subtotal/discount/platformFee/cardFee/stripeFee/total/net`), `status`, owner (`ownerUserId`/`ownerIdentityId`), modo/teste (`mode`/`isTest`) e snapshots de promo (`promoCodeSnapshot/label/type/value`).
-  - `SaleLine`: linhas por ticketType (`ticketTypeId`), `quantity`, `unitPrice`, `gross/net/platformFee` + snapshots de promo.
-- Owner: apenas o consumer de finanças (domain/finance read‑model consumer) escreve; resto é read‑only.
-
-D04.06 FeeMode e pricing têm um resolvedor único (FECHADO)
-- `computePricing()` (Finanças) decide de forma determinística e versionada:
-  - platform default
-  - org default
-  - override por `sourceType`
-  - override por `sourceId` (opcional)
-- Regra: nenhum módulo força feeMode “por fora”. Se Eventos quiserem “INCLUDED sempre”, isso é configurado como override por `sourceType=TICKET_ORDER` e fica escrito em policy versionada.
-
-D04.07 Regras de FREE_CHECKOUT (FECHADO)
-- Um checkout é “free” se:
-  - `totalAmount == 0` (após promos/fees) **ou**
-  - `scenario == FREE_CHECKOUT` (explicitamente resolvido por Finanças)
-- Limites e anti‑abuso aplicam-se ao free checkout independentemente de qualquer flag no evento.
-- Bilhetes 0€ só existem por decisão explícita:
-  - `Event.allowZeroPriceTickets` (default false) **ou** policy por TicketType (recomendado).
-
-D04.07.01 Guardrails de FREE_CHECKOUT (FECHADO)
-- Anti‑abuso é **normativo** e vive em Finanças (não em Eventos):
-  - Limite por `Identity` e por `eventId+ticketTypeId`: default `max=1` (configurável por policy, com guardrails globais).
-  - Rate limit por IP/device + janela (ex.: 10 tentativas/5 min) + cooldown progressivo em falhas.
-  - Step‑up em casos suspeitos: captcha/turnstile, obrigar login, ou bloquear por 15–60 min (policy).
-  - Dedupe por idempotencyKey e por `Identity+sourceId` (não existe “free checkout repetido”).
-  - Audit + EventLog obrigatórios: `free_checkout.denied` com reasonCode (sem PII).
-- Regra: o mesmo conjunto de guardrails aplica-se a `totalAmount==0` e a `scenario==FREE_CHECKOUT`.
-- Precedência de guardrails:
-  - FREE_CHECKOUT só é permitido se cumprir simultaneamente A1, A3 e D04.07.01.
-  - Em conflito de limites, aplica-se sempre o limite mais restritivo.
-
-D04.08 Deprecação de `Event.isFree` (anti‑desync) (FECHADO)
-Regra:
-- `Event.isFree` deixa de existir como “fonte de decisão”.
-- A única regra de “free” é a de D04.07.
-- Para UI (“evento grátis”) é sempre derivado:
-  - `derivedIsFree = (min(TicketType.price) == 0 AND não existe TicketType.price > 0)` **ou**
-  - `Event.pricingMode = FREE_ONLY` (flag explícita, se precisares)
-- Qualquer gating (checkout/login/anti‑abuso) **nunca** usa `Event.isFree`.
-
-Implementação:
-- Remover leituras do flag em UI/checkout.
-- Se o campo ainda existir por compatibilidade, marcá-lo como deprecated e preenchê-lo apenas como read model.
-- Assert em Finanças: se `totalAmount > 0` então `scenario != FREE_CHECKOUT`.
-
-D04.09 Refunds, cancelamentos e chargebacks (FECHADO)
-Cancelamento de evento:
-- Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
-- Stripe Connect Standard:
-  - o organizador paga os processing fees (quando Stripe não os devolve)
-  - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
-- O refund é idempotente e auditável (`RefundPolicyVersion` se houver regras variáveis).
-
-Refund manual (suporte):
-- Só por casos definidos (evento cancelado, falha grave, denúncias, problema técnico confirmado).
-- Não existe “refund porque faltaste”.
- 
-Refund parcial (FECHADO):
-- `Payment=PARTIAL_REFUND` quando apenas alguns lineItems são reembolsados.
-- Ledger adiciona `REFUND_GROSS` + reversões aplicáveis **por item** (append-only; pode haver múltiplos parciais).
-- Em `sourceType=TICKET_ORDER`, revoga apenas os entitlements dos itens refundados (resto mantém ACTIVE).
-
-Chargeback / dispute:
-- Evento Stripe `dispute.created` → `Payment` entra em estado de disputa e:
-  - Entitlements associados → `SUSPENDED` (bloqueia entrada) até resolução
-- Resolução:
-  - `dispute.won` → `Payment=CHARGEBACK_WON` + reactivar entitlements (se ainda fizer sentido temporalmente)
-  - `dispute.lost` → `Payment=CHARGEBACK_LOST` + `Entitlement=REVOKED` + ledger com `CHARGEBACK_*` (e `DISPUTE_FEE` se aplicável)
-- Fee de disputa (FECHADO):
-  - `DISPUTE_FEE` é debitado à organização por defeito.
-  - Se o processor reembolsar a fee num `CHARGEBACK_WON`, criar `DISPUTE_FEE_REVERSAL` (positivo).
-- `Ticket.status=DISPUTED` entra em `dispute.created` (ou `charge.dispute.created`) e bloqueia entrada.
-- `dispute.won` → volta a `ACTIVE` (se não houver refund/chargeback aplicado).
-- `dispute.lost` → `CHARGEBACK_LOST` (estado final canónico).
-
-D04.10) Revenda — state machine e atomicidade (FECHADO)
-- Estado canónico:
-  - `TicketStatus`: `ACTIVE | RESALE_LISTED | TRANSFERRED | REFUNDED | DISPUTED | CHARGEBACK_LOST | CANCELLED`
-  - `ResaleStatus`: `LISTED | SOLD | CANCELLED`
-- Pré-condições de listagem:
-  - só tickets `ACTIVE`;
-  - ticket com `consumedAt != null` não pode entrar em revenda;
-  - para multi-sessão, revenda só é permitida quando todos os entitlements transferíveis ainda não foram consumidos.
-- Atomicidade de compra:
-  - compra de revenda é transação única: `payment succeeded` -> `owner` canónico atualizado -> entitlements do owner antigo revogados/reemitidos para o novo owner -> listing fechado.
-  - falha em qualquer passo implica rollback total.
-- Locks e constraints:
-  - lock transacional obrigatório (`SELECT ... FOR UPDATE`) no `Ticket` e no `TicketResale`;
-  - máximo 1 listing ativo por ticket (constraint única para status ativo).
-- Preço e anti-scalping:
-  - `maxResalePrice` por evento/ticketType (default: preço original);
-  - `resaleFeePolicyVersion` congelada no `Payment`.
-- Disputes/refunds (sem reversão automática):
-  - chargeback/refund do comprador da revenda -> entitlement do novo owner `SUSPENDED` + `Ticket.status=DISPUTED`;
-  - não existe reversão automática de owner;
-  - qualquer reversão de owner é apenas manual/admin com `AuditLog`.
-- Resolução:
-  - `dispute.won` -> entitlement `ACTIVE` + ticket `ACTIVE` (se temporalmente válido);
-  - `dispute.lost` -> `Ticket=CHARGEBACK_LOST` + entitlement `REVOKED`;
-  - refund confirmado -> `Ticket=REFUNDED` + entitlement `REVOKED`.
-- Integração operacional:
-  - jobs idempotentes obrigatórios para `entitlements.suspend_on_dispute_opened` e `ticket.mark_disputed`.
-
-⸻
-
-D05) RBAC mínimo viável + Role Packs
-
-Introduzir já: CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
-Com mapa fixo para roles/scopes (Secção 11).
-
-D05.01) Resolução de organização é determinística
-	•	Em B2B, organizationId vem da rota (/org/:orgId/...) como fonte primária.
-	•	Cookie pode existir apenas como conveniência (redirect inicial), não como base de autorização.
-	•	RBAC avalia sempre com orgId explícito.
-	•	Qualquer fallback (cookie/lastUsedAt) é permitido apenas para redirect/UI. Nunca para autorização.
-	•	Alias legado web removido (hard-cut): `/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
-	•	Namespace legado API: `/api/organizacao/*` → `410 LEGACY_ROUTE_REMOVED`.
-
-D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
-	•	Exige reautenticação/2FA recente + `reasonCode` obrigatório para:
-		–	refunds;
-		–	cancelamento de evento/torneio (soft-cancel);
-		–	alteração de fee policy/overrides;
-		–	exportação com PII.
-	•	Todas as ações acima geram `AuditLog` com before/after (payload minimizado RGPD).
-
-D06) Notificações como serviço (com logs e opt-in)
-
-Templates, consentimento RGPD, logs de delivery, outbox e preferências.
-
-D07) sourceType canónico (Finanças/ledger/check-in)
-
-Todos os checkouts e entitlements usam sourceType canónico e unificado (Secção 7).
-
-D08) EventAccessPolicy (acesso + convites + identidade + claim entitlements) — definição final
-
-> **FECHADO (SSOT):** `EventAccessPolicy` é a única fonte de verdade para:
-> 1) modo de acesso (public/invite/unlisted), 2) checkout como convidado, 3) convites por token, 4) compatibilidade de identidade, e 5) check‑in (ver Secção 8).
-
-D08.01) EventAccessPolicy é a única verdade de acesso (FECHADO)
-- Substitui qualquer combo de flags legacy (`public_access_mode`, `invite_only`, etc.).
-- Modelo canónico (mínimo):
-  - `mode: PUBLIC | INVITE_ONLY | UNLISTED`
-  - `guestCheckoutAllowed: boolean`
-  - `inviteTokenAllowed: boolean`
-  - `inviteIdentityMatch: EMAIL | USERNAME | BOTH`
-  - `inviteTokenTTL: duration` (obrigatório se `inviteTokenAllowed=true`)
-  - `checkin: { requiresEntitlementForEntry, methods[...] }` (ver Secção 8)
-- **Restrição:** `inviteTokenAllowed=true` exige `inviteIdentityMatch=EMAIL|BOTH`.  
-  `inviteIdentityMatch=USERNAME` **não** suporta tokens (apenas convites por username existente).
-- **Regra de integridade:** convites por username só podem ser emitidos para utilizadores existentes.  
-  Para pessoas sem conta, usar convite por email.
-- **Sem fallback** entre campos. Migração/backfill obrigatório no write‑path (não na leitura).
-
-D08.02) Convites por token (guest checkout) — versão final (FECHADO)
-
-Convites permitem checkout como convidado via token **na WebApp e no site público**.  
-A app mobile é **login‑only** (sem guest checkout).
-
-Regras fechadas
-1) InviteToken one‑time + expira
-- guardar `tokenHash` (nunca token em claro)
-- `expiresAt` (ex.: 7 dias; ou conforme `inviteTokenTTL`)
-- `usedAt` + `usedByIdentityId`
-
-2) Match obrigatório de identidade
-- o token fica associado a `emailNormalizado` (e opcionalmente username, se usares BOTH)
-- no checkout guest, o email tem de bater certo (case‑insensitive, normalizado)
-- se `inviteIdentityMatch=USERNAME`, `inviteTokenAllowed` tem de ser **false** (sem tokens)
-
-3) Scope do token
-- token é válido só para 1 evento e (opcional) 1 `ticketTypeId` (controlo fino)
-
-4) Rate limit + anti‑enumeração
-- limitar tentativas por IP/device
-- respostas indistinguíveis (“token inválido” sem detalhes)
-
-5) Entitlement final (SSOT) + claim posterior (FECHADO)
-- compra gera `Entitlement` com `ownerIdentityId = Identity(GUEST_EMAIL)`
-- quando o user criar conta e verificar o mesmo email → claim automático (Secção 7.7)
-- **Propriedade do acesso nunca é OR entre campos.** Resolver sempre via `Entitlement.ownerIdentityId`.
-
-6) Eventos VIP (login obrigatório)
-- Para eventos que exijam login: `guestCheckoutAllowed=false` e `mode=INVITE_ONLY` (sem exceções).
-- App mobile é sempre login obrigatório (independente de `guestCheckoutAllowed`).
-
-7) Guest Ticket Link (acesso sem conta) — FECHADO
-- Após compra guest, emitir `GuestTicketAccessToken` (guardar **apenas** `tokenHash`).
-- Email de compra deve incluir link `/guest/tickets/[token]`.
-- Expiração: `expiresAt = fim da janela de check‑in` (default: abre `startsAt - 6h`, fecha `endsAt + 6h`; se `endsAt` faltar, fecha `startsAt + 24h`).
-- Segurança: token único + hash, sem PII no link; rate limit em rotas de QR.
-- Se falhar emissão do token, usar fallback seguro (`/`).
-
-UX operacional detalhada de convite/checkout guest é **não‑normativa** e vive em `docs/planning_registry_v1.md` (P7.1).
-
-⸻
-
-D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
-- `EventAccessPolicy` é versionada (`policyVersion`) e cada alteração cria **nova versão** (append‑only; sem editar retroativamente).
-- **Lock após a primeira venda/entitlement**: quando existir qualquer `Payment.status=SUCCEEDED` ou qualquer `Entitlement` emitido para o evento:
-  - Campos **bloqueados** (não podem tornar-se mais restritivos nem mudar de semântica): `mode`, `guestCheckoutAllowed`, `inviteTokenAllowed`, `inviteIdentityMatch`, `requiresEntitlementForEntry`.
-  - Permitido apenas:
-    - **Relaxar** regras (ex.: INVITE_ONLY → UNLISTED/PUBLIC) se não quebrar direitos já emitidos.
-    - Ajustar `inviteTokenTTL` apenas para **novos** convites (tokens já emitidos mantêm o seu `expiresAt`).
-    - **Adicionar** métodos de check‑in (nunca remover) para compatibilidade operacional.
-    - Reentrada/undo só podem **relaxar**:
-      – `checkin.allowReentry`: apenas `false → true`
-      – `maxEntries`, `reentryWindowMinutes`, `undoWindowMinutes`: apenas aumentar
-- Snapshot aplicado:
-  - `Entitlement.policyVersionApplied` passa a **obrigatório** para `sourceType=TICKET_ORDER|PADEL_REGISTRATION|BOOKING` quando associado a um evento.
-  - Check-in valida por defeito contra `policyVersionApplied` armazenado no Entitlement. A policy corrente só pode relaxar regras ou adicionar métodos; nunca pode apertar constraints após emissão.
-
-D09) Merchant of Record + fiscalidade (decisão “top”)
-	•	MoR por defeito é a Organização (Connected Account)
-	•	Organização é responsável por IVA / fatura ao consumidor final
-	•	ORYA cobra fee de plataforma e emite fatura B2B da fee à Organização (ou documento equivalente)
-	•	Excepção futura (enterprise): ORYA como MoR só por contrato/config explícita (fora v1.x)
-
-D09.01) Faturação “não obrigatória” (posição v3) — sem risco para a ORYA
-
-Regra:
-	•	ORYA não obriga a emitir fatura dentro da ORYA.
-	•	ORYA obriga SEMPRE a:
-		•	registo de movimentos (ledger + exports)
-		•	exports (CSV/PDF) por período
-		•	configuração explícita: “Como esta organização emite faturação?”
-		•	“0€ tickets” não podem existir “por acidente”.
-		•	Anti-abuso é central em Finanças (rate limits, 1 por user por event, etc.).
-
-Config “Emissão de faturação” (OrganizationSettings):
-	•	Software externo (recomendado) — campo para “nome do software” + notas
-	•	Manual / fora da ORYA — checklist de responsabilidade + confirmação
-	•	Integrações opcionais PT são fora de escopo atual e só entram por decisão explícita no planning.
-
-Objetivo:
-	•	ser tooling de gestão, não “motor de incumprimento”
-	•	proteger ORYA legalmente sem matar adoção
-
-Acesso e Convites (obrigatório v1)
-	•	O evento define EventAccessPolicy.
-	•	Convites são regidos por policy + EventInvite (ou equivalente).
-	•	Checkout e página pública respeitam apenas a policy canónica.
-	•	UI deve reflectir exactamente as regras (sem “promessas”).
-
-	Acesso Público — Deprecação de campos legacy (sem fallback)
-
-Regra:
-	•	EventAccessPolicy é a única fonte de verdade.
-	•	Campos legacy (ex.: inviteOnly / publicAccessMode / publicTicketTypeIds) ficam READ-ONLY (deprecated) e deixam de ser lidos por UI/API.
-	•	Se existir payload antigo, converte-se para EventAccessPolicy na escrita (write-path), nunca na leitura (read-path).
-
-Migração:
-	1) Backfill único: para cada Event, gerar EventAccessPolicy canónica.
-	2) Rollout controlado:
-		•	Passo 1: ler ambos, comparar e alertar divergências sem alterar UX.
-		•	Passo 2: UI/API lê apenas policy canónica; legacy apenas para export/debug.
-		•	Passo 3: remover fallback e remover campos legacy do schema.
-
-Guardrail:
-	•	Architecture test falha se algum módulo importar/ler os campos legacy.
-
-D09.02) UX Operacional Global (B2B)
-	•	Blueprint de UX global (Unified Search, Context Drawer, Command Palette, Ops mode e padrões visuais) é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.2).
-
-D09.03) Loja — bloco canónico FECHADO (3 pilares)
-- Pilar 1 — Disponibilidade resolvida (SSOT único):
-  - UI pública e checkout usam apenas `resolvedStoreState`.
-  - Enum canónico: `DISABLED | HIDDEN | LOCKED | CHECKOUT_DISABLED | ACTIVE`.
-  - Precedência obrigatória: `DISABLED > HIDDEN > LOCKED > CHECKOUT_DISABLED > ACTIVE`.
-  - Guardrail: só `lib/storeAccess.ts` pode resolver estado; duplicação de lógica é proibida.
-- Pilar 2 — Ownership org-only:
-  - apenas ORGANIZAÇÕES podem ser owner de Store/Produtos/Checkout;
-  - constraints canónicas: `ownerOrganizationId NOT NULL` e `ownerUserId NULL`;
-  - qualquer hipótese de user-store é fora de escopo desta versão normativa.
-- Pilar 3 — Contratos unificados de catálogo/envio/digital:
-  - visibilidade canónica de produto/bundle: `visibility = PUBLIC | HIDDEN | ARCHIVED`;
-  - cálculo de shipping usa exclusivamente `StoreShippingMethod.mode`;
-  - `Store.shippingMode` global é legado/deprecado e não decide checkout;
-  - digital goods ignoram shipping e usam acesso por entitlement + URL assinada expirada.
-
-D10) Jobs/Queues + Outbox (motor enterprise sem overkill) — definição final
-
-> **FECHADO:** Tudo o que é assíncrono, re‑tentável, ou depende de webhooks externos passa por Jobs/Queues.  
-> A entrega de eventos internos é garantida por Outbox + idempotência (evita “eventos perdidos”).
-
-D10.01 Jobs/Queues (obrigatório)
-- Sistema de jobs com:
-  - queue, retries, backoff, e DLQ
-  - prioridades (ex.: pagamentos/entitlements > notificações)
-  - dedupe por `idempotencyKey`
-- Tudo assíncrono passa por jobs:
-  - notificações, exports, ingest CRM, sync Stripe, indexação/search
-  - replays do EventLog, reminders (ex.: split payment T‑48/36/24), reconciliations
-- Estado efémero com TTL (holds, locks, rate‑limits) vive em Redis; DB guarda apenas estado final/auditável.
-
-D10.02 Outbox (obrigatório)
-- Padrão:
-  - Dentro da mesma transação DB que altera estado, escrever `OutboxEvent` (append‑only).
-  - Worker lê Outbox e publica para:
-    - Job queue (SQS) / consumidores internos
-    - EventBus (quando existir)
-- Campos mínimos:
-  - `eventId` (UUID), `eventType`, `payload`, `createdAt`, `publishedAt`, `attempts`, `nextAttemptAt`
-  - `causationId` / `correlationId`
-- Garantias:
-  - pelo menos uma vez (at‑least‑once) + consumidores idempotentes
-  - sem “eventos perdidos” mesmo com crash entre write e publish
-
-D10.03 EventBus na AWS — introdução faseada (sem overkill)
-Fase 1:
-- EventLog + Outbox + consumers no worker + SQS para jobs críticos
-- simplicidade e custo baixo
-- **Higienização:** remover legacy (tabelas/colunas/flags antigas), sem fallback; só fica o modelo final do SSOT.
-
-Fase 2/3 (fan‑out real / múltiplos serviços):
-- Introduzir EventBridge para routing serverless
-- Regras/targets por tipo de evento
-- Mantém EventLog como trilho e base de auditoria
-
-⸻
-
-D11) Moradas — Address Service (SSOT) + Apple Maps como provider único
-
-> **FECHADO (SSOT):** Todos os módulos consomem e escrevem moradas **apenas** via Address Service. Nunca há “moradas por módulo”.
-
-Regra
-- Todos os módulos (Eventos / Reservas / Loja / Serviços / Padel) consomem e escrevem moradas APENAS via Address Service (SSOT).
-- O SSOT guarda SEMPRE:
-  - `addressId`
-  - `formattedAddress` (para UI)
-  - `canonical` (estruturado: `countryCode` ISO‑3166‑1, region, locality, postalCode, street, number, etc.)
-  - `geo` (lat, lng)
-  - `sourceProvider` (ex.: `APPLE_MAPS` / `MANUAL`)
-  - `sourceProviderPlaceId` (quando existir)
-  - `confidenceScore` + `validationStatus` (`RAW | NORMALIZED | VERIFIED`)
-- Nunca há “moradas locais” por módulo. Só referências a `addressId`.
-
-Provider (decisão FECHADO)
-- **Provider único:** Apple Maps (autocomplete + geocode/reverse) via server token.
-- Regra: o client **não** usa providers como fonte de verdade; tudo passa pelo Address Service (protege keys, rate limits e consistência).
-- Exceção permitida: reverse geocode **no device** apenas como hint de UX (não é SSOT). A normalização e persistência continuam no backend.
-
-Proteções (obrigatório)
-- Rate limiting por IP/user/org + quotas por módulo (para não estourar limites Apple).
-- Cache em 2 níveis:
-  - Redis (TTL curto) por query (autocomplete) e por placeId/geo (geocode)
-  - cache persistente por `addressId` (TTL longo) e dedupe por canonical+geo
-- Circuit breaker do provider Apple:
-  - se Apple falhar acima de `errorRateThreshold` (ex.: 20% em 2 min) → entrar em `cooldownMinutes` (ex.: 10)
-  - durante cooldown, re-test Apple em background (probe) e só volta quando estabilizar
-- Quotas “hard” por organização e por módulo:
-  - ao exceder quota → degrade gracioso (só `resolvePlace` por placeId já em cache; sem autocomplete novo)
-  - emitir `ops.alert` com orgId + módulo + métrica de consumo
-
-Detalhe de implementação/execução do Address Service é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.3).
-
-⸻
+#### G08.002 (origem: D12)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2976`.
 
 D12) Split Payment Padel — regra default (48/24) + resolução determinística (FECHADO)
 
@@ -2983,46 +2869,17 @@ Clarificações finais (FECHADO):
 	•	Precedência terminal: refund confirmado domina estado final (`REFUNDED`); expiração sem refund mantém `EXPIRED`.
 	•	Troca de parceiro após pagamento parcial exige fluxo idempotente com reversões/refund conforme policy e novo pedido ao novo parceiro.
 
+
+#### G08.003 (origem: D12.05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3038`.
+
 D12.05) Ops — Prisma env auto-load (FECHADO)
 	•	Prisma CLI deve ler variáveis automaticamente do `.env` (root), sem `set -a`, `source` ou inline envs.
 	•	Nota operacional: DATABASE_URL via pooler (6543) + DIRECT_URL direto (5432) e ambos com `sslmode=require`.
 
-D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
-	•	sem wallet monetária nesta fase
-	•	pontos por organização (e opcional por sub-organização)
-	•	taxa semi-normalizada: 100 pontos ≈ 1€ de “valor percebido” (config global)
-	•	guardrails globais (caps e ranges) para evitar discrepâncias abusivas
-	•	Implementação (atual):
-		–	state change → outbox → worker idempotente (events: LOYALTY_EARNED / LOYALTY_SPENT)
-		–	payload mínimo: { ledgerId }
-		–	idempotencyKey: eventId (único por ledgerId+eventType)
-		–	guardrails globais: pontos/regra 1–5000; max/dia 20000; max/user 200000; custo reward 100–500000
 
-D14) Multi-Organizações (empresa mãe → filiais)
-		•	OrganizationGroup (mãe) agrega Organizations (filiais)
-		•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
-		•	A mãe atua como control plane administrativo do grupo para regras globais de agenda.
-		•	A mãe pode aplicar hard blocks globais; filial pode solicitar remoção, mas aprovação final é sempre da mãe (auditável).
-
-D15) Macro + Micro Analytics (obrigatório)
-	•	dashboards financeiros e operacionais com drill-down por dimensões
-	•	sempre derivados do Ledger + dimensões (sem duplicar estado “financeiro” fora de Finanças)
-
-D16) Ops Feed (Activity Feed) é first-class
-	•	eventos operacionais são publicados no EventBus e gravados no EventLog
-	•	um consumer gera Activity Feed + posts automáticos no canal “Ops” do chat interno
-
-⸻
-
-D17) Integrações Apple — guardrails normativos (FECHADO)
-	•	Sign in with Apple é método suportado e obrigatório em iOS quando existirem logins de terceiros.
-	•	Push iOS usa APNs com token-based auth.
-	•	Universal links e share sheet iOS são suportados para superfícies públicas relevantes.
-	•	Apple Wallet/PassKit em v1.x mantém validação **online** por `EntitlementQrToken` (`tokenHash`), com updates/revogação por jobs idempotentes.
-	•	Offline signed QR permanece fora de v1.x e só pode entrar com payload assinado/versionado, rotação de chaves e revocation list sincronizada.
-	•	Address provider canónico continua em D11 (Apple Maps via Address Service).
-	•	Certificados/keys Apple vivem em AWS Secrets Manager com rotação e mínimo privilégio.
-	•	Detalhe de roadmap/fases Apple fica em `docs/planning_registry_v1.md` (P7.4).
+#### G08.004 (origem: D18)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3079`.
 
 D18) Padel Tournament Core Unification (FECHADO)
 
@@ -3030,9 +2887,17 @@ Escopo v1.x (fechado):
 	•	Neste momento, a plataforma opera torneios apenas de Padel.
 	•	As regras abaixo são normativas e de aplicação obrigatória.
 
+
+#### G08.005 (origem: D18.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3085`.
+
 D18.01) Verdade única de jogo Padel (FECHADO)
 	•	Para eventos Padel, a verdade operacional de jogo é `EventMatchSlot`.
 	•	`TournamentMatch` não é write-model de operação de jogo Padel em v1.x.
+
+
+#### G08.006 (origem: D18.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3089`.
 
 D18.02) Agenda sem conflitos entre módulos (FECHADO)
 	•	Reservas, aulas, jogos e bloqueios partilham o mesmo motor de conflito.
@@ -3041,29 +2906,54 @@ D18.02) Agenda sem conflitos entre módulos (FECHADO)
 	•	Se qualquer claim falhar (conflito/validação), a operação deve fazer rollback total (sem estado parcial).
 	•	Write-path concorrente para o mesmo recurso/janela deve aplicar lock técnico obrigatório.
 
+
+#### G08.007 (origem: D18.03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3096`.
+
 D18.03) Agendamento por `tournamentMatch` em Padel (FECHADO)
 	•	Em `templateType=PADEL`, alterações de horário/campo por write direto em `TournamentMatch` são proibidas.
 	•	Todo o agendamento de jogo Padel deve passar pelo fluxo canónico de agenda.
 	•	Implementação fora desta regra deve falhar fechado.
 
+
+#### G08.008 (origem: D18.04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3101`.
+
 D18.04) C01 com enforcement obrigatório (FECHADO)
 	•	A regra "Padel nunca escreve no calendário diretamente" é obrigatória no write-path.
 	•	Se existir caminho paralelo sem validação de conflito, é bug arquitetural.
 
+
+#### G08.009 (origem: D18.05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3105`.
+
 D18.05) sourceType e AgendaSourceType unificados (FECHADO)
-		•	Separação Finance/Agenda mantém-se obrigatória.
-		•	`AgendaSourceType` oficial para ocupação operacional: `MATCH`, `BOOKING`, `CLASS_SESSION`, `SOFT_BLOCK`, `HARD_BLOCK`.
-		•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
-		•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
+			•	Separação Finance/Agenda mantém-se obrigatória.
+			•	`AgendaSourceType` oficial para ocupação operacional (v1 Reservas): `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK`.
+			•	`CLASS_SESSION` fica reservado para evolução futura, fora do write-path v1 de Reservas.
+			•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
+			•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
+
+
+#### G08.010 (origem: D18.06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3112`.
 
 D18.06) Verdade transacional de inscrição Padel (FECHADO)
 	•	`PadelRegistration` é a única verdade transacional de inscrição Padel.
 	•	Estados canónicos de inscrição devem ser resolvidos a partir desta entidade.
 
+
+#### G08.011 (origem: D18.07)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3116`.
+
 D18.07) `TournamentEntry` em Padel é derivado (FECHADO)
 	•	Para Padel, `TournamentEntry` é read-model/projeção.
 	•	`TournamentEntry` não pode ser fonte primária de estado transacional.
 	•	Em superfícies Padel (ex.: live/acesso), elegibilidade de participante deve usar `PadelRegistration` + entitlement, não `TournamentEntry`.
+
+
+#### G08.012 (origem: D18.08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3121`.
 
 D18.08) Perfil de jogador canónico (FECHADO)
 	•	`PadelPlayerProfile` é a fonte canónica única de perfil operacional para Padel (jogo, elegibilidade, pairing, agenda e live).
@@ -3072,6 +2962,10 @@ D18.08) Perfil de jogador canónico (FECHADO)
 	•	Leitura em superfícies Padel deve usar `PadelPlayerProfile` como primário; fallback para `Profile/users` só é permitido quando o campo canónico estiver vazio.
 	•	Escrita em fluxos Padel deve atualizar primeiro `PadelPlayerProfile`; sincronizações para CRM/outros módulos devem ser assíncronas e idempotentes.
 	•	Em conflito entre fontes, prevalece sempre `PadelPlayerProfile`.
+
+
+#### G08.013 (origem: D18.09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3129`.
 
 D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Autorização canónica (quem pode executar ação) é definida por RBAC organizacional (`OrganizationMemberRole` + `RolePack` + permissões de módulo/capability).
@@ -3085,10 +2979,18 @@ D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Quando incidente/resolução é confirmado por `REFEREE`, a plataforma deve notificar automaticamente perfis `DIRETOR_PROVA` do torneio (trilho auditável).
 	•	Em rondas críticas KO (meias/final), confirmação operacional exige direção (`DIRETOR_PROVA` ou `Owner/Admin`).
 
+
+#### G08.014 (origem: D18.10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3141`.
+
 D18.10) Interclub por equipas (FECHADO)
 	•	Quando `isInterclub=true`, geração e operação de jogos devem ser por equipas.
 	•	Motor baseado em pairing não é válido como motor principal em interclub.
 	•	Se o motor por equipas não estiver disponível, geração automática interclub deve ser bloqueada.
+
+
+#### G08.015 (origem: D18.11)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3146`.
 
 D18.11) Catálogo de formatos unificado (FECHADO)
 			•	Formatos de torneio devem seguir um catálogo canónico único, versionado.
@@ -3106,6 +3008,10 @@ D18.11) Catálogo de formatos unificado (FECHADO)
 			•	Quando torneio entra em `LOCKED`, formato e regras aplicadas ficam congelados até ao fim da operação.
 			•	Enquanto um formato oficial não estiver operacional numa superfície específica, o sistema deve falhar fechado com erro explícito (sem fallback silencioso para outro formato).
 
+
+#### G08.016 (origem: D18.12)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3162`.
+
 D18.12) Snapshot de regras por torneio/jogo (FECHADO)
 	•	Tie-break, pontuação e regras de resultado devem ter versão aplicada e auditável.
 	•	Alteração de regra não pode produzir ambiguidade histórica em jogos já operados.
@@ -3116,6 +3022,10 @@ D18.12) Snapshot de regras por torneio/jogo (FECHADO)
 	•	Nos writes de resultado/disputa de match, o `score` deve transportar `ruleSnapshot` com `ruleSetId` e `ruleSetVersionId`.
 	•	Resolução de disputa exige `resolutionStatus` explícito (`CONFIRMED`, `CORRECTED`, `VOIDED`) e `confirmationSource`.
 
+
+#### G08.021 (origem: D18.17)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3172`.
+
 D18.17) Gate de direção operacional na publicação (FECHADO)
 	•	Um torneio Padel não pode transitar para `PUBLISHED` sem pelo menos 1 atribuição operacional `DIRETOR_PROVA` no torneio.
 	•	O create Padel deve auto-atribuir o criador como `DIRETOR_PROVA` (idempotente), garantindo operação sem vazio de governança.
@@ -3123,24 +3033,44 @@ D18.17) Gate de direção operacional na publicação (FECHADO)
 	•	Override de parceria exige `reasonCode` obrigatório, trilho auditável e compensação determinística.
 	•	Sem slot alternativo de compensação, o caso deve entrar em `PENDING_COMPENSATION` com alerta operacional prioritário.
 
+
+#### G08.022 (origem: D18.18)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3179`.
+
 D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
 	•	O motor oficial de ranking é `Glicko-2` adaptado, com contrato matemático explícito e versionado.
 	•	A conversão `rating -> nível` (escala visual) é logarítmica e parametrizada no `RankingPolicyContract`.
 	•	Coeficientes de `carry` e `underdog` são parâmetros de contrato (não heurística ad-hoc).
 	•	Qualquer alteração de fórmula/parâmetros exige nova versão de contrato (`v2+`) sem mutação retroativa de histórico.
 
+
+#### G08.017 (origem: D18.13)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3185`.
+
 D18.13) Live unificado (FECHADO)
 	•	Superfícies live (interna e pública) devem ler do mesmo modelo canónico de estado.
 	•	Ramificações de modelo que geram resultados divergentes não são aceitáveis.
 	•	Para Padel, o estado live de jogo vem de `EventMatchSlot` e o estado de participação vem de entitlement/`PadelRegistration`.
 
+
+#### G08.018 (origem: D18.14)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3190`.
+
 D18.14) Pagamentos no gateway canónico (FECHADO)
 	•	Criação financeira deve convergir no domínio canónico de Finanças.
 	•	Pré-validações por módulo são permitidas; criação transacional financeira paralela não é norma.
 
+
+#### G08.019 (origem: D18.15)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3194`.
+
 D18.15) Check-in/Acesso mantém lock e versionamento (FECHADO)
 	•	Padrão de lock após venda/entitlement mantém-se obrigatório.
 	•	Qualquer evolução em agenda/torneios deve preservar guardrails equivalentes de imutabilidade temporal.
+
+
+#### G08.020 (origem: D18.16)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3198`.
 
 D18.16) Roadmap obrigatório em 3 ondas com gate técnico em dev (FECHADO)
 	•	Onda 1 — Higienização: remover bypasses e dupla verdade operacional.
@@ -3150,6 +3080,7 @@ D18.16) Roadmap obrigatório em 3 ondas com gate técnico em dev (FECHADO)
 	•	Regra de passagem de onda (dev): qualquer falha de gate técnico bloqueia avanço de onda.
 	•	Aprovação final em dev exige evidência auditável de execução limpa em ambiente limpo (fresh clone + seed) e suites verdes consecutivas.
 	•	KPIs de produção podem ser acompanhados como observabilidade, mas não são bloqueantes de aprovação em desenvolvimento sem tráfego real.
+	•	Norma de desenvolvimento: em `APP_ENV=dev`, aplicar observabilidade mínima essencial (logs de erro + auditoria de ações críticas), sem obrigatoriedade de alertas operacionais ativos e sem gate por SLO/SLA de produção.
 
 ⸻
 
@@ -3287,7 +3218,8 @@ Regra:
 
 Separação de enums (SSOT D07):
 - `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
-- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `BOOKING`, `CLASS_SESSION`, `SOFT_BLOCK`, `HARD_BLOCK` (agenda/check‑in).
+- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK` (agenda/check‑in).
+- `CLASS_SESSION` permanece reservado para evolução futura (fora do v1 operacional de Reservas).
 - Normalização deve escolher o enum certo por domínio (finance vs agenda).  
 
 7.6 Segurança de Entitlements (mínimo v1–v2)
@@ -3408,6 +3340,9 @@ Regra de canonicidade (FECHADO):
 - API hub/sistema: **`/api/org-hub/*`** e **`/api/org-system/*`**
 - Alias web legado removido: **`/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
 - Namespace API legado: **`/api/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
+- Implementação física canónica:
+  - handlers ativos devem residir em namespace canónico;
+  - re-export de handlers legacy para write-path canónico não é estado final aceitável.
 
 Regra de subnav (FECHADO):
 - Topbar principal resolve apenas **`toolKey -> ToolSubnav`** (1:1).
@@ -3435,6 +3370,77 @@ Matriz canónica final (web):
 Hard-cut de slugs legacy em `/org/:orgId/*`:
 - Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `crm/clientes`, `manage`, `promote`, `tournaments`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
 - Sem redirects internos para slugs legacy (política single-route-only).
+
+10.1 Multi-Organizações & Group Governance (FECHADO v1)
+- Fonte mandatória de produto para este domínio: `docs/organizacoes_multiorg.md`.
+- Modelo canónico:
+  - `Group` (mãe) é superfície de agregação read-only, com exceção de governança de membership.
+  - `Group` tem owner explícito (`OrganizationGroup.ownerUserId`) e único.
+  - Invariante: owner do `Group` é owner efetivo de todas as orgs do `Group` após qualquer commit.
+- Operações canónicas:
+  - criação final de org: `POST /api/org-hub/organizations` (commit atómico);
+  - entrada de org em group: `/api/org-hub/groups/join-requests/*`;
+  - saída de org de group: `/api/org-hub/groups/exit-requests/*`;
+  - transferência de owner: apenas ao nível Group em `/api/org-hub/groups/:groupId/owner/transfer/*`.
+- Regras fechadas de saída com troca de owner:
+  - confirmação forte por código+email de 2 partes: owner antigo + novo owner;
+  - owner do group aprova a operação ao iniciar a saída (sem etapa forte adicional).
+- Onboarding/official email:
+  - no commit de criação, `officialEmail` nasce com o email verificado do user criador;
+  - `officialEmailVerifiedAt` nasce preenchido;
+  - troca posterior de official email mantém fluxo de confirmação dedicado.
+- Deprecações/hard-cut deste escopo:
+  - `/api/org-hub/become` -> `410`;
+  - owner transfer por organização (`/organizations/owner/*`) -> `410` com endpoint canónico de Group.
+- D-MO-10 (chave global de recurso partilhado cross-org):
+  - `resourceKey` canónica obrigatória no formato `resourceType:authorityOrgId:resourceId`.
+  - claims, locks e arbitragem de conflitos usam `resourceKey` como fonte única (não `organizationId` local).
+  - integridade de write-path: não é permitido commit de claim sem `resourceKey` e `authorityOrgId`.
+- D-MO-11 (parceria híbrida):
+  - base transversal obrigatória em `PadelPartnershipAgreement`.
+  - extensões modulares (windows, policy, grants, overrides, compensation) são válidas apenas se ligadas por `agreementId`.
+  - fail-closed no write-path: extensão sem acordo-base válido é bloqueada.
+- Mapa normativo D-MO (propagação 1:1):
+  - D-MO-01: Group como entidade canónica de agregação.
+  - D-MO-02: criação canónica em `POST /api/org-hub/organizations`.
+  - D-MO-03: default single-org em 1 group; multi-org quando >= 2 orgs.
+  - D-MO-04: entrada no group com duplo código + email bilateral.
+  - D-MO-05: saída com aprovação do owner do group.
+  - D-MO-06: contrato de org-context por superfície.
+  - D-MO-07: hard-cut legacy total.
+  - D-MO-08: hard-cut físico global e imediato.
+  - D-MO-09: group read-only de domínio, com exceção de governança de membership.
+  - D-MO-10: chave global de recurso partilhado cross-org.
+  - D-MO-11: parcerias híbridas (base + extensões).
+  - D-MO-12: onboarding com criação atómica no clique final.
+  - D-MO-13: RBAC final group/organization.
+  - D-MO-14: lista final de ações exclusivas de owner.
+  - D-MO-15: política final de códigos (TTL/tentativas/lockout/anti-replay).
+  - D-MO-16: política final de confirmação por email (TTL/reenvio/expiração).
+  - D-MO-17: support/recovery por ticket na consola admin.
+  - D-MO-18: cutover global único com rollback por release.
+  - D-MO-19: runbook e observabilidade canónica sem legacy.
+  - D-MO-20: saída de org com manter/trocar owner e dupla confirmação na troca.
+
+10.2 Support v1 (FECHADO)
+- Abertura de ticket apenas por formulário público: `POST /api/support/tickets`.
+- Campos mandatórios: email, categoria, assunto, descrição.
+- Assunto persistido no formato canónico: `[TICKET-<numero>] <assunto_user>`.
+- Estados permitidos v1: `OPEN`, `IN_PROGRESS`, `CLOSED`.
+- Operação administrativa:
+  - lista: `GET /api/admin/support/tickets/list`
+  - detalhe: `GET /api/admin/support/tickets/:id`
+  - estado: `POST /api/admin/support/tickets/:id/status`
+  - eventos/notas: `POST /api/admin/support/tickets/:id/events`
+  - UI: `/admin/suporte` e `/admin/suporte/:id`
+- Email direto para `admin@orya.pt` não cria ticket automaticamente.
+
+10.3 Nota de Higienização (global)
+- O hard-cut runtime global de legacy mantém-se no edge (`410 LEGACY_ROUTE_REMOVED`).
+- O hard-cut físico é global e imediato para namespaces legacy org:
+  - remover `app/api/organizacao/**`;
+  - remover `app/organizacao/**`;
+  - manter apenas superfícies canónicas (`/api/org*`, `/api/org-hub/*`, `/api/org-system/*`, `/org/*`, `/org-hub/*`).
 
 ⸻
 
@@ -3648,7 +3654,7 @@ Classificação canónica:
 - `app/api/cobrancas/[token]/checkout/route.ts`
 - `app/api/servicos/[id]/checkout/route.ts`
 - `app/api/servicos/[id]/creditos/checkout/route.ts`
-- `app/api/organizacao/reservas/[id]/checkout/route.ts`
+- `app/api/org/[orgId]/reservas/[id]/checkout/route.ts`
 - `app/api/padel/pairings/[id]/checkout/route.ts`
 - `app/api/public/store/checkout/route.ts`
 - `app/api/admin/payments/refund/route.ts`
@@ -3656,15 +3662,15 @@ Classificação canónica:
 - `app/api/admin/payments/reprocess/route.ts`
 - `app/api/admin/refunds/list/route.ts`
 - `app/api/admin/refunds/retry/route.ts`
-- `app/api/organizacao/refunds/list/route.ts`
-- `app/api/organizacao/events/[id]/refund/route.ts`
+- `app/api/org/[orgId]/refunds/list/route.ts`
+- `app/api/org/[orgId]/events/[id]/refund/route.ts`
 - `app/api/padel/matches/[id]/dispute/route.ts`
-- `app/api/organizacao/payouts/status/route.ts`
-- `app/api/organizacao/payouts/list/route.ts`
-- `app/api/organizacao/payouts/summary/route.ts`
-- `app/api/organizacao/payouts/settings/route.ts`
-- `app/api/organizacao/payouts/connect/route.ts`
-- `app/api/organizacao/payouts/webhook/route.ts`
+- `app/api/org/[orgId]/payouts/status/route.ts`
+- `app/api/org/[orgId]/payouts/list/route.ts`
+- `app/api/org/[orgId]/payouts/summary/route.ts`
+- `app/api/org/[orgId]/payouts/settings/route.ts`
+- `app/api/org/[orgId]/payouts/connect/route.ts`
+- `app/api/org-system/payouts/webhook/route.ts`
 - `app/api/internal/reconcile/route.ts`
 - `app/api/internal/outbox/dlq/route.ts`
 - `app/api/internal/outbox/replay/route.ts`
@@ -3684,9 +3690,758 @@ Classificação canónica:
 This section defines the minimum observability and alerting standards
 required for production operation of the ORYA platform.
 
+Scope note: este bloco aplica-se a pre-prod/prod. Em `APP_ENV=dev`, vigora a norma mínima de observabilidade definida em D18.16.
+
 Dashboards without actionable thresholds are insufficient.
 
 ---
+
+
+## G09) CRM, Notificacoes e Suporte
+
+### Escopo estrutural
+- 10.2 Support v1
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G09.001 (origem: C04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1145`.
+
+C04) CRM ↔ Todos (timeline)
+
+CRM recebe eventos a partir do EventLog (não ponto-a-ponto).
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C04  
+**Contract Name:** CRM ↔ Todos (timeline)  
+**Current Version:** v3.0.0  
+**Owner:** Domain: CRM  
+**Primary Consumers:** EventLog consumers, ORYA-WebApp, internal workers
+
+---
+
+#### Purpose
+Define a ingestão de eventos para timeline e segmentação CRM.
+
+---
+
+#### Idempotency
+- **Idempotency Key:** eventId
+- **Scope:** global
+- **Guarantee:** repeated requests with the same key MUST NOT produce
+  duplicate side effects.
+
+If idempotency cannot be guaranteed, the contract is considered invalid.
+
+---
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evtlog_123",
+  "eventType": "BOOKING_CONFIRMED",
+  "orgId": "org_123",
+  "identityId": "id_456",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Output / Response (Example)
+```json
+{
+  "status": "INGESTED",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Error Cases
+All errors follow the global error envelope.
+Example:
+```json
+{
+  "errorCode": "EVENTLOG_NOT_FOUND",
+  "message": "No event found for the given eventId",
+  "retryable": true,
+  "correlationId": "corr_abc"
+}
+```
+
+---
+
+#### Ordering & Duplication
+This contract MUST tolerate:
+- duplicate delivery
+- out-of-order delivery
+
+If ordering is required, the following key is authoritative:
+NONE
+
+---
+
+#### Side Effects
+This contract MAY trigger:
+☐ ledger entries
+☐ entitlement issuance
+☐ emails / notifications
+☐ downstream async jobs
+
+All side effects MUST be idempotent and observable.
+
+---
+
+#### Observability
+This contract MUST emit:
+- success/failure counters
+- latency metrics (p50, p95)
+- structured logs with correlationId and orgId
+
+---
+
+#### Compatibility Rules
+- Fields may only be added as OPTIONAL in minor versions.
+- Fields may only be removed or redefined in major versions.
+- Consumers MUST tolerate unknown fields.
+
+---
+
+#### Failure Mode
+On uncertainty or partial failure:
+- the contract MUST fail closed
+- no irreversible side effects may be committed
+
+---
+
+#### Notes
+Ingestão é idempotente e tolera replays.
+
+#### G09.002 (origem: C05)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1254`.
+
+C05) Notificações ↔ Todos
+
+Triggers por eventos do sistema + templates + opt-in + logs.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C05  
+**Contract Name:** Notificações ↔ Todos  
+**Current Version:** v3.0.0  
+**Owner:** Domain: Notificações  
+**Primary Consumers:** Events, Finance, CRM, Padel, ORYA-WebApp, internal workers
+
+---
+
+#### Purpose
+Define o disparo e entrega de notificações (in-app/push) a partir de eventos do sistema.
+
+---
+
+#### Idempotency
+- **Idempotency Key:** sourceEventId
+- **Scope:** per identity + eventId
+- **Guarantee:** repeated requests with the same key MUST NOT produce
+  duplicate side effects.
+
+If idempotency cannot be guaranteed, the contract is considered invalid.
+
+---
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evtlog_123",
+  "eventType": "payment.succeeded",
+  "orgId": "org_123",
+  "identityId": "id_456",
+  "channel": "PUSH",
+  "templateKey": "PAYMENT_SUCCEEDED",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Output / Response (Example)
+```json
+{
+  "status": "QUEUED",
+  "notificationId": "notif_789",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Error Cases
+All errors follow the global error envelope.
+Example:
+```json
+{
+  "errorCode": "PUSH_TOKEN_NOT_FOUND",
+  "message": "No push token available for identity",
+  "retryable": false,
+  "correlationId": "corr_abc"
+}
+```
+
+---
+
+#### Ordering & Duplication
+This contract MUST tolerate:
+- duplicate delivery
+- out-of-order delivery
+
+If ordering is required, the following key is authoritative:
+NONE
+
+---
+
+#### Side Effects
+This contract MAY trigger:
+☐ ledger entries
+☐ entitlement issuance
+☑ emails / notifications
+☑ downstream async jobs
+
+All side effects MUST be idempotent and observable.
+
+---
+
+#### Observability
+This contract MUST emit:
+- success/failure counters
+- latency metrics (p50, p95)
+- structured logs with correlationId and orgId
+
+---
+
+#### Compatibility Rules
+- Fields may only be added as OPTIONAL in minor versions.
+- Fields may only be removed or redefined in major versions.
+- Consumers MUST tolerate unknown fields.
+
+---
+
+#### Failure Mode
+On uncertainty or partial failure:
+- the contract MUST fail closed
+- no irreversible side effects may be committed
+
+---
+
+#### Notes
+Envio real ocorre apenas via consumer idempotente.
+
+#### G09.003 (origem: C17)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2084`.
+
+C17) CRM Ingest + Dedupe (read‑model) — **FECHADO**
+
+Regras:
+	•	CRM ingere **apenas** a partir do EventLog.
+	•	Idempotência por `eventId`; se existir `externalId`, dedupe por `(orgId, externalId)`.
+	•	Rebuild diário reprodutível; nunca confiar em contadores incrementais sem replay.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C17  
+**Contract Name:** CRM Ingest + Dedupe  
+**Current Version:** v1.0.0  
+**Owner:** Domain: CRM  
+**Primary Consumers:** CRM UI, Analytics, Ops
+
+---
+
+
+#### G09.004 (origem: D06)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2738`.
+
+D06) Notificações como serviço (com logs e opt-in)
+
+Templates, consentimento RGPD, logs de delivery, outbox e preferências.
+
+
+## G10) Loja, Promocoes e Loyalty
+
+### Escopo estrutural
+- Store canonical block
+- Promotions and loyalty boundaries
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G10.001 (origem: C08)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1592`.
+
+C08) Loyalty ↔ CRM/Finanças/Promoções
+	•	pontos gerados por eventos (compra, presença, actividade)
+	•	redemptions obedecem a guardrails globais + política da organização
+	•	pontos não alteram ledger financeiro (não é dinheiro) — mas podem gerar descontos via Promoções
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C08  
+**Contract Name:** Loyalty ↔ CRM/Finanças/Promoções  
+**Current Version:** v3.0.0  
+**Owner:** Domain: Loyalty  
+**Primary Consumers:** CRM, Finance, Promotions, ORYA-WebApp
+
+---
+
+#### Purpose
+Define emissão e resgate de pontos de fidelização a partir de eventos canónicos.
+
+---
+
+#### Idempotency
+- **Idempotency Key:** eventId
+- **Scope:** per identity + eventId
+- **Guarantee:** repeated requests with the same key MUST NOT produce
+  duplicate side effects.
+
+If idempotency cannot be guaranteed, the contract is considered invalid.
+
+---
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evtlog_123",
+  "eventType": "LOYALTY_EARNED",
+  "orgId": "org_123",
+  "identityId": "id_456",
+  "points": 100,
+  "sourceRef": {"sourceType": "BOOKING", "sourceId": "bk_789"},
+  "correlationId": "corr_abc"
+}
+```
+
+#### Output / Response (Example)
+```json
+{
+  "status": "APPLIED",
+  "balance": 1200,
+  "correlationId": "corr_abc"
+}
+```
+
+#### Error Cases
+All errors follow the global error envelope.
+Example:
+```json
+{
+  "errorCode": "LOYALTY_POLICY_VIOLATION",
+  "message": "Points award violates policy",
+  "retryable": false,
+  "correlationId": "corr_abc"
+}
+```
+
+---
+
+#### Ordering & Duplication
+This contract MUST tolerate:
+- duplicate delivery
+- out-of-order delivery
+
+If ordering is required, the following key is authoritative:
+NONE
+
+---
+
+#### Side Effects
+This contract MAY trigger:
+☐ ledger entries
+☐ entitlement issuance
+☐ emails / notifications
+☐ downstream async jobs
+
+All side effects MUST be idempotent and observable.
+
+---
+
+#### Observability
+This contract MUST emit:
+- success/failure counters
+- latency metrics (p50, p95)
+- structured logs with correlationId and orgId
+
+---
+
+#### Compatibility Rules
+- Fields may only be added as OPTIONAL in minor versions.
+- Fields may only be removed or redefined in major versions.
+- Consumers MUST tolerate unknown fields.
+
+---
+
+#### Failure Mode
+On uncertainty or partial failure:
+- the contract MUST fail closed
+- no irreversible side effects may be committed
+
+---
+
+#### Notes
+Pontos não alteram ledger financeiro.
+
+#### G10.002 (origem: D09.03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2876`.
+
+D09.03) Loja — bloco canónico FECHADO (3 pilares)
+- Pilar 1 — Disponibilidade resolvida (SSOT único):
+  - UI pública e checkout usam apenas `resolvedStoreState`.
+  - Enum canónico: `DISABLED | HIDDEN | LOCKED | CHECKOUT_DISABLED | ACTIVE`.
+  - Precedência obrigatória: `DISABLED > HIDDEN > LOCKED > CHECKOUT_DISABLED > ACTIVE`.
+  - Guardrail: só `lib/storeAccess.ts` pode resolver estado; duplicação de lógica é proibida.
+- Pilar 2 — Ownership org-only:
+  - apenas ORGANIZAÇÕES podem ser owner de Store/Produtos/Checkout;
+  - constraints canónicas: `ownerOrganizationId NOT NULL` e `ownerUserId NULL`;
+  - qualquer hipótese de user-store é fora de escopo desta versão normativa.
+- Pilar 3 — Contratos unificados de catálogo/envio/digital:
+  - visibilidade canónica de produto/bundle: `visibility = PUBLIC | HIDDEN | ARCHIVED`;
+  - cálculo de shipping usa exclusivamente `StoreShippingMethod.mode`;
+  - `Store.shippingMode` global é legado/deprecado e não decide checkout;
+  - digital goods ignoram shipping e usam acesso por entitlement + URL assinada expirada.
+
+
+#### G10.003 (origem: D13)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3042`.
+
+D13) Loyalty Points (pontos) — semi-normalizado + guardrails globais
+	•	sem wallet monetária nesta fase
+	•	pontos por organização (e opcional por sub-organização)
+	•	taxa semi-normalizada: 100 pontos ≈ 1€ de “valor percebido” (config global)
+	•	guardrails globais (caps e ranges) para evitar discrepâncias abusivas
+	•	Implementação (atual):
+		–	state change → outbox → worker idempotente (events: LOYALTY_EARNED / LOYALTY_SPENT)
+		–	payload mínimo: { ledgerId }
+		–	idempotencyKey: eventId (único por ledgerId+eventType)
+		–	guardrails globais: pontos/regra 1–5000; max/dia 20000; max/user 200000; custo reward 100–500000
+
+
+## G11) Discovery, Search, Analytics e Ops Feed
+
+### Escopo estrutural
+- 13 Pesquisa & Discovery
+- 14.1 Admin analytics
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G11.001 (origem: C09)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1705`.
+
+C09) Activity Feed ↔ EventLog/Chat
+	•	consumer do EventLog transforma eventos seleccionados em:
+	•	ActivityItem (UI)
+	•	mensagem automática no canal “Ops” (Chat interno)
+
+⸻
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C09  
+**Contract Name:** Activity Feed ↔ EventLog/Chat  
+**Current Version:** v3.0.0  
+**Owner:** Domain: Ops Feed / Chat  
+**Primary Consumers:** Ops UI, Chat interno, ORYA-WebApp
+
+---
+
+#### Purpose
+Define a materialização do Activity Feed a partir do EventLog e a publicação no canal Ops.
+
+---
+
+#### Idempotency
+- **Idempotency Key:** eventId
+- **Scope:** global
+- **Guarantee:** repeated requests with the same key MUST NOT produce
+  duplicate side effects.
+
+If idempotency cannot be guaranteed, the contract is considered invalid.
+
+---
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evtlog_123",
+  "eventType": "payment.succeeded",
+  "orgId": "org_123",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Output / Response (Example)
+```json
+{
+  "status": "POSTED",
+  "activityItemId": "act_456",
+  "correlationId": "corr_abc"
+}
+```
+
+#### Error Cases
+All errors follow the global error envelope.
+Example:
+```json
+{
+  "errorCode": "OPS_CHANNEL_UNAVAILABLE",
+  "message": "Unable to post to Ops channel",
+  "retryable": true,
+  "correlationId": "corr_abc"
+}
+```
+
+---
+
+#### Ordering & Duplication
+This contract MUST tolerate:
+- duplicate delivery
+- out-of-order delivery
+
+If ordering is required, the following key is authoritative:
+createdAt
+
+---
+
+#### Side Effects
+This contract MAY trigger:
+☐ ledger entries
+☐ entitlement issuance
+☐ emails / notifications
+☑ downstream async jobs
+
+All side effects MUST be idempotent and observable.
+
+---
+
+#### Observability
+This contract MUST emit:
+- success/failure counters
+- latency metrics (p50, p95)
+- structured logs with correlationId and orgId
+
+---
+
+#### Compatibility Rules
+- Fields may only be added as OPTIONAL in minor versions.
+- Fields may only be removed or redefined in major versions.
+- Consumers MUST tolerate unknown fields.
+
+---
+
+#### Failure Mode
+On uncertainty or partial failure:
+- the contract MUST fail closed
+- no irreversible side effects may be committed
+
+---
+
+#### Notes
+Consumer dedupe por eventId; replays não duplicam items.
+
+
+#### G11.002 (origem: C16)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2064`.
+
+C16) Search Index (read‑model derivado) — **FECHADO**
+
+Regras:
+	•	Index é read‑model derivado do EventLog (não é owner).
+	•	Jobs idempotentes por `sourceType+sourceId+version`.
+	•	Unpublish/disable → remoção/soft‑delete no index.
+	•	Rebuild completo por job (reprodutível).
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C16  
+**Contract Name:** Search Index (read‑model derivado)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Search/Discovery  
+**Primary Consumers:** Discover UI, Public Search
+
+---
+
+
+#### G11.003 (origem: D15)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3059`.
+
+D15) Macro + Micro Analytics (obrigatório)
+	•	dashboards financeiros e operacionais com drill-down por dimensões
+	•	sempre derivados do Ledger + dimensões (sem duplicar estado “financeiro” fora de Finanças)
+
+
+#### G11.004 (origem: D16)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3063`.
+
+D16) Ops Feed (Activity Feed) é first-class
+	•	eventos operacionais são publicados no EventBus e gravados no EventLog
+	•	um consumer gera Activity Feed + posts automáticos no canal “Ops” do chat interno
+
+⸻
+
+
+## G12) Infra, Jobs, Outbox, Observabilidade e Release Gates
+
+### Escopo estrutural
+- 06 Production Gates
+- 07 Normative Appendices
+- Critical Flow Sequences
+
+### Blocos normativos (conteúdo integral, ordem estável)
+
+#### G12.001 (origem: C11)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1899`.
+
+C11) EventLog + Outbox (schema canónico e versionamento) — **FECHADO**
+
+Regras:
+	•	`eventType` em formato `domain.action` (lowercase, sem espaços).
+	•	`eventVersion` obrigatório (semver).
+	•	Campos mínimos do EventLog:
+		–	`eventId` (UUID), `eventType`, `eventVersion`, `orgId`
+		–	`subjectType`, `subjectId`
+		–	`actorIdentityId?`, `causationId`, `correlationId`
+		–	`payload` (PII minimizado), `createdAt`
+	•	PII: sem email/telefone em claro; usar `identityId`/hash.
+	•	Qualquer mutação com side‑effects escreve **EventLog + Outbox** na mesma transação.
+	•	Outbox é append‑only e garante at‑least‑once; consumers são idempotentes.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C11  
+**Contract Name:** EventLog + Outbox (schema e versionamento)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Ops/Platform  
+**Primary Consumers:** Workers, CRM, Activity Feed, Search, Analytics
+
+#### Purpose
+Garantir trilho auditável, versionado e compatível para todos os eventos internos.
+
+#### Idempotency
+- **Idempotency Key:** eventId  
+- **Scope:** global
+
+#### Input Payload (Example)
+```json
+{
+  "eventId": "evt_abc",
+  "eventType": "payment.succeeded",
+  "eventVersion": "1.0.0",
+  "orgId": "org_123",
+  "subjectType": "PAYMENT",
+  "subjectId": "pay_456",
+  "correlationId": "corr_789"
+}
+```
+
+#### Ordering & Duplication
+At‑least‑once; consumidores idempotentes; ordering não garantido.
+
+#### Side Effects
+☑ downstream async jobs  
+☑ materializações (read‑models)
+
+#### Observability
+EventLog é fonte para métricas e auditoria; payload com PII minimizado.
+
+---
+
+
+#### G12.002 (origem: C18)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2103`.
+
+C18) Media/Uploads (SSOT de ficheiros) — **FECHADO**
+
+Regras:
+	•	Todo upload cria `MediaAsset` com owner, orgId, checksum e metadata.
+	•	Acesso por URLs assinadas com TTL (sem public‑by‑default).
+	•	Apagar asset remove acesso e invalida URLs; logs/audit obrigatórios.
+
+---
+
+### Contract Execution Addendum (NORMATIVE)
+
+**Contract ID:** C18  
+**Contract Name:** Media/Uploads (SSOT de ficheiros)  
+**Current Version:** v1.0.0  
+**Owner:** Domain: Platform/Storage  
+**Primary Consumers:** Events, Store, Org Profile, Mobile/Web
+
+---
+
+
+#### G12.003 (origem: D10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2892`.
+
+D10) Jobs/Queues + Outbox (motor enterprise sem overkill) — definição final
+
+> **FECHADO:** Tudo o que é assíncrono, re‑tentável, ou depende de webhooks externos passa por Jobs/Queues.  
+> A entrega de eventos internos é garantida por Outbox + idempotência (evita “eventos perdidos”).
+
+
+#### G12.004 (origem: D10.01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2897`.
+
+D10.01 Jobs/Queues (obrigatório)
+- Sistema de jobs com:
+  - queue, retries, backoff, e DLQ
+  - prioridades (ex.: pagamentos/entitlements > notificações)
+  - dedupe por `idempotencyKey`
+- Tudo assíncrono passa por jobs:
+  - notificações, exports, ingest CRM, sync Stripe, indexação/search
+  - replays do EventLog, reminders (ex.: split payment T‑48/36/24), reconciliations
+- Estado efémero com TTL (holds, locks, rate‑limits) vive em Redis; DB guarda apenas estado final/auditável.
+
+
+#### G12.005 (origem: D10.02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2907`.
+
+D10.02 Outbox (obrigatório)
+- Padrão:
+  - Dentro da mesma transação DB que altera estado, escrever `OutboxEvent` (append‑only).
+  - Worker lê Outbox e publica para:
+    - Job queue (SQS) / consumidores internos
+    - EventBus (quando existir)
+- Campos mínimos:
+  - `eventId` (UUID), `eventType`, `payload`, `createdAt`, `publishedAt`, `attempts`, `nextAttemptAt`
+  - `causationId` / `correlationId`
+- Garantias:
+  - pelo menos uma vez (at‑least‑once) + consumidores idempotentes
+  - sem “eventos perdidos” mesmo com crash entre write e publish
+
+
+#### G12.006 (origem: D10.03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2920`.
+
+D10.03 EventBus na AWS — introdução faseada (sem overkill)
+Fase 1:
+- EventLog + Outbox + consumers no worker + SQS para jobs críticos
+- simplicidade e custo baixo
+- **Higienização:** remover legacy (tabelas/colunas/flags antigas), sem fallback; só fica o modelo final do SSOT.
+
+Fase 2/3 (fan‑out real / múltiplos serviços):
+- Introduzir EventBridge para routing serverless
+- Regras/targets por tipo de evento
+- Mantém EventLog como trilho e base de auditoria
+
+⸻
+
+
+#### G12.007 (origem: O01)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3801`.
 
 ### O01 — Alert Classification
 Alerts are classified as:
@@ -3694,6 +4449,10 @@ Alerts are classified as:
 - **TICKET:** requires investigation but not immediate action
 
 ---
+
+
+#### G12.008 (origem: O02)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3808`.
 
 ### O02 — Core Domain SLIs & Thresholds
 
@@ -3725,6 +4484,10 @@ Alerts are classified as:
 
 ---
 
+
+#### G12.009 (origem: O03)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3838`.
+
 ### O03 — Logging & Correlation
 All logs MUST include:
 - `correlationId`
@@ -3734,6 +4497,10 @@ All logs MUST include:
 Logs without correlation context are non-compliant.
 
 ---
+
+
+#### G12.010 (origem: O04)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3848`.
 
 ### O04 — Incident Readiness
 For each PAGER alert, the following MUST exist:
@@ -3883,6 +4650,10 @@ Como o DB está em Supabase na Fase 1, a estratégia de backup é:
 
 Apêndice A — Policy Defaults v1 (FECHADO)
 
+
+#### G12.011 (origem: A1)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3996`.
+
 A1) Rate Limits (segurança/anti‑abuso) — FECHADO
 - Login:
   - 10 tentativas / 10 min por IP
@@ -3899,12 +4670,20 @@ A1) Rate Limits (segurança/anti‑abuso) — FECHADO
   - 120 scans/min por deviceId (burst), média 60/min
   - 10 “denied” consecutivos → step‑up (re‑auth do staff) + throttle 5 min
 
+
+#### G12.012 (origem: A2)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4012`.
+
 A2) TTLs e janelas — FECHADO
 - InviteToken TTL default: 7 dias (salvo override em EventAccessPolicy)
 - EntitlementQrToken TTL default: 24h (rotacionável por job) + revogação imediata em disputa/refund
 - Allow‑list “Modo Recinto” TTL: 2h (prefetch) + validade máxima offline: 30 min sem sync
 - Username cooldown (rename): 15 dias (já definido; reafirmar FECHADO)
 - Retenção de “offline_pending_sync” (check‑in): 7 dias
+
+
+#### G12.013 (origem: A3)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4019`.
 
 A3) FREE_CHECKOUT guardrails — FECHADO
 - Default max por Identity e por (eventId + ticketTypeId): 1
@@ -3913,6 +4692,10 @@ A3) FREE_CHECKOUT guardrails — FECHADO
   - ≥3 falhas em 10 min, ou
   - padrão suspeito (múltiplos identities no mesmo device/IP)
 - Regra de precedência: FREE_CHECKOUT deve cumprir cumulativamente A1 + A3 + D04.07.01; em conflito, vence o limite mais restritivo.
+
+
+#### G12.014 (origem: A4)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4027`.
 
 A4) SLIs/SLOs e Alert Thresholds — FECHADO
 - API (p95):
@@ -3927,12 +4710,20 @@ A4) SLIs/SLOs e Alert Thresholds — FECHADO
 - Webhooks Stripe:
   - eventos não reconciliados > 15 min → alerta
 
+
+#### G12.015 (origem: A5)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4040`.
+
 A5) SLA Suporte e Trust & Safety — FECHADO
 - Pagamentos/Check‑in (P0): triagem ≤ 1h, mitigação ≤ 4h
 - Fraude/Chargeback (P1): triagem ≤ 24h, acção ≤ 72h
 - Denúncias conteúdo/comportamento (P2): triagem ≤ 24h, resolução ≤ 7 dias
 - Comunicação incidentes:
   - P0/P1: status page + aviso às orgs afectadas em ≤ 2h
+
+
+#### G12.016 (origem: A6)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4047`.
 
 A6) Retenção Operacional por classe (hot/warm) — FECHADO
 - Esta secção define apenas janelas operacionais de acesso/search/custo.
@@ -3943,6 +4734,10 @@ A6) Retenção Operacional por classe (hot/warm) — FECHADO
 - Read-models e caches financeiros: até 24 meses (arquivo legal segue 19.4.1)
 - PII não essencial em camadas operacionais: apagar/anonimizar após 24 meses de inactividade (salvo obrigação legal)
 
+
+#### G12.017 (origem: A7)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4056`.
+
 A7) Risk Flags (resumo informativo, sem thresholds) — FECHADO
 - Esta secção é apenas resumo operacional de sinais.
 - Thresholds numéricos e ações automáticas vinculativas vivem exclusivamente em 19.2.2.
@@ -3950,6 +4745,10 @@ A7) Risk Flags (resumo informativo, sem thresholds) — FECHADO
   - chargeback rate
   - anomalia de vendas
   - abuso de check‑in/QR
+
+
+#### G12.018 (origem: A8)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4064`.
 
 A8) Environment Baseline (prod + CI) — FECHADO
 Fonte normativa consolidada de envs críticos (origem: especificação legacy migrada):
@@ -3981,6 +4780,10 @@ Guardrails:
 - Paid checkout sem publishable key deve falhar explicitamente com `CONFIG_STRIPE_KEY_MISSING`.
 - Snapshot operacional PROD/LOCAL e runbooks de custo ficam em `docs/planning_registry_v1.md` (não-normativo).
 
+
+#### G12.019 (origem: A9)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4094`.
+
 A9) Cutover Guardrails (Store Big-Bang compatibility) — FECHADO
 Guardrails normativos mínimos para cutovers destrutivos de domínio:
 - Pré-condições obrigatórias:
@@ -3997,6 +4800,10 @@ Guardrails normativos mínimos para cutovers destrutivos de domínio:
   - qualquer guardrail/gate falhado bloqueia reabertura.
 - Rollback:
   - restore integral + redeploy da versão anterior + verificação de consistência pós-restore.
+
+
+#### G12.020 (origem: A10)
+- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:4111`.
 
 A10) Roadmap Infra Supabase -> AWS (decisão de direção) — FECHADO
 - Fase 1:
@@ -4057,3 +4864,153 @@ expected execution order.
 ---
 
 ---
+
+
+## 99) Índice ID de Origem -> ID Canónico
+| ID de Origem | ID Canónico | Grupo |
+| --- | --- | --- |
+| `A1` | `G12.011` | `G12` |
+| `A10` | `G12.020` | `G12` |
+| `A2` | `G12.012` | `G12` |
+| `A3` | `G12.013` | `G12` |
+| `A4` | `G12.014` | `G12` |
+| `A5` | `G12.015` | `G12` |
+| `A6` | `G12.016` | `G12` |
+| `A7` | `G12.017` | `G12` |
+| `A8` | `G12.018` | `G12` |
+| `A9` | `G12.019` | `G12` |
+| `C-G01` | `G01.011` | `G01` |
+| `C-G02` | `G01.012` | `G01` |
+| `C-G03` | `G01.013` | `G01` |
+| `C-G04` | `G01.014` | `G01` |
+| `C-G05` | `G01.015` | `G01` |
+| `C-G06` | `G01.016` | `G01` |
+| `C-G07` | `G01.017` | `G01` |
+| `C-G08` | `G01.018` | `G01` |
+| `C-G09` | `G01.019` | `G01` |
+| `C01` | `G07.001` | `G07` |
+| `C02` | `G05.001` | `G05` |
+| `C02.01` | `G05.002` | `G05` |
+| `C02.02` | `G05.003` | `G05` |
+| `C02.X01` | `G05.004` | `G05` |
+| `C03` | `G06.001` | `G06` |
+| `C04` | `G09.001` | `G09` |
+| `C05` | `G09.002` | `G09` |
+| `C06` | `G08.001` | `G08` |
+| `C07` | `G07.002` | `G07` |
+| `C08` | `G10.001` | `G10` |
+| `C09` | `G11.001` | `G11` |
+| `C10` | `G05.005` | `G05` |
+| `C11` | `G12.001` | `G12` |
+| `C12` | `G03.001` | `G03` |
+| `C13` | `G04.001` | `G04` |
+| `C14` | `G05.006` | `G05` |
+| `C15` | `G05.007` | `G05` |
+| `C16` | `G11.002` | `G11` |
+| `C17` | `G09.003` | `G09` |
+| `C18` | `G12.002` | `G12` |
+| `CAUTH.01` | `G02.010` | `G02` |
+| `CAUTH.02` | `G03.002` | `G03` |
+| `D00` | `G01.020` | `G01` |
+| `D01` | `G06.002` | `G06` |
+| `D01.01` | `G06.003` | `G06` |
+| `D01.02` | `G03.003` | `G03` |
+| `D02` | `G01.021` | `G01` |
+| `D03` | `G07.003` | `G07` |
+| `D03.01` | `G07.004` | `G07` |
+| `D03.02` | `G07.005` | `G07` |
+| `D04` | `G05.008` | `G05` |
+| `D04.00` | `G05.009` | `G05` |
+| `D04.00.01` | `G05.010` | `G05` |
+| `D04.01` | `G05.011` | `G05` |
+| `D04.02` | `G05.012` | `G05` |
+| `D04.03` | `G05.013` | `G05` |
+| `D04.04` | `G05.014` | `G05` |
+| `D04.05` | `G05.015` | `G05` |
+| `D04.06` | `G05.016` | `G05` |
+| `D04.07` | `G05.017` | `G05` |
+| `D04.07.01` | `G05.018` | `G05` |
+| `D04.08` | `G05.019` | `G05` |
+| `D04.09` | `G05.020` | `G05` |
+| `D04.10` | `G05.021` | `G05` |
+| `D05` | `G04.002` | `G04` |
+| `D05.01` | `G04.003` | `G04` |
+| `D05.02` | `G04.004` | `G04` |
+| `D06` | `G09.004` | `G09` |
+| `D07` | `G06.004` | `G06` |
+| `D08` | `G06.005` | `G06` |
+| `D08.01` | `G06.006` | `G06` |
+| `D08.02` | `G06.007` | `G06` |
+| `D08.03` | `G06.008` | `G06` |
+| `D09` | `G05.022` | `G05` |
+| `D09.01` | `G05.023` | `G05` |
+| `D09.02` | `G01.022` | `G01` |
+| `D09.03` | `G10.002` | `G10` |
+| `D10` | `G12.003` | `G12` |
+| `D10.01` | `G12.004` | `G12` |
+| `D10.02` | `G12.005` | `G12` |
+| `D10.03` | `G12.006` | `G12` |
+| `D11` | `G07.006` | `G07` |
+| `D12` | `G08.002` | `G08` |
+| `D12.05` | `G08.003` | `G08` |
+| `D13` | `G10.003` | `G10` |
+| `D14` | `G04.005` | `G04` |
+| `D15` | `G11.003` | `G11` |
+| `D16` | `G11.004` | `G11` |
+| `D17` | `G03.004` | `G03` |
+| `D18` | `G08.004` | `G08` |
+| `D18.01` | `G08.005` | `G08` |
+| `D18.02` | `G08.006` | `G08` |
+| `D18.03` | `G08.007` | `G08` |
+| `D18.04` | `G08.008` | `G08` |
+| `D18.05` | `G08.009` | `G08` |
+| `D18.06` | `G08.010` | `G08` |
+| `D18.07` | `G08.011` | `G08` |
+| `D18.08` | `G08.012` | `G08` |
+| `D18.09` | `G08.013` | `G08` |
+| `D18.10` | `G08.014` | `G08` |
+| `D18.11` | `G08.015` | `G08` |
+| `D18.12` | `G08.016` | `G08` |
+| `D18.13` | `G08.017` | `G08` |
+| `D18.14` | `G08.018` | `G08` |
+| `D18.15` | `G08.019` | `G08` |
+| `D18.16` | `G08.020` | `G08` |
+| `D18.17` | `G08.021` | `G08` |
+| `D18.18` | `G08.022` | `G08` |
+| `DORG.01` | `G04.006` | `G04` |
+| `DORG.03A` | `G04.007` | `G04` |
+| `DORG.04A` | `G04.008` | `G04` |
+| `DORG.05A` | `G04.009` | `G04` |
+| `DORG.06A` | `G04.010` | `G04` |
+| `DORG.07A` | `G04.011` | `G04` |
+| `DORG.08` | `G03.005` | `G03` |
+| `DORG.09` | `G03.006` | `G03` |
+| `I01` | `G01.001` | `G01` |
+| `I02` | `G01.002` | `G01` |
+| `I03` | `G01.003` | `G01` |
+| `I04` | `G01.004` | `G01` |
+| `I05` | `G01.005` | `G01` |
+| `I06` | `G01.006` | `G01` |
+| `I07` | `G01.007` | `G01` |
+| `I08` | `G01.008` | `G01` |
+| `I09` | `G01.009` | `G01` |
+| `I10` | `G01.010` | `G01` |
+| `O01` | `G12.007` | `G12` |
+| `O02` | `G12.008` | `G12` |
+| `O03` | `G12.009` | `G12` |
+| `O04` | `G12.010` | `G12` |
+| `T01` | `G02.001` | `G02` |
+| `T02` | `G02.002` | `G02` |
+| `T03` | `G02.003` | `G02` |
+| `T04` | `G02.004` | `G02` |
+| `T05` | `G02.005` | `G02` |
+| `T06` | `G02.006` | `G02` |
+| `T07` | `G02.007` | `G02` |
+| `T08` | `G02.008` | `G02` |
+| `T09` | `G02.009` | `G02` |
+
+## 100) Integridade Reprodutível
+```bash
+node scripts/rebuild_ssot_registry_by_groups.mjs
+node scripts/verify_ssot_canonical_groups.mjs
+```

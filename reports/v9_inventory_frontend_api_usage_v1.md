@@ -1,6 +1,6 @@
 # V9 Inventory — Frontend API Usage
 
-Total endpoints referenced: 359
+Total endpoints referenced: 361
 
 ## /api/address/autocomplete
 - apps/mobile/features/discover/location.ts
@@ -133,6 +133,18 @@ Total endpoints referenced: 359
 ## /api/admin/refunds/retry
 - app/admin/(protected)/finance/page.tsx
 
+## /api/admin/support/tickets/[param]
+- app/admin/(protected)/suporte/[id]/page.tsx
+
+## /api/admin/support/tickets/[param]/events
+- app/admin/(protected)/suporte/[id]/page.tsx
+
+## /api/admin/support/tickets/[param]/status
+- app/admin/(protected)/suporte/[id]/page.tsx
+
+## /api/admin/support/tickets/list
+- app/admin/(protected)/suporte/page.tsx
+
 ## /api/admin/tickets/export
 - app/admin/components/AdminTopActions.tsx
 
@@ -160,7 +172,7 @@ Total endpoints referenced: 359
 - app/admin/forbidden/ForbiddenClient.tsx
 - app/components/Navbar.tsx
 - app/me/settings/page.tsx
-- app/organizacao/OrganizationTopBar.tsx
+- app/org/_internal/core/OrganizationTopBar.tsx
 
 ## /api/auth/me
 - app/components/autenticação/AuthModal.tsx
@@ -434,74 +446,74 @@ Total endpoints referenced: 359
 - apps/mobile/features/wallet/api.ts
 
 ## /api/messages/blocks
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/conversations
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/conversations/[param]
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/conversations/[param]/leave
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/conversations/[param]/messages
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/conversations/[param]/messages/[param]
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/conversations/[param]/notifications
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/conversations/[param]/read
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/conversations/resolve
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/grants
-- app/organizacao/(dashboard)/chat/ChannelRequestsPanel.tsx
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/ChannelRequestsPanel.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/grants/[param]/accept
-- app/organizacao/(dashboard)/chat/ChannelRequestsPanel.tsx
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/ChannelRequestsPanel.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/grants/[param]/decline
-- app/organizacao/(dashboard)/chat/ChannelRequestsPanel.tsx
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/ChannelRequestsPanel.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 - apps/mobile/features/messages/api.ts
 
 ## /api/messages/messages
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/messages/messages/[param]
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/messages/[param]/pins
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/messages/[param]/reactions
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
 
 ## /api/messages/search
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
 
 ## /api/notifications/mark-click
 - app/components/notifications/NotificationBell.tsx
@@ -517,8 +529,8 @@ Total endpoints referenced: 359
 - apps/mobile/app/settings/index.tsx
 - apps/mobile/features/settings/api.ts
 
-## /api/org-hub/become
-- lib/canonicalOrgUiEndpointRegistry.ts
+## /api/org-hub/groups/[param]/owner/transfer/start
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org-hub/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
@@ -526,56 +538,53 @@ Total endpoints referenced: 359
 
 ## /api/org-hub/organizations
 - app/me/page.tsx
-- app/organizacao/organizations/OrganizationsHubClient.tsx
+- app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
+- lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org-hub/organizations/[param]
-- app/organizacao/(dashboard)/settings/page.tsx
+- app/org/_internal/core/(dashboard)/settings/page.tsx
 
 ## /api/org-hub/organizations/leave
-- app/organizacao/(dashboard)/staff/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org-hub/organizations/members
-- app/organizacao/(dashboard)/chat/ChatInternoV2Client.tsx
-- app/organizacao/(dashboard)/chat/preview/useChatPreviewData.ts
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/reservas/profissionais/page.tsx
-- app/organizacao/(dashboard)/staff/page.tsx
-- app/organizacao/DashboardClient.tsx
-- app/organizacao/promo/PromoCodesClient.tsx
+- app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx
+- app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
+- app/org/_internal/core/promo/PromoCodesClient.tsx
 
 ## /api/org-hub/organizations/members/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/staff/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 - app/social/page.tsx
 - apps/mobile/features/notifications/api.ts
 
 ## /api/org-hub/organizations/members/permissions
-- app/organizacao/(dashboard)/staff/page.tsx
-
-## /api/org-hub/organizations/owner/transfer
-- app/organizacao/(dashboard)/staff/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org-hub/organizations/settings/official-email
-- app/organizacao/(dashboard)/settings/page.tsx
+- app/org/_internal/core/(dashboard)/settings/page.tsx
 
 ## /api/org-hub/organizations/settings/official-email/confirm
-- app/organizacao/(dashboard)/settings/verify/page.tsx
+- app/org/_internal/core/(dashboard)/settings/verify/page.tsx
 
 ## /api/org-hub/organizations/switch
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
-- app/organizacao/OrganizationDashboardShell.tsx
-- app/organizacao/OrganizationTopBar.tsx
-- app/organizacao/organizations/OrganizationsHubClient.tsx
+- app/org/_internal/core/OrganizationDashboardShell.tsx
+- app/org/_internal/core/OrganizationTopBar.tsx
+- app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
 
 ## /api/org/[param]
 - app/components/checkin/CheckinScanner.tsx
 - app/eventos/[slug]/EventLiveClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/DashboardClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/DashboardClient.tsx
 
 ## /api/org/[param]/agenda
 - lib/canonicalOrgUiEndpointRegistry.ts
@@ -584,297 +593,288 @@ Total endpoints referenced: 359
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org/[param]/audit
-- app/organizacao/(dashboard)/staff/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org/[param]/avaliacoes
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/club/finance/overview
-- app/organizacao/(dashboard)/clube/caixa/page.tsx
+- app/org/_internal/core/(dashboard)/clube/caixa/page.tsx
 
 ## /api/org/[param]/consentimentos
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org/[param]/consentimentos/[param]
-- app/organizacao/(dashboard)/crm/clientes/[customerId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
 
 ## /api/org/[param]/crm/campanhas
-- app/organizacao/(dashboard)/crm/campanhas/page.tsx
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
 
 ## /api/org/[param]/crm/campanhas/[param]/[param]
-- app/organizacao/(dashboard)/crm/campanhas/page.tsx
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
 
 ## /api/org/[param]/crm/campanhas/[param]/enviar
-- app/organizacao/(dashboard)/crm/campanhas/page.tsx
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
 
 ## /api/org/[param]/crm/clientes
-- app/organizacao/(dashboard)/crm/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
 
 ## /api/org/[param]/crm/clientes/[param]
-- app/organizacao/(dashboard)/crm/clientes/[customerId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
 
 ## /api/org/[param]/crm/clientes/[param]/notas
-- app/organizacao/(dashboard)/crm/clientes/[customerId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
 
 ## /api/org/[param]/crm/clientes/[param]/tags
-- app/organizacao/(dashboard)/crm/clientes/[customerId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/[customerId]/page.tsx
 
 ## /api/org/[param]/crm/config
-- app/organizacao/(dashboard)/crm/journeys/page.tsx
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
 
 ## /api/org/[param]/crm/journeys
-- app/organizacao/(dashboard)/crm/journeys/page.tsx
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
 
 ## /api/org/[param]/crm/journeys/[param]
-- app/organizacao/(dashboard)/crm/journeys/page.tsx
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
 
 ## /api/org/[param]/crm/journeys/[param]/[param]
-- app/organizacao/(dashboard)/crm/journeys/page.tsx
+- app/org/_internal/core/(dashboard)/crm/journeys/page.tsx
 
 ## /api/org/[param]/crm/relatorios
-- app/organizacao/(dashboard)/crm/relatorios/page.tsx
+- app/org/_internal/core/(dashboard)/crm/relatorios/page.tsx
 
 ## /api/org/[param]/crm/saved-views
-- app/organizacao/(dashboard)/crm/clientes/page.tsx
-- app/organizacao/(dashboard)/crm/segmentos/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
 
 ## /api/org/[param]/crm/saved-views/[param]
-- app/organizacao/(dashboard)/crm/clientes/page.tsx
-- app/organizacao/(dashboard)/crm/segmentos/page.tsx
+- app/org/_internal/core/(dashboard)/crm/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
 
 ## /api/org/[param]/crm/segmentos
-- app/organizacao/(dashboard)/crm/campanhas/page.tsx
-- app/organizacao/(dashboard)/crm/segmentos/page.tsx
+- app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/page.tsx
 
 ## /api/org/[param]/crm/segmentos/[param]
-- app/organizacao/(dashboard)/crm/segmentos/[segmentId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
 
 ## /api/org/[param]/crm/segmentos/[param]/preview
-- app/organizacao/(dashboard)/crm/segmentos/[segmentId]/page.tsx
+- app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
 
 ## /api/org/[param]/events/[param]/attendees
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
 
 ## /api/org/[param]/events/[param]/invite-token
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org/[param]/events/[param]/invites
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
 
 ## /api/org/[param]/events/[param]/refund
-- app/organizacao/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
 
 ## /api/org/[param]/events/create
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/org/[param]/events/list
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
-- app/organizacao/(dashboard)/categorias/page.tsx
+- app/org/_internal/core/(dashboard)/categorias/page.tsx
 
 ## /api/org/[param]/events/update
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx
 
 ## /api/org/[param]/faturacao
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org/[param]/finance/reconciliation
-- app/organizacao/pagamentos/ReconciliationPanel.tsx
+- app/org/_internal/core/pagamentos/ReconciliationPanel.tsx
 
 ## /api/org/[param]/inscricoes
-- app/organizacao/(dashboard)/inscricoes/page.tsx
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/page.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/inscricoes/[param]
-- app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
-- app/organizacao/(dashboard)/inscricoes/page.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/page.tsx
 
 ## /api/org/[param]/inscricoes/[param]/export
-- app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
 ## /api/org/[param]/inscricoes/[param]/submissions
-- app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
 ## /api/org/[param]/inscricoes/[param]/summary
-- app/organizacao/(dashboard)/inscricoes/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
 
 ## /api/org/[param]/loyalty/programa
-- app/organizacao/(dashboard)/crm/loyalty/page.tsx
+- app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
 ## /api/org/[param]/loyalty/recompensas
-- app/organizacao/(dashboard)/crm/loyalty/page.tsx
+- app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
 ## /api/org/[param]/loyalty/regras
-- app/organizacao/(dashboard)/crm/loyalty/page.tsx
+- app/org/_internal/core/(dashboard)/crm/loyalty/page.tsx
 
 ## /api/org/[param]/me
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
-- app/organizacao/(dashboard)/settings/page.tsx
-- app/organizacao/(dashboard)/staff/page.tsx
-- app/organizacao/DashboardClient.tsx
-- app/organizacao/ObjectiveSubnav.tsx
-- app/organizacao/OrganizationDashboardShell.tsx
-- app/organizacao/OrganizationPublicProfilePanel.tsx
-- app/organizacao/OrganizationTopBar.tsx
-- app/organizacao/pagamentos/FinanceAlertsPanel.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/settings/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
+- app/org/_internal/core/ObjectiveSubnav.tsx
+- app/org/_internal/core/OrganizationDashboardShell.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/OrganizationTopBar.tsx
+- app/org/_internal/core/pagamentos/FinanceAlertsPanel.tsx
 
 ## /api/org/[param]/pagamentos/invoices
-- app/organizacao/pagamentos/invoices/invoices-client.tsx
+- app/org/_internal/core/pagamentos/invoices/invoices-client.tsx
 
 ## /api/org/[param]/payouts/list
-- app/organizacao/pagamentos/PayoutsPanel.tsx
+- app/org/_internal/core/pagamentos/PayoutsPanel.tsx
 
 ## /api/org/[param]/policies
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/politicas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx
 
 ## /api/org/[param]/policies/[param]
-- app/organizacao/(dashboard)/reservas/politicas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx
 
 ## /api/org/[param]/promo
-- app/organizacao/promo/PromoCodesClient.tsx
+- app/org/_internal/core/promo/PromoCodesClient.tsx
 
 ## /api/org/[param]/promo/[param]
-- app/organizacao/promo/PromoCodesClient.tsx
+- app/org/_internal/core/promo/PromoCodesClient.tsx
 
 ## /api/org/[param]/refunds/list
-- app/organizacao/pagamentos/RefundsPanel.tsx
+- app/org/_internal/core/pagamentos/RefundsPanel.tsx
 
 ## /api/org/[param]/reservas
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/cancel
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/charges
-- app/organizacao/(dashboard)/reservas/_components/BookingChargesPanel.tsx
+- app/org/_internal/core/(dashboard)/reservas/_components/BookingChargesPanel.tsx
 
 ## /api/org/[param]/reservas/[param]/checkout
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/invites
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/no-show
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/participants
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/reschedule
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/[param]/split
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/clientes
-- app/organizacao/(dashboard)/reservas/clientes/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/clientes/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/delays
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/disponibilidade
-- app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor.tsx
+- app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
 
 ## /api/org/[param]/reservas/disponibilidade/[param]
-- app/organizacao/(dashboard)/reservas/_components/AvailabilityEditor.tsx
+- app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
 
 ## /api/org/[param]/reservas/profissionais
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
-- app/organizacao/(dashboard)/reservas/profissionais/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/profissionais/page.tsx
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/profissionais/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/reservas/profissionais/[param]
-- app/organizacao/(dashboard)/reservas/profissionais/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
 
 ## /api/org/[param]/reservas/recursos
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
-- app/organizacao/(dashboard)/reservas/recursos/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/recursos/page.tsx
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/recursos/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/reservas/recursos/[param]
-- app/organizacao/(dashboard)/reservas/recursos/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
 
 ## /api/org/[param]/servicos
-- app/organizacao/(dashboard)/reservas/novo/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
-- app/organizacao/(dashboard)/reservas/servicos/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/novo/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/servicos/page.tsx
 
 ## /api/org/[param]/servicos/[param]
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/addons
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/addons/[param]
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/class-series
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/class-series/[param]
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/class-sessions
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/packages
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/packages/[param]
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/packs
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/servicos/[param]/packs/[param]
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 
 ## /api/org/[param]/store
 - app/org/[orgId]/store/OrgStoreToolClient.tsx
 
 ## /api/org/[param]/store/preview
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/tournaments/[param]
 - app/eventos/[slug]/EventLiveClient.tsx
+- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
+
+## /api/org/[param]/tournaments/[param]/live
+- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
+
+## /api/org/[param]/tournaments/create
+- app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx
 
 ## /api/org/[param]/trainers
-- app/organizacao/(dashboard)/staff/page.tsx
+- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org/[param]/trainers/profile
-- app/organizacao/(dashboard)/treinadores/page.tsx
+- app/org/_internal/core/(dashboard)/treinadores/page.tsx
 
 ## /api/org/[param]/username
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/venues/recent
 - lib/canonicalOrgUiEndpointRegistry.ts
-
-## /api/organizacao/events/create
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-
-## /api/organizacao/events/update
-- app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx
-
-## /api/organizacao/tournaments/[param]/generate
-- app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx
-
-## /api/organizacao/tournaments/[param]/live
-- app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx
-
-## /api/organizacao/tournaments/[param]/participants
-- app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx
-
-## /api/organizacao/tournaments/create
-- app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx
 
 ## /api/organizations/search
 - app/components/Navbar.tsx
@@ -882,54 +882,60 @@ Total endpoints referenced: 359
 - apps/mobile/features/search/api.ts
 
 ## /api/padel/calendar
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/calendar/auto-schedule
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/calendar/claims/commit
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/categories/my
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/padel/clubs
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/padel/PadelHubSection.tsx
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubSection.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/padel/clubs/[param]/courts
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/reservas/page.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/padel/clubs/[param]/staff
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/clubs/[param]/staff/invites
+- app/convites/organizacoes/OrganizationInvitesClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/social/page.tsx
+- apps/mobile/features/notifications/api.ts
 
 ## /api/padel/community/posts
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/discover
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/event-categories
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/matches
 - app/eventos/[slug]/EventLiveClient.tsx
 - app/eventos/[slug]/PadelPublicTablesClient.tsx
 - app/eventos/[slug]/monitor/PadelMonitorClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/widgets/padel/bracket/BracketWidgetClient.tsx
 - app/widgets/padel/calendar/CalendarWidgetClient.tsx
 - app/widgets/padel/next/NextMatchesWidgetClient.tsx
@@ -937,12 +943,12 @@ Total endpoints referenced: 359
 
 ## /api/padel/matches/[param]/delay
 - app/eventos/[slug]/monitor/PadelMonitorClient.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/matches/[param]/dispute
 - app/[username]/padel/PadelDisputeButton.tsx
 - app/eventos/[slug]/EventLiveClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/[param]/undo
 - app/eventos/[slug]/EventLiveClient.tsx
@@ -950,13 +956,13 @@ Total endpoints referenced: 359
 ## /api/padel/matches/[param]/walkover
 - app/eventos/[slug]/EventLiveClient.tsx
 - app/eventos/[slug]/monitor/PadelMonitorClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/assign
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/generate
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/me/history
 - apps/mobile/features/tournaments/api.ts
@@ -973,13 +979,13 @@ Total endpoints referenced: 359
 - apps/mobile/features/onboarding/api.ts
 
 ## /api/padel/ops/summary
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/pairings
 - app/components/checkout/Step1Bilhete.tsx
 - app/eventos/[slug]/EventPageClient.tsx
 - app/eventos/[slug]/PadelSignupInline.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/pairings/[param]/accept
@@ -1003,35 +1009,35 @@ Total endpoints referenced: 359
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/partnerships/agreements
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
-- app/organizacao/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient.tsx
 
 ## /api/padel/partnerships/agreements/[param]/[param]
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/agreements/[param]/grants
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/agreements/[param]/windows
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/compensation-cases
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/overrides
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/partnerships/overrides/[param]/execute
-- app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
+- app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx
 
 ## /api/padel/players
-- app/organizacao/(dashboard)/padel/PadelHubSection.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubSection.tsx
 
 ## /api/padel/public/calendar
 - app/eventos/[slug]/calendario/page.tsx
 
 ## /api/padel/public/clubs
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 
 ## /api/padel/public/open-pairings
 - app/padel/duplas/PadelOpenPairingsClient.tsx
@@ -1041,36 +1047,41 @@ Total endpoints referenced: 359
 - app/padel/rankings/PadelRankingsClient.tsx
 
 ## /api/padel/rulesets
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/padel/standings
 - app/eventos/[slug]/PadelPublicTablesClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/widgets/padel/standings/StandingsWidgetClient.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/teams
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/teams/[param]/invites
+- app/convites/organizacoes/OrganizationInvitesClient.tsx
+- app/social/page.tsx
+- apps/mobile/features/notifications/api.ts
 
 ## /api/padel/teams/entries
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/tournaments/config
 - app/eventos/[slug]/EventLiveClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/organizacao/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/tournaments/lifecycle
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentLifecyclePanel.tsx
-- app/organizacao/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentLifecyclePanel.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/padel/tournaments/roles
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentRolesPanel.tsx
 
 ## /api/padel/tournaments/seeds
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/payments/intent
 - app/components/checkout/Step2Pagamento.tsx
@@ -1283,6 +1294,9 @@ Total endpoints referenced: 359
 - app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
+## /api/support/tickets
+- app/suporte/page.tsx
+
 ## /api/tickets/resale/cancel
 - apps/mobile/app/wallet/[entitlementId].tsx
 
@@ -1303,13 +1317,13 @@ Total endpoints referenced: 359
 
 ## /api/upload
 - app/components/profile/ProfileHeader.tsx
-- app/organizacao/(dashboard)/eventos/EventEditClient.tsx
-- app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/organizacao/(dashboard)/eventos/novo/page.tsx
-- app/organizacao/(dashboard)/reservas/[id]/page.tsx
-- app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx
-- app/organizacao/(dashboard)/treinadores/page.tsx
-- app/organizacao/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+- app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
+- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
+- app/org/_internal/core/(dashboard)/treinadores/page.tsx
+- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 - components/store/StoreProductImagesPanel.tsx
 - components/store/StoreProductsPanel.tsx
 
@@ -1317,13 +1331,13 @@ Total endpoints referenced: 359
 - app/components/autenticação/AuthModal.tsx
 - app/components/checkout/AuthWall.tsx
 - app/onboarding/perfil/page.tsx
-- app/organizacao/organizations/OrganizationsHubClient.tsx
+- app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
 
 ## /api/users/search
 - app/components/Navbar.tsx
 - app/components/checkout/Step1Bilhete.tsx
-- app/organizacao/(dashboard)/tournaments/[id]/live/page.tsx
+- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
 - app/social/page.tsx
 - apps/mobile/features/search/api.ts
 

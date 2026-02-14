@@ -8,7 +8,7 @@ function readLocal(pathname: string) {
 
 describe("padel final hard-cut guardrails", () => {
   it("remove bypass de criação de parceiro no wizard e exige acordo aprovado", () => {
-    const wizard = readLocal("app/organizacao/(dashboard)/eventos/novo/page.tsx");
+    const wizard = readLocal("app/org/_internal/core/(dashboard)/eventos/novo/page.tsx");
     const clubsRoute = readLocal("app/api/padel/clubs/route.ts");
 
     expect(wizard).not.toContain("createPartnerClubFromDirectory");
@@ -19,7 +19,7 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("expõe gestão operacional de parcerias no hub de clube", () => {
-    const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
+    const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
     const subnav = readLocal("app/org/_components/subnav/PadelClubSubnav.tsx");
     expect(hub).toContain("\"partnerships\"");
     expect(hub).toContain("Parcerias operacionais");
@@ -113,10 +113,10 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("usa naming liveVisibility no frontend organizacional sem aliases liveHub", () => {
-    const createPage = readLocal("app/organizacao/(dashboard)/eventos/novo/page.tsx");
-    const editPage = readLocal("app/organizacao/(dashboard)/eventos/EventEditClient.tsx");
-    const livePrep = readLocal("app/organizacao/(dashboard)/eventos/EventLivePrepClient.tsx");
-    const liveDashboard = readLocal("app/organizacao/(dashboard)/eventos/EventLiveDashboardClient.tsx");
+    const createPage = readLocal("app/org/_internal/core/(dashboard)/eventos/novo/page.tsx");
+    const editPage = readLocal("app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx");
+    const livePrep = readLocal("app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx");
+    const liveDashboard = readLocal("app/org/_internal/core/(dashboard)/eventos/EventLiveDashboardClient.tsx");
     for (const content of [createPage, editPage, livePrep, liveDashboard]) {
       expect(content).toContain("liveVisibility");
       expect(content).not.toContain("LiveHubVisibility");
@@ -197,7 +197,7 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("workspace de parcerias expõe cockpit operacional de claims + override contextual", () => {
-    const workspace = readLocal("app/organizacao/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx");
+    const workspace = readLocal("app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx");
     expect(workspace).toContain("createAndExecuteOverrideFromClaim");
     expect(workspace).toContain("Resolver via override");
     expect(workspace).toContain("updateClaimStatus");
@@ -206,8 +206,8 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("remove chamadas legacy /organizacao no hub web padel", () => {
-    const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
-    const tabs = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
+    const tabs = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
     expect(hub).not.toContain('"/api/organizacao');
     expect(hub).not.toContain('"/organizacao/padel');
     expect(hub).not.toContain('"/organizacao/reservas');
@@ -242,13 +242,14 @@ describe("padel final hard-cut guardrails", () => {
       exportBracket,
       exportAnalytics,
     ]) {
-      expect(content).toContain('export * from "@/app/api/organizacao/padel/');
+      expect(content).not.toContain('export * from "@/app/api/org/[orgId]/padel/');
+      expect(content).toContain("withApiEnvelope");
     }
   });
 
   it("higieniza mensagens técnicas/legacy no UI Padel", () => {
-    const hub = readLocal("app/organizacao/(dashboard)/padel/PadelHubClient.tsx");
-    const tabs = readLocal("app/organizacao/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
+    const tabs = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
     const uiError = readLocal("lib/uiErrorMessage.ts");
 
     expect(uiError).toContain("sanitizeUiErrorMessage");
@@ -283,14 +284,14 @@ describe("padel final hard-cut guardrails", () => {
   });
 
   it("aceitação de convite org exige identidade compatível e trainer com username", () => {
-    const orgMemberInvites = readLocal("app/api/organizacao/organizations/members/invites/route.ts");
+    const orgMemberInvites = readLocal("app/api/org-hub/organizations/members/invites/route.ts");
     expect(orgMemberInvites).toContain("Token é apenas localizador do convite");
     expect(orgMemberInvites).toContain("if (!isTargetUser)");
     expect(orgMemberInvites).toContain("TRAINER_USERNAME_REQUIRED");
   });
 
   it("hard-cut legacy de convites e hygiene interno one-shot ficam explícitos", () => {
-    const legacyInvites = readLocal("app/api/organizacao/invites/route.ts");
+    const legacyInvites = readLocal("app/api/org-hub/invites/route.ts");
     const hygiene = readLocal("app/api/internal/ops/padel/workforce-hygiene/route.ts");
     expect(legacyInvites).toContain("LEGACY_ROUTE_REMOVED");
     expect(legacyInvites).toContain("/api/org-hub/invites");

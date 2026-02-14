@@ -3,7 +3,7 @@ import path from "path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
-const ORG_API_DIR = path.join(ROOT, "app/api/organizacao");
+const ORG_API_DIR = path.join(ROOT, "app/api/org");
 
 const METHOD_RE = /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\b/;
 const GATE_PATTERNS: RegExp[] = [
@@ -17,12 +17,11 @@ const GATE_PATTERNS: RegExp[] = [
 ];
 
 const ALLOWLIST: Record<string, string> = {
-  "app/api/organizacao/organizations/route.ts": "org creation (no email yet)",
-  "app/api/organizacao/organizations/switch/route.ts": "context switch (read-only mutation)",
-  "app/api/organizacao/become/route.ts": "onboarding flow (pre-email)",
-  "app/api/organizacao/organizations/settings/official-email/route.ts": "email setup endpoint",
-  "app/api/organizacao/organizations/settings/official-email/confirm/route.ts": "email confirm endpoint",
-  "app/api/organizacao/payouts/webhook/route.ts": "webhook (secret-gated)",
+  "app/api/org-hub/organizations/route.ts": "org creation (no email yet)",
+  "app/api/org-hub/organizations/switch/route.ts": "context switch (read-only mutation)",
+  "app/api/org-hub/become/route.ts": "onboarding flow (pre-email)",
+  "app/api/org-hub/organizations/settings/official-email/route.ts": "email setup endpoint",
+  "app/api/org-hub/organizations/settings/official-email/confirm/route.ts": "email confirm endpoint",
 };
 
 function walk(dir: string, files: string[] = []) {

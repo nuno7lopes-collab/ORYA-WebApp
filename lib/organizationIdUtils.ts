@@ -368,26 +368,29 @@ export function appendOrganizationIdToHref(href: string, organizationId: number 
     const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
     const base = isAbsolute ? undefined : "http://local";
     const url = new URL(href, base);
-    if (url.pathname.startsWith("/org/") || url.pathname.startsWith("/org-hub")) {
+    const pathname = url.pathname;
+    const resolvedOrgId = parseOrganizationId(organizationId);
+    const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
+    const canonicalOrgId = parseOrganizationId(canonicalMatch?.[1] ?? null);
+    const isCanonicalOrgPath = Boolean(canonicalMatch && canonicalOrgId);
+    const isOrgShorthandPath = pathname === "/org" || Boolean(canonicalMatch && !canonicalOrgId);
+
+    if (isCanonicalOrgPath || pathname.startsWith("/org-hub")) {
       url.searchParams.delete("organizationId");
       url.searchParams.delete("org");
       if (isAbsolute) return url.toString();
       return `${url.pathname}${url.search}${url.hash}`;
     }
-
-    const canonical = resolveCanonicalOrgHref(url.pathname, url.searchParams, organizationId);
-    if (canonical) {
-      url.pathname = canonical.pathname;
-      url.search = canonical.search.toString() ? `?${canonical.search.toString()}` : "";
+    if (isOrgShorthandPath) {
+      if (!resolvedOrgId) return href;
+      const suffix = pathname === "/org" ? "/overview" : pathname.slice("/org".length) || "/overview";
+      url.pathname = buildOrgHref(resolvedOrgId, suffix);
+      url.searchParams.delete("organizationId");
+      url.searchParams.delete("org");
       if (isAbsolute) return url.toString();
       return `${url.pathname}${url.search}${url.hash}`;
     }
-    if (!organizationId || !Number.isFinite(organizationId)) return href;
-    if (!url.pathname.startsWith("/organizacao")) return href;
-    if (url.searchParams.has("organizationId")) return href;
-    url.searchParams.set("organizationId", String(organizationId));
-    if (isAbsolute) return url.toString();
-    return `${url.pathname}${url.search}${url.hash}`;
+    return href;
   } catch {
     return href;
   }
