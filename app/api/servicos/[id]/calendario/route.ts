@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
@@ -9,7 +9,6 @@ import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/l
 import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { GET as SlotsGet } from "@/app/api/servicos/[id]/slots/route";
 
 const SLOT_STEP_MINUTES = 15;
 
@@ -21,6 +20,17 @@ function parseMonthParam(value: string | null) {
   const month = Number(match[2]);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
   return { year, month };
+}
+
+function parseDayParam(value: string | null) {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  return { year, month, day };
 }
 
 function buildDateKey(parts: { year: number; month: number; day: number }) {
@@ -50,15 +60,6 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
-function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
-  return sessions.map((session) => ({
-    start: session.startsAt,
-    end: session.endsAt,
-    professionalId: session.professionalId,
-    resourceId: null,
-  }));
-}
-
 function parsePositiveInt(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
@@ -73,11 +74,6 @@ async function _GET(
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
     return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
-  }
-
-  // Contracto canónico: /calendario suporta visão mensal e diária.
-  if (req.nextUrl.searchParams.get("day")) {
-    return SlotsGet(req, { params: Promise.resolve({ id: resolved.id }) });
   }
 
   try {
@@ -137,6 +133,255 @@ async function _GET(
           .filter((link) => link.resource?.isActive)
           .map((link) => link.resourceId)
       : null;
+    const dayParam = parseDayParam(req.nextUrl.searchParams.get("day"));
+    if (dayParam) {
+      const todayParts = getDateParts(new Date(), timezone);
+      const dayKey = (dayParam.year * 12) + (dayParam.month - 1);
+      const minKey = (todayParts.year * 12) + (todayParts.month - 1);
+      const maxKey = minKey + 3;
+      if (dayKey < minKey || dayKey > maxKey) {
+        return jsonWrap({ ok: false, error: "RANGE_NOT_ALLOWED" }, { status: 400 });
+      }
+      if (
+        dayParam.year === todayParts.year &&
+        dayParam.month === todayParts.month &&
+        dayParam.day < todayParts.day
+      ) {
+        return jsonWrap({ ok: true, items: [] });
+      }
+
+      const rangeStart = makeUtcDateFromLocal({ ...dayParam, hour: 0, minute: 0 }, timezone);
+      const rangeEnd = makeUtcDateFromLocal({ ...dayParam, hour: 23, minute: 59 }, timezone);
+      const assignmentMode = assignmentConfig.mode;
+      const professionalId = parsePositiveInt(req.nextUrl.searchParams.get("professionalId"));
+      const partySize = parsePositiveInt(req.nextUrl.searchParams.get("partySize"));
+      const durationOverride = parsePositiveInt(req.nextUrl.searchParams.get("durationMinutes"));
+      const addonSelection = normalizeAddonSelection(req.nextUrl.searchParams.get("addons"));
+      const packageIdRaw = req.nextUrl.searchParams.get("packageId");
+      const packageId = parsePackageId(packageIdRaw);
+      if (packageIdRaw && !packageId) {
+        return jsonWrap({ ok: false, error: "Pacote inválido." }, { status: 400 });
+      }
+      if (!assignmentConfig.isCourtService && partySize) {
+        return jsonWrap(getResourceModeBlockedPayload(), { status: 409 });
+      }
+
+      const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+      let scopeIds: number[] = [];
+
+      if (assignmentMode === "RESOURCE") {
+        if (!partySize) {
+          return jsonWrap({ ok: false, error: "Capacidade obrigatória." }, { status: 400 });
+        }
+        if (allowedResourceIds && allowedResourceIds.length === 0) {
+          return jsonWrap({ ok: true, items: [] });
+        }
+        const resources = await prisma.reservationResource.findMany({
+          where: {
+            organizationId: service.organizationId,
+            isActive: true,
+            capacity: { gte: partySize },
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+          },
+          orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
+          select: { id: true },
+        });
+        scopeIds = resources.map((resource) => resource.id);
+        if (scopeIds.length === 0) {
+          return jsonWrap({ ok: true, items: [] });
+        }
+      } else {
+        if (professionalId) {
+          if (allowedProfessionalIds && !allowedProfessionalIds.includes(professionalId)) {
+            return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          }
+          const professional = await prisma.reservationProfessional.findFirst({
+            where: { id: professionalId, organizationId: service.organizationId, isActive: true },
+            select: { id: true },
+          });
+          if (!professional) {
+            return jsonWrap({ ok: false, error: "Profissional inválido." }, { status: 404 });
+          }
+          scopeIds = [professional.id];
+        } else {
+          if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
+            return jsonWrap({ ok: true, items: [] });
+          }
+          const professionals = await prisma.reservationProfessional.findMany({
+            where: {
+              organizationId: service.organizationId,
+              isActive: true,
+              ...(allowedProfessionalIds ? { id: { in: allowedProfessionalIds } } : {}),
+            },
+            orderBy: [{ priority: "asc" }, { id: "asc" }],
+            select: { id: true },
+          });
+          scopeIds = professionals.map((professional) => professional.id);
+        }
+      }
+
+      if (scopeIds.length === 0) {
+        return jsonWrap({ ok: true, items: [] });
+      }
+
+      const shouldUseOrgOnly = false;
+      const now = new Date();
+      let effectiveDurationMinutes = service.durationMinutes;
+      let effectivePriceCents = service.unitPriceCents ?? 0;
+      let baseDurationMinutes = service.durationMinutes;
+      let basePriceCents = service.unitPriceCents ?? 0;
+      if (packageId) {
+        const packageResolution = await resolveServicePackageSelection({
+          tx: prisma,
+          serviceId: service.id,
+          packageId,
+        });
+        if (!packageResolution.ok) {
+          return jsonWrap({ ok: false, error: packageResolution.error }, { status: 400 });
+        }
+        const base = applyPackageBase({
+          baseDurationMinutes: service.durationMinutes,
+          basePriceCents: service.unitPriceCents ?? 0,
+          pkg: packageResolution.package,
+        });
+        baseDurationMinutes = base.durationMinutes;
+        basePriceCents = base.priceCents;
+      }
+      if (addonSelection.length > 0) {
+        const addonResolution = await resolveServiceAddonSelection({
+          tx: prisma,
+          serviceId: service.id,
+          selection: addonSelection,
+        });
+        if (!addonResolution.ok) {
+          return jsonWrap({ ok: false, error: addonResolution.error }, { status: 400 });
+        }
+        const totals = applyAddonTotals({
+          baseDurationMinutes,
+          basePriceCents,
+          totalDeltaMinutes: addonResolution.totalDeltaMinutes,
+          totalDeltaPriceCents: addonResolution.totalDeltaPriceCents,
+        });
+        effectiveDurationMinutes = totals.durationMinutes;
+        effectivePriceCents = totals.priceCents;
+      } else {
+        effectiveDurationMinutes = baseDurationMinutes;
+        effectivePriceCents = basePriceCents;
+      }
+      if (durationOverride) {
+        effectiveDurationMinutes = durationOverride;
+      }
+      if (effectivePriceCents > 0) {
+        const isPlatformOrg = service.organization?.orgType === "PLATFORM";
+        const gate = getPaidSalesGate({
+          officialEmail: service.organization?.officialEmail ?? null,
+          officialEmailVerifiedAt: service.organization?.officialEmailVerifiedAt ?? null,
+          stripeAccountId: service.organization?.stripeAccountId ?? null,
+          stripeChargesEnabled: service.organization?.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: service.organization?.stripePayoutsEnabled ?? false,
+          requireStripe: !isPlatformOrg,
+        });
+        if (!gate.ok) {
+          return jsonWrap(
+            {
+              ok: false,
+              error: "PAYMENTS_NOT_READY",
+              message: formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
+              missingEmail: gate.missingEmail,
+              missingStripe: gate.missingStripe,
+            },
+            { status: 409 },
+          );
+        }
+      }
+
+      const [templates, overrides, bookings] = await Promise.all([
+        prisma.weeklyAvailabilityTemplate.findMany({
+          where: {
+            organizationId: service.organizationId,
+            ...(shouldUseOrgOnly
+              ? { scopeType: "ORGANIZATION", scopeId: 0 }
+              : {
+                  OR: [
+                    { scopeType: "ORGANIZATION", scopeId: 0 },
+                    { scopeType, scopeId: { in: scopeIds } },
+                  ],
+                }),
+          },
+          select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        }),
+        prisma.availabilityOverride.findMany({
+          where: {
+            organizationId: service.organizationId,
+            ...(shouldUseOrgOnly
+              ? { scopeType: "ORGANIZATION", scopeId: 0 }
+              : {
+                  OR: [
+                    { scopeType: "ORGANIZATION", scopeId: 0 },
+                    { scopeType, scopeId: { in: scopeIds } },
+                  ],
+                }),
+            date: new Date(Date.UTC(dayParam.year, dayParam.month - 1, dayParam.day)),
+          },
+          orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+          select: { scopeType: true, scopeId: true, date: true, kind: true, intervals: true },
+        }),
+        prisma.booking.findMany({
+          where: {
+            organizationId: service.organizationId,
+            startsAt: { lt: rangeEnd, gte: new Date(rangeStart.getTime() - 24 * 60 * 60 * 1000) },
+            OR: [
+              { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+              { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+            ],
+          },
+          select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+        }),
+      ]);
+
+      const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+      const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+      const templatesByScope = groupByScope(templates);
+      const overridesByScope = groupByScope(overrides);
+      const blocks = buildBlocks(bookings);
+      const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
+      const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
+        ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
+        : scopeIds.map((id) => ({ scopeType, scopeId: id }));
+
+      scopesToCheck.forEach((scope) => {
+        const slots = getAvailableSlotsForScope({
+          rangeStart,
+          rangeEnd,
+          timezone,
+          durationMinutes: effectiveDurationMinutes,
+          stepMinutes: SLOT_STEP_MINUTES,
+          now,
+          scopeType: scope.scopeType,
+          scopeId: scope.scopeId,
+          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgOverrides: orgOverrides as ScopedOverride[],
+          templatesByScope,
+          overridesByScope,
+          blocks,
+        });
+        slots.forEach((slot) => {
+          slotMap.set(slot.startsAt.toISOString(), { startsAt: slot.startsAt, durationMinutes: slot.durationMinutes });
+        });
+      });
+
+      const items = Array.from(slotMap.values())
+        .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+        .map((slot) => ({
+          slotKey: slot.startsAt.toISOString(),
+          startsAt: slot.startsAt.toISOString(),
+          durationMinutes: slot.durationMinutes,
+          status: "OPEN",
+        }));
+
+      return jsonWrap({ ok: true, items });
+    }
+
     const monthParam = parseMonthParam(req.nextUrl.searchParams.get("month"));
     const todayParts = getDateParts(new Date(), timezone);
     const targetMonth = monthParam ?? { year: todayParts.year, month: todayParts.month };
@@ -332,7 +577,7 @@ async function _GET(
 
     const shouldUseOrgOnly = false;
     const now = new Date();
-    const [templates, overrides, bookings, classSessions] = await Promise.all([
+    const [templates, overrides, bookings] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -377,22 +622,13 @@ async function _GET(
         },
         select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
-      prisma.classSession.findMany({
-        where: {
-          organizationId: service.organizationId,
-          status: "SCHEDULED",
-          startsAt: { lt: end },
-          endsAt: { gt: start },
-        },
-        select: { startsAt: true, endsAt: true, professionalId: true },
-      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
+    const blocks = buildBlocks(bookings);
 
     const slotMap = new Map<string, number>();
     const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly

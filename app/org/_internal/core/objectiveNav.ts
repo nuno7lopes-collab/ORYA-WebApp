@@ -347,29 +347,29 @@ export function getObjectiveSections(
       {
         id: "overview",
         label: "Visão geral",
-        href: "/org/finance?tab=analyze&section=overview",
+        href: "/org/analytics?view=overview",
       },
       {
-        id: "vendas",
-        label: "Vendas",
-        href: "/org/finance?tab=analyze&section=vendas",
+        id: "conversion",
+        label: "Conversão",
+        href: "/org/analytics?view=conversion",
       },
     );
     sections.push(
       {
-        id: "financas",
+        id: "finance-overview",
         label: "Finanças",
-        href: "/org/finance?tab=analyze&section=financas",
+        href: "/org/finance?view=overview",
       },
       {
-        id: "invoices",
+        id: "invoicing",
         label: "Faturação",
-        href: "/org/finance?tab=analyze&section=invoices",
+        href: "/org/finance?view=invoicing",
       },
       {
         id: "ops",
         label: "Feed operacional",
-        href: "/org/finance?tab=analyze&section=ops",
+        href: "/org/finance?view=ops",
       },
     );
     const focusId = options?.focusSectionId ?? null;

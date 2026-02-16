@@ -81,7 +81,7 @@ export default function PayoutsPanel() {
       params.set("status", status);
       if (search) params.set("q", search);
       if (cursor) params.set("cursor", String(cursor));
-      return resolveCanonicalOrgApiPath(`/api/org/[orgId]/payouts/list?${params.toString()}`);
+      return resolveCanonicalOrgApiPath(`/api/org/[orgId]/finance/payouts/list?${params.toString()}`);
     },
     [status, search],
   );

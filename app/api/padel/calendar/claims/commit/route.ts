@@ -42,6 +42,11 @@ type ResolvedClaimInput = ClaimInput & {
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const ACTIVE_PRIORITY_RULE_VERSION = "v1";
 const AGENDA_ARBITRATION_COMPENSATION_OPERATION = "AGENDA_ARBITRATION_COMPENSATION";
+const CANONICAL_CLAIM_SOURCE_TYPES = new Set<SourceType>([
+  SourceType.MATCH,
+  SourceType.BOOKING,
+  SourceType.HARD_BLOCK,
+]);
 
 type ArbitrationCandidateType = "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
 
@@ -117,9 +122,11 @@ function normalizeClaimInput(
   if (!startsAt || !endsAt || endsAt <= startsAt) return null;
 
   const sourceTypeRaw = typeof input.sourceType === "string" ? input.sourceType.trim().toUpperCase() : "";
-  const sourceType = Object.values(SourceType).includes(sourceTypeRaw as SourceType)
+  const parsedSourceType = Object.values(SourceType).includes(sourceTypeRaw as SourceType)
     ? (sourceTypeRaw as SourceType)
-    : fallbackSourceType;
+    : null;
+  const sourceType = parsedSourceType ?? fallbackSourceType;
+  if (!CANONICAL_CLAIM_SOURCE_TYPES.has(sourceType)) return null;
 
   const sourceId =
     typeof input.sourceId === "string" && input.sourceId.trim().length > 0
@@ -130,6 +137,9 @@ function normalizeClaimInput(
     input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
       ? (input.metadata as Prisma.JsonObject)
       : {};
+  if (sourceType === SourceType.MATCH && typeof metadata.reasonCode !== "string") {
+    metadata.reasonCode = "MATCH_SLOT";
+  }
 
   return {
     resourceType,
@@ -367,9 +377,13 @@ async function _POST(req: NextRequest) {
   if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const fallbackSourceTypeRaw = typeof body.sourceType === "string" ? body.sourceType.trim().toUpperCase() : "";
-  const fallbackSourceType = Object.values(SourceType).includes(fallbackSourceTypeRaw as SourceType)
+  const fallbackSourceTypeCandidate = Object.values(SourceType).includes(fallbackSourceTypeRaw as SourceType)
     ? (fallbackSourceTypeRaw as SourceType)
-    : SourceType.EVENT;
+    : null;
+  const fallbackSourceType =
+    fallbackSourceTypeCandidate && CANONICAL_CLAIM_SOURCE_TYPES.has(fallbackSourceTypeCandidate)
+      ? fallbackSourceTypeCandidate
+      : SourceType.MATCH;
   const fallbackSourceId =
     typeof body.sourceId === "string" && body.sourceId.trim().length > 0
       ? body.sourceId.trim()

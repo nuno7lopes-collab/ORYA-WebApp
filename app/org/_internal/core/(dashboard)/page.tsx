@@ -33,6 +33,7 @@ export default async function OrganizationRouterPage({
 
   const tabParam = typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams?.tab : null;
   const sectionParam = typeof resolvedSearchParams?.section === "string" ? resolvedSearchParams.section : null;
+  const viewParam = typeof resolvedSearchParams?.view === "string" ? resolvedSearchParams.view : null;
   const targetBase =
     tabParam === "manage"
       ? sectionParam === "reservas"
@@ -51,7 +52,7 @@ export default async function OrganizationRouterPage({
                     ? buildOrgHref(activeOrganizationId, "/crm/customers")
                     : buildOrgHref(activeOrganizationId, "/events")
       : tabParam === "analyze"
-        ? sectionParam === "financas" || sectionParam === "invoices"
+        ? sectionParam === "financas" || sectionParam === "invoices" || viewParam === "invoicing" || viewParam === "payouts" || viewParam === "refunds-disputes" || viewParam === "reconciliation" || viewParam === "ledger" || viewParam === "exports" || viewParam === "ops"
           ? buildOrgHref(activeOrganizationId, "/finance")
           : buildOrgHref(activeOrganizationId, "/analytics")
         : tabParam === "promote"

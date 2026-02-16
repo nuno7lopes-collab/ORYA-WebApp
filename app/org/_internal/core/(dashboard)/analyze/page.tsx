@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { ensureDashboardAccess } from "@/app/org/_internal/core/_lib/dashboardAccess";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { isFinanceAllowedView } from "@/lib/domainBoundaries";
 
 export default async function OrganizationAnalyzePage({
   searchParams,
@@ -9,12 +10,12 @@ export default async function OrganizationAnalyzePage({
 }) {
   const { activeOrganizationId } = await ensureDashboardAccess();
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const sectionParam = typeof resolvedSearchParams?.section === "string" ? resolvedSearchParams.section : null;
+  const viewParam = typeof resolvedSearchParams?.view === "string" ? resolvedSearchParams.view : null;
 
   const params = new URLSearchParams();
   if (resolvedSearchParams) {
     for (const [key, value] of Object.entries(resolvedSearchParams)) {
-      if (key === "section") continue;
+      if (key === "section" || key === "tab" || key === "analytics" || key === "finance") continue;
       if (typeof value === "string") {
         params.set(key, value);
       } else if (Array.isArray(value)) {
@@ -24,15 +25,11 @@ export default async function OrganizationAnalyzePage({
   }
   params.delete("organizationId");
   params.delete("org");
-  const target =
-    sectionParam === "financas" || sectionParam === "invoices"
-      ? buildOrgHref(activeOrganizationId, "/finance")
-      : buildOrgHref(activeOrganizationId, "/analytics");
-  if (sectionParam === "ops" && !params.get("tab")) {
-    params.set("tab", "ops");
-  }
-  if (sectionParam === "vendas" && !params.get("tab")) {
-    params.set("tab", "vendas");
+  const target = viewParam && isFinanceAllowedView(viewParam)
+    ? buildOrgHref(activeOrganizationId, "/finance")
+    : buildOrgHref(activeOrganizationId, "/analytics");
+  if (!params.get("view")) {
+    params.set("view", "overview");
   }
   const query = params.toString();
   redirect(`${target}${query ? `?${query}` : ""}`);

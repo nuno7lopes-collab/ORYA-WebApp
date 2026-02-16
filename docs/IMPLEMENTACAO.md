@@ -14,6 +14,7 @@
   - `docs/identidade_auth_historico_pre_fecho.md` (historico revogado; nao normativo nesta transicao)
   - `docs/organizacoes_multiorg.md` (Governance Multi-org)
   - `docs/padel.md` (Padel)
+  - `docs/padel_live_normativo.md` (Padel Live)
   - `docs/SPLIT_V2.md` + `docs/split_v2_ssot.md` (Split)
   - `docs/reservas.md` (Reservas)
   - `docs/calendario_motor_unico.md` (Motor/Calendario)
@@ -60,6 +61,7 @@
 | `docs/calendario_motor_unico.md` | Motor unico calendario + federacao leitura + lock/arbitragem | `app/api/org/[orgId]/agenda/route.ts`, `app/api/public/agenda/route.ts`, `domain/agendaReadModel/*`, `domain/agenda/*` | `tests/agenda/*`, `tests/ops/agendaDriftGuardrails.test.ts` |
 | `docs/reservas.md` | Booking lifecycle + politica + timeline + canonicidade API | `app/api/org/[orgId]/reservas/*`, `app/api/me/reservas/*`, `lib/reservas/*`, `domain/bookings/commands.ts` | `tests/agenda/booking*.test.ts`, `tests/ops/bookingGuardrails.test.ts` |
 | `docs/padel.md` | Torneios/pairings/competicao em curso/partnership/ranking integrados | `app/api/padel/*`, `app/api/org/[orgId]/padel/*`, `domain/padel/*` | `tests/padel/*`, `tests/ops/padel*Guardrails.test.ts` |
+| `docs/padel_live_normativo.md` + `docs/padel_live_implementacao.md` | G08 (`D18.13`, `D18.11`, `D18.12`, `D18.17`) + live publico/internal parity | `app/api/padel/calendar/*`, `app/api/padel/matches/*`, `app/api/padel/public/*`, `app/api/padel/standings/route.ts`, `app/api/padel/me/*`, `domain/padel/*` | `tests/padel/live*.test.ts`, `tests/padel/match*.test.ts`, `tests/padel/standings*.test.ts`, `tests/ops/padelLive*Guardrails.test.ts` |
 | `docs/organizacoes_multiorg.md` | Multi-org governance + hard-cut de rotas antigas | `proxy.ts`, `app/api/org-hub/*`, `lib/organization*` | `tests/ops/orgCanonicalProxyAlias.test.ts`, `tests/ops/noLegacyApiReexportGuardrails.test.ts` |
 | `docs/legacy_cut_plan.md` + `docs/fecho_unificado_normativo.md` | Hard-cut global + zero legacy | `proxy.ts`, `scripts/v9_inventory.mjs`, `scripts/v9_parity_gate.mjs`, rotas `410` | `tests/ops/*legacy*`, `tests/ops/*hardcut*` |
 

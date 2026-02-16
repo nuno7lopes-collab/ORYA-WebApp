@@ -1206,8 +1206,8 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <Link
             href={
               organizationId
-                ? `/org/${organizationId}/finance?tab=analyze&section=vendas&eventId=${event.id}`
-                : `/org/finance?tab=analyze&section=vendas&eventId=${event.id}`
+                ? `/org/${organizationId}/analytics?view=buyers&eventId=${event.id}`
+                : `/org/analytics?view=buyers&eventId=${event.id}`
             }
             className="text-[11px] text-[#6BFFFF]"
           >

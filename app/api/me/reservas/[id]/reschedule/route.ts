@@ -64,15 +64,6 @@ function buildBlocks(
   }));
 }
 
-function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
-  return sessions.map((session) => ({
-    start: session.startsAt,
-    end: session.endsAt,
-    professionalId: session.professionalId,
-    resourceId: null,
-  }));
-}
-
 function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
   return buildAgendaConflictPayload({ decision: decision ?? null, fallbackReason: "MISSING_EXISTING_DATA" });
 }
@@ -282,7 +273,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
+    const [templates, overrides, blockingBookings] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.organizationId,
@@ -317,22 +308,13 @@ async function _POST(
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
-      prisma.classSession.findMany({
-        where: {
-          organizationId: booking.organizationId,
-          status: "SCHEDULED",
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-        },
-        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
-      }),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
+    const blocks = buildBlocks(blockingBookings);
 
     const slotKey = startsAt.toISOString();
     let slotIsAvailable = false;
@@ -395,16 +377,6 @@ async function _POST(
         startsAt: item.startsAt,
         endsAt: new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000),
       }));
-    classSessions.forEach((session) => {
-      if (assignmentMode === "RESOURCE") return;
-      if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
-      existing.push({
-        type: "BOOKING",
-        sourceId: `class:${session.id}`,
-        startsAt: session.startsAt,
-        endsAt: session.endsAt,
-      });
-    });
     const conflictDecision = evaluateCandidate({ candidate, existing });
     if (!conflictDecision.allowed) {
       const conflict = agendaConflictResponse(conflictDecision);

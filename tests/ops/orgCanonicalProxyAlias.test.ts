@@ -42,6 +42,16 @@ describe("proxy org canonical hard-cut", () => {
     expect(disponibilidadeBody.namespace).toBe("api");
   });
 
+  it("returns 410 for removed /api/org/:orgId/payouts/* routes", async () => {
+    const req = new NextRequest("http://localhost/api/org/42/payouts/status");
+    const res = await proxy(req);
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.namespace).toBe("api");
+  });
+
   it("returns 410 for removed PT legacy slugs under /org/:orgId", async () => {
     const legacyPaths = [
       "/org/42/financas",
@@ -68,12 +78,26 @@ describe("proxy org canonical hard-cut", () => {
     }
   });
 
-  it("does not rewrite canonical /org/:orgId/* routes", async () => {
+  it("returns 410 for removed finance/analytics legacy sub-routes", async () => {
     const req = new NextRequest("http://localhost/org/42/finance/subscriptions");
     const res = await proxy(req);
 
-    expect(res.status).toBe(200);
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.namespace).toBe("web");
+  });
+
+  it("returns 410 for removed finance/analytics legacy query keys", async () => {
+    const req = new NextRequest("http://localhost/org/42/analytics?tab=analyze&section=vendas&analytics=conversion");
+    const res = await proxy(req);
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.namespace).toBe("web");
   });
 
   it("returns 410 for shorthand /org/overview using organizationId context", async () => {

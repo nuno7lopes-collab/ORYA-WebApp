@@ -3,11 +3,10 @@ import { SourceType } from "@prisma/client";
 import { buildAgendaOverlapFilter } from "@/domain/agendaReadModel/overlap";
 
 export type AgendaItem = {
-  kind: "EVENT" | "TOURNAMENT" | "RESERVATION" | "SOFT_BLOCK";
+  kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
   eventId?: number | null;
   tournamentId?: number | null;
   reservationId?: number | null;
-  softBlockId?: number | null;
   padelClubId?: number | null;
   courtId?: number | null;
   resourceId?: number | null;
@@ -60,7 +59,7 @@ export async function getAgendaItemsForOrganization(params: {
           ? { OR: scopeOr }
           : {}),
       sourceType: {
-        in: [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING, SourceType.SOFT_BLOCK, SourceType.CLASS_SESSION],
+        in: [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING],
       },
       status: { not: "DELETED" },
     },
@@ -102,20 +101,6 @@ export async function getAgendaItemsForOrganization(params: {
         ...base,
         kind: "RESERVATION",
         reservationId: Number(item.sourceId),
-      } satisfies AgendaItem;
-    }
-    if (item.sourceType === SourceType.SOFT_BLOCK) {
-      return {
-        ...base,
-        kind: "SOFT_BLOCK",
-        softBlockId: Number(item.sourceId),
-      } satisfies AgendaItem;
-    }
-    if (item.sourceType === SourceType.CLASS_SESSION) {
-      return {
-        ...base,
-        kind: "RESERVATION",
-        reservationId: null,
       } satisfies AgendaItem;
     }
     return {

@@ -834,7 +834,8 @@ function OrganizacaoPageInner({
     [membershipRole, membershipRolePack],
   );
   const canViewFinance = roleFlags.canViewFinance && canAccessFinance;
-  const canUseAnalytics = roleFlags.canViewFinance && canAccessAnalytics;
+  const canViewAnalytics = canAccessAnalytics;
+  const canUseAnalytics = canViewAnalytics;
   const canPromote = roleFlags.canPromote && canAccessMarketing;
   const canManageMembers = roleFlags.canManageMembers && canAccessStaff;
   const canEditOrgSettings = roleFlags.canEditOrg && canAccessSettings;
@@ -985,8 +986,12 @@ function OrganizacaoPageInner({
       ],
       promote: ["marketing"],
       analyze: canViewFinance
-        ? ["overview", "vendas", "financas", "invoices", "ops"]
-        : ["financas", "invoices", "ops"],
+        ? canUseAnalytics
+          ? ["overview", "vendas", "financas", "invoices", "ops"]
+          : ["financas", "invoices", "ops"]
+        : canUseAnalytics
+          ? ["overview", "vendas"]
+          : [],
     };
 
     const allowed = scrollTargets[activeObjective] ?? [];
@@ -995,7 +1000,7 @@ function OrganizacaoPageInner({
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [scrollSection, activeObjective, canViewFinance, hasInscricoesModule, showPadelHub]);
+  }, [scrollSection, activeObjective, canViewFinance, canUseAnalytics, hasInscricoesModule, showPadelHub]);
 
   useEffect(() => {
     if (scrollSection) return;
@@ -1018,7 +1023,7 @@ function OrganizacaoPageInner({
     const refreshStripe = async () => {
       try {
         if (!orgApiBase) return;
-        const res = await fetch(`${orgApiBase}/payouts/status`);
+        const res = await fetch(`${orgApiBase}/finance/payouts/status`);
         const data = await res.json().catch(() => null);
         if (res.ok && data?.status) {
           setStripeRequirements(Array.isArray(data.requirements_due) ? data.requirements_due : []);
@@ -1055,8 +1060,12 @@ function OrganizacaoPageInner({
       ...(hasInscricoesModule ? ["inscricoes"] : []),
     ];
     const analyzeSections = canViewFinance
-      ? ["overview", "vendas", "financas", "invoices", "ops"]
-      : ["financas", "invoices", "ops"];
+      ? canUseAnalytics
+        ? ["overview", "vendas", "financas", "invoices", "ops"]
+        : ["financas", "invoices", "ops"]
+      : canUseAnalytics
+        ? ["overview", "vendas"]
+        : [];
     const baseSections: Record<ObjectiveTab, string[]> = {
       create: ["overview"],
       manage: manageSections,
@@ -1067,7 +1076,9 @@ function OrganizacaoPageInner({
     const candidate =
       normalizedSection ??
       (activeObjective === "analyze"
-        ? "financas"
+        ? canViewFinance
+          ? "financas"
+          : "overview"
         : activeObjective === "promote"
           ? "marketing"
             : "overview");
@@ -1078,11 +1089,12 @@ function OrganizacaoPageInner({
     showPadelHub,
     hasInscricoesModule,
     canViewFinance,
+    canUseAnalytics,
   ]);
 
   const shouldLoadOverview =
     organization?.status === "ACTIVE" &&
-    canViewFinance &&
+    canUseAnalytics &&
     (activeObjective === "create" || (activeObjective === "analyze" && normalizedSection === "overview"));
   const { data: overview } = useSWR<OverviewResponse>(
     shouldLoadOverview && orgApiBase ? `${orgApiBase}/analytics/overview?range=30d${eventsScopeAmp}` : null,
@@ -1092,7 +1104,7 @@ function OrganizacaoPageInner({
 
   const shouldLoadOverviewSeries =
     organization?.status === "ACTIVE" &&
-    canViewFinance &&
+    canUseAnalytics &&
     activeObjective === "analyze" &&
     normalizedSection === "overview";
 
@@ -1151,7 +1163,7 @@ function OrganizacaoPageInner({
 
   const shouldLoadSales =
     organization?.status === "ACTIVE" &&
-    canViewFinance &&
+    canUseAnalytics &&
     activeObjective === "analyze" &&
     normalizedSection === "vendas";
 
@@ -1164,7 +1176,7 @@ function OrganizacaoPageInner({
 
   const { data: payoutSummary } = useSWR<PayoutSummaryResponse>(
     organization?.status === "ACTIVE" && canViewFinance && activeObjective === "analyze" && activeSection === "financas" && orgApiBase
-      ? `${orgApiBase}/payouts/summary`
+      ? `${orgApiBase}/finance/payouts/summary`
       : null,
     fetcher,
     swrOptions
@@ -1248,7 +1260,7 @@ function OrganizacaoPageInner({
   );
   const { data: analyticsDimensions } = useSWR<AnalyticsDimensionsResponse>(
     organization?.status === "ACTIVE" &&
-      canViewFinance &&
+      canUseAnalytics &&
       activeObjective === "analyze" &&
       activeSection === "overview" &&
       orgApiBase
@@ -1334,7 +1346,7 @@ function OrganizacaoPageInner({
     setStripeCtaLoading(true);
     try {
       if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
-      const res = await fetch(`${orgApiBase}/payouts/connect`, { method: "POST" });
+      const res = await fetch(`${orgApiBase}/finance/payouts/connect`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json.url) {
         setStripeCtaError(json?.error || "Não foi possível gerar o link de configuração.");
@@ -1440,7 +1452,7 @@ function OrganizacaoPageInner({
     setFinanceActionSaving("payout-settings");
     try {
       if (!orgApiBase) throw new Error("ORG_CONTEXT_MISSING");
-      const res = await fetch(`${orgApiBase}/payouts/settings`, {
+      const res = await fetch(`${orgApiBase}/finance/payouts/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2285,8 +2297,8 @@ function OrganizacaoPageInner({
               id: "analytics",
               moduleKey: "ANALYTICS",
               title: "Análises",
-              summary: "Análises de ocupação, conversão e retenção.",
-              bullets: ["Visão geral + coortes", "No-show + conversão", "Performance por ferramenta"],
+              summary: "BI financeiro com conversão, coortes e tendências de receita.",
+              bullets: ["Visão geral monetária", "Conversão + coortes", "Performance por dimensão financeira"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
               flow: "Gestão",
             }
@@ -3946,7 +3958,7 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
               <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
-                href={organization?.id ? `/org/${organization.id}/finance?tab=analyze&section=invoices` : "/org/finance?tab=analyze&section=invoices"}
+                href={organization?.id ? `/org/${organization.id}/finance?view=invoicing` : "/org/finance?view=invoicing"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
@@ -4215,8 +4227,8 @@ function OrganizacaoPageInner({
                               <Link
                                 href={
                                   scopedOrganizationId
-                                    ? `/org/${scopedOrganizationId}/finance?tab=analyze&section=vendas&eventId=${ev.id}`
-                                    : `/org/finance?tab=analyze&section=vendas&eventId=${ev.id}`
+                                    ? `/org/${scopedOrganizationId}/analytics?view=buyers&eventId=${ev.id}`
+                                    : `/org/analytics?view=buyers&eventId=${ev.id}`
                                 }
                                 className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                               >
@@ -4694,7 +4706,7 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
           <InvoicesClient
-            basePath={organization?.id ? `/org/${organization.id}/finance?tab=analyze&section=invoices` : "/org/finance?tab=analyze&section=invoices"}
+            basePath={organization?.id ? `/org/${organization.id}/finance?view=invoicing` : "/org/finance?view=invoicing"}
             fullWidth
             organizationId={organization?.id ?? null}
           />

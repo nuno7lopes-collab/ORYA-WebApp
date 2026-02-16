@@ -497,7 +497,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
         body: JSON.stringify({
           organizationId,
           eventId: Number(claimEventId),
-          sourceType: "EVENT",
+          sourceType: "MATCH",
           sourceId: claimEventId,
           resourceClaims: [
             {
@@ -505,10 +505,11 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
               resourceId: String(claimCourtId),
               startsAt: new Date(claimStartsAt).toISOString(),
               endsAt: new Date(claimEndsAt).toISOString(),
-              sourceType: "EVENT",
+              sourceType: "MATCH",
               sourceId: claimEventId,
               metadata: {
                 agreementId,
+                reasonCode: "MATCH_SLOT",
               },
             },
           ],

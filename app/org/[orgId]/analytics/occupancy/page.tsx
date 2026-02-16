@@ -6,5 +6,5 @@ export default async function Page({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  redirect(`/org/${orgId}/analytics?tab=overview&analytics=occupancy`);
+  redirect(`/org/${orgId}/analytics?view=overview`);
 }

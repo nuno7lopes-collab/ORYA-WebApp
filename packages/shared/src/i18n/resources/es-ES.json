@@ -52,7 +52,7 @@
       "error": "Error"
     },
     "interests": {
-      "padel": "Pádel",
+      "padel": "Padel",
       "concertos": "Conciertos",
       "festas": "Fiestas",
       "viagens": "Viajes",
@@ -171,7 +171,7 @@
     "searchPlaceholder": "Buscar",
     "offer": "Oferta",
     "worlds": {
-      "padel": "Pádel",
+      "padel": "Padel",
       "events": "Eventos",
       "services": "Servicios"
     },
@@ -454,7 +454,7 @@
     "steps": {
       "basic": "Perfil",
       "interests": "Intereses",
-      "padel": "Pádel",
+      "padel": "Padel",
       "location": "Ubicación"
     },
     "basic": {

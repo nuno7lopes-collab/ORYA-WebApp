@@ -11,6 +11,7 @@ import {
   ORYA_REQUEST_ID_HEADER,
   REQUEST_ID_HEADER,
 } from "@/lib/http/headers";
+import { hasLegacyAnalyzeSections, hasLegacyRemovedQueryKeys } from "@/lib/domainBoundaries";
 
 const ADMIN_HOSTS = (process.env.ADMIN_HOSTS ?? "")
   .split(",")
@@ -178,6 +179,10 @@ function isRemovedPublicServiceAvailabilityRoute(pathname: string) {
   return /^\/api\/servicos\/\d+\/(slots|disponibilidade)(?:\/|$)/i.test(pathname);
 }
 
+function isRemovedCanonicalOrgApiRoute(pathname: string) {
+  return /^\/api\/org\/\d+\/payouts(?:\/|$)/i.test(pathname);
+}
+
 function isLegacyWebRoute(pathname: string) {
   return pathname === "/organizacao" || pathname.startsWith("/organizacao/");
 }
@@ -199,6 +204,11 @@ const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
   "/pagamentos",
   "/payments",
   "/finance/invoices",
+  "/finance/dimensions",
+  "/finance/ledger",
+  "/finance/payouts",
+  "/finance/refunds-disputes",
+  "/finance/subscriptions",
   "/checkin",
   "/scan",
   "/servicos",
@@ -212,6 +222,10 @@ const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
   "/crm/segmentos",
   "/crm/campanhas",
   "/crm/relatorios",
+  "/analytics/conversion",
+  "/analytics/cohorts",
+  "/analytics/occupancy",
+  "/analytics/no-show",
 ] as const;
 
 function isRemovedCanonicalOrgWebRoute(pathname: string) {
@@ -232,6 +246,19 @@ function isLegacyOrgShorthandRoute(pathname: string) {
   const head = match[1] ?? null;
   if (!head) return true;
   return !/^\d+$/.test(head);
+}
+
+function hasRemovedFinanceAnalyticsLegacyQuery(req: NextRequest) {
+  const match = req.nextUrl.pathname.match(/^\/org\/\d+\/(finance|analytics)(?:\/|$)/i);
+  if (!match) return false;
+  if (hasLegacyRemovedQueryKeys(req.nextUrl.searchParams)) return true;
+  if (hasLegacyAnalyzeSections(req.nextUrl.searchParams)) return true;
+  const view = req.nextUrl.searchParams.get("view");
+  if (!view) return false;
+  const tool = match[1]?.toLowerCase();
+  if (tool === "analytics" && (view === "occupancy" || view === "no-show")) return true;
+  if (tool === "finance" && view === "subscriptions") return true;
+  return false;
 }
 
 function hasInvalidOrgContextSources(req: NextRequest) {
@@ -269,6 +296,29 @@ function buildInvalidOrgContextResponse() {
     },
     { status: 400 },
   );
+}
+
+function logProxyMetric(metric: "analytics_route_hits" | "finance_route_hits" | "legacy_410_hits" | "cross_domain_call_blocked", context: {
+  pathname: string;
+  namespace: "web" | "api";
+  requestId: string;
+}) {
+  console.info(
+    `[proxy][metric] ${JSON.stringify({
+      metric,
+      pathname: context.pathname,
+      namespace: context.namespace,
+      requestId: context.requestId,
+    })}`,
+  );
+}
+
+function resolveProxyRouteMetric(pathname: string): "analytics_route_hits" | "finance_route_hits" | null {
+  if (/^\/org\/\d+\/analytics(?:\/|$)/i.test(pathname)) return "analytics_route_hits";
+  if (/^\/api\/org\/\d+\/analytics(?:\/|$)/i.test(pathname)) return "analytics_route_hits";
+  if (/^\/org\/\d+\/finance(?:\/|$)/i.test(pathname)) return "finance_route_hits";
+  if (/^\/api\/org\/\d+\/finance(?:\/|$)/i.test(pathname)) return "finance_route_hits";
+  return null;
 }
 
 function buildRedirectUrl(req: NextRequest, protocol: string, host: string) {
@@ -331,7 +381,16 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  if (isLegacyApiRoute(req.nextUrl.pathname) || isRemovedPublicServiceAvailabilityRoute(req.nextUrl.pathname)) {
+  if (
+    isLegacyApiRoute(req.nextUrl.pathname) ||
+    isRemovedPublicServiceAvailabilityRoute(req.nextUrl.pathname) ||
+    isRemovedCanonicalOrgApiRoute(req.nextUrl.pathname)
+  ) {
+    logProxyMetric("legacy_410_hits", {
+      pathname: req.nextUrl.pathname,
+      namespace: "api",
+      requestId: requestContext.requestId,
+    });
     console.warn(
       `[proxy][legacy_removed] ${JSON.stringify({
         errorCode: "LEGACY_ROUTE_REMOVED",
@@ -345,11 +404,26 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
+  const removedFinanceAnalyticsLegacyQuery = hasRemovedFinanceAnalyticsLegacyQuery(req);
+
   if (
     isLegacyWebRoute(req.nextUrl.pathname) ||
     isRemovedCanonicalOrgWebRoute(req.nextUrl.pathname) ||
-    isLegacyOrgShorthandRoute(req.nextUrl.pathname)
+    isLegacyOrgShorthandRoute(req.nextUrl.pathname) ||
+    removedFinanceAnalyticsLegacyQuery
   ) {
+    logProxyMetric("legacy_410_hits", {
+      pathname: req.nextUrl.pathname,
+      namespace: "web",
+      requestId: requestContext.requestId,
+    });
+    if (removedFinanceAnalyticsLegacyQuery) {
+      logProxyMetric("cross_domain_call_blocked", {
+        pathname: req.nextUrl.pathname,
+        namespace: "web",
+        requestId: requestContext.requestId,
+      });
+    }
     console.warn(
       `[proxy][legacy_removed] ${JSON.stringify({
         errorCode: "LEGACY_ROUTE_REMOVED",
@@ -399,6 +473,15 @@ export async function proxy(req: NextRequest) {
     ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   applyRequestContextHeaders(res.headers, requestContext);
+
+  const routeMetric = resolveProxyRouteMetric(req.nextUrl.pathname);
+  if (routeMetric) {
+    logProxyMetric(routeMetric, {
+      pathname: req.nextUrl.pathname,
+      namespace: req.nextUrl.pathname.startsWith("/api/") ? "api" : "web",
+      requestId: requestContext.requestId,
+    });
+  }
 
   const sensitivePath = isSensitivePath(pathname);
   if (sensitivePath) {
