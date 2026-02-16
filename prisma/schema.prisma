@@ -3017,6 +3017,7 @@ model PadelClubCourt {
   calendarBlocks                CalendarBlock[]
   eventMatchSlots               EventMatchSlot[]       @relation("EventMatchSlotCourt")
   availabilities                Availability[]
+  reservationResource           ReservationResource?
   bookings                      Booking[]
   bookingChangeRequestsProposed BookingChangeRequest[]
   classSeries                   ClassSeries[]
@@ -3206,6 +3207,9 @@ model PadelTournamentConfig {
   padelClubId        Int?                           @map("padel_club_id")
   partnerClubIds     Int[]                          @default([]) @map("partner_club_ids")
   advancedSettings   Json?                          @map("advanced_settings")
+  resultValidationMode PadelResultValidationMode    @default(IMMEDIATE_OFFICIAL) @map("result_validation_mode")
+  pendingConfirmationWindowMinutes Int              @default(15) @map("pending_confirmation_window_minutes")
+  playerResultSubmissionEnabled Boolean             @default(false) @map("player_result_submission_enabled")
   lifecycleStatus    PadelTournamentLifecycleStatus @default(DRAFT) @map("lifecycle_status")
   publishedAt        DateTime?                      @map("published_at") @db.Timestamptz(6)
   lockedAt           DateTime?                      @map("locked_at") @db.Timestamptz(6)
@@ -3699,12 +3703,58 @@ model EventMatchSlot {
   winnerParticipant      PadelTournamentParticipant? @relation("MatchWinnerParticipant", fields: [winnerParticipantId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "padel_matches_winner_participant_fk")
   round                  PadelRound?                 @relation(fields: [roundId], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "padel_matches_round_fk")
   participants           PadelMatchParticipant[]
+  resultCards            PadelMatchResultCard[]
 
   @@index([pairingAId, pairingBId], map: "padel_matches_pairings_idx")
   @@index([courtId], map: "padel_matches_court_idx")
   @@index([roundId], map: "padel_matches_round_idx")
   @@index([winnerParticipantId], map: "padel_matches_winner_participant_idx")
   @@map("padel_matches")
+  @@schema("app_v3")
+}
+
+model PadelMatchResultCard {
+  env             String                     @default("prod")
+  id              String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId         Int                        @map("match_id")
+  organizationId  Int                        @map("organization_id")
+  eventId         Int                        @map("event_id")
+  submittedByUserId String?                  @map("submitted_by_user_id") @db.Uuid
+  payload         Json
+  payloadHash     String                     @map("payload_hash")
+  status          PadelMatchResultCardStatus @default(PENDING_SIGNATURES)
+  confirmedAt     DateTime?                  @map("confirmed_at") @db.Timestamptz(6)
+  conflictAt      DateTime?                  @map("conflict_at") @db.Timestamptz(6)
+  cancelledAt     DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
+  appliedAt       DateTime?                  @map("applied_at") @db.Timestamptz(6)
+  createdAt       DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  match           EventMatchSlot             @relation(fields: [matchId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "padel_match_result_cards_match_fk")
+  signatures      PadelMatchResultSignature[]
+
+  @@index([matchId], map: "padel_match_result_cards_match_idx")
+  @@index([eventId], map: "padel_match_result_cards_event_idx")
+  @@index([organizationId], map: "padel_match_result_cards_org_idx")
+  @@index([status], map: "padel_match_result_cards_status_idx")
+  @@index([payloadHash], map: "padel_match_result_cards_hash_idx")
+  @@map("padel_match_result_cards")
+  @@schema("app_v3")
+}
+
+model PadelMatchResultSignature {
+  env          String               @default("prod")
+  id           Int                  @id @default(autoincrement())
+  resultCardId String               @map("result_card_id") @db.Uuid
+  side         PadelMatchSide       @map("side")
+  userId       String               @map("user_id") @db.Uuid
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  resultCard   PadelMatchResultCard @relation(fields: [resultCardId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "padel_match_result_signatures_card_fk")
+
+  @@unique([resultCardId, side], map: "padel_match_result_signatures_card_side_uq")
+  @@unique([resultCardId, userId], map: "padel_match_result_signatures_card_user_uq")
+  @@index([resultCardId], map: "padel_match_result_signatures_card_idx")
+  @@index([userId], map: "padel_match_result_signatures_user_idx")
+  @@map("padel_match_result_signatures")
   @@schema("app_v3")
 }
 
@@ -4658,6 +4708,7 @@ model ReservationResource {
   env                           String                 @default("prod")
   id                            Int                    @id @default(autoincrement())
   organizationId                Int                    @map("organization_id")
+  courtId                       Int?                   @unique @map("court_id")
   label                         String
   capacity                      Int                    @default(1)
   isActive                      Boolean                @default(true) @map("is_active")
@@ -4665,6 +4716,7 @@ model ReservationResource {
   createdAt                     DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                     DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization                  Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  court                         PadelClubCourt?        @relation(fields: [courtId], references: [id], onDelete: SetNull)
   bookings                      Booking[]
   serviceLinks                  ServiceResourceLink[]
   bookingChangeRequestsProposed BookingChangeRequest[]
@@ -5246,6 +5298,7 @@ model BookingSplit {
   captureBeforeAt     DateTime?                       @map("capture_before_at") @db.Timestamptz(6)
   captureBeforeSource BookingSplitCaptureBeforeSource @default(CANONICAL_COMPUTED_TABLE) @map("capture_before_source")
   retryUntilAt        DateTime?                       @map("retry_until_at") @db.Timestamptz(6)
+  cancelReason        BookingSplitCancelReason?       @map("cancel_reason")
   settledAt           DateTime?                       @map("settled_at") @db.Timestamptz(6)
   debtOpenedAt        DateTime?                       @map("debt_opened_at") @db.Timestamptz(6)
   createdAt           DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -5254,6 +5307,7 @@ model BookingSplit {
   organization        Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy           Profile?                        @relation("BookingSplitCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   participants        BookingSplitParticipant[]
+  holdAttempts        BookingSplitHoldAttempt[]
   offsessionAttempts  BookingSplitOffsessionAttempt[]
   debt                BookingSplitDebt?
   settlementSnapshot  BookingSplitSettlementSnapshot?
@@ -5280,6 +5334,7 @@ model BookingSplitParticipant {
   platformFeeCents          Int                             @default(0) @map("platform_fee_cents")
   status                    BookingSplitParticipantStatus   @default(PENDING)
   paymentIntentId           String?                         @map("payment_intent_id")
+  activeShareAttemptId      Int?                            @map("active_share_attempt_id")
   offsessionPaymentMethodId String?                         @map("offsession_payment_method_id")
   offsessionCustomerId      String?                         @map("offsession_customer_id")
   paidAt                    DateTime?                       @map("paid_at") @db.Timestamptz(6)
@@ -5288,6 +5343,8 @@ model BookingSplitParticipant {
   split                     BookingSplit                    @relation(fields: [splitId], references: [id], onDelete: Cascade)
   invite                    BookingInvite?                  @relation("BookingSplitParticipantInvite", fields: [inviteId], references: [id], onDelete: SetNull)
   user                      Profile?                        @relation("BookingSplitParticipantUser", fields: [userId], references: [id], onDelete: SetNull)
+  activeShareAttempt        BookingSplitShareAttempt?       @relation("BookingSplitParticipantActiveAttempt", fields: [activeShareAttemptId], references: [id], onDelete: SetNull)
+  shareAttempts             BookingSplitShareAttempt[]      @relation("BookingSplitParticipantAttempts")
   offsessionAttempts        BookingSplitOffsessionAttempt[]
 
   @@index([splitId])
@@ -5295,8 +5352,51 @@ model BookingSplitParticipant {
   @@index([userId])
   @@index([status])
   @@index([paymentIntentId])
+  @@index([activeShareAttemptId], map: "booking_split_participants_active_share_attempt_idx")
   @@index([offsessionPaymentMethodId], map: "booking_split_participants_offsession_pm_idx")
   @@map("booking_split_participants")
+  @@schema("app_v3")
+}
+
+model BookingSplitShareAttempt {
+  env           String                             @default("prod")
+  id            Int                                @id @default(autoincrement())
+  participantId Int                                @map("participant_id")
+  attemptNo     Int                                @map("attempt_no")
+  status        BookingSplitShareAttemptStatus
+  failureClass  BookingSplitShareAttemptFailureClass? @map("failure_class")
+  paymentId     String?                            @map("payment_id")
+  paymentIntentId String?                          @map("payment_intent_id")
+  actionExpireAt DateTime?                         @map("action_expire_at") @db.Timestamptz(6)
+  createdAt     DateTime                           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  participant   BookingSplitParticipant            @relation("BookingSplitParticipantAttempts", fields: [participantId], references: [id], onDelete: Cascade)
+  activeForParticipants BookingSplitParticipant[]  @relation("BookingSplitParticipantActiveAttempt")
+
+  @@unique([participantId, attemptNo], map: "booking_split_share_attempts_participant_attempt_no_unique")
+  @@index([participantId], map: "booking_split_share_attempts_participant_idx")
+  @@index([status], map: "booking_split_share_attempts_status_idx")
+  @@map("booking_split_share_attempts")
+  @@schema("app_v3")
+}
+
+model BookingSplitHoldAttempt {
+  env                 String                       @default("prod")
+  id                  Int                          @id @default(autoincrement())
+  splitId             Int                          @map("split_id")
+  attemptNo           Int                          @map("attempt_no")
+  status              BookingSplitHoldAttemptStatus
+  previousCaptureBeforeAt DateTime?               @map("previous_capture_before_at") @db.Timestamptz(6)
+  nextCaptureBeforeAt DateTime?                   @map("next_capture_before_at") @db.Timestamptz(6)
+  errorCode           String?                      @map("error_code")
+  metadata            Json?                        @default("{}")
+  createdAt           DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  split               BookingSplit                 @relation(fields: [splitId], references: [id], onDelete: Cascade)
+
+  @@unique([splitId, attemptNo], map: "booking_split_hold_attempts_split_attempt_no_unique")
+  @@index([splitId], map: "booking_split_hold_attempts_split_idx")
+  @@index([status], map: "booking_split_hold_attempts_status_idx")
+  @@map("booking_split_hold_attempts")
   @@schema("app_v3")
 }
 
@@ -6951,6 +7051,22 @@ enum PadelScoreMode {
   @@schema("app_v3")
 }
 
+enum PadelResultValidationMode {
+  IMMEDIATE_OFFICIAL
+  IMMEDIATE_PENDING_THEN_OFFICIAL
+
+  @@schema("app_v3")
+}
+
+enum PadelMatchResultCardStatus {
+  PENDING_SIGNATURES
+  CONFIRMED
+  CONFLICTED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
 enum AgendaResourceClaimType {
   CLUB
   COURT
@@ -7208,7 +7324,13 @@ enum padel_format {
 enum padel_match_status {
   PENDING
   IN_PROGRESS
-  DONE
+  RESULT_SUBMITTED
+  PENDING_CONFIRMATION
+  PENDING_REVIEW_EXPIRED
+  DISPUTED
+  OFFICIAL
+  WALKOVER
+  RETIRED
   CANCELLED
 
   @@schema("app_v3")
@@ -7472,6 +7594,14 @@ enum BookingSplitMode {
   @@schema("app_v3")
 }
 
+enum BookingSplitCancelReason {
+  USER_REQUESTED
+  TARGET_UPDATED
+  GUARANTEE_LOST
+
+  @@schema("app_v3")
+}
+
 enum BookingSplitRailState {
   HOLD_CAPTURE
   OFFSESSION_PI
@@ -7523,6 +7653,34 @@ enum BookingSplitParticipantStatus {
   PAID
   EXPIRED
   CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitShareAttemptStatus {
+  OPEN
+  REQUIRES_ACTION
+  SUCCEEDED
+  FAILED
+  CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitShareAttemptFailureClass {
+  AUTH_REQUIRED
+  INSUFFICIENT_FUNDS
+  PROCESSOR_ERROR
+  INVALID_PAYMENT_METHOD
+  UNKNOWN
+
+  @@schema("app_v3")
+}
+
+enum BookingSplitHoldAttemptStatus {
+  SUCCEEDED
+  FAILED_RETRYABLE
+  FAILED_FINAL
 
   @@schema("app_v3")
 }

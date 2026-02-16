@@ -1,5 +1,9 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  deactivateReservationResourcesForCourts,
+  syncReservationResourceForCourt,
+} from "@/lib/reservas/courtResourceLink";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -130,6 +134,10 @@ export async function syncPartnerClubCourts(
     }
 
     localCourtIds.push(resolvedLocalCourtId);
+    await syncReservationResourceForCourt({
+      db,
+      courtId: resolvedLocalCourtId,
+    });
 
     await db.padelPartnerCourtSnapshot.upsert({
       where: {
@@ -201,6 +209,10 @@ export async function syncPartnerClubCourts(
             deletedAt: now,
           },
         });
+        await deactivateReservationResourcesForCourts({
+          db,
+          courtIds: staleLocalCourtIds,
+        });
       }
       deactivated += staleSnapshots.length;
     }
@@ -232,6 +244,10 @@ export async function syncPartnerClubCourts(
           select: { id: true },
         });
         localCourtIds.push(createdCourt.id);
+        await syncReservationResourceForCourt({
+          db,
+          courtId: createdCourt.id,
+        });
         created += 1;
       }
     }

@@ -5,7 +5,16 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingChangeNotifications";
-import { CrmInteractionSource, CrmInteractionType, EntitlementStatus, EntitlementType, SourceType, type Prisma } from "@prisma/client";
+import {
+  BookingSplitShareAttemptFailureClass,
+  BookingSplitShareAttemptStatus,
+  CrmInteractionSource,
+  CrmInteractionType,
+  EntitlementStatus,
+  EntitlementType,
+  SourceType,
+  type Prisma,
+} from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { logError, logInfo } from "@/lib/observability/logger";
 import {
@@ -75,12 +84,11 @@ const extractSnapshotCreatedAt = (snapshot: unknown, fallback: Date) => {
 
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
-function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
-  const guest = normalizeEmail(params.guestEmail);
-  if (guest) return `email:${guest}`;
-  return "unknown";
+function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
+  if (!params.ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${params.ownerIdentityId}`;
 }
 
 async function resolveStripeFee(intent: Stripe.PaymentIntent) {
@@ -116,6 +124,8 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
 
   const bookingId = parseId(meta.bookingId);
   const splitId = parseId(meta.bookingSplitId);
+  const splitShareAttemptId = parseId(meta.bookingSplitShareAttemptId);
+  const splitShareAttemptNo = parseId(meta.bookingSplitShareAttemptNo);
   const organizationId = parseId(meta.organizationId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
   const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
@@ -195,7 +205,55 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       });
     }
 
-    if (participant.status !== "PAID") {
+    const splitClosedForCollection =
+      participant.split.status !== "OPEN" ||
+      participant.split.railState === "DEBT" ||
+      Boolean(participant.split.settledAt) ||
+      Boolean(participant.split.settlementSnapshot);
+    const shareAttemptData = {
+      status: BookingSplitShareAttemptStatus.SUCCEEDED,
+      failureClass: null as BookingSplitShareAttemptFailureClass | null,
+      paymentIntentId: intent.id,
+    };
+    if (splitShareAttemptId) {
+      await tx.bookingSplitShareAttempt.updateMany({
+        where: { id: splitShareAttemptId, participantId: participant.id },
+        data: shareAttemptData,
+      });
+    } else if (splitShareAttemptNo) {
+      await tx.bookingSplitShareAttempt.upsert({
+        where: {
+          participantId_attemptNo: {
+            participantId: participant.id,
+            attemptNo: splitShareAttemptNo,
+          },
+        },
+        update: shareAttemptData,
+        create: {
+          participantId: participant.id,
+          attemptNo: splitShareAttemptNo,
+          status: BookingSplitShareAttemptStatus.SUCCEEDED,
+          paymentIntentId: intent.id,
+        },
+      });
+    } else if (participant.activeShareAttemptId) {
+      await tx.bookingSplitShareAttempt.update({
+        where: { id: participant.activeShareAttemptId },
+        data: shareAttemptData,
+      });
+    }
+
+    if (splitClosedForCollection) {
+      await tx.bookingSplitParticipant.update({
+        where: { id: participant.id },
+        data: {
+          paymentIntentId: intent.id,
+          offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
+          offsessionCustomerId: offsessionCustomerId ?? undefined,
+          activeShareAttemptId: null,
+        },
+      });
+    } else if (participant.status !== "PAID") {
       await tx.bookingSplitParticipant.update({
         where: { id: participant.id },
         data: {
@@ -206,6 +264,7 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
           offsessionCustomerId: offsessionCustomerId ?? undefined,
           shareCents: amountCents,
           platformFeeCents,
+          activeShareAttemptId: null,
         },
       });
     } else if (offsessionPaymentMethodId || offsessionCustomerId) {
@@ -214,15 +273,11 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
         data: {
           offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
           offsessionCustomerId: offsessionCustomerId ?? undefined,
+          activeShareAttemptId: null,
         },
       });
     }
 
-    const splitClosedForCollection =
-      participant.split.status !== "OPEN" ||
-      participant.split.railState === "DEBT" ||
-      Boolean(participant.split.settledAt) ||
-      Boolean(participant.split.settlementSnapshot);
     if (splitClosedForCollection) {
       localLateRefundPlan = {
         splitId: participant.splitId,
@@ -661,8 +716,11 @@ async function upsertBookingEntitlement(params: {
     const identity = await ensureEmailIdentity({ email: guestEmail, tx });
     resolvedIdentityId = identity.id;
   }
+  if (!resolvedIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
   const entitlementOwnerUserId = resolvedIdentityId ? null : ownerUserId;
-  const ownerKey = buildOwnerKey({ ownerUserId: entitlementOwnerUserId, ownerIdentityId: resolvedIdentityId, guestEmail });
+  const ownerKey = buildOwnerKey({ ownerIdentityId: resolvedIdentityId });
   const snapshotTitle = booking.service?.title ?? `Reserva ${booking.id}`;
   const snapshotCoverUrl = booking.service?.coverImageUrl ?? null;
   const snapshotVenueName =
@@ -1030,6 +1088,7 @@ export async function fulfillServiceBookingIntent(
             select: {
               id: true,
               serviceId: true,
+              courtId: true,
               status: true,
               capacity: true,
               startsAt: true,
@@ -1064,12 +1123,26 @@ export async function fulfillServiceBookingIntent(
           throw new Error("SERVICE_BOOKING_FULL");
         }
 
+        const linkedCourtResource =
+          availabilityWithService.courtId != null
+            ? await tx.reservationResource.findFirst({
+                where: {
+                  organizationId,
+                  courtId: availabilityWithService.courtId,
+                  isActive: true,
+                },
+                select: { id: true },
+              })
+            : null;
+
         booking = await tx.booking.create({
           data: {
             serviceId,
             organizationId,
             userId,
             availabilityId: availabilityWithService.id,
+            courtId: availabilityWithService.courtId ?? null,
+            resourceId: linkedCourtResource?.id ?? null,
             startsAt: availabilityWithService.startsAt,
             durationMinutes: availabilityWithService.durationMinutes,
             price: availabilityWithService.service.unitPriceCents,

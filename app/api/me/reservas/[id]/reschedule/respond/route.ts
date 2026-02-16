@@ -322,6 +322,21 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       });
     }
 
+    const resolvedProposedResourceId = request.proposedResourceId ?? booking.resourceId;
+    let resolvedProposedCourtId = request.proposedCourtId ?? booking.courtId;
+    if (resolvedProposedResourceId) {
+      const linkedResource = await prisma.reservationResource.findFirst({
+        where: {
+          id: resolvedProposedResourceId,
+          organizationId: booking.organizationId,
+        },
+        select: { courtId: true },
+      });
+      if (linkedResource?.courtId) {
+        resolvedProposedCourtId = linkedResource.courtId;
+      }
+    }
+
     const { ip, userAgent } = getRequestMeta(req);
     const result = await prisma.$transaction(async (tx) => {
       const newPriceCents = Math.max(0, Math.round((booking.price ?? 0) + priceDeltaCents));
@@ -333,9 +348,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         data: {
           startsAt: request.proposedStartsAt,
           price: newPriceCents,
-          courtId: request.proposedCourtId ?? booking.courtId,
+          courtId: resolvedProposedCourtId,
           professionalId: request.proposedProfessionalId ?? booking.professionalId,
-          resourceId: request.proposedResourceId ?? booking.resourceId,
+          resourceId: resolvedProposedResourceId,
         },
         select: {
           id: true,

@@ -92,6 +92,7 @@ export async function confirmPendingBooking({
       partySize: true,
       professionalId: true,
       resourceId: true,
+      courtId: true,
       price: true,
       currency: true,
       pendingExpiresAt: true,
@@ -132,7 +133,7 @@ export async function confirmPendingBooking({
             select: { professionalId: true, professional: { select: { isActive: true } } },
           },
           resourceLinks: {
-            select: { resourceId: true, resource: { select: { isActive: true } } },
+            select: { resourceId: true, resource: { select: { isActive: true, courtId: true } } },
           },
           organization: {
             select: {
@@ -207,6 +208,12 @@ export async function confirmPendingBooking({
         .filter((link) => link.resource?.isActive)
         .map((link) => link.resourceId)
     : null;
+  const allowedCourtIdsFromService = booking.service.resourceLinks.length
+    ? booking.service.resourceLinks
+        .filter((link) => link.resource?.isActive && (link.resource?.courtId ?? null) != null)
+        .map((link) => link.resource?.courtId)
+        .filter((value): value is number => typeof value === "number" && value > 0)
+    : null;
   const timezone = booking.snapshotTimezone || booking.service.organization?.timezone || "Europe/Lisbon";
   const dayParts = getDateParts(booking.startsAt, timezone);
   const dayStart = makeUtcDateFromLocal({ ...dayParts, hour: 0, minute: 0 }, timezone);
@@ -216,19 +223,42 @@ export async function confirmPendingBooking({
   let candidateScopes: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = [];
   let assignedProfessionalId = booking.professionalId ?? null;
   let assignedResourceId = assignmentConfig.isCourtService ? booking.resourceId ?? null : null;
+  let assignedCourtId = booking.courtId ?? null;
+  const resourceCourtById = new Map<number, number | null>();
+  const enforceServiceResourceLinks = !assignmentConfig.isCourtService;
 
   if (assignmentMode === "RESOURCE") {
     const partySize = booking.partySize;
     if (!partySize || partySize < 1) {
       return { ok: false, code: "INVALID_CAPACITY", message: "Capacidade inválida." };
     }
-    if (allowedResourceIds && allowedResourceIds.length === 0) {
+    if (enforceServiceResourceLinks && allowedResourceIds && allowedResourceIds.length === 0) {
       return { ok: false, code: "SLOT_TAKEN", message: "Sem recursos disponíveis." };
     }
-    if (assignedResourceId && allowedResourceIds && !allowedResourceIds.includes(assignedResourceId)) {
-      return { ok: false, code: "SLOT_TAKEN", message: "Recurso indisponível." };
-    }
     if (assignedResourceId) {
+      const linkedResource = await tx.reservationResource.findFirst({
+        where: { id: assignedResourceId, organizationId: booking.organizationId, isActive: true },
+        select: { id: true, courtId: true },
+      });
+      if (!linkedResource) {
+        return { ok: false, code: "SLOT_TAKEN", message: "Recurso indisponível." };
+      }
+      if (assignmentConfig.isCourtService) {
+        if (!linkedResource.courtId) {
+          return { ok: false, code: "SLOT_TAKEN", message: "Recurso sem ligação canónica a campo." };
+        }
+        if (
+          allowedCourtIdsFromService &&
+          allowedCourtIdsFromService.length > 0 &&
+          !allowedCourtIdsFromService.includes(linkedResource.courtId) &&
+          !(allowedResourceIds?.includes(linkedResource.id) ?? false)
+        ) {
+          return { ok: false, code: "SLOT_TAKEN", message: "Recurso indisponível." };
+        }
+      } else if (enforceServiceResourceLinks && allowedResourceIds && !allowedResourceIds.includes(linkedResource.id)) {
+        return { ok: false, code: "SLOT_TAKEN", message: "Recurso indisponível." };
+      }
+      resourceCourtById.set(linkedResource.id, linkedResource.courtId ?? null);
       candidateScopes = [{ scopeType: "RESOURCE", scopeId: assignedResourceId }];
     } else {
       const resources = await tx.reservationResource.findMany({
@@ -236,10 +266,14 @@ export async function confirmPendingBooking({
           organizationId: booking.organizationId,
           isActive: true,
           capacity: { gte: partySize },
-          ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+          ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+          ...(enforceServiceResourceLinks && allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
-        select: { id: true },
+        select: { id: true, courtId: true },
+      });
+      resources.forEach((resource) => {
+        resourceCourtById.set(resource.id, resource.courtId ?? null);
       });
       candidateScopes = resources.map((resource) => ({ scopeType: "RESOURCE", scopeId: resource.id }));
     }
@@ -370,6 +404,18 @@ export async function confirmPendingBooking({
     if (!assignedResourceId) {
       return { ok: false, code: "SLOT_TAKEN", message: "Sem recursos disponíveis." };
     }
+    let linkedCourtId = resourceCourtById.get(assignedResourceId) ?? null;
+    if (linkedCourtId == null) {
+      const linkedResource = await tx.reservationResource.findUnique({
+        where: { id: assignedResourceId },
+        select: { courtId: true },
+      });
+      linkedCourtId = linkedResource?.courtId ?? null;
+    }
+    assignedCourtId = assignmentConfig.isCourtService ? linkedCourtId : null;
+    if (assignmentConfig.isCourtService && !assignedCourtId) {
+      return { ok: false, code: "SLOT_TAKEN", message: "Sem ligação canónica entre campo e recurso." };
+    }
   } else {
     assignedProfessionalId = assignedScope.scopeType === "PROFESSIONAL" ? assignedScope.scopeId : null;
   }
@@ -419,6 +465,7 @@ export async function confirmPendingBooking({
       assignmentMode,
       professionalId: assignedProfessionalId,
       resourceId: assignedResourceId,
+      courtId: assignmentMode === "RESOURCE" ? assignedCourtId : booking.courtId ?? null,
       confirmationSnapshot: snapshot,
       confirmationSnapshotVersion: snapshotVersion,
       confirmationSnapshotCreatedAt: snapshotCreatedAt,

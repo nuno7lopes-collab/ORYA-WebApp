@@ -16,6 +16,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
+import { deactivateReservationResourcesForCourts } from "@/lib/reservas/courtResourceLink";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -456,9 +457,17 @@ async function _DELETE(req: NextRequest) {
 
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
+    const courtIds = await tx.padelClubCourt.findMany({
+      where: { padelClubId: clubId, deletedAt: null },
+      select: { id: true },
+    });
     await tx.padelClubCourt.updateMany({
       where: { padelClubId: clubId, deletedAt: null },
       data: { isActive: false, deletedAt: now },
+    });
+    await deactivateReservationResourcesForCourts({
+      db: tx,
+      courtIds: courtIds.map((court) => court.id),
     });
     await tx.padelClubStaff.updateMany({
       where: { padelClubId: clubId, deletedAt: null },

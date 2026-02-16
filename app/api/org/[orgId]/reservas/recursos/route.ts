@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { resolveReservasScopesForMember } from "@/lib/reservas/memberScopes";
 import { OrganizationMemberRole } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -40,6 +41,10 @@ function fail(
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
+    const includeCourts = (() => {
+      const raw = req.nextUrl.searchParams.get("includeCourts");
+      return raw === "1" || raw === "true";
+    })();
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
@@ -62,13 +67,142 @@ async function _GET(req: NextRequest) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
     }
 
-    const items = await prisma.reservationResource.findMany({
-      where: { organizationId: organization.id },
+    const isStaff = membership.role === OrganizationMemberRole.STAFF;
+    let allowedResourceIds: number[] | null = null;
+    let allowedCourtIds: number[] | null = null;
+    if (isStaff) {
+      const scopes = await resolveReservasScopesForMember({
+        organizationId: organization.id,
+        userId: profile.id,
+      });
+      if (!scopes.hasAny) {
+        return respondOk(ctx, { items: [] });
+      }
+      allowedResourceIds = scopes.resourceIds;
+      allowedCourtIds = scopes.courtIds;
+    }
+
+    const staffScopeOr: Array<Record<string, unknown>> = [];
+    if (isStaff) {
+      if (allowedResourceIds && allowedResourceIds.length > 0) {
+        staffScopeOr.push({ id: { in: allowedResourceIds } });
+      }
+      if (includeCourts && allowedCourtIds && allowedCourtIds.length > 0) {
+        staffScopeOr.push({ courtId: { in: allowedCourtIds } });
+      }
+      if (staffScopeOr.length === 0) {
+        return respondOk(ctx, { items: [] });
+      }
+    }
+
+    const resources = await prisma.reservationResource.findMany({
+      where: {
+        organizationId: organization.id,
+        ...(isStaff ? { OR: staffScopeOr } : {}),
+      },
       orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
-      select: { id: true, label: true, capacity: true, isActive: true, priority: true },
+      select: {
+        id: true,
+        label: true,
+        capacity: true,
+        isActive: true,
+        priority: true,
+        courtId: true,
+        court: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            displayOrder: true,
+            deletedAt: true,
+            padelClubId: true,
+            club: { select: { name: true, deletedAt: true } },
+          },
+        },
+      },
     });
 
-    return respondOk(ctx, { items });
+    const resourceItems = resources
+      .filter((resource) => resource.courtId == null)
+      .map((resource) => ({
+        id: resource.id,
+        label: resource.label,
+        capacity: resource.capacity,
+        isActive: resource.isActive,
+        priority: resource.priority,
+        resourceId: resource.id,
+        sourceType: "RESOURCE" as const,
+        courtId: null,
+        padelClubId: null,
+        clubName: null,
+      }));
+
+    if (!includeCourts) {
+      return respondOk(ctx, { items: resourceItems });
+    }
+
+    const linkedCourtItems = resources
+      .filter((resource) => resource.courtId != null)
+      .map((resource) => {
+        const court = resource.court;
+        if (!court || court.deletedAt || court.club.deletedAt) return null;
+        return {
+          id: court.id,
+          label: court.name,
+          capacity: resource.capacity,
+          isActive: Boolean(resource.isActive && court.isActive),
+          priority: court.displayOrder ?? resource.priority ?? 0,
+          sourceType: "COURT" as const,
+          resourceId: resource.id,
+          courtId: court.id,
+          padelClubId: court.padelClubId,
+          clubName: court.club.name ?? null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item != null);
+
+    // Transitional fallback while older environments may still have courts not yet linked.
+    const linkedCourtIds = new Set(linkedCourtItems.map((item) => item.courtId));
+    const missingCourts = await prisma.padelClubCourt.findMany({
+      where: {
+        club: {
+          organizationId: organization.id,
+          deletedAt: null,
+        },
+        deletedAt: null,
+        isActive: true,
+        id: { notIn: Array.from(linkedCourtIds) },
+        reservationResource: { is: null },
+        ...(isStaff
+          ? allowedCourtIds && allowedCourtIds.length > 0
+            ? { id: { in: allowedCourtIds } }
+            : { id: { in: [] } }
+          : {}),
+      },
+      orderBy: [{ displayOrder: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        displayOrder: true,
+        padelClubId: true,
+        club: { select: { name: true } },
+      },
+    });
+    const missingCourtItems = missingCourts.map((court) => ({
+      id: court.id,
+      label: court.name,
+      capacity: 4,
+      isActive: court.isActive,
+      priority: court.displayOrder ?? 0,
+      sourceType: "COURT" as const,
+      resourceId: null,
+      courtId: court.id,
+      padelClubId: court.padelClubId,
+      clubName: court.club.name ?? null,
+    }));
+
+    return respondOk(ctx, { items: [...resourceItems, ...linkedCourtItems, ...missingCourtItems] });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");

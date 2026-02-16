@@ -42,13 +42,33 @@ export async function resolveReservasScopesForMember(params: {
 
   const courts = Array.from(courtIds);
   const resources = Array.from(resourceIds);
+  if (courts.length > 0 || resources.length > 0) {
+    const linkedResources = await prisma.reservationResource.findMany({
+      where: {
+        organizationId: params.organizationId,
+        OR: [
+          ...(courts.length > 0 ? [{ courtId: { in: courts } }] : []),
+          ...(resources.length > 0 ? [{ id: { in: resources } }] : []),
+        ],
+      },
+      select: { id: true, courtId: true },
+    });
+    linkedResources.forEach((row) => {
+      resourceIds.add(row.id);
+      if (row.courtId) {
+        courtIds.add(row.courtId);
+      }
+    });
+  }
+  const expandedCourts = Array.from(courtIds);
+  const expandedResources = Array.from(resourceIds);
   const professionals = Array.from(professionalIds);
 
   return {
-    courtIds: courts,
-    resourceIds: resources,
+    courtIds: expandedCourts,
+    resourceIds: expandedResources,
     professionalIds: professionals,
-    hasAny: courts.length > 0 || resources.length > 0 || professionals.length > 0,
+    hasAny: expandedCourts.length > 0 || expandedResources.length > 0 || professionals.length > 0,
   };
 }
 

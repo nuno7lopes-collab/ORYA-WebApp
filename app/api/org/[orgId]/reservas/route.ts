@@ -10,7 +10,14 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { AddressSourceProvider, OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
+import {
+  AddressSourceProvider,
+  OrganizationMemberRole,
+  OrganizationRolePack,
+  PaymentStatus,
+  ServiceLocationMode,
+  SourceType,
+} from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
@@ -29,6 +36,9 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
 
 const PENDING_HOLD_MINUTES = 10;
 const SLOT_STEP_MINUTES = 15;
+
+type CalendarPaymentStatus = "PAID" | "PARTIAL" | "PROCESSING" | "PENDING" | "UNKNOWN";
+type CalendarChannel = "ONLINE" | "PRESENTIAL" | "BACKOFFICE" | "UNKNOWN";
 
 function fail(
   ctx: { requestId: string; correlationId: string },
@@ -61,6 +71,41 @@ function getMinutesOfDay(date: Date, timeZone: string) {
 function parsePositiveInt(value: unknown) {
   const parsed = typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function mapCalendarPaymentStatus(status: PaymentStatus): CalendarPaymentStatus {
+  if (status === PaymentStatus.SUCCEEDED) return "PAID";
+  if (status === PaymentStatus.PARTIAL_REFUND) return "PARTIAL";
+  if (status === PaymentStatus.CREATED) return "PENDING";
+  if (status === PaymentStatus.REQUIRES_ACTION || status === PaymentStatus.PROCESSING) return "PROCESSING";
+  if (
+    status === PaymentStatus.DISPUTED ||
+    status === PaymentStatus.CHARGEBACK_LOST ||
+    status === PaymentStatus.CHARGEBACK_WON
+  ) {
+    return "PROCESSING";
+  }
+  if (status === PaymentStatus.CANCELLED || status === PaymentStatus.FAILED || status === PaymentStatus.REFUNDED) {
+    return "PENDING";
+  }
+  return "UNKNOWN";
+}
+
+function resolveBookingChannel(params: {
+  resourceId: number | null;
+  courtId: number | null;
+  bookingAddressId: string | null;
+  serviceAddressId: string | null;
+  bookingLocationMode: ServiceLocationMode | null;
+  serviceLocationMode: ServiceLocationMode | null;
+}): CalendarChannel {
+  const resolvedLocationMode = params.bookingLocationMode ?? params.serviceLocationMode;
+  if (params.resourceId || params.courtId || params.bookingAddressId || params.serviceAddressId) {
+    return "PRESENTIAL";
+  }
+  if (resolvedLocationMode === ServiceLocationMode.FIXED) return "PRESENTIAL";
+  if (resolvedLocationMode === ServiceLocationMode.CHOOSE_AT_BOOKING) return "ONLINE";
+  return "UNKNOWN";
 }
 
 function buildBlocks(
@@ -227,6 +272,8 @@ async function _GET(req: NextRequest) {
         price: true,
         currency: true,
         createdAt: true,
+        locationMode: true,
+        addressId: true,
         assignmentMode: true,
         partySize: true,
         court: { select: { id: true, name: true, isActive: true } },
@@ -249,6 +296,8 @@ async function _GET(req: NextRequest) {
             id: true,
             title: true,
             kind: true,
+            locationMode: true,
+            addressId: true,
           },
         },
         user: {
@@ -292,6 +341,55 @@ async function _GET(req: NextRequest) {
     const resourceIds = Array.from(
       new Set(items.map((item) => item.resource?.id).filter((id): id is number => typeof id === "number")),
     );
+
+    const bookingSourceIds = Array.from(new Set(items.map((item) => String(item.id))));
+    const [payments, paymentSnapshots] = bookingSourceIds.length
+      ? await Promise.all([
+          prisma.payment.findMany({
+            where: {
+              organizationId: organization.id,
+              sourceType: SourceType.BOOKING,
+              sourceId: { in: bookingSourceIds },
+            },
+            select: {
+              sourceId: true,
+              status: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          }),
+          prisma.paymentSnapshot.findMany({
+            where: {
+              organizationId: organization.id,
+              sourceType: SourceType.BOOKING,
+              sourceId: { in: bookingSourceIds },
+            },
+            select: {
+              sourceId: true,
+              status: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          }),
+        ])
+      : [[], []];
+
+    const latestPaymentStatusBySourceId = new Map<string, PaymentStatus>();
+    const latestTimestampBySourceId = new Map<string, number>();
+    const pushCandidate = (sourceId: string, status: PaymentStatus, date: Date) => {
+      const timestamp = date.getTime();
+      const current = latestTimestampBySourceId.get(sourceId);
+      if (current != null && current >= timestamp) return;
+      latestTimestampBySourceId.set(sourceId, timestamp);
+      latestPaymentStatusBySourceId.set(sourceId, status);
+    };
+    payments.forEach((payment) => {
+      pushCandidate(payment.sourceId, payment.status, payment.updatedAt ?? payment.createdAt);
+    });
+    paymentSnapshots.forEach((snapshot) => {
+      pushCandidate(snapshot.sourceId, snapshot.status, snapshot.updatedAt ?? snapshot.createdAt);
+    });
+
     const delayMap = await loadScheduleDelays({
       tx: prisma,
       organizationId: organization.id,
@@ -326,8 +424,21 @@ async function _GET(req: NextRequest) {
         { total: 0, confirmed: 0, cancelled: 0 },
       );
       const { invites: _invites, participants: _participants, changeRequests: _changeRequests, ...rest } = item;
+      const canonicalPaymentStatus = latestPaymentStatusBySourceId.get(String(item.id));
+      const paymentStatus: CalendarPaymentStatus =
+        canonicalPaymentStatus != null ? mapCalendarPaymentStatus(canonicalPaymentStatus) : "UNKNOWN";
+      const channel = resolveBookingChannel({
+        resourceId: item.resource?.id ?? null,
+        courtId: item.court?.id ?? null,
+        bookingAddressId: item.addressId ?? null,
+        serviceAddressId: item.service?.addressId ?? null,
+        bookingLocationMode: item.locationMode ?? null,
+        serviceLocationMode: item.service?.locationMode ?? null,
+      });
       return {
         ...rest,
+        channel,
+        paymentStatus,
         inviteSummary: inviteCounts,
         participantSummary: participantCounts,
         estimatedStartsAt: delay.estimatedStartsAt ? delay.estimatedStartsAt.toISOString() : null,
@@ -422,6 +533,7 @@ async function _POST(req: NextRequest) {
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const professionalIdRaw = parsePositiveInt(payload?.professionalId);
     const resourceIdRaw = parsePositiveInt(payload?.resourceId);
+    const courtIdRaw = parsePositiveInt(payload?.courtId);
     const partySizeRaw = parsePositiveInt(payload?.partySize);
 
     if (!Number.isFinite(serviceId)) {
@@ -465,7 +577,7 @@ async function _POST(req: NextRequest) {
           select: { professionalId: true, professional: { select: { isActive: true } } },
         },
         resourceLinks: {
-          select: { resourceId: true, resource: { select: { isActive: true } } },
+          select: { resourceId: true, resource: { select: { isActive: true, courtId: true } } },
         },
         organization: {
           select: { timezone: true, addressId: true, reservationAssignmentMode: true },
@@ -510,13 +622,22 @@ async function _POST(req: NextRequest) {
           .filter((link) => link.resource?.isActive)
           .map((link) => link.resourceId)
       : null;
+    const allowedCourtIdsFromService = service.resourceLinks.length
+      ? service.resourceLinks
+          .filter((link) => link.resource?.isActive && (link.resource?.courtId ?? null) != null)
+          .map((link) => link.resource?.courtId)
+          .filter((value): value is number => typeof value === "number" && value > 0)
+      : null;
     let professionalId: number | null = null;
     let resourceId: number | null = null;
+    let bookingCourtId: number | null = null;
     let partySize: number | null = null;
     const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
+    const resourceCourtById = new Map<number, number | null>();
+    const enforceServiceResourceLinks = !assignmentConfig.isCourtService;
 
-    if (!assignmentConfig.isCourtService && (partySizeRaw || resourceIdRaw)) {
+    if (!assignmentConfig.isCourtService && (partySizeRaw || resourceIdRaw || courtIdRaw)) {
       const blocked = getResourceModeBlockedPayload();
       return fail(
         ctx,
@@ -530,33 +651,64 @@ async function _POST(req: NextRequest) {
       if (!partySizeRaw) {
         return fail(ctx, 400, "CAPACITY_REQUIRED", "Capacidade obrigatória.");
       }
-      if (allowedResourceIds && allowedResourceIds.length === 0) {
+      if (enforceServiceResourceLinks && allowedResourceIds && allowedResourceIds.length === 0) {
         return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para este serviço.");
       }
       partySize = partySizeRaw;
-      if (resourceIdRaw) {
-        if (memberScopes?.resourceIds?.length) {
-          if (!memberScopes.resourceIds.includes(resourceIdRaw)) {
+
+      if (resourceIdRaw || (assignmentConfig.isCourtService && courtIdRaw)) {
+        const selectedResource = await prisma.reservationResource.findFirst({
+          where: {
+            organizationId: service.organizationId,
+            isActive: true,
+            ...(resourceIdRaw ? { id: resourceIdRaw } : { courtId: courtIdRaw }),
+          },
+          select: { id: true, capacity: true, courtId: true },
+        });
+        if (!selectedResource) {
+          if (assignmentConfig.isCourtService && courtIdRaw) {
+            return fail(ctx, 404, "COURT_INVALID", "Campo inválido.");
+          }
+          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
+        }
+
+        if (assignmentConfig.isCourtService) {
+          if (!selectedResource.courtId) {
+            return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
+          }
+          if (courtIdRaw && selectedResource.courtId !== courtIdRaw) {
+            return fail(ctx, 409, "COURT_RESOURCE_MISMATCH", "Recurso não corresponde ao campo selecionado.");
+          }
+          if (
+            allowedCourtIdsFromService &&
+            allowedCourtIdsFromService.length > 0 &&
+            !allowedCourtIdsFromService.includes(selectedResource.courtId) &&
+            !(allowedResourceIds?.includes(selectedResource.id) ?? false)
+          ) {
+            return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
+          }
+        } else if (enforceServiceResourceLinks && allowedResourceIds && !allowedResourceIds.includes(selectedResource.id)) {
+          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
+        }
+
+        if (isStaff) {
+          const allowedByResource = memberScopes?.resourceIds?.includes(selectedResource.id) ?? false;
+          const allowedByCourt = selectedResource.courtId
+            ? (memberScopes?.courtIds?.includes(selectedResource.courtId) ?? false)
+            : false;
+          if (!allowedByResource && !allowedByCourt) {
             return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
           }
-        } else if (isStaff) {
-          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
-        if (allowedResourceIds && !allowedResourceIds.includes(resourceIdRaw)) {
-          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
-        }
-        const resource = await prisma.reservationResource.findFirst({
-          where: { id: resourceIdRaw, organizationId: service.organizationId, isActive: true },
-          select: { id: true, capacity: true },
-        });
-        if (!resource) {
-          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
-        }
-        if (resource.capacity < partySize) {
+
+        if (selectedResource.capacity < partySize) {
           return fail(ctx, 400, "RESOURCE_CAPACITY_EXCEEDED", "Capacidade acima do recurso.");
         }
-        resourceId = resource.id;
-        scopeIds = [resource.id];
+
+        resourceCourtById.set(selectedResource.id, selectedResource.courtId ?? null);
+        resourceId = selectedResource.id;
+        scopeIds = [selectedResource.id];
+        bookingCourtId = assignmentConfig.isCourtService ? selectedResource.courtId ?? null : null;
       } else {
         if (memberScopes?.resourceIds?.length) {
           scopeIds = memberScopes.resourceIds;
@@ -568,11 +720,15 @@ async function _POST(req: NextRequest) {
             organizationId: service.organizationId,
             isActive: true,
             capacity: { gte: partySize },
-            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+            ...(enforceServiceResourceLinks && allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
             ...(scopeIds.length ? { id: { in: scopeIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
-          select: { id: true },
+          select: { id: true, courtId: true },
+        });
+        resources.forEach((resource) => {
+          resourceCourtById.set(resource.id, resource.courtId ?? null);
         });
         scopeIds = resources.map((resource) => resource.id);
         if (scopeIds.length === 0) {
@@ -752,6 +908,20 @@ async function _POST(req: NextRequest) {
     if (assignmentMode === "PROFESSIONAL" && !professionalId && assignedScopeId) {
       professionalId = assignedScopeId;
     }
+    if (assignmentMode === "RESOURCE" && resourceId) {
+      let linkedCourtId = resourceCourtById.get(resourceId) ?? null;
+      if (linkedCourtId == null) {
+        const resource = await prisma.reservationResource.findUnique({
+          where: { id: resourceId },
+          select: { courtId: true },
+        });
+        linkedCourtId = resource?.courtId ?? null;
+      }
+      bookingCourtId = assignmentConfig.isCourtService ? linkedCourtId : null;
+      if (assignmentConfig.isCourtService && !bookingCourtId) {
+        return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Sem ligação canónica entre campo e recurso.");
+      }
+    }
 
     const scopeIdForConflict = assignmentMode === "RESOURCE" ? resourceId : professionalId;
     if (!scopeIdForConflict) {
@@ -827,6 +997,7 @@ async function _POST(req: NextRequest) {
         assignmentMode,
         professionalId,
         resourceId,
+        courtId: bookingCourtId,
         partySize,
         pendingExpiresAt,
         snapshotTimezone: timezone,

@@ -11,6 +11,10 @@ import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
+import {
+  deactivateReservationResourcesForCourts,
+  syncReservationResourceForCourt,
+} from "@/lib/reservas/courtResourceLink";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -153,12 +157,21 @@ async function _POST(req: NextRequest) {
       displayOrder,
     };
 
-    const court = courtId
-      ? await prisma.padelClubCourt.update({
-          where: { id: courtId, padelClubId: club.id },
-          data,
-        })
-      : await prisma.padelClubCourt.create({ data });
+    const court = await prisma.$transaction(async (tx) => {
+      const saved = courtId
+        ? await tx.padelClubCourt.update({
+            where: { id: courtId, padelClubId: club.id },
+            data,
+          })
+        : await tx.padelClubCourt.create({ data });
+
+      await syncReservationResourceForCourt({
+        db: tx,
+        courtId: saved.id,
+      });
+
+      return saved;
+    });
 
     return jsonWrap({ ok: true, court }, { status: courtId ? 200 : 201 });
   } catch (err) {
@@ -211,9 +224,16 @@ async function _DELETE(req: NextRequest) {
 
   try {
     const now = new Date();
-    const updated = await prisma.padelClubCourt.update({
-      where: { id: courtId, padelClubId: club.id },
-      data: { isActive: false, deletedAt: now },
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.padelClubCourt.update({
+        where: { id: courtId, padelClubId: club.id },
+        data: { isActive: false, deletedAt: now },
+      });
+      await deactivateReservationResourcesForCourts({
+        db: tx,
+        courtIds: [saved.id],
+      });
+      return saved;
     });
     return jsonWrap({ ok: true, court: updated }, { status: 200 });
   } catch (err) {

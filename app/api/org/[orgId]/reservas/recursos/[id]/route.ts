@@ -73,7 +73,7 @@ async function _PATCH(
 
     const resource = await prisma.reservationResource.findFirst({
       where: { id: resourceId, organizationId: organization.id },
-      select: { id: true },
+      select: { id: true, courtId: true },
     });
 
     if (!resource) {
@@ -85,6 +85,15 @@ async function _PATCH(
     const capacityRaw = Number.isFinite(Number(payload?.capacity)) ? Number(payload.capacity) : null;
     const isActiveRaw = typeof payload?.isActive === "boolean" ? payload.isActive : null;
     const priorityRaw = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : null;
+
+    if (resource.courtId) {
+      return fail(
+        ctx,
+        409,
+        "COURT_RESOURCE_MANAGED_BY_COURT",
+        "Recurso ligado a campo de padel deve ser editado no módulo de campos.",
+      );
+    }
 
     const data: Record<string, unknown> = {};
     if (labelRaw) data.label = labelRaw;
@@ -150,11 +159,20 @@ async function _DELETE(
 
     const resource = await prisma.reservationResource.findFirst({
       where: { id: resourceId, organizationId: organization.id },
-      select: { id: true },
+      select: { id: true, courtId: true },
     });
 
     if (!resource) {
       return fail(ctx, 404, "RESOURCE_NOT_FOUND", "Recurso não encontrado.");
+    }
+
+    if (resource.courtId) {
+      return fail(
+        ctx,
+        409,
+        "COURT_RESOURCE_MANAGED_BY_COURT",
+        "Recurso ligado a campo de padel não pode ser removido aqui.",
+      );
     }
 
     await prisma.reservationResource.delete({ where: { id: resource.id } });
