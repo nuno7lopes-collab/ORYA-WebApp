@@ -16,38 +16,51 @@ export default function CheckInSubnav({ orgId, className }: { orgId: number | nu
           id: "scanner",
           label: "Scanner",
           href: buildOrgHref(orgId, "/check-in/scanner"),
-          isActive: ({ normalizedPathname, searchParams }) =>
-            normalizedPathname === basePath ||
-            normalizedPathname === `${basePath}/scanner` ||
-            searchParams.get("mode") === "scanner",
+          isActive: ({ normalizedPathname, searchParams }) => {
+            const mode = searchParams.get("mode");
+            if (mode) return mode === "scanner";
+            return normalizedPathname === basePath || normalizedPathname === `${basePath}/scanner`;
+          },
         },
         {
           id: "list",
           label: "Lista",
           href: buildOrgHref(orgId, "/check-in/list"),
-          isActive: ({ normalizedPathname, searchParams }) =>
-            normalizedPathname === `${basePath}/list` || searchParams.get("mode") === "list",
+          isActive: ({ normalizedPathname, searchParams }) => {
+            const mode = searchParams.get("mode");
+            if (mode) return mode === "list";
+            return normalizedPathname === `${basePath}/list`;
+          },
         },
         {
           id: "sessions",
           label: "Sessões",
           href: buildOrgHref(orgId, "/check-in/sessions"),
-          isActive: ({ normalizedPathname, searchParams }) =>
-            normalizedPathname === `${basePath}/sessions` || searchParams.get("mode") === "sessions",
+          isActive: ({ normalizedPathname, searchParams }) => {
+            const mode = searchParams.get("mode");
+            if (mode) return mode === "sessions";
+            return normalizedPathname === `${basePath}/sessions`;
+          },
         },
         {
           id: "logs",
           label: "Registos",
           href: buildOrgHref(orgId, "/check-in/logs"),
-          isActive: ({ normalizedPathname, searchParams }) =>
-            normalizedPathname === `${basePath}/logs` || searchParams.get("mode") === "logs",
+          isActive: ({ normalizedPathname, searchParams }) => {
+            const mode = searchParams.get("mode");
+            if (mode) return mode === "logs";
+            return normalizedPathname === `${basePath}/logs`;
+          },
         },
         {
           id: "devices",
           label: "Dispositivos",
           href: buildOrgHref(orgId, "/check-in/devices"),
-          isActive: ({ normalizedPathname, searchParams }) =>
-            normalizedPathname === `${basePath}/devices` || searchParams.get("mode") === "devices",
+          isActive: ({ normalizedPathname, searchParams }) => {
+            const mode = searchParams.get("mode");
+            if (mode) return mode === "devices";
+            return normalizedPathname === `${basePath}/devices`;
+          },
         },
       ]}
     />

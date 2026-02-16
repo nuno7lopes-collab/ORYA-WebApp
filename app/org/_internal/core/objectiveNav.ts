@@ -164,7 +164,7 @@ export function getObjectiveSections(
         {
           id: "politicas",
           label: "Políticas",
-          href: `${baseHref}/policies`,
+          href: "/org/policies?view=booking",
         },
         {
           id: "precos",

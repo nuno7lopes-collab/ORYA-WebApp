@@ -161,7 +161,7 @@ export function resolveRegistrationStatusFromSlots(params: {
   const allFilled = hasSlots && slots.every((slot) => slot.slotStatus === PadelPairingSlotStatus.FILLED);
   const allPaid = hasSlots && slots.every((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID);
 
-  if (allPaid) {
+  if (allFilled && allPaid) {
     return PadelRegistrationStatus.CONFIRMED;
   }
   if (allFilled && !allPaid) {

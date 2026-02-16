@@ -22,7 +22,8 @@ function getClientPlatform(req: NextRequest) {
 }
 
 export function isMobileClientRequest(req: NextRequest) {
-  return getClientPlatform(req) === "mobile";
+  const platform = getClientPlatform(req);
+  return platform === "mobile" || platform === "ios" || platform === "android";
 }
 
 export function enforceMobileClientRequest(req: NextRequest): Response | null {

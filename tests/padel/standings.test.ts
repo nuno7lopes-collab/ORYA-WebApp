@@ -16,7 +16,7 @@ describe("padel standings", () => {
           { teamA: 6, teamB: 4 },
         ],
         score: {},
-        status: "DONE",
+        status: "OFFICIAL",
         groupLabel: "A",
       },
       {
@@ -27,7 +27,7 @@ describe("padel standings", () => {
           { teamA: 6, teamB: 4 },
         ],
         score: {},
-        status: "DONE",
+        status: "OFFICIAL",
         groupLabel: "A",
       },
       {
@@ -52,7 +52,7 @@ describe("padel standings", () => {
     expect(groupA[2].pairingId).toBe(3);
   });
 
-  it("ignores matches not DONE", () => {
+  it("ignores matches not official", () => {
     const standings = computePadelStandingsByGroup(
       [
         {

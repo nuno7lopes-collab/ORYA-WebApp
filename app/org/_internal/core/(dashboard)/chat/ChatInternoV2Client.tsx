@@ -189,6 +189,11 @@ type ChatEvent =
       type: "handshake:ok";
     }
   | {
+      type: "handshake:error";
+      errorCode: string;
+      reason?: string | null;
+    }
+  | {
       type: "message:new";
       conversationId: string;
       message: Message;
@@ -1260,6 +1265,7 @@ export default function ChatInternoV2Client() {
             id: `org_${orgId}`,
           },
           client_platform: "web",
+          runtime_platform: "web",
         }),
       );
     };
@@ -1282,6 +1288,18 @@ export default function ChatInternoV2Client() {
           }
           return;
         }
+        if (parsed.type === "handshake:error") {
+          const code = typeof parsed.errorCode === "string" ? parsed.errorCode.trim().toUpperCase() : "";
+          const detail = typeof parsed.reason === "string" ? parsed.reason.trim().toUpperCase() : "";
+          if (code === "UPGRADE_REQUIRED") {
+            setWsError(detail || "UPGRADE_REQUIRED");
+          } else if (code === "RATE_LIMITED") {
+            setWsError("RATE_LIMITED");
+          } else if (code === "FORBIDDEN" || code === "UNAUTHORIZED" || code === "MOBILE_APP_REQUIRED") {
+            setWsError(code);
+          }
+          return;
+        }
         if (!handshakeReady) return;
         handleChatEvent(parsed);
       } catch {
@@ -1290,11 +1308,13 @@ export default function ChatInternoV2Client() {
     };
 
     ws.onclose = (event) => {
-      const reason = typeof event.reason === "string" ? event.reason : "";
+      const reason = typeof event.reason === "string" ? event.reason.trim().toUpperCase() : "";
       wsConnectingRef.current = false;
       setWsStatus("closed");
       if (reason === "RATE_LIMITED") {
         setWsError("RATE_LIMITED");
+      } else if (reason === "UPGRADE_REQUIRED" || reason === "MOBILE_APP_REQUIRED") {
+        setWsError(reason);
       }
       stopWsPing();
       wsRef.current = null;

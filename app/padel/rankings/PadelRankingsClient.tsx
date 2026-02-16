@@ -12,7 +12,7 @@ type RankingItem = {
   position: number;
   points: number;
   player: {
-    id: string;
+    id: number;
     fullName: string;
     level?: string | null;
   };
@@ -52,7 +52,7 @@ export default function PadelRankingsClient({
 }: PadelRankingsClientProps) {
   const resolvedLocale = resolveLocale(locale);
   const [periodDays, setPeriodDays] = useState<number>(90);
-  const [level, setLevel] = useState("");
+  const [tier, setTier] = useState("");
   const [city, setCity] = useState("");
 
   const periodOptions = useMemo(
@@ -75,11 +75,11 @@ export default function PadelRankingsClient({
       }
     }
     if (periodDays) params.set("periodDays", String(periodDays));
-    if (level.trim()) params.set("level", level.trim());
+    if (tier.trim()) params.set("tier", tier.trim());
     if (city.trim()) params.set("city", city.trim());
     params.set("limit", compact ? "20" : "80");
     return params.toString();
-  }, [eventId, scope, organizationId, periodDays, level, city, compact]);
+  }, [eventId, scope, organizationId, periodDays, tier, city, compact]);
 
   const { data, isLoading } = useSWR<RankingResponse>(`/api/padel/rankings?${query}`, fetcher, {
     revalidateOnFocus: false,
@@ -124,8 +124,8 @@ export default function PadelRankingsClient({
             />
             <input
               type="text"
-              value={level}
-              onChange={(event) => setLevel(event.target.value)}
+              value={tier}
+              onChange={(event) => setTier(event.target.value)}
               placeholder={t("levelPlaceholder", resolvedLocale)}
               className="w-24 rounded-full border border-white/15 bg-black/40 px-3 py-1 text-[12px] text-white/80 placeholder:text-white/40"
             />

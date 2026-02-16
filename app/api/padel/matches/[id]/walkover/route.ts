@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma, padel_match_status } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
@@ -12,9 +12,24 @@ import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { listTournamentDirectorUserIds, resolveIncidentAuthority } from "@/domain/padel/incidentGovernance";
 import { createNotification, shouldNotify } from "@/lib/notifications";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
+import { buildIdempotencyScope, readIdempotencyReplay, writeIdempotencyRecord } from "@/domain/padel/resultWorkflow";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
+
+function asScoreObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {} as Record<string, unknown>;
+  return value as Record<string, unknown>;
+}
+
+function resolveClientRequestId(req: NextRequest, body: Record<string, unknown>) {
+  const fromBody = typeof body.clientRequestId === "string" ? body.clientRequestId.trim() : "";
+  if (fromBody) return fromBody;
+  const fromHeader = req.headers.get("x-idempotency-key")?.trim() ?? "";
+  if (fromHeader) return fromHeader;
+  return null;
+}
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -33,6 +48,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       winnerParticipantId: true,
       eventId: true,
       status: true,
+      score: true,
+      scoreSets: true,
       roundType: true,
       roundLabel: true,
       participants: {
@@ -57,7 +74,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const organizationId = match.event.organizationId;
-  if (match.status === padel_match_status.DONE) {
+  if (isPadelOfficialStatus(match.status)) {
     return jsonWrap({ ok: false, error: "ALREADY_DONE" }, { status: 409 });
   }
 
@@ -77,6 +94,40 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     SPECIAL_RESULT_TYPES.has(resultTypeRaw) ? (resultTypeRaw as "WALKOVER" | "RETIREMENT" | "INJURY") : null;
   if (!resultType) {
     return jsonWrap({ ok: false, error: "INVALID_RESULT_TYPE" }, { status: 400 });
+  }
+  const clientRequestId = resolveClientRequestId(req, body);
+  if (!clientRequestId) {
+    return jsonWrap({ ok: false, error: "MISSING_CLIENT_REQUEST_ID" }, { status: 400 });
+  }
+
+  const action = resultType === "WALKOVER" ? "walkover" : "retired";
+  const scopeKey = buildIdempotencyScope({
+    tournamentId: match.eventId,
+    matchId,
+    action,
+    actorId: authData.user.id,
+    clientRequestId,
+  });
+
+  const currentScore = asScoreObject(match.score);
+  const idempotencyReplay = readIdempotencyReplay({ score: currentScore, scopeKey });
+  if (idempotencyReplay) {
+    return jsonWrap(
+      {
+        ok: true,
+        idempotentReplay: true,
+        match: {
+          id: match.id,
+          eventId: match.eventId,
+          status: match.status,
+          score: currentScore,
+          scoreSets: match.scoreSets ?? null,
+          winnerSide: match.winnerSide,
+          winnerParticipantId: match.winnerParticipantId,
+        },
+      },
+      { status: 200 },
+    );
   }
 
   const { organization, membership } = await getActiveOrganizationForUser(authData.user.id, {
@@ -143,6 +194,29 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   };
   const nowIso = new Date().toISOString();
 
+  const terminalStatus =
+    resultType === "WALKOVER" ? padel_match_status.WALKOVER : padel_match_status.RETIRED;
+
+  const scoreWithIncident = {
+    ...currentScore,
+    walkover: resultType === "WALKOVER",
+    resultType,
+    winnerSide: winner,
+    ruleSnapshot,
+    incidentType: resultType,
+    incidentConfirmedByRole: authority.confirmedByRole,
+    incidentConfirmationSource: authority.confirmationSource,
+    incidentConfirmedAt: nowIso,
+    incidentConfirmedBy: authData.user.id,
+  } as Record<string, unknown>;
+  const persistedScore = writeIdempotencyRecord({
+    score: scoreWithIncident,
+    scopeKey,
+    action,
+    actorId: authData.user.id,
+    status: terminalStatus,
+  });
+
   const updated = await prisma.$transaction(async (tx) => {
     const { match: updatedMatch } = await updatePadelMatch({
       tx,
@@ -152,20 +226,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       actorUserId: authData.user.id,
       beforeStatus: match.status ?? null,
       data: {
-        status: padel_match_status.DONE,
+        status: terminalStatus,
         winnerSide: winner,
         winnerParticipantId,
-        score: {
-          walkover: resultType === "WALKOVER",
-          resultType,
-          winnerSide: winner,
-          ruleSnapshot,
-          incidentType: resultType,
-          incidentConfirmedByRole: authority.confirmedByRole,
-          incidentConfirmationSource: authority.confirmationSource,
-          incidentConfirmedAt: nowIso,
-          incidentConfirmedBy: authData.user.id,
-        },
+        score: persistedScore as Prisma.InputJsonValue,
         scoreSets: buildWalkoverSets(winner, scoreRules ?? undefined),
       },
     });

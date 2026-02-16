@@ -59,6 +59,29 @@ export default function MePage() {
     user ? "/api/org-hub/organizations" : null,
     fetcher,
   );
+  const { data: padelSummaryData } = useSWR<{
+    ok: boolean;
+    stats?: { matchesPlayed?: number; wins?: number; losses?: number; winRate?: number; tournaments?: number };
+  }>(user ? "/api/padel/me/summary" : null, fetcher);
+  const { data: padelMatchesData } = useSWR<{
+    ok: boolean;
+    items?: Array<{
+      id: number;
+      status: string | null;
+      startTime?: string | null;
+      plannedStartAt?: string | null;
+      event?: { title?: string | null; slug?: string | null } | null;
+      category?: { label?: string | null } | null;
+      courtName?: string | null;
+      winnerSide?: "A" | "B" | null;
+      pairingSide?: "A" | "B" | null;
+      isWinner?: boolean | null;
+    }>;
+  }>(user ? "/api/padel/me/matches?scope=upcoming&limit=6" : null, fetcher);
+  const { data: padelHistoryData } = useSWR<{
+    ok: boolean;
+    titles?: Array<{ id: number; event?: { title?: string | null } | null; category?: { label?: string | null } | null }>;
+  }>(user ? "/api/padel/me/history" : null, fetcher);
 
   // Redireciona quando já tem username ou força login
   useEffect(() => {
@@ -125,6 +148,10 @@ export default function MePage() {
   const padelItems = agendaItems
     .filter((item) => item.type === "JOGO" || item.type === "INSCRICAO")
     .slice(0, 3);
+  const padelUpcomingMatches = padelMatchesData?.items ?? [];
+  const nextPadelMatch = padelUpcomingMatches[0] ?? null;
+  const padelStats = padelSummaryData?.stats ?? null;
+  const latestPadelTitle = (padelHistoryData?.titles ?? [])[0] ?? null;
   const organizations = orgsData?.items ?? [];
 
   const upcomingTickets = tickets.filter((t) => {
@@ -373,6 +400,35 @@ export default function MePage() {
           <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
             <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Padel</p>
             <div className="mt-3 space-y-2">
+              {nextPadelMatch && (
+                <Link
+                  href={nextPadelMatch.event?.slug ? `/eventos/${nextPadelMatch.event.slug}/calendario` : padelProfileHref}
+                  className="block rounded-xl border border-cyan-300/30 bg-cyan-400/10 px-3 py-2 hover:bg-cyan-400/20"
+                >
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-cyan-100/80">Próximo jogo</p>
+                  <p className="text-sm font-semibold text-white">{nextPadelMatch.event?.title || "Torneio Padel"}</p>
+                  <p className="text-[12px] text-white/70">
+                    {formatAgendaDate(nextPadelMatch.plannedStartAt || nextPadelMatch.startTime || null) || "Data por definir"}
+                    {nextPadelMatch.category?.label ? ` · ${nextPadelMatch.category.label}` : ""}
+                  </p>
+                </Link>
+              )}
+              {(padelStats || latestPadelTitle) && (
+                <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70 space-y-1">
+                  {padelStats && (
+                    <p>
+                      {padelStats.matchesPlayed ?? 0} jogos · {padelStats.wins ?? 0}V-{padelStats.losses ?? 0}D · WR{" "}
+                      {padelStats.winRate ?? 0}%
+                    </p>
+                  )}
+                  {latestPadelTitle && (
+                    <p>
+                      Último título: {latestPadelTitle.event?.title || "Torneio"}{" "}
+                      {latestPadelTitle.category?.label ? `(${latestPadelTitle.category.label})` : ""}
+                    </p>
+                  )}
+                </div>
+              )}
               {padelItems.length === 0 && <p className="text-[12px] text-white/60">Sem jogos pendentes.</p>}
               {padelItems.map((item) => (
                 <Link

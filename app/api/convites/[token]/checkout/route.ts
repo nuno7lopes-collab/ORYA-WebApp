@@ -10,12 +10,22 @@ import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
-import { SourceType, PaymentStatus, ProcessorFeesStatus } from "@prisma/client";
+import {
+  BookingSplitShareAttemptFailureClass,
+  BookingSplitShareAttemptStatus,
+  SourceType,
+  PaymentStatus,
+  ProcessorFeesStatus,
+} from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getBookingState } from "@/lib/reservas/bookingState";
 import { BOOKING_SPLIT_CANONICAL_MODE, emitSplitRuntimeAlert } from "@/domain/bookings/splitGarantido";
 
 const ORYA_CARD_FEE_BPS = 100;
+const SHARE_ACTION_WINDOW_MS = Math.max(
+  60_000,
+  Number(process.env.BOOKING_SPLIT_SHARE_ACTION_WINDOW_MS || String(30 * 60 * 1000)),
+);
 
 function fail(
   ctx: { requestId: string; correlationId: string },
@@ -45,6 +55,23 @@ function extractIntentCustomerId(intent: { customer?: string | { id?: string } |
   return null;
 }
 
+function classifyShareAttemptStatus(intentStatus: string | null | undefined) {
+  if (intentStatus === "succeeded") return BookingSplitShareAttemptStatus.SUCCEEDED;
+  if (intentStatus === "requires_action") return BookingSplitShareAttemptStatus.REQUIRES_ACTION;
+  if (intentStatus === "requires_confirmation") return BookingSplitShareAttemptStatus.REQUIRES_ACTION;
+  if (intentStatus === "requires_payment_method") return BookingSplitShareAttemptStatus.REQUIRES_ACTION;
+  if (intentStatus === "canceled") return BookingSplitShareAttemptStatus.CANCELLED;
+  if (intentStatus === "processing") return BookingSplitShareAttemptStatus.OPEN;
+  return BookingSplitShareAttemptStatus.OPEN;
+}
+
+function classifyShareAttemptFailureClass(intentStatus: string | null | undefined) {
+  if (intentStatus === "requires_action") return BookingSplitShareAttemptFailureClass.AUTH_REQUIRED;
+  if (intentStatus === "requires_payment_method") return BookingSplitShareAttemptFailureClass.INVALID_PAYMENT_METHOD;
+  if (intentStatus === "canceled") return BookingSplitShareAttemptFailureClass.UNKNOWN;
+  return null;
+}
+
 async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -60,7 +87,16 @@ async function _POST(
     const payload = await req.json().catch(() => ({}));
     const paymentMethodRaw =
       typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;
-    const paymentMethod: "mbway" | "card" = paymentMethodRaw === "card" ? "card" : "mbway";
+    if (paymentMethodRaw && paymentMethodRaw !== "card") {
+      return fail(
+        ctx,
+        422,
+        "SPLIT_PAYMENT_METHOD_NOT_ALLOWED",
+        "SPLIT_GARANTIDO aceita apenas cartão (`paymentMethod=card`).",
+        false,
+      );
+    }
+    const paymentMethod: "card" = "card";
 
     const invite = await prisma.bookingInvite.findUnique({
       where: { token },
@@ -229,7 +265,72 @@ async function _POST(
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
 
     const sourceId = String(booking.id);
-    const purchaseId = `booking_${booking.id}_split_${participant.id}`;
+    const now = new Date();
+    const actionExpireAt = new Date(
+      Math.min(
+        now.getTime() + SHARE_ACTION_WINDOW_MS,
+        split.deadlineAt ? split.deadlineAt.getTime() : now.getTime() + SHARE_ACTION_WINDOW_MS,
+      ),
+    );
+    const latestShareAttempt = await prisma.bookingSplitShareAttempt.findFirst({
+      where: { participantId: participant.id },
+      orderBy: [{ attemptNo: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        attemptNo: true,
+        status: true,
+        paymentId: true,
+        actionExpireAt: true,
+      },
+    });
+    const latestAttemptOpen =
+      latestShareAttempt &&
+      (latestShareAttempt.status === BookingSplitShareAttemptStatus.OPEN ||
+        latestShareAttempt.status === BookingSplitShareAttemptStatus.REQUIRES_ACTION) &&
+      latestShareAttempt.paymentId &&
+      latestShareAttempt.actionExpireAt &&
+      latestShareAttempt.actionExpireAt.getTime() > now.getTime();
+
+    if (
+      latestShareAttempt &&
+      (latestShareAttempt.status === BookingSplitShareAttemptStatus.OPEN ||
+        latestShareAttempt.status === BookingSplitShareAttemptStatus.REQUIRES_ACTION) &&
+      !latestAttemptOpen
+    ) {
+      await prisma.bookingSplitShareAttempt.update({
+        where: { id: latestShareAttempt.id },
+        data: {
+          status: BookingSplitShareAttemptStatus.CANCELLED,
+          failureClass: BookingSplitShareAttemptFailureClass.AUTH_REQUIRED,
+        },
+      });
+    }
+
+    const attemptNo = latestAttemptOpen
+      ? latestShareAttempt.attemptNo
+      : (latestShareAttempt?.attemptNo ?? 0) + 1;
+    const purchaseId = latestAttemptOpen
+      ? (latestShareAttempt?.paymentId as string)
+      : `booking_${booking.id}_split_${participant.id}_share_${attemptNo}`;
+    const shareAttempt =
+      latestAttemptOpen && latestShareAttempt
+        ? latestShareAttempt
+        : await prisma.bookingSplitShareAttempt.create({
+            data: {
+              participantId: participant.id,
+              attemptNo,
+              status: BookingSplitShareAttemptStatus.OPEN,
+              paymentId: purchaseId,
+              actionExpireAt,
+            },
+            select: {
+              id: true,
+              attemptNo: true,
+              status: true,
+              paymentId: true,
+              actionExpireAt: true,
+            },
+          });
     const feePolicyVersion = computeFeePolicyVersion({
       feeMode: pricing.feeMode,
       feeBps: pricing.feeBpsApplied,
@@ -276,7 +377,7 @@ async function _POST(
       amountCents: totalCents,
       currency,
       intentParams: {
-        payment_method_types: paymentMethod === "card" ? ["card"] : ["mb_way"],
+        payment_method_types: ["card"],
         description: `Reserva serviço ${booking.serviceId} (split)`,
       },
       metadata: {
@@ -289,6 +390,8 @@ async function _POST(
         orgId: String(booking.organizationId),
         userId: participant.userId ?? "",
         inviteId: String(invite.id),
+        bookingSplitShareAttemptId: String(shareAttempt.id),
+        bookingSplitShareAttemptNo: String(shareAttempt.attemptNo),
         baseShareCents: String(baseShareCents),
         shareCents: String(totalCents),
         platformFeeCents: String(platformFeeCents),
@@ -321,6 +424,8 @@ async function _POST(
     });
 
     const intent = ensured.paymentIntent;
+    const shareAttemptStatus = classifyShareAttemptStatus(intent.status);
+    const shareAttemptFailureClass = classifyShareAttemptFailureClass(intent.status);
     const offsessionPaymentMethodId = extractIntentPaymentMethodId(intent);
     const offsessionCustomerId = extractIntentCustomerId(intent);
     await prisma.$transaction(async (tx) => {
@@ -330,8 +435,23 @@ async function _POST(
           shareCents: totalCents,
           platformFeeCents,
           paymentIntentId: intent.id,
+          activeShareAttemptId:
+            shareAttemptStatus === BookingSplitShareAttemptStatus.SUCCEEDED ||
+            shareAttemptStatus === BookingSplitShareAttemptStatus.CANCELLED
+              ? null
+              : shareAttempt.id,
           offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
           offsessionCustomerId: offsessionCustomerId ?? undefined,
+        },
+      });
+      await tx.bookingSplitShareAttempt.update({
+        where: { id: shareAttempt.id },
+        data: {
+          status: shareAttemptStatus,
+          failureClass: shareAttemptFailureClass ?? undefined,
+          paymentId: purchaseId,
+          paymentIntentId: intent.id,
+          actionExpireAt,
         },
       });
 

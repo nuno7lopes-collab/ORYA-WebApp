@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
+import { isPadelOfficialPublicResult } from "@/domain/padel/publicResult";
 import { EventAccessMode } from "@prisma/client";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { formatDate, formatTime, resolveLocale, t } from "@/lib/i18n";
@@ -29,12 +30,15 @@ const pairingName = (pairing?: { slots?: PairingSlot[] } | null, locale?: string
 };
 
 const formatScoreLabel = (
-  match: { scoreSets?: Array<{ teamA: number; teamB: number }> | null; score?: Record<string, unknown> | null },
+  match: {
+    status: string | null | undefined;
+    scoreSets?: Array<{ teamA: number; teamB: number }> | null;
+    score?: Record<string, unknown> | null;
+  },
   locale?: string | null,
 ) => {
+  if (!isPadelOfficialPublicResult({ status: match.status, score: match.score })) return "—";
   const score = (match.score || {}) as Record<string, unknown>;
-  if (score.disputeStatus === "OPEN") return t("scoreDispute", locale);
-  if (score.delayStatus === "DELAYED") return t("scoreDelayed", locale);
   if (match.scoreSets?.length) {
     return match.scoreSets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
   }
@@ -50,6 +54,33 @@ const formatScoreLabel = (
   if (resultType === "RETIREMENT") return t("scoreRetirement", locale);
   if (resultType === "INJURY") return t("scoreInjury", locale);
   return "—";
+};
+
+const formatMatchStatusLabel = (status: string | null | undefined, locale?: string | null) => {
+  switch (status) {
+    case "PENDING":
+      return t("statusPending", locale);
+    case "IN_PROGRESS":
+      return t("statusInProgress", locale);
+    case "RESULT_SUBMITTED":
+      return "Resultado submetido";
+    case "PENDING_CONFIRMATION":
+      return "Pendente confirmação";
+    case "PENDING_REVIEW_EXPIRED":
+      return "Pendente expirado";
+    case "DISPUTED":
+      return "Em disputa";
+    case "OFFICIAL":
+      return "Oficial";
+    case "WALKOVER":
+      return t("scoreWalkover", locale);
+    case "RETIRED":
+      return "Desistência";
+    case "CANCELLED":
+      return t("statusCancelled", locale);
+    default:
+      return status ?? "—";
+  }
 };
 
 async function resolvePageLocale(searchParams?: Record<string, string | string[] | undefined>) {
@@ -154,6 +185,7 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
   const startAt = match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null;
   const scoreLabel = formatScoreLabel(
     {
+      status: match.status ?? null,
       scoreSets: Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null,
       score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {},
     },
@@ -200,7 +232,7 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
 
           <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
             <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{t("statusLabel", locale)}</p>
-            <p className="mt-2 text-sm text-white/90">{match.status}</p>
+            <p className="mt-2 text-sm text-white/90">{formatMatchStatusLabel(match.status, locale)}</p>
             <p className="text-[12px] text-white/60">{t("resultLabel", locale)}: {scoreLabel}</p>
           </div>
         </div>

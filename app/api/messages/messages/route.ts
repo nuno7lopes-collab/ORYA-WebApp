@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
   if (bookingId && !conversationId) {
     const delegatedReq = await cloneWithJsonBody(req, {
       body: payload?.body,
+      attachments: payload?.attachments,
       clientMessageId: payload?.clientMessageId,
     });
     return postBookingMessage(delegatedReq, { params: { bookingId: String(bookingId) } });

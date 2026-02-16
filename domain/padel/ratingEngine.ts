@@ -332,7 +332,7 @@ export async function rebuildPadelRatingsForEvent(params: {
   const matches = await tx.eventMatchSlot.findMany({
     where: {
       eventId,
-      status: "DONE",
+      status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
     },
     select: {
       id: true,

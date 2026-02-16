@@ -47,20 +47,20 @@ import { queuePairingInvite, queueWaitlistJoined } from "@/domain/notifications/
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
-import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 function normalizeInvitedContact(
   value: string | null | undefined,
-  options?: Parameters<typeof normalizePhone>[1],
 ) {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (trimmed.startsWith("@")) return trimmed.toLowerCase();
   if (trimmed.includes("@")) return trimmed.toLowerCase();
-  return isValidPhone(trimmed) ? normalizePhone(trimmed, options) : trimmed;
+  const compactPhoneLike = trimmed.replace(/[\s().-]/g, "");
+  if (/^\+?\d{7,}$/.test(compactPhoneLike)) return null;
+  return trimmed.toLowerCase();
 }
 
 const pairingSlotSelect = {
@@ -105,7 +105,6 @@ const pairingReadSelect = {
 async function syncPlayersFromSlots({
   organizationId,
   slots,
-  phoneOptions,
 }: {
   organizationId: number;
   slots: Array<{
@@ -113,7 +112,6 @@ async function syncPlayersFromSlots({
     invitedContact: string | null;
     invitedUserId: string | null;
   }>;
-  phoneOptions?: { defaultCountryIso2?: string | null; defaultLocale?: string | null; defaultCountryCallingCode?: string };
 }) {
   const profileIds = Array.from(
     new Set(
@@ -134,7 +132,7 @@ async function syncPlayersFromSlots({
     }
   }
 
-  // 2) Convites por contacto (email ou telefone)
+  // 2) Convites por contacto (email ou username)
   const invitedContacts = Array.from(
     new Set(
       slots
@@ -145,15 +143,14 @@ async function syncPlayersFromSlots({
   for (const contact of invitedContacts) {
     const isEmail = contact.includes("@");
     const email = isEmail ? contact.toLowerCase() : null;
-    const phone = !isEmail ? contact : null;
     await upsertPadelPlayerProfile({
       organizationId,
       fullName: contact,
       email,
-      phone,
-      phoneCountryIso2: phoneOptions?.defaultCountryIso2 ?? null,
-      phoneLocale: phoneOptions?.defaultLocale ?? null,
-      phoneCallingCode: phoneOptions?.defaultCountryCallingCode,
+      phone: null,
+      phoneCountryIso2: null,
+      phoneLocale: null,
+      phoneCallingCode: undefined,
     });
   }
 }
@@ -176,10 +173,8 @@ async function _POST(req: NextRequest) {
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
-  const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
   const invitedContactNormalized = normalizeInvitedContact(
     typeof body?.invitedContact === "string" ? body.invitedContact : null,
-    phoneOptions,
   );
   const targetUserId =
     typeof body?.targetUserId === "string" && body.targetUserId.trim().length > 0
@@ -736,7 +731,7 @@ async function _POST(req: NextRequest) {
             invitedUserId: null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.CAPTAIN,
-            slotStatus: captainPaid ? PadelPairingSlotStatus.FILLED : PadelPairingSlotStatus.PENDING,
+            slotStatus: PadelPairingSlotStatus.FILLED,
             paymentStatus: captainPaid ? PadelPairingPaymentStatus.PAID : PadelPairingPaymentStatus.UNPAID,
           },
           {
@@ -900,7 +895,6 @@ async function _POST(req: NextRequest) {
     // Auto-criar perfis de jogador para o organização (roster)
     await syncPlayersFromSlots({
       organizationId,
-      phoneOptions,
       slots: result.pairing.slots.map((s) => ({
         profileId: (s as { profileId?: string | null }).profileId ?? null,
         invitedContact: (s as { invitedContact?: string | null }).invitedContact ?? null,

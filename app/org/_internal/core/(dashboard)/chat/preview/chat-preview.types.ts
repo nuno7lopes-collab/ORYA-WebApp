@@ -204,6 +204,11 @@ export type ChatEvent =
       type: "handshake:ok";
     }
   | {
+      type: "handshake:error";
+      errorCode: string;
+      reason?: string | null;
+    }
+  | {
       type: "message:new";
       conversationId: string;
       message: Message;

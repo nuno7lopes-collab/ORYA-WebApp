@@ -27,11 +27,32 @@ type BuyerMonthlyRollup = {
   purchasesByMonth: Map<string, number>;
 };
 
-const INCLUDED_STATUSES: SaleSummaryStatus[] = [
-  SaleSummaryStatus.PAID,
-  SaleSummaryStatus.PARTIAL_REFUND,
-  SaleSummaryStatus.REFUNDED,
-];
+let cachedIncludedStatuses: SaleSummaryStatus[] | null = null;
+
+async function resolveIncludedStatuses() {
+  if (cachedIncludedStatuses) return cachedIncludedStatuses;
+  try {
+    const rows = await prisma.$queryRaw<Array<{ label: string }>>(Prisma.sql`
+      SELECT e.enumlabel::text AS label
+      FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+      JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname = 'app_v3'
+        AND t.typname = 'SaleSummaryStatus'
+    `);
+    const labels = new Set(rows.map((row) => row.label));
+    const resolved: SaleSummaryStatus[] = [SaleSummaryStatus.PAID, SaleSummaryStatus.REFUNDED];
+    if (labels.has("PARTIAL_REFUND")) {
+      resolved.push(SaleSummaryStatus.PARTIAL_REFUND);
+    }
+    cachedIncludedStatuses = resolved;
+    return resolved;
+  } catch {
+    const fallback: SaleSummaryStatus[] = [SaleSummaryStatus.PAID, SaleSummaryStatus.REFUNDED];
+    cachedIncludedStatuses = fallback;
+    return fallback;
+  }
+}
 
 function parseTemplateType(raw: string | null) {
   if (!raw) return null;
@@ -127,13 +148,14 @@ async function _GET(req: NextRequest) {
         ? { OR: [{ templateType: null }, { templateType: { not: excludeTemplateType } }] }
         : {};
 
+    const includedStatuses = await resolveIncludedStatuses();
     const sales = await prisma.saleSummary.findMany({
       where: {
         event: {
           organizationId: organization.id,
           ...eventTemplateFilter,
         },
-        status: { in: INCLUDED_STATUSES },
+        status: { in: includedStatuses },
         OR: [{ ownerIdentityId: { not: null } }, { ownerUserId: { not: null } }, { userId: { not: null } }],
       },
       select: {

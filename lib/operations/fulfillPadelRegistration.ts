@@ -40,11 +40,11 @@ function extractPaymentMethodId(intent: IntentLike) {
   return null;
 }
 
-function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; email?: string | null }) {
-  if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
-  if (params.email) return `email:${params.email}`;
-  return "unknown";
+function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
+  if (!params.ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${params.ownerIdentityId}`;
 }
 
 function normalizeEmail(value: string | null | undefined) {
@@ -179,6 +179,9 @@ export async function fulfillPadelRegistrationIntent(
   } else if (!ownerIdentityId && ownerEmail) {
     const identity = await ensureEmailIdentity({ email: ownerEmail });
     ownerIdentityId = identity.id;
+  }
+  if (!ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
   }
 
   const now = new Date();
@@ -381,20 +384,11 @@ export async function fulfillPadelRegistrationIntent(
         },
       });
 
-      const slot = line.pairingSlotId
-        ? pairing.slots.find((s) => s.id === line.pairingSlotId)
-        : null;
-      const rawEntitlementOwnerUserId =
-        slot?.profileId ?? slot?.invitedUserId ?? ownerUserId ?? null;
-      const entitlementEmail =
-        normalizeEmail(slot?.invitedContact ?? null) ?? ownerEmail ?? null;
       const resolvedIdentityId =
         ownerIdentityId ?? payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
-      const entitlementOwnerUserId = resolvedIdentityId ? null : rawEntitlementOwnerUserId;
+      const entitlementOwnerUserId = null;
       const ownerKey = buildOwnerKey({
-        ownerUserId: entitlementOwnerUserId,
         ownerIdentityId: resolvedIdentityId,
-        email: entitlementEmail,
       });
 
       for (let i = 0; i < line.qty; i += 1) {

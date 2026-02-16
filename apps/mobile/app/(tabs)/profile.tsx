@@ -35,6 +35,7 @@ import { useUserFollowers, useUserFollowing } from "../../features/network/follo
 import { FollowListModal } from "../../components/profile/FollowListModal";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import type { AgendaItem } from "../../features/profile/types";
+import { splitAgendaTimeline } from "../../features/profile/timeline";
 import { getMobileEnv } from "../../lib/env";
 import { resolveMobileLink } from "../../lib/links";
 
@@ -482,47 +483,12 @@ export default function ProfileScreen() {
   };
 
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
-  const totalEvents = agendaStats.upcoming + agendaStats.past;
-  const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalEvents };
+  const totalTimelineItems = agendaStats.upcoming + agendaStats.past;
+  const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalTimelineItems };
   const agendaItems = useMemo(() => agenda.data?.items ?? [], [agenda.data?.items]);
-  const eventItems = useMemo(
-    () => agendaItems.filter((item) => item.type === "EVENTO" || item.type === "JOGO"),
-    [agendaItems],
-  );
-  const upcomingItems = useMemo(() => {
-    const items = eventItems;
-    const now = Date.now();
-    return items
-      .filter((item) => new Date(item.startAt).getTime() >= now)
-      .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-      .slice(0, 3);
-  }, [eventItems]);
-  const pastItems = useMemo(() => {
-    const items = eventItems;
-    const now = Date.now();
-    return items
-      .filter((item) => new Date(item.startAt).getTime() < now)
-      .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime())
-      .slice(0, 3);
-  }, [eventItems]);
-  const eventStats = useMemo(() => {
-    const now = Date.now();
-    const currentYear = new Date(now).getFullYear();
-    const currentMonth = new Date(now).getMonth();
-    let upcoming = 0;
-    let past = 0;
-    let thisMonth = 0;
-    eventItems.forEach((item) => {
-      const start = new Date(item.startAt);
-      if (Number.isNaN(start.getTime())) return;
-      if (start.getTime() >= now) upcoming += 1;
-      else past += 1;
-      if (start.getFullYear() === currentYear && start.getMonth() === currentMonth) {
-        thisMonth += 1;
-      }
-    });
-    return { upcoming, past, thisMonth };
-  }, [eventItems]);
+  const timeline = useMemo(() => splitAgendaTimeline(agendaItems), [agendaItems]);
+  const activeTimelineItems = useMemo(() => timeline.active.slice(0, 4), [timeline.active]);
+  const historyTimelineItems = useMemo(() => timeline.history.slice(0, 4), [timeline.history]);
 
   const formatAgendaDate = (value: string) =>
     new Date(value).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
@@ -626,7 +592,7 @@ export default function ProfileScreen() {
               counts={{
                 followers: counts.followers,
                 following: counts.following,
-                events: counts.events ?? totalEvents,
+                events: counts.events ?? totalTimelineItems,
               }}
               onCoverPress={editMode ? () => openImageActions("cover") : undefined}
               onAvatarPress={editMode ? () => openImageActions("avatar") : undefined}
@@ -785,7 +751,7 @@ export default function ProfileScreen() {
               </GlassCard>
             )}
 
-            <SectionHeader title="Calendário" subtitle="Próximos eventos e torneios." />
+            <SectionHeader title="Timeline pessoal" subtitle="Reservas, bilhetes, inscrições e jogos." />
             {agenda.isLoading ? (
               <View className="gap-3">
                 <GlassSkeleton height={90} />
@@ -794,28 +760,28 @@ export default function ProfileScreen() {
               <View className="gap-3">
                 <GlassSurface intensity={48}>
                   <Text className="text-white/70 text-sm">
-                    Próximos eventos: {eventStats.upcoming} · Este mês: {eventStats.thisMonth}
+                    Ativos: {timeline.active.length} · Histórico: {timeline.history.length}
                   </Text>
                 </GlassSurface>
-                {upcomingItems.length === 0 && pastItems.length === 0 ? (
+                {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
                   <GlassCard intensity={52}>
-                    <Text className="text-white/60 text-xs">Ainda não tens eventos no calendário.</Text>
+                    <Text className="text-white/60 text-xs">Ainda não tens itens na tua timeline pessoal.</Text>
                   </GlassCard>
                 ) : (
                   <>
-                    {upcomingItems.length > 0 ? (
+                    {activeTimelineItems.length > 0 ? (
                       <GlassCard intensity={52}>
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Próximos</Text>
-                          {upcomingItems.map(renderAgendaItem)}
+                          <Text className="text-white text-sm font-semibold">Ativos</Text>
+                          {activeTimelineItems.map(renderAgendaItem)}
                         </View>
                       </GlassCard>
                     ) : null}
-                    {pastItems.length > 0 ? (
+                    {historyTimelineItems.length > 0 ? (
                       <GlassCard intensity={48}>
                         <View className="gap-3">
-                          <Text className="text-white/80 text-sm font-semibold">Passados</Text>
-                          {pastItems.map(renderAgendaItem)}
+                          <Text className="text-white/80 text-sm font-semibold">Histórico</Text>
+                          {historyTimelineItems.map(renderAgendaItem)}
                         </View>
                       </GlassCard>
                     ) : null}

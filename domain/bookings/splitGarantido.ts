@@ -1,8 +1,12 @@
 import crypto from "crypto";
 import {
+  BookingSplitCancelReason,
   BookingSplitCaptureBeforeSource,
+  BookingSplitHoldAttemptStatus,
   BookingSplitOffsessionAttemptStatus,
   BookingSplitRailState,
+  BookingSplitShareAttemptFailureClass,
+  BookingSplitShareAttemptStatus,
   BookingSplitStatus,
   OrgType,
   Prisma,
@@ -13,9 +17,29 @@ export const BOOKING_SPLIT_CANONICAL_MODE = "SPLIT_GARANTIDO" as const;
 export const BOOKING_SPLIT_GUARD_T6H_MS = 6 * 60 * 60 * 1000;
 export const BOOKING_SPLIT_GUARD_T2H_MS = 2 * 60 * 60 * 1000;
 
-const CAPTURE_BEFORE_BUFFER_MS = 30 * 60 * 1000;
-const RETRY_WINDOW_MS = 2 * 60 * 60 * 1000;
-const OFFSESSION_ATTEMPT_SCHEDULE_MS = [0, 30 * 60 * 1000, 120 * 60 * 1000] as const;
+function parseDurationMs(raw: string | undefined, fallbackMs: number) {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallbackMs;
+  const rounded = Math.trunc(parsed);
+  return rounded > 0 ? rounded : fallbackMs;
+}
+
+export const BOOKING_SPLIT_SAFETY_BUFFER_MS = parseDurationMs(
+  process.env.BOOKING_SPLIT_SAFETY_BUFFER_MS,
+  6 * 60 * 60 * 1000,
+);
+export const BOOKING_SPLIT_OFFSESSION_RETRY_WINDOW_MS = parseDurationMs(
+  process.env.BOOKING_SPLIT_OFFSESSION_RETRY_WINDOW_MS,
+  7 * 24 * 60 * 60 * 1000,
+);
+const OFFSESSION_ATTEMPT_SCHEDULE_MS = [
+  0,
+  30 * 60 * 1000,
+  120 * 60 * 1000,
+  24 * 60 * 60 * 1000,
+  72 * 60 * 60 * 1000,
+  144 * 60 * 60 * 1000,
+] as const;
 export const BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS = OFFSESSION_ATTEMPT_SCHEDULE_MS.length;
 
 type TxLike = Prisma.TransactionClient;
@@ -47,6 +71,22 @@ export type BookingSplitSettlementSnapshot = {
   captureBeforeSource: BookingSplitCaptureBeforeSource;
 };
 
+export type BookingSplitHoldCoverageResult =
+  | {
+      state: "NOT_FOUND" | "NOT_OPEN" | "NO_DEADLINE";
+      splitId: number;
+    }
+  | {
+      state: "COVERED" | "REPLACED";
+      splitId: number;
+      captureBeforeAt: string;
+      captureBeforeSource: BookingSplitCaptureBeforeSource;
+    }
+  | {
+      state: "GUARANTEE_LOST";
+      splitId: number;
+    };
+
 export function computeSplitCaptureBefore(params: {
   deadlineAt: Date;
   gatewayCaptureBefore?: Date | null;
@@ -60,9 +100,34 @@ export function computeSplitCaptureBefore(params: {
   }
 
   return {
-    captureBeforeAt: new Date(params.deadlineAt.getTime() - CAPTURE_BEFORE_BUFFER_MS),
+    captureBeforeAt: new Date(params.deadlineAt.getTime() + BOOKING_SPLIT_SAFETY_BUFFER_MS),
     captureBeforeSource: BookingSplitCaptureBeforeSource.CANONICAL_COMPUTED_TABLE,
   } as const;
+}
+
+export function hasSplitGuaranteeCoverage(params: {
+  deadlineAt: Date;
+  captureBeforeAt: Date;
+  safetyBufferMs?: number;
+}) {
+  const safetyBufferMs = parseDurationMs(
+    params.safetyBufferMs == null ? undefined : String(params.safetyBufferMs),
+    BOOKING_SPLIT_SAFETY_BUFFER_MS,
+  );
+  return params.captureBeforeAt.getTime() >= params.deadlineAt.getTime() + safetyBufferMs;
+}
+
+export function hasSplitCaptureWindowViability(params: {
+  captureBeforeAt: Date;
+  now?: Date;
+  safetyBufferMs?: number;
+}) {
+  const now = params.now ?? new Date();
+  const safetyBufferMs = parseDurationMs(
+    params.safetyBufferMs == null ? undefined : String(params.safetyBufferMs),
+    BOOKING_SPLIT_SAFETY_BUFFER_MS,
+  );
+  return params.captureBeforeAt.getTime() - safetyBufferMs > now.getTime();
 }
 
 export function computeSplitRetryUntil(params: {
@@ -71,9 +136,10 @@ export function computeSplitRetryUntil(params: {
   captureBeforeAt?: Date | null;
 }) {
   const now = params.now ?? new Date();
-  const candidates = [now.getTime() + RETRY_WINDOW_MS];
-  if (params.deadlineAt) candidates.push(params.deadlineAt.getTime() + RETRY_WINDOW_MS);
-  if (params.captureBeforeAt) candidates.push(params.captureBeforeAt.getTime() + RETRY_WINDOW_MS);
+  const candidates = [now.getTime() + BOOKING_SPLIT_OFFSESSION_RETRY_WINDOW_MS];
+  if (params.deadlineAt) {
+    candidates.push(params.deadlineAt.getTime() + BOOKING_SPLIT_OFFSESSION_RETRY_WINDOW_MS);
+  }
   return new Date(Math.max(...candidates));
 }
 
@@ -82,7 +148,7 @@ export function computeSplitOffsessionStartedAt(params: {
   now?: Date;
 }) {
   if (params.retryUntilAt) {
-    return new Date(params.retryUntilAt.getTime() - RETRY_WINDOW_MS);
+    return new Date(params.retryUntilAt.getTime() - BOOKING_SPLIT_OFFSESSION_RETRY_WINDOW_MS);
   }
   return params.now ?? new Date();
 }
@@ -215,6 +281,178 @@ export function buildBookingSplitSettlementSnapshot(params: {
     destinationAccountRef: params.destinationAccountRef ?? null,
     captureBeforeSource: params.captureBeforeSource,
   };
+}
+
+export async function enforceSplitHoldCoverage(params: {
+  tx: TxLike;
+  splitId: number;
+  now?: Date;
+  correlationId?: string;
+}): Promise<BookingSplitHoldCoverageResult> {
+  const now = params.now ?? new Date();
+  const correlationId = params.correlationId ?? crypto.randomUUID();
+  const split = await params.tx.bookingSplit.findUnique({
+    where: { id: params.splitId },
+    select: {
+      id: true,
+      splitMode: true,
+      status: true,
+      bookingId: true,
+      organizationId: true,
+      deadlineAt: true,
+      captureBeforeAt: true,
+      captureBeforeSource: true,
+      holdAttempts: {
+        orderBy: { attemptNo: "desc" },
+        take: 1,
+        select: { attemptNo: true },
+      },
+    },
+  });
+  if (!split) return { state: "NOT_FOUND", splitId: params.splitId };
+  if (split.splitMode !== BOOKING_SPLIT_CANONICAL_MODE || split.status !== BookingSplitStatus.OPEN) {
+    return { state: "NOT_OPEN", splitId: split.id };
+  }
+  if (!split.deadlineAt) return { state: "NO_DEADLINE", splitId: split.id };
+
+  const currentCaptureBeforeAt =
+    split.captureBeforeAt ??
+    computeSplitCaptureBefore({
+      deadlineAt: split.deadlineAt,
+      gatewayCaptureBefore: null,
+    }).captureBeforeAt;
+  const currentCaptureBeforeSource =
+    split.captureBeforeSource ?? BookingSplitCaptureBeforeSource.CANONICAL_COMPUTED_TABLE;
+
+  if (
+    hasSplitGuaranteeCoverage({ deadlineAt: split.deadlineAt, captureBeforeAt: currentCaptureBeforeAt }) &&
+    hasSplitCaptureWindowViability({ captureBeforeAt: currentCaptureBeforeAt, now })
+  ) {
+    if (!split.captureBeforeAt) {
+      await params.tx.bookingSplit.update({
+        where: { id: split.id },
+        data: {
+          captureBeforeAt: currentCaptureBeforeAt,
+          captureBeforeSource: currentCaptureBeforeSource,
+        },
+      });
+    }
+    return {
+      state: "COVERED",
+      splitId: split.id,
+      captureBeforeAt: currentCaptureBeforeAt.toISOString(),
+      captureBeforeSource: currentCaptureBeforeSource,
+    };
+  }
+
+  const replacement = computeSplitCaptureBefore({
+    deadlineAt: split.deadlineAt,
+    gatewayCaptureBefore: null,
+  });
+  const replacementAttemptNo = (split.holdAttempts[0]?.attemptNo ?? 0) + 1;
+  const replacementIsValid =
+    hasSplitGuaranteeCoverage({
+      deadlineAt: split.deadlineAt,
+      captureBeforeAt: replacement.captureBeforeAt,
+    }) &&
+    hasSplitCaptureWindowViability({
+      captureBeforeAt: replacement.captureBeforeAt,
+      now,
+    }) &&
+    replacement.captureBeforeAt.getTime() > currentCaptureBeforeAt.getTime();
+
+  if (replacementIsValid) {
+    await params.tx.bookingSplit.update({
+      where: { id: split.id },
+      data: {
+        captureBeforeAt: replacement.captureBeforeAt,
+        captureBeforeSource: replacement.captureBeforeSource,
+      },
+    });
+    await params.tx.bookingSplitHoldAttempt.create({
+      data: {
+        splitId: split.id,
+        attemptNo: replacementAttemptNo,
+        status: BookingSplitHoldAttemptStatus.SUCCEEDED,
+        previousCaptureBeforeAt: currentCaptureBeforeAt,
+        nextCaptureBeforeAt: replacement.captureBeforeAt,
+        metadata: {
+          reason: "COVERAGE_ENFORCER_REPLACE_HOLD",
+          correlationId,
+        },
+      },
+    });
+    emitSplitMetric("split_hold_replace_success_count", {
+      splitId: split.id,
+      bookingId: split.bookingId,
+      organizationId: split.organizationId,
+      correlationId,
+    });
+    return {
+      state: "REPLACED",
+      splitId: split.id,
+      captureBeforeAt: replacement.captureBeforeAt.toISOString(),
+      captureBeforeSource: replacement.captureBeforeSource,
+    };
+  }
+
+  await params.tx.bookingSplitHoldAttempt.create({
+    data: {
+      splitId: split.id,
+      attemptNo: replacementAttemptNo,
+      status: BookingSplitHoldAttemptStatus.FAILED_FINAL,
+      previousCaptureBeforeAt: currentCaptureBeforeAt,
+      nextCaptureBeforeAt: replacement.captureBeforeAt,
+      errorCode: "GUARANTEE_LOST",
+      metadata: {
+        reason: "COVERAGE_ENFORCER_REPLACE_HOLD_FAILED",
+        correlationId,
+      },
+    },
+  });
+  await params.tx.bookingSplit.update({
+    where: { id: split.id },
+    data: {
+      status: BookingSplitStatus.CANCELLED,
+      cancelReason: BookingSplitCancelReason.GUARANTEE_LOST,
+      settledAt: null,
+      debtOpenedAt: null,
+    },
+  });
+  await params.tx.bookingSplitParticipant.updateMany({
+    where: {
+      splitId: split.id,
+      status: { in: ["PENDING", "EXPIRED"] },
+    },
+    data: {
+      status: "CANCELLED",
+      activeShareAttemptId: null,
+    },
+  });
+  await params.tx.bookingSplitShareAttempt.updateMany({
+    where: {
+      participant: { splitId: split.id },
+      status: {
+        in: [
+          BookingSplitShareAttemptStatus.OPEN,
+          BookingSplitShareAttemptStatus.REQUIRES_ACTION,
+        ],
+      },
+    },
+    data: {
+      status: BookingSplitShareAttemptStatus.CANCELLED,
+      failureClass: BookingSplitShareAttemptFailureClass.UNKNOWN,
+    },
+  });
+  emitSplitAlert("split_guarantee_lost", {
+    splitId: split.id,
+    bookingId: split.bookingId,
+    organizationId: split.organizationId,
+    correlationId,
+    captureBeforeAt: currentCaptureBeforeAt.toISOString(),
+    deadlineAt: split.deadlineAt.toISOString(),
+  });
+  return { state: "GUARANTEE_LOST", splitId: split.id };
 }
 
 export type BookingSplitSettlementResult =
@@ -418,9 +656,40 @@ export async function settleBookingSplitRuntime(params: {
         ? computeSplitCaptureBefore({ deadlineAt, gatewayCaptureBefore: null }).captureBeforeAt
         : now);
     const retryUntilAt = split.retryUntilAt ?? computeSplitRetryUntil({ now, deadlineAt, captureBeforeAt: captureBefore });
+    const pendingParticipantIds = split.participants
+      .filter((participant) => participant.status !== "PAID")
+      .map((participant) => participant.id);
 
     if (!ensureMonotonicRail(split.railState, BookingSplitRailState.OFFSESSION_PI)) {
       return { state: "OFFSESSION_PENDING", splitId: split.id, outstandingCents };
+    }
+
+    if (pendingParticipantIds.length > 0) {
+      await tx.bookingSplitParticipant.updateMany({
+        where: {
+          id: { in: pendingParticipantIds },
+          status: "PENDING",
+        },
+        data: {
+          status: "EXPIRED",
+          activeShareAttemptId: null,
+        },
+      });
+      await tx.bookingSplitShareAttempt.updateMany({
+        where: {
+          participantId: { in: pendingParticipantIds },
+          status: {
+            in: [
+              BookingSplitShareAttemptStatus.OPEN,
+              BookingSplitShareAttemptStatus.REQUIRES_ACTION,
+            ],
+          },
+        },
+        data: {
+          status: BookingSplitShareAttemptStatus.CANCELLED,
+          failureClass: BookingSplitShareAttemptFailureClass.AUTH_REQUIRED,
+        },
+      });
     }
 
     await tx.bookingSplit.update({
@@ -544,7 +813,12 @@ export function emitSplitGuardMetrics(params: {
 }
 
 export function emitSplitRuntimeAlert(
-  alert: "settle_job_missed_deadlineAt" | "capture_attempt_after_captureBefore" | "late_refund_failed" | "debt_open_rate_spike",
+  alert:
+    | "settle_job_missed_deadlineAt"
+    | "capture_attempt_after_captureBefore"
+    | "late_refund_failed"
+    | "debt_open_rate_spike"
+    | "split_guarantee_lost",
   payload: Record<string, unknown>,
 ) {
   emitSplitAlert(alert, payload);

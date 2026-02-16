@@ -10,6 +10,7 @@ import {
   padel_match_status,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { isPadelTerminalStatus } from "@/domain/padel/liveStatus";
 
 type SyncParams = {
   eventId: number;
@@ -52,7 +53,7 @@ function resolvePhase(format: padel_format | null, roundType: string | null): Pa
 
 function resolveRoundState(statuses: padel_match_status[]): PadelRoundState {
   if (statuses.some((status) => status === "IN_PROGRESS")) return PadelRoundState.IN_PROGRESS;
-  if (statuses.length > 0 && statuses.every((status) => status === "DONE" || status === "CANCELLED")) {
+  if (statuses.length > 0 && statuses.every((status) => isPadelTerminalStatus(status))) {
     return PadelRoundState.CLOSED;
   }
   return PadelRoundState.PENDING;

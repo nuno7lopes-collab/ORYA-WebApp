@@ -28,7 +28,13 @@ describe("resolveNotificationLink", () => {
   it("maps wallet and tickets shortcuts", () => {
     expectNative("/me/carteira", "/tickets?source=notifications");
     expectNative("/me/inscricoes", "/tickets?source=notifications");
+    expectNative("/me/reservas", "/reservas?source=notifications");
     expectNative("/me/bilhetes/ent_123", "/wallet/ent_123?source=notifications");
+  });
+
+  it("maps registration detail deep links", () => {
+    expectNative("/inscricoes/77", "/inscricoes/77?source=notifications");
+    expectNative("/me/inscricoes/77", "/inscricoes/77?source=notifications");
   });
 
   it("maps social notifications tab", () => {

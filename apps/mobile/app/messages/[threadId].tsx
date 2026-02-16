@@ -257,6 +257,7 @@ export default function ChatThreadScreen() {
               id: threadId,
             },
             client_platform: "mobile",
+            runtime_platform: Platform.OS,
           }),
         );
       };
@@ -276,6 +277,24 @@ export default function ChatThreadScreen() {
                 // ignore
               }
             }, WS_PING_INTERVAL_MS);
+            return;
+          }
+          if (payload.type === "handshake:error") {
+            const code = typeof payload.errorCode === "string" ? payload.errorCode.trim().toUpperCase() : "";
+            const detail = typeof payload.reason === "string" ? payload.reason.trim().toUpperCase() : "";
+            if (code === "RATE_LIMITED") {
+              setError("Muitas tentativas de ligação ao chat. Tenta novamente em 1 minuto.");
+            } else if (code === "UPGRADE_REQUIRED") {
+              setError(
+                detail === "APP_VERSION_INVALID"
+                  ? "Versão da app inválida. Atualiza para continuar."
+                  : "Esta versão da app já não é suportada para chat.",
+              );
+            } else if (code === "UNAUTHORIZED") {
+              setError(t("messages:thread.errors.signInRequired"));
+            } else if (code === "FORBIDDEN") {
+              setError(t("messages:thread.errors.participantsOnly"));
+            }
             return;
           }
           if (!handshakeReady) return;
@@ -338,10 +357,14 @@ export default function ChatThreadScreen() {
         stopWsPing();
         wsRef.current = null;
         if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
-        const reason = typeof event.reason === "string" ? event.reason : "";
+        const reason = typeof event.reason === "string" ? event.reason.trim().toUpperCase() : "";
         const reconnectDelayMs = reason === "RATE_LIMITED" ? 60000 : 2000;
         if (reason === "RATE_LIMITED") {
           setError("Muitas tentativas de ligação ao chat. Tenta novamente em 1 minuto.");
+        } else if (reason === "UPGRADE_REQUIRED") {
+          setError("Atualiza a app para continuar a usar o chat.");
+        } else if (reason === "UNAUTHORIZED") {
+          setError(t("messages:thread.errors.signInRequired"));
         }
         wsReconnectRef.current = setTimeout(connect, reconnectDelayMs);
       };
@@ -354,7 +377,7 @@ export default function ChatThreadScreen() {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [accessToken, threadId]);
+  }, [accessToken, threadId, t]);
 
   useEffect(() => {
     if (!autoScroll) return;

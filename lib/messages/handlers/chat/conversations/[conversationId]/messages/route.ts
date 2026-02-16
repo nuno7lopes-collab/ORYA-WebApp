@@ -12,6 +12,30 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 
+function canExposeAttachment(metadata: Record<string, unknown>) {
+  const scanStatusRaw =
+    typeof metadata.scanStatus === "string"
+      ? metadata.scanStatus
+      : typeof metadata.scan_state === "string"
+        ? metadata.scan_state
+        : null;
+  const dlpStatusRaw =
+    typeof metadata.dlpStatus === "string"
+      ? metadata.dlpStatus
+      : typeof metadata.dlp_status === "string"
+        ? metadata.dlp_status
+        : null;
+  const scanStatus = scanStatusRaw?.trim().toLowerCase() ?? "ready";
+  const dlpStatus = dlpStatusRaw?.trim().toLowerCase() ?? "passed";
+  const blocked = metadata.blocked === true || metadata.rejected === true;
+
+  if (blocked) return false;
+  if (dlpStatus === "rejected" || dlpStatus === "blocked") return false;
+  if (scanStatus === "rejected" || scanStatus === "blocked") return false;
+  if (scanStatus === "pending_scan" || scanStatus === "pending") return false;
+  return true;
+}
+
 async function resolveAttachmentUrls<T extends { attachments: any[] }>(items: T[]) {
   if (CHAT_ATTACHMENTS_PUBLIC) return items;
   const ttlSeconds = env.storageSignedTtlSeconds;
@@ -24,6 +48,9 @@ async function resolveAttachmentUrls<T extends { attachments: any[] }>(items: T[
             attachment?.metadata && typeof attachment.metadata === "object"
               ? (attachment.metadata as Record<string, unknown>)
               : {};
+          if (!canExposeAttachment(metadata)) {
+            return { ...attachment, url: "" };
+          }
           const path = typeof metadata.path === "string" ? metadata.path : null;
           const bucket =
             typeof metadata.bucket === "string"

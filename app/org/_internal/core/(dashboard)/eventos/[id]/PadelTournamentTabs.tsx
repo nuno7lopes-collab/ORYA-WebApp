@@ -226,6 +226,8 @@ export default function PadelTournamentTabs({
   const [koSaving, setKoSaving] = useState<Record<number, boolean>>({});
   const [disputeBusy, setDisputeBusy] = useState<Record<number, boolean>>({});
   const [disputeError, setDisputeError] = useState<Record<number, string | null>>({});
+  const [workflowBusy, setWorkflowBusy] = useState<Record<number, boolean>>({});
+  const [workflowError, setWorkflowError] = useState<Record<number, string | null>>({});
   const [swapPairingAId, setSwapPairingAId] = useState<string>("");
   const [swapPairingBId, setSwapPairingBId] = useState<string>("");
   const [swapBusy, setSwapBusy] = useState(false);
@@ -543,10 +545,12 @@ export default function PadelTournamentTabs({
   const matchesSummary = {
     pending: matches.filter((m) => m.status === "PENDING").length,
     inProgress: matches.filter((m) => m.status === "IN_PROGRESS").length,
-    done: matches.filter((m) => m.status === "DONE").length,
+    done: matches.filter((m) => ["OFFICIAL", "WALKOVER", "RETIRED"].includes(m.status)).length,
   };
   const groupMatchesCount = matches.filter((m) => m.roundType === "GROUPS").length;
-  const groupMatchesDone = matches.filter((m) => m.roundType === "GROUPS" && m.status === "DONE").length;
+  const groupMatchesDone = matches.filter(
+    (m) => m.roundType === "GROUPS" && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(m.status),
+  ).length;
   const groupMissing = Math.max(0, groupMatchesCount - groupMatchesDone);
   const canGenerateGroups = isAdminRole && supportsGroups;
   const canGenerateKnockout = isAdminRole && supportsKnockout && (groupMissing === 0 || isOwnerRole);
@@ -692,6 +696,49 @@ export default function PadelTournamentTabs({
     const reason = typeof score.disputeReason === "string" ? score.disputeReason : null;
     const resolutionNote = typeof score.disputeResolutionNote === "string" ? score.disputeResolutionNote : null;
     return { status, reason, resolutionNote };
+  };
+
+  const getLiveWorkflowInfo = (match: Match) => {
+    const score = (match.score || {}) as Record<string, unknown>;
+    const workflow =
+      score.liveWorkflow && typeof score.liveWorkflow === "object" && !Array.isArray(score.liveWorkflow)
+        ? (score.liveWorkflow as Record<string, unknown>)
+        : null;
+    const pendingReviewExpiredAt =
+      workflow && typeof workflow.pendingReviewExpiredAt === "string" ? workflow.pendingReviewExpiredAt : null;
+    const pendingConfirmationExpiresAt =
+      workflow && typeof workflow.pendingConfirmationExpiresAt === "string" ? workflow.pendingConfirmationExpiresAt : null;
+    return {
+      pendingReviewExpiredAt,
+      pendingConfirmationExpiresAt,
+    };
+  };
+
+  const formatMatchStatusLabel = (status: string) => {
+    switch (status) {
+      case "PENDING":
+        return "Pendente";
+      case "IN_PROGRESS":
+        return "Em curso";
+      case "RESULT_SUBMITTED":
+        return "Resultado submetido";
+      case "PENDING_CONFIRMATION":
+        return "Pendente confirmação";
+      case "PENDING_REVIEW_EXPIRED":
+        return "Pendente expirado";
+      case "DISPUTED":
+        return "Em disputa";
+      case "OFFICIAL":
+        return "Oficial";
+      case "WALKOVER":
+        return "WO";
+      case "RETIRED":
+        return "Desistência";
+      case "CANCELLED":
+        return "Cancelado";
+      default:
+        return status;
+    }
   };
 
   function formatScoreLabel(match: Match) {
@@ -1529,6 +1576,10 @@ export default function PadelTournamentTabs({
 
     updateResultDraft(matchId, { saving: true, error: null });
     const isSpecialResult = resultType !== "NORMAL";
+    const clientRequestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     const score: Record<string, unknown> = {
       resultType,
       ...(sets.length > 0 ? { sets } : {}),
@@ -1545,12 +1596,16 @@ export default function PadelTournamentTabs({
             resultType,
             confirmedByRole: "DIRETOR_PROVA",
             confirmationSource: "WEB_ORGANIZATION",
+            clientRequestId,
           }),
         })
-      : await fetch(`/api/padel/matches`, {
+      : await fetch(`/api/padel/matches/${matchId}/result/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: matchId, status: "DONE", score }),
+          body: JSON.stringify({
+            score,
+            clientRequestId,
+          }),
         });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
@@ -1565,6 +1620,78 @@ export default function PadelTournamentTabs({
     }
     mutateMatches();
     updateResultDraft(matchId, { saving: false });
+  }
+
+  async function runResultWorkflowAction(matchId: number, path: string, payload: Record<string, unknown>) {
+    const clientRequestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    setWorkflowBusy((prev) => ({ ...prev, [matchId]: true }));
+    setWorkflowError((prev) => ({ ...prev, [matchId]: null }));
+    try {
+      const res = await fetch(`/api/padel/matches/${matchId}/result/${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmationSource: "WEB_ORGANIZATION",
+          confirmedByRole: "DIRETOR_PROVA",
+          clientRequestId,
+          ...payload,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setWorkflowError((prev) => ({
+          ...prev,
+          [matchId]: sanitizeUiErrorMessage(json?.error, "Erro no workflow de resultado."),
+        }));
+        return false;
+      }
+      mutateMatches();
+      return true;
+    } catch (err) {
+      setWorkflowError((prev) => ({ ...prev, [matchId]: "Erro no workflow de resultado." }));
+      return false;
+    } finally {
+      setWorkflowBusy((prev) => ({ ...prev, [matchId]: false }));
+      setTimeout(() => {
+        setWorkflowError((prev) => ({ ...prev, [matchId]: null }));
+      }, 3500);
+    }
+  }
+
+  async function confirmResult(matchId: number) {
+    await runResultWorkflowAction(matchId, "confirm", {});
+  }
+
+  async function rejectResult(matchId: number) {
+    const reasonText = window.prompt("Motivo da rejeição (obrigatório)") ?? "";
+    if (!reasonText.trim()) return;
+    await runResultWorkflowAction(matchId, "reject", { reasonText: reasonText.trim() });
+  }
+
+  async function resetPendingResult(matchId: number, targetState: "IN_PROGRESS" | "RESULT_SUBMITTED") {
+    const reasonText = window.prompt("Motivo do reset (obrigatório)") ?? "";
+    if (!reasonText.trim()) return;
+    await runResultWorkflowAction(matchId, "reset-pending", {
+      reasonCode: "OPERATIONS_RESET",
+      reasonText: reasonText.trim(),
+      targetState,
+    });
+  }
+
+  async function overrideResult(matchId: number) {
+    const reasonText = window.prompt("Motivo do override (obrigatório)") ?? "";
+    if (!reasonText.trim()) return;
+    const evidence = window.prompt("Anexo/evidência (URL ou referência) obrigatório") ?? "";
+    if (!evidence.trim()) return;
+    await runResultWorkflowAction(matchId, "override", {
+      reasonCode: "OPERATIONS_OVERRIDE",
+      reasonText: reasonText.trim(),
+      evidenceAttachments: [evidence.trim()],
+    });
   }
 
   async function savePartialScore(matchId: number) {
@@ -1613,6 +1740,10 @@ export default function PadelTournamentTabs({
     const confirmed = window.confirm("Resolver disputa e desbloquear o jogo?");
     if (!confirmed) return;
     const resolutionNote = window.prompt("Nota de resolução (opcional)") ?? "";
+    const clientRequestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     setDisputeBusy((prev) => ({ ...prev, [matchId]: true }));
     setDisputeError((prev) => ({ ...prev, [matchId]: null }));
     try {
@@ -1623,6 +1754,7 @@ export default function PadelTournamentTabs({
           ...(resolutionNote ? { resolutionNote } : {}),
           resolutionStatus: "CONFIRMED",
           confirmationSource: "WEB_ORGANIZATION",
+          clientRequestId,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1680,11 +1812,114 @@ export default function PadelTournamentTabs({
     const dispute = getDisputeInfo(m);
     const disputeOpen = dispute.status === "OPEN";
     const disputeResolved = dispute.status === "RESOLVED";
-    const lockedByDispute = disputeOpen && !isAdminRole;
+    const workflow = getLiveWorkflowInfo(m);
+    const pendingReviewExpiredAt = workflow.pendingReviewExpiredAt
+      ? new Date(workflow.pendingReviewExpiredAt)
+      : null;
+    const pendingExpiredMinutes =
+      pendingReviewExpiredAt && !Number.isNaN(pendingReviewExpiredAt.getTime())
+        ? Math.max(0, Math.floor((Date.now() - pendingReviewExpiredAt.getTime()) / 60000))
+        : null;
+    const lockedByWorkflow = m.status === "PENDING_CONFIRMATION" || m.status === "PENDING_REVIEW_EXPIRED";
+    const lockedByDispute = (disputeOpen || m.status === "DISPUTED") && !isAdminRole;
+    const lockInputs = lockedByWorkflow || lockedByDispute;
     const resolving = disputeBusy[m.id] === true;
     const disputeMsg = disputeError[m.id];
+    const actionRunning = workflowBusy[m.id] === true;
+    const actionError = workflowError[m.id];
     return (
       <div className="space-y-2 text-[12px]">
+        {m.status === "PENDING_CONFIRMATION" && (
+          <div className="rounded-lg border border-sky-300/35 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-100 space-y-2">
+            <p className="font-semibold">Resultado pendente de confirmação</p>
+            <p className="text-sky-100/80">Progressão bloqueada até confirmar/rejeitar.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => confirmResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-sky-200/45 px-3 py-1 text-[11px] text-sky-100 hover:bg-sky-400/10 disabled:opacity-60"
+              >
+                Confirmar
+              </button>
+              <button
+                type="button"
+                onClick={() => rejectResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+              >
+                Rejeitar
+              </button>
+            </div>
+          </div>
+        )}
+        {m.status === "PENDING_REVIEW_EXPIRED" && (
+          <div className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100 space-y-2">
+            <p className="font-semibold">Pendente expirado · fila operacional</p>
+            <p className="text-rose-100/80">
+              {pendingExpiredMinutes != null
+                ? `Expirado há ${pendingExpiredMinutes} min (SLA alvo: <=30s).`
+                : "Expirado; requer revisão humana."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => confirmResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-rose-200/45 px-3 py-1 text-[11px] text-rose-100 hover:bg-rose-400/10 disabled:opacity-60"
+              >
+                Confirmar
+              </button>
+              <button
+                type="button"
+                onClick={() => rejectResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+              >
+                Rejeitar
+              </button>
+              <button
+                type="button"
+                onClick={() => resetPendingResult(m.id, "IN_PROGRESS")}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+              >
+                Reset {"->"} Em curso
+              </button>
+              <button
+                type="button"
+                onClick={() => resetPendingResult(m.id, "RESULT_SUBMITTED")}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-white/25 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10 disabled:opacity-60"
+              >
+                Reset {"->"} Submetido
+              </button>
+              <button
+                type="button"
+                onClick={() => overrideResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 disabled:opacity-60"
+              >
+                Override
+              </button>
+            </div>
+          </div>
+        )}
+        {m.status === "DISPUTED" && isAdminRole && (
+          <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100 space-y-2">
+            <p className="font-semibold">Disputa em curso</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => overrideResult(m.id)}
+                disabled={actionRunning}
+                className="rounded-full border border-amber-200/45 px-3 py-1 text-[11px] text-amber-100 hover:bg-amber-400/10 disabled:opacity-60"
+              >
+                Override para oficial
+              </button>
+            </div>
+          </div>
+        )}
         {disputeOpen && (
           <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100 space-y-1">
             <p className="font-semibold">Disputa aberta</p>
@@ -1718,7 +1953,7 @@ export default function PadelTournamentTabs({
             placeholder="6-3, 6-4"
             value={draft.scoreText}
             onChange={(e) => updateResultDraft(m.id, { scoreText: e.target.value })}
-            disabled={lockedByDispute}
+            disabled={lockInputs}
             className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
           />
           <select
@@ -1729,7 +1964,7 @@ export default function PadelTournamentTabs({
                 ...(e.target.value === "NORMAL" ? { winnerSide: "" } : {}),
               })
             }
-            disabled={lockedByDispute}
+            disabled={lockInputs}
             className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
           >
             <option value="NORMAL">Resultado normal</option>
@@ -1744,7 +1979,7 @@ export default function PadelTournamentTabs({
             onChange={(e) =>
               updateResultDraft(m.id, { winnerSide: e.target.value as "" | "A" | "B" })
             }
-            disabled={lockedByDispute}
+            disabled={lockInputs}
             className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
           >
             <option value="">Seleciona vencedor</option>
@@ -1762,7 +1997,7 @@ export default function PadelTournamentTabs({
                 const file = e.target.files?.[0];
                 if (file) uploadResultPhoto(m.id, file);
               }}
-              disabled={lockedByDispute}
+              disabled={lockInputs}
               className="text-[11px] text-white/70 disabled:opacity-60"
             />
           </label>
@@ -1777,7 +2012,7 @@ export default function PadelTournamentTabs({
           <button
             type="button"
             onClick={() => savePartialScore(m.id)}
-            disabled={draft.saving || draft.uploading || lockedByDispute}
+            disabled={draft.saving || draft.uploading || lockInputs}
             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
           >
             Guardar parcial
@@ -1785,12 +2020,13 @@ export default function PadelTournamentTabs({
           <button
             type="button"
             onClick={() => submitResult(m.id)}
-            disabled={draft.saving || draft.uploading || lockedByDispute}
+            disabled={draft.saving || draft.uploading || lockInputs}
             className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-black disabled:opacity-60"
           >
             {draft.saving ? "A guardar…" : "Guardar resultado"}
           </button>
           {draft.error && <span className="text-[11px] text-amber-200">{draft.error}</span>}
+          {actionError && <span className="text-[11px] text-amber-200">{actionError}</span>}
         </div>
       </div>
     );
@@ -2759,7 +2995,7 @@ export default function PadelTournamentTabs({
                     </span>
                     <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing, locale)} vs {nameFromSlots(m.pairingB as Pairing, locale)}</p>
                   </div>
-                  <span className="text-[11px] text-white/60">{m.status}</span>
+                  <span className="text-[11px] text-white/60">{formatMatchStatusLabel(m.status)}</span>
                 </div>
                 <p className="text-[12px] text-white/70">Resultado: {formatScoreLabel(m)}</p>
                 {renderResultControls(m)}

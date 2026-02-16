@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { isValidPointsTable, isValidTieBreakRules, type PadelPointsTable, type PadelTieBreakRule } from "@/lib/padel/validation";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 export type PadelStandingEntityType = "PAIRING" | "PLAYER";
 
@@ -279,7 +280,7 @@ function computePadelStandingsByGroupCore(
     for (const entityId of [...sideA, ...sideB]) {
       ensureRowIn(groups, group, entityId, entityType);
     }
-    if (match.status !== "DONE") return;
+    if (!isPadelOfficialStatus(match.status)) return;
     const stats = resolvePadelMatchStats(match.scoreSets, match.score ?? null);
     if (!stats) return;
     scoredMatches.push({ group, sideA, sideB, stats });

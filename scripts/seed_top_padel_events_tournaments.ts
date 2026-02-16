@@ -385,46 +385,58 @@ async function main() {
       });
       tournamentId = tournament.id;
 
-      const padelConfig = await prisma.padelTournamentConfig.upsert({
-        where: { eventId: event.id },
-        update: {
-          organizationId: organization.id,
-          format: padel_format.GRUPOS_ELIMINATORIAS,
-          numberOfCourts: 4,
-          padelV2Enabled: true,
-          lifecycleStatus: PadelTournamentLifecycleStatus.PUBLISHED,
-          publishedAt: new Date(),
-          advancedSettings: {
-            source: "seed_top_padel_events_tournaments",
-            scheduleDefaults: {
-              durationMinutes: 60,
-              slotMinutes: 15,
-              bufferMinutes: 5,
+      try {
+        const padelConfig = await prisma.padelTournamentConfig.upsert({
+          where: { eventId: event.id },
+          update: {
+            organizationId: organization.id,
+            format: padel_format.GRUPOS_ELIMINATORIAS,
+            numberOfCourts: 4,
+            padelV2Enabled: true,
+            lifecycleStatus: PadelTournamentLifecycleStatus.PUBLISHED,
+            publishedAt: new Date(),
+            advancedSettings: {
+              source: "seed_top_padel_events_tournaments",
+              scheduleDefaults: {
+                durationMinutes: 60,
+                slotMinutes: 15,
+                bufferMinutes: 5,
+              },
+              competitionState: "PUBLISHED",
             },
-            competitionState: "PUBLISHED",
           },
-        },
-        create: {
-          eventId: event.id,
-          organizationId: organization.id,
-          format: padel_format.GRUPOS_ELIMINATORIAS,
-          numberOfCourts: 4,
-          padelV2Enabled: true,
-          lifecycleStatus: PadelTournamentLifecycleStatus.PUBLISHED,
-          publishedAt: new Date(),
-          advancedSettings: {
-            source: "seed_top_padel_events_tournaments",
-            scheduleDefaults: {
-              durationMinutes: 60,
-              slotMinutes: 15,
-              bufferMinutes: 5,
+          create: {
+            eventId: event.id,
+            organizationId: organization.id,
+            format: padel_format.GRUPOS_ELIMINATORIAS,
+            numberOfCourts: 4,
+            padelV2Enabled: true,
+            lifecycleStatus: PadelTournamentLifecycleStatus.PUBLISHED,
+            publishedAt: new Date(),
+            advancedSettings: {
+              source: "seed_top_padel_events_tournaments",
+              scheduleDefaults: {
+                durationMinutes: 60,
+                slotMinutes: 15,
+                bufferMinutes: 5,
+              },
+              competitionState: "PUBLISHED",
             },
-            competitionState: "PUBLISHED",
           },
-        },
-        select: { id: true },
-      });
-      padelConfigId = padelConfig.id;
+          select: { id: true },
+        });
+        padelConfigId = padelConfig.id;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("result_validation_mode")) {
+          console.warn(
+            "[seed-top-padel-events-tournaments] WARN: padelTournamentConfig skipped (schema drift: missing result_validation_mode)",
+          );
+          padelConfigId = null;
+        } else {
+          throw error;
+        }
+      }
 
       await upsertAgendaItem({
         organizationId: organization.id,

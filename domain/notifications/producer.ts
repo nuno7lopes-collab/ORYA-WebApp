@@ -12,6 +12,13 @@ function buildDedupe(prefix: string, parts: Array<string | number | null | undef
   return [prefix, ...parts.map((p) => (p === null || p === undefined ? "null" : String(p)))].join(":");
 }
 
+function normalizeScheduledAt(value: Date | string | null | undefined) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 async function queue(
   type: NotificationTemplate,
   dedupeKey: string,
@@ -231,19 +238,45 @@ export async function notifyTournamentEve(params: { userId: string; tournamentId
   });
 }
 
-export async function notifyMatchResult(params: { userId: string; matchId: number; tournamentId?: number }) {
-  const dedupeKey = buildDedupe("MATCH_RESULT", [params.matchId, params.userId]);
+export async function notifyMatchResult(params: {
+  userId: string;
+  matchId: number;
+  tournamentId?: number;
+  eventType?: string;
+  scheduledAt?: Date | string | null;
+}) {
+  const eventType = params.eventType ?? "MATCH_RESULT";
+  const scheduledAt = normalizeScheduledAt(params.scheduledAt);
+  const dedupeKey = buildDedupe("MATCH_RESULT", [params.matchId, params.userId, eventType, scheduledAt]);
   return queue("MATCH_RESULT", dedupeKey, {
     userId: params.userId,
-    payload: { matchId: params.matchId, tournamentId: params.tournamentId },
+    payload: {
+      matchId: params.matchId,
+      tournamentId: params.tournamentId,
+      eventType,
+      scheduledAt,
+    },
   });
 }
 
-export async function notifyNextOpponent(params: { userId: string; matchId: number; tournamentId?: number }) {
-  const dedupeKey = buildDedupe("NEXT_OPPONENT", [params.matchId, params.userId]);
+export async function notifyNextOpponent(params: {
+  userId: string;
+  matchId: number;
+  tournamentId?: number;
+  eventType?: string;
+  scheduledAt?: Date | string | null;
+}) {
+  const eventType = params.eventType ?? "NEXT_OPPONENT";
+  const scheduledAt = normalizeScheduledAt(params.scheduledAt);
+  const dedupeKey = buildDedupe("NEXT_OPPONENT", [params.matchId, params.userId, eventType, scheduledAt]);
   return queue("NEXT_OPPONENT", dedupeKey, {
     userId: params.userId,
-    payload: { matchId: params.matchId, tournamentId: params.tournamentId },
+    payload: {
+      matchId: params.matchId,
+      tournamentId: params.tournamentId,
+      eventType,
+      scheduledAt,
+    },
   });
 }
 
@@ -255,9 +288,16 @@ export async function notifyMatchChanged(params: {
   scheduleVersion?: string | null;
   reason?: string | null;
   delayStatus?: string | null;
+  eventType?: string;
+  scheduledAt?: Date | string | null;
 }) {
+  const eventType = params.eventType ?? "MATCH_CHANGED";
+  const scheduledAt = normalizeScheduledAt(params.scheduledAt ?? params.startAt ?? null);
   const dedupeKey = buildDedupe("MATCH_CHANGED", [
     params.matchId,
+    params.userId,
+    eventType,
+    scheduledAt,
     params.startAt ? params.startAt.toISOString() : null,
     params.courtId ?? null,
     params.scheduleVersion ?? null,
@@ -271,6 +311,8 @@ export async function notifyMatchChanged(params: {
       scheduleVersion: params.scheduleVersion ?? null,
       reason: params.reason ?? null,
       delayStatus: params.delayStatus ?? null,
+      eventType,
+      scheduledAt,
     },
   });
 }

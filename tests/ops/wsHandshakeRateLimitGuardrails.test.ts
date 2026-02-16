@@ -17,6 +17,17 @@ describe("ws handshake rate-limit guardrails", () => {
     expect(wsServer).toContain("code: 4008");
   });
 
+  it("enforces mobile version gate parity and platform kill switches in ws handshake", () => {
+    const wsServer = readLocal("scripts/chat-ws-server.js");
+
+    expect(wsServer).toContain("resolveMobileMinVersion");
+    expect(wsServer).toContain("MOBILE_KILL_SWITCH_IOS");
+    expect(wsServer).toContain("MOBILE_KILL_SWITCH_ANDROID");
+    expect(wsServer).toContain('detail: "APP_VERSION_INVALID"');
+    expect(wsServer).toContain('detail: "PLATFORM_KILL_SWITCH"');
+    expect(wsServer).toContain("type: \"handshake:error\"");
+  });
+
   it("keeps client handling for RATE_LIMITED reconnect backoff", () => {
     const webChat = readLocal("app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx");
     const webPreview = readLocal("app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts");

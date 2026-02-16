@@ -91,8 +91,20 @@ export const resolveMobileLink = (
   if (path === "/me/bilhetes") {
     return buildNative("/tickets", "", source);
   }
+  if (path === "/me/reservas") {
+    return buildNative("/reservas", "", source);
+  }
+  if (parts[0] === "me" && parts[1] === "reservas" && parts[2]) {
+    return buildNative("/reservas", `?bookingId=${encodeURIComponent(parts[2])}`, source);
+  }
   if (path === "/me/carteira" || path === "/me/inscricoes") {
     return buildNative("/tickets", "", source);
+  }
+  if (parts[0] === "inscricoes" && parts[1]) {
+    return buildNative(`/inscricoes/${parts[1]}`, search, source);
+  }
+  if (parts[0] === "me" && parts[1] === "inscricoes" && parts[2]) {
+    return buildNative(`/inscricoes/${parts[2]}`, search, source);
   }
   if (parts[0] === "me" && parts[1] === "bilhetes" && parts[2]) {
     return buildNative(`/wallet/${parts[2]}`, "", source);
@@ -165,6 +177,8 @@ export const resolveMobileLink = (
     "index",
     "servicos",
     "service",
+    "reservas",
+    "inscricoes",
     "chat",
     "api",
     "store",

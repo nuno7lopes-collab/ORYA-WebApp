@@ -30,10 +30,18 @@ export default function PadelDisputeButton({
     setPending(true);
     setError(null);
     try {
+      const clientRequestId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
       const res = await fetch(`/api/padel/matches/${matchId}/dispute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: trimmed, confirmationSource: "WEB_PUBLIC" }),
+        body: JSON.stringify({
+          reason: trimmed,
+          confirmationSource: "WEB_PUBLIC",
+          clientRequestId,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {

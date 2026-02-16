@@ -6,11 +6,18 @@ vi.mock("@/domain/outbox/producer", () => ({
 vi.mock("@/domain/eventLog/append", () => ({
   appendEventLog: vi.fn(async () => null),
 }));
-import { PadelPairingJoinMode, PadelPaymentMode, PadelRegistrationStatus } from "@prisma/client";
+import {
+  PadelPairingJoinMode,
+  PadelPairingPaymentStatus,
+  PadelPairingSlotStatus,
+  PadelPaymentMode,
+  PadelRegistrationStatus,
+} from "@prisma/client";
 import {
   mapRegistrationToPairingLifecycle,
   resolveInitialPadelRegistrationStatus,
   resolvePartnerActionStatus,
+  resolveRegistrationStatusFromSlots,
 } from "@/domain/padelRegistration";
 
 describe("padel registration status (D12)", () => {
@@ -61,6 +68,38 @@ describe("padel registration status (D12)", () => {
     expect(mapRegistrationToPairingLifecycle(PadelRegistrationStatus.EXPIRED, PadelPaymentMode.SPLIT)).toBe(
       "CANCELLED_INCOMPLETE",
     );
+  });
+
+  it("resolves slot-derived status with allFilled && allPaid for CONFIRMED", () => {
+    expect(
+      resolveRegistrationStatusFromSlots({
+        pairingJoinMode: PadelPairingJoinMode.INVITE_PARTNER,
+        slots: [
+          { slotStatus: PadelPairingSlotStatus.FILLED, paymentStatus: PadelPairingPaymentStatus.PAID },
+          { slotStatus: PadelPairingSlotStatus.FILLED, paymentStatus: PadelPairingPaymentStatus.PAID },
+        ],
+      }),
+    ).toBe(PadelRegistrationStatus.CONFIRMED);
+
+    expect(
+      resolveRegistrationStatusFromSlots({
+        pairingJoinMode: PadelPairingJoinMode.INVITE_PARTNER,
+        slots: [
+          { slotStatus: PadelPairingSlotStatus.PENDING, paymentStatus: PadelPairingPaymentStatus.PAID },
+          { slotStatus: PadelPairingSlotStatus.FILLED, paymentStatus: PadelPairingPaymentStatus.PAID },
+        ],
+      }),
+    ).toBe(PadelRegistrationStatus.PENDING_PARTNER);
+
+    expect(
+      resolveRegistrationStatusFromSlots({
+        pairingJoinMode: PadelPairingJoinMode.LOOKING_FOR_PARTNER,
+        slots: [
+          { slotStatus: PadelPairingSlotStatus.PENDING, paymentStatus: PadelPairingPaymentStatus.PAID },
+          { slotStatus: PadelPairingSlotStatus.PENDING, paymentStatus: PadelPairingPaymentStatus.UNPAID },
+        ],
+      }),
+    ).toBe(PadelRegistrationStatus.MATCHMAKING);
   });
 
 });

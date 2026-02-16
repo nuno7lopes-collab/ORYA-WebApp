@@ -6,18 +6,24 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
+import {
+  CHAT_MAX_ATTACHMENT_BYTES,
+  CHAT_MAX_ATTACHMENTS,
+  CHAT_MESSAGE_MAX_LENGTH,
+} from "@/lib/chat/constants";
 import {
   isChatRedisAvailable,
   isChatUserOnline,
   publishChatEvent,
 } from "@/lib/chat/redis";
 import { enqueueNotification } from "@/domain/notifications/outbox";
-import { ChatConversationContextType, Prisma } from "@prisma/client";
+import { ChatConversationContextType, MediaOwnerType, Prisma } from "@prisma/client";
 import {
   resolvePostingWindow,
   resolvePostingWindowStatus,
 } from "@/lib/messages/postingWindow";
+import { env } from "@/lib/env";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.EVENT,
@@ -27,6 +33,181 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
 ];
+const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
+
+type AttachmentInput = {
+  type?: unknown;
+  url?: unknown;
+  mime?: unknown;
+  size?: unknown;
+  metadata?: unknown;
+};
+
+type NormalizedAttachment = {
+  type: "IMAGE" | "VIDEO" | "FILE";
+  url: string;
+  mime: string;
+  size: number;
+  metadata: Record<string, unknown>;
+};
+
+type PreparedAttachmentAsset = {
+  bucket: string;
+  objectPath: string;
+  checksumSha256: string;
+  mimeType: string;
+  sizeBytes: number;
+  originalFilename: string | null;
+};
+
+function isExternalAttachmentUrl(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized.startsWith("https://") || normalized.startsWith("http://");
+}
+
+function canExposeAttachment(metadata: Record<string, unknown>) {
+  const scanStatusRaw =
+    typeof metadata.scanStatus === "string"
+      ? metadata.scanStatus
+      : typeof metadata.scan_state === "string"
+        ? metadata.scan_state
+        : null;
+  const dlpStatusRaw =
+    typeof metadata.dlpStatus === "string"
+      ? metadata.dlpStatus
+      : typeof metadata.dlp_status === "string"
+        ? metadata.dlp_status
+        : null;
+  const scanStatus = scanStatusRaw?.trim().toLowerCase() ?? "ready";
+  const dlpStatus = dlpStatusRaw?.trim().toLowerCase() ?? "passed";
+  const blocked = metadata.blocked === true || metadata.rejected === true;
+
+  if (blocked) return false;
+  if (dlpStatus === "rejected" || dlpStatus === "blocked") return false;
+  if (scanStatus === "rejected" || scanStatus === "blocked") return false;
+  if (scanStatus === "pending_scan" || scanStatus === "pending") return false;
+  return true;
+}
+
+function normalizeAttachments(raw: unknown) {
+  if (!Array.isArray(raw)) return { ok: true as const, items: [] as NormalizedAttachment[] };
+  const items = raw.filter((entry): entry is AttachmentInput => typeof entry === "object" && entry !== null);
+  if (items.length > CHAT_MAX_ATTACHMENTS) {
+    return { ok: false as const, error: "TOO_MANY_ATTACHMENTS" };
+  }
+  const normalized = items.map((entry) => {
+    const type = typeof entry.type === "string" ? entry.type.trim().toUpperCase() : "";
+    const url = typeof entry.url === "string" ? entry.url.trim() : "";
+    const mime = typeof entry.mime === "string" ? entry.mime.trim() : "";
+    const size = typeof entry.size === "number" ? entry.size : Number(entry.size);
+    const metadata = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+    return { type, url, mime, size, metadata };
+  });
+  for (const entry of normalized) {
+    if (!entry.type || !["IMAGE", "VIDEO", "FILE"].includes(entry.type)) {
+      return { ok: false as const, error: "INVALID_ATTACHMENT_TYPE" };
+    }
+    if (!entry.url) {
+      return { ok: false as const, error: "INVALID_ATTACHMENT_URL" };
+    }
+    if (!entry.mime) {
+      return { ok: false as const, error: "INVALID_ATTACHMENT_MIME" };
+    }
+    if (!Number.isFinite(entry.size) || entry.size <= 0) {
+      return { ok: false as const, error: "INVALID_ATTACHMENT_SIZE" };
+    }
+    if (entry.size > CHAT_MAX_ATTACHMENT_BYTES) {
+      return { ok: false as const, error: "ATTACHMENT_TOO_LARGE" };
+    }
+  }
+  const typed = normalized.map((entry) => ({
+    type: entry.type as NormalizedAttachment["type"],
+    url: entry.url,
+    mime: entry.mime,
+    size: entry.size,
+    metadata: entry.metadata as Record<string, unknown>,
+  }));
+  return { ok: true as const, items: typed };
+}
+
+async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
+  if (items.length === 0) {
+    return { ok: true as const, items: [] as PreparedAttachmentAsset[] };
+  }
+
+  const prepared: PreparedAttachmentAsset[] = [];
+  for (const entry of items) {
+    const metadata = entry.metadata ?? {};
+    const objectPath =
+      typeof metadata.path === "string" && metadata.path.trim() ? metadata.path.trim() : null;
+    if (!objectPath) {
+      if (!isExternalAttachmentUrl(entry.url)) {
+        return { ok: false as const, error: "ATTACHMENT_METADATA_REQUIRED" };
+      }
+      continue;
+    }
+    const bucket =
+      typeof metadata.bucket === "string" && metadata.bucket.trim()
+        ? metadata.bucket.trim()
+        : process.env.CHAT_ATTACHMENTS_BUCKET ?? env.uploadsBucket ?? "uploads";
+    const checksumRaw =
+      typeof metadata.checksumSha256 === "string" && metadata.checksumSha256.trim()
+        ? metadata.checksumSha256.trim().toLowerCase()
+        : null;
+    if (!checksumRaw || !/^[a-f0-9]{64}$/.test(checksumRaw)) {
+      return { ok: false as const, error: "ATTACHMENT_CHECKSUM_FAILED" };
+    }
+    const originalFilename =
+      typeof metadata.filename === "string" && metadata.filename.trim()
+        ? metadata.filename.trim()
+        : typeof metadata.name === "string" && metadata.name.trim()
+          ? metadata.name.trim()
+          : null;
+    prepared.push({
+      bucket,
+      objectPath,
+      checksumSha256: checksumRaw,
+      mimeType: entry.mime,
+      sizeBytes: entry.size,
+      originalFilename,
+    });
+  }
+
+  return { ok: true as const, items: prepared };
+}
+
+async function resolveAttachmentUrls<T extends { attachments: any[] }>(items: T[]) {
+  if (CHAT_ATTACHMENTS_PUBLIC) return items;
+  const ttlSeconds = env.storageSignedTtlSeconds;
+  return Promise.all(
+    items.map(async (item) => {
+      if (!item.attachments?.length) return item;
+      const resolved = await Promise.all(
+        item.attachments.map(async (attachment) => {
+          const metadata =
+            attachment?.metadata && typeof attachment.metadata === "object"
+              ? (attachment.metadata as Record<string, unknown>)
+              : {};
+          if (!canExposeAttachment(metadata)) {
+            return { ...attachment, url: "" };
+          }
+          const path = typeof metadata.path === "string" ? metadata.path : null;
+          const bucket =
+            typeof metadata.bucket === "string"
+              ? metadata.bucket
+              : process.env.CHAT_ATTACHMENTS_BUCKET ?? env.uploadsBucket ?? "uploads";
+          if (!path || !bucket) return attachment;
+          const signed = await supabaseAdmin.storage.from(bucket).createSignedUrl(path, ttlSeconds);
+          if (signed.data?.signedUrl) {
+            return { ...attachment, url: signed.data.signedUrl };
+          }
+          return attachment;
+        }),
+      );
+      return { ...item, attachments: resolved };
+    }),
+  );
+}
 
 function parseLimit(raw: string | null) {
   const value = Number(raw ?? "40");
@@ -51,10 +232,6 @@ function decodeCursor(raw: string | null) {
   } catch {
     return null;
   }
-}
-
-function resolveUserLabel(user: { fullName: string | null; username: string | null }) {
-  return user.fullName?.trim() || (user.username ? `@${user.username}` : "Utilizador");
 }
 
 function mapSenderDisplay(params: {
@@ -171,8 +348,10 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
           createdAt: true,
           deletedAt: true,
           senderId: true,
+          attachments: true,
         },
       });
+      const resolvedItems = await resolveAttachmentUrls(items);
 
       const latest = items.length > 0 ? encodeCursor(items[items.length - 1]) : null;
 
@@ -194,11 +373,12 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
           username: member.user.username,
           avatarUrl: member.user.avatarUrl,
         })),
-        items: items.map((item) => ({
+        items: resolvedItems.map((item) => ({
           id: item.id,
           body: item.deletedAt ? null : item.body,
           createdAt: item.createdAt.toISOString(),
           deletedAt: item.deletedAt ? item.deletedAt.toISOString() : null,
+          attachments: item.deletedAt ? [] : item.attachments,
           sender: mapSenderDisplay({
             senderId: item.senderId,
             members: allMembers,
@@ -231,10 +411,12 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
         createdAt: true,
         deletedAt: true,
         senderId: true,
+        attachments: true,
       },
     });
 
     const ordered = items.slice().reverse();
+    const resolvedOrdered = await resolveAttachmentUrls(ordered);
     const nextCursor = items.length === limit ? encodeCursor(items[items.length - 1]) : null;
     const latestCursor = ordered.length > 0 ? encodeCursor(ordered[ordered.length - 1]) : null;
 
@@ -264,19 +446,20 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
       })),
       canPost: posting.canPost,
       readOnlyReason: posting.canPost ? null : posting.reason ?? "READ_ONLY",
-      items: ordered.map((item) => ({
+      items: resolvedOrdered.map((item) => ({
         id: item.id,
         body: item.deletedAt ? null : item.body,
         createdAt: item.createdAt.toISOString(),
         deletedAt: item.deletedAt ? item.deletedAt.toISOString() : null,
-      sender: mapSenderDisplay({
-        senderId: item.senderId,
-        members: allMembers,
-        viewerIsCustomer,
-        viewerId: user.id,
-        organization: conversation.organization,
-      }),
-    })),
+        attachments: item.deletedAt ? [] : item.attachments,
+        sender: mapSenderDisplay({
+          senderId: item.senderId,
+          members: allMembers,
+          viewerIsCustomer,
+          viewerId: user.id,
+          organization: conversation.organization,
+        }),
+      })),
       nextCursor,
       latestCursor,
     });
@@ -341,15 +524,20 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       clientMessageId?: unknown;
       attachments?: unknown;
     } | null;
-    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
-      return jsonWrap({ error: "ATTACHMENTS_DISABLED" }, { status: 400 });
+    const attachmentResult = normalizeAttachments(payload?.attachments);
+    if (!attachmentResult.ok) {
+      return jsonWrap({ error: attachmentResult.error }, { status: 400 });
     }
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
-    if (!body) {
+    if (!body && attachmentResult.items.length === 0) {
       return jsonWrap({ error: "EMPTY_BODY" }, { status: 400 });
     }
     if (body.length > CHAT_MESSAGE_MAX_LENGTH) {
       return jsonWrap({ error: "MESSAGE_TOO_LONG" }, { status: 400 });
+    }
+    const preparedAssets = await prepareAttachmentAssets(attachmentResult.items);
+    if (!preparedAssets.ok) {
+      return jsonWrap({ error: preparedAssets.error }, { status: 400 });
     }
 
     const posting = await resolvePostingWindow({
@@ -376,6 +564,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       createdAt: true,
       deletedAt: true,
       senderId: true,
+      attachments: true,
     } as const;
 
     const uniqueWhere = {
@@ -392,6 +581,10 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     });
 
     if (!message) {
+      const attachmentOwner =
+        conversation.type === "CHANNEL"
+          ? { ownerType: MediaOwnerType.ORGANIZATION, ownerId: String(conversation.organizationId) }
+          : { ownerType: MediaOwnerType.USER, ownerId: user.id };
       try {
         message = await prisma.$transaction(async (tx) => {
           const created = await tx.chatConversationMessage.create({
@@ -399,12 +592,45 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
               conversationId,
               organizationId: conversation.organizationId,
               senderId: user.id,
-              body,
+              body: body || null,
               clientMessageId,
               kind: "TEXT",
+              attachments: attachmentResult.items.length
+                ? {
+                    create: attachmentResult.items.map((entry) => ({
+                      type: entry.type as "IMAGE" | "VIDEO" | "FILE",
+                      url: entry.url,
+                      storagePath:
+                        typeof entry.metadata?.path === "string" ? (entry.metadata.path as string) : undefined,
+                      mime: entry.mime,
+                      size: entry.size,
+                      metadata: entry.metadata as Prisma.InputJsonValue,
+                    })),
+                  }
+                : undefined,
             },
             select: messageSelect,
           });
+
+          if (preparedAssets.items.length) {
+            await tx.mediaAsset.createMany({
+              data: preparedAssets.items.map((asset) => ({
+                organizationId: conversation.organizationId,
+                ownerType: attachmentOwner.ownerType,
+                ownerId: attachmentOwner.ownerId,
+                uploadedByUserId: user.id,
+                scope: "chat-attachment",
+                bucket: asset.bucket,
+                objectPath: asset.objectPath,
+                mimeType: asset.mimeType,
+                sizeBytes: asset.sizeBytes,
+                checksumSha256: asset.checksumSha256,
+                originalFilename: asset.originalFilename,
+                isPublic: CHAT_ATTACHMENTS_PUBLIC,
+              })),
+              skipDuplicates: true,
+            });
+          }
 
           await tx.chatConversation.update({
             where: { id: conversationId },
@@ -436,6 +662,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     if (!message) {
       return jsonWrap({ error: "MESSAGE_NOT_CREATED" }, { status: 500 });
     }
+    const [messageWithUrls] = await resolveAttachmentUrls([message]);
 
     const viewerIsCustomer = conversation.customerId === user.id;
     const members = conversation.members;
@@ -446,7 +673,8 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     });
 
     const now = new Date();
-    const preview = body.length > 160 ? `${body.slice(0, 157)}…` : body;
+    const preview =
+      body.length > 0 ? (body.length > 160 ? `${body.slice(0, 157)}…` : body) : "Anexo";
     const warnings: string[] = [];
 
     try {
@@ -455,13 +683,14 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
         organizationId: conversation.organizationId ?? undefined,
         conversationId,
         message: {
-          id: message.id,
+          id: messageWithUrls.id,
           conversationId,
-          body: message.body,
-          createdAt: message.createdAt.toISOString(),
-          deletedAt: null,
+          body: messageWithUrls.body,
+          createdAt: messageWithUrls.createdAt.toISOString(),
+          deletedAt: messageWithUrls.deletedAt ? messageWithUrls.deletedAt.toISOString() : null,
+          attachments: messageWithUrls.attachments,
           sender: mapSenderDisplay({
-            senderId: message.senderId,
+            senderId: messageWithUrls.senderId,
             members,
             viewerIsCustomer,
             viewerId: user.id,
@@ -481,12 +710,12 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
           const online = await isChatUserOnline(recipient.userId);
           if (online) continue;
           await enqueueNotification({
-            dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
+            dedupeKey: `chat_message:${messageWithUrls.id}:${recipient.userId}`,
             userId: recipient.userId,
             notificationType: "CHAT_MESSAGE",
             payload: {
               conversationId,
-              messageId: message.id,
+              messageId: messageWithUrls.id,
               senderId: user.id,
               preview,
               organizationId: conversation.organizationId ?? null,
@@ -504,12 +733,13 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
 
     return jsonWrap({
       item: {
-        id: message.id,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        deletedAt: null,
+        id: messageWithUrls.id,
+        body: messageWithUrls.body,
+        createdAt: messageWithUrls.createdAt.toISOString(),
+        deletedAt: messageWithUrls.deletedAt ? messageWithUrls.deletedAt.toISOString() : null,
+        attachments: messageWithUrls.attachments,
         sender: mapSenderDisplay({
-          senderId: message.senderId,
+          senderId: messageWithUrls.senderId,
           members,
           viewerIsCustomer,
           viewerId: user.id,

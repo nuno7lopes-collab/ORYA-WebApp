@@ -9,6 +9,7 @@ import { advancePadelKnockoutWinner, extractBracketPrefix, sortRoundsBySize } fr
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { resolvePartnershipScheduleConstraints } from "@/domain/padel/partnershipSchedulePolicy";
+import { isPadelOfficialStatus, isPadelTerminalStatus } from "@/domain/padel/liveStatus";
 import { Prisma } from "@prisma/client";
 
 type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
@@ -1065,7 +1066,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     }
   }
 
-  const matchCompleted = updated.status === "DONE" && payload.beforeStatus !== "DONE";
+  const matchCompleted = isPadelOfficialStatus(updated.status) && !isPadelOfficialStatus(payload.beforeStatus);
   const pairingLabel = (pairing: typeof updated.pairingA | null) => {
     if (!pairing) return "Dupla";
     const names = (pairing.slots || [])
@@ -1178,9 +1179,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
       }),
     ]);
 
-    const allClosed = groupMatches.every(
-      (m) => m.status === "DONE" || m.status === "CANCELLED",
-    );
+    const allClosed = groupMatches.every((m) => isPadelTerminalStatus(m.status));
     if (allClosed) {
       const ruleSnapshot = await getPadelRuleSetSnapshot({
         ruleSetId: config?.ruleSetId ?? null,
@@ -1279,7 +1278,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
 
       const allGroupsClosed =
         allGroupMatches.length > 0 &&
-        allGroupMatches.every((m) => m.status === "DONE" || m.status === "CANCELLED");
+        allGroupMatches.every((m) => isPadelTerminalStatus(m.status));
       const formatToUse = categoryLink?.format ?? updated.event?.padelTournamentConfig?.format ?? null;
       if (allGroupsClosed && !existingKo && formatToUse === "GRUPOS_ELIMINATORIAS") {
         try {

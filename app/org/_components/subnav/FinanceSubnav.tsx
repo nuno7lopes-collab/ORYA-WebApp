@@ -65,7 +65,7 @@ export default function FinanceSubnav({ orgId, className }: { orgId: number | nu
         },
         {
           id: "exports",
-          label: "Exports",
+          label: "Exportações",
           href: buildOrgHref(orgId, "/finance", { view: "exports" }),
           isActive: ({ searchParams }) => resolveView(searchParams) === "exports",
         },

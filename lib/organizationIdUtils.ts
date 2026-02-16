@@ -293,7 +293,9 @@ export function resolveCanonicalOrgHref(
     };
   }
   if (suffix === "/reservas/politicas") {
-    return { pathname: buildOrgHref(organizationId, "/bookings/policies"), search: nextSearch };
+    const mappedSearch = new URLSearchParams(nextSearch);
+    mappedSearch.set("view", "booking");
+    return { pathname: buildOrgHref(organizationId, "/policies"), search: mappedSearch };
   }
   if (suffix === "/reservas/precos") {
     return { pathname: buildOrgHref(organizationId, "/bookings/prices"), search: nextSearch };

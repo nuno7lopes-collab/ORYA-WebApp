@@ -6,6 +6,7 @@ import {
   normalizePadelTieBreakRules,
   sortPadelStandingsRows,
 } from "@/domain/padel/standings";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 type DbClient = Prisma.TransactionClient;
 
@@ -236,7 +237,7 @@ export async function rebuildPadelPlayerHistoryProjectionForEvent(params: {
     orderBy: [{ id: "asc" }],
   });
 
-  const doneMatches = matches.filter((match) => match.status === "DONE");
+  const doneMatches = matches.filter((match) => isPadelOfficialStatus(match.status));
   const tieBreakRules = normalizePadelTieBreakRules(
     event.padelTournamentConfig?.ruleSetVersion?.tieBreakRules ?? event.padelTournamentConfig?.ruleSet?.tieBreakRules,
   );

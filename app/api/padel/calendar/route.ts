@@ -21,6 +21,7 @@ import { evaluateCandidate, type AgendaCandidate, type AgendaCandidateType, type
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
+import { isPadelLockedForReschedule } from "@/domain/padel/liveStatus";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
@@ -1059,7 +1060,7 @@ async function _PATCH(req: NextRequest) {
       },
     });
     if (!match) return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
-    if (match.status === "IN_PROGRESS" || match.status === "DONE") {
+    if (isPadelLockedForReschedule(match.status)) {
       return jsonWrap({ ok: false, error: "MATCH_LOCKED" }, { status: 409 });
     }
 

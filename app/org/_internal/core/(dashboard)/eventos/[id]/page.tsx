@@ -463,8 +463,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
   const publicPageHref = `/eventos/${event.slug}`;
-  const monitorHref = publicPageHref;
-  const scoreHref = publicPageHref;
+  const monitorHref = `/eventos/${event.slug}/monitor`;
+  const scoreHref = `/eventos/${event.slug}/calendario?view=resultados`;
   const calendarPublicHref = `/eventos/${event.slug}/calendario`;
   const rankingPublicHref = `/eventos/${event.slug}/ranking`;
 
@@ -500,8 +500,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         },
         {
           key: "monitor",
-          label: "Página pública",
-          description: "Abrir página pública do torneio.",
+          label: "TV Mode",
+          description: "Monitor desportivo do live.",
           href: monitorHref,
           tone: "neutral" as const,
           external: true,

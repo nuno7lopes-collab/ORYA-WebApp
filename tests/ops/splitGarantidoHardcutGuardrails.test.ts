@@ -17,6 +17,9 @@ describe("split garantido hard-cut guardrails", () => {
       expect(content).toContain("SPLIT_GARANTIDO");
       expect(content).toContain("410");
     }
+
+    expect(inviteCheckout).toContain("SPLIT_PAYMENT_METHOD_NOT_ALLOWED");
+    expect(inviteCheckout).toContain('payment_method_types: ["card"]');
   });
 
   it("keeps runtime cron guard for split garantido transitions", () => {
@@ -28,11 +31,18 @@ describe("split garantido hard-cut guardrails", () => {
     expect(cronRoute).toContain("BOOKING_SPLIT_OFFSESSION_CHARGE");
     expect(cronRoute).toContain("settle_job_missed_deadlineAt");
     expect(cronRoute).toContain("debt_open_rate_spike");
+    expect(cronRoute).toContain("enforceSplitHoldCoverage");
+    expect(cronRoute).toContain("split_guarantee_lost");
     expect(splitRuntime).toContain("HOLD_CAPTURE");
     expect(splitRuntime).toContain("OFFSESSION_PI");
     expect(splitRuntime).toContain("DEBT");
+    expect(splitRuntime).toContain("BookingSplitHoldAttemptStatus");
+    expect(splitRuntime).toContain("BookingSplitShareAttemptStatus");
+    expect(splitRuntime).toContain("enforceSplitHoldCoverage");
     expect(splitRuntime).toContain("resolveNextBookingSplitOffsessionAttempt");
     expect(workerRoute).toContain("processBookingSplitOffsessionCharge");
+    expect(workerRoute).toContain('from "@/domain/bookings/splitGarantido"');
+    expect(workerRoute).toContain("BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS");
   });
 
   it("keeps canonical offsession schema + migration for split runtime", () => {
@@ -41,6 +51,10 @@ describe("split garantido hard-cut guardrails", () => {
 
     expect(schema).toContain("offsessionPaymentMethodId");
     expect(schema).toContain("offsessionCustomerId");
+    expect(schema).toContain("activeShareAttemptId");
+    expect(schema).toContain("model BookingSplitShareAttempt");
+    expect(schema).toContain("model BookingSplitHoldAttempt");
+    expect(schema).toContain("enum BookingSplitCancelReason");
     expect(schema).toContain("model BookingSplitOffsessionAttempt");
     expect(schema).toContain("enum BookingSplitOffsessionAttemptStatus");
     expect(migration).toContain("booking_split_offsession_attempts");

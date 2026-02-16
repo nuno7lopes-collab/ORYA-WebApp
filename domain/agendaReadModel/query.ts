@@ -23,6 +23,7 @@ export async function getAgendaItemsForOrganization(params: {
   to: Date;
   padelClubId?: number | null;
   courtId?: number | null;
+  sourceTypes?: SourceType[];
   scopeFilter?: {
     courtIds?: number[];
     resourceIds?: number[];
@@ -30,7 +31,16 @@ export async function getAgendaItemsForOrganization(params: {
   } | null;
   scopeMode?: "OR" | "AND";
 }) {
-  const { organizationId, from, to, padelClubId = null, courtId = null, scopeFilter = null, scopeMode = "OR" } = params;
+  const {
+    organizationId,
+    from,
+    to,
+    padelClubId = null,
+    courtId = null,
+    sourceTypes = [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING],
+    scopeFilter = null,
+    scopeMode = "OR",
+  } = params;
   const rangeFilter = buildAgendaOverlapFilter({ from, to });
   const scopeOr: Array<Record<string, unknown>> = [];
   const courtIds = scopeFilter?.courtIds ?? [];
@@ -59,7 +69,7 @@ export async function getAgendaItemsForOrganization(params: {
           ? { OR: scopeOr }
           : {}),
       sourceType: {
-        in: [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING],
+        in: sourceTypes,
       },
       status: { not: "DELETED" },
     },

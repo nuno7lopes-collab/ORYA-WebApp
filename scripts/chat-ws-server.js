@@ -260,6 +260,61 @@ function isValidSemver(value) {
   return /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(value.trim());
 }
 
+function parseSemver(value) {
+  if (typeof value !== "string") return null;
+  const match = value
+    .trim()
+    .replace(/^v/i, "")
+    .match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function compareSemver(a, b) {
+  const va = parseSemver(a);
+  const vb = parseSemver(b);
+  if (!va || !vb) return null;
+  if (va.major !== vb.major) return va.major - vb.major;
+  if (va.minor !== vb.minor) return va.minor - vb.minor;
+  return va.patch - vb.patch;
+}
+
+function normalizeRuntimePlatform(rawValue) {
+  if (typeof rawValue !== "string") return "unknown";
+  const normalized = rawValue.trim().toLowerCase();
+  if (normalized === "ios" || normalized === "android") return normalized;
+  return "unknown";
+}
+
+function resolveMobileMinVersion(platform) {
+  if (platform === "ios") {
+    return process.env.MIN_SUPPORTED_MOBILE_VERSION_IOS?.trim() || process.env.MIN_SUPPORTED_MOBILE_VERSION?.trim() || null;
+  }
+  if (platform === "android") {
+    return process.env.MIN_SUPPORTED_MOBILE_VERSION_ANDROID?.trim() || process.env.MIN_SUPPORTED_MOBILE_VERSION?.trim() || null;
+  }
+  return process.env.MIN_SUPPORTED_MOBILE_VERSION?.trim() || null;
+}
+
+function isPlatformKillSwitchEnabled(platform, appVersion) {
+  if (process.env.MOBILE_KILL_SWITCH_ALL?.trim() === "1") return true;
+  if (!platform || platform === "unknown") return false;
+  const rawSwitch = platform === "ios"
+    ? process.env.MOBILE_KILL_SWITCH_IOS?.trim()
+    : process.env.MOBILE_KILL_SWITCH_ANDROID?.trim();
+  if (!rawSwitch) return false;
+  if (rawSwitch === "1" || rawSwitch === "*") return true;
+  return rawSwitch
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .includes(appVersion.trim());
+}
+
 function getClientPlatform(url, headers) {
   const fromQuery = url.searchParams.get("platform");
   if (typeof fromQuery === "string" && fromQuery.trim()) {
@@ -278,6 +333,32 @@ function getClientPlatform(url, headers) {
     return String(fromHeaders[0] || "").trim().toLowerCase();
   }
   return "";
+}
+
+function getRuntimePlatform(payload, url, headers) {
+  const payloadPlatform =
+    typeof payload?.runtime_platform === "string"
+      ? payload.runtime_platform
+      : typeof payload?.device_platform === "string"
+        ? payload.device_platform
+        : typeof payload?.mobile_platform === "string"
+          ? payload.mobile_platform
+          : "";
+  if (payloadPlatform) return normalizeRuntimePlatform(payloadPlatform);
+
+  const queryPlatform = url.searchParams.get("os");
+  if (queryPlatform) return normalizeRuntimePlatform(queryPlatform);
+
+  const headerPlatform =
+    headers["x-app-os"] ||
+    headers["x-mobile-os"] ||
+    headers["x-device-platform"] ||
+    null;
+  if (typeof headerPlatform === "string") return normalizeRuntimePlatform(headerPlatform);
+  if (Array.isArray(headerPlatform) && headerPlatform.length > 0) {
+    return normalizeRuntimePlatform(String(headerPlatform[0] || ""));
+  }
+  return "unknown";
 }
 
 async function validateToken(token) {
@@ -507,13 +588,23 @@ wss.on("connection", (ws, req) => {
     let handshakeComplete = false;
 
     const rejectHandshake = (params) => {
-      const { reason, code, userId = null, organizationId = null, platform = null } = params;
+      const {
+        reason,
+        code,
+        detail = null,
+        userId = null,
+        organizationId = null,
+        platform = null,
+        runtimePlatform = null,
+      } = params;
       emitWsMetric("ws.handshake.failure_count", {
         reason,
+        detail,
         code,
         userId,
         organizationId,
         platform,
+        runtimePlatform,
         clientIp,
         correlationId,
         handshakeLatencyMs: Date.now() - handshakeStartedAt,
@@ -527,19 +618,33 @@ wss.on("connection", (ws, req) => {
       if (reason === "UPGRADE_REQUIRED" || reason === "MOBILE_APP_REQUIRED") {
         emitWsMetric("ws.handshake.rejected.version_gate_count", {
           reason,
+          detail,
           userId,
           correlationId,
         });
       }
       emitWsLog("ws.handshake.rejected", {
         reason,
+        detail,
         code,
         userId,
         organizationId,
         platform,
+        runtimePlatform,
         clientIp,
         correlationId,
       });
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "handshake:error",
+            errorCode: reason,
+            reason: detail || null,
+          }),
+        );
+      } catch {
+        // ignore send failures
+      }
       try {
         ws.close(code, reason);
       } catch {
@@ -609,12 +714,14 @@ wss.on("connection", (ws, req) => {
             (typeof payload.client_platform === "string" && payload.client_platform.trim().toLowerCase()) ||
             fallbackPlatform ||
             "";
+          const runtimePlatform = getRuntimePlatform(payload, url, req.headers);
 
           if (!token) {
             rejectHandshake({
               reason: "UNAUTHORIZED",
               code: 4001,
               platform: clientPlatform || null,
+              runtimePlatform,
             });
             return;
           }
@@ -622,7 +729,9 @@ wss.on("connection", (ws, req) => {
             rejectHandshake({
               reason: "UPGRADE_REQUIRED",
               code: 4003,
+              detail: "APP_VERSION_INVALID",
               platform: clientPlatform || null,
+              runtimePlatform,
             });
             return;
           }
@@ -631,6 +740,7 @@ wss.on("connection", (ws, req) => {
               reason: "ORG_CONTEXT_REQUIRED",
               code: 4003,
               platform: clientPlatform || null,
+              runtimePlatform,
             });
             return;
           }
@@ -641,6 +751,7 @@ wss.on("connection", (ws, req) => {
               reason: "UNAUTHORIZED",
               code: 4001,
               platform: clientPlatform || null,
+              runtimePlatform,
             });
             return;
           }
@@ -656,6 +767,7 @@ wss.on("connection", (ws, req) => {
                 code: 4003,
                 userId: user.id,
                 platform: clientPlatform || null,
+                runtimePlatform,
               });
               return;
             }
@@ -667,6 +779,7 @@ wss.on("connection", (ws, req) => {
                 userId: user.id,
                 organizationId,
                 platform: clientPlatform || null,
+                runtimePlatform,
               });
               return;
             }
@@ -677,6 +790,43 @@ wss.on("connection", (ws, req) => {
                 code: 4003,
                 userId: user.id,
                 platform: clientPlatform || null,
+                runtimePlatform,
+              });
+              return;
+            }
+            const minSupportedVersion = resolveMobileMinVersion(runtimePlatform);
+            if (!minSupportedVersion || !isValidSemver(minSupportedVersion)) {
+              rejectHandshake({
+                reason: "UPGRADE_REQUIRED",
+                code: 4003,
+                detail: !minSupportedVersion
+                  ? "MIN_SUPPORTED_MOBILE_VERSION_NOT_CONFIGURED"
+                  : "MIN_SUPPORTED_MOBILE_VERSION_INVALID",
+                userId: user.id,
+                platform: clientPlatform || null,
+                runtimePlatform,
+              });
+              return;
+            }
+            if (isPlatformKillSwitchEnabled(runtimePlatform, appVersion)) {
+              rejectHandshake({
+                reason: "UPGRADE_REQUIRED",
+                code: 4003,
+                detail: "PLATFORM_KILL_SWITCH",
+                userId: user.id,
+                platform: clientPlatform || null,
+                runtimePlatform,
+              });
+              return;
+            }
+            if ((compareSemver(appVersion, minSupportedVersion) ?? -1) < 0) {
+              rejectHandshake({
+                reason: "UPGRADE_REQUIRED",
+                code: 4003,
+                detail: "APP_VERSION_UNSUPPORTED",
+                userId: user.id,
+                platform: clientPlatform || null,
+                runtimePlatform,
               });
               return;
             }
@@ -687,6 +837,7 @@ wss.on("connection", (ws, req) => {
               code: 4003,
               userId: user.id,
               platform: clientPlatform || null,
+              runtimePlatform,
             });
             return;
           }
@@ -708,6 +859,7 @@ wss.on("connection", (ws, req) => {
             organizationId,
             scope,
             platform: clientPlatform || null,
+            runtimePlatform,
             correlationId,
             handshakeLatencyMs: Date.now() - handshakeStartedAt,
           });
@@ -715,6 +867,7 @@ wss.on("connection", (ws, req) => {
             userId: user.id,
             organizationId,
             scope,
+            runtimePlatform,
             correlationId,
             value: Date.now() - handshakeStartedAt,
           });
@@ -723,6 +876,7 @@ wss.on("connection", (ws, req) => {
             organizationId,
             scope,
             platform: clientPlatform || null,
+            runtimePlatform,
             correlationId,
           });
 

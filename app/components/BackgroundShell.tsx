@@ -32,6 +32,17 @@ const USER_BG_PRESET: BackgroundPreset = {
     "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
 };
 
+const ORG_BG_PRESET: BackgroundPreset = {
+  color: "#0b1014",
+  image: FUNDO_1_BG_IMAGE,
+  overlay: "none",
+  overlayOpacity: 1,
+  skeletonSurface:
+    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
+  skeletonSurfaceStrong:
+    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
+};
+
 const LANDING_BG_PRESET: BackgroundPreset = {
   color: "#0b1014",
   image: FUNDO_1_BG_IMAGE,
@@ -61,7 +72,7 @@ const EVENT_BLUR_PRESET = getCatalogLayerPreset("event-cover-blur");
 const BG_PRESETS: Record<BackgroundKey, BackgroundPreset> = {
   "orya-bg-user": USER_BG_PRESET,
   "orya-bg-event": USER_BG_PRESET,
-  "orya-bg-org": USER_BG_PRESET,
+  "orya-bg-org": ORG_BG_PRESET,
   "orya-bg-landing": LANDING_BG_PRESET,
 };
 

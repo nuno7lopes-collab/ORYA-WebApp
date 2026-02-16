@@ -498,7 +498,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
   try {
     const statsRows = await prisma.eventMatchSlot.findMany({
       where: {
-        status: "DONE",
+        status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
         OR: [
           {
             participants: {
@@ -1037,7 +1037,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
                           </p>
                         ) : null}
                         <p className="text-[11px] text-white/70">Resultado: {formatScoreSummary(match)}</p>
-                        {isOwner && match.status === "DONE" && (
+                        {isOwner && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(match.status) && (
                           <PadelDisputeButton
                             matchId={match.id}
                             initialStatus={disputeStatus as "OPEN" | "RESOLVED" | null}

@@ -6,7 +6,7 @@ describe("computeUserPadelStats", () => {
     const stats = computeUserPadelStats([
       {
         pairingSide: "A",
-        status: "DONE",
+        status: "OFFICIAL",
         scoreSets: [
           { teamA: 6, teamB: 4 },
           { teamA: 6, teamB: 3 },
@@ -14,7 +14,7 @@ describe("computeUserPadelStats", () => {
       },
       {
         pairingSide: "B",
-        status: "DONE",
+        status: "OFFICIAL",
         scoreSets: [
           { teamA: 7, teamB: 5 },
           { teamA: 6, teamB: 3 },

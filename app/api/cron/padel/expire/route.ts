@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -11,6 +11,8 @@ import {
   PadelPairingStatus,
   PadelPairingJoinMode,
   PadelRegistrationStatus,
+  Prisma,
+  padel_match_status,
 } from "@prisma/client";
 import { expireHolds } from "@/domain/padelPairingHold";
 import { INACTIVE_REGISTRATION_STATUSES, transitionPadelRegistrationStatus, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
@@ -18,6 +20,127 @@ import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import { queueDeadlineExpired } from "@/domain/notifications/splitPayments";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
+import { markPendingReviewExpired } from "@/domain/padel/resultWorkflow";
+import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { listTournamentDirectorUserIds } from "@/domain/padel/incidentGovernance";
+import { createNotification, shouldNotify } from "@/lib/notifications";
+
+function asScoreObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {} as Record<string, unknown>;
+  return value as Record<string, unknown>;
+}
+
+async function expirePendingResultWindows(now: Date) {
+  const pendingMatches = await prisma.eventMatchSlot.findMany({
+    where: {
+      status: padel_match_status.PENDING_CONFIRMATION,
+      event: { organizationId: { not: null } },
+    },
+    select: {
+      id: true,
+      eventId: true,
+      status: true,
+      score: true,
+      event: {
+        select: {
+          organizationId: true,
+          title: true,
+          slug: true,
+        },
+      },
+    },
+    orderBy: { id: "asc" },
+    take: 2000,
+  });
+
+  let expiredCount = 0;
+  let notificationsCount = 0;
+
+  for (const match of pendingMatches) {
+    const organizationId = match.event?.organizationId ?? null;
+    if (!organizationId) continue;
+
+    const score = asScoreObject(match.score);
+    const expiry = markPendingReviewExpired({
+      currentStatus: match.status,
+      currentScore: score,
+      now,
+    });
+    if (!expiry.changed || !expiry.status) continue;
+
+    const { match: updated } = await updatePadelMatch({
+      matchId: match.id,
+      eventId: match.eventId,
+      organizationId,
+      actorUserId: null,
+      beforeStatus: match.status,
+      eventType: "PADEL_MATCH_PENDING_EXPIRED",
+      outboxEventType: "PADEL_MATCH_PENDING_EXPIRED",
+      data: {
+        status: expiry.status,
+        score: expiry.score as Prisma.InputJsonValue,
+      },
+    });
+
+    expiredCount += 1;
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: null,
+      action: "PADEL_MATCH_PENDING_EXPIRED",
+      metadata: {
+        matchId: match.id,
+        eventId: match.eventId,
+        fromStatus: match.status,
+        toStatus: expiry.status,
+        trigger: "CRON_PADEL_EXPIRE",
+      },
+    });
+
+    const directorUserIds = await listTournamentDirectorUserIds({
+      eventId: match.eventId,
+      organizationId,
+    });
+    if (directorUserIds.length === 0) continue;
+
+    const expiredAt =
+      typeof (expiry.score as Record<string, unknown>)?.liveWorkflow === "object" &&
+      !Array.isArray((expiry.score as Record<string, unknown>)?.liveWorkflow) &&
+      typeof ((expiry.score as Record<string, unknown>).liveWorkflow as Record<string, unknown>)?.pendingReviewExpiredAt === "string"
+        ? (((expiry.score as Record<string, unknown>).liveWorkflow as Record<string, unknown>).pendingReviewExpiredAt as string)
+        : now.toISOString();
+    const eventTitle = match.event?.title?.trim() || "Torneio Padel";
+    const ctaUrl = match.event?.slug ? `/org/${organizationId}/events/${match.eventId}` : null;
+
+    for (const userId of directorUserIds) {
+      const allow = await shouldNotify(userId, "SYSTEM_ANNOUNCE");
+      if (!allow) continue;
+      await createNotification({
+        userId,
+        type: "SYSTEM_ANNOUNCE",
+        title: "Resultado pendente expirado",
+        body: `Jogo #${match.id} em ${eventTitle} entrou em revisão operacional.`,
+        organizationId,
+        eventId: match.eventId,
+        ctaUrl,
+        dedupeKey: `padel_pending_expired:${match.id}:${expiredAt}:${userId}`,
+        payload: {
+          kind: "PADEL_PENDING_REVIEW_EXPIRED",
+          matchId: match.id,
+          eventId: match.eventId,
+          expiredAt,
+          status: updated.status,
+        },
+      });
+      notificationsCount += 1;
+    }
+  }
+
+  return {
+    expiredCount,
+    notificationsCount,
+  };
+}
 
 // Expira pairings SPLIT em T-24h e garante 2ª cobrança / refunds via outbox.
 // Pode ser executado via cron. Não expõe dados sensíveis, mas requer permissão server-side.
@@ -29,6 +152,7 @@ async function _POST(req: NextRequest) {
     }
     const now = new Date();
     await expireHolds(prisma, now);
+    const pendingExpiry = await expirePendingResultWindows(now);
 
     // Move pairings SPLIT para matchmaking após janela de 1h (T-48 + 1h)
     const toMatchmake = await prisma.padelPairing.findMany({
@@ -211,7 +335,13 @@ async function _POST(req: NextRequest) {
     }
 
     await recordCronHeartbeat("padel-expire", { status: "SUCCESS", startedAt });
-    return jsonWrap({ ok: true, processed, now: now.toISOString() });
+    return jsonWrap({
+      ok: true,
+      processed,
+      pendingResultsExpired: pendingExpiry.expiredCount,
+      pendingExpiryNotifications: pendingExpiry.notificationsCount,
+      now: now.toISOString(),
+    });
   } catch (err) {
     await recordCronHeartbeat("padel-expire", { status: "ERROR", startedAt, error: err });
     return jsonWrap({ ok: false, error: "Internal error" }, { status: 500 });

@@ -13,6 +13,8 @@ import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
 import { normalizePadelScoreRules, resolvePadelMatchStats } from "@/domain/padel/score";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
+import { isPadelOfficialPublicResult } from "@/domain/padel/publicResult";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext, type RequestContext } from "@/lib/http/requestContext";
@@ -22,6 +24,35 @@ import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
+const RESULT_WORKFLOW_STATUSES = new Set<padel_match_status>([
+  padel_match_status.RESULT_SUBMITTED,
+  padel_match_status.PENDING_CONFIRMATION,
+  padel_match_status.PENDING_REVIEW_EXPIRED,
+  padel_match_status.DISPUTED,
+  padel_match_status.OFFICIAL,
+  padel_match_status.WALKOVER,
+  padel_match_status.RETIRED,
+]);
+
+const asPublicMatch = (match: Record<string, unknown>) => {
+  if (
+    isPadelOfficialPublicResult({
+      status: typeof match.status === "string" ? match.status : null,
+      score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
+    })
+  ) {
+    return match;
+  }
+
+  return {
+    ...match,
+    score: {},
+    scoreSets: null,
+    winnerSide: null,
+    winnerPairingId: null,
+    winnerParticipantId: null,
+  };
+};
 
 function fail(
   ctx: RequestContext,
@@ -122,7 +153,8 @@ async function _GET(req: NextRequest) {
     ],
   });
 
-  return respondOk(ctx, { items: matches }, { status: 200 });
+  const items = !user ? matches.map((match) => asPublicMatch(match as unknown as Record<string, unknown>)) : matches;
+  return respondOk(ctx, { items }, { status: 200 });
 }
 
 async function _POST(req: NextRequest) {
@@ -219,12 +251,19 @@ async function _POST(req: NextRequest) {
 
   const isAdmin = adminRoles.has(membership.role);
 
+  if (isPadelOfficialStatus(match.status)) {
+    return fail(ctx, 409, "MATCH_FINALIZED_USE_RESULT_WORKFLOW");
+  }
+
   if (scoreRaw && !isValidScore(scoreRaw)) {
     return fail(ctx, 400, "INVALID_SCORE");
   }
 
   const scoreObj = scoreRaw && typeof scoreRaw === "object" ? (scoreRaw as Record<string, unknown>) : null;
   const nextStatus = statusRaw ?? match.status;
+  if (statusRaw && RESULT_WORKFLOW_STATUSES.has(statusRaw)) {
+    return fail(ctx, 409, "RESULT_WORKFLOW_REQUIRED");
+  }
 
   const existingScore =
     match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : {};
@@ -271,7 +310,7 @@ async function _POST(req: NextRequest) {
     : null;
   const stats = resolvePadelMatchStats(rawSets, mergedScore, shouldApplyScoreRules ? scoreRules ?? undefined : undefined);
 
-  if (Array.isArray(rawSets) && rawSets.length > 0 && nextStatus === "DONE" && !stats) {
+  if (Array.isArray(rawSets) && rawSets.length > 0 && isPadelOfficialStatus(nextStatus) && !stats) {
     return fail(ctx, 400, "INVALID_SCORE");
   }
 
@@ -310,7 +349,7 @@ async function _POST(req: NextRequest) {
   let winnerParticipantId: number | null =
     winnerSide === "A" ? sideParticipants.A[0]?.participantId ?? null : winnerSide === "B" ? sideParticipants.B[0]?.participantId ?? null : null;
 
-  const shouldSetWinner = nextStatus === "DONE";
+  const shouldSetWinner = isPadelOfficialStatus(nextStatus);
   if (shouldSetWinner && !winnerSide && !isDrawResult && !isByeNeutral) {
     if (sideParticipants.A.length > 0 && sideParticipants.B.length === 0) winnerSide = "A";
     if (sideParticipants.A.length === 0 && sideParticipants.B.length > 0) winnerSide = "B";
@@ -326,13 +365,13 @@ async function _POST(req: NextRequest) {
   const scoreValue = (scoreObj ? mergedScore : existingScore) as Prisma.InputJsonValue;
   const shouldSetScoreSetsFromStats =
     !hasIncomingSets &&
-    nextStatus === "DONE" &&
+    isPadelOfficialStatus(nextStatus) &&
     stats?.mode === "SETS" &&
     Array.isArray(stats?.sets) &&
     stats.sets.length > 0 &&
     !Array.isArray(match.scoreSets);
   const shouldResetScoreSetsForTimed =
-    !hasIncomingSets && nextStatus === "DONE" && stats?.mode === "TIMED_GAMES";
+    !hasIncomingSets && isPadelOfficialStatus(nextStatus) && stats?.mode === "TIMED_GAMES";
   const scoreSetsValue = hasIncomingSets
     ? ((stats?.sets ?? incomingSets) as Prisma.InputJsonValue)
     : shouldResetScoreSetsForTimed

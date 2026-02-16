@@ -1,8 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isAnalyticsAllowedView, type AnalyticsAllowedView } from "@/lib/domainBoundaries";
 import { cn } from "@/lib/utils";
@@ -12,101 +27,328 @@ type AnalyticsToolClientProps = {
   initialView: AnalyticsAllowedView;
 };
 
-type AnalyticsOverviewResponse =
-  | {
-      ok: true;
-      range: string;
-      currency: string | null;
-      totalTickets: number;
-      grossCents: number;
-      feesCents: number;
-      netRevenueCents: number;
-      eventsWithSalesCount: number;
-      activeEventsCount: number;
-    }
-  | { ok: false; error?: string };
+type RangeOption = "7d" | "30d" | "90d" | "all";
+type ScopeOption = "all" | "eventos" | "padel";
+type DimensionOption = "MODULE" | "SOURCE_TYPE" | "PAYMENT_PROVIDER" | "CURRENCY";
+type MetricOption = "GROSS" | "PLATFORM_FEES" | "PROCESSOR_FEES" | "NET_TO_ORG";
 
-type AnalyticsConversionResponse =
-  | {
-      ok: true;
-      range: string;
-      startedCount: number;
-      succeededCount: number;
-      conversionRateBps: number;
-      conversionRatePct: number;
-      breakdown: Array<{ sourceType: string; startedCount: number; succeededCount: number; conversionRateBps: number }>;
-    }
-  | { ok: false; error?: string };
+type AnalyticsOverviewResponse = {
+  ok?: boolean;
+  range: string;
+  currency: string | null;
+  totalTickets: number;
+  grossCents: number;
+  feesCents: number;
+  netRevenueCents: number;
+  eventsWithSalesCount: number;
+  activeEventsCount: number;
+};
 
-type AnalyticsCohortsResponse =
-  | {
-      ok: true;
-      months: number;
-      cohorts: Array<{
-        cohortMonth: string;
-        buyers: number;
-        retention: Array<{ monthOffset: number; retainedBuyers: number; retentionRateBps: number; revenueCents: number }>;
-      }>;
-    }
-  | { ok: false; error?: string };
+type AnalyticsConversionResponse = {
+  ok?: boolean;
+  range: string;
+  startedCount: number;
+  succeededCount: number;
+  conversionRateBps: number;
+  conversionRatePct: number;
+  breakdown: Array<{ sourceType: string; startedCount: number; succeededCount: number; conversionRateBps: number }>;
+};
 
-type AnalyticsTimeSeriesResponse =
-  | {
-      ok: true;
-      currency: string | null;
-      points: Array<{ date: string; grossCents: number; feesCents: number; netCents: number }>;
-    }
-  | { ok: false; error?: string };
+type AnalyticsCohortsResponse = {
+  ok?: boolean;
+  months: number;
+  cohorts: Array<{
+    cohortMonth: string;
+    buyers: number;
+    retention: Array<{ monthOffset: number; retainedBuyers: number; retentionRateBps: number; revenueCents: number }>;
+  }>;
+};
 
-type AnalyticsDimensionsResponse =
-  | {
-      ok: true;
-      bucketDate: string | null;
-      items: Record<string, Record<string, number>>;
-    }
-  | { ok: false; error?: string };
+type AnalyticsTimeSeriesResponse = {
+  ok?: boolean;
+  currency: string | null;
+  points: Array<{ date: string; grossCents: number; feesCents: number; netCents: number; tickets?: number }>;
+};
 
-type AnalyticsBuyersResponse =
-  | {
-      ok: true;
-      eventId: number;
-      items: Array<{
-        id: string;
-        buyerName: string;
-        buyerEmail: string;
-        totalPaidCents: number;
-        status: string;
-      }>;
-    }
-  | { ok: false; error?: string };
+type AnalyticsDimensionsResponse = {
+  ok?: boolean;
+  bucketDate: string | null;
+  items: Record<string, Record<string, number>>;
+};
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+type AnalyticsBuyersResponse = {
+  ok?: boolean;
+  eventId: number;
+  items: Array<{
+    id: string;
+    buyerName: string;
+    buyerEmail: string;
+    totalPaidCents: number;
+    status: string;
+  }>;
+};
+
+type AnalyticsEventsResponse = {
+  ok?: boolean;
+  items: Array<{
+    id: number;
+    title: string;
+    startsAt: string;
+    status: string;
+    templateType: string | null;
+  }>;
+};
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  revalidateOnReconnect: true,
+  shouldRetryOnError: true,
+  errorRetryCount: 2,
+} as const;
+
+const CHART_COLORS = ["#5EEAD4", "#60A5FA", "#F472B6", "#F59E0B", "#22C55E", "#A78BFA"];
+const DEFAULT_RANGE: RangeOption = "30d";
+const DEFAULT_SCOPE: ScopeOption = "all";
+const DEFAULT_COHORT_MONTHS = 12;
+const DEFAULT_DIMENSION: DimensionOption = "MODULE";
 
 function parseView(raw: string | null | undefined, fallback: AnalyticsAllowedView): AnalyticsAllowedView {
   if (isAnalyticsAllowedView(raw)) return raw;
   return fallback;
 }
 
+function parseRange(raw: string | null | undefined): RangeOption {
+  if (raw === "7d" || raw === "30d" || raw === "90d" || raw === "all") return raw;
+  return "30d";
+}
+
+function parseScope(raw: string | null | undefined): ScopeOption {
+  if (raw === "all" || raw === "eventos" || raw === "padel") return raw;
+  return "all";
+}
+
+function parseMonths(raw: string | null | undefined) {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return 12;
+  return Math.max(3, Math.min(24, parsed));
+}
+
+function parseDimension(raw: string | null | undefined): DimensionOption {
+  if (raw === "MODULE" || raw === "SOURCE_TYPE" || raw === "PAYMENT_PROVIDER" || raw === "CURRENCY") return raw;
+  return "MODULE";
+}
+
+function parseMetric(raw: string | null | undefined): MetricOption {
+  if (raw === "GROSS" || raw === "PLATFORM_FEES" || raw === "PROCESSOR_FEES" || raw === "NET_TO_ORG") return raw;
+  return "GROSS";
+}
+
+function parseEventId(raw: string | null | undefined) {
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function toCurrency(cents: number | null | undefined, currency = "EUR") {
+  const value = (cents ?? 0) / 100;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function toPctFromBps(bps: number | null | undefined) {
+  return `${(((bps ?? 0) / 100) as number).toFixed(2)}%`;
+}
+
+function toEuroChartLabel(value: unknown) {
+  const numeric = typeof value === "number" ? value : Number(value ?? 0);
+  return `${numeric.toFixed(2)} €`;
+}
+
+function compactDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("pt-PT", { day: "2-digit", month: "2-digit" }).format(date);
+}
+
+function prettyMetricKey(value: MetricOption) {
+  switch (value) {
+    case "GROSS":
+      return "Bruto";
+    case "PLATFORM_FEES":
+      return "Taxas plataforma";
+    case "PROCESSOR_FEES":
+      return "Taxas processamento";
+    case "NET_TO_ORG":
+      return "Líquido";
+    default:
+      return value;
+  }
+}
+
+function prettyDimensionKey(value: DimensionOption) {
+  switch (value) {
+    case "MODULE":
+      return "Módulo";
+    case "SOURCE_TYPE":
+      return "Origem";
+    case "PAYMENT_PROVIDER":
+      return "Fornecedor";
+    case "CURRENCY":
+      return "Moeda";
+    default:
+      return value;
+  }
+}
+
+function prettyScope(scope: ScopeOption) {
+  if (scope === "eventos") return "Eventos";
+  if (scope === "padel") return "Padel";
+  return "Tudo";
+}
+
+function unwrapEnvelope(payload: unknown) {
+  if (!payload || typeof payload !== "object") return payload;
+  const asRecord = payload as Record<string, unknown>;
+  if (asRecord.data && typeof asRecord.data === "object") return asRecord.data;
+  if (asRecord.result && typeof asRecord.result === "object") return asRecord.result;
+  return payload;
+}
+
+async function apiFetcher<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const payload = await res.json().catch(() => null);
+  const unwrapped = unwrapEnvelope(payload) as Record<string, unknown> | null;
+  const topLevel = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+  const hasErrorFlag = topLevel?.ok === false || unwrapped?.ok === false;
+  if (!res.ok || hasErrorFlag) {
+    const errorCode =
+      (unwrapped?.error as string | undefined) ??
+      (topLevel?.error as string | undefined) ??
+      `HTTP_${res.status}`;
+    throw new Error(errorCode);
+  }
+  return (unwrapped ?? payload) as T;
+}
+
+function buildScopeQuery(scope: ScopeOption) {
+  if (scope === "padel") return { templateType: "PADEL" as const };
+  if (scope === "eventos") return { excludeTemplateType: "PADEL" as const };
+  return {};
+}
+
+function buildQueryString(query: Record<string, string | number | undefined | null>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === null || typeof value === "undefined" || value === "") continue;
+    params.set(key, String(value));
+  }
+  return params.toString();
+}
+
 export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToolClientProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const view = parseView(searchParams?.get("view") ?? null, initialView);
-  const eventIdParam = searchParams?.get("eventId") ?? null;
-  const eventId = eventIdParam && Number.isFinite(Number(eventIdParam)) ? Number(eventIdParam) : null;
+  const range = parseRange(searchParams?.get("range") ?? null);
+  const scope = parseScope(searchParams?.get("scope") ?? null);
+  const months = parseMonths(searchParams?.get("months") ?? null);
+  const dimensionKey = parseDimension(searchParams?.get("dimensionKey") ?? null);
+  const metricKey = parseMetric(searchParams?.get("metricKey") ?? null);
+  const selectedEventId = parseEventId(searchParams?.get("eventId") ?? null);
   const orgApiBase = `/api/org/${orgId}`;
+  const scopeQuery = buildScopeQuery(scope);
 
-  const overviewKey = view === "overview" ? `${orgApiBase}/analytics/overview?range=30d` : null;
-  const conversionKey = view === "conversion" ? `${orgApiBase}/analytics/conversion?range=30d` : null;
-  const cohortsKey = view === "cohorts" ? `${orgApiBase}/analytics/cohorts?months=12` : null;
-  const buyersKey = view === "buyers" && eventId ? `${orgApiBase}/analytics/buyers?eventId=${eventId}` : null;
-  const seriesKey = view === "time-series" ? `${orgApiBase}/analytics/time-series?range=30d` : null;
-  const dimensionsKey = view === "dimensions" ? `${orgApiBase}/analytics/dimensoes?dimensionKey=MODULE` : null;
+  const updateQuery = useCallback(
+    (updates: Record<string, string | number | null | undefined>) => {
+      const next = new URLSearchParams(searchParams?.toString() ?? "");
+      for (const [key, value] of Object.entries(updates)) {
+        if (value === null || typeof value === "undefined" || value === "") {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      }
+      next.set("view", view);
+      router.replace(buildOrgHref(orgId, "/analytics", next));
+    },
+    [orgId, router, searchParams, view],
+  );
 
-  const { data: overview } = useSWR<AnalyticsOverviewResponse>(overviewKey, fetcher);
-  const { data: conversion } = useSWR<AnalyticsConversionResponse>(conversionKey, fetcher);
-  const { data: cohorts } = useSWR<AnalyticsCohortsResponse>(cohortsKey, fetcher);
-  const { data: buyers } = useSWR<AnalyticsBuyersResponse>(buyersKey, fetcher);
-  const { data: series } = useSWR<AnalyticsTimeSeriesResponse>(seriesKey, fetcher);
-  const { data: dimensions } = useSWR<AnalyticsDimensionsResponse>(dimensionsKey, fetcher);
+  const overviewKey =
+    view === "overview"
+      ? `${orgApiBase}/analytics/overview?${buildQueryString({ range, ...scopeQuery })}`
+      : null;
+  const conversionKey =
+    view === "conversion"
+      ? `${orgApiBase}/analytics/conversion?${buildQueryString({ range })}`
+      : null;
+  const cohortsKey =
+    view === "cohorts"
+      ? `${orgApiBase}/analytics/cohorts?${buildQueryString({ months, ...scopeQuery })}`
+      : null;
+  const eventsKey =
+    view === "buyers"
+      ? `${orgApiBase}/analytics/events?${buildQueryString({ limit: 120, ...scopeQuery })}`
+      : null;
+
+  const { data: eventsData, error: eventsError, isLoading: eventsLoading, mutate: mutateEvents } = useSWR<AnalyticsEventsResponse>(
+    eventsKey,
+    apiFetcher,
+    swrOptions,
+  );
+
+  const effectiveEventId = selectedEventId ?? eventsData?.items?.[0]?.id ?? null;
+  const buyersKey =
+    view === "buyers" && effectiveEventId
+      ? `${orgApiBase}/analytics/buyers?${buildQueryString({ eventId: effectiveEventId })}`
+      : null;
+  const seriesKey =
+    view === "overview" || view === "time-series"
+      ? `${orgApiBase}/analytics/time-series?${buildQueryString({ range, ...scopeQuery })}`
+      : null;
+  const dimensionsKey =
+    view === "dimensions"
+      ? `${orgApiBase}/analytics/dimensoes?${buildQueryString({ dimensionKey })}`
+      : null;
+
+  const { data: overview, error: overviewError, isLoading: overviewLoading, mutate: mutateOverview } = useSWR<AnalyticsOverviewResponse>(
+    overviewKey,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: conversion, error: conversionError, isLoading: conversionLoading, mutate: mutateConversion } =
+    useSWR<AnalyticsConversionResponse>(conversionKey, apiFetcher, swrOptions);
+  const { data: cohorts, error: cohortsError, isLoading: cohortsLoading, mutate: mutateCohorts } = useSWR<AnalyticsCohortsResponse>(
+    cohortsKey,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: buyers, error: buyersError, isLoading: buyersLoading, mutate: mutateBuyers } = useSWR<AnalyticsBuyersResponse>(
+    buyersKey,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: series, error: seriesError, isLoading: seriesLoading, mutate: mutateSeries } = useSWR<AnalyticsTimeSeriesResponse>(
+    seriesKey,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: dimensions, error: dimensionsError, isLoading: dimensionsLoading, mutate: mutateDimensions } =
+    useSWR<AnalyticsDimensionsResponse>(dimensionsKey, apiFetcher, swrOptions);
+
+  const refreshCurrentView = useCallback(async () => {
+    if (view === "overview") await Promise.all([mutateOverview(), mutateSeries()]);
+    if (view === "conversion") await mutateConversion();
+    if (view === "cohorts") await mutateCohorts();
+    if (view === "buyers") await Promise.all([mutateEvents(), mutateBuyers()]);
+    if (view === "time-series") await mutateSeries();
+    if (view === "dimensions") await mutateDimensions();
+  }, [mutateBuyers, mutateCohorts, mutateConversion, mutateDimensions, mutateEvents, mutateOverview, mutateSeries, view]);
 
   const headerByView = useMemo<Record<AnalyticsAllowedView, string>>(
     () => ({
@@ -120,163 +362,668 @@ export default function AnalyticsToolClient({ orgId, initialView }: AnalyticsToo
     [],
   );
 
+  const seriesChartData = useMemo(
+    () =>
+      (series?.points ?? []).map((point) => ({
+        date: compactDate(point.date),
+        gross: (point.grossCents ?? 0) / 100,
+        fees: (point.feesCents ?? 0) / 100,
+        net: (point.netCents ?? 0) / 100,
+      })),
+    [series?.points],
+  );
+
+  const conversionChartData = useMemo(
+    () =>
+      (conversion?.breakdown ?? []).map((item) => ({
+        sourceType: item.sourceType,
+        started: item.startedCount,
+        succeeded: item.succeededCount,
+      })),
+    [conversion?.breakdown],
+  );
+
+  const dimensionsMetricOptions = useMemo(() => {
+    const options = new Set<MetricOption>();
+    for (const metrics of Object.values(dimensions?.items ?? {})) {
+      const keys = Object.keys(metrics) as MetricOption[];
+      keys.forEach((key) => options.add(key));
+    }
+    if (options.size === 0) {
+      options.add("GROSS");
+      options.add("PLATFORM_FEES");
+      options.add("PROCESSOR_FEES");
+      options.add("NET_TO_ORG");
+    }
+    return Array.from(options);
+  }, [dimensions?.items]);
+
+  const effectiveMetricKey = dimensionsMetricOptions.includes(metricKey) ? metricKey : dimensionsMetricOptions[0];
+
+  const dimensionsChartData = useMemo(() => {
+    return Object.entries(dimensions?.items ?? {})
+      .map(([dimensionValue, metrics]) => ({
+        dimensionValue,
+        value: (metrics[effectiveMetricKey] ?? 0) / 100,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 12);
+  }, [dimensions?.items, effectiveMetricKey]);
+
+  const buyersStatusChartData = useMemo(() => {
+    const map = new Map<string, { count: number; amount: number }>();
+    for (const item of buyers?.items ?? []) {
+      const current = map.get(item.status) ?? { count: 0, amount: 0 };
+      current.count += 1;
+      current.amount += item.totalPaidCents;
+      map.set(item.status, current);
+    }
+    return Array.from(map.entries()).map(([status, values]) => ({
+      status,
+      count: values.count,
+      amount: values.amount / 100,
+    }));
+  }, [buyers?.items]);
+
+  const cohortsHeatmapRows = useMemo(() => (cohorts?.cohorts ?? []).slice(-12), [cohorts?.cohorts]);
+  const visibleCohortOffsets = useMemo(
+    () => Array.from({ length: Math.min(8, Math.max(1, months)) }, (_, index) => index),
+    [months],
+  );
+  const buyersSortedByPaid = useMemo(
+    () => [...(buyers?.items ?? [])].sort((a, b) => (b.totalPaidCents ?? 0) - (a.totalPaidCents ?? 0)),
+    [buyers?.items],
+  );
+  const buyersTotalPaidCents = useMemo(
+    () => buyersSortedByPaid.reduce((sum, item) => sum + (item.totalPaidCents ?? 0), 0),
+    [buyersSortedByPaid],
+  );
+  const activeFilters = useMemo(() => {
+    const chips = [
+      { id: "range", label: `Período: ${range}` },
+      { id: "scope", label: `Âmbito: ${prettyScope(scope)}` },
+    ];
+    if (view === "cohorts") chips.push({ id: "months", label: `Janela: ${months}m` });
+    if (view === "dimensions") {
+      chips.push({ id: "dimension", label: `Dimensão: ${prettyDimensionKey(dimensionKey)}` });
+      chips.push({ id: "metric", label: `Métrica: ${prettyMetricKey(effectiveMetricKey)}` });
+    }
+    if (view === "buyers" && effectiveEventId) chips.push({ id: "event", label: `Evento #${effectiveEventId}` });
+    return chips;
+  }, [dimensionKey, effectiveEventId, effectiveMetricKey, months, range, scope, view]);
+
+  const resetGlobalFilters = useCallback(() => {
+    updateQuery({
+      range: DEFAULT_RANGE,
+      scope: DEFAULT_SCOPE,
+      months: DEFAULT_COHORT_MONTHS,
+      dimensionKey: DEFAULT_DIMENSION,
+      metricKey: null,
+      eventId: null,
+    });
+  }, [updateQuery]);
+
   return (
-    <section className="space-y-4 text-white">
-      <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
-        <h1 className="text-2xl font-semibold">{headerByView[view]}</h1>
-        <p className="text-sm text-white/70">Analytics focado em BI/performance monetária, sem CRM.</p>
+    <section className="space-y-5 text-white sm:space-y-6">
+      <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(20,20,20,0.92))] px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">{headerByView[view]}</h1>
+            <p className="text-sm text-white/70">Analytics focado em BI/performance monetária, sem CRM.</p>
+          </div>
+          <div className="rounded-xl border border-emerald-300/45 bg-emerald-300/12 px-3 py-2 text-xs text-emerald-100">
+            Domínio de dados: <span className="font-semibold">BI financeiro</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/12 bg-[#141414]/88 p-4 backdrop-blur-xl">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <FilterSelect
+            label="Período"
+            value={range}
+            onChange={(value) => updateQuery({ range: value })}
+            options={[
+              { label: "7 dias", value: "7d" },
+              { label: "30 dias", value: "30d" },
+              { label: "90 dias", value: "90d" },
+              { label: "Sem limite", value: "all" },
+            ]}
+          />
+          <FilterSelect
+            label="Âmbito"
+            value={scope}
+            onChange={(value) => updateQuery({ scope: value })}
+            options={[
+              { label: "Tudo", value: "all" },
+              { label: "Eventos", value: "eventos" },
+              { label: "Padel", value: "padel" },
+            ]}
+          />
+          {view === "cohorts" && (
+            <FilterSelect
+              label="Janela coortes"
+              value={String(months)}
+              onChange={(value) => updateQuery({ months: Number(value) })}
+              options={[
+                { label: "6 meses", value: "6" },
+                { label: "12 meses", value: "12" },
+                { label: "18 meses", value: "18" },
+                { label: "24 meses", value: "24" },
+              ]}
+            />
+          )}
+          {view === "dimensions" && (
+            <FilterSelect
+              label="Dimensão"
+              value={dimensionKey}
+              onChange={(value) => updateQuery({ dimensionKey: value })}
+              options={[
+                { label: "Módulo", value: "MODULE" },
+                { label: "Tipo de origem", value: "SOURCE_TYPE" },
+                { label: "Fornecedor", value: "PAYMENT_PROVIDER" },
+                { label: "Moeda", value: "CURRENCY" },
+              ]}
+            />
+          )}
+          {view === "dimensions" && (
+            <FilterSelect
+              label="Métrica"
+              value={effectiveMetricKey}
+              onChange={(value) => updateQuery({ metricKey: value })}
+              options={dimensionsMetricOptions.map((option) => ({ label: prettyMetricKey(option), value: option }))}
+            />
+          )}
+          {view === "buyers" && (
+            <FilterSelect
+              label="Evento"
+              value={effectiveEventId ? String(effectiveEventId) : ""}
+              onChange={(value) => updateQuery({ eventId: Number(value) })}
+              disabled={eventsLoading || Boolean(eventsError) || (eventsData?.items?.length ?? 0) === 0}
+              options={(eventsData?.items ?? []).map((item) => ({
+                label: `${item.title} · ${compactDate(item.startsAt)}`,
+                value: String(item.id),
+              }))}
+              placeholder={eventsLoading ? "A carregar eventos..." : "Sem eventos"}
+            />
+          )}
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="h-10 w-full rounded-xl border border-[#22D3EE]/45 bg-[#22D3EE]/14 px-3 text-sm font-semibold text-white transition hover:border-[#22D3EE]/70 hover:bg-[#22D3EE]/22"
+              onClick={() => void refreshCurrentView()}
+            >
+              Atualizar dados
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {activeFilters.map((filter) => (
+            <span key={filter.id} className="rounded-md border border-white/24 bg-white/[0.08] px-2 py-1 text-xs text-white/85">
+              {filter.label}
+            </span>
+          ))}
+          <button
+            type="button"
+            className="rounded-md border border-[#22D3EE]/40 bg-transparent px-2 py-1 text-xs font-semibold text-white transition hover:bg-[#22D3EE]/14"
+            onClick={resetGlobalFilters}
+          >
+            Repor filtros
+          </button>
+          {view === "conversion" && scope !== "all" && (
+            <span className="rounded-md border border-amber-300/40 bg-amber-300/10 px-2 py-1 text-amber-200">
+              A conversão ainda não está segmentada por âmbito.
+            </span>
+          )}
+          {view === "dimensions" && scope !== "all" && (
+            <span className="rounded-md border border-cyan-300/40 bg-cyan-300/10 px-2 py-1 text-cyan-200">
+              O âmbito pode não refletir todas as dimensões nesta versão.
+            </span>
+          )}
+        </div>
       </div>
 
       {view === "overview" && (
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            label="Bruto (30d)"
-            value={overview?.ok ? `${(overview.grossCents / 100).toFixed(2)} €` : "—"}
-          />
-          <MetricCard
-            label="Taxas (30d)"
-            value={overview?.ok ? `${(overview.feesCents / 100).toFixed(2)} €` : "—"}
-          />
-          <MetricCard
-            label="Líquido (30d)"
-            value={overview?.ok ? `${(overview.netRevenueCents / 100).toFixed(2)} €` : "—"}
-          />
-          <MetricCard label="Eventos com vendas" value={overview?.ok ? String(overview.eventsWithSalesCount) : "—"} />
-        </div>
+        <ViewSection
+          loading={overviewLoading || seriesLoading}
+          error={overviewError ?? seriesError}
+          onRetry={() => void Promise.all([mutateOverview(), mutateSeries()])}
+          empty={!overview && !series}
+          emptyLabel="Sem dados para o período selecionado."
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label={`Bruto (${range})`}
+              value={toCurrency(overview?.grossCents, overview?.currency ?? "EUR")}
+            />
+            <MetricCard
+              label={`Taxas (${range})`}
+              value={toCurrency(overview?.feesCents, overview?.currency ?? "EUR")}
+            />
+            <MetricCard
+              label={`Líquido (${range})`}
+              value={toCurrency(overview?.netRevenueCents, overview?.currency ?? "EUR")}
+            />
+            <MetricCard label="Eventos com vendas" value={String(overview?.eventsWithSalesCount ?? 0)} />
+            <MetricCard label="Bilhetes totais" value={String(overview?.totalTickets ?? 0)} />
+          </div>
+          <Panel title="Tendência financeira" subtitle="Bruto, taxas e líquido no tempo">
+            {seriesChartData.length > 0 ? (
+              <ChartWrap>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={seriesChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gGross" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#60A5FA" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="#60A5FA" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="gNet" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#22C55E" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#22C55E" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
+                    <XAxis dataKey="date" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      formatter={(value, key) => [toEuroChartLabel(value), String(key ?? "")]}
+                    />
+                    <Legend />
+                    <Area type="monotone" dataKey="gross" stroke="#60A5FA" fill="url(#gGross)" name="Bruto" strokeWidth={2} />
+                    <Area type="monotone" dataKey="fees" stroke="#F59E0B" fillOpacity={0.06} fill="#F59E0B" name="Taxas" strokeWidth={2} />
+                    <Area type="monotone" dataKey="net" stroke="#22C55E" fill="url(#gNet)" name="Líquido" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </ChartWrap>
+            ) : (
+              <EmptyState label="Sem série temporal disponível para este período." />
+            )}
+          </Panel>
+        </ViewSection>
       )}
 
       {view === "conversion" && (
-        <div className="space-y-3">
+        <ViewSection
+          loading={conversionLoading}
+          error={conversionError}
+          onRetry={() => void mutateConversion()}
+          empty={!conversion}
+          emptyLabel="Sem dados de conversão para o período selecionado."
+        >
           <div className="grid gap-3 md:grid-cols-3">
-            <MetricCard label="Checkouts iniciados" value={conversion?.ok ? String(conversion.startedCount) : "—"} />
-            <MetricCard label="Pagamentos concluídos" value={conversion?.ok ? String(conversion.succeededCount) : "—"} />
-            <MetricCard label="Taxa de conversão" value={conversion?.ok ? `${conversion.conversionRatePct.toFixed(2)}%` : "—"} />
+            <MetricCard label="Checkouts iniciados" value={String(conversion?.startedCount ?? 0)} />
+            <MetricCard label="Pagamentos concluídos" value={String(conversion?.succeededCount ?? 0)} />
+            <MetricCard label="Taxa de conversão" value={toPctFromBps(conversion?.conversionRateBps)} />
           </div>
-          <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-            {conversion?.ok && conversion.breakdown.length > 0 ? (
-              <ul className="space-y-1">
-                {conversion.breakdown.map((item) => (
-                  <li key={item.sourceType}>
-                    {item.sourceType}: {item.succeededCount}/{item.startedCount} ({(item.conversionRateBps / 100).toFixed(2)}%)
-                  </li>
-                ))}
-              </ul>
+          <Panel title="Funil por tipo de origem" subtitle="Iniciados vs concluídos">
+            {conversionChartData.length > 0 ? (
+              <ChartWrap>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={conversionChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
+                    <XAxis dataKey="sourceType" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                    />
+                    <Legend />
+                    <Bar dataKey="started" name="Iniciados" radius={[6, 6, 0, 0]} fill="#64748B" />
+                    <Bar dataKey="succeeded" name="Concluídos" radius={[6, 6, 0, 0]} fill="#22C55E" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartWrap>
             ) : (
-              "Sem dados de conversão para o período."
+              <EmptyState label="Sem desagregação de conversão." />
             )}
-          </div>
-        </div>
+          </Panel>
+        </ViewSection>
       )}
 
       {view === "cohorts" && (
-        <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-          {cohorts?.ok && cohorts.cohorts.length > 0 ? (
-            <div className="space-y-3">
-              {cohorts.cohorts.map((cohort) => (
-                <div key={cohort.cohortMonth} className="rounded-xl border border-white/10 bg-black/25 p-3">
-                  <p className="font-semibold text-white">{cohort.cohortMonth} · {cohort.buyers} compradores</p>
-                  <div className="mt-2 grid gap-2 md:grid-cols-3">
-                    {cohort.retention.slice(0, 6).map((row) => (
-                      <div key={`${cohort.cohortMonth}-${row.monthOffset}`} className="text-[12px] text-white/70">
-                        M+{row.monthOffset}: {row.retainedBuyers} ({(row.retentionRateBps / 100).toFixed(2)}%) · {(row.revenueCents / 100).toFixed(2)} €
-                      </div>
-                    ))}
+        <ViewSection
+          loading={cohortsLoading}
+          error={cohortsError}
+          onRetry={() => void mutateCohorts()}
+          empty={!cohorts || cohorts.cohorts.length === 0}
+          emptyLabel="Sem coortes financeiras para mostrar."
+        >
+          <Panel title="Heatmap de retenção" subtitle={`Janela M+0..M+${Math.max(0, months - 1)}`}>
+            <div className="space-y-2 overflow-auto">
+              <p className="text-[11px] text-white/55">
+                Deslize horizontalmente no mobile para ver todos os meses visíveis.
+              </p>
+              <div
+                className="grid min-w-[760px] gap-1 text-[11px] uppercase tracking-wide text-white/60"
+                style={{ gridTemplateColumns: `140px repeat(${visibleCohortOffsets.length}, minmax(86px, 1fr))` }}
+              >
+                <div>Coorte</div>
+                {visibleCohortOffsets.map((offset) => (
+                  <div key={`cohort-header-${offset}`}>{`M+${offset}`}</div>
+                ))}
+              </div>
+              {cohortsHeatmapRows.map((cohort) => (
+                <div
+                  key={cohort.cohortMonth}
+                  className="grid min-w-[760px] gap-1 text-xs"
+                  style={{ gridTemplateColumns: `140px repeat(${visibleCohortOffsets.length}, minmax(86px, 1fr))` }}
+                >
+                  <div className="rounded-md border border-white/10 bg-black/35 px-2 py-2 text-white">
+                    {cohort.cohortMonth}
+                    <div className="text-[11px] text-white/65">{cohort.buyers} compradores</div>
                   </div>
+                  {visibleCohortOffsets.map((offset) => {
+                    const row = cohort.retention[offset];
+                    if (!row) {
+                      return (
+                        <div key={`${cohort.cohortMonth}-${offset}`} className="rounded-md border border-white/10 bg-black/20 px-2 py-2" />
+                      );
+                    }
+                    const rate = (row.retentionRateBps ?? 0) / 10000;
+                    const bg = `rgba(34,197,94,${Math.max(0.08, Math.min(0.8, rate))})`;
+                    return (
+                      <div key={`${cohort.cohortMonth}-${row.monthOffset}`} className="rounded-md border border-white/10 px-2 py-2" style={{ background: bg }}>
+                        <div className="font-semibold text-white">{toPctFromBps(row.retentionRateBps)}</div>
+                        <div className="text-[11px] text-white/75">{row.retainedBuyers} compradores</div>
+                        <div className="text-[11px] text-white/75">{toCurrency(row.revenueCents)}</div>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
-          ) : (
-            "Sem coortes financeiras para mostrar."
-          )}
-        </div>
+          </Panel>
+        </ViewSection>
       )}
 
       {view === "buyers" && (
-        <div className="space-y-3">
-          {!eventId ? (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-              Define `eventId` na query para analisar compradores de um evento.
-            </div>
-          ) : buyers?.ok && buyers.items.length > 0 ? (
-            <div className="overflow-auto rounded-2xl border border-white/12 bg-white/5 p-2">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
-                  <tr>
-                    <th className="px-3 py-2">Comprador</th>
-                    <th className="px-3 py-2">Email</th>
-                    <th className="px-3 py-2">Estado</th>
-                    <th className="px-3 py-2 text-right">Pago</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/10">
-                  {buyers.items.map((item) => (
-                    <tr key={item.id}>
-                      <td className="px-3 py-2">{item.buyerName}</td>
-                      <td className="px-3 py-2">{item.buyerEmail}</td>
-                      <td className="px-3 py-2">{item.status}</td>
-                      <td className="px-3 py-2 text-right">{(item.totalPaidCents / 100).toFixed(2)} €</td>
+        <ViewSection
+          loading={buyersLoading || eventsLoading}
+          error={buyersError ?? eventsError}
+          onRetry={() => void Promise.all([mutateEvents(), mutateBuyers()])}
+          empty={!effectiveEventId || !buyers || buyers.items.length === 0}
+          emptyLabel="Sem compradores para o evento selecionado."
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <MetricCard label="Compradores" value={String(buyersSortedByPaid.length)} />
+            <MetricCard label="Total pago" value={toCurrency(buyersTotalPaidCents)} />
+            <MetricCard label="Estados ativos" value={String(buyersStatusChartData.length)} />
+          </div>
+          <div className="grid gap-3 lg:grid-cols-[340px_1fr]">
+            <Panel title="Distribuição de estados" subtitle={`Evento #${effectiveEventId ?? "—"}`}>
+              {buyersStatusChartData.length > 0 ? (
+                <ChartWrap className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={buyersStatusChartData}
+                        dataKey="count"
+                        nameKey="status"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={86}
+                        label={({ percent }) => `${Math.round((percent ?? 0) * 100)}%`}
+                      >
+                        {buyersStatusChartData.map((entry, index) => (
+                          <Cell key={`${entry.status}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                        formatter={(value, key, item) => {
+                          const count = Number(value ?? 0);
+                          const payload = (item as { payload?: { amount?: number } } | undefined)?.payload;
+                          const amountCents = Number(payload?.amount ?? 0) * 100;
+                          return [`${count} compras · ${toCurrency(amountCents)}`, String(key ?? "estado")];
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </ChartWrap>
+              ) : (
+                <EmptyState label="Sem distribuição para mostrar." />
+              )}
+            </Panel>
+            <Panel title="Tabela de compradores" subtitle="Ordenada por valor pago">
+              <div className="space-y-2 md:hidden">
+                {buyersSortedByPaid.map((item) => (
+                  <div key={`mobile-${item.id}`} className="rounded-xl border border-white/10 bg-black/20 p-3">
+                    <div className="text-sm font-semibold text-white">{item.buyerName}</div>
+                    <div className="text-xs text-white/70">{item.buyerEmail}</div>
+                    <div className="mt-2 flex items-center justify-between text-xs">
+                      <span className="rounded-md border border-white/15 bg-white/[0.08] px-2 py-1 text-white/85">{item.status}</span>
+                      <span className="font-semibold text-emerald-200">{toCurrency(item.totalPaidCents)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-auto rounded-xl border border-white/10 md:block">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-white/5 text-left text-[11px] uppercase tracking-wide text-white/60">
+                    <tr>
+                      <th className="px-3 py-2">Comprador</th>
+                      <th className="px-3 py-2">Email</th>
+                      <th className="px-3 py-2">Estado</th>
+                      <th className="px-3 py-2 text-right">Pago</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-              Sem compradores para este evento.
-            </div>
-          )}
-        </div>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {buyersSortedByPaid.map((item) => (
+                      <tr key={item.id} className="bg-black/10">
+                        <td className="px-3 py-2">{item.buyerName}</td>
+                        <td className="px-3 py-2">{item.buyerEmail}</td>
+                        <td className="px-3 py-2">{item.status}</td>
+                        <td className="px-3 py-2 text-right">{toCurrency(item.totalPaidCents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          </div>
+        </ViewSection>
       )}
 
       {view === "time-series" && (
-        <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-          {series?.ok && series.points.length > 0 ? (
-            <ul className="space-y-1">
-              {series.points.slice(0, 30).map((point) => (
-                <li key={point.date}>
-                  {point.date}: bruto {(point.grossCents / 100).toFixed(2)} € · taxas {(point.feesCents / 100).toFixed(2)} € · líquido {(point.netCents / 100).toFixed(2)} €
-                </li>
-              ))}
-            </ul>
-          ) : (
-            "Sem série temporal disponível."
-          )}
-        </div>
+        <ViewSection
+          loading={seriesLoading}
+          error={seriesError}
+          onRetry={() => void mutateSeries()}
+          empty={!series || series.points.length === 0}
+          emptyLabel="Sem série temporal disponível."
+        >
+          <Panel title="Série temporal" subtitle="Leitura diária de bruto, taxas e líquido">
+            <ChartWrap className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={seriesChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
+                  <XAxis dataKey="date" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                    formatter={(value, key) => [toEuroChartLabel(value), String(key ?? "")]}
+                  />
+                  <Legend />
+                  <Area type="monotone" dataKey="gross" stroke="#60A5FA" fill="#60A5FA33" name="Bruto" strokeWidth={2} />
+                  <Area type="monotone" dataKey="fees" stroke="#F59E0B" fill="#F59E0B22" name="Taxas" strokeWidth={2} />
+                  <Area type="monotone" dataKey="net" stroke="#22C55E" fill="#22C55E22" name="Líquido" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartWrap>
+          </Panel>
+        </ViewSection>
       )}
 
       {view === "dimensions" && (
-        <div className="rounded-2xl border border-white/12 bg-white/5 p-4 text-sm text-white/75">
-          {dimensions?.ok ? (
-            <ul className="space-y-1">
-              {Object.keys(dimensions.items).map((key) => (
-                <li key={key}>{key}</li>
-              ))}
-            </ul>
-          ) : (
-            "Sem dimensões para mostrar."
-          )}
-        </div>
+        <ViewSection
+          loading={dimensionsLoading}
+          error={dimensionsError}
+          onRetry={() => void mutateDimensions()}
+          empty={!dimensions || Object.keys(dimensions.items).length === 0}
+          emptyLabel="Sem dimensões para mostrar."
+        >
+          <Panel
+            title={`Top dimensões (${prettyMetricKey(effectiveMetricKey)})`}
+            subtitle={dimensions?.bucketDate ? `Agregado: ${dimensions.bucketDate}` : "Sem agregado definido"}
+          >
+            {dimensionsChartData.length > 0 ? (
+              <ChartWrap>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dimensionsChartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff18" />
+                    <XAxis dataKey="dimensionValue" tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#E5E7EB", fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ background: "#161616", border: "1px solid #ffffff2e", borderRadius: 10 }}
+                      formatter={(value) => [toEuroChartLabel(value), prettyMetricKey(effectiveMetricKey)]}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#38BDF8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartWrap>
+            ) : (
+              <EmptyState label="Sem dados suficientes nesta dimensão." />
+            )}
+          </Panel>
+        </ViewSection>
       )}
 
-      <div className="rounded-2xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/60">
-        Links rápidos:
-        {" "}
-        <a className={cn("underline")} href={buildOrgHref(orgId, "/analytics", { view: "conversion" })}>Conversão</a>
-        {" · "}
-        <a className={cn("underline")} href={buildOrgHref(orgId, "/analytics", { view: "cohorts" })}>Coortes</a>
-        {" · "}
-        <a className={cn("underline")} href={buildOrgHref(orgId, "/analytics", { view: "time-series" })}>Séries</a>
-      </div>
     </section>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ label: string; value: string }>;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
   return (
-    <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/65 to-[#050810]/90 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{label}</p>
-      <p className="mt-1 text-2xl font-bold text-white">{value}</p>
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</span>
+      <select
+        className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      >
+        {!options.length && (
+          <option value="">{placeholder ?? "Sem opções"}</option>
+        )}
+        {options.map((option) => (
+          <option key={`${label}-${option.value}`} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ViewSection({
+  loading,
+  error,
+  onRetry,
+  empty,
+  emptyLabel,
+  children,
+}: {
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+  empty: boolean;
+  emptyLabel: string;
+  children: React.ReactNode;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/[0.08] via-white/[0.04] to-transparent p-4">
+        <p className="mb-1 text-xs uppercase tracking-[0.14em] text-white/55">A carregar dados da vista</p>
+        <p className="mb-3 text-[12px] text-white/65">A sincronizar métricas e séries em tempo real.</p>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <LoadingCard />
+          <LoadingCard />
+          <LoadingCard />
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-rose-300/50 bg-gradient-to-br from-rose-500/16 via-rose-500/10 to-transparent p-4 text-sm text-rose-100">
+        <p className="font-semibold">Falha ao carregar dados desta vista.</p>
+        <p className="mt-1 rounded-md border border-rose-200/30 bg-black/15 px-2 py-1 text-rose-100/85">
+          {error instanceof Error ? error.message : "Erro inesperado."}
+        </p>
+        <p className="mt-1 text-xs text-rose-100/65">Se persistir, valide filtros e permissões de módulo.</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 rounded-lg border border-rose-200/50 bg-rose-200/20 px-3 py-1.5 text-xs font-semibold text-rose-50 transition hover:bg-rose-200/35"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (empty) {
+    return <EmptyState label={emptyLabel} />;
+  }
+
+  return <div className="space-y-3">{children}</div>;
+}
+
+function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_16px_46px_rgba(0,0,0,0.28)]">
+      <div className="mb-3">
+        <h2 className="text-base font-semibold text-white">{title}</h2>
+        {subtitle ? <p className="text-xs text-white/60">{subtitle}</p> : null}
+      </div>
+      {children}
     </div>
   );
 }
 
+function ChartWrap({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("h-72 w-full", className)}>{children}</div>;
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/12 via-[#0b1124]/72 to-[#050810]/95 p-3 shadow-[0_20px_62px_rgba(0,0,0,0.5)]">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{label}</p>
+      <p className="mt-1 text-[24px] font-bold leading-tight text-white">{value}</p>
+    </div>
+  );
+}
+
+function LoadingCard() {
+  return (
+    <div className="h-44 animate-pulse rounded-2xl border border-white/10 bg-white/[0.05] p-3">
+      <div className="h-3 w-2/5 rounded bg-white/20" />
+      <div className="mt-4 h-7 w-3/5 rounded bg-white/15" />
+      <div className="mt-6 h-20 w-full rounded bg-white/10" />
+    </div>
+  );
+}
+
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 text-sm text-white/75">
+      <p className="font-semibold text-white/90">Sem dados disponíveis</p>
+      <p className="mt-1">{label}</p>
+    </div>
+  );
+}

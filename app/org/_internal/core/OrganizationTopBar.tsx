@@ -19,6 +19,7 @@ import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
 import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
 import CalendarSubnav from "@/app/org/_components/subnav/CalendarSubnav";
 import CheckInSubnav from "@/app/org/_components/subnav/CheckInSubnav";
+import PoliciesSubnav from "@/app/org/_components/subnav/PoliciesSubnav";
 import FinanceSubnav from "@/app/org/_components/subnav/FinanceSubnav";
 import AnalyticsSubnav from "@/app/org/_components/subnav/AnalyticsSubnav";
 import CrmToolSubnav from "@/app/org/_components/subnav/CrmToolSubnav";
@@ -94,6 +95,7 @@ const TOOL_META: Record<OrgToolKey, { label: string; moduleKey: string | null }>
   bookings: { label: "Reservas", moduleKey: "RESERVAS" },
   calendar: { label: "Calendário", moduleKey: "RESERVAS" },
   "check-in": { label: "Check-in", moduleKey: "CHECKIN" },
+  policies: { label: "Políticas", moduleKey: "DEFINICOES" },
   finance: { label: "Finanças", moduleKey: "FINANCEIRO" },
   analytics: { label: "Análises", moduleKey: "ANALYTICS" },
   crm: { label: "CRM", moduleKey: "CRM" },
@@ -170,6 +172,7 @@ export default function OrganizationTopBar({
     if (activeTool === "bookings") return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "calendar") return <CalendarSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "check-in") return <CheckInSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "policies") return <PoliciesSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "finance") return <FinanceSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "analytics") return <AnalyticsSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "crm") {
@@ -459,7 +462,7 @@ export default function OrganizationTopBar({
           "relative w-full border-b transition-all duration-300",
           isAtTop
             ? "border-transparent bg-transparent shadow-none backdrop-blur-[6px]"
-            : "border-white/10 bg-[linear-gradient(120deg,rgba(8,10,20,0.62),rgba(8,10,20,0.82))] shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-[18px]",
+            : "border-white/20 bg-[linear-gradient(120deg,rgba(20,20,20,0.88),rgba(20,20,20,0.96))] shadow-[0_16px_40px_rgba(0,0,0,0.52)] backdrop-blur-[18px]",
         )}
       >
         <div
@@ -471,13 +474,13 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href={dashboardHref}
-              className="group flex h-11 min-w-0 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
+              className="group flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border border-white/22 bg-black/25 px-3 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
               aria-label={`Voltar ao painel (${currentApp.label})`}
             >
               {currentApp.moduleKey ? (
                 <span
                   className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-full border border-white/15 text-white/90",
+                    "flex h-6 w-6 items-center justify-center rounded-full border border-white/22 text-white",
                     currentIconGradient ? `bg-gradient-to-br ${currentIconGradient}` : "bg-white/10",
                   )}
                 >
@@ -514,7 +517,7 @@ export default function OrganizationTopBar({
           <NotificationBell organizationId={activeOrg?.id ?? null} />
 
           <details ref={orgMenuRef} className={cn("relative", openMenu === "org" && "z-50")} onToggle={handleMenuToggle("org")}>
-            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-11 items-center">
+            <summary className="list-none cursor-pointer rounded-full border border-white/22 bg-black/25 px-3 text-sm text-white/90 shadow-[0_12px_38px_rgba(0,0,0,0.36)] flex h-11 items-center">
               <div className="flex items-center gap-2">
                 <Avatar
                   src={orgAvatar}
@@ -581,7 +584,7 @@ export default function OrganizationTopBar({
           </details>
 
           <details ref={userMenuRef} className={cn("relative", openMenu === "user" && "z-50")} onToggle={handleMenuToggle("user")}>
-            <summary className="list-none cursor-pointer rounded-full border border-white/15 bg-white/5 px-2.5 text-sm text-white/80 shadow-[0_12px_38px_rgba(0,0,0,0.3)] flex h-11 items-center">
+            <summary className="list-none cursor-pointer rounded-full border border-white/22 bg-black/25 px-2.5 text-sm text-white/90 shadow-[0_12px_38px_rgba(0,0,0,0.36)] flex h-11 items-center">
               <div className="flex items-center gap-2">
                 {roleBadge && (
                   <span className="hidden lg:inline-flex">

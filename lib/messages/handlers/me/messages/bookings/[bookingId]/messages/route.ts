@@ -7,12 +7,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
-import {
-  isChatRedisAvailable,
-  isChatUserOnline,
-  publishChatEvent,
-} from "@/lib/chat/redis";
-import { enqueueNotification } from "@/domain/notifications/outbox";
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
@@ -20,50 +14,12 @@ import {
   resolvePostingWindow,
   resolvePostingWindowStatus,
 } from "@/lib/messages/postingWindow";
+import { POST as postB2CConversationMessage } from "@/lib/messages/handlers/me/messages/conversations/[conversationId]/messages/route";
 
 const ADMIN_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN"]);
 
 function resolveUserLabel(user: { fullName: string | null; username: string | null }) {
   return user.fullName?.trim() || (user.username ? `@${user.username}` : "Cliente");
-}
-
-function mapSenderDisplay(params: {
-  senderId: string | null;
-  members: Array<{
-    userId: string;
-    displayAs: "ORGANIZATION" | "PROFESSIONAL";
-    user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null };
-  }>;
-  viewerIsCustomer: boolean;
-  viewerId?: string | null;
-  organization?: { id: number; publicName: string | null; businessName: string | null; username: string | null; brandingAvatarUrl: string | null } | null;
-}) {
-  if (!params.senderId) return null;
-  const member = params.members.find((m) => m.userId === params.senderId);
-  if (!member) return null;
-  if (params.viewerId && params.senderId === params.viewerId) {
-    return {
-      id: member.user.id,
-      fullName: member.user.fullName,
-      username: member.user.username,
-      avatarUrl: member.user.avatarUrl,
-    };
-  }
-  if (params.viewerIsCustomer && member.displayAs === "ORGANIZATION" && params.organization) {
-    const orgName = params.organization.publicName || params.organization.businessName || "Organização";
-    return {
-      id: `org:${params.organization.id}`,
-      fullName: orgName,
-      username: params.organization.username ?? null,
-      avatarUrl: params.organization.brandingAvatarUrl ?? null,
-    };
-  }
-  return {
-    id: member.user.id,
-    fullName: member.user.fullName,
-    username: member.user.username,
-    avatarUrl: member.user.avatarUrl,
-  };
 }
 
 async function _POST(req: NextRequest, context: { params: { bookingId: string } }) {
@@ -111,21 +67,14 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
       clientMessageId?: unknown;
       attachments?: unknown;
     } | null;
-    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
-      return jsonWrap({ error: "ATTACHMENTS_DISABLED" }, { status: 400 });
-    }
     const body = typeof payload?.body === "string" ? payload.body.trim() : "";
-    if (!body) {
+    const hasAttachments = Array.isArray(payload?.attachments) && payload.attachments.length > 0;
+    if (!body && !hasAttachments) {
       return jsonWrap({ error: "EMPTY_BODY" }, { status: 400 });
     }
     if (body.length > CHAT_MESSAGE_MAX_LENGTH) {
       return jsonWrap({ error: "MESSAGE_TOO_LONG" }, { status: 400 });
     }
-
-    const organization = await prisma.organization.findUnique({
-      where: { id: booking.organizationId },
-      select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
-    });
 
     const customerProfile = await prisma.profile.findUnique({
       where: { id: user.id },
@@ -300,106 +249,31 @@ async function _POST(req: NextRequest, context: { params: { bookingId: string } 
       typeof payload?.clientMessageId === "string" && payload.clientMessageId.trim().length > 0
         ? payload.clientMessageId.trim()
         : crypto.randomUUID();
+    const delegatedHeaders = new Headers(req.headers);
+    delegatedHeaders.set("content-type", "application/json");
+    delegatedHeaders.delete("content-length");
 
-    const message = await prisma.chatConversationMessage.create({
-      data: {
-        conversationId: conversation.id,
-        organizationId: conversation.organizationId,
-        senderId: user.id,
+    const delegatedReq = new NextRequest(req.url, {
+      method: req.method,
+      headers: delegatedHeaders,
+      body: JSON.stringify({
         body,
+        attachments: payload?.attachments,
         clientMessageId,
-        kind: "TEXT",
-      },
-      select: { id: true, body: true, createdAt: true, deletedAt: true, senderId: true },
+      }),
     });
-
-    await prisma.chatConversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: message.createdAt, lastMessageId: message.id },
+    const delegatedResponse = await postB2CConversationMessage(delegatedReq, {
+      params: { conversationId: conversation.id },
     });
-
-    const viewerIsCustomer = conversation.customerId === user.id;
-    const members = conversation.members;
-
-    const warnings: string[] = [];
-    try {
-      await publishChatEvent({
-        type: "message:new",
-        organizationId: conversation.organizationId ?? undefined,
+    const delegatedJson = await delegatedResponse.clone().json().catch(() => null);
+    if (delegatedResponse.ok && delegatedJson?.item) {
+      return jsonWrap({
         conversationId: conversation.id,
-        message: {
-          id: message.id,
-          conversationId: conversation.id,
-          body: message.body,
-          createdAt: message.createdAt.toISOString(),
-          deletedAt: null,
-          sender: mapSenderDisplay({
-            senderId: message.senderId,
-            members,
-            viewerIsCustomer,
-            viewerId: user.id,
-            organization: conversation.organization ?? organization,
-          }),
-        },
+        item: delegatedJson.item,
+        ...(Array.isArray(delegatedJson.warnings) ? { warnings: delegatedJson.warnings } : {}),
       });
-    } catch (err) {
-      warnings.push("REALTIME_DEGRADED");
-      console.warn("[api/me/messages/bookings/messages][post] realtime degraded", err);
     }
-
-    const recipients = await prisma.chatConversationMember.findMany({
-      where: { conversationId: conversation.id, userId: { not: user.id } },
-      select: { userId: true, mutedUntil: true },
-    });
-
-    const now = new Date();
-    const preview = body.length > 160 ? `${body.slice(0, 157)}…` : body;
-
-    try {
-      if (isChatRedisAvailable()) {
-        for (const recipient of recipients) {
-          if (recipient.mutedUntil && recipient.mutedUntil > now) continue;
-          const online = await isChatUserOnline(recipient.userId);
-          if (online) continue;
-          await enqueueNotification({
-            dedupeKey: `chat_message:${message.id}:${recipient.userId}`,
-            userId: recipient.userId,
-            notificationType: "CHAT_MESSAGE",
-            payload: {
-              conversationId: conversation.id,
-              messageId: message.id,
-              senderId: user.id,
-              preview,
-              organizationId: conversation.organizationId ?? null,
-              contextType: conversation.contextType,
-            },
-          });
-        }
-      }
-    } catch (err) {
-      if (!warnings.includes("REALTIME_DEGRADED")) {
-        warnings.push("REALTIME_DEGRADED");
-      }
-      console.warn("[api/me/messages/bookings/messages][post] offline notifications degraded", err);
-    }
-
-    return jsonWrap({
-      conversationId: conversation.id,
-      item: {
-        id: message.id,
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        deletedAt: null,
-        sender: mapSenderDisplay({
-          senderId: message.senderId,
-          members,
-          viewerIsCustomer,
-          viewerId: user.id,
-          organization: conversation.organization ?? organization,
-        }),
-      },
-      ...(warnings.length ? { warnings } : {}),
-    });
+    return delegatedResponse;
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });

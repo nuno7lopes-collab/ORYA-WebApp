@@ -95,16 +95,13 @@ function resolveBookingChannel(params: {
   resourceId: number | null;
   courtId: number | null;
   bookingAddressId: string | null;
-  serviceAddressId: string | null;
-  bookingLocationMode: ServiceLocationMode | null;
-  serviceLocationMode: ServiceLocationMode | null;
+  bookingLocationMode: ServiceLocationMode;
 }): CalendarChannel {
-  const resolvedLocationMode = params.bookingLocationMode ?? params.serviceLocationMode;
-  if (params.resourceId || params.courtId || params.bookingAddressId || params.serviceAddressId) {
+  if (params.resourceId || params.courtId || params.bookingAddressId) {
     return "PRESENTIAL";
   }
-  if (resolvedLocationMode === ServiceLocationMode.FIXED) return "PRESENTIAL";
-  if (resolvedLocationMode === ServiceLocationMode.CHOOSE_AT_BOOKING) return "ONLINE";
+  if (params.bookingLocationMode === ServiceLocationMode.FIXED) return "PRESENTIAL";
+  if (params.bookingLocationMode === ServiceLocationMode.CHOOSE_AT_BOOKING) return "ONLINE";
   return "UNKNOWN";
 }
 
@@ -431,9 +428,7 @@ async function _GET(req: NextRequest) {
         resourceId: item.resource?.id ?? null,
         courtId: item.court?.id ?? null,
         bookingAddressId: item.addressId ?? null,
-        serviceAddressId: item.service?.addressId ?? null,
-        bookingLocationMode: item.locationMode ?? null,
-        serviceLocationMode: item.service?.locationMode ?? null,
+        bookingLocationMode: item.locationMode,
       });
       return {
         ...rest,

@@ -135,7 +135,7 @@ async function _GET(req: NextRequest) {
   if (pairingIds.length > 0) {
     const walkoverMatches = await prisma.eventMatchSlot.findMany({
       where: {
-        status: "DONE",
+        status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
         participants: {
           some: {
             participant: {

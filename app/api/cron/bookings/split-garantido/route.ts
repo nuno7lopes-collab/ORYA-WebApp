@@ -10,6 +10,7 @@ import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
 import {
   BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS,
   computeSplitOffsessionStartedAt,
+  enforceSplitHoldCoverage,
   emitSplitGuardMetrics,
   emitSplitRuntimeAlert,
   resolveNextBookingSplitOffsessionAttempt,
@@ -167,6 +168,8 @@ async function _POST(req: NextRequest) {
     let missedDeadline = 0;
     let offsessionEnqueued = 0;
     let offsessionSkippedNoPaymentMethod = 0;
+    let coverageReplaced = 0;
+    let coverageLost = 0;
 
     for (const split of splits) {
       if (!split.deadlineAt) continue;
@@ -174,6 +177,30 @@ async function _POST(req: NextRequest) {
       const outstanding = split.participants
         .filter((participant) => participant.status !== "PAID")
         .reduce((acc, participant) => acc + Math.max(0, participant.shareCents ?? 0), 0);
+
+      if (split.deadlineAt.getTime() > now.getTime() && split.railState === "HOLD_CAPTURE") {
+        const coverageResult = await prisma.$transaction((tx) =>
+          enforceSplitHoldCoverage({
+            tx,
+            splitId: split.id,
+            now,
+            correlationId,
+          }),
+        );
+        if (coverageResult.state === "REPLACED") {
+          coverageReplaced += 1;
+        }
+        if (coverageResult.state === "GUARANTEE_LOST") {
+          coverageLost += 1;
+          emitSplitRuntimeAlert("split_guarantee_lost", {
+            splitId: split.id,
+            bookingId: split.bookingId,
+            organizationId: split.organizationId,
+            correlationId,
+          });
+          continue;
+        }
+      }
 
       if (outstanding > 0 && split.deadlineAt.getTime() > now.getTime()) {
         const untilDeadlineMs = split.deadlineAt.getTime() - now.getTime();
@@ -270,6 +297,8 @@ async function _POST(req: NextRequest) {
         missedDeadline,
         offsessionEnqueued,
         offsessionSkippedNoPaymentMethod,
+        coverageReplaced,
+        coverageLost,
       },
     });
 
@@ -284,6 +313,8 @@ async function _POST(req: NextRequest) {
       missedDeadline,
       offsessionEnqueued,
       offsessionSkippedNoPaymentMethod,
+      coverageReplaced,
+      coverageLost,
     });
   } catch (err) {
     console.error("[cron/bookings/split-garantido]", err);

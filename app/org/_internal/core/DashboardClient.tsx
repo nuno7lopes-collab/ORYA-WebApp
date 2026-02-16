@@ -390,6 +390,7 @@ type DashboardToolFlow = "Operações" | "Gestão" | "Administração";
 type DashboardToolCard = {
   id: string;
   moduleKey: string;
+  iconKey: string;
   title: string;
   summary: string;
   bullets: string[];
@@ -431,6 +432,58 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   ANALYTICS: "from-[#22D3EE]/35 via-[#6A7BFF]/30 to-[#A78BFA]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
+  TOOL_EVENTOS: "from-[#FF4ECD]/56 via-[#7FE0FF]/44 to-[#6A7BFF]/56",
+  TOOL_RESERVAS: "from-[#6BFFFF]/52 via-[#4DB4FF]/42 to-[#6A7BFF]/54",
+  TOOL_CALENDARIO: "from-[#6BFFFF]/50 via-[#60A5FA]/40 to-[#8B5CF6]/52",
+  TOOL_PADEL_CLUBE: "from-[#F59E0B]/52 via-[#FB7185]/40 to-[#6A7BFF]/50",
+  TOOL_PADEL_TORNEIOS: "from-[#22D3EE]/54 via-[#A78BFA]/40 to-[#F59E0B]/50",
+  TOOL_CHECKIN: "from-[#22D3EE]/52 via-[#34D399]/42 to-[#60A5FA]/50",
+  TOOL_FORMULARIOS: "from-[#14B8A6]/50 via-[#22D3EE]/40 to-[#A78BFA]/48",
+  TOOL_CHAT_INTERNO: "from-[#A78BFA]/52 via-[#60A5FA]/40 to-[#34D399]/48",
+  TOOL_FINANCAS: "from-[#F97316]/54 via-[#F59E0B]/42 to-[#FB7185]/50",
+  TOOL_ANALYTICS: "from-[#22D3EE]/56 via-[#6A7BFF]/42 to-[#A78BFA]/54",
+  TOOL_PROMOCOES: "from-[#FF7AD1]/54 via-[#FB7185]/40 to-[#F59E0B]/52",
+  TOOL_CRM: "from-[#38BDF8]/52 via-[#22D3EE]/40 to-[#F97316]/50",
+  TOOL_LOJA: "from-[#FB7185]/54 via-[#F59E0B]/40 to-[#FB923C]/52",
+  TOOL_EQUIPA: "from-[#60A5FA]/52 via-[#22D3EE]/42 to-[#F59E0B]/48",
+  TOOL_DEFINICOES: "from-[#94A3B8]/52 via-[#64748B]/38 to-[#60A5FA]/48",
+  TOOL_POLITICAS: "from-[#60A5FA]/54 via-[#22D3EE]/42 to-[#A78BFA]/50",
+};
+const MODULE_ICON_SURFACE_GLOWS: Record<string, string> = {
+  TOOL_EVENTOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(255,78,205,0.35)]",
+  TOOL_RESERVAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(34,211,238,0.34)]",
+  TOOL_CALENDARIO: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
+  TOOL_PADEL_CLUBE: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(245,158,11,0.34)]",
+  TOOL_PADEL_TORNEIOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(167,139,250,0.34)]",
+  TOOL_CHECKIN: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(52,211,153,0.34)]",
+  TOOL_FORMULARIOS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(20,184,166,0.34)]",
+  TOOL_CHAT_INTERNO: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(167,139,250,0.34)]",
+  TOOL_FINANCAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(249,115,22,0.34)]",
+  TOOL_ANALYTICS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(34,211,238,0.35)]",
+  TOOL_PROMOCOES: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(251,113,133,0.34)]",
+  TOOL_CRM: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(56,189,248,0.34)]",
+  TOOL_LOJA: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.46),0_0_24px_rgba(251,146,60,0.34)]",
+  TOOL_EQUIPA: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
+  TOOL_DEFINICOES: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(148,163,184,0.32)]",
+  TOOL_POLITICAS: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_14px_28px_rgba(0,0,0,0.45),0_0_24px_rgba(96,165,250,0.34)]",
+};
+const MODULE_ICON_BG_STYLES: Record<string, string> = {
+  TOOL_EVENTOS: "linear-gradient(145deg, rgba(255,78,205,0.85) 0%, rgba(127,224,255,0.72) 46%, rgba(106,123,255,0.86) 100%)",
+  TOOL_RESERVAS: "linear-gradient(145deg, rgba(107,255,255,0.84) 0%, rgba(77,180,255,0.7) 46%, rgba(106,123,255,0.84) 100%)",
+  TOOL_CALENDARIO: "linear-gradient(145deg, rgba(107,255,255,0.8) 0%, rgba(96,165,250,0.72) 46%, rgba(139,92,246,0.84) 100%)",
+  TOOL_PADEL_CLUBE: "linear-gradient(145deg, rgba(245,158,11,0.84) 0%, rgba(251,113,133,0.7) 44%, rgba(106,123,255,0.82) 100%)",
+  TOOL_PADEL_TORNEIOS: "linear-gradient(145deg, rgba(34,211,238,0.86) 0%, rgba(167,139,250,0.7) 44%, rgba(245,158,11,0.8) 100%)",
+  TOOL_CHECKIN: "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(52,211,153,0.72) 46%, rgba(96,165,250,0.82) 100%)",
+  TOOL_FORMULARIOS: "linear-gradient(145deg, rgba(20,184,166,0.82) 0%, rgba(34,211,238,0.7) 46%, rgba(167,139,250,0.78) 100%)",
+  TOOL_CHAT_INTERNO: "linear-gradient(145deg, rgba(167,139,250,0.82) 0%, rgba(96,165,250,0.7) 44%, rgba(52,211,153,0.78) 100%)",
+  TOOL_FINANCAS: "linear-gradient(145deg, rgba(249,115,22,0.86) 0%, rgba(245,158,11,0.74) 44%, rgba(251,113,133,0.82) 100%)",
+  TOOL_ANALYTICS: "linear-gradient(145deg, rgba(34,211,238,0.88) 0%, rgba(106,123,255,0.72) 44%, rgba(167,139,250,0.84) 100%)",
+  TOOL_PROMOCOES: "linear-gradient(145deg, rgba(255,122,209,0.86) 0%, rgba(251,113,133,0.72) 44%, rgba(245,158,11,0.82) 100%)",
+  TOOL_CRM: "linear-gradient(145deg, rgba(56,189,248,0.84) 0%, rgba(34,211,238,0.72) 46%, rgba(249,115,22,0.8) 100%)",
+  TOOL_LOJA: "linear-gradient(145deg, rgba(251,113,133,0.86) 0%, rgba(245,158,11,0.72) 44%, rgba(251,146,60,0.82) 100%)",
+  TOOL_EQUIPA: "linear-gradient(145deg, rgba(96,165,250,0.82) 0%, rgba(34,211,238,0.72) 46%, rgba(245,158,11,0.78) 100%)",
+  TOOL_DEFINICOES: "linear-gradient(145deg, rgba(148,163,184,0.82) 0%, rgba(100,116,139,0.68) 46%, rgba(96,165,250,0.74) 100%)",
+  TOOL_POLITICAS: "linear-gradient(145deg, rgba(96,165,250,0.86) 0%, rgba(34,211,238,0.72) 44%, rgba(167,139,250,0.8) 100%)",
 };
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
@@ -2208,6 +2261,7 @@ function OrganizacaoPageInner({
           ? {
               id: "eventos",
               moduleKey: "EVENTOS",
+              iconKey: "TOOL_EVENTOS",
               title: "Eventos",
               summary: "Eventos públicos e privados com operação completa.",
               bullets: ["Bilhetes e regras", "Participantes + check-in", "Operação + anúncios"],
@@ -2219,6 +2273,7 @@ function OrganizacaoPageInner({
           ? {
               id: "reservas",
               moduleKey: "RESERVAS",
+              iconKey: "TOOL_RESERVAS",
               title: "Reservas",
               summary: "Serviços e marcações com gestão diária.",
               bullets: ["Serviços + disponibilidade", "Marcações + estados", "Check-in operacional"],
@@ -2230,6 +2285,7 @@ function OrganizacaoPageInner({
           ? {
               id: "calendar",
               moduleKey: "RESERVAS",
+              iconKey: "TOOL_CALENDARIO",
               title: "Calendário",
               summary: "Visão operacional read-first da ocupação da organização.",
               bullets: ["Agenda consolidada", "Vista semanal e diária", "Sem escrita direta de serviços"],
@@ -2241,6 +2297,7 @@ function OrganizacaoPageInner({
           ? {
               id: "padel-club",
               moduleKey: "TORNEIOS",
+              iconKey: "TOOL_PADEL_CLUBE",
               title: "Clube de padel",
               summary: "Operação diária do clube e gestão de campos.",
               bullets: ["Clubes + campos", "Jogadores + treinadores", "Comunidade + aulas"],
@@ -2252,6 +2309,7 @@ function OrganizacaoPageInner({
           ? {
               id: "padel-tournaments",
               moduleKey: "TORNEIOS",
+              iconKey: "TOOL_PADEL_TORNEIOS",
               title: "Torneios de padel",
               summary: "Calendário competitivo, equipas e operação ao vivo.",
               bullets: ["Criação + calendário", "Categorias + equipas", "Jogadores + ao vivo"],
@@ -2263,6 +2321,7 @@ function OrganizacaoPageInner({
           ? {
               id: "checkin",
               moduleKey: "CHECKIN",
+              iconKey: "TOOL_CHECKIN",
               title: "Check-in",
               summary: "Scanner rápido para eventos e torneios.",
               bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
@@ -2274,6 +2333,7 @@ function OrganizacaoPageInner({
           ? {
               id: "inscricoes",
               moduleKey: "INSCRICOES",
+              iconKey: "TOOL_FORMULARIOS",
               title: "Formulários",
               summary: "Recolha de inscrições e dados operacionais.",
               bullets: ["Formulários rápidos", "Listas e vagas", "Exportação de dados"],
@@ -2285,6 +2345,7 @@ function OrganizacaoPageInner({
           ? {
               id: "mensagens",
               moduleKey: "MENSAGENS",
+              iconKey: "TOOL_CHAT_INTERNO",
               title: "Chat interno",
               summary: "Canal privado entre membros da organização.",
               bullets: ["Conversas da equipa", "Canais internos", "Histórico completo"],
@@ -2296,9 +2357,10 @@ function OrganizacaoPageInner({
           ? {
               id: "financeiro",
               moduleKey: "FINANCEIRO",
+              iconKey: "TOOL_FINANCAS",
               title: "Finanças",
-              summary: "Receitas, indicadores e transferências num só lugar.",
-              bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Transferências Stripe"],
+              summary: "Operação financeira e compliance transacional.",
+              bullets: ["Faturação + reconciliação", "Reembolsos + disputas", "Transferências + exportações"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
               flow: "Gestão",
             }
@@ -2307,6 +2369,7 @@ function OrganizacaoPageInner({
           ? {
               id: "analytics",
               moduleKey: "ANALYTICS",
+              iconKey: "TOOL_ANALYTICS",
               title: "Análises",
               summary: "BI financeiro com conversão, coortes e tendências de receita.",
               bullets: ["Visão geral monetária", "Conversão + coortes", "Performance por dimensão financeira"],
@@ -2318,6 +2381,7 @@ function OrganizacaoPageInner({
           ? {
               id: "marketing",
               moduleKey: "MARKETING",
+              iconKey: "TOOL_PROMOCOES",
               title: "Promoções",
               summary: "Códigos, parcerias e partilha.",
               bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
@@ -2329,6 +2393,7 @@ function OrganizacaoPageInner({
           ? {
               id: "crm",
               moduleKey: "CRM",
+              iconKey: "TOOL_CRM",
               title: "CRM",
               summary: "Clientes, segmentos e fidelização.",
               bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
@@ -2340,6 +2405,7 @@ function OrganizacaoPageInner({
           ? {
               id: "loja",
               moduleKey: "LOJA",
+              iconKey: "TOOL_LOJA",
               title: "Loja",
               summary: "Produtos físicos e digitais com checkout único.",
               bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
@@ -2351,6 +2417,7 @@ function OrganizacaoPageInner({
           ? {
               id: "staff",
               moduleKey: "STAFF",
+              iconKey: "TOOL_EQUIPA",
               title: "Equipa",
               summary: "Gestão de equipa, funções e permissões.",
               bullets: ["Dono / Co-dono / Administrador / Equipa / Scanner", "Permissões por ferramenta", "Registo de ações"],
@@ -2360,8 +2427,21 @@ function OrganizacaoPageInner({
           : null,
         canEditOrgSettings
           ? {
+              id: "politicas",
+              moduleKey: "DEFINICOES",
+              iconKey: "TOOL_POLITICAS",
+              title: "Políticas",
+              summary: "Políticas personalizáveis, termos e guardrails operacionais.",
+              bullets: ["Cancelamento e reagendamento", "Termos e condições", "Defaults editáveis por dropdown e texto"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/policies` : undefined,
+              flow: "Administração",
+            }
+          : null,
+        canEditOrgSettings
+          ? {
               id: "settings",
               moduleKey: "DEFINICOES",
+              iconKey: "TOOL_DEFINICOES",
               title: "Definições",
               summary: "Pagamentos, políticas e preferências.",
               bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
@@ -2560,10 +2640,19 @@ function OrganizacaoPageInner({
     );
   };
   const renderToolCard = (tool: DashboardToolCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const iconBgStyle =
+      MODULE_ICON_BG_STYLES[tool.iconKey] ??
+      "linear-gradient(145deg, rgba(34,211,238,0.82) 0%, rgba(96,165,250,0.72) 48%, rgba(167,139,250,0.82) 100%)";
+    const iconSurfaceGlow =
+      MODULE_ICON_SURFACE_GLOWS[tool.iconKey] ??
+      "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_22px_42px_rgba(107,255,255,0.34)]";
     const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
     const cardInner = (
-      <div className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 hover:border-white/25">
+      <div className="group relative flex min-h-[172px] flex-col items-center justify-center gap-3 overflow-hidden rounded-[26px] border border-white/22 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.03)_48%,rgba(20,20,20,0.88))] px-3 py-4 text-center shadow-[0_24px_70px_rgba(0,0,0,0.6)] transition hover:-translate-y-0.5 hover:border-[#22D3EE]/42 hover:shadow-[0_28px_78px_rgba(0,0,0,0.68)] sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/35 to-transparent" />
+        </div>
         {canHide && (
           <button
             type="button"
@@ -2580,19 +2669,25 @@ function OrganizacaoPageInner({
         )}
         <div
           className={cn(
-            "flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br text-white/85",
-            iconGradient,
-          )}
+                "relative flex h-[84px] w-[84px] items-center justify-center rounded-full border border-white/32 text-white transition-transform duration-200 group-hover:scale-[1.04] sm:h-[102px] sm:w-[102px]",
+                iconGradient,
+                iconSurfaceGlow,
+              )}
+          style={{ background: iconBgStyle }}
         >
-          <ModuleIcon moduleKey={tool.moduleKey} className="h-6 w-6" aria-hidden="true" />
+          <span className="pointer-events-none absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.34),rgba(255,255,255,0.1)_40%,rgba(255,255,255,0)_70%)]" />
+          <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_55%,rgba(8,12,20,0.12),rgba(8,12,20,0.28)_72%,rgba(6,10,18,0.38)_100%)]" />
+          <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
+          <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/35 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
+          <ModuleIcon moduleKey={tool.iconKey} className="relative h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
         </div>
-        <span className="text-[12px] font-semibold text-white/90">{tool.title}</span>
+        <span className="relative text-[14px] font-extrabold leading-tight text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)] sm:text-[16px]">{tool.title}</span>
       </div>
     );
 
     if (tool.href) {
       return (
-        <Link key={tool.id} href={tool.href} className="block">
+        <Link key={tool.id} href={tool.href} className="block rounded-[24px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]">
           {cardInner}
         </Link>
       );
@@ -2609,15 +2704,20 @@ function OrganizacaoPageInner({
       type="button"
       onClick={() => setToolsModalOpen(true)}
       aria-label="Adicionar ferramenta"
-      className="group flex h-full min-h-[126px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 py-5 text-center text-white/70 transition hover:border-white/35 hover:bg-white/10 hover:text-white"
+      className="group flex h-full min-h-[172px] w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-[26px] border border-dashed border-white/28 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03)_52%,rgba(20,20,20,0.88))] px-3 py-4 text-center text-white/80 transition hover:border-[#22D3EE]/45 hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04)_52%,rgba(20,20,20,0.92))] hover:text-white sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5"
     >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/20 bg-black/20 text-2xl leading-none">+</div>
-      <span className="text-[12px] font-semibold">Adicionar ferramenta</span>
+      <div className="relative flex h-[84px] w-[84px] items-center justify-center rounded-full border border-white/30 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.35),rgba(255,255,255,0.14)_32%,rgba(8,12,20,0.88)_78%,rgba(6,10,18,0.96)_100%)] text-4xl leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.46),0_14px_32px_rgba(0,0,0,0.56),0_0_24px_rgba(34,211,238,0.25)] sm:h-[102px] sm:w-[102px] sm:text-5xl">
+        <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_48%,rgba(34,211,238,0.14),rgba(7,11,18,0.88)_72%)]" />
+        <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
+        <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/30 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
+        <span className="relative">+</span>
+      </div>
+      <span className="text-[14px] font-bold text-white sm:text-[16px]">Adicionar ferramenta</span>
     </button>
   );
 
   const renderToolPickerCard = (tool: DashboardToolCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
     return (
       <div
         key={`picker-${tool.id}`}
@@ -2627,11 +2727,11 @@ function OrganizacaoPageInner({
           <div className="flex items-start gap-3">
             <div
               className={cn(
-                "flex h-12 w-12 items-center justify-center rounded-2xl border border-white/15 bg-gradient-to-br text-white/85",
+                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
                 iconGradient,
               )}
             >
-              <ModuleIcon moduleKey={tool.moduleKey} className="h-5 w-5" aria-hidden="true" />
+              <ModuleIcon moduleKey={tool.iconKey} className="h-6 w-6" aria-hidden="true" />
             </div>
             <div className="flex-1 space-y-2">
               <div className="flex items-start justify-between gap-2">
@@ -2936,7 +3036,7 @@ function OrganizacaoPageInner({
 
           <div className={cn("space-y-4", fadeClass)}>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1a2e]/80 via-[#0b1224]/70 to-[#050a12]/90 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+              <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
                 <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Conta</p>
                 <h3 className="text-lg font-semibold text-white">Estado da conta</h3>
                 <div className="mt-3 space-y-2 text-[12px] text-white/75">
@@ -2966,7 +3066,7 @@ function OrganizacaoPageInner({
               </div>
 
               {isReservasOrg ? (
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Serviços</p>
                   <h3 className="text-lg font-semibold text-white">Oferta ativa</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -2985,7 +3085,7 @@ function OrganizacaoPageInner({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#101b39]/80 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">
                     {primaryOperation === "TORNEIOS" ? "Torneios" : "Eventos"}
                   </p>
@@ -3008,7 +3108,7 @@ function OrganizacaoPageInner({
               )}
 
               {isReservasOrg ? (
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Reservas</p>
                   <h3 className="text-lg font-semibold text-white">Agenda 7 dias</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -3033,7 +3133,7 @@ function OrganizacaoPageInner({
                   </div>
                 </div>
               ) : (
-                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#120b24]/75 via-[#0b1124]/70 to-[#050a12]/92 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
+                <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Finanças</p>
                   <h3 className="text-lg font-semibold text-white">Últimos 30 dias</h3>
                   <div className="mt-3 grid gap-2 text-[12px] text-white/75">
@@ -3058,11 +3158,13 @@ function OrganizacaoPageInner({
 
             <div
               id="ferramentas"
-              className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)]"
+              className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.58)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
+                <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
+                  <h2 className="text-xl font-semibold text-white">Apps da organização</h2>
+                  <p className="text-[12px] text-white/65">Cada ferramenta mantém domínio próprio e acesso direto.</p>
                 </div>
               </div>
               {toolVisibilityError && (
@@ -3075,7 +3177,7 @@ function OrganizacaoPageInner({
                       <span className="uppercase tracking-[0.22em]">{group.flow}</span>
                       <span>{group.tools.length} ferramentas</span>
                     </div>
-                    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
                       {group.tools.map((tool) => renderToolCard(tool))}
                       {canCustomizeTools && hasHiddenTools && group.flow === "Operações" && renderAddToolGhostCard()}
                     </div>
@@ -3090,11 +3192,11 @@ function OrganizacaoPageInner({
 
       {activeObjective === "manage" && activeSection === "eventos" && (
         <section className={cn("space-y-4", fadeClass)} id="eventos">
-          <div className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 p-5 backdrop-blur-3xl">
+          <div className="relative overflow-hidden rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(20,20,20,0.92))] p-5 backdrop-blur-3xl">
             <div className="pointer-events-none absolute inset-0">
-              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#6BFFFF]/18 blur-[120px]" />
-              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-[#FF7AD1]/18 blur-[120px]" />
-              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#6A7BFF]/18 blur-[120px]" />
+              <div className="absolute -left-20 top-2 h-56 w-56 rounded-full bg-[#22D3EE]/10 blur-[120px]" />
+              <div className="absolute right-10 top-0 h-48 w-48 rounded-full bg-white/6 blur-[120px]" />
+              <div className="absolute -right-18 -bottom-20 h-64 w-64 rounded-full bg-[#22D3EE]/8 blur-[120px]" />
               <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/8 to-transparent" />
             </div>
 

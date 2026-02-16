@@ -13,6 +13,7 @@ const DASHBOARD_TOOL_IDS = [
   "crm",
   "loja",
   "staff",
+  "politicas",
   "settings",
 ] as const;
 

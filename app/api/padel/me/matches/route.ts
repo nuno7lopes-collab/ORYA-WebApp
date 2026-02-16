@@ -58,9 +58,9 @@ async function _GET(req: NextRequest) {
   };
   const where: Record<string, any> = participantFilter;
   if (scope === "past") {
-    where.status = "DONE";
+    where.status = { in: ["OFFICIAL", "WALKOVER", "RETIRED"] };
   } else if (scope === "upcoming") {
-    where.status = { not: "DONE" };
+    where.status = { notIn: ["OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"] };
     where.AND = [
       participantFilter,
       {

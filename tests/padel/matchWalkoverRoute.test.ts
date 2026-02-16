@@ -94,6 +94,7 @@ describe("padel match walkover route", () => {
         winner: "A",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-permission-denied",
       }),
     });
 
@@ -127,7 +128,7 @@ describe("padel match walkover route", () => {
     prisma.padelTournamentConfig.findUnique.mockResolvedValue({ advancedSettings: {} });
     prisma.padelTournamentRoleAssignment.findMany.mockResolvedValue([{ userId: "u-dir" }]);
     updatePadelMatch.mockResolvedValue({
-      match: { id: 1, eventId: 5, status: "DONE" },
+      match: { id: 1, eventId: 5, status: "WALKOVER" },
     });
 
     const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
@@ -136,6 +137,7 @@ describe("padel match walkover route", () => {
         winner: "A",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-walkover-ok",
       }),
     });
 
@@ -177,6 +179,7 @@ describe("padel match walkover route", () => {
         winner: "A",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-missing-director",
       }),
     });
 
@@ -200,7 +203,7 @@ describe("padel match walkover route", () => {
 
     const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
       method: "POST",
-      body: JSON.stringify({ winner: "A" }),
+      body: JSON.stringify({ winner: "A", clientRequestId: "req-missing-meta" }),
     });
     const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
@@ -233,7 +236,7 @@ describe("padel match walkover route", () => {
     ensureMemberModuleAccess.mockResolvedValue({ ok: true });
     prisma.padelTournamentConfig.findUnique.mockResolvedValue({ advancedSettings: {} });
     updatePadelMatch.mockResolvedValue({
-      match: { id: 1, eventId: 5, status: "DONE" },
+      match: { id: 1, eventId: 5, status: "WALKOVER" },
     });
     resolveIncidentAuthority.mockResolvedValue({
       ok: true,
@@ -249,11 +252,63 @@ describe("padel match walkover route", () => {
         winner: "A",
         confirmedByRole: "REFEREE",
         confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-referee-notify",
       }),
     });
 
     const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(200);
     expect(createNotification).toHaveBeenCalled();
+  });
+
+  it("responde idempotent replay quando clientRequestId já foi aplicado", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 1,
+      participants: [
+        {
+          participantId: 101,
+          side: "A",
+          slotOrder: 0,
+          participant: { id: 101, sourcePairingId: null, playerProfileId: 11 },
+        },
+      ],
+      eventId: 5,
+      status: "PENDING",
+      score: {
+        liveWorkflow: {
+          idempotency: {
+            "5:1:walkover:u1:req-replay": {
+              action: "walkover",
+              actorId: "u1",
+              scopeKey: "5:1:walkover:u1:req-replay",
+              status: "WALKOVER",
+              at: "2026-02-16T12:00:00.000Z",
+            },
+          },
+        },
+      },
+      scoreSets: [],
+      event: { organizationId: 99 },
+    });
+
+    const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
+      method: "POST",
+      body: JSON.stringify({
+        winner: "A",
+        resultType: "WALKOVER",
+        confirmedByRole: "DIRETOR_PROVA",
+        confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-replay",
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    expect(res.status).toBe(200);
+    const payload = await res.json();
+    expect(payload?.idempotentReplay).toBe(true);
+    expect(updatePadelMatch).not.toHaveBeenCalled();
   });
 });

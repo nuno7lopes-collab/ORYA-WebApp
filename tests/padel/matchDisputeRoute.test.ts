@@ -73,7 +73,7 @@ describe("padel match dispute resolve route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 50,
-      status: "DONE",
+      status: "OFFICIAL",
       score: { disputeStatus: "OPEN" },
       roundType: "KNOCKOUT",
       roundLabel: "FINAL",
@@ -109,7 +109,7 @@ describe("padel match dispute resolve route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 50,
-      status: "DONE",
+      status: "OFFICIAL",
       score: { disputeStatus: "OPEN", ruleSnapshot: { source: "DEFAULT" } },
       roundType: "GROUPS",
       roundLabel: "G1",
@@ -174,7 +174,7 @@ describe("padel match dispute resolve route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 51,
-      status: "DONE",
+      status: "OFFICIAL",
       score: { disputeStatus: "OPEN", ruleSnapshot: { source: "DEFAULT" } },
       roundType: "GROUPS",
       roundLabel: "G2",
@@ -218,7 +218,7 @@ describe("padel match dispute resolve route", () => {
     });
     prisma.eventMatchSlot.findUnique.mockResolvedValue({
       id: 77,
-      status: "DONE",
+      status: "OFFICIAL",
       score: { disputeStatus: "OPEN", disputedBy: "u-player", ruleSnapshot: { source: "DEFAULT" } },
       roundType: "GROUPS",
       roundLabel: "G4",

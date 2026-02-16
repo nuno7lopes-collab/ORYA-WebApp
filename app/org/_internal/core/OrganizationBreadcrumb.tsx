@@ -57,6 +57,7 @@ function resolveLabel(
   marketing?: string | null,
   preset?: string | null,
   padel?: string | null,
+  view?: string | null,
 ) {
   if (pathname.startsWith("/org/padel/tournaments/create")) {
     return "Criar torneio";
@@ -104,6 +105,12 @@ function resolveLabel(
     }
     return "Reservas";
   }
+  if (/^\/org\/\d+\/policies(?:\/|$)/.test(pathname)) {
+    if (view === "booking") return "Políticas · Reservas";
+    if (view === "terms") return "Políticas · Termos";
+    if (view === "guardrails") return "Políticas · Guardrails";
+    return "Políticas";
+  }
   if (pathname.startsWith("/org/clube/membros")) return "Clube · Membros";
   if (pathname.startsWith("/org/clube/caixa")) return "Clube · Caixa";
   if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
@@ -139,6 +146,7 @@ export function OrganizationBreadcrumb() {
   const marketingParamRaw = searchParams?.get("marketing");
   const presetParamRaw = searchParams?.get("preset");
   const padelParamRaw = searchParams?.get("padel");
+  const viewParamRaw = searchParams?.get("view");
   const organizationId = parseOrgIdFromPathnameStrict(pathname ?? "");
   const dashboardHref = organizationId ? buildOrgHref(organizationId, "/overview") : buildOrgHubHref("/organizations");
   const label = resolveLabel(
@@ -148,6 +156,7 @@ export function OrganizationBreadcrumb() {
     marketingParamRaw,
     presetParamRaw,
     padelParamRaw,
+    viewParamRaw,
   );
 
   return (

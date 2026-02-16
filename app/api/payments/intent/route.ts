@@ -1918,18 +1918,9 @@ async function _POST(req: NextRequest) {
               const username = profile?.username?.trim().toLowerCase() ?? "";
               const email =
                 userData?.user?.email?.trim().toLowerCase() ?? "";
-              const normalizedInvitedPhone = isValidPhone(invited)
-                ? normalizePhone(invited, phoneOptions)
-                : invited.replace(/[^\d]/g, "");
-              const userPhoneRaw = userData?.user?.phone ?? profile?.contactPhone ?? "";
-              const normalizedUserPhone =
-                userPhoneRaw && isValidPhone(userPhoneRaw)
-                  ? normalizePhone(userPhoneRaw, phoneOptions)
-                  : userPhoneRaw.replace(/[^\d]/g, "");
               if (
                 (invited.includes("@") && email && invited === email) ||
-                (!invited.includes("@") && username && invited === username) ||
-                (normalizedInvitedPhone && normalizedUserPhone && normalizedInvitedPhone === normalizedUserPhone)
+                (!invited.includes("@") && username && invited === username)
               ) {
                 allowUnclaimed = true;
               }

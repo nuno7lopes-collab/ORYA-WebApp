@@ -6,7 +6,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack, SourceType } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
@@ -69,9 +69,10 @@ async function _GET(req: NextRequest) {
     moduleKey: OrganizationModule.EVENTOS,
     required: "VIEW",
   });
-  if (!tournamentsAccess.ok && !eventsAccess.ok) {
-    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-  }
+
+  const sourceTypes: SourceType[] = [SourceType.BOOKING];
+  if (eventsAccess.ok) sourceTypes.push(SourceType.EVENT);
+  if (tournamentsAccess.ok) sourceTypes.push(SourceType.TOURNAMENT);
 
   const now = new Date();
   const limitEnd = new Date(Date.UTC(now.getUTCFullYear() + 2, 11, 31, 23, 59, 59, 999));
@@ -141,6 +142,7 @@ async function _GET(req: NextRequest) {
     organizationId: organization.id,
     from,
     to: boundedTo,
+    sourceTypes,
     padelClubId: resolvedClubId,
     courtId: resolvedCourtId,
     scopeFilter,

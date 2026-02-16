@@ -46,7 +46,15 @@ async function _GET() {
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      return jsonWrap({ user: null, profile: null }, { status: 401 });
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: "UNAUTHENTICATED",
+          message: "Sessão não autenticada.",
+          retryable: false,
+        },
+        { status: 401 },
+      );
     }
 
     const supaUser = user as User;
@@ -132,7 +140,15 @@ async function _GET() {
     );
   } catch (err) {
     console.error("GET /api/auth/me error:", err);
-    return jsonWrap({ user: null, profile: null }, { status: 500 });
+    return jsonWrap(
+      {
+        ok: false,
+        errorCode: "SERVER_ERROR",
+        message: "Não foi possível carregar a sessão.",
+        retryable: true,
+      },
+      { status: 500 },
+    );
   }
 }
 

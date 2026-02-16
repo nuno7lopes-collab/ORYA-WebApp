@@ -243,7 +243,7 @@ export async function autoAdvancePadelByes({
           winnerPairingId: autoWinnerPairingId,
           winnerParticipantId: autoWinnerParticipantId,
           winnerSide,
-          status: padel_match_status.DONE,
+          status: padel_match_status.WALKOVER,
           score,
           scoreSets,
         });

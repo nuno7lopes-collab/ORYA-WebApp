@@ -12,6 +12,7 @@ describe("rbac analytics independent guardrails", () => {
       "app/api/org/[orgId]/analytics/overview/route.ts",
       "app/api/org/[orgId]/analytics/time-series/route.ts",
       "app/api/org/[orgId]/analytics/buyers/route.ts",
+      "app/api/org/[orgId]/analytics/events/route.ts",
       "app/api/org/[orgId]/analytics/dimensoes/route.ts",
       "app/api/org/[orgId]/analytics/conversion/route.ts",
       "app/api/org/[orgId]/analytics/cohorts/route.ts",

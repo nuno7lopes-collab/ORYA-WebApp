@@ -176,7 +176,7 @@ export async function promoteNextPadelWaitlistEntry(params: PromoteParams): Prom
             invitedContact: null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.CAPTAIN,
-            slotStatus: PadelPairingSlotStatus.PENDING,
+            slotStatus: PadelPairingSlotStatus.FILLED,
             paymentStatus: PadelPairingPaymentStatus.UNPAID,
           },
           {

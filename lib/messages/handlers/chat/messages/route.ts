@@ -30,6 +30,35 @@ const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 const B2C_CONTEXT_TYPES = new Set(["ORG_CONTACT", "BOOKING", "SERVICE"]);
 
+function isExternalAttachmentUrl(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized.startsWith("https://") || normalized.startsWith("http://");
+}
+
+function canExposeAttachment(metadata: Record<string, unknown>) {
+  const scanStatusRaw =
+    typeof metadata.scanStatus === "string"
+      ? metadata.scanStatus
+      : typeof metadata.scan_state === "string"
+        ? metadata.scan_state
+        : null;
+  const dlpStatusRaw =
+    typeof metadata.dlpStatus === "string"
+      ? metadata.dlpStatus
+      : typeof metadata.dlp_status === "string"
+        ? metadata.dlp_status
+        : null;
+  const scanStatus = scanStatusRaw?.trim().toLowerCase() ?? "ready";
+  const dlpStatus = dlpStatusRaw?.trim().toLowerCase() ?? "passed";
+  const blocked = metadata.blocked === true || metadata.rejected === true;
+
+  if (blocked) return false;
+  if (dlpStatus === "rejected" || dlpStatus === "blocked") return false;
+  if (scanStatus === "rejected" || scanStatus === "blocked") return false;
+  if (scanStatus === "pending_scan" || scanStatus === "pending") return false;
+  return true;
+}
+
 type MessageWithRelations = Prisma.ChatConversationMessageGetPayload<{
   select: {
     id: true;
@@ -136,7 +165,10 @@ async function prepareAttachmentAssets(items: NormalizedAttachment[]) {
     const objectPath =
       typeof metadata.path === "string" && metadata.path.trim() ? metadata.path.trim() : null;
     if (!objectPath) {
-      return { ok: false as const, error: "ATTACHMENT_METADATA_REQUIRED" };
+      if (!isExternalAttachmentUrl(entry.url)) {
+        return { ok: false as const, error: "ATTACHMENT_METADATA_REQUIRED" };
+      }
+      continue;
     }
     const bucket =
       typeof metadata.bucket === "string" && metadata.bucket.trim()
@@ -218,6 +250,9 @@ async function resolveMessageAttachments<T extends { attachments: any[] }>(messa
         attachment?.metadata && typeof attachment.metadata === "object"
           ? (attachment.metadata as Record<string, unknown>)
           : {};
+      if (!canExposeAttachment(metadata)) {
+        return { ...attachment, url: "" };
+      }
       const path = typeof metadata.path === "string" ? metadata.path : null;
       const bucket =
         typeof metadata.bucket === "string"
@@ -285,10 +320,6 @@ async function _POST(req: NextRequest) {
     const body = bodyRaw.length > 0 ? bodyRaw : null;
     if (body && body.length > CHAT_MESSAGE_MAX_LENGTH) {
       return jsonWrap({ ok: false, error: "MESSAGE_TOO_LONG" }, { status: 400 });
-    }
-
-    if (Array.isArray(payload?.attachments) && payload.attachments.length > 0) {
-      return jsonWrap({ ok: false, error: "ATTACHMENTS_DISABLED" }, { status: 400 });
     }
 
     const attachmentResult = normalizeAttachments(payload?.attachments);

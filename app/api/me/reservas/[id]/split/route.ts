@@ -16,6 +16,8 @@ import {
   BOOKING_SPLIT_CANONICAL_MODE,
   computeSplitCaptureBefore,
   computeSplitRetryUntil,
+  hasSplitCaptureWindowViability,
+  hasSplitGuaranteeCoverage,
 } from "@/domain/bookings/splitGarantido";
 
 function parseId(value: string) {
@@ -53,6 +55,12 @@ function parseSplitMode(value: unknown) {
 function toInt(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+function parseOptionalDate(value: unknown) {
+  if (typeof value !== "string") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -303,10 +311,31 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (deadlineResolved.getTime() <= Date.now()) {
       return fail(ctx, 422, "DEADLINE_IN_PAST", "O prazo do split tem de estar no futuro.");
     }
+    const gatewayCaptureBefore =
+      parseOptionalDate(payload?.gatewayCaptureBefore) ?? parseOptionalDate(payload?.captureBeforeAt);
+    if ((payload?.gatewayCaptureBefore || payload?.captureBeforeAt) && !gatewayCaptureBefore) {
+      return fail(ctx, 422, "CAPTURE_BEFORE_INVALID", "captureBefore inválido.");
+    }
     const { captureBeforeAt, captureBeforeSource } = computeSplitCaptureBefore({
       deadlineAt: deadlineResolved,
-      gatewayCaptureBefore: null,
+      gatewayCaptureBefore,
     });
+    if (!hasSplitGuaranteeCoverage({ deadlineAt: deadlineResolved, captureBeforeAt })) {
+      return fail(
+        ctx,
+        422,
+        "SPLIT_GUARANTEE_WINDOW_INVALID",
+        "captureBefore tem de cobrir `deadlineAt + SAFETY_BUFFER`.",
+      );
+    }
+    if (!hasSplitCaptureWindowViability({ captureBeforeAt })) {
+      return fail(
+        ctx,
+        422,
+        "SPLIT_CAPTURE_WINDOW_INVALID",
+        "Janela de captura inválida para manter SPLIT_GARANTIDO.",
+      );
+    }
     const retryUntilAt = computeSplitRetryUntil({
       deadlineAt: deadlineResolved,
       captureBeforeAt,

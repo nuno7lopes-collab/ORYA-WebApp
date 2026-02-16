@@ -9,10 +9,11 @@ const recordOrganizationAuditSafe = vi.hoisted(() => vi.fn());
 const isValidScore = vi.hoisted(() => vi.fn(() => true));
 const normalizePadelScoreRules = vi.hoisted(() => vi.fn(() => null));
 const resolvePadelMatchStats = vi.hoisted(() => vi.fn(() => null));
+const enforcePublicRateLimit = vi.hoisted(() => vi.fn(async () => null));
 
 const prisma = vi.hoisted(() => ({
   event: { findUnique: vi.fn() },
-  eventMatchSlot: { findUnique: vi.fn() },
+  eventMatchSlot: { findUnique: vi.fn(), findMany: vi.fn() },
   padelTournamentConfig: { findUnique: vi.fn() },
   padelClubCourt: { findFirst: vi.fn() },
 }));
@@ -27,8 +28,10 @@ vi.mock("@/domain/padel/score", () => ({
   normalizePadelScoreRules: (...args: any[]) => normalizePadelScoreRules(...args),
   resolvePadelMatchStats: (...args: any[]) => resolvePadelMatchStats(...args),
 }));
+vi.mock("@/lib/padel/publicRateLimit", () => ({ enforcePublicRateLimit }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
+let GET: typeof import("@/app/api/padel/matches/route").GET;
 let POST: typeof import("@/app/api/padel/matches/route").POST;
 
 beforeEach(async () => {
@@ -40,15 +43,62 @@ beforeEach(async () => {
   isValidScore.mockReset();
   normalizePadelScoreRules.mockReset();
   resolvePadelMatchStats.mockReset();
+  enforcePublicRateLimit.mockReset();
   prisma.event.findUnique.mockReset();
   prisma.eventMatchSlot.findUnique.mockReset();
+  prisma.eventMatchSlot.findMany.mockReset();
   prisma.padelTournamentConfig.findUnique.mockReset();
   prisma.padelClubCourt.findFirst.mockReset();
   vi.resetModules();
+  GET = (await import("@/app/api/padel/matches/route")).GET;
   POST = (await import("@/app/api/padel/matches/route")).POST;
 });
 
 describe("padel matches route", () => {
+  it("oculta score público quando o resultado ainda não é final oficial", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: null } })) },
+    });
+    prisma.event.findUnique.mockResolvedValue({
+      organizationId: 99,
+      status: "PUBLISHED",
+      padelTournamentConfig: { advancedSettings: { competitionState: "PUBLIC" }, lifecycleStatus: null },
+      accessPolicies: [{ mode: "PUBLIC" }],
+    });
+    prisma.eventMatchSlot.findMany.mockResolvedValue([
+      {
+        id: 1,
+        status: "IN_PROGRESS",
+        score: { teamA: 3, teamB: 2 },
+        scoreSets: [{ teamA: 6, teamB: 4 }],
+      },
+      {
+        id: 2,
+        status: "OFFICIAL",
+        score: { disputeStatus: "OPEN", teamA: 6, teamB: 4 },
+        scoreSets: [{ teamA: 6, teamB: 4 }],
+      },
+      {
+        id: 3,
+        status: "WALKOVER",
+        score: { resultType: "WALKOVER" },
+        scoreSets: null,
+      },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/padel/matches?eventId=10", { method: "GET" });
+    const res = await GET(req);
+    const json = await res.json();
+    const items = json.data?.items ?? [];
+
+    expect(res.status).toBe(200);
+    expect(items[0].score).toEqual({});
+    expect(items[0].scoreSets).toBeNull();
+    expect(items[1].score).toEqual({});
+    expect(items[1].scoreSets).toBeNull();
+    expect(items[2].score).toEqual({ resultType: "WALKOVER" });
+  });
+
   it("rejeita sem autenticação", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: null } })) },

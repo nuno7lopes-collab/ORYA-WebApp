@@ -1,8 +1,17 @@
 import crypto from "crypto";
-import { EventMatchSlot, Prisma, PrismaClient, SourceType } from "@prisma/client";
+import {
+  EventMatchSlot,
+  PadelMatchResultCard,
+  PadelMatchResultCardStatus,
+  PadelMatchSide,
+  Prisma,
+  PrismaClient,
+  SourceType,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 type MatchCommandBase = {
   eventId: number;
@@ -22,6 +31,9 @@ type MatchCommandResult<T> = { match: T; outboxEventId: string };
 const DEFAULT_UPDATED_EVENT = "PADEL_MATCH_UPDATED";
 const DEFAULT_CREATED_EVENT = "PADEL_MATCH_GENERATED";
 const DEFAULT_DELETED_EVENT = "PADEL_MATCH_DELETED";
+const DEFAULT_RESULT_CARD_UPDATED_EVENT = "PADEL_MATCH_RESULT_CARD_UPDATED";
+const DEFAULT_RESULT_CARD_CONFLICT_EVENT = "PADEL_MATCH_RESULT_CARD_CONFLICT";
+const RESULT_MUTATION_KEYS = new Set(["score", "scoreSets", "winnerSide", "winnerPairingId", "winnerParticipantId"]);
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -90,6 +102,45 @@ async function recordMatchEvent(params: {
   return outbox.eventId;
 }
 
+const isResultMutationData = (
+  data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput,
+) => {
+  const payload = data as Record<string, unknown>;
+  const hasResultField = Object.keys(payload).some((key) => RESULT_MUTATION_KEYS.has(key));
+  if (hasResultField) return true;
+  if (!Object.prototype.hasOwnProperty.call(payload, "status")) return false;
+
+  const status = payload.status;
+  if (typeof status === "string") return isPadelOfficialStatus(status);
+  if (status && typeof status === "object" && "set" in status) {
+    return isPadelOfficialStatus((status as { set?: unknown }).set as string | null | undefined);
+  }
+  return false;
+};
+
+async function resolveConfirmedResultCardForWrite(params: {
+  tx: Prisma.TransactionClient;
+  matchId: number;
+  requireConfirmedResultCard: boolean;
+  resultCardId?: string | null;
+}) {
+  if (!params.requireConfirmedResultCard) return null;
+  if (!params.resultCardId) throw new Error("MATCH_RESULT_CARD_REQUIRED");
+
+  const card = await params.tx.padelMatchResultCard.findUnique({
+    where: { id: params.resultCardId },
+    select: { id: true, matchId: true, status: true, appliedAt: true },
+  });
+  if (!card || card.matchId !== params.matchId) {
+    throw new Error("MATCH_RESULT_CARD_NOT_FOUND");
+  }
+  if (card.status !== PadelMatchResultCardStatus.CONFIRMED) {
+    throw new Error("MATCH_RESULT_CARD_NOT_CONFIRMED");
+  }
+
+  return card;
+}
+
 export async function createPadelMatch(
   input: MatchCommandBase &
     MatchCommandTx & {
@@ -135,18 +186,35 @@ export async function updatePadelMatch(
       beforeStatus?: string | null;
       select?: Prisma.EventMatchSlotSelect;
       include?: Prisma.EventMatchSlotInclude;
+      requireConfirmedResultCard?: boolean;
+      resultCardId?: string | null;
     },
 ): Promise<MatchCommandResult<EventMatchSlot>> {
   const eventType = input.eventType ?? DEFAULT_UPDATED_EVENT;
   const outboxEventType = input.outboxEventType ?? eventType;
 
   return withTx(input.tx, async (tx) => {
+    const isResultMutation = isResultMutationData(input.data);
+    const resultCard = await resolveConfirmedResultCardForWrite({
+      tx,
+      matchId: input.matchId,
+      requireConfirmedResultCard: Boolean(input.requireConfirmedResultCard && isResultMutation),
+      resultCardId: input.resultCardId ?? null,
+    });
+
     const updated = (await tx.eventMatchSlot.update({
       where: { id: input.matchId },
       data: input.data,
       ...(input.select ? { select: input.select } : {}),
       ...(input.include ? { include: input.include } : {}),
     })) as EventMatchSlot;
+
+    if (resultCard && !resultCard.appliedAt) {
+      await tx.padelMatchResultCard.update({
+        where: { id: resultCard.id },
+        data: { appliedAt: new Date() },
+      });
+    }
 
     const outboxEventId = await recordMatchEvent({
       tx,
@@ -208,5 +276,171 @@ export async function reassignWinnerParticipantOnMatchSlots(params: {
   return tx.eventMatchSlot.updateMany({
     where: { winnerParticipantId: sourceParticipantId },
     data: { winnerParticipantId: targetParticipantId },
+  });
+}
+
+export async function submitPadelMatchResultCard(
+  input: MatchCommandBase &
+    MatchCommandTx & {
+      matchId: number;
+      side: PadelMatchSide;
+      payload: Record<string, unknown>;
+      actorUserId: string;
+    },
+): Promise<{ card: PadelMatchResultCard; conflict: boolean; outboxEventId: string }> {
+  const eventType = input.eventType ?? DEFAULT_RESULT_CARD_UPDATED_EVENT;
+  const outboxEventType = input.outboxEventType ?? eventType;
+  const now = new Date();
+  const payloadHash = hashPayload(input.payload);
+
+  return withTx(input.tx, async (tx) => {
+    const existingPending = await tx.padelMatchResultCard.findMany({
+      where: {
+        matchId: input.matchId,
+        status: PadelMatchResultCardStatus.PENDING_SIGNATURES,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    });
+
+    const conflicting = existingPending.find((card) => card.payloadHash !== payloadHash);
+    if (conflicting) {
+      await tx.padelMatchResultCard.updateMany({
+        where: {
+          matchId: input.matchId,
+          status: PadelMatchResultCardStatus.PENDING_SIGNATURES,
+        },
+        data: {
+          status: PadelMatchResultCardStatus.CONFLICTED,
+          conflictAt: now,
+        },
+      });
+
+      const conflictCard = await tx.padelMatchResultCard.create({
+        data: {
+          matchId: input.matchId,
+          organizationId: input.organizationId,
+          eventId: input.eventId,
+          submittedByUserId: input.actorUserId,
+          payload: input.payload as Prisma.InputJsonValue,
+          payloadHash,
+          status: PadelMatchResultCardStatus.CONFLICTED,
+          conflictAt: now,
+        },
+      });
+      await tx.padelMatchResultSignature.create({
+        data: {
+          resultCardId: conflictCard.id,
+          side: input.side,
+          userId: input.actorUserId,
+        },
+      });
+
+      const currentMatch = await tx.eventMatchSlot.findUnique({
+        where: { id: input.matchId },
+        select: { score: true },
+      });
+      const previousScore =
+        currentMatch?.score && typeof currentMatch.score === "object"
+          ? (currentMatch.score as Record<string, unknown>)
+          : {};
+      await tx.eventMatchSlot.update({
+        where: { id: input.matchId },
+        data: {
+          score: {
+            ...previousScore,
+            disputeStatus: "OPEN",
+            disputeReason: "RESULT_HASH_CONFLICT",
+            disputedAt: now.toISOString(),
+            disputedBy: input.actorUserId,
+          },
+        },
+      });
+
+      const outboxEventId = await recordMatchEvent({
+        tx,
+        eventType: DEFAULT_RESULT_CARD_CONFLICT_EVENT,
+        outboxEventType: DEFAULT_RESULT_CARD_CONFLICT_EVENT,
+        organizationId: input.organizationId,
+        actorUserId: input.actorUserId,
+        correlationId: input.correlationId,
+        payload: {
+          matchId: input.matchId,
+          eventId: input.eventId,
+          organizationId: input.organizationId,
+          resultCardId: conflictCard.id,
+          status: conflictCard.status,
+          payloadHash,
+        },
+      });
+
+      return { card: conflictCard, conflict: true, outboxEventId };
+    }
+
+    const baseCard =
+      existingPending.find((card) => card.payloadHash === payloadHash) ??
+      (await tx.padelMatchResultCard.create({
+        data: {
+          matchId: input.matchId,
+          organizationId: input.organizationId,
+          eventId: input.eventId,
+          submittedByUserId: input.actorUserId,
+          payload: input.payload as Prisma.InputJsonValue,
+          payloadHash,
+          status: PadelMatchResultCardStatus.PENDING_SIGNATURES,
+        },
+      }));
+
+    await tx.padelMatchResultSignature.upsert({
+      where: {
+        resultCardId_side: {
+          resultCardId: baseCard.id,
+          side: input.side,
+        },
+      },
+      update: {
+        userId: input.actorUserId,
+      },
+      create: {
+        resultCardId: baseCard.id,
+        side: input.side,
+        userId: input.actorUserId,
+      },
+    });
+
+    const signatures = await tx.padelMatchResultSignature.findMany({
+      where: { resultCardId: baseCard.id },
+      select: { side: true },
+    });
+    const hasBothSides =
+      signatures.some((signature) => signature.side === PadelMatchSide.A) &&
+      signatures.some((signature) => signature.side === PadelMatchSide.B);
+
+    const card =
+      hasBothSides && baseCard.status !== PadelMatchResultCardStatus.CONFIRMED
+        ? await tx.padelMatchResultCard.update({
+            where: { id: baseCard.id },
+            data: { status: PadelMatchResultCardStatus.CONFIRMED, confirmedAt: now },
+          })
+        : baseCard;
+
+    const outboxEventId = await recordMatchEvent({
+      tx,
+      eventType,
+      outboxEventType,
+      organizationId: input.organizationId,
+      actorUserId: input.actorUserId,
+      correlationId: input.correlationId,
+      payload: {
+        matchId: input.matchId,
+        eventId: input.eventId,
+        organizationId: input.organizationId,
+        resultCardId: card.id,
+        status: card.status,
+        payloadHash,
+      },
+    });
+
+    return { card, conflict: false, outboxEventId };
   });
 }

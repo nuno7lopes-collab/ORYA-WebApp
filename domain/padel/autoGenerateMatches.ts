@@ -14,6 +14,7 @@ import {
 import { autoAdvancePadelByes } from "@/domain/padel/knockoutAdvance";
 import { normalizePadelScoreRules } from "@/domain/padel/score";
 import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 const MATCH_SYSTEM_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const MATCH_GENERATED_EVENT = "PADEL_MATCH_GENERATED";
@@ -599,7 +600,7 @@ export async function autoGeneratePadelMatches({
       },
     });
     if (groupMatches.length === 0) return { ok: false, error: "NO_GROUP_MATCHES" };
-    const pending = groupMatches.some((m) => m.status !== "DONE" && m.status !== "CANCELLED");
+    const pending = groupMatches.some((m) => !isPadelOfficialStatus(m.status) && m.status !== "CANCELLED");
     if (pending && !allowIncomplete) return { ok: false, error: "GROUPS_NOT_FINISHED" };
 
     const ruleSnapshot = await getPadelRuleSetSnapshot({
@@ -1178,7 +1179,7 @@ export async function autoGeneratePadelMatches({
                 categoryId: resolvedCategoryId ?? null,
                 pairingAId: null,
                 pairingBId: null,
-                status: "DONE",
+                status: "OFFICIAL",
                 roundType: "GROUPS",
                 roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
                 groupLabel,
@@ -1248,7 +1249,7 @@ export async function autoGeneratePadelMatches({
               categoryId: resolvedCategoryId ?? null,
               pairingAId: byePairingId,
               pairingBId: null,
-              status: "DONE",
+              status: "OFFICIAL",
               roundType: "GROUPS",
               roundLabel: `${roundLabelPrefix} ${roundIdx + 1}`,
               groupLabel,

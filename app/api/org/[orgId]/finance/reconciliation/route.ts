@@ -5,7 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
+import { EventTemplateType, OrganizationModule, Prisma, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type Aggregate = {
@@ -26,6 +26,24 @@ async function _GET(req: NextRequest) {
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
+
+    const url = new URL(req.url);
+    const templateTypeParam = url.searchParams.get("templateType");
+    const excludeTemplateTypeParam = url.searchParams.get("excludeTemplateType");
+    const parseTemplateType = (raw: string | null) => {
+      if (!raw) return null;
+      const normalized = raw.trim().toUpperCase();
+      return (Object.values(EventTemplateType) as string[]).includes(normalized)
+        ? (normalized as EventTemplateType)
+        : null;
+    };
+    const templateType = parseTemplateType(templateTypeParam);
+    const excludeTemplateType = parseTemplateType(excludeTemplateTypeParam);
+    const eventTemplateFilter: Prisma.EventWhereInput = templateType
+      ? { templateType }
+      : excludeTemplateType
+        ? { OR: [{ templateType: null }, { templateType: { not: excludeTemplateType } }] }
+        : {};
 
     const organizationId = resolveOrganizationIdFromRequest(req);
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
@@ -49,7 +67,10 @@ async function _GET(req: NextRequest) {
     }
 
     const events = await prisma.event.findMany({
-      where: { organizationId: organization.id },
+      where: {
+        organizationId: organization.id,
+        ...eventTemplateFilter,
+      },
       select: { id: true, title: true, startsAt: true, status: true, payoutMode: true },
       orderBy: { startsAt: "asc" },
     });

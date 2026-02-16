@@ -169,6 +169,22 @@ export type PadelHistoryRow = {
   bracketSnapshot?: Record<string, unknown> | null;
 };
 
+export type PadelMyRegistrationDetail = {
+  id: number;
+  event: {
+    id: number;
+    slug: string | null;
+    title: string;
+    startsAt: string | null;
+  } | null;
+  isCaptain: boolean;
+  partnerUserId: string | null;
+  partnerGuestName: string | null;
+  badge: string;
+  paymentStatusLabel: string;
+  nextAction: "CONFIRM_GUARANTEE" | "PAY_PARTNER" | "NONE";
+};
+
 const parseItems = <T>(payload: unknown, key: string): T[] => {
   if (!payload || typeof payload !== "object") return [];
   const raw = (payload as Record<string, unknown>)[key];
@@ -347,4 +363,18 @@ export const fetchPadelHistory = async (): Promise<{ titles: PadelHistoryRow[]; 
     titles: parseItems<PadelHistoryRow>(unwrapped, "titles"),
     history: parseItems<PadelHistoryRow>(unwrapped, "history"),
   };
+};
+
+export const fetchPadelMyRegistrationDetail = async (
+  entryId: number,
+): Promise<PadelMyRegistrationDetail> => {
+  if (!Number.isFinite(entryId) || entryId <= 0) {
+    throw new ApiError(400, "Inscrição inválida.");
+  }
+  const response = await api.request<unknown>(`/api/me/inscricoes/${entryId}`);
+  const unwrapped = unwrapApiResponse<{ entry?: PadelMyRegistrationDetail }>(response);
+  if (!unwrapped?.entry) {
+    throw new ApiError(404, "Inscrição não encontrada.");
+  }
+  return unwrapped.entry;
 };

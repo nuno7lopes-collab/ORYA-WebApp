@@ -70,6 +70,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS } from "@/domain/bookings/splitGarantido";
 
 const MAX_ATTEMPTS = Number(process.env.OPERATIONS_MAX_ATTEMPTS || "5");
 const BATCH_MIN_SIZE = Number(process.env.OPERATIONS_BATCH_MIN_SIZE || "10");
@@ -94,7 +95,6 @@ const PRIORITY_TYPES = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
-const BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS = 3;
 const AGENDA_ARBITRATION_COMP_MAX_ATTEMPTS = 3;
 
 function shouldSkipOperationsTransaction() {
@@ -251,12 +251,11 @@ function computeBackoffMs(backlogCount: number, oldestAgeMs: number | null) {
   return 1000;
 }
 
-function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
-  const guest = normalizeEmail(params.guestEmail);
-  if (guest) return `email:${guest}`;
-  return "unknown";
+function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
+  if (!params.ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${params.ownerIdentityId}`;
 }
 
 function parsePositiveInt(value: unknown) {
@@ -1762,6 +1761,9 @@ async function processUpsertLedger(op: OperationRecord) {
     const identity = await ensureEmailIdentity({ email: guestEmail });
     resolvedOwnerIdentityId = identity.id;
   }
+  if (!resolvedOwnerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
   const subtotalCents = Number(payload.subtotalCents ?? 0);
   const discountCents = Number(payload.discountCents ?? 0);
   const platformFeeCents = Number(payload.platformFeeCents ?? 0);
@@ -1783,11 +1785,9 @@ async function processUpsertLedger(op: OperationRecord) {
 
   const ticketTypeMap = new Map(event.ticketTypes.map((t) => [t.id, t]));
 
-  const entitlementOwnerUserId = resolvedOwnerIdentityId ? null : userId;
+  const entitlementOwnerUserId = null;
   const ownerKey = buildOwnerKey({
-    ownerUserId: entitlementOwnerUserId,
     ownerIdentityId: resolvedOwnerIdentityId,
-    guestEmail,
   });
   const totalSubtotal = lines.reduce(
     (sum, line) => sum + Math.max(0, Number(line.unitPriceCents ?? 0)) * Math.max(1, Number(line.quantity ?? 0)),

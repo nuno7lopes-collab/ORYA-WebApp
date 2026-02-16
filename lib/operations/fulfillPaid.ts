@@ -14,12 +14,11 @@ import { logError } from "@/lib/observability/logger";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 
-function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
-  if (params.ownerUserId) return `user:${params.ownerUserId}`;
-  const guest = normalizeEmail(params.guestEmail);
-  if (guest) return `email:${guest}`;
-  return "unknown";
+function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
+  if (!params.ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${params.ownerIdentityId}`;
 }
 
 type BreakdownLine = {
@@ -102,6 +101,9 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
   } else if (!ownerIdentityId && ownerEmail) {
     const identity = await ensureEmailIdentity({ email: ownerEmail });
     ownerIdentityId = identity.id;
+  }
+  if (!ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
   }
   const userId = ownerUserId;
   const eventId =
@@ -233,8 +235,8 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
       const tt = ticketTypeMap.get(line.ticketTypeId);
       if (!tt) continue;
       const qty = Math.max(1, Number(line.quantity ?? 0));
-      const ownerKey = buildOwnerKey({ ownerUserId: userId, ownerIdentityId, guestEmail: ownerEmail });
-      const entitlementOwnerUserId = ownerIdentityId ? null : userId ?? null;
+      const ownerKey = buildOwnerKey({ ownerIdentityId });
+      const entitlementOwnerUserId = null;
       const lineNetCents = line.lineNetCents ?? line.lineTotalCents ?? line.unitPriceCents * qty;
       const pricePerTicketCents = Math.round(lineNetCents / Math.max(1, qty));
       const totalPlatformFeeCents = line.platformFeeCents ?? 0;

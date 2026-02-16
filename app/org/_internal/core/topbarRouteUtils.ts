@@ -4,6 +4,7 @@ export type OrgToolKey =
   | "bookings"
   | "calendar"
   | "check-in"
+  | "policies"
   | "finance"
   | "analytics"
   | "crm"
@@ -49,6 +50,7 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   if (rest.startsWith("/bookings")) return "bookings";
   if (rest.startsWith("/calendar")) return "calendar";
   if (rest.startsWith("/check-in")) return "check-in";
+  if (rest.startsWith("/policies")) return "policies";
   if (rest.startsWith("/finance")) return "finance";
   if (rest.startsWith("/analytics")) return "analytics";
   if (rest.startsWith("/crm")) return "crm";

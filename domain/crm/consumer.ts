@@ -529,7 +529,7 @@ async function computePadelNoShows(pairingIds: number[]) {
   if (!pairingIds.length) return 0;
   const walkovers = await prisma.eventMatchSlot.findMany({
     where: {
-      status: "DONE",
+      status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
       OR: [{ pairingAId: { in: pairingIds } }, { pairingBId: { in: pairingIds } }],
     },
     select: { pairingAId: true, pairingBId: true, score: true },

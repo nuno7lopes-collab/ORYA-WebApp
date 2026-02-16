@@ -2,7 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { OrganizationMemberRole, OrganizationModule, padel_match_status } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma, padel_match_status } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -17,6 +17,8 @@ import {
 } from "@/domain/padel/incidentGovernance";
 import { reconcilePadelDisputeAntiFraud } from "@/domain/padel/ratingAntiFraud";
 import { createNotification, shouldNotify } from "@/lib/notifications";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
+import { buildIdempotencyScope, readIdempotencyReplay, writeIdempotencyRecord } from "@/domain/padel/resultWorkflow";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
@@ -26,6 +28,20 @@ const asScoreObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const normalizeReason = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+const resolveClientRequestId = (req: NextRequest, body: Record<string, unknown> | null) => {
+  const fromBody = typeof body?.clientRequestId === "string" ? body.clientRequestId.trim() : "";
+  if (fromBody) return fromBody;
+  const fromHeader = req.headers.get("x-idempotency-key")?.trim() ?? "";
+  if (fromHeader) return fromHeader;
+  return null;
+};
+
+const resolveOfficialStatusFromScore = (score: Record<string, unknown>) => {
+  const resultType = typeof score.resultType === "string" ? score.resultType.trim().toUpperCase() : null;
+  if (resultType === "WALKOVER" || score.walkover === true) return padel_match_status.WALKOVER;
+  if (resultType === "RETIREMENT" || resultType === "INJURY") return padel_match_status.RETIRED;
+  return padel_match_status.OFFICIAL;
+};
 
 const buildRuleSnapshot = (config: { ruleSetId: number | null; ruleSetVersionId: number | null } | null) => ({
   source:
@@ -66,6 +82,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!reason || reason.length < 5) {
     return jsonWrap({ ok: false, error: "INVALID_REASON" }, { status: 400 });
   }
+  const clientRequestId = resolveClientRequestId(req, body);
+  if (!clientRequestId) {
+    return jsonWrap({ ok: false, error: "MISSING_CLIENT_REQUEST_ID" }, { status: 400 });
+  }
   if (body?.confirmationSource === undefined || body?.confirmationSource === null) {
     return jsonWrap({ ok: false, error: "MISSING_CONFIRMATION_SOURCE" }, { status: 400 });
   }
@@ -92,6 +112,30 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
   const organizationId = match.event.organizationId;
+  const scopeKey = buildIdempotencyScope({
+    tournamentId: match.event.id,
+    matchId: match.id,
+    action: "dispute_result",
+    actorId: user.id,
+    clientRequestId,
+  });
+  const currentScore = asScoreObject(match.score);
+  const idempotencyReplay = readIdempotencyReplay({ score: currentScore, scopeKey });
+  if (idempotencyReplay) {
+    return jsonWrap(
+      {
+        ok: true,
+        idempotentReplay: true,
+        match: {
+          id: match.id,
+          eventId: match.event.id,
+          status: match.status,
+          score: currentScore,
+        },
+      },
+      { status: 200 },
+    );
+  }
 
   const participant = isParticipant(match, user.id);
   if (!participant) {
@@ -111,12 +155,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
 
-  if (match.status !== padel_match_status.DONE) {
+  if (!isPadelOfficialStatus(match.status)) {
     return jsonWrap({ ok: false, error: "MATCH_NOT_DONE" }, { status: 409 });
   }
 
-  const score = asScoreObject(match.score);
-  if (score.disputeStatus === "OPEN") {
+  if (currentScore.disputeStatus === "OPEN") {
     return jsonWrap({ ok: false, error: "DISPUTE_ALREADY_OPEN" }, { status: 409 });
   }
   const config = await prisma.padelTournamentConfig.findUnique({
@@ -124,12 +167,31 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     select: { ruleSetId: true, ruleSetVersionId: true },
   });
   const ruleSnapshot =
-    score.ruleSnapshot && typeof score.ruleSnapshot === "object"
-      ? score.ruleSnapshot
+    currentScore.ruleSnapshot && typeof currentScore.ruleSnapshot === "object"
+      ? currentScore.ruleSnapshot
       : buildRuleSnapshot(config ? { ruleSetId: config.ruleSetId ?? null, ruleSetVersionId: config.ruleSetVersionId ?? null } : null);
 
   const nowIso = new Date().toISOString();
   const disputeOpenedSource = parsedOpenSource ?? (participant ? "WEB_PUBLIC" : "WEB_ORGANIZATION");
+  const nextScore = writeIdempotencyRecord({
+    score: {
+      ...currentScore,
+      ruleSnapshot,
+      disputeStatus: "OPEN",
+      disputeReason: reason,
+      disputedAt: nowIso,
+      disputedBy: user.id,
+      disputeOpenedSource,
+      disputeResolvedAt: null,
+      disputeResolvedBy: null,
+      disputeResolutionNote: null,
+    },
+    scopeKey,
+    action: "dispute_result",
+    actorId: user.id,
+    status: padel_match_status.DISPUTED,
+  });
+
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.event.id,
@@ -138,18 +200,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     beforeStatus: match.status ?? null,
     eventType: SYSTEM_MATCH_EVENT,
     data: {
-      score: {
-        ...score,
-        ruleSnapshot,
-        disputeStatus: "OPEN",
-        disputeReason: reason,
-        disputedAt: nowIso,
-        disputedBy: user.id,
-        disputeOpenedSource,
-        disputeResolvedAt: null,
-        disputeResolvedBy: null,
-        disputeResolutionNote: null,
-      },
+      status: padel_match_status.DISPUTED,
+      score: nextScore as Prisma.InputJsonValue,
     },
   });
 
@@ -281,6 +333,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   }
 
   const nowIso = new Date().toISOString();
+  const resolvedStatus = resolveOfficialStatusFromScore(score);
   const { match: updated } = await updatePadelMatch({
     matchId: match.id,
     eventId: match.event.id,
@@ -289,6 +342,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     beforeStatus: match.status ?? null,
     eventType: SYSTEM_MATCH_EVENT,
     data: {
+      status: resolvedStatus,
       score: {
         ...score,
         ruleSnapshot,

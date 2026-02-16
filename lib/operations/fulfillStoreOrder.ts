@@ -17,13 +17,11 @@ function parseId(value: unknown) {
 
 const DEFAULT_TIMEZONE = "Europe/Lisbon";
 
-function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: string | null; guestEmail?: string | null }) {
-  const { ownerUserId, ownerIdentityId, guestEmail } = params;
-  if (ownerIdentityId) return `identity:${ownerIdentityId}`;
-  if (ownerUserId) return `user:${ownerUserId}`;
-  const normalized = normalizeEmail(guestEmail);
-  if (normalized) return `email:${normalized}`;
-  return "unknown";
+function buildOwnerKey(params: { ownerIdentityId?: string | null }) {
+  if (!params.ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${params.ownerIdentityId}`;
 }
 
 export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
@@ -64,8 +62,11 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
     const identity = await ensureEmailIdentity({ email: ownerEmail });
     ownerIdentityId = identity.id;
   }
-  const entitlementOwnerUserId = ownerIdentityId ? null : ownerUserId;
-  const ownerKey = buildOwnerKey({ ownerUserId: entitlementOwnerUserId, ownerIdentityId, guestEmail: ownerEmail });
+  if (!ownerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  const entitlementOwnerUserId = null;
+  const ownerKey = buildOwnerKey({ ownerIdentityId });
   const snapshotStartAt = order.createdAt ?? new Date();
   let paymentApplied = false;
 

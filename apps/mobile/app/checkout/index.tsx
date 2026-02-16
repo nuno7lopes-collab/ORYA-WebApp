@@ -615,11 +615,11 @@ export default function CheckoutScreen() {
       return {
         tone: "success" as const,
         title: "Reserva confirmada",
-        message: "A tua reserva foi confirmada. Encontras os detalhes na carteira.",
+        message: "A tua reserva foi confirmada. Encontras os detalhes em Reservas.",
         actionLabel: "Ver reservas",
         action: () => {
           clearDraft();
-          router.replace("/tickets");
+          router.replace("/reservas");
         },
       };
     }

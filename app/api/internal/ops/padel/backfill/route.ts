@@ -93,7 +93,7 @@ async function _POST(req: NextRequest) {
       prisma.eventMatchSlot.count({
         where: {
           eventId: event.id,
-          status: "DONE",
+          status: { in: ["OFFICIAL", "WALKOVER", "RETIRED"] },
         },
       }),
     ]);

@@ -8,6 +8,7 @@ import {
   fetchPadelMyMatches,
   fetchPadelDiscover,
   fetchPadelRankings,
+  fetchPadelMyRegistrationDetail,
 } from "./api";
 
 export const usePadelStandings = (
@@ -103,3 +104,11 @@ export const usePadelRankings = (
     staleTime: 60_000,
   });
 };
+
+export const usePadelMyRegistrationDetail = (entryId: number | null, enabled = true) =>
+  useQuery({
+    queryKey: ["padel-me-registration", entryId],
+    queryFn: () => fetchPadelMyRegistrationDetail(entryId as number),
+    enabled: enabled && Number.isFinite(entryId) && (entryId ?? 0) > 0,
+    staleTime: 30_000,
+  });

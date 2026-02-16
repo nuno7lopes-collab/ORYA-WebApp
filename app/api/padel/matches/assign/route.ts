@@ -110,7 +110,7 @@ async function _POST(req: NextRequest) {
     where: {
       eventId: match.eventId,
       roundType: "KNOCKOUT",
-      status: { in: [padel_match_status.IN_PROGRESS, padel_match_status.DONE] },
+      status: { in: [padel_match_status.IN_PROGRESS, padel_match_status.OFFICIAL, padel_match_status.WALKOVER, padel_match_status.RETIRED] },
       ...matchCategoryFilter,
     },
     select: { id: true },

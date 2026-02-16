@@ -10,6 +10,7 @@ import {
 } from "@prisma/client";
 import { requireLatestPolicyVersionForEvent } from "@/lib/checkin/accessPolicy";
 import { formatEventLocationLabel } from "@/lib/location/eventLocation";
+import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -30,8 +31,10 @@ export type ApplyPaymentStatusResult = {
 };
 
 function buildOwnerKey(identityId?: string | null) {
-  if (identityId) return `identity:${identityId}`;
-  return "unknown";
+  if (!identityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
+  return `identity:${identityId}`;
 }
 
 function parseIntId(value: string | number | null | undefined): number | null {
@@ -151,10 +154,13 @@ async function issueTicketOrderEntitlements(
   );
 
   const buyerIdentityId = payment.customerIdentityId ?? order.buyerIdentityId ?? null;
+  if (!buyerIdentityId) {
+    throw new Error("OWNER_IDENTITY_REQUIRED");
+  }
   const buyerUserId = await resolveUserIdFromIdentity(buyerIdentityId, tx);
 
   const policyVersionApplied = await requireLatestPolicyVersionForEvent(event.id, tx);
-  const ownerKey = buildOwnerKey(payment.customerIdentityId ?? order.buyerIdentityId ?? null);
+  const ownerKey = buildOwnerKey(buyerIdentityId);
   const snapshot = payment.pricingSnapshotJson as { gross?: number; platformFee?: number; currency?: string } | null;
   const grossTotal = snapshot?.gross ?? 0;
   const platformFeeTotal = snapshot?.platformFee ?? 0;
@@ -342,30 +348,29 @@ async function issuePadelRegistrationEntitlements(
     return email && email.includes("@") ? email : null;
   };
 
-  const buildPadelOwnerKey = (params: {
-    ownerUserId?: string | null;
-    ownerIdentityId?: string | null;
-    email?: string | null;
-  }) => {
-    if (params.ownerIdentityId) return `identity:${params.ownerIdentityId}`;
-    if (params.ownerUserId) return `user:${params.ownerUserId}`;
-    if (params.email) return `email:${params.email}`;
-    return "unknown";
-  };
-
   for (const saleLine of saleLines) {
     const line = saleLine.padelRegistrationLine;
     if (!line) continue;
     const slot = line.pairingSlotId ? slotMap.get(line.pairingSlotId) : null;
     const entitlementOwnerUserIdRaw = slot?.profileId ?? slot?.invitedUserId ?? null;
     const entitlementEmail = normalizeEmail(slot?.invitedContact ?? null);
-    const resolvedIdentityId = payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
-    const entitlementOwnerUserId = resolvedIdentityId ? null : entitlementOwnerUserIdRaw;
-    const ownerKey = buildPadelOwnerKey({
-      ownerUserId: entitlementOwnerUserId,
-      ownerIdentityId: resolvedIdentityId,
-      email: entitlementEmail,
-    });
+    let resolvedIdentityId = payment.customerIdentityId ?? registration.buyerIdentityId ?? null;
+    if (!resolvedIdentityId && entitlementOwnerUserIdRaw) {
+      const identity = await resolveIdentityForUser({
+        userId: entitlementOwnerUserIdRaw,
+        email: entitlementEmail,
+        tx,
+      });
+      resolvedIdentityId = identity.id;
+    } else if (!resolvedIdentityId && entitlementEmail) {
+      const identity = await ensureEmailIdentity({ email: entitlementEmail, tx });
+      resolvedIdentityId = identity.id;
+    }
+    if (!resolvedIdentityId) {
+      throw new Error("OWNER_IDENTITY_REQUIRED");
+    }
+    const entitlementOwnerUserId = null;
+    const ownerKey = buildOwnerKey(resolvedIdentityId);
 
     for (let i = 0; i < line.qty; i += 1) {
       await tx.entitlement.upsert({

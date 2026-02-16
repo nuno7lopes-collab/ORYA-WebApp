@@ -1,4 +1,5 @@
 import { resolvePadelMatchStats } from "@/domain/padel/score";
+import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 export type UserPadelMatchInput = {
   pairingSide: "A" | "B" | null;
@@ -21,8 +22,7 @@ export function computeUserPadelStats(matches: UserPadelMatchInput[]): UserPadel
 
   matches.forEach((match) => {
     if (!match || !match.pairingSide) return;
-    const status = typeof match.status === "string" ? match.status.toUpperCase() : "";
-    if (status && status !== "DONE") return;
+    if (match.status && !isPadelOfficialStatus(match.status)) return;
     const stats = resolvePadelMatchStats(match.scoreSets, match.score);
     if (!stats || !stats.winner) return;
     matchesPlayed += 1;

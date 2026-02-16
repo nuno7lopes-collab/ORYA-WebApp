@@ -1043,6 +1043,7 @@ export function useChatPreviewData() {
             id: `org_${orgId}`,
           },
           client_platform: "web",
+          runtime_platform: "web",
         }),
       );
     };
@@ -1065,6 +1066,24 @@ export function useChatPreviewData() {
           }
           return;
         }
+        if (parsed.type === "handshake:error") {
+          const code = typeof parsed.errorCode === "string" ? parsed.errorCode.trim().toUpperCase() : "";
+          const detail = typeof parsed.reason === "string" ? parsed.reason.trim().toUpperCase() : "";
+          if (code === "RATE_LIMITED") {
+            setSendError("Muitas tentativas de ligação ao chat. Tenta novamente em 1 minuto.");
+          } else if (code === "UPGRADE_REQUIRED") {
+            setSendError(
+              detail === "APP_VERSION_INVALID"
+                ? "Versão da app inválida para chat."
+                : "A versão da app já não é suportada para chat.",
+            );
+          } else if (code === "MOBILE_APP_REQUIRED") {
+            setSendError("Este chat requer cliente mobile suportado.");
+          } else if (code === "FORBIDDEN" || code === "UNAUTHORIZED") {
+            setSendError("Sessão sem autorização para abrir o chat.");
+          }
+          return;
+        }
         if (!handshakeReady) return;
         handleChatEventRef.current?.(parsed);
       } catch {
@@ -1073,7 +1092,7 @@ export function useChatPreviewData() {
     };
 
     ws.onclose = (event) => {
-      const reason = typeof event.reason === "string" ? event.reason : "";
+      const reason = typeof event.reason === "string" ? event.reason.trim().toUpperCase() : "";
       wsConnectingRef.current = false;
       setConnectionState("reconnecting");
       stopWsPing();
@@ -1147,19 +1166,6 @@ export function useChatPreviewData() {
         return;
       }
 
-      if (attachments.length > 0) {
-        const message = "ATTACHMENTS_DISABLED";
-        setSendError(message);
-        setAttachmentsError(message);
-        setPendingByConversation((prev) => ({
-          ...prev,
-          [conversationId]: (prev[conversationId] ?? []).map((entry) =>
-            entry.id === pendingId ? { ...entry, status: "failed", error: message } : entry,
-          ),
-        }));
-        return;
-      }
-
       try {
         const res = await fetcher<{ ok: boolean; message: Message }>("/api/messages/messages", {
           method: "POST",
@@ -1167,6 +1173,17 @@ export function useChatPreviewData() {
           body: JSON.stringify({
             conversationId,
             body,
+            attachments: attachments.map((attachment) => ({
+              type: attachment.kind === "image" ? "IMAGE" : "FILE",
+              url: attachment.url ?? "",
+              mime: attachment.file?.type ?? "application/octet-stream",
+              size: attachment.file?.size ?? 1,
+              metadata: {
+                name: attachment.title,
+                filename: attachment.file?.name ?? attachment.title ?? null,
+                source: attachment.kind,
+              },
+            })),
             clientMessageId,
             replyToMessageId: replyTo?.id ?? undefined,
           }),

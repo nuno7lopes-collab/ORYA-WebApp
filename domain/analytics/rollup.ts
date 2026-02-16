@@ -98,7 +98,11 @@ export async function computeAnalyticsRollups(params: {
     JOIN app_v3.payments p ON p.id = le.payment_id
     WHERE (le.created_at AT TIME ZONE ${LISBON_TZ})::date BETWEEN ${fromDate}::date AND ${toDate}::date
       AND (${organizationId ?? null}::int IS NULL OR p.organization_id = ${organizationId ?? null}::int)
-    GROUP BY org_id, bucket_date, currency, source_type
+    GROUP BY
+      p.organization_id,
+      (le.created_at AT TIME ZONE ${LISBON_TZ})::date,
+      le.currency,
+      le.source_type
   `;
 
   const rollups = buildRollupsFromAggregates(rows);
