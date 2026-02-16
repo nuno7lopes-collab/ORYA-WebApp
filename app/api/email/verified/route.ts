@@ -16,7 +16,10 @@ async function _POST() {
   if (!email) {
     return jsonWrap({ ok: false, error: "EMAIL_MISSING" }, { status: 400 });
   }
-  await claimIdentity(email, data.user.id, { requireVerified: true });
+  await claimIdentity(email, data.user.id, {
+    requireVerified: true,
+    mergedBy: data.user.id,
+  });
   await linkPendingWorkforceInvitesToUser({
     userId: data.user.id,
     email,

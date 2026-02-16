@@ -20,7 +20,7 @@ export function resolvePadelCompetitionState(params: {
   if (lifecycle && Object.values(PadelTournamentLifecycleStatus).includes(lifecycle)) {
     if (lifecycle === "CANCELLED") return "CANCELLED";
     if (lifecycle === "DRAFT") return "HIDDEN";
-    if (lifecycle === "LIVE" || lifecycle === "COMPLETED") return "PUBLIC";
+    if (lifecycle === "LOCKED" || lifecycle === "COMPLETED") return "PUBLIC";
     return "DEVELOPMENT";
   }
 

@@ -7,7 +7,6 @@ export const CHAT_ORG_ROLES = [
   "CO_OWNER",
   "ADMIN",
   "STAFF",
-  "TRAINER",
 ] as const;
 
 export type ChatAccessCutoffs = {

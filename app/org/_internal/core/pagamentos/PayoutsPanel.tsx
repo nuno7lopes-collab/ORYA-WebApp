@@ -98,14 +98,14 @@ export default function PayoutsPanel() {
         const data = (await res.json().catch(() => null)) as PayoutsResponse | null;
         if (requestId !== requestIdRef.current) return;
         if (!res.ok || !data || data.ok === false) {
-          throw new Error(data && "error" in data ? data.error : "Erro ao carregar payouts.");
+          throw new Error(data && "error" in data ? data.error : "Erro ao carregar transferências.");
         }
         const nextItems = data.items ?? [];
         setItems((prev) => (mode === "reset" ? nextItems : [...prev, ...nextItems]));
         setNextCursor(data.pagination?.nextCursor ?? null);
       } catch (err) {
         if (requestId !== requestIdRef.current) return;
-        setError(err instanceof Error ? err.message : "Erro ao carregar payouts.");
+        setError(err instanceof Error ? err.message : "Erro ao carregar transferências.");
       } finally {
         if (requestId === requestIdRef.current) {
           setLoading(false);
@@ -128,7 +128,7 @@ export default function PayoutsPanel() {
   const downloadCsv = () => {
     if (!items.length) return;
     const rows = [
-      ["ID", "Status", "Fonte", "Valor", "Moeda", "Hold até", "Motivo", "Criado em"],
+      ["ID", "Estado", "Fonte", "Valor", "Moeda", "Em espera até", "Motivo", "Criado em"],
       ...items.map((item) => [
         item.id,
         item.status,
@@ -145,18 +145,14 @@ export default function PayoutsPanel() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "payouts.csv";
+    link.download = "transferencias.csv";
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Payouts</h3>
-          <p className="text-[12px] text-white/65">Pendentes, bloqueados e libertados.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -194,7 +190,7 @@ export default function PayoutsPanel() {
         <input
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Pesquisar por payment intent, motivo ou source..."
+          placeholder="Pesquisar por intenção de pagamento, motivo ou origem..."
           className="flex-1 min-w-[220px] rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white placeholder:text-white/40"
         />
         <button
@@ -207,7 +203,7 @@ export default function PayoutsPanel() {
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-        Total listado: <span className="text-white">{formatMoney(totalAmount, items[0]?.currency)}</span>
+        Total apresentado: <span className="text-white">{formatMoney(totalAmount, items[0]?.currency)}</span>
       </div>
 
       {error && (
@@ -218,13 +214,13 @@ export default function PayoutsPanel() {
 
       {loading && items.length === 0 && (
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
-          A carregar payouts...
+          A carregar transferências...
         </div>
       )}
 
       {!loading && items.length === 0 && !error && (
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-[12px] text-white/70">
-          Sem payouts para o filtro atual.
+          Sem transferências para o filtro atual.
         </div>
       )}
 
@@ -256,9 +252,9 @@ export default function PayoutsPanel() {
                   <span className={cn("rounded-full border px-2 py-1 text-[10px]", statusMeta.tone)}>
                     {statusMeta.label}
                   </span>
-                  {item.holdUntil && <span className="text-[10px]">Hold até {formatDateTime(item.holdUntil)}</span>}
+                  {item.holdUntil && <span className="text-[10px]">Em espera até {formatDateTime(item.holdUntil)}</span>}
                   {item.nextAttemptAt && <span className="text-[10px]">Próx. tentativa {formatDateTime(item.nextAttemptAt)}</span>}
-                  {item.releasedAt && <span className="text-[10px]">Liberado {formatDateTime(item.releasedAt)}</span>}
+                  {item.releasedAt && <span className="text-[10px]">Libertado {formatDateTime(item.releasedAt)}</span>}
                 </div>
 
                 <div className="flex flex-col items-end gap-1 text-right">

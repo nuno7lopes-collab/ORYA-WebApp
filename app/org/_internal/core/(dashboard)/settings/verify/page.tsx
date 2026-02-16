@@ -3,18 +3,19 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { buildOrgHref, parseOrgIdFromPathnameStrict, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type State = "idle" | "loading" | "ok" | "error";
 
 export default function VerifyOfficialEmailPage() {
   const search = useSearchParams();
+  const pathname = usePathname();
   const router = useRouter();
   const token = search?.get("token");
-  const organizationId = parseOrganizationId(search?.get("organizationId"));
+  const organizationId = parseOrgIdFromPathnameStrict(pathname) ?? parseOrganizationId(search?.get("organizationId"));
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -35,14 +36,18 @@ export default function VerifyOfficialEmailPage() {
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
           setState("error");
-          setMessage(json?.error || "Não foi possível confirmar o email.");
+          setMessage(json?.message || json?.error || json?.errorCode || "Não foi possível confirmar o email.");
           return;
         }
         setState("ok");
         setMessage("Email oficial confirmado.");
         setTimeout(() => {
           router.refresh();
-          router.push(appendOrganizationIdToHref("/org", organizationId));
+          if (organizationId) {
+            router.push(buildOrgHref(organizationId, "/overview"));
+          } else {
+            router.push("/org-hub/organizations");
+          }
         }, 1200);
       } catch (err) {
         setState("error");
@@ -50,7 +55,7 @@ export default function VerifyOfficialEmailPage() {
       }
     };
     void confirm();
-  }, [token, router]);
+  }, [organizationId, token, router]);
 
   return (
     <div className={cn("w-full py-8 text-white", ORG_SHELL_GUTTER)}>
@@ -64,7 +69,9 @@ export default function VerifyOfficialEmailPage() {
         {state === "error" && <p className="text-amber-300">{message || "Token inválido ou expirado."}</p>}
         <div className="flex justify-center">
           <button
-            onClick={() => router.push(appendOrganizationIdToHref("/org/settings", organizationId))}
+            onClick={() =>
+              router.push(organizationId ? buildOrgHref(organizationId, "/settings") : "/org-hub/organizations")
+            }
             className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:border-white/35"
           >
             Voltar a definições

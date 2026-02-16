@@ -4,7 +4,13 @@ import { cookies } from "next/headers";
 import { isSameOrigin } from "@/lib/auth/requestValidation";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-// Utilitário para limpar cookies locais (incluindo os sb- do Supabase) quando ficam corrompidos.
+const AUTH_COOKIE_EXACT_ALLOWLIST = new Set(["orya_admin_mfa"]);
+
+function isAuthCookie(name: string) {
+  return name.startsWith("sb-") || AUTH_COOKIE_EXACT_ALLOWLIST.has(name);
+}
+
+// Limpa apenas cookies de autenticação (allowlist). Nunca remove cookies de contexto/UX.
 async function _POST(req: NextRequest) {
   try {
     if (!isSameOrigin(req)) {
@@ -16,8 +22,9 @@ async function _POST(req: NextRequest) {
 
     const store = await cookies();
     const all = store.getAll();
+    const authCookies = all.filter((c) => isAuthCookie(c.name));
 
-    for (const c of all) {
+    for (const c of authCookies) {
       try {
         store.set({
           name: c.name,
@@ -30,7 +37,11 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    return jsonWrap({ ok: true, cleared: all.map((c) => c.name) });
+    return jsonWrap({
+      ok: true,
+      cleared: authCookies.map((c) => c.name),
+      skipped: all.filter((c) => !isAuthCookie(c.name)).map((c) => c.name),
+    });
   } catch (err) {
     console.error("[api/auth/clear] erro inesperado:", err);
     return jsonWrap(

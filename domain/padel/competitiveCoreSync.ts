@@ -51,7 +51,7 @@ function resolvePhase(format: padel_format | null, roundType: string | null): Pa
 }
 
 function resolveRoundState(statuses: padel_match_status[]): PadelRoundState {
-  if (statuses.some((status) => status === "IN_PROGRESS")) return PadelRoundState.LIVE;
+  if (statuses.some((status) => status === "IN_PROGRESS")) return PadelRoundState.IN_PROGRESS;
   if (statuses.length > 0 && statuses.every((status) => status === "DONE" || status === "CANCELLED")) {
     return PadelRoundState.CLOSED;
   }
@@ -60,7 +60,7 @@ function resolveRoundState(statuses: padel_match_status[]): PadelRoundState {
 
 function resolveTimerState(phase: PadelRoundPhase, state: PadelRoundState) {
   if (phase !== PadelRoundPhase.NON_STOP) return PadelRoundTimerState.IDLE;
-  return state === PadelRoundState.LIVE ? PadelRoundTimerState.RUNNING : PadelRoundTimerState.STOPPED;
+  return state === PadelRoundState.IN_PROGRESS ? PadelRoundTimerState.RUNNING : PadelRoundTimerState.STOPPED;
 }
 
 function buildRoundKey(params: {

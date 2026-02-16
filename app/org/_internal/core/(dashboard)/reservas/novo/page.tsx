@@ -73,7 +73,7 @@ export default function NovoServicoPage() {
         throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
       }
 
-      const detailHref = appendOrganizationIdToHref(`/org/reservas/${json.service.id}`, organizationId);
+      const detailHref = appendOrganizationIdToHref(`/org/bookings/${json.service.id}`, organizationId);
       router.push(detailHref);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar serviço.");
@@ -154,7 +154,7 @@ export default function NovoServicoPage() {
           <button
             type="button"
             className={CTA_SECONDARY}
-            onClick={() => router.push(appendOrganizationIdToHref("/org/reservas", organizationId))}
+            onClick={() => router.push(appendOrganizationIdToHref("/org/bookings", organizationId))}
           >
             Cancelar
           </button>

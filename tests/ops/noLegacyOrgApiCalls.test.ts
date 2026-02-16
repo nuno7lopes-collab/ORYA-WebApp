@@ -11,7 +11,6 @@ const ALLOWLIST_PREFIXES = [
 ];
 
 const ALLOWLIST_FILES = new Set([
-  "app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx",
   "app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx",
 ]);
 

@@ -14,6 +14,11 @@ import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { normalizeSplitParticipants, type SplitParticipantInput, type SplitPricingMode, type SplitDynamicMode } from "@/lib/reservas/bookingSplit";
+import {
+  BOOKING_SPLIT_CANONICAL_MODE,
+  computeSplitCaptureBefore,
+  computeSplitRetryUntil,
+} from "@/domain/bookings/splitGarantido";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -21,7 +26,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
 ];
-
 function parseId(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -45,6 +49,12 @@ function parseDynamicMode(value: unknown): SplitDynamicMode | null {
   const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
   if (raw === "PERCENT") return "PERCENT";
   if (raw === "AMOUNT") return "AMOUNT";
+  return null;
+}
+
+function parseSplitMode(value: unknown) {
+  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!raw || raw === BOOKING_SPLIT_CANONICAL_MODE) return BOOKING_SPLIT_CANONICAL_MODE;
   return null;
 }
 
@@ -87,12 +97,19 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         splitPayment: {
           select: {
             id: true,
+            splitMode: true,
             status: true,
             pricingMode: true,
+            railState: true,
             currency: true,
             totalCents: true,
             shareCents: true,
             deadlineAt: true,
+            captureBeforeAt: true,
+            captureBeforeSource: true,
+            retryUntilAt: true,
+            settledAt: true,
+            debtOpenedAt: true,
             createdAt: true,
             updatedAt: true,
             participants: {
@@ -204,6 +221,15 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
 
     const payload = await req.json().catch(() => ({}));
+    const splitMode = parseSplitMode(payload?.splitMode);
+    if (!splitMode) {
+      return fail(
+        ctx,
+        410,
+        "LEGACY_SPLIT_MODE_REMOVED",
+        "Contrato legado removido. Usa `splitMode=SPLIT_GARANTIDO`.",
+      );
+    }
     const pricingMode = parsePricingMode(payload?.pricingMode);
     const dynamicMode = parseDynamicMode(payload?.dynamicMode);
     const rawParticipants = Array.isArray(payload?.participants) ? payload.participants : [];
@@ -287,6 +313,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const fixedShareCents = pricingMode === "FIXED" ? computed[0]?.shareCents ?? null : null;
     const deadlineAt = typeof payload?.deadlineAt === "string" ? new Date(payload.deadlineAt) : null;
     const deadlineResolved = deadlineAt && !Number.isNaN(deadlineAt.getTime()) ? deadlineAt : null;
+    if (!deadlineResolved) {
+      return fail(ctx, 422, "DEADLINE_REQUIRED", "Define um prazo (`deadlineAt`) válido para o split.");
+    }
+    if (deadlineResolved.getTime() <= Date.now()) {
+      return fail(ctx, 422, "DEADLINE_IN_PAST", "O prazo do split tem de estar no futuro.");
+    }
+    const { captureBeforeAt, captureBeforeSource } = computeSplitCaptureBefore({
+      deadlineAt: deadlineResolved,
+      gatewayCaptureBefore: null,
+    });
+    const retryUntilAt = computeSplitRetryUntil({
+      deadlineAt: deadlineResolved,
+      captureBeforeAt,
+    });
 
     const existing = await prisma.bookingSplit.findUnique({
       where: { bookingId },
@@ -301,12 +341,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         ? await tx.bookingSplit.update({
             where: { id: existing.id },
             data: {
+              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
               pricingMode,
               status: "OPEN",
+              railState: "HOLD_CAPTURE",
               currency: booking.currency ?? "EUR",
               totalCents,
               shareCents: fixedShareCents,
               deadlineAt: deadlineResolved ?? undefined,
+              captureBeforeAt,
+              captureBeforeSource,
+              retryUntilAt,
+              settledAt: null,
+              debtOpenedAt: null,
               createdByUserId: profile.id,
             },
             select: { id: true },
@@ -316,15 +363,27 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
               bookingId,
               organizationId: booking.organizationId,
               createdByUserId: profile.id,
+              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
               pricingMode,
               status: "OPEN",
+              railState: "HOLD_CAPTURE",
               currency: booking.currency ?? "EUR",
               totalCents,
               shareCents: fixedShareCents,
               deadlineAt: deadlineResolved ?? undefined,
+              captureBeforeAt,
+              captureBeforeSource,
+              retryUntilAt,
             },
             select: { id: true },
           });
+
+      await tx.bookingSplitDebt.deleteMany({
+        where: { splitId: split.id },
+      });
+      await tx.bookingSplitSettlementSnapshot.deleteMany({
+        where: { splitId: split.id },
+      });
 
       await tx.bookingSplitParticipant.deleteMany({
         where: { splitId: split.id },
@@ -360,6 +419,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return respondOk(ctx, {
       split: {
         id: split.id,
+        splitMode,
         pricingMode,
         totalCents,
         shareCents: fixedShareCents,

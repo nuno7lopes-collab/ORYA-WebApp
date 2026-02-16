@@ -10,12 +10,12 @@ export default function StoreToolSubnav({ orgId, className }: { orgId: number | 
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/store?view=overview") },
-        { id: "catalog", label: "Catalog", href: buildOrgHref(orgId, "/store?view=catalog") },
-        { id: "orders", label: "Orders", href: buildOrgHref(orgId, "/store?view=orders") },
-        { id: "shipping", label: "Shipping", href: buildOrgHref(orgId, "/store?view=shipping") },
+        { id: "overview", label: "Visão geral", href: buildOrgHref(orgId, "/store?view=overview") },
+        { id: "catalog", label: "Catálogo", href: buildOrgHref(orgId, "/store?view=catalog") },
+        { id: "orders", label: "Encomendas", href: buildOrgHref(orgId, "/store?view=orders") },
+        { id: "shipping", label: "Envios", href: buildOrgHref(orgId, "/store?view=shipping") },
         { id: "marketing", label: "Marketing", href: buildOrgHref(orgId, "/store?view=marketing") },
-        { id: "settings", label: "Settings", href: buildOrgHref(orgId, "/store?view=settings") },
+        { id: "settings", label: "Definições", href: buildOrgHref(orgId, "/store?view=settings") },
       ]}
     />
   );

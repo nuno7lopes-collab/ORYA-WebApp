@@ -24,12 +24,14 @@ import {
   CTA_SUCCESS,
 } from "@/app/org/_shared/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl } from "@/lib/eventCover";
-import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getOrganizationRoleFlags } from "@/lib/organizationUiPermissions";
 import { hasModuleAccess, normalizeAccessLevel, resolveMemberModuleAccess } from "@/lib/organizationRbac";
-import { ensurePublicProfileLayout } from "@/lib/publicProfileLayout";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import {
+  NON_HIDEABLE_DASHBOARD_TOOL_IDS,
+  sanitizeDashboardHiddenToolIds,
+} from "@/lib/organizationDashboardTools";
 import type { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { ModuleIcon } from "./moduleIcons";
 
@@ -90,14 +92,9 @@ const SalesAreaChart = dynamic(
 const InvoicesClient = dynamic(() => import("./pagamentos/invoices/invoices-client"), { loading: LoadingPanel });
 const PayoutsPanel = dynamic(() => import("./pagamentos/PayoutsPanel"), { loading: LoadingPanel });
 const RefundsPanel = dynamic(() => import("./pagamentos/RefundsPanel"), { loading: LoadingPanel });
-const ReconciliationPanel = dynamic(() => import("./pagamentos/ReconciliationPanel"), { loading: LoadingPanel });
-const FinanceAlertsPanel = dynamic(() => import("./pagamentos/FinanceAlertsPanel"), { loading: LoadingPanel });
 const PadelHubSection = dynamic(() => import("./(dashboard)/padel/PadelHubSection"), { loading: LoadingPanel });
 const ReservasDashboardPage = dynamic(() => import("./(dashboard)/reservas/page"), { loading: LoadingPanel });
 const InscricoesPage = dynamic(() => import("./(dashboard)/inscricoes/page"), { loading: LoadingPanel });
-const OrganizationPublicProfilePanel = dynamic(() => import("./OrganizationPublicProfilePanel"), {
-  loading: LoadingPanel,
-});
 
 type OverviewResponse = {
   ok: boolean;
@@ -348,6 +345,14 @@ type OrganizationLite = {
   platformFeeFixedCents?: number | null;
   officialEmail?: string | null;
   officialEmailVerifiedAt?: string | null;
+  suspension?: {
+    isSuspended: boolean;
+    suspendedAt?: string | null;
+    reactivationDeadlineAt?: string | null;
+    reactivationWindowOpen?: boolean;
+    remainingWindowDays?: number | null;
+    suspensionTimestampUnknown?: boolean;
+  } | null;
   stripeAccountId?: string | null;
   stripeChargesEnabled?: boolean | null;
   stripePayoutsEnabled?: boolean | null;
@@ -364,12 +369,13 @@ type OrganizationLite = {
   publicWebsite?: string | null;
   publicInstagram?: string | null;
   publicYoutube?: string | null;
+  publicTiktok?: string | null;
+  publicLinkedin?: string | null;
   publicHours?: string | null;
   showAddressPublicly?: boolean | null;
-  publicProfileLayout?: unknown | null;
 };
 
-type ObjectiveTab = "create" | "manage" | "promote" | "analyze" | "profile";
+type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
 const MARKETING_TABS = [
   { key: "overview", label: "Visão geral" },
   { key: "promos", label: "Códigos promocionais" },
@@ -379,17 +385,23 @@ const MARKETING_TABS = [
 type MarketingSectionKey = (typeof MARKETING_TABS)[number]["key"];
 const MARKETING_TAB_KEYS = MARKETING_TABS.map((tab) => tab.key) as MarketingSectionKey[];
 
-type DashboardModuleStatus = "active" | "optional" | "soon" | "locked" | "core";
+type DashboardToolFlow = "Operações" | "Gestão" | "Administração";
 
-type DashboardModuleCard = {
+type DashboardToolCard = {
   id: string;
   moduleKey: string;
   title: string;
   summary: string;
   bullets: string[];
   href?: string;
-  status: DashboardModuleStatus;
-  eyebrow?: string;
+  flow: DashboardToolFlow;
+};
+
+type DashboardToolVisibilityResponse = {
+  ok: boolean;
+  hiddenToolIds?: string[];
+  canEdit?: boolean;
+  error?: string;
 };
 
 const OPERATION_MODULES = ["EVENTOS", "RESERVAS", "TORNEIOS"] as const;
@@ -401,22 +413,10 @@ const OPERATION_LABELS: Record<OperationModule, string> = {
   TORNEIOS: "Padel",
 };
 
-const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA", "CRM"] as const;
-type OptionalModule = (typeof OPTIONAL_MODULES)[number];
 const PADEL_CLUB_SECTION = "padel-club";
 const PADEL_TOURNAMENTS_SECTION = "padel-tournaments";
 const PADEL_MANAGE_SECTIONS = [PADEL_CLUB_SECTION, PADEL_TOURNAMENTS_SECTION] as const;
-const PRIMARY_TOOL_KEYS = new Set<string>([
-  "EVENTOS",
-  "RESERVAS",
-  "TORNEIOS",
-  "CHECKIN",
-  "FINANCEIRO",
-  "ANALYTICS",
-  "STAFF",
-  "PERFIL_PUBLICO",
-  "DEFINICOES",
-]);
+const TOOL_FLOW_ORDER: DashboardToolFlow[] = ["Operações", "Gestão", "Administração"];
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
   EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
   RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
@@ -430,13 +430,12 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
   ANALYTICS: "from-[#22D3EE]/35 via-[#6A7BFF]/30 to-[#A78BFA]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
-  PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
 };
 
-const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze", "profile"];
+const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
 type SalesRange = "7d" | "30d" | "90d" | "365d" | "all";
-type ProfileView = "overview" | "followers" | "requests";
+type FinanceFocusView = "overview" | "payouts" | "refunds";
 
 type EventStatusFilter = "all" | "active" | "draft" | "finished" | "ongoing" | "archived";
 
@@ -448,6 +447,9 @@ const formatDateTime = (date: Date | null, options?: Intl.DateTimeFormatOptions)
 
 const formatDateOnly = (date: Date | null, options?: Intl.DateTimeFormatOptions) =>
   date ? date.toLocaleDateString(DATE_LOCALE, { timeZone: DATE_TIMEZONE, ...options }) : "";
+
+const areStringArraysEqual = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
 
 const mapTabToObjective = (
   tab: string | null | undefined,
@@ -461,6 +463,13 @@ const mapTabToObjective = (
   }
   return fallbackObjective;
 };
+
+function resolveFinanceFocusView(financeParamRaw: string | null | undefined): FinanceFocusView {
+  if (!financeParamRaw) return "overview";
+  if (financeParamRaw === "payouts") return "payouts";
+  if (financeParamRaw === "refunds" || financeParamRaw === "refunds-disputes") return "refunds";
+  return "overview";
+}
 
 type DashboardClientDefaults = {
   defaultObjective?: ObjectiveTab;
@@ -477,6 +486,8 @@ function OrganizacaoPageInner({
   const [stripeCtaError, setStripeCtaError] = useState<string | null>(null);
   const [ctaError, setCtaError] = useState<string | null>(null);
   const [ctaSuccess, setCtaSuccess] = useState<string | null>(null);
+  const [suspensionActionLoading, setSuspensionActionLoading] = useState(false);
+  const [suspensionActionMessage, setSuspensionActionMessage] = useState<string | null>(null);
   const [entityType, setEntityType] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("");
   const [payoutIban, setPayoutIban] = useState<string>("");
@@ -492,7 +503,7 @@ function OrganizacaoPageInner({
   const [eventDialog, setEventDialog] = useState<{ mode: "archive" | "delete" | "unarchive"; ev: EventItem } | null>(null);
   const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
-  const [pendingModuleRemoval, setPendingModuleRemoval] = useState<DashboardModuleCard | null>(null);
+  const [pendingToolVisibilityRemoval, setPendingToolVisibilityRemoval] = useState<DashboardToolCard | null>(null);
   const loadingRetryAttemptRef = useRef(false);
   const dashboardLoadStartedAtRef = useRef<number | null>(null);
   const dashboardLoadSuccessTrackedRef = useRef(false);
@@ -536,16 +547,13 @@ function OrganizacaoPageInner({
 
   const tabParamRaw = searchParams?.get("tab") ?? defaultObjective ?? null;
   const sectionParamRaw = searchParams?.get("section") ?? null;
+  const financeParamRaw = searchParams?.get("finance") ?? null;
   const marketingParamRaw = searchParams?.get("marketing");
-  const profileParamRaw = searchParams?.get("profile") ?? null;
   const activeObjective = mapTabToObjective(tabParamRaw, defaultObjective ?? "create");
+  const financeFocus = resolveFinanceFocusView(financeParamRaw);
   const normalizedSectionParam = sectionParamRaw;
   const normalizedDefaultSection = defaultSection;
   const normalizedSection = normalizedSectionParam ?? normalizedDefaultSection ?? undefined;
-  const profileView: ProfileView =
-    profileParamRaw === "followers" || profileParamRaw === "requests"
-      ? profileParamRaw
-      : "overview";
   const scrollSection = normalizedSectionParam ?? undefined;
   const isPadelManageSection =
     sectionParamRaw === PADEL_CLUB_SECTION || sectionParamRaw === PADEL_TOURNAMENTS_SECTION;
@@ -560,7 +568,7 @@ function OrganizacaoPageInner({
       params.set("padel", normalizedSection === PADEL_TOURNAMENTS_SECTION ? "tournaments" : "clubs");
     }
     params.delete("tab");
-    const basePath = normalizedSection === PADEL_CLUB_SECTION ? "/org/padel/clube" : "/org/padel/torneios";
+    const basePath = normalizedSection === PADEL_CLUB_SECTION ? "/org/padel/clubs" : "/org/padel/tournaments";
     router.replace(`${basePath}?${params.toString()}`);
   }, [activeObjective, normalizedSection, pathname, router, searchParams]);
 
@@ -677,6 +685,11 @@ function OrganizacaoPageInner({
   const isSuspended = organization?.status === "SUSPENDED";
   const isActive = organization?.status === "ACTIVE";
   const isPending = Boolean(organization?.status && !isActive && !isSuspended);
+  const suspension = organization?.suspension ?? null;
+  const reactivationDeadlineDate = suspension?.reactivationDeadlineAt ? new Date(suspension.reactivationDeadlineAt) : null;
+  const reactivationWindowOpen = suspension?.reactivationWindowOpen === true;
+  const remainingReactivationDays =
+    typeof suspension?.remainingWindowDays === "number" ? suspension.remainingWindowDays : null;
   const platformSupportEmail = organizationData?.platformOfficialEmail ?? null;
   const primaryModule = organization?.primaryModule ?? null;
   const rawModules = useMemo(() => {
@@ -710,12 +723,10 @@ function OrganizacaoPageInner({
   const hasTorneiosModule = activeModules.includes("TORNEIOS");
   const isOrgCanonicalPath = pathname?.startsWith("/org/");
   const isTorneiosRoute =
-    pathname?.startsWith("/org/torneios") ||
     pathname?.startsWith("/org/padel") ||
-    pathname?.startsWith("/org/tournaments") ||
-    Boolean(isOrgCanonicalPath && (pathname?.includes("/torneios") || pathname?.includes("/tournaments") || pathname?.includes("/padel")));
+    Boolean(isOrgCanonicalPath && pathname?.includes("/padel"));
   const isEventosRoute =
-    pathname?.startsWith("/org/eventos") ||
+    pathname?.startsWith("/org/events") ||
     Boolean(isOrgCanonicalPath && (pathname?.includes("/eventos") || pathname?.includes("/events")));
   const isManageEventosSection = activeObjective === "manage" && normalizedSection === "eventos";
   const isManagePadelSection =
@@ -745,21 +756,21 @@ function OrganizacaoPageInner({
   const hasMarketingModule = activeModules.includes("MARKETING");
   const primaryCreateMeta =
     primaryOperation === "RESERVAS"
-      ? { label: "Criar serviço", href: "/org/reservas?create=service", singular: "serviço", plural: "serviços" }
+      ? { label: "Criar serviço", href: "/org/bookings?create=service", singular: "serviço", plural: "serviços" }
       : primaryOperation === "TORNEIOS"
         ? {
             label: "Criar torneio",
-            href: "/org/padel/torneios/novo",
+            href: "/org/padel/tournaments/create",
             singular: "torneio",
             plural: "torneios",
           }
-        : { label: "Criar evento", href: "/org/eventos/novo", singular: "evento", plural: "eventos" };
+        : { label: "Criar evento", href: "/org/events/new", singular: "evento", plural: "eventos" };
   const manageCreateMeta = isEventosRoute
-    ? { label: "Criar evento", href: "/org/eventos/novo", singular: "evento", plural: "eventos" }
+    ? { label: "Criar evento", href: "/org/events/new", singular: "evento", plural: "eventos" }
     : isPadelContext
       ? {
           label: "Criar torneio",
-          href: "/org/padel/torneios/novo",
+          href: "/org/padel/tournaments/create",
           singular: "torneio",
           plural: "torneios",
         }
@@ -770,7 +781,7 @@ function OrganizacaoPageInner({
   const managePrimarySingularLabel = manageCreateMeta.singular;
   const salesUnitLabel = isPadelContext ? "Inscrições" : "Bilhetes";
   const salesCountLabel = isPadelContext ? "Inscrições registadas" : "Bilhetes vendidos";
-  const eventRouteBase = isPadelContext ? "/org/padel/torneios" : "/org/eventos";
+  const eventRouteBase = isPadelContext ? "/org/padel/tournaments" : "/org/events";
   const loading =
     organizationLoading ||
     (Boolean(orgMeUrl) && !organizationData && !organizationError) ||
@@ -780,13 +791,7 @@ function OrganizacaoPageInner({
   const profileStatus = organizationData?.profileStatus ?? "MISSING_CONTACT";
   const membershipRole = organizationData?.membershipRole ?? null;
   const membershipRolePack = organizationData?.membershipRolePack ?? null;
-  const organizationProfile = useMemo(() => {
-    if (!organization) return null;
-    return {
-      ...organization,
-      publicProfileLayout: ensurePublicProfileLayout(organization.publicProfileLayout ?? null),
-    };
-  }, [organization]);
+  const canReactivateSuspendedOrganization = membershipRole === "OWNER" && isSuspended && reactivationWindowOpen;
   const moduleOverrides = useMemo(
     () =>
       Array.isArray(organizationData?.modulePermissions)
@@ -822,7 +827,6 @@ function OrganizacaoPageInner({
   const canAccessMarketing = canAccessModule("MARKETING");
   const canAccessCrm = canAccessModule("CRM");
   const canAccessStaff = canAccessModule("STAFF");
-  const canAccessProfile = canAccessModule("PERFIL_PUBLICO");
   const canAccessSettings = canAccessModule("DEFINICOES");
   const canAccessAnalytics = canAccessModule("ANALYTICS");
   const roleFlags = useMemo(
@@ -833,10 +837,7 @@ function OrganizacaoPageInner({
   const canUseAnalytics = roleFlags.canViewFinance && canAccessAnalytics;
   const canPromote = roleFlags.canPromote && canAccessMarketing;
   const canManageMembers = roleFlags.canManageMembers && canAccessStaff;
-  const canEditOrgProfile = roleFlags.canEditOrg && canAccessProfile;
   const canEditOrgSettings = roleFlags.canEditOrg && canAccessSettings;
-  const canEditFinanceAlerts =
-    membershipRole === "OWNER" || membershipRole === "CO_OWNER" || membershipRole === "ADMIN";
   const canUseMarketing = canPromote && hasMarketingModule;
   useEffect(() => {
     if (!orgMeUrl) return;
@@ -910,127 +911,56 @@ function OrganizacaoPageInner({
     }
     return MARKETING_TABS;
   }, [canUseMarketing, roleFlags]);
-  const activeOperationModules = useMemo(
-    () => OPERATION_MODULES.filter((module) => activeModules.includes(module)),
-    [activeModules],
-  );
-  const activeOptionalModules = useMemo(
-    () => OPTIONAL_MODULES.filter((module) => activeModules.includes(module)),
-    [activeModules],
-  );
-  const [primarySelection, setPrimarySelection] = useState<OperationModule>(primaryOperation);
-  const [operationSelection, setOperationSelection] =
-    useState<OperationModule[]>(activeOperationModules);
-  const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>(activeOptionalModules);
-  const [modulesSaving, setModulesSaving] = useState(false);
+  const dashboardToolsVisibilityUrl = scopedOrganizationId
+    ? `/api/org/${scopedOrganizationId}/dashboard/tools/visibility`
+    : null;
+  const { data: dashboardToolsVisibility, mutate: mutateDashboardToolsVisibility } =
+    useSWR<DashboardToolVisibilityResponse>(
+      dashboardToolsVisibilityUrl,
+      fetcherStrict,
+      swrOptions,
+    );
+  const canCustomizeTools = roleFlags.canEditOrg && Boolean(dashboardToolsVisibility?.canEdit ?? roleFlags.canEditOrg);
+  const [hiddenToolIds, setHiddenToolIds] = useState<string[]>([]);
+  const [toolVisibilityError, setToolVisibilityError] = useState<string | null>(null);
   const salesUnitHint = isPadelContext
     ? "Inscrições registadas nos últimos 30 dias"
     : "Bilhetes vendidos nos últimos 30 dias";
-  const activeOperationKey = useMemo(
-    () => [...activeOperationModules].sort().join("|"),
-    [activeOperationModules],
-  );
-  const activeOptionalKey = useMemo(
-    () => [...activeOptionalModules].sort().join("|"),
-    [activeOptionalModules],
-  );
 
   useEffect(() => {
-    setPrimarySelection(primaryOperation);
-    setOperationSelection(activeOperationModules);
-    setOptionalSelection(activeOptionalModules);
-  }, [organization?.id, primaryOperation, activeOperationKey, activeOptionalKey]);
+    if (!scopedOrganizationId) {
+      setHiddenToolIds([]);
+      setToolVisibilityError(null);
+      return;
+    }
+    const normalized = sanitizeDashboardHiddenToolIds(dashboardToolsVisibility?.hiddenToolIds);
+    setHiddenToolIds((prev) => (areStringArraysEqual(prev, normalized) ? prev : normalized));
+  }, [dashboardToolsVisibility?.hiddenToolIds, scopedOrganizationId]);
 
-  const buildModulesPayload = useCallback(
-    (primary: OperationModule, operations: OperationModule[], optional: OptionalModule[]) => {
-      const managed = new Set<string>([...CORE_ORGANIZATION_MODULES, ...OPERATION_MODULES, ...OPTIONAL_MODULES]);
-      const preserved = activeModules.filter((module) => !managed.has(module));
-      const operationSet = new Set<string>([...operations, primary]);
-      const base = new Set<string>([
-        ...CORE_ORGANIZATION_MODULES,
-        ...operationSet,
-        ...optional,
-        ...preserved,
-      ]);
-      return Array.from(base);
-    },
-    [activeModules],
-  );
-
-  const saveModules = useCallback(
-    async (primary: OperationModule, operations: OperationModule[], optional: OptionalModule[]) => {
-      if (!organization) return;
-      setModulesSaving(true);
+  const persistHiddenToolIds = useCallback(
+    async (nextHidden: string[]) => {
+      const normalized = sanitizeDashboardHiddenToolIds(nextHidden);
+      setHiddenToolIds((prev) => (areStringArraysEqual(prev, normalized) ? prev : normalized));
+      setToolVisibilityError(null);
+      if (!dashboardToolsVisibilityUrl) return;
       try {
-        const payload: Record<string, unknown> = {
-          modules: buildModulesPayload(primary, operations, optional),
-        };
-        if (organization.primaryModule !== primary) {
-          payload.primaryModule = primary;
-        }
-        const organizationIdForPatch = organization?.id ?? (organizationIdParam ? Number(organizationIdParam) : null);
-        if (!organizationIdForPatch || Number.isNaN(organizationIdForPatch)) return;
-        const patchUrl = `/api/org/${organizationIdForPatch}/me`;
-        const res = await fetch(patchUrl, {
+        const res = await fetch(dashboardToolsVisibilityUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ hiddenToolIds: normalized }),
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || json?.ok === false) {
-          return;
+          throw new Error((json && (json.error || json.message)) || "Não foi possível guardar a visibilidade.");
         }
-        mutateOrganization();
-      } catch (err) {
-        console.error("[dashboard][modules] update error", err);
-      } finally {
-        setModulesSaving(false);
+        const serverHidden = sanitizeDashboardHiddenToolIds(json?.hiddenToolIds ?? normalized);
+        setHiddenToolIds((prev) => (areStringArraysEqual(prev, serverHidden) ? prev : serverHidden));
+      } catch (error) {
+        setToolVisibilityError(error instanceof Error ? error.message : "Falha ao guardar visibilidade das ferramentas.");
+        void mutateDashboardToolsVisibility();
       }
     },
-    [buildModulesPayload, mutateOrganization, organization, organizationIdParam],
-  );
-  const canEditModules = roleFlags.canEditOrg;
-  const setPrimaryModule = useCallback(
-    (moduleKey: OperationModule) => {
-      if (!canEditModules || modulesSaving) return;
-      if (moduleKey === primarySelection) return;
-      const nextOperations = operationSelection.includes(moduleKey)
-        ? operationSelection
-        : [...operationSelection, moduleKey];
-      setPrimarySelection(moduleKey);
-      setOperationSelection(nextOperations);
-      saveModules(moduleKey, nextOperations, optionalSelection);
-    },
-    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
-  );
-  const activateModule = useCallback(
-    (moduleKey: string) => {
-      if (!canEditModules || modulesSaving) return;
-      if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
-        return;
-      }
-      if (OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) {
-        if (optionalSelection.includes(moduleKey as OptionalModule)) return;
-        const nextOptional = [...optionalSelection, moduleKey as OptionalModule];
-        setOptionalSelection(nextOptional);
-        saveModules(primarySelection, operationSelection, nextOptional);
-      }
-    },
-    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
-  );
-  const deactivateModule = useCallback(
-    (moduleKey: string) => {
-      if (!canEditModules || modulesSaving) return;
-      if (OPERATION_MODULES.includes(moduleKey as OperationModule)) {
-        return;
-      }
-      if (!OPTIONAL_MODULES.includes(moduleKey as OptionalModule)) return;
-      if (!optionalSelection.includes(moduleKey as OptionalModule)) return;
-      const nextOptional = optionalSelection.filter((module) => module !== moduleKey);
-      setOptionalSelection(nextOptional);
-      saveModules(primarySelection, operationSelection, nextOptional);
-    },
-    [canEditModules, modulesSaving, operationSelection, optionalSelection, primarySelection, saveModules],
+    [dashboardToolsVisibilityUrl, mutateDashboardToolsVisibility],
   );
   const onboardingParam = searchParams?.get("onboarding");
   const [stripeRequirements, setStripeRequirements] = useState<string[]>([]);
@@ -1046,7 +976,7 @@ function OrganizacaoPageInner({
     if (typeof window === "undefined") return;
 
     const scrollTargets: Record<ObjectiveTab, string[]> = {
-      create: ["overview", "modulos"],
+      create: ["overview", "ferramentas"],
       manage: [
         "eventos",
         "reservas",
@@ -1057,7 +987,6 @@ function OrganizacaoPageInner({
       analyze: canViewFinance
         ? ["overview", "vendas", "financas", "invoices", "ops"]
         : ["financas", "invoices", "ops"],
-      profile: ["perfil"],
     };
 
     const allowed = scrollTargets[activeObjective] ?? [];
@@ -1133,7 +1062,6 @@ function OrganizacaoPageInner({
       manage: manageSections,
       promote: ["marketing"],
       analyze: analyzeSections,
-      profile: ["perfil"],
     };
     const allowed = baseSections[activeObjective] ?? ["overview"];
     const candidate =
@@ -1142,8 +1070,6 @@ function OrganizacaoPageInner({
         ? "financas"
         : activeObjective === "promote"
           ? "marketing"
-          : activeObjective === "profile"
-            ? "perfil"
             : "overview");
     return allowed.includes(candidate) ? candidate : allowed[0];
   }, [
@@ -1411,17 +1337,68 @@ function OrganizacaoPageInner({
       const res = await fetch(`${orgApiBase}/payouts/connect`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json.url) {
-        setStripeCtaError(json?.error || "Não foi possível gerar o link de onboarding.");
+        setStripeCtaError(json?.error || "Não foi possível gerar o link de configuração.");
         setStripeCtaLoading(false);
         return;
       }
       window.location.href = json.url;
     } catch (err) {
       console.error(err);
-      setStripeCtaError("Erro inesperado ao gerar link de onboarding.");
+      setStripeCtaError("Erro inesperado ao gerar link de configuração.");
       setStripeCtaLoading(false);
     }
   }
+
+  const handleReactivateOrganization = useCallback(async () => {
+    if (!organization?.id) return;
+    setSuspensionActionLoading(true);
+    setSuspensionActionMessage(null);
+    try {
+      const invoke = async (stepUp?: { stepUpChallengeId?: string; stepUpCode?: string }) => {
+        const res = await fetch(`/api/org-hub/organizations/${organization.id}/suspend`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reasonCode: "OWNER_RESTORE",
+            ...(stepUp?.stepUpChallengeId ? { stepUpChallengeId: stepUp.stepUpChallengeId } : {}),
+            ...(stepUp?.stepUpCode ? { stepUpCode: stepUp.stepUpCode } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        return { res, json };
+      };
+
+      let { res, json } = await invoke();
+      if ((!res.ok || json?.ok === false) && String(json?.errorCode ?? json?.error ?? "").toUpperCase() === "STEP_UP_REQUIRED") {
+        const challengeId = typeof json?.details?.challengeId === "string" ? json.details.challengeId : undefined;
+        const input =
+          typeof window !== "undefined"
+            ? window.prompt("Introduz o código de confirmação (6 dígitos) para reativar a organização:")
+            : null;
+        const code = typeof input === "string" ? input.trim() : "";
+        if (!code) {
+          setSuspensionActionMessage("Operação cancelada. Código não introduzido.");
+          return;
+        }
+        const retry = await invoke({ stepUpChallengeId: challengeId, stepUpCode: code });
+        res = retry.res;
+        json = retry.json;
+      }
+
+      if (!res.ok || json?.ok === false) {
+        setSuspensionActionMessage(json?.message || json?.error || "Não foi possível reativar a organização.");
+        return;
+      }
+      setSuspensionActionMessage("Organização reativada.");
+      await mutateOrganization();
+      router.refresh();
+    } catch (err) {
+      console.error("[dashboard][reactivate-organization]", err);
+      setSuspensionActionMessage("Erro inesperado ao reativar.");
+    } finally {
+      setSuspensionActionLoading(false);
+    }
+  }, [mutateOrganization, organization?.id, router]);
 
   async function handleUpdateInvoicing(mode: "EXTERNAL_SOFTWARE" | "MANUAL_OUTSIDE_ORYA") {
     setFinanceActionError(null);
@@ -1474,12 +1451,12 @@ function OrganizacaoPageInner({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(json?.error || json?.message || "Não foi possível guardar payout settings.");
+        throw new Error(json?.error || json?.message || "Não foi possível guardar as definições de transferência.");
       }
-      setFinanceActionMessage("Payout settings guardados.");
+      setFinanceActionMessage("Definições de transferência guardadas.");
       mutateOrganization();
     } catch (err) {
-      setFinanceActionError(err instanceof Error ? err.message : "Erro ao guardar payout settings.");
+      setFinanceActionError(err instanceof Error ? err.message : "Erro ao guardar as definições de transferência.");
     } finally {
       setFinanceActionSaving(null);
     }
@@ -1754,6 +1731,22 @@ function OrganizacaoPageInner({
   const financeData = financeOverview && financeOverview.ok ? financeOverview : null;
   const financeSummary = payoutSummary && "ok" in payoutSummary && payoutSummary.ok ? payoutSummary : null;
   const payoutAlerts = financeData?.payoutAlerts ?? financeSummary?.payoutAlerts ?? null;
+  const showFinanceStripeStateBanners = financeFocus === "overview" || financeFocus === "payouts";
+  const showFinanceControlPanel = financeFocus === "overview";
+  const showFinanceSummaryCards = financeFocus === "overview";
+  const showFinanceStripeCard = financeFocus === "overview";
+  const showFinancePayoutInfoCard = financeFocus === "overview";
+  const showFinanceLedgerTable = financeFocus === "overview";
+  const showFinancePayoutsPanel = financeFocus === "payouts";
+  const showFinanceRefundsPanel = financeFocus === "refunds";
+  const financeInvoicingModeLabel =
+    !financeInvoicingSettings || !financeInvoicingSettings.ok
+      ? "Sem acesso"
+      : financeInvoicingSettings.settings?.invoicingMode === "MANUAL_OUTSIDE_ORYA"
+        ? "Manual"
+        : financeInvoicingSettings.settings?.invoicingMode === "EXTERNAL_SOFTWARE"
+          ? "Software externo"
+          : "Não configurado";
   const stripeState = useMemo(() => {
     const hasReqs = stripeRequirements.length > 0;
     const pluralLabel = primaryCreateMeta.plural;
@@ -1763,21 +1756,21 @@ function OrganizacaoPageInner({
         tone: "success",
         title: "Conta Stripe ligada ✅",
         desc: isReservasOrg
-          ? "Já podes receber pagamentos e gerir os teus payouts normalmente."
-          : "Já podes vender bilhetes pagos e receber os teus payouts normalmente.",
+          ? "Já podes receber pagamentos e gerir as tuas transferências normalmente."
+          : "Já podes vender bilhetes pagos e receber as tuas transferências normalmente.",
         cta: "Abrir painel Stripe",
       };
     }
     if (paymentsStatus === "PENDING") {
       return {
-        badge: hasReqs ? "Requer atenção" : "Onboarding incompleto",
+        badge: hasReqs ? "Requer atenção" : "Configuração incompleta",
         tone: hasReqs ? "error" : "warning",
         title: hasReqs ? "Falta concluir dados no Stripe" : "Conta Stripe em configuração",
         desc: hasReqs
           ? "A tua conta Stripe precisa de dados antes de ativar pagamentos."
           : isReservasOrg
-            ? "Conclui o onboarding no Stripe para começares a receber pagamentos."
-            : "Conclui o onboarding no Stripe para começares a receber os pagamentos dos teus bilhetes.",
+            ? "Conclui a configuração no Stripe para começares a receber pagamentos."
+            : "Conclui a configuração no Stripe para começares a receber os pagamentos dos teus bilhetes.",
         cta: hasReqs ? "Rever ligação Stripe" : "Continuar configuração no Stripe",
       };
     }
@@ -2035,16 +2028,6 @@ function OrganizacaoPageInner({
   const publicProfileUrl = organization?.username ? `/${organization.username}` : null;
   const officialEmailNormalized = normalizeOfficialEmail(organization?.officialEmail ?? null);
   const officialEmailVerified = Boolean(officialEmailNormalized && organization?.officialEmailVerifiedAt);
-  const profileCoverUrl = useMemo(() => {
-    const customCover = organization?.brandingCoverUrl?.trim() || null;
-    if (!customCover) return null;
-    return getProfileCoverUrl(customCover, {
-      width: 1500,
-      height: 500,
-      quality: 70,
-      format: "webp",
-    });
-  }, [organization?.brandingCoverUrl]);
   const membersCount = membersData?.ok ? membersData.items?.length ?? 0 : 0;
   const hasInvitedStaff = membersCount > 1;
   const eventsTotal = eventsSummary?.counts?.total ?? eventsList.length;
@@ -2070,7 +2053,7 @@ function OrganizacaoPageInner({
       description: "Atualiza dados base da organização.",
       done: profileStatus === "OK",
       href: "/org/settings",
-      iconKey: "PERFIL_PUBLICO",
+      iconKey: "DEFINICOES",
     },
     {
       id: "email",
@@ -2086,7 +2069,7 @@ function OrganizacaoPageInner({
       label: "Stripe ligado",
       description: "Liga pagamentos para receber receitas.",
       done: stripeReady,
-      href: "/org/analyze?section=financas",
+      href: "/org/finance",
       iconKey: "FINANCEIRO",
       required: true,
     },
@@ -2105,17 +2088,17 @@ function OrganizacaoPageInner({
             label: "Horários publicados",
             description: "Define slots para reservas.",
             done: servicesStats.availabilityCount > 0,
-            href: "/org/reservas",
+            href: "/org/bookings",
             iconKey: "RESERVAS",
           },
         ]
       : []),
     {
       id: "staff",
-      label: "Primeiro staff convidado",
+      label: "Primeiro membro convidado",
       description: "Convida alguém para a tua equipa.",
       done: hasInvitedStaff,
-      href: "/org/staff",
+      href: "/org/team",
       iconKey: "STAFF",
     },
     {
@@ -2123,8 +2106,8 @@ function OrganizacaoPageInner({
       label: "Página pública definida",
       description: "Prepara a presença pública da organização.",
       done: Boolean(publicProfileUrl),
-      href: "/org/profile",
-      iconKey: "PERFIL_PUBLICO",
+      href: scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : "/org-hub/organizations",
+      iconKey: "DEFINICOES",
     },
   ];
   const orderedChecklistSteps = summarySteps
@@ -2206,215 +2189,242 @@ function OrganizacaoPageInner({
   const canUseCrm = canAccessCrm;
   const canUseChatInterno = canAccessMensagens;
   const canUseCheckin = canAccessEvents || canAccessTorneios;
-  const dashboardModules = useMemo<DashboardModuleCard[]>(
-    () => [
-      {
-        id: "eventos",
-        moduleKey: "EVENTOS",
-        title: "Eventos",
-        summary: "Festas, sessões especiais, eventos públicos/privados.",
-        bullets: ["Bilhetes e regras", "Participantes + check-in", "Live + chat + anúncios"],
-        status: canAccessEvents ? "core" : "locked",
-        href: canAccessEvents && scopedOrganizationId ? `/org/${scopedOrganizationId}/events` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "reservas",
-        moduleKey: "RESERVAS",
-        title: "Reservas",
-        summary: "Serviços e marcações com chat 1:1.",
-        bullets: ["Serviços + disponibilidade", "Marcações + estados", "Chat 1:1 + check-in"],
-        status: canAccessReservas ? "core" : "locked",
-        href: canAccessReservas && scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "padel-club",
-        moduleKey: "TORNEIOS",
-        title: "Padel Club",
-        summary: "Operação diária do clube e gestão de courts.",
-        bullets: ["Clubs + courts", "Players + trainers", "Community + lessons"],
-        status: canAccessTorneios ? "core" : "locked",
-        href: canAccessTorneios && scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "padel-tournaments",
-        moduleKey: "TORNEIOS",
-        title: "Padel Tournaments",
-        summary: "Calendário competitivo, equipas e live ops.",
-        bullets: ["Criação + calendário", "Categorias + equipas", "Players + operação live"],
-        status: canAccessTorneios ? "core" : "locked",
-        href: canAccessTorneios && scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "checkin",
-        moduleKey: "CHECKIN",
-        title: "Check-in",
-        summary: "Scanner rápido para eventos e torneios.",
-        bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
-        status: canUseCheckin ? "core" : "locked",
-        href: canUseCheckin && scopedOrganizationId ? `/org/${scopedOrganizationId}/check-in` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "financeiro",
-        moduleKey: "FINANCEIRO",
-        title: "Finanças",
-        summary: "Receitas, indicadores e payouts num só lugar.",
-        bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Payouts Stripe"],
-        status: canViewFinance ? "core" : "locked",
-        href: canViewFinance && scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
-        eyebrow: "Financeiro",
-      },
-      {
-        id: "analytics",
-        moduleKey: "ANALYTICS",
-        title: "Analytics",
-        summary: "Insights de ocupação, conversão e retenção.",
-        bullets: ["Overview + cohorts", "No-show + conversion", "Leitura de performance por módulo"],
-        status: canUseAnalytics ? "core" : "locked",
-        href: canUseAnalytics && scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
-        eyebrow: "Financeiro",
-      },
-      {
-        id: "staff",
-        moduleKey: "STAFF",
-        title: "Equipa",
-        summary: "Gestão de equipa, roles e permissões.",
-        bullets: ["Owner / Admin / Staff / Scanner", "Permissões por módulo", "Log de ações"],
-        status: canManageMembers ? "core" : "locked",
-        href: canManageMembers && scopedOrganizationId ? `/org/${scopedOrganizationId}/team` : undefined,
-        eyebrow: "Configuração",
-      },
-      {
-        id: "perfil-publico",
-        moduleKey: "PERFIL_PUBLICO",
-        title: "Perfil público",
-        summary: "Página e detalhes visíveis ao público.",
-        bullets: ["Nome + bio", "Fotos e links", "Localização"],
-        status: canEditOrgProfile ? "core" : "locked",
-        href: canEditOrgProfile && scopedOrganizationId ? `/org/${scopedOrganizationId}/profile` : undefined,
-        eyebrow: "Crescimento",
-      },
-      {
-        id: "settings",
-        moduleKey: "DEFINICOES",
-        title: "Definições",
-        summary: "Pagamentos, políticas e preferências.",
-        bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
-        status: canEditOrgSettings ? "core" : "locked",
-        href: canEditOrgSettings && scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : undefined,
-        eyebrow: "Configuração",
-      },
-      {
-        id: "inscricoes",
-        moduleKey: "INSCRICOES",
-        title: "Formulários",
-        summary: "Formulários e listas para inscrições e dados.",
-        bullets: ["Formulários rápidos", "Vagas + listas de espera", "Exportação de dados"],
-        status: canAccessInscricoes ? "core" : "locked",
-        href: canAccessInscricoes && scopedOrganizationId ? `/org/${scopedOrganizationId}/forms` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "mensagens",
-        moduleKey: "MENSAGENS",
-        title: "Chat interno",
-        summary: "Canal privado entre membros da organização.",
-        bullets: ["Conversas rápidas da equipa", "Canais internos simples", "Histórico completo"],
-        status: canUseChatInterno ? "core" : "locked",
-        href: canUseChatInterno && scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
-        eyebrow: "Operações",
-      },
-      {
-        id: "marketing",
-        moduleKey: "MARKETING",
-        title: "Promoções",
-        summary: "Códigos, parcerias e partilha.",
-        bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
-        status: canPromote ? "core" : "locked",
-        href: canPromote && scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
-        eyebrow: "Crescimento",
-      },
-      {
-        id: "crm",
-        moduleKey: "CRM",
-        title: "CRM",
-        summary: "Customer 360, segmentos e loyalty.",
-        bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
-        status: canUseCrm ? "core" : "locked",
-        href: canUseCrm && scopedOrganizationId ? `/org/${scopedOrganizationId}/crm` : undefined,
-        eyebrow: "Crescimento",
-      },
-      {
-        id: "loja",
-        moduleKey: "LOJA",
-        title: "Loja",
-        summary: "Produtos físicos e digitais num só checkout.",
-        bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
-        status: canAccessLoja ? "core" : "locked",
-        href: canAccessLoja && scopedOrganizationId ? `/org/${scopedOrganizationId}/store` : undefined,
-        eyebrow: "Crescimento",
-      },
-    ],
+  const dashboardTools = useMemo<DashboardToolCard[]>(
+    () => {
+      const tools: Array<DashboardToolCard | null> = [
+        canAccessEvents
+          ? {
+              id: "eventos",
+              moduleKey: "EVENTOS",
+              title: "Eventos",
+              summary: "Eventos públicos e privados com operação completa.",
+              bullets: ["Bilhetes e regras", "Participantes + check-in", "Operação + anúncios"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/events` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canAccessReservas
+          ? {
+              id: "reservas",
+              moduleKey: "RESERVAS",
+              title: "Reservas",
+              summary: "Serviços e marcações com gestão diária.",
+              bullets: ["Serviços + disponibilidade", "Marcações + estados", "Check-in operacional"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/bookings` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canAccessTorneios
+          ? {
+              id: "padel-club",
+              moduleKey: "TORNEIOS",
+              title: "Clube de padel",
+              summary: "Operação diária do clube e gestão de campos.",
+              bullets: ["Clubes + campos", "Jogadores + treinadores", "Comunidade + aulas"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canAccessTorneios
+          ? {
+              id: "padel-tournaments",
+              moduleKey: "TORNEIOS",
+              title: "Torneios de padel",
+              summary: "Calendário competitivo, equipas e operação ao vivo.",
+              bullets: ["Criação + calendário", "Categorias + equipas", "Jogadores + ao vivo"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canUseCheckin
+          ? {
+              id: "checkin",
+              moduleKey: "CHECKIN",
+              title: "Check-in",
+              summary: "Scanner rápido para eventos e torneios.",
+              bullets: ["Leitor QR", "Confirmação explícita", "Histórico por evento"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/check-in` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canAccessInscricoes
+          ? {
+              id: "inscricoes",
+              moduleKey: "INSCRICOES",
+              title: "Formulários",
+              summary: "Recolha de inscrições e dados operacionais.",
+              bullets: ["Formulários rápidos", "Listas e vagas", "Exportação de dados"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/forms` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canUseChatInterno
+          ? {
+              id: "mensagens",
+              moduleKey: "MENSAGENS",
+              title: "Chat interno",
+              summary: "Canal privado entre membros da organização.",
+              bullets: ["Conversas da equipa", "Canais internos", "Histórico completo"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
+              flow: "Operações",
+            }
+          : null,
+        canViewFinance
+          ? {
+              id: "financeiro",
+              moduleKey: "FINANCEIRO",
+              title: "Finanças",
+              summary: "Receitas, indicadores e transferências num só lugar.",
+              bullets: ["Visão geral + vendas", "Reembolsos + CSV", "Transferências Stripe"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/finance` : undefined,
+              flow: "Gestão",
+            }
+          : null,
+        canUseAnalytics
+          ? {
+              id: "analytics",
+              moduleKey: "ANALYTICS",
+              title: "Análises",
+              summary: "Análises de ocupação, conversão e retenção.",
+              bullets: ["Visão geral + coortes", "No-show + conversão", "Performance por ferramenta"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/analytics` : undefined,
+              flow: "Gestão",
+            }
+          : null,
+        canPromote
+          ? {
+              id: "marketing",
+              moduleKey: "MARKETING",
+              title: "Promoções",
+              summary: "Códigos, parcerias e partilha.",
+              bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
+              flow: "Gestão",
+            }
+          : null,
+        canUseCrm
+          ? {
+              id: "crm",
+              moduleKey: "CRM",
+              title: "CRM",
+              summary: "Clientes, segmentos e fidelização.",
+              bullets: ["Clientes + histórico", "Segmentos + campanhas", "Pontos + recompensas"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/crm` : undefined,
+              flow: "Gestão",
+            }
+          : null,
+        canAccessLoja
+          ? {
+              id: "loja",
+              moduleKey: "LOJA",
+              title: "Loja",
+              summary: "Produtos físicos e digitais com checkout único.",
+              bullets: ["Catálogo + imagens", "Portes + descontos", "Encomendas + envio"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/store` : undefined,
+              flow: "Gestão",
+            }
+          : null,
+        canManageMembers
+          ? {
+              id: "staff",
+              moduleKey: "STAFF",
+              title: "Equipa",
+              summary: "Gestão de equipa, funções e permissões.",
+              bullets: ["Dono / Co-dono / Administrador / Equipa / Scanner", "Permissões por ferramenta", "Registo de ações"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/team` : undefined,
+              flow: "Administração",
+            }
+          : null,
+        canEditOrgSettings
+          ? {
+              id: "settings",
+              moduleKey: "DEFINICOES",
+              title: "Definições",
+              summary: "Pagamentos, políticas e preferências.",
+              bullets: ["Pagamentos e políticas", "Notificações globais", "Regras de chat"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/settings` : undefined,
+              flow: "Administração",
+            }
+          : null,
+      ];
+      return tools.filter((tool): tool is DashboardToolCard => tool !== null);
+    },
     [
-      canEditOrgProfile,
-      canEditOrgSettings,
-      canManageMembers,
-      canPromote,
       canAccessEvents,
       canAccessReservas,
       canAccessTorneios,
+      canUseCheckin,
       canAccessInscricoes,
-      canAccessLoja,
+      canUseChatInterno,
       canViewFinance,
       canUseAnalytics,
-      canUseCheckin,
+      canPromote,
       canUseCrm,
-      canUseChatInterno,
+      canAccessLoja,
+      canManageMembers,
+      canEditOrgSettings,
       scopedOrganizationId,
     ],
   );
-  const primaryDashboardModules = useMemo(
-    () => dashboardModules.filter((module) => PRIMARY_TOOL_KEYS.has(module.moduleKey)),
-    [dashboardModules],
-  );
-  const secondaryDashboardModules = useMemo(
-    () => dashboardModules.filter((module) => !PRIMARY_TOOL_KEYS.has(module.moduleKey)),
-    [dashboardModules],
-  );
-  const secondaryModuleGroups = useMemo(() => {
-    const groups = new Map<string, DashboardModuleCard[]>();
-    secondaryDashboardModules.forEach((module) => {
-      const key = module.eyebrow ?? "Mais";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)?.push(module);
-    });
-    return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
-  }, [secondaryDashboardModules]);
-  const inactiveDashboardModules = useMemo(
+  const hideableToolIds = useMemo(
     () =>
-      dashboardModules.filter(
-        (module) =>
-          (module.status === "optional" || module.status === "locked") && module.moduleKey !== "CHECKIN",
-      ),
-    [dashboardModules],
+      dashboardTools
+        .map((tool) => tool.id)
+        .filter((toolId) => !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(toolId))
+        .sort(),
+    [dashboardTools],
   );
-  const addableModules = useMemo(
-    () => inactiveDashboardModules.filter((module) => module.status === "optional"),
-    [inactiveDashboardModules],
+  const validHiddenToolIds = useMemo(() => {
+    const hideableSet = new Set(hideableToolIds);
+    return hiddenToolIds.filter((toolId) => hideableSet.has(toolId)).sort();
+  }, [hiddenToolIds, hideableToolIds]);
+  useEffect(() => {
+    if (areStringArraysEqual(hiddenToolIds, validHiddenToolIds)) return;
+    void persistHiddenToolIds(validHiddenToolIds);
+  }, [hiddenToolIds, persistHiddenToolIds, validHiddenToolIds]);
+  const hiddenToolSet = useMemo(() => new Set(validHiddenToolIds), [validHiddenToolIds]);
+  const visibleDashboardTools = useMemo(
+    () => dashboardTools.filter((tool) => !hiddenToolSet.has(tool.id)),
+    [dashboardTools, hiddenToolSet],
   );
-  const availableModuleGroups = useMemo(() => {
-    const groups = new Map<string, DashboardModuleCard[]>();
-    inactiveDashboardModules.forEach((module) => {
-      const key = module.eyebrow ?? "Outros";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)?.push(module);
-    });
-    return Array.from(groups.entries()).map(([label, modules]) => ({ label, modules }));
-  }, [inactiveDashboardModules]);
+  const hiddenDashboardTools = useMemo(
+    () => dashboardTools.filter((tool) => hiddenToolSet.has(tool.id)),
+    [dashboardTools, hiddenToolSet],
+  );
+  const toolGroups = useMemo(
+    () =>
+      TOOL_FLOW_ORDER.map((flow) => ({
+        flow,
+        tools: visibleDashboardTools.filter((tool) => tool.flow === flow),
+      })).filter((group) => group.tools.length > 0),
+    [visibleDashboardTools],
+  );
+  const hiddenToolGroups = useMemo(
+    () =>
+      TOOL_FLOW_ORDER.map((flow) => ({
+        flow,
+        tools: hiddenDashboardTools.filter((tool) => tool.flow === flow),
+      })).filter((group) => group.tools.length > 0),
+    [hiddenDashboardTools],
+  );
+  const hasHiddenTools = hiddenDashboardTools.length > 0;
+  const hideDashboardTool = useCallback(
+    (tool: DashboardToolCard) => {
+      if (!canCustomizeTools) return;
+      if (NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id)) return;
+      if (hiddenToolSet.has(tool.id)) return;
+      void persistHiddenToolIds([...validHiddenToolIds, tool.id]);
+    },
+    [canCustomizeTools, hiddenToolSet, persistHiddenToolIds, validHiddenToolIds],
+  );
+  const showDashboardTool = useCallback(
+    (toolId: string) => {
+      if (!canCustomizeTools) return;
+      if (!hiddenToolSet.has(toolId)) return;
+      void persistHiddenToolIds(validHiddenToolIds.filter((id) => id !== toolId));
+    },
+    [canCustomizeTools, hiddenToolSet, persistHiddenToolIds, validHiddenToolIds],
+  );
   const modulePrefetchTargets = useMemo(() => {
     if (!scopedOrganizationId) return [];
     const coreTargets = [
@@ -2423,12 +2433,12 @@ function OrganizacaoPageInner({
       `/org/${scopedOrganizationId}/analytics`,
       `/org/${scopedOrganizationId}/settings`,
     ];
-    const moduleTargets = dashboardModules
+    const moduleTargets = visibleDashboardTools
       .map((module) => module.href)
       .filter((href): href is string => typeof href === "string")
       .map((href) => appendOrganizationIdToHref(href, scopedOrganizationId));
     return Array.from(new Set([...coreTargets, ...moduleTargets])).slice(0, 12);
-  }, [dashboardModules, scopedOrganizationId]);
+  }, [scopedOrganizationId, visibleDashboardTools]);
   useEffect(() => {
     if (loading || loadingTimedOut || modulePrefetchTargets.length === 0) return;
     const timer = window.setTimeout(() => {
@@ -2496,24 +2506,6 @@ function OrganizacaoPageInner({
     return () => cancelAnimationFrame(id);
   }, [activeObjective, activeSection, marketingSection]);
   const fadeClass = cn("transition-opacity duration-300", fadeIn ? "opacity-100" : "opacity-0");
-  const profileHeroCopy = useMemo(() => {
-    if (profileView === "followers") {
-      return {
-        title: "Seguidores",
-        description: "Visibilidade pública e crescimento da comunidade.",
-      };
-    }
-    if (profileView === "requests") {
-      return {
-        title: "Pedidos",
-        description: "Acompanha pedidos pendentes e estado da comunidade.",
-      };
-    }
-    return {
-      title: "Perfil público",
-      description: "Edita como a tua organização aparece ao público.",
-    };
-  }, [profileView]);
   const renderChecklistRing = (percent: number) => {
     const clamped = Math.min(100, Math.max(0, percent));
     const radius = 16;
@@ -2544,31 +2536,20 @@ function OrganizacaoPageInner({
       </div>
     );
   };
-  const renderModuleCard = (module: DashboardModuleCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[module.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
-    const isOptional = OPTIONAL_MODULES.includes(module.moduleKey as OptionalModule);
-    const isActive = module.status === "active" || module.status === "core";
-    const isLocked = module.status === "locked";
-    const canDeactivate = module.status === "active" && canEditModules && !modulesSaving && isOptional;
-    const cardClasses = cn(
-      "group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition",
-      isActive ? "hover:-translate-y-0.5 hover:border-white/25" : "opacity-85",
-      isLocked && "opacity-45",
-    );
-    const handleDeactivate = (event: any) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!canDeactivate) return;
-      setPendingModuleRemoval(module);
-    };
-
+  const renderToolCard = (tool: DashboardToolCard) => {
+    const iconGradient = MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
     const cardInner = (
-      <div className={cardClasses}>
-        {canDeactivate && (
+      <div className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/12 bg-white/5 px-4 py-5 text-center shadow-[0_18px_55px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 hover:border-white/25">
+        {canHide && (
           <button
             type="button"
-            onClick={handleDeactivate}
-            aria-label="Desativar módulo"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setPendingToolVisibilityRemoval(tool);
+            }}
+            aria-label="Ocultar ferramenta"
             className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
           >
             ×
@@ -2580,44 +2561,44 @@ function OrganizacaoPageInner({
             iconGradient,
           )}
         >
-          <ModuleIcon moduleKey={module.moduleKey} className="h-6 w-6" aria-hidden="true" />
+          <ModuleIcon moduleKey={tool.moduleKey} className="h-6 w-6" aria-hidden="true" />
         </div>
-        <span className="text-[12px] font-semibold text-white/90">{module.title}</span>
+        <span className="text-[12px] font-semibold text-white/90">{tool.title}</span>
       </div>
     );
 
-    if (isActive && module.href && !isLocked) {
+    if (tool.href) {
       return (
-        <Link key={module.id} href={module.href} className="block">
+        <Link key={tool.id} href={tool.href} className="block">
           {cardInner}
         </Link>
       );
     }
-
     return (
-      <div key={module.id} className="block">
+      <div key={tool.id} className="block">
         {cardInner}
       </div>
     );
   };
 
-  const renderModulePickerCard = (module: DashboardModuleCard) => {
-    const iconGradient = MODULE_ICON_GRADIENTS[module.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
-    const isLocked = module.status === "locked";
-    const canActivate = module.status === "optional" && canEditModules && !modulesSaving;
-    const actionLabel = isLocked ? "Sem acesso" : canActivate ? "Adicionar" : "Sem permissão";
-    const handleActivate = () => {
-      if (!canActivate) return;
-      activateModule(module.moduleKey);
-    };
+  const renderAddToolGhostCard = () => (
+    <button
+      type="button"
+      onClick={() => setToolsModalOpen(true)}
+      aria-label="Adicionar ferramenta"
+      className="group flex h-full min-h-[126px] w-full flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-white/20 bg-white/5 px-4 py-5 text-center text-white/70 transition hover:border-white/35 hover:bg-white/10 hover:text-white"
+    >
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/20 bg-black/20 text-2xl leading-none">+</div>
+      <span className="text-[12px] font-semibold">Adicionar ferramenta</span>
+    </button>
+  );
 
+  const renderToolPickerCard = (tool: DashboardToolCard) => {
+    const iconGradient = MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
     return (
       <div
-        key={`picker-${module.id}`}
-        className={cn(
-          "rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition",
-          isLocked && "opacity-60",
-        )}
+        key={`picker-${tool.id}`}
+        className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.4)] transition"
       >
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-3">
@@ -2627,28 +2608,21 @@ function OrganizacaoPageInner({
                 iconGradient,
               )}
             >
-              <ModuleIcon moduleKey={module.moduleKey} className="h-5 w-5" aria-hidden="true" />
+              <ModuleIcon moduleKey={tool.moduleKey} className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="flex-1 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-semibold text-white">{module.title}</p>
-                  <p className="text-[12px] text-white/65">{module.summary}</p>
+                  <p className="text-sm font-semibold text-white">{tool.title}</p>
+                  <p className="text-[12px] text-white/65">{tool.summary}</p>
                 </div>
-                <span
-                  className={cn(
-                    "rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.18em]",
-                    isLocked
-                      ? "border-white/10 bg-white/5 text-white/50"
-                      : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
-                  )}
-                >
-                  {isLocked ? "Bloqueado" : "Disponível"}
+                <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-emerald-100">
+                  Oculta
                 </span>
               </div>
               <ul className="space-y-1 text-[11px] text-white/60">
-                {module.bullets.map((bullet) => (
-                  <li key={`${module.id}-${bullet}`} className="flex items-start gap-2">
+                {tool.bullets.map((bullet) => (
+                  <li key={`${tool.id}-${bullet}`} className="flex items-start gap-2">
                     <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/40" />
                     <span>{bullet}</span>
                   </li>
@@ -2657,21 +2631,13 @@ function OrganizacaoPageInner({
             </div>
           </div>
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">
-              {module.eyebrow ?? "Ferramenta"}
-            </span>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-white/40">{tool.flow}</span>
             <button
               type="button"
-              onClick={handleActivate}
-              disabled={!canActivate}
-              className={cn(
-                "rounded-full border border-white/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition",
-                canActivate
-                  ? "bg-white/10 text-white hover:border-white/40 hover:bg-white/15"
-                  : "cursor-not-allowed text-white/40",
-              )}
+              onClick={() => showDashboardTool(tool.id)}
+              className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white transition hover:border-white/40 hover:bg-white/15"
             >
-              {actionLabel}
+              Mostrar
             </button>
           </div>
         </div>
@@ -2686,7 +2652,7 @@ function OrganizacaoPageInner({
             className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
             role="dialog"
             aria-modal="true"
-            aria-label="Módulos disponíveis"
+            aria-label="Ferramentas ocultas"
             onClick={(event) => {
               if (event.target === event.currentTarget) setToolsModalOpen(false);
             }}
@@ -2694,10 +2660,10 @@ function OrganizacaoPageInner({
             <div className="w-full max-w-5xl overflow-hidden rounded-3xl border border-white/12 bg-[#050915]/95 p-5 text-white shadow-[0_28px_80px_rgba(0,0,0,0.75)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="space-y-1">
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Módulos disponíveis</p>
-                  <h3 className="text-xl font-semibold text-white">Adicionar módulos</h3>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas ocultas</p>
+                  <h3 className="text-xl font-semibold text-white">Mostrar ferramentas</h3>
                   <p className="text-[12px] text-white/65">
-                    Ativa módulos para o teu dashboard. Podes remover quando quiseres.
+                    Estas ferramentas continuam ativas no sistema, apenas estão ocultas no dashboard.
                   </p>
                 </div>
                 <button
@@ -2710,21 +2676,21 @@ function OrganizacaoPageInner({
               </div>
 
               <div className="mt-4 max-h-[60vh] space-y-6 overflow-y-auto pr-1">
-                {availableModuleGroups.length > 0 ? (
-                  availableModuleGroups.map((group) => (
-                    <div key={group.label} className="space-y-3">
+                {hiddenToolGroups.length > 0 ? (
+                  hiddenToolGroups.map((group) => (
+                    <div key={group.flow} className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.label}</p>
-                        <span className="text-[11px] text-white/40">{group.modules.length} módulos</span>
+                        <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.flow}</p>
+                        <span className="text-[11px] text-white/40">{group.tools.length} ferramentas</span>
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
-                        {group.modules.map((module) => renderModulePickerCard(module))}
+                        {group.tools.map((tool) => renderToolPickerCard(tool))}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-sm text-white/70">
-                    Sem ferramentas disponíveis para adicionar.
+                    Não tens ferramentas ocultas neste momento.
                   </div>
                 )}
               </div>
@@ -2864,6 +2830,20 @@ function OrganizacaoPageInner({
         <div className="max-w-xl space-y-3 rounded-3xl border border-amber-400/40 bg-gradient-to-br from-amber-500/15 via-[#0b1124]/75 to-[#050810]/90 p-6 text-amber-50 backdrop-blur-2xl">
           <p className="text-[11px] uppercase tracking-[0.24em] text-amber-100/80">Organização suspensa</p>
           <h1 className="text-2xl font-semibold text-white">Acesso apenas de leitura.</h1>
+          {reactivationWindowOpen ? (
+            <p className="text-sm text-amber-100/80">
+              {remainingReactivationDays === 0
+                ? "Último dia para reativar a organização."
+                : `Reativação disponível por mais ${remainingReactivationDays ?? "?"} dias.`}
+            </p>
+          ) : (
+            <p className="text-sm text-amber-100/80">A janela de reativação já terminou.</p>
+          )}
+          {reactivationDeadlineDate ? (
+            <p className="text-[12px] text-amber-100/70">
+              Prazo de reativação: {formatDateTime(reactivationDeadlineDate)}.
+            </p>
+          ) : null}
           <p className="text-sm text-amber-100/80">
             Se precisares de ajuda,{" "}
             {platformSupportEmail ? (
@@ -2881,6 +2861,23 @@ function OrganizacaoPageInner({
               "contacta o suporte."
             )}
           </p>
+          {canReactivateSuspendedOrganization ? (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleReactivateOrganization}
+                disabled={suspensionActionLoading}
+                className={cn(CTA_PRIMARY, "disabled:opacity-60")}
+              >
+                {suspensionActionLoading ? "A reativar…" : "Reativar organização"}
+              </button>
+              {suspensionActionMessage ? (
+                <p className="text-[12px] text-amber-100">{suspensionActionMessage}</p>
+              ) : null}
+            </div>
+          ) : suspensionActionMessage ? (
+            <p className="text-[12px] text-amber-100">{suspensionActionMessage}</p>
+          ) : null}
         </div>
       </div>
     );
@@ -2892,7 +2889,7 @@ function OrganizacaoPageInner({
         <section className="space-y-4">
           <div id="overview" className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Dashboard</p>
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Painel</p>
               <h1 className="text-2xl sm:text-3xl font-semibold text-white">Visão geral</h1>
               <p className="text-sm text-white/70">
                 {orgDisplayName} · {operationLabel}
@@ -2902,13 +2899,15 @@ function OrganizacaoPageInner({
               <Link href={primaryCreateMeta.href} className={CTA_PRIMARY}>
                 {primaryCreateMeta.label}
               </Link>
-              <button
-                type="button"
-                onClick={() => setToolsModalOpen(true)}
-                className={CTA_SECONDARY}
-              >
-                Módulos
-              </button>
+              {canCustomizeTools && (
+                <button
+                  type="button"
+                  onClick={() => setToolsModalOpen(true)}
+                  className={CTA_SECONDARY}
+                >
+                  Ferramentas
+                </button>
+              )}
             </div>
           </div>
 
@@ -3035,82 +3034,34 @@ function OrganizacaoPageInner({
             </div>
 
             <div
-              id="modulos"
+              id="ferramentas"
               className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_22px_70px_rgba(0,0,0,0.55)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Módulos</p>
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramentas</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setToolsModalOpen(true)}
-                  disabled={!canEditModules || addableModules.length === 0}
-                  aria-label="Adicionar módulo"
-                  className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:bg-white/10",
-                    (!canEditModules || addableModules.length === 0) && "cursor-not-allowed opacity-50",
-                  )}
-                >
-                  +
-                </button>
               </div>
+              {toolVisibilityError && (
+                <p className="mt-3 text-[12px] text-amber-200">{toolVisibilityError}</p>
+              )}
               <div className="mt-4 space-y-5">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Topo</p>
-                  <div className="mt-2 grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-                    {primaryDashboardModules.map((module) => renderModuleCard(module))}
+                {toolGroups.map((group) => (
+                  <div key={`flow-${group.flow}`} className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-white/50">
+                      <span className="uppercase tracking-[0.22em]">{group.flow}</span>
+                      <span>{group.tools.length} ferramentas</span>
+                    </div>
+                    <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+                      {group.tools.map((tool) => renderToolCard(tool))}
+                      {canCustomizeTools && hasHiddenTools && group.flow === "Operações" && renderAddToolGhostCard()}
+                    </div>
                   </div>
-                </div>
-                {secondaryModuleGroups.length > 0 && (
-                  <div className="space-y-4">
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Mais</p>
-                    {secondaryModuleGroups.map((group) => (
-                      <div key={`more-${group.label}`} className="space-y-2">
-                        <div className="flex items-center justify-between text-[11px] text-white/50">
-                          <span className="uppercase tracking-[0.22em]">{group.label}</span>
-                          <span>{group.modules.length} ferramentas</span>
-                        </div>
-                        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-                          {group.modules.map((module) => renderModuleCard(module))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
             </div>
           </div>
 
-        </section>
-      )}
-
-      {activeObjective === "profile" && (
-        <section className={cn("space-y-4", fadeClass)} id="perfil">
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
-                <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  {profileHeroCopy.title}
-                </h2>
-                <p className="text-sm text-white/70">
-                  {profileHeroCopy.description}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/80 via-[#0b1124]/70 to-[#050a12]/92 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-            <OrganizationPublicProfilePanel
-              organization={organizationProfile}
-              membershipRole={membershipRole}
-              categoryLabel={operationLabel}
-              coverUrl={profileCoverUrl}
-              services={servicesData?.items ?? []}
-              events={eventsList}
-              activeModules={activeModules}
-            />
-          </div>
         </section>
       )}
 
@@ -3620,7 +3571,7 @@ function OrganizacaoPageInner({
                                   : ev.status === "ARCHIVED"
                                     ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
                                     : ev.status === "DRAFT"
-                                      ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                                      ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
                                       : isOngoing
                                         ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
                                         : isFuture
@@ -3665,10 +3616,10 @@ function OrganizacaoPageInner({
                                         Editar
                                       </Link>
                                       <Link
-                                        href={`${eventRouteBase}/${ev.id}/live`}
+                                        href={`${eventRouteBase}/${ev.id}`}
                                         className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                       >
-                                        Preparar Live
+                                        Operação
                                       </Link>
                                       {ev.status !== "ARCHIVED" && (
                                         <Link
@@ -3744,7 +3695,7 @@ function OrganizacaoPageInner({
                               : ev.status === "ARCHIVED"
                                 ? { label: "Arquivado", classes: "border-amber-400/60 bg-amber-500/10 text-amber-100" }
                                 : ev.status === "DRAFT"
-                                  ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                                  ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
                                   : isOngoing
                                     ? { label: "A decorrer", classes: "border-emerald-400/60 bg-emerald-500/10 text-emerald-100" }
                                     : isFuture
@@ -3826,10 +3777,10 @@ function OrganizacaoPageInner({
                                     Editar
                                   </Link>
                                   <Link
-                                    href={`${eventRouteBase}/${ev.id}/live`}
+                                    href={`${eventRouteBase}/${ev.id}`}
                                     className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                                   >
-                                    Preparar Live
+                                    Operação
                                   </Link>
                                   {ev.status !== "ARCHIVED" && (
                                     <Link
@@ -3928,11 +3879,22 @@ function OrganizacaoPageInner({
         <section className={cn("space-y-3", fadeClass)} id="analisar">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-1">
+              <div>
                 <h2 className="text-2xl sm:text-3xl font-semibold text-white drop-shadow-[0_12px_45px_rgba(0,0,0,0.6)]">
-                  Finanças &amp; faturação
+                  {activeSection === "overview"
+                    ? "Resumo financeiro"
+                    : activeSection === "vendas"
+                      ? "Vendas"
+                      : activeSection === "financas" && financeFocus === "payouts"
+                        ? "Transferências"
+                      : activeSection === "financas" && financeFocus === "refunds"
+                          ? "Reembolsos"
+                      : activeSection === "invoices"
+                        ? "Faturação"
+                        : activeSection === "ops"
+                          ? "Operações"
+                          : "Finanças"}
                 </h2>
-                <p className="text-sm text-white/70">Receitas, payouts e docs fiscais.</p>
               </div>
             </div>
           </div>
@@ -3984,18 +3946,18 @@ function OrganizacaoPageInner({
               <h3 className="text-lg font-semibold text-white">Recibos e documentos</h3>
               <p className="text-[12px] text-white/65">Invoices e dados fiscais.</p>
               <Link
-                href={organization?.id ? `/org/${organization.id}/finance?tab=invoices` : "/org/analyze?section=invoices"}
+                href={organization?.id ? `/org/${organization.id}/finance?tab=analyze&section=invoices` : "/org/finance?tab=analyze&section=invoices"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Abrir faturação
               </Link>
             </div>
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0a1120]/85 via-[#0b1428]/80 to-[#05080f]/95 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
-              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Payouts</p>
+              <p className="text-[11px] uppercase tracking-[0.26em] text-white/60">Transferências</p>
               <h3 className="text-lg font-semibold text-white">Detalhe de receitas</h3>
               <p className="text-[12px] text-white/65">Detalhe de reservas e releases.</p>
               <Link
-                href={organization?.id ? `/org/${organization.id}/finance` : "/org/analyze?section=financas"}
+                href={organization?.id ? `/org/${organization.id}/finance` : "/org/finance"}
                 className={cn(CTA_SECONDARY, "mt-3 text-[12px]")}
               >
                 Ver detalhe
@@ -4213,7 +4175,7 @@ function OrganizacaoPageInner({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">{managePrimaryLabel} com mais vendas</h3>
-                <p className="text-[11px] text-white/60">Top por receita.</p>
+                <p className="text-[11px] text-white/60">Maior receita.</p>
               </div>
             </div>
 
@@ -4238,7 +4200,7 @@ function OrganizacaoPageInner({
                         ev.status === "CANCELLED"
                           ? { label: "Cancelado", classes: "border-red-400/50 bg-red-500/10 text-red-100" }
                           : ev.status === "DRAFT"
-                            ? { label: "Draft", classes: "border-white/20 bg-white/5 text-white/70" }
+                            ? { label: "Rascunho", classes: "border-white/20 bg-white/5 text-white/70" }
                             : { label: "Publicado", classes: "border-sky-400/50 bg-sky-500/10 text-sky-100" };
                       return (
                         <tr key={ev.id}>
@@ -4251,7 +4213,11 @@ function OrganizacaoPageInner({
                           <td className="py-2 pr-3 text-right text-[11px]">
                             <div className="flex items-center justify-end gap-2">
                               <Link
-                                href={`/org/analyze?section=vendas&eventId=${ev.id}`}
+                                href={
+                                  scopedOrganizationId
+                                    ? `/org/${scopedOrganizationId}/finance?tab=analyze&section=vendas&eventId=${ev.id}`
+                                    : `/org/finance?tab=analyze&section=vendas&eventId=${ev.id}`
+                                }
                                 className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                               >
                                 Ver vendas
@@ -4373,14 +4339,7 @@ function OrganizacaoPageInner({
 
       {activeObjective === "analyze" && activeSection === "financas" && (
         <section className={cn("space-y-5", fadeClass)} id="financas">
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 backdrop-blur-3xl">
-            <div className="flex flex-col gap-2">
-              <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Receita e Stripe</h2>
-              <p className="text-sm text-white/70">Dinheiro, taxas e estado Stripe.</p>
-            </div>
-          </div>
-
-          {paymentsMode === "CONNECT" && paymentsStatus !== "READY" && (
+          {showFinanceStripeStateBanners && paymentsMode === "CONNECT" && paymentsStatus !== "READY" && (
             <div
               className={`rounded-2xl border px-4 py-3 text-sm shadow-[0_18px_60px_rgba(0,0,0,0.55)] ${
                 stripeIncomplete
@@ -4391,14 +4350,14 @@ function OrganizacaoPageInner({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-1">
                   <p className="font-semibold">
-                    {stripeIncomplete ? "Onboarding incompleto no Stripe." : "Liga o Stripe para começar a receber."}
+                    {stripeIncomplete ? "Configuração incompleta no Stripe." : "Liga o Stripe para começar a receber."}
                   </p>
                   <p className="text-[12px] text-amber-100/85">
                     {paymentsStatus === "NO_STRIPE"
-                      ? "Sem Stripe não há payouts."
+                      ? "Sem Stripe não há transferências."
                       : stripeRequirements.length > 0
                         ? `Faltam ${stripeRequirements.length} passos.`
-                        : "Conclui o onboarding para payouts."}
+                        : "Conclui a configuração para transferências."}
                   </p>
                 </div>
                 <button
@@ -4412,7 +4371,7 @@ function OrganizacaoPageInner({
               </div>
             </div>
           )}
-          {paymentsMode === "PLATFORM" && (
+          {showFinanceStripeStateBanners && paymentsMode === "PLATFORM" && (
             <div className="rounded-2xl border border-emerald-400/45 bg-gradient-to-r from-emerald-500/20 via-emerald-500/15 to-teal-500/20 px-4 py-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="space-y-1">
@@ -4424,339 +4383,318 @@ function OrganizacaoPageInner({
               </div>
             </div>
           )}
-          {stripeSuccessMessage && (
+          {showFinanceStripeStateBanners && stripeSuccessMessage && (
             <div className="rounded-2xl border border-emerald-400/45 bg-gradient-to-r from-emerald-500/20 via-emerald-500/15 to-teal-500/20 px-4 py-3 text-sm text-emerald-50 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
               {stripeSuccessMessage}
             </div>
           )}
 
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-lg font-semibold text-white">Controlos Financeiros</h3>
-                <p className="text-[12px] text-white/65">Invoicing, exports e payout settings canónicos.</p>
-              </div>
-              <div className="text-[11px] text-white/60">
-                Intervalo export: {financeExportRange.from} → {financeExportRange.to}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => handleUpdateInvoicing("MANUAL_OUTSIDE_ORYA")}
-                disabled={financeActionSaving !== null}
-                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
-              >
-                Invoicing manual
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateInvoicing("EXTERNAL_SOFTWARE")}
-                disabled={financeActionSaving !== null}
-                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
-              >
-                Invoicing externo
-              </button>
-              <button
-                type="button"
-                onClick={handlePayoutSettingsHardcut}
-                disabled={financeActionSaving !== null}
-                className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
-              >
-                Guardar payout settings
-              </button>
-              <a href={buildFinanceExportHref("fees")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
-                Export fees CSV
-              </a>
-              <a href={buildFinanceExportHref("ledger")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
-                Export ledger CSV
-              </a>
-              <a href={buildFinanceExportHref("payouts")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
-                Export payouts CSV
-              </a>
-            </div>
-            <div className="text-[12px] text-white/70">
-              Modo de faturação:{" "}
-              <span className="font-semibold text-white">
-                {financeInvoicingSettings?.ok
-                  ? financeInvoicingSettings.settings?.invoicingMode ?? "Não configurado"
-                  : "Sem acesso"}
-              </span>
-            </div>
-            {financeActionMessage && (
-              <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
-                {financeActionMessage}
-              </div>
-            )}
-            {financeActionError && (
-              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
-                {financeActionError}
-              </div>
-            )}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            {[
-              {
-                label: "Receita líquida total",
-                value:
-                  financeData?.totals.netCents !== undefined
-                    ? `${(financeData.totals.netCents / 100).toFixed(2)} €`
-                    : financeSummary
-                      ? `${(financeSummary.estimatedPayoutCents / 100).toFixed(2)} €`
-                      : "—",
-                hint: "Bruto - taxas.",
-              },
-              {
-                label: "Receita últimos 30d",
-                value:
-                  financeData?.rolling.last30.netCents !== undefined
-                    ? `${(financeData.rolling.last30.netCents / 100).toFixed(2)} €`
-                    : "—",
-                hint: "Líquido 30 dias.",
-              },
-              {
-                label: "Taxas",
-                value:
-                  financeData?.totals.feesCents !== undefined
-                    ? `${(financeData.totals.feesCents / 100).toFixed(2)} €`
-                    : financeSummary
-                      ? `${(financeSummary.platformFeesCents / 100).toFixed(2)} €`
-                      : "—",
-                hint: "Processamento + fees.",
-              },
-              {
-                label: `${managePrimaryLabel} com vendas`,
-                value: financeData?.totals.eventsWithSales ?? financeSummary?.eventsWithSales ?? "—",
-                hint: "≥1 bilhete.",
-              },
-            ].map((card) => (
-              <div
-                key={card.label}
-                className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/65 to-[#050810]/90 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
-              >
-                <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{card.label}</p>
-                <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_25px_rgba(0,0,0,0.45)]">{card.value}</p>
-                <p className="text-[11px] text-white/60">{card.hint}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3">
+          {showFinanceControlPanel && (
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-white">Stripe</h3>
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] shadow-[0_10px_30px_rgba(0,0,0,0.35)] ${
-                      stripeState.tone === "success"
-                        ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
-                        : stripeState.tone === "warning"
-                          ? "border-amber-400/60 bg-amber-500/15 text-amber-100"
-                          : stripeState.tone === "error"
-                            ? "border-red-400/60 bg-red-500/15 text-red-100"
-                            : "border-white/25 bg-white/10 text-white/70"
-                    }`}
-                  >
-                    {stripeState.badge}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {paymentsStatus === "READY" ? (
-                    <a
-                      href="https://dashboard.stripe.com/"
-                      target="_blank"
-                      rel="noreferrer"
-                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
-                    >
-                      {stripeState.cta}
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleStripeConnect}
-                      disabled={stripeCtaLoading}
-                      className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
-                    >
-                      {stripeState.cta}
-                    </button>
-                  )}
+                <h3 className="text-lg font-semibold text-white">Controlos financeiros</h3>
+                <div className="text-[11px] text-white/60">
+                  {financeExportRange.from} → {financeExportRange.to}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/12 bg-black/35 p-3 text-sm space-y-1">
-                <p className="text-white/70">Conta: {organization.stripeAccountId ? `…${organization.stripeAccountId.slice(-6)}` : "Por ligar"}</p>
-                <p className="text-white/70">Cobranças: {organization.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
-                <p className="text-white/70">Payouts: {organization.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleUpdateInvoicing("MANUAL_OUTSIDE_ORYA")}
+                  disabled={financeActionSaving !== null}
+                  className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                >
+                  Faturação manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUpdateInvoicing("EXTERNAL_SOFTWARE")}
+                  disabled={financeActionSaving !== null}
+                  className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                >
+                  Software externo
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePayoutSettingsHardcut}
+                  disabled={financeActionSaving !== null}
+                  className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                >
+                  Guardar transferência
+                </button>
+                <a href={buildFinanceExportHref("fees")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                  Taxas CSV
+                </a>
+                <a href={buildFinanceExportHref("ledger")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                  Livro-razão CSV
+                </a>
+                <a href={buildFinanceExportHref("payouts")} className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")} download>
+                  Transferências CSV
+                </a>
               </div>
-              <div className="text-[11px] text-white/75 space-y-2">
-                <p>{stripeState.desc}</p>
-                {stripeRequirements.length > 0 && (
-                  <p className="text-white/70">
-                    {stripeRequirements.length} itens pendentes.
-                  </p>
-                )}
+              <div className="text-[12px] text-white/70">
+                Modo:{" "}
+                <span className="font-semibold text-white">
+                  {financeInvoicingModeLabel}
+                </span>
               </div>
-              {stripeCtaError && <div className="text-xs text-red-300">{stripeCtaError}</div>}
+              {financeActionMessage && (
+                <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+                  {financeActionMessage}
+                </div>
+              )}
+              {financeActionError && (
+                <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                  {financeActionError}
+                </div>
+              )}
             </div>
+          )}
 
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-white">Payouts</h3>
-                <span className="text-[11px] text-white/70">Info</span>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
-                  <p className="text-white/70 text-xs">Próximo payout (estimado)</p>
-                  <p className="text-xl font-semibold text-white">
-                    {financeData ? (financeData.upcomingPayoutCents / 100).toFixed(2) : financeSummary ? (financeSummary.estimatedPayoutCents / 100).toFixed(2) : "—"} €
-                  </p>
-                  <p className="text-[11px] text-white/60">Estimativa.</p>
+          {showFinanceSummaryCards && (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  label: "Receita líquida total",
+                  value:
+                    financeData?.totals.netCents !== undefined
+                      ? `${(financeData.totals.netCents / 100).toFixed(2)} €`
+                      : financeSummary
+                        ? `${(financeSummary.estimatedPayoutCents / 100).toFixed(2)} €`
+                        : "—",
+                },
+                {
+                  label: "Receita últimos 30d",
+                  value:
+                    financeData?.rolling.last30.netCents !== undefined
+                      ? `${(financeData.rolling.last30.netCents / 100).toFixed(2)} €`
+                      : "—",
+                },
+                {
+                  label: "Taxas",
+                  value:
+                    financeData?.totals.feesCents !== undefined
+                      ? `${(financeData.totals.feesCents / 100).toFixed(2)} €`
+                      : financeSummary
+                        ? `${(financeSummary.platformFeesCents / 100).toFixed(2)} €`
+                        : "—",
+                },
+                {
+                  label: `${managePrimaryLabel} com vendas`,
+                  value: financeData?.totals.eventsWithSales ?? financeSummary?.eventsWithSales ?? "—",
+                },
+              ].map((card) => (
+                <div
+                  key={card.label}
+                  className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/65 to-[#050810]/90 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+                >
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{card.label}</p>
+                  <p className="mt-1 text-2xl font-bold text-white drop-shadow-[0_10px_25px_rgba(0,0,0,0.45)]">{card.value}</p>
                 </div>
-                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
-                  <p className="text-white/70 text-xs">Receita bruta (total)</p>
-                  <p className="text-xl font-semibold text-white">
-                    {financeData ? (financeData.totals.grossCents / 100).toFixed(2) : financeSummary ? (financeSummary.revenueCents / 100).toFixed(2) : "—"} €
-                  </p>
+              ))}
+            </div>
+          )}
+
+          {(showFinanceStripeCard || showFinancePayoutInfoCard) && (
+            <div className={cn("grid gap-4", showFinanceStripeCard && showFinancePayoutInfoCard ? "md:grid-cols-2" : "md:grid-cols-1")}>
+              {showFinanceStripeCard && (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-white">Stripe</h3>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] shadow-[0_10px_30px_rgba(0,0,0,0.35)] ${
+                          stripeState.tone === "success"
+                            ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-100"
+                            : stripeState.tone === "warning"
+                              ? "border-amber-400/60 bg-amber-500/15 text-amber-100"
+                              : stripeState.tone === "error"
+                                ? "border-red-400/60 bg-red-500/15 text-red-100"
+                                : "border-white/25 bg-white/10 text-white/70"
+                        }`}
+                      >
+                        {stripeState.badge}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {paymentsStatus === "READY" ? (
+                        <a
+                          href="https://dashboard.stripe.com/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+                        >
+                          {stripeState.cta}
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleStripeConnect}
+                          disabled={stripeCtaLoading}
+                          className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-60")}
+                        >
+                          {stripeState.cta}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/12 bg-black/35 p-3 text-sm space-y-1">
+                    <p className="text-white/70">Conta: {organization.stripeAccountId ? `…${organization.stripeAccountId.slice(-6)}` : "Por ligar"}</p>
+                    <p className="text-white/70">Cobranças: {organization.stripeChargesEnabled ? "Ativo" : "Inativo"}</p>
+                    <p className="text-white/70">Transferências: {organization.stripePayoutsEnabled ? "Ativo" : "Inativo"}</p>
+                  </div>
+                  <div className="text-[11px] text-white/75 space-y-2">
+                    <p>{stripeState.desc}</p>
+                    {stripeRequirements.length > 0 && (
+                      <p className="text-white/70">
+                        {stripeRequirements.length} itens pendentes.
+                      </p>
+                    )}
+                  </div>
+                  {stripeCtaError && <div className="text-xs text-red-300">{stripeCtaError}</div>}
                 </div>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 text-sm">
-                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
-                  <p className="text-white/70 text-xs">Taxas acumuladas</p>
-                  <p className="text-xl font-semibold text-white">
-                    {financeData ? (financeData.totals.feesCents / 100).toFixed(2) : financeSummary ? (financeSummary.platformFeesCents / 100).toFixed(2) : "—"} €
-                  </p>
-                  <p className="text-[11px] text-white/60">Stripe + fees.</p>
-                </div>
-                <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
-                  <p className="text-white/70 text-xs">{managePrimaryLabel} com vendas</p>
-                  <p className="text-xl font-semibold text-white">
-                    {financeData ? financeData.totals.eventsWithSales : financeSummary ? financeSummary.eventsWithSales : "—"}
-                  </p>
-                </div>
-              </div>
-              {payoutAlerts && (
-                <div className="flex flex-wrap gap-2 text-[11px]">
-                  {payoutAlerts.holdUntil && (
-                    <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-white/80">
-                      Pendente (hold até{" "}
-                      {formatDateTime(new Date(payoutAlerts.holdUntil), {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                      )
-                    </span>
-                  )}
-                  {payoutAlerts.actionRequired && (
-                    <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-amber-100">
-                      Ação necessária: completar Stripe
-                    </span>
-                  )}
-                  {payoutAlerts.nextAttemptAt && (
-                    <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-3 py-1 text-sky-100">
-                      A tentar novamente em:{" "}
-                      {formatDateTime(new Date(payoutAlerts.nextAttemptAt), {
-                        day: "2-digit",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+              )}
+
+              {showFinancePayoutInfoCard && (
+                <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0b1124]/70 to-[#050810]/90 backdrop-blur-3xl p-4 space-y-3">
+                  <h3 className="text-lg font-semibold text-white">Transferências</h3>
+                  <div className="grid gap-2 sm:grid-cols-2 text-sm">
+                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                      <p className="text-white/70 text-xs">Próxima transferência (estimada)</p>
+                      <p className="text-xl font-semibold text-white">
+                        {financeData ? (financeData.upcomingPayoutCents / 100).toFixed(2) : financeSummary ? (financeSummary.estimatedPayoutCents / 100).toFixed(2) : "—"} €
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                      <p className="text-white/70 text-xs">Receita bruta (total)</p>
+                      <p className="text-xl font-semibold text-white">
+                        {financeData ? (financeData.totals.grossCents / 100).toFixed(2) : financeSummary ? (financeSummary.revenueCents / 100).toFixed(2) : "—"} €
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 text-sm">
+                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                      <p className="text-white/70 text-xs">Taxas acumuladas</p>
+                      <p className="text-xl font-semibold text-white">
+                        {financeData ? (financeData.totals.feesCents / 100).toFixed(2) : financeSummary ? (financeSummary.platformFeesCents / 100).toFixed(2) : "—"} €
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-white/12 bg-white/8 p-3">
+                      <p className="text-white/70 text-xs">{managePrimaryLabel} com vendas</p>
+                      <p className="text-xl font-semibold text-white">
+                        {financeData ? financeData.totals.eventsWithSales : financeSummary ? financeSummary.eventsWithSales : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {payoutAlerts && (
+                    <div className="flex flex-wrap gap-2 text-[11px]">
+                      {payoutAlerts.holdUntil && (
+                        <span className="rounded-full border border-white/15 bg-white/8 px-3 py-1 text-white/80">
+                          Pendente (em espera até{" "}
+                          {formatDateTime(new Date(payoutAlerts.holdUntil), {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                          )
+                        </span>
+                      )}
+                      {payoutAlerts.actionRequired && (
+                        <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-amber-100">
+                          Ação necessária: completar Stripe
+                        </span>
+                      )}
+                      {payoutAlerts.nextAttemptAt && (
+                        <span className="rounded-full border border-sky-300/40 bg-sky-300/10 px-3 py-1 text-sky-100">
+                          A tentar novamente em:{" "}
+                          {formatDateTime(new Date(payoutAlerts.nextAttemptAt), {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
-              <p className="text-[11px] text-white/65">Valores informativos.</p>
             </div>
-          </div>
+          )}
 
-          <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
+          {showFinanceLedgerTable && (
+            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-white">Por {managePrimaryLabelLower}</h3>
-                <p className="text-[12px] text-white/65">Bruto, taxas e líquido.</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={exportFinanceCsv}
+                    disabled={!financeData || financeData.events.length === 0}
+                    className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
+                  >
+                    Exportar CSV
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={exportFinanceCsv}
-                  disabled={!financeData || financeData.events.length === 0}
-                  className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px] disabled:opacity-50")}
-                >
-                  Exportar CSV
-                </button>
-              </div>
-            </div>
 
-            {!financeData && <p className="text-sm text-white/60">A carregar…</p>}
-            {financeData && financeData.events.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
-                Sem vendas ainda.
-              </div>
-            )}
-            {stripeSuccessMessage && (
-              <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-50">
-                {stripeSuccessMessage}
-              </div>
-            )}
+              {!financeData && <p className="text-sm text-white/60">A carregar…</p>}
+              {financeData && financeData.events.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 px-4 py-4 text-sm text-white/70">
+                  Sem vendas ainda.
+                </div>
+              )}
 
-            {financeData && financeData.events.length > 0 && (
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm text-white/80">
-                  <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
-                    <tr>
-                      <th className="px-4 py-3">{managePrimaryLabelTitle}</th>
-                      <th className="px-4 py-3">{salesUnitLabel}</th>
-                      <th className="px-4 py-3">Bruto</th>
-                      <th className="px-4 py-3">Taxas</th>
-                      <th className="px-4 py-3">Líquido</th>
-                      <th className="px-4 py-3">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {financeData.events.map((ev) => (
-                      <tr key={ev.id} className="hover:bg-white/5 transition">
-                        <td className="px-4 py-3">
-                          <div className="flex flex-col">
-                            <span className="font-semibold text-white">{ev.title}</span>
-                            <span className="text-[11px] text-white/60">
-                              {ev.startsAt ? formatDateOnly(new Date(ev.startsAt)) : "Data por definir"}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-[12px]">{ev.ticketsSold}</td>
-                        <td className="px-4 py-3 text-[12px]">{(ev.grossCents / 100).toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-[12px]">{(ev.feesCents / 100).toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-[12px]">{(ev.netCents / 100).toFixed(2)} €</td>
-                        <td className="px-4 py-3 text-[11px]">
-                          <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">{ev.status ?? "—"}</span>
-                        </td>
+              {financeData && financeData.events.length > 0 && (
+                <div className="overflow-auto">
+                  <table className="min-w-full text-sm text-white/80">
+                    <thead className="text-left text-[11px] uppercase tracking-wide text-white/60">
+                      <tr>
+                        <th className="px-4 py-3">{managePrimaryLabelTitle}</th>
+                        <th className="px-4 py-3">{salesUnitLabel}</th>
+                        <th className="px-4 py-3">Bruto</th>
+                        <th className="px-4 py-3">Taxas</th>
+                        <th className="px-4 py-3">Líquido</th>
+                        <th className="px-4 py-3">Estado</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {financeData.events.map((ev) => (
+                        <tr key={ev.id} className="hover:bg-white/5 transition">
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-white">{ev.title}</span>
+                              <span className="text-[11px] text-white/60">
+                                {ev.startsAt ? formatDateOnly(new Date(ev.startsAt)) : "Data por definir"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-[12px]">{ev.ticketsSold}</td>
+                          <td className="px-4 py-3 text-[12px]">{(ev.grossCents / 100).toFixed(2)} €</td>
+                          <td className="px-4 py-3 text-[12px]">{(ev.feesCents / 100).toFixed(2)} €</td>
+                          <td className="px-4 py-3 text-[12px]">{(ev.netCents / 100).toFixed(2)} €</td>
+                          <td className="px-4 py-3 text-[11px]">
+                            <span className="rounded-full border border-white/20 px-2 py-0.5 text-white/70">{ev.status ?? "—"}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <PayoutsPanel />
-            <RefundsPanel />
-          </div>
-
-          <ReconciliationPanel />
-          <FinanceAlertsPanel
-            organization={organization ?? null}
-            canEdit={canEditFinanceAlerts}
-            onSaved={mutateOrganization}
-          />
+          {showFinancePayoutsPanel && <PayoutsPanel />}
+          {showFinanceRefundsPanel && <RefundsPanel />}
         </section>
       )}
 
       {activeObjective === "analyze" && activeSection === "invoices" && (
         <section className={cn("space-y-4", fadeClass)} id="invoices">
           <InvoicesClient
-            basePath={organization?.id ? `/org/${organization.id}/finance?tab=invoices` : "/org/analyze?section=invoices"}
+            basePath={organization?.id ? `/org/${organization.id}/finance?tab=analyze&section=invoices` : "/org/finance?tab=analyze&section=invoices"}
             fullWidth
             organizationId={organization?.id ?? null}
           />
@@ -4766,7 +4704,7 @@ function OrganizacaoPageInner({
       {activeObjective === "analyze" && activeSection === "ops" && (
         <section className={cn("space-y-4", fadeClass)} id="ops">
           <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/10 via-[#0d1530]/75 to-[#050912]/90 px-5 py-4 backdrop-blur-3xl">
-            <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Ops Feed</h2>
+            <h2 className="text-3xl font-semibold text-white drop-shadow-[0_12px_40px_rgba(0,0,0,0.55)]">Feed operacional</h2>
             <p className="text-sm text-white/70">Atividade operacional recente com correlação.</p>
           </div>
           {!opsFeed && (
@@ -4787,8 +4725,8 @@ function OrganizacaoPageInner({
                     <tr>
                       <th className="px-3 py-2">Data</th>
                       <th className="px-3 py-2">Evento</th>
-                      <th className="px-3 py-2">Source</th>
-                      <th className="px-3 py-2">Correlation</th>
+                      <th className="px-3 py-2">Origem</th>
+                      <th className="px-3 py-2">Correlação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -4809,7 +4747,7 @@ function OrganizacaoPageInner({
           )}
           {opsFeed && !opsFeed.ok && (
             <div className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-4 text-sm text-rose-100">
-              Não foi possível carregar o Ops Feed.
+              Não foi possível carregar o feed operacional.
             </div>
           )}
         </section>
@@ -4844,7 +4782,7 @@ function OrganizacaoPageInner({
             <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 px-4 py-4 text-sm text-white/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-white">Módulo de Promoções desativado.</p>
+                  <p className="font-semibold text-white">Ferramenta de Promoções desativada.</p>
                   <p className="text-[12px] text-white/60">Ativa a ferramenta para usar promoções e campanhas.</p>
                 </div>
                 <button
@@ -4879,7 +4817,7 @@ function OrganizacaoPageInner({
                       hint: marketingKpis.topPromo ? `${marketingKpis.topPromo.redemptionsCount ?? 0} usos` : "Sem dados.",
                     },
                     {
-                      label: "Promo codes ativos",
+                      label: "Códigos promocionais ativos",
                       value: marketingKpis.activePromos,
                       hint: "Ativos agora.",
                     },
@@ -4912,7 +4850,7 @@ function OrganizacaoPageInner({
             <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0c162c]/65 to-[#050912]/90 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Fill the Room</h3>
+                  <h3 className="text-lg font-semibold text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.45)]">Encher a casa</h3>
                   <p className="text-[12px] text-white/65">Ações sugeridas.</p>
                 </div>
                 <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/70">
@@ -4978,7 +4916,7 @@ function OrganizacaoPageInner({
                         </div>
                         <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                           <Link
-                            href="/org/promote?section=marketing&marketing=promos"
+                            href="/org/marketing?marketing=promos"
                             className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
                             {ev.tag.suggestion}
@@ -5015,7 +4953,7 @@ function OrganizacaoPageInner({
                 {[
                   { label: `${salesUnitLabel} totais`, value: marketingKpis.totalTickets ?? "—" },
                   { label: `${salesUnitLabel} com promo`, value: marketingKpis.ticketsWithPromo ?? 0 },
-                  { label: "Guest / convidados", value: marketingKpis.guestTickets ?? 0 },
+                  { label: "Convidados", value: marketingKpis.guestTickets ?? 0 },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5/80 bg-black/20 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.4)]">
                     <p className="text-[11px] text-white/60">{item.label}</p>
@@ -5116,7 +5054,7 @@ function OrganizacaoPageInner({
             ) : (
               <div className="rounded-3xl border border-white/10 bg-black/35 p-4 text-sm text-white/70 space-y-3">
                 <p className="text-white/80 font-semibold">Em breve</p>
-                <p className="text-[12px] text-white/65">Dashboard por promotor.</p>
+                <p className="text-[12px] text-white/65">Painel por promotor.</p>
               </div>
             )}
           </div>
@@ -5308,22 +5246,22 @@ function OrganizacaoPageInner({
       )}
 
       {toolsModal}
-      {pendingModuleRemoval && (
+      {pendingToolVisibilityRemoval && (
         <ConfirmDestructiveActionDialog
           open
-          title={`Remover ${pendingModuleRemoval.title}?`}
-          description="Esta ferramenta deixa de aparecer no dashboard e as páginas associadas ficam indisponíveis."
+          title={`Ocultar ${pendingToolVisibilityRemoval.title}?`}
+          description="Esta ferramenta deixa de aparecer no dashboard, mas continua ativa no sistema."
           consequences={[
-            "Podes voltar a ativar a qualquer momento no menu de ferramentas.",
-            "As tuas configurações ficam guardadas.",
+            "Podes voltar a mostrar a qualquer momento no gestor de ferramentas.",
+            "As configurações e os dados da ferramenta mantêm-se.",
           ]}
-          confirmLabel="Remover ferramenta"
+          confirmLabel="Ocultar ferramenta"
           dangerLevel="medium"
           onConfirm={() => {
-            deactivateModule(pendingModuleRemoval.moduleKey);
-            setPendingModuleRemoval(null);
+            hideDashboardTool(pendingToolVisibilityRemoval);
+            setPendingToolVisibilityRemoval(null);
           }}
-          onClose={() => setPendingModuleRemoval(null)}
+          onClose={() => setPendingToolVisibilityRemoval(null)}
         />
       )}
       {eventDialog && (

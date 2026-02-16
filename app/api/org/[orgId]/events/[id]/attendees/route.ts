@@ -185,7 +185,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         },
       },
       checkins: {
-        select: { checkedInAt: true, resultCode: true },
+        select: { checkedInAt: true, resultCode: true, method: true, manualReason: true, checkedInBy: true },
         orderBy: { checkedInAt: "desc" },
         take: 1,
       },
@@ -222,6 +222,16 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       })
     : [];
   const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
+  const checkinByIds = Array.from(
+    new Set(pageItems.map((item) => item.checkins?.[0]?.checkedInBy).filter(Boolean) as string[]),
+  );
+  const checkinByProfiles = checkinByIds.length
+    ? await prisma.profile.findMany({
+        where: { id: { in: checkinByIds } },
+        select: { id: true, fullName: true, username: true, users: { select: { email: true } } },
+      })
+    : [];
+  const checkinByProfileMap = new Map(checkinByProfiles.map((profile) => [profile.id, profile]));
   const identityMap = new Map(identities.map((identity) => [identity.id, identity]));
   const purchaseIds = Array.from(
     new Set(pageItems.map((item) => item.purchaseId).filter(Boolean) as string[]),
@@ -268,7 +278,16 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       identityEmail ||
       (e.ownerKey.startsWith("email:") ? e.ownerKey.replace("email:", "") : null);
 
-    const consumedAt = e.checkins?.[0]?.checkedInAt ?? null;
+    const latestCheckin = e.checkins?.[0] ?? null;
+    const consumedAt = latestCheckin?.checkedInAt ?? null;
+    const checkinByProfile = latestCheckin?.checkedInBy
+      ? checkinByProfileMap.get(latestCheckin.checkedInBy)
+      : null;
+    const checkedInByLabel =
+      checkinByProfile?.fullName?.trim() ||
+      checkinByProfile?.username?.trim() ||
+      checkinByProfile?.users?.email?.trim() ||
+      null;
     const ticketStatus = e.ticket?.status ?? null;
     const displayStatus =
       ticketStatus === TicketStatus.CHARGEBACK_LOST
@@ -289,6 +308,18 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       purchaseId: e.purchaseId,
       ticketId: e.ticketId,
       checkedInAt: consumedAt,
+      checkinMethod: latestCheckin?.method ?? null,
+      checkinManualReason: latestCheckin?.manualReason ?? null,
+      checkedInBy: latestCheckin?.checkedInBy ?? null,
+      checkedInByLabel,
+      checkin: latestCheckin
+        ? {
+            method: latestCheckin.method ?? null,
+            manualReason: latestCheckin.manualReason ?? null,
+            checkedInBy: latestCheckin.checkedInBy ?? null,
+            checkedInByLabel,
+          }
+        : null,
       refundedAt: refundMap.get(e.purchaseId) ?? null,
       snapshot: {
         title: e.snapshotTitle,

@@ -11,7 +11,7 @@ import { trackEvent } from "@/lib/analytics";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type PromoCodeDto = {
   id: number;
@@ -141,7 +141,7 @@ export default function PromoCodesClient() {
   const { openModal } = useAuthModal();
   const searchParams = useSearchParams();
   const orgId = parseOrganizationId(searchParams?.get("organizationId")) ?? getOrganizationIdFromBrowser();
-  const loginRedirectHref = appendOrganizationIdToHref("/org/promo", orgId);
+  const loginRedirectHref = orgId ? buildOrgHref(orgId, "/marketing/promos") : buildOrgHubHref("/organizations");
   const { data, mutate } = useSWR<ListResponse>(user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/promo") : null, fetcher);
   const viewerRole = data?.viewerRole ?? null;
   const isPromoterOnly = viewerRole === "PROMOTER";
@@ -1068,7 +1068,7 @@ export default function PromoCodesClient() {
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-black/35 p-4 text-[12px] text-white/80">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Preview</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pré-visualização</p>
                 <p className="mt-2 text-sm">
                   Ex.: {preview.base.toFixed(2)} € → paga{" "}
                   <span className="font-semibold text-white">{preview.total.toFixed(2)} €</span>{" "}

@@ -1,9 +1,6 @@
 "use client";
 
-import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
-
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import useSWR from "swr";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
@@ -21,8 +18,8 @@ import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLe
 import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
-type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
-type StaffTabKey = "membros" | "convidados" | "permissoes" | "auditoria";
+type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER";
+type StaffTabKey = "membros" | "permissoes" | "auditoria";
 
 type Member = {
   userId: string;
@@ -95,32 +92,15 @@ type AuditLogResponse = {
   organizationId?: number | null;
   error?: string;
 };
-type TrainerItem = {
-  userId: string;
-  fullName: string | null;
-  username: string | null;
-  avatarUrl: string | null;
-  isPublished: boolean;
-  reviewStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
-  reviewNote: string | null;
-  reviewRequestedAt: string | null;
-};
-type TrainersResponse = {
-  ok: boolean;
-  items: TrainerItem[];
-  organizationId?: number | null;
-  error?: string;
-};
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const roleLabels: Record<MemberRole, string> = {
-  OWNER: "Owner",
-  CO_OWNER: "Co-owner",
-  ADMIN: "Admin",
-  STAFF: "Staff",
-  TRAINER: "Treinador",
-  PROMOTER: "Promoter",
+  OWNER: "Dono",
+  CO_OWNER: "Co-dono",
+  ADMIN: "Administrador",
+  STAFF: "Colaborador",
+  PROMOTER: "Promotor",
 };
 
 const roleOrder: Record<MemberRole, number> = {
@@ -128,26 +108,23 @@ const roleOrder: Record<MemberRole, number> = {
   CO_OWNER: 1,
   ADMIN: 2,
   STAFF: 3,
-  TRAINER: 4,
-  PROMOTER: 5,
+  PROMOTER: 4,
 };
 
 const rolePackLabels: Record<OrganizationRolePack, string> = {
   CLUB_MANAGER: "Gestor de Clube",
   TOURNAMENT_DIRECTOR: "Diretor de Torneio",
   FRONT_DESK: "Front Desk",
-  COACH: "Treinador",
+  COACH: "Coach",
   REFEREE: "Árbitro",
 };
 
 const rolePackOptionsByRole: Partial<Record<MemberRole, OrganizationRolePack[]>> = {
-  STAFF: ["CLUB_MANAGER", "TOURNAMENT_DIRECTOR", "FRONT_DESK", "REFEREE"],
-  TRAINER: ["COACH"],
+  STAFF: ["CLUB_MANAGER", "TOURNAMENT_DIRECTOR", "FRONT_DESK", "COACH", "REFEREE"],
 };
 
 const defaultRolePackByRole: Partial<Record<MemberRole, OrganizationRolePack>> = {
   STAFF: "FRONT_DESK",
-  TRAINER: "COACH",
 };
 
 const moduleOrder: OrganizationModule[] = [
@@ -172,10 +149,10 @@ const auditActionLabels: Record<string, string> = {
   INVITE_RESENT: "Convite reenviado",
   INVITE_ACCEPTED: "Convite aceite",
   INVITE_DECLINED: "Convite recusado",
-  MEMBER_ROLE_UPDATED: "Role atualizada",
+  MEMBER_ROLE_UPDATED: "Função atualizada",
   MEMBER_REMOVED: "Membro removido",
-  OWNER_PROMOTED: "Owner promovido",
-  OWNER_DEMOTED: "Owner despromovido",
+  OWNER_PROMOTED: "Dono promovido",
+  OWNER_DEMOTED: "Dono despromovido",
   PERMISSION_UPDATED: "Permissao atualizada",
   PERMISSION_CLEARED: "Permissao removida",
 };
@@ -191,26 +168,12 @@ const statusTone: Record<InviteStatus, string> = {
   CANCELLED: "border-white/15 bg-gradient-to-r from-white/8 via-white/4 to-white/6 text-white/65",
 };
 
-const trainerStatusLabel: Record<TrainerItem["reviewStatus"], string> = {
-  DRAFT: "Rascunho",
-  PENDING: "Em revisão",
-  APPROVED: "Aprovado",
-  REJECTED: "Recusado",
-};
-
-const trainerStatusTone: Record<TrainerItem["reviewStatus"], string> = {
-  DRAFT: "border-white/15 bg-white/5 text-white/60",
-  PENDING: "border-amber-300/50 bg-amber-400/10 text-amber-100",
-  APPROVED: "border-emerald-300/50 bg-emerald-400/10 text-emerald-100",
-  REJECTED: "border-rose-300/50 bg-rose-400/10 text-rose-100",
-};
-
 function canManageMember(actorRole: MemberRole | null, targetRole: MemberRole) {
   if (!actorRole) return false;
   if (actorRole === "OWNER") return true;
-  if (actorRole === "CO_OWNER") return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
+  if (actorRole === "CO_OWNER") return targetRole !== "OWNER";
   if (actorRole === "ADMIN") {
-    return targetRole === "STAFF" || targetRole === "TRAINER" || targetRole === "PROMOTER";
+    return targetRole === "ADMIN" || targetRole === "STAFF" || targetRole === "PROMOTER";
   }
   return false;
 }
@@ -219,12 +182,12 @@ function canAssignRole(actorRole: MemberRole | null, targetRole: MemberRole, des
   if (!actorRole) return false;
   if (actorRole === "OWNER") return true;
   if (actorRole === "CO_OWNER") {
-    if (desiredRole === "OWNER" || desiredRole === "CO_OWNER") return false;
-    return targetRole !== "OWNER" && targetRole !== "CO_OWNER";
+    if (desiredRole === "OWNER") return false;
+    return targetRole !== "OWNER";
   }
   if (actorRole === "ADMIN") {
-    const allowed = desiredRole === "STAFF" || desiredRole === "TRAINER" || desiredRole === "PROMOTER";
-    return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER" && targetRole !== "ADMIN";
+    const allowed = desiredRole === "ADMIN" || desiredRole === "STAFF" || desiredRole === "PROMOTER";
+    return allowed && targetRole !== "OWNER" && targetRole !== "CO_OWNER";
   }
   return false;
 }
@@ -265,13 +228,13 @@ function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
     const fromLabel = roleLabels[fromRole as MemberRole] ?? fromRole ?? "";
     const toLabel = roleLabels[toRole as MemberRole] ?? toRole ?? "";
     if (fromLabel && toLabel) {
-      parts.push(`Role: ${fromLabel} → ${toLabel}`);
+      parts.push(`Função: ${fromLabel} → ${toLabel}`);
     } else if (fromLabel || toLabel) {
-      parts.push(`Role: ${fromLabel || toLabel}`);
+      parts.push(`Função: ${fromLabel || toLabel}`);
     }
   } else if (newRole) {
     const newLabel = roleLabels[newRole as MemberRole] ?? newRole;
-    parts.push(`Role: ${newLabel}`);
+    parts.push(`Função: ${newLabel}`);
   }
   const fromRolePack = typeof metadata.fromRolePack === "string" ? metadata.fromRolePack : null;
   const toRolePack = typeof metadata.toRolePack === "string" ? metadata.toRolePack : null;
@@ -282,17 +245,17 @@ function formatAuditMeta(metadata: Record<string, unknown> | null | undefined) {
       : "";
     const toPackLabel = toRolePack ? rolePackLabels[toRolePack as OrganizationRolePack] ?? toRolePack : "";
     if (fromPackLabel && toPackLabel) {
-      parts.push(`Pack: ${fromPackLabel} → ${toPackLabel}`);
+      parts.push(`Pacote: ${fromPackLabel} → ${toPackLabel}`);
     } else if (fromPackLabel || toPackLabel) {
-      parts.push(`Pack: ${fromPackLabel || toPackLabel}`);
+      parts.push(`Pacote: ${fromPackLabel || toPackLabel}`);
     }
   } else if (rolePack) {
     const rolePackLabel = rolePackLabels[rolePack as OrganizationRolePack] ?? rolePack;
-    parts.push(`Pack: ${rolePackLabel}`);
+    parts.push(`Pacote: ${rolePackLabel}`);
   }
   const moduleKey = typeof metadata.moduleKey === "string" ? metadata.moduleKey : null;
   if (moduleKey && Object.prototype.hasOwnProperty.call(MODULE_LABELS, moduleKey)) {
-    parts.push(`Modulo: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
+    parts.push(`Módulo: ${MODULE_LABELS[moduleKey as OrganizationModule]}`);
   }
   const accessLevel = typeof metadata.accessLevel === "string" ? metadata.accessLevel : null;
   const normalizedAccess = normalizeAccessLevel(accessLevel);
@@ -361,12 +324,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     label: "",
   });
   const [roleConfirmOpen, setRoleConfirmOpen] = useState(false);
-  const [trainerActionLoading, setTrainerActionLoading] = useState<string | null>(null);
-  const [newTrainerUsername, setNewTrainerUsername] = useState("");
-  const [creatingTrainer, setCreatingTrainer] = useState(false);
-  const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewTarget, setReviewTarget] = useState<TrainerItem | null>(null);
-  const [reviewNote, setReviewNote] = useState("");
   const [selectedPermissionUserId, setSelectedPermissionUserId] = useState<string>("");
   const [permissionSavingKey, setPermissionSavingKey] = useState<string | null>(null);
   const [scopeDraftType, setScopeDraftType] = useState<string>("COURT");
@@ -390,7 +347,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   }>(orgMeUrl, fetcher, { revalidateOnFocus: false });
   const staffTabParam = searchParams?.get("staff");
   const activeStaffTab: StaffTabKey =
-    staffTabParam === "convidados" || staffTabParam === "permissoes" || staffTabParam === "auditoria"
+    staffTabParam === "permissoes" || staffTabParam === "auditoria"
       ? staffTabParam
       : "membros";
   const orgTransferEnabled = meData?.orgTransferEnabled ?? false;
@@ -435,19 +392,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const resolvedOrganizationId = organizationId ?? membersData?.organizationId ?? invitesData?.organizationId ?? null;
   const canInvite = viewerRole === "OWNER" || viewerRole === "CO_OWNER" || viewerRole === "ADMIN";
   const canManagePermissions = canInvite;
-  const trainersKey = useMemo(() => {
-    if (!user) return null;
-    if (!resolvedOrganizationId) return null;
-    if (!canInvite) return null;
-    return `/api/org/${resolvedOrganizationId}/trainers`;
-  }, [user, resolvedOrganizationId, canInvite]);
-  const { data: trainersData, mutate: mutateTrainers } = useSWR<TrainersResponse>(
-    trainersKey,
-    fetcher,
-    { revalidateOnFocus: false },
-  );
-  const canManageTrainers = canInvite;
-  const trainers = trainersData?.items ?? [];
   const ownerCount = useMemo(() => members.filter((m) => m.role === "OWNER").length, [members]);
 
   const permissionsKey = useMemo(() => {
@@ -569,75 +513,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
   };
 
-  const handleTrainerAction = async (trainer: TrainerItem, action: "APPROVE" | "REJECT" | "PUBLISH" | "HIDE", note?: string) => {
-    if (!resolvedOrganizationId) return;
-    setTrainerActionLoading(trainer.userId);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers"), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          organizationId: resolvedOrganizationId,
-          userId: trainer.userId,
-          action,
-          reviewNote: note ?? null,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Não foi possível atualizar o treinador.");
-      }
-      if (mutateTrainers) await mutateTrainers();
-      if (action === "APPROVE") pushToast("Treinador aprovado e publicado.", "success");
-      if (action === "REJECT") pushToast("Treinador recusado.", "success");
-      if (action === "PUBLISH") pushToast("Treinador publicado.", "success");
-      if (action === "HIDE") pushToast("Treinador ocultado.", "success");
-    } catch (err) {
-      pushToast(err instanceof Error ? err.message : "Erro ao atualizar treinador.");
-    } finally {
-      setTrainerActionLoading(null);
-    }
-  };
-
-  const openRejectDialog = (trainer: TrainerItem) => {
-    setReviewTarget(trainer);
-    setReviewNote("");
-    setReviewDialogOpen(true);
-  };
-
-  const handleCreateTrainerProfile = async () => {
-    if (!resolvedOrganizationId) return;
-    const value = newTrainerUsername.trim();
-    if (!value) {
-      pushToast("Indica o username do treinador.");
-      return;
-    }
-    setCreatingTrainer(true);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId: resolvedOrganizationId, username: value }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        pushToast(json?.error || "Não foi possível criar o perfil.");
-        return;
-      }
-      setNewTrainerUsername("");
-      pushToast("Perfil de treinador criado.", "success");
-      if (mutateTrainers) await mutateTrainers();
-    } catch (err) {
-      pushToast(err instanceof Error ? err.message : "Erro ao criar perfil.");
-    } finally {
-      setCreatingTrainer(false);
-    }
-  };
-
   const handleRequireLogin = () => {
     openModal({
       mode: "login",
-      redirectTo: "/org/staff",
+      redirectTo: "/org/team",
       showGoogle: true,
     });
   };
@@ -653,7 +532,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
     const normalizedInviteRolePack = resolveRolePackForRole(inviteRole, inviteRolePack);
     if (getRolePackOptions(inviteRole).length > 0 && !normalizedInviteRolePack) {
-      pushToast("Seleciona um pack para este papel.");
+      pushToast("Seleciona um pacote para este papel.");
       return;
     }
     setInviteLoading(true);
@@ -714,7 +593,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       if (!res.ok || json?.ok === false) {
         pushToast(json?.error || "Não foi possível alterar o papel.");
       } else {
-        pushToast("Role atualizado.", "success");
+        pushToast("Função atualizada.", "success");
         trackEvent("organization_staff_role_changed", {
           organizationId: resolvedOrganizationId,
           userId,
@@ -725,7 +604,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       }
     } catch (err) {
       console.error("[staff] role change error", err);
-      pushToast("Erro inesperado ao alterar role.");
+      pushToast("Erro inesperado ao alterar função.");
     } finally {
       setMemberActionLoading(null);
       setRoleConfirmOpen(false);
@@ -739,7 +618,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
     }
     const normalizedRolePack = resolveRolePackForRole(newRole, member.rolePack);
     if (getRolePackOptions(newRole).length > 0 && !normalizedRolePack) {
-      pushToast("Seleciona um pack válido para esse papel.");
+      pushToast("Seleciona um pacote válido para esse papel.");
       return;
     }
 
@@ -749,7 +628,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         newRole,
         newRolePack: normalizedRolePack,
         currentRole: member.role,
-        label: member.fullName || member.username || member.email || "Owner",
+        label: member.fullName || member.username || member.email || "Dono",
       });
       setRoleConfirmOpen(true);
       return;
@@ -845,7 +724,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       if (!res.ok || json?.ok === false) {
         pushToast(json?.error || "Não foi possível transferir a organização.");
       } else {
-        pushToast("Pedido criado. Enviámos o pedido de confirmação ao novo Owner.", "success");
+        pushToast("Pedido criado. Enviámos o pedido de confirmação ao novo Dono.", "success");
         setTransferTarget("");
         setTransferConfirm("");
         setTransferModalOpen(false);
@@ -898,7 +777,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         <ViewState
           kind="empty"
           title="Equipa"
-          description="Inicia sessão para gerir o staff."
+          description="Inicia sessão para gerir a equipa."
           action={
             <button
               type="button"
@@ -925,7 +804,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   ];
   const staffTabs: { key: StaffTabKey; label: string }[] = [
     { key: "membros", label: "Equipa" },
-    { key: "convidados", label: "Convidados" },
     ...(canManagePermissions ? permissionTabs : []),
   ];
   const setStaffTab = (next: StaffTabKey) => {
@@ -946,21 +824,10 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
 
   return (
     <div className={wrapperClass}>
-      <div className="relative overflow-hidden rounded-[28px] border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/75 to-[#050810]/92 p-5 shadow-[0_30px_110px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.12),transparent_35%),linear-gradient(225deg,rgba(255,255,255,0.08),transparent_40%)]" />
-        <div className="relative flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.26em] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.4)]">
-              Equipa &amp; segurança
-            </div>
-            <h1 className="text-3xl font-semibold drop-shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
-              Controla quem tem acesso {meData?.organization?.publicName ? ` · ${meData.organization.publicName}` : ""}
-            </h1>
-            <p className="text-sm text-white/70">Papéis, convites e transferências.</p>
-            {viewerRole === "OWNER" && !orgTransferEnabled && (
-              <p className="text-[11px] text-white/55">Transferência de Owner desativada.</p>
-            )}
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 text-[12px]">
+        {viewerRole === "OWNER" && !orgTransferEnabled && (
+          <p className="mr-auto text-[11px] text-white/55">Transferência de Dono desativada.</p>
+        )}
         <div className="flex flex-wrap gap-2 text-[12px]">
             {activeStaffTab === "membros" && (
               <button
@@ -991,10 +858,9 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               </button>
             )}
           </div>
-        </div>
       </div>
 
-      <ActionBar role="tablist" aria-label="Navegação de staff" className="text-sm">
+      <ActionBar role="tablist" aria-label="Navegação da equipa" className="text-sm">
         {staffTabs.map((tab) => (
           <button
             key={tab.key}
@@ -1013,17 +879,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         ))}
       </ActionBar>
 
-      {viewerRole === "TRAINER" && (
-        <div className="rounded-3xl border border-cyan-300/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-50">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p>O teu perfil de treinador está pronto para editar.</p>
-            <Link href="/org/treinadores" className={CTA_SECONDARY}>
-              Editar perfil
-            </Link>
-          </div>
-        </div>
-      )}
-
       {activeStaffTab === "permissoes" && (
         <>
           {canManagePermissions ? (
@@ -1032,7 +887,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold">Permissões por membro</h2>
-                    <p className="text-[12px] text-white/60">Overrides por módulo e por role.</p>
+                    <p className="text-[12px] text-white/60">Overrides por ferramenta e por role.</p>
                   </div>
                   <div className="text-[11px] text-white/60">
                     {isMembersLoading
@@ -1101,7 +956,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                               </div>
                             </div>
                             <span className="text-[11px] text-white/50">
-                              {overridesCount} override{overridesCount === 1 ? "" : "s"}
+                              {overridesCount} exceção{overridesCount === 1 ? "" : "ões"}
                             </span>
                           </div>
                         </button>
@@ -1115,7 +970,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-sm font-semibold">Detalhe de permissões</h2>
-                    <p className="text-[12px] text-white/60">Define o acesso efetivo por módulo.</p>
+                    <p className="text-[12px] text-white/60">Define o acesso efetivo por ferramenta.</p>
                   </div>
                   <div className="text-[11px] text-white/60">
                     {isPermissionsLoading ? "A carregar…" : "Atualiza e guarda"}
@@ -1341,7 +1196,9 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               {auditLogs.length > 0 && (
                 <div className="space-y-2">
                   {auditLogs.map((entry) => {
-                    const actorLabel = resolveUserLabel(entry.actor, "Sistema");
+                    const actorLabel = entry.actor
+                      ? resolveUserLabel(entry.actor, entry.actor.id.slice(0, 8))
+                      : "Sistema";
                     const targetUser = entry.toUser ?? entry.fromUser;
                     const targetLabel = targetUser ? resolveUserLabel(targetUser, "Utilizador") : null;
                     const actionLabel = formatAuditAction(entry.action);
@@ -1382,133 +1239,14 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </>
       )}
 
-      {activeStaffTab !== "permissoes" && activeStaffTab !== "auditoria" && (
+      {activeStaffTab === "membros" && (
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        {activeStaffTab === "convidados" && canManageTrainers && (
           <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold">Treinadores</h2>
-                <p className="text-[12px] text-white/60">Publica perfis para aparecerem no clube.</p>
-              </div>
-              <div className="text-[11px] text-white/60">
-                {trainers.length} treinador{trainers.length === 1 ? "" : "es"}
-              </div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <p className="text-[12px] text-white/70">Criar perfil por username</p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input
-                  value={newTrainerUsername}
-                  onChange={(e) => setNewTrainerUsername(e.target.value)}
-                  placeholder="@username"
-                  className="flex-1 rounded-full border border-white/15 bg-black/30 px-4 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateTrainerProfile}
-                  disabled={creatingTrainer}
-                  className={`rounded-full border border-emerald-300/50 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition ${
-                    creatingTrainer ? "opacity-60" : "hover:border-emerald-300/80"
-                  }`}
-                >
-                  {creatingTrainer ? "A criar…" : "Criar perfil"}
-                </button>
-              </div>
-              <p className="mt-2 text-[11px] text-white/50">
-                O treinador pode editar o perfil assim que tiver role Treinador.
-              </p>
-            </div>
-            {trainers.length === 0 ? (
-              <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-                Sem treinadores com role atribuído.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {trainers.map((trainer) => {
-                  const displayName = trainer.fullName || trainer.username || "Treinador";
-                  const isLoading = trainerActionLoading === trainer.userId;
-                  const statusLabel = trainerStatusLabel[trainer.reviewStatus];
-                  return (
-                    <div
-                      key={trainer.userId}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/12 bg-white/5 px-3 py-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Avatar
-                          src={trainer.avatarUrl}
-                          name={displayName}
-                          className="h-9 w-9 border border-white/10"
-                          textClassName="text-xs font-semibold uppercase tracking-[0.16em] text-white/80"
-                          fallbackText="TR"
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-white">{displayName}</p>
-                          {trainer.username && (
-                            <p className="text-[11px] text-white/60">@{trainer.username}</p>
-                          )}
-                          {trainer.reviewStatus === "REJECTED" && trainer.reviewNote && (
-                            <p className="text-[11px] text-rose-200">Motivo: {trainer.reviewNote}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${trainerStatusTone[trainer.reviewStatus]}`}
-                        >
-                          {statusLabel}
-                        </span>
-                        {trainer.reviewStatus === "PENDING" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleTrainerAction(trainer, "APPROVE")}
-                              disabled={isLoading}
-                              className={`rounded-full border border-emerald-300/50 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold text-emerald-100 transition ${isLoading ? "opacity-60" : ""}`}
-                            >
-                              Aprovar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openRejectDialog(trainer)}
-                              disabled={isLoading}
-                              className={`rounded-full border border-rose-300/50 bg-rose-400/10 px-3 py-1 text-[11px] font-semibold text-rose-100 transition ${isLoading ? "opacity-60" : ""}`}
-                            >
-                              Recusar
-                            </button>
-                          </>
-                        )}
-                        {trainer.reviewStatus === "APPROVED" && (
-                          <button
-                            type="button"
-                            onClick={() => handleTrainerAction(trainer, trainer.isPublished ? "HIDE" : "PUBLISH")}
-                            disabled={isLoading}
-                            className={`rounded-full border px-3 py-1 text-[11px] font-semibold transition ${
-                              trainer.isPublished
-                                ? "border-white/20 bg-white/5 text-white/70 hover:border-white/40 hover:text-white"
-                                : "border-emerald-300/50 bg-emerald-400/10 text-emerald-100"
-                            } ${isLoading ? "opacity-60" : ""}`}
-                          >
-                            {trainer.isPublished ? "Ocultar" : "Publicar"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
-
-        {activeStaffTab === "membros" && (
-          <>
-            <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1226]/75 to-[#050912]/90 p-4 space-y-3 shadow-[0_26px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">Membros</h2>
               <p className="text-[12px] text-white/60">
-                Papéis: Owner, Co-owner, Admin, Staff, Treinador e Promoter.
+                Papéis: Dono, Co-dono, Administrador, Colaborador e Promotor.
               </p>
             </div>
             <div className="text-[11px] text-white/60">
@@ -1583,7 +1321,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         <div className="text-[12px] text-white/60 space-x-2">
                           {m.username && <span>@{m.username}</span>}
                           {m.email && <span className="text-white/50">· {m.email}</span>}
-                          {isOnlyOwner && <span className="text-red-300">· Último Owner</span>}
+                          {isOnlyOwner && <span className="text-red-300">· Último Dono</span>}
                         </div>
                       </div>
                     </div>
@@ -1595,22 +1333,19 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
                       >
                         <option value="OWNER" disabled={!canAssignRole(viewerRole, m.role, "OWNER")}>
-                          Owner
+                          Dono
                         </option>
                         <option value="CO_OWNER" disabled={!canAssignRole(viewerRole, m.role, "CO_OWNER")}>
-                          Co-owner
+                          Co-dono
                         </option>
                         <option value="ADMIN" disabled={!canAssignRole(viewerRole, m.role, "ADMIN")}>
-                          Admin
+                          Administrador
                         </option>
                         <option value="STAFF" disabled={!canAssignRole(viewerRole, m.role, "STAFF")}>
-                          Staff
-                        </option>
-                        <option value="TRAINER" disabled={!canAssignRole(viewerRole, m.role, "TRAINER")}>
-                          Treinador
+                          Colaborador
                         </option>
                         <option value="PROMOTER" disabled={!canAssignRole(viewerRole, m.role, "PROMOTER")}>
-                          Promoter
+                          Promotor
                         </option>
                       </select>
                       {hasRolePackOptions && (
@@ -1625,7 +1360,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                           className="rounded-full border border-white/15 bg-black/40 px-4 py-2 text-sm text-white shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none focus:border-[#6BFFFF] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)] disabled:opacity-60"
                         >
                           <option value="" disabled>
-                            Selecionar pack
+                            Selecionar pacote
                           </option>
                           {rolePackOptions.map((pack) => (
                             <option key={pack} value={pack}>
@@ -1720,7 +1455,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                         </div>
                         {inv.invitedBy && (
                           <p className="text-[11px] text-white/45">
-                            Enviado por {inv.invitedBy.fullName || inv.invitedBy.username || "owner"}
+                            Enviado por {inv.invitedBy.fullName || inv.invitedBy.username || "dono"}
                           </p>
                         )}
                       </div>
@@ -1766,20 +1501,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             </div>
           )}
         </section>
-          </>
-        )}
-
-        {activeStaffTab === "convidados" && !canManageTrainers && (
-          <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70">
-            Sem permissões para gerir convidados.
-          </section>
-        )}
         </div>
       )}
 
       <ConfirmDestructiveActionDialog
         open={removeTarget !== null}
-        title="Remover membro do staff?"
+        title="Remover membro da equipa?"
         description={`Isto remove ${removeTarget?.fullName || removeTarget?.username || "este membro"} desta organização.`}
         consequences={["Perde o acesso ao dashboard e check-ins desta organização."]}
         confirmLabel="Remover"
@@ -1807,9 +1534,9 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
           <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
             <div className="space-y-1">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Confirmar</p>
-              <h3 className="text-xl font-semibold text-white">Despromover Owner?</h3>
+              <h3 className="text-xl font-semibold text-white">Despromover Dono?</h3>
               <p className="text-sm text-white/70">
-                Vais descer o papel de <span className="font-semibold text-white">{roleConfirm.label}</span> de Owner para {roleLabels[roleConfirm.newRole]}. Garante que fica pelo menos um Owner ativo.
+                Vais descer o papel de <span className="font-semibold text-white">{roleConfirm.label}</span> de Dono para {roleLabels[roleConfirm.newRole]}. Garante que fica pelo menos um Dono ativo.
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -1832,50 +1559,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
         </div>
       )}
 
-      {/* Trainer review modal */}
-      {reviewDialogOpen && reviewTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
-          <div className="w-full max-w-lg space-y-4 rounded-2xl border border-white/10 bg-[#0c1424] p-5 shadow-2xl">
-            <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Revisão</p>
-              <h3 className="text-xl font-semibold text-white">Recusar perfil</h3>
-              <p className="text-sm text-white/70">
-                Motivo opcional para o treinador rever e submeter novamente.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[12px] text-white/70">Motivo</label>
-              <textarea
-                value={reviewNote}
-                onChange={(e) => setReviewNote(e.target.value)}
-                rows={4}
-                className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Ex: Ajustar bio e preços."
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setReviewDialogOpen(false)}
-                className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleTrainerAction(reviewTarget, "REJECT", reviewNote.trim() || undefined);
-                  setReviewDialogOpen(false);
-                }}
-                className="rounded-full bg-rose-500 px-4 py-2 text-sm font-semibold text-white shadow"
-              >
-                Recusar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Invite modal */}
       {inviteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur">
@@ -1887,7 +1570,7 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             </div>
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="text-[12px] text-white/70">Email / username</label>
+                <label className="text-[12px] text-white/70">Email / utilizador</label>
                 <input
                   type="text"
                   value={inviteIdentifier}
@@ -1897,29 +1580,26 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[12px] text-white/70">Role proposto</label>
+                <label className="text-[12px] text-white/70">Função proposta</label>
                 <select
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as MemberRole)}
                   className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
                 >
                   <option value="OWNER" disabled={!canAssignRole(viewerRole, inviteRole, "OWNER")}>
-                    Owner
+                    Dono
                   </option>
                   <option value="CO_OWNER" disabled={!canAssignRole(viewerRole, inviteRole, "CO_OWNER")}>
-                    Co-owner
+                    Co-dono
                   </option>
                   <option value="ADMIN" disabled={!canAssignRole(viewerRole, inviteRole, "ADMIN")}>
-                    Admin
+                    Administrador
                   </option>
                   <option value="STAFF" disabled={!canAssignRole(viewerRole, inviteRole, "STAFF")}>
-                    Staff
-                  </option>
-                  <option value="TRAINER" disabled={!canAssignRole(viewerRole, inviteRole, "TRAINER")}>
-                    Treinador
+                    Colaborador
                   </option>
                   <option value="PROMOTER" disabled={!canAssignRole(viewerRole, inviteRole, "PROMOTER")}>
-                    Promoter
+                    Promotor
                   </option>
                 </select>
               </div>
@@ -1972,12 +1652,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/50">Transferir organização</p>
               <h3 className="text-xl font-semibold text-white">Passar a propriedade</h3>
               <p className="text-sm text-white/70">
-                A organização será atribuída ao destino como Owner. O teu papel passa para Admin automaticamente.
+                A organização será atribuída ao destino como Dono. O teu papel passa para Administrador automaticamente.
               </p>
             </div>
             <div className="space-y-3">
               <div className="space-y-1">
-                <label className="text-[12px] text-white/70">Username / email do novo Owner</label>
+                <label className="text-[12px] text-white/70">Utilizador / email do novo Dono</label>
                 <input
                   type="text"
                   value={transferTarget}

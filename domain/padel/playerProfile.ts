@@ -4,8 +4,19 @@ import crypto from "crypto";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordCrmIngestOutbox } from "@/domain/crm/outbox";
 import { reassignWinnerParticipantOnMatchSlots } from "@/domain/padel/matches/commands";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 
 const DEFAULT_RETROACTIVE_CLAIM_MONTHS = 6;
+
+const normalizeStoredPhone = (
+  value: string | null | undefined,
+  options?: Parameters<typeof normalizePhone>[1],
+) => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return null;
+  if (!isValidPhone(trimmed)) return null;
+  return normalizePhone(trimmed, options);
+};
 
 export class PadelClaimWindowExpiredError extends Error {
   constructor() {
@@ -62,13 +73,21 @@ export async function upsertPadelPlayerProfile(params: {
   fullName: string;
   email?: string | null;
   phone?: string | null;
+  phoneCountryIso2?: string | null;
+  phoneLocale?: string | null;
+  phoneCallingCode?: string;
   gender?: string | null;
   level?: string | null;
   userId?: string | null;
 }) {
-  const { organizationId, fullName, email, phone, gender, level, userId } = params;
+  const { organizationId, fullName, email, phone, phoneCountryIso2, phoneLocale, phoneCallingCode, gender, level, userId } = params;
   const emailClean = email?.trim().toLowerCase() || null;
-  const phoneClean = phone?.trim() || null;
+  const phoneNormalizationOptions = {
+    defaultCountryIso2: phoneCountryIso2 ?? null,
+    defaultLocale: phoneLocale ?? null,
+    defaultCountryCallingCode: phoneCallingCode,
+  };
+  const phoneClean = normalizeStoredPhone(phone, phoneNormalizationOptions);
 
   try {
     let resolvedUserId = userId ?? null;
@@ -90,7 +109,7 @@ export async function upsertPadelPlayerProfile(params: {
       ]);
       const resolvedName = fullName.trim() || profile?.fullName?.trim() || "Jogador Padel";
       const resolvedEmail = (emailClean || authUser?.email) ?? null;
-      const resolvedPhone = (phoneClean || profile?.contactPhone) ?? null;
+      const resolvedPhone = phoneClean ?? normalizeStoredPhone(profile?.contactPhone, phoneNormalizationOptions) ?? null;
 
       const existing = await prisma.padelPlayerProfile.findFirst({
         where: { organizationId, userId: resolvedUserId },
@@ -473,7 +492,11 @@ export async function ensurePadelPlayerProfileId(
     provisional?.displayName?.trim() ||
     "Jogador Padel";
   const resolvedEmail = normalizeEmail(email ?? existing?.email ?? provisional?.email ?? null);
-  const resolvedPhone = profile?.contactPhone ?? existing?.phone ?? provisional?.phone ?? null;
+  const resolvedPhone =
+    normalizeStoredPhone(profile?.contactPhone) ??
+    normalizeStoredPhone(existing?.phone) ??
+    normalizeStoredPhone(provisional?.phone) ??
+    null;
   const resolvedGender = profile?.gender ?? existing?.gender ?? provisional?.gender ?? undefined;
   const resolvedLevel = profile?.padelLevel ?? existing?.level ?? provisional?.level ?? undefined;
   const resolvedPreferredSide = profile?.padelPreferredSide ?? existing?.preferredSide ?? provisional?.preferredSide ?? undefined;

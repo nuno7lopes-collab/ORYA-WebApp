@@ -3,6 +3,39 @@ import path from "path";
 
 const ROOT = process.cwd();
 const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry_v1.md");
+const NORMATIVE_MODE = process.env.SSOT_NORMATIVE_MODE ?? "DOMAIN_TRANSITION";
+const AUXILIARY_TRACEABILITY_DOCS = [
+  "docs/arbitration_service_spec.md",
+  "docs/ws_handshake_and_jwt_claims.md",
+  "docs/split_v2_ssot.md",
+  "docs/SPLIT_V2.md",
+  "docs/identity_merge_log_spec.md",
+  "docs/identidade_auth_sessao_cookies_mobile_access.md",
+  "docs/policies_organizacao_fechado.md",
+  "docs/dashboard_org_decisions.md",
+  "docs/calendario_motor_unico.md",
+  "docs/reservas.md",
+  "docs/padel.md",
+  "docs/fecho_unificado_normativo.md",
+  "docs/legacy_cut_plan.md",
+  "docs/organizacoes_multiorg.md",
+  "docs/identidade_auth_historico_pre_fecho.md",
+];
+const DOMAIN_AUTHORITY_DOCS = new Set([
+  "docs/dashboard_org_decisions.md",
+  "docs/calendario_motor_unico.md",
+  "docs/organizacoes_multiorg.md",
+  "docs/padel.md",
+  "docs/reservas.md",
+  "docs/identidade_auth_sessao_cookies_mobile_access.md",
+  "docs/SPLIT_V2.md",
+  "docs/split_v2_ssot.md",
+]);
+const PLANNING_DOC = "docs/planning_registry_v1.md";
+const DOCS_DIR = path.join(ROOT, "docs");
+const ENFORCE_SINGLE_DOC = process.env.SSOT_ENFORCE_SINGLE_DOC === "1";
+const IS_DOMAIN_TRANSITION = NORMATIVE_MODE === "DOMAIN_TRANSITION";
+const IS_SSOT_ONLY = NORMATIVE_MODE === "SSOT_ONLY";
 
 function fail(lines) {
   console.error("SSOT normative gate failed:");
@@ -14,6 +47,12 @@ function fail(lines) {
 
 if (!fs.existsSync(SSOT_PATH)) {
   fail([`Missing ${path.relative(ROOT, SSOT_PATH)}`]);
+}
+
+if (!IS_DOMAIN_TRANSITION && !IS_SSOT_ONLY) {
+  fail([
+    `Invalid SSOT_NORMATIVE_MODE="${NORMATIVE_MODE}". Allowed values: DOMAIN_TRANSITION | SSOT_ONLY`,
+  ]);
 }
 
 const text = fs.readFileSync(SSOT_PATH, "utf8");
@@ -71,8 +110,87 @@ if (entitlementSummary) {
   }
 }
 
+const gapStateSection = text.match(/## 102\)[\s\S]*?(?=\n## \d{3}\)|\s*$)/)?.[0] ?? "";
+if (gapStateSection) {
+  const hasExpectedState =
+    /Estado desta ronda:\s*`EM_VERIFICACAO_EXECUCAO`/.test(gapStateSection) ||
+    /Estado desta ronda:\s*`SEM_GAPS_NORMATIVOS`/.test(gapStateSection);
+  if (!hasExpectedState) {
+    violations.push(
+      "Section 102 must declare Estado desta ronda as `EM_VERIFICACAO_EXECUCAO` or `SEM_GAPS_NORMATIVOS`.",
+    );
+  }
+}
+
+for (const doc of AUXILIARY_TRACEABILITY_DOCS) {
+  const full = path.join(ROOT, doc);
+  if (!fs.existsSync(full)) {
+    if (IS_DOMAIN_TRANSITION && DOMAIN_AUTHORITY_DOCS.has(doc)) {
+      violations.push(`Missing required domain authority doc during DOMAIN_TRANSITION: ${doc}`);
+    }
+    continue;
+  }
+
+  const raw = fs.readFileSync(full, "utf8");
+  const headerSample = raw.split(/\r?\n/).slice(0, 40).join("\n");
+  const isDomainAuthorityDoc = DOMAIN_AUTHORITY_DOCS.has(doc);
+
+  if (IS_SSOT_ONLY || !isDomainAuthorityDoc) {
+    if (!/Estado documental:\s*`RASTREABILIDADE_TECNICA`\s*\(`NAO_NORMATIVO`\)/i.test(raw)) {
+      violations.push(`${doc}: missing required non-normative traceability header.`);
+    }
+
+    if (/Autoridade\s+normativa\s+unica/i.test(headerSample)) {
+      violations.push(`${doc}: must not declare normative authority in the auxiliary header.`);
+    }
+
+    if (/\(NORMATIVO\)/i.test(headerSample)) {
+      violations.push(`${doc}: top header must not contain explicit normative markers.`);
+    }
+
+    if (/único\s+documento\s+normativo/i.test(raw) || /unico\s+documento\s+normativo/i.test(raw)) {
+      violations.push(`${doc}: auxiliary docs must not claim to be normative authority.`);
+    }
+  }
+}
+
+if (fs.existsSync(DOCS_DIR)) {
+  const docFiles = fs.readdirSync(DOCS_DIR).filter((file) => file.endsWith(".md"));
+
+  if (IS_SSOT_ONLY) {
+    for (const file of docFiles) {
+      const rel = `docs/${file}`;
+      if (rel === path.relative(ROOT, SSOT_PATH)) continue;
+      if (rel === PLANNING_DOC) continue;
+
+      const full = path.join(DOCS_DIR, file);
+      const raw = fs.readFileSync(full, "utf8");
+
+      if (/Autoridade\s+normativa\s+(u[nn]ica|única|final|exclusiva)/i.test(raw)) {
+        violations.push(`${rel}: SSOT-only mode forbids normative authority declarations outside SSOT.`);
+      }
+
+      if (/único\s+documento\s+normativo/i.test(raw) || /unico\s+documento\s+normativo/i.test(raw)) {
+        violations.push(`${rel}: SSOT-only mode forbids normative authority claims outside SSOT.`);
+      }
+    }
+
+    if (ENFORCE_SINGLE_DOC) {
+      const allowed = new Set([path.basename(SSOT_PATH)]);
+      const extra = docFiles.filter((file) => !allowed.has(file));
+      if (extra.length > 0) {
+        violations.push(
+          `SSOT-only final mode requires docs/ to keep only ${path.basename(SSOT_PATH)}. Extra files: ${extra
+            .map((file) => `docs/${file}`)
+            .join(", ")}`,
+        );
+      }
+    }
+  }
+}
+
 if (violations.length > 0) {
   fail(violations);
 }
 
-console.log("SSOT normative gate: OK");
+console.log(`SSOT normative gate: OK (${NORMATIVE_MODE})`);

@@ -15,21 +15,9 @@ describe("organization role pack policy", () => {
     }
   });
 
-  it("rejects incompatible rolePack", () => {
+  it("accepts COACH pack for STAFF", () => {
     const result = resolveRolePackForRole({
       role: OrganizationMemberRole.STAFF,
-      rolePackRaw: OrganizationRolePack.COACH,
-      rolePackProvided: true,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errorCode).toBe("ROLE_PACK_INCOMPATIBLE");
-    }
-  });
-
-  it("accepts TRAINER with COACH pack", () => {
-    const result = resolveRolePackForRole({
-      role: OrganizationMemberRole.TRAINER,
       rolePackRaw: OrganizationRolePack.COACH,
       rolePackProvided: true,
     });

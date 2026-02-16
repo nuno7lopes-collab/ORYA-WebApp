@@ -87,8 +87,6 @@ type UpdateEventBody = {
   isGratis?: boolean;
   pricingMode?: string | null;
   coverImageUrl?: string | null;
-  liveVisibility?: string | null;
-  liveStreamUrl?: string | null;
   ticketTypeUpdates?: TicketTypeUpdate[];
   newTicketTypes?: NewTicketType[];
   payoutMode?: string | null;
@@ -107,8 +105,6 @@ type UpdateEventBody = {
     undoWindowMinutes?: number | null;
   } | null;
 };
-
-type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 function slugify(input: string): string {
   return input
@@ -564,17 +560,6 @@ async function _POST(req: NextRequest) {
       }
     }
     if (body.coverImageUrl !== undefined) dataUpdate.coverImageUrl = body.coverImageUrl ?? null;
-    if (body.liveStreamUrl !== undefined) {
-      const trimmed = typeof body.liveStreamUrl === "string" ? body.liveStreamUrl.trim() : "";
-      dataUpdate.liveStreamUrl = trimmed ? trimmed : null;
-    }
-    if (body.liveVisibility !== undefined) {
-      const normalized =
-        typeof body.liveVisibility === "string" ? body.liveVisibility.trim().toUpperCase() : "";
-      if (normalized === "PUBLIC" || normalized === "PRIVATE" || normalized === "DISABLED") {
-        dataUpdate.liveVisibility = normalized as LiveVisibility;
-      }
-    }
     if (
       body.payoutMode &&
       (body.payoutMode.toUpperCase() === "PLATFORM" || body.payoutMode.toUpperCase() === "ORGANIZATION")

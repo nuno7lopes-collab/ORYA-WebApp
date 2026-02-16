@@ -27,7 +27,6 @@ const ALLOWLIST = new Set([
   "app/api/padel/matches/[id]/dispute/route.ts",
   "app/api/padel/matches/[id]/undo/route.ts",
   "app/api/padel/matches/[id]/walkover/route.ts",
-  "app/api/padel/live/timer/next-round/route.ts",
   "app/api/admin/eventos/purge/route.ts",
 ]);
 

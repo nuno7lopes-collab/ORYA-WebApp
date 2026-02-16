@@ -7,8 +7,8 @@ import useSWR from "swr";
 import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestructiveActionDialog";
 import { trackEvent } from "@/lib/analytics";
 import { formatCurrency } from "@/lib/i18n";
-import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
-import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
+import { AddressCombobox } from "@/components/ui/address-combobox";
+import type { GeoDetailsItem } from "@/lib/geo/types";
 import { computeMatchSlots } from "@/lib/padel/capacityRecommendation";
 import { Avatar } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/ui/command-palette";
@@ -257,7 +257,7 @@ type PadelOpsSummaryResponse = {
     conversionRate?: number | null;
     avgMatchmakingMinutes?: number | null;
     waitlistCount: number;
-    liveMatchesCount: number;
+    inProgressMatchesCount: number;
     delayedMatchesCount: number;
     refundPendingCount: number;
     invalidStateCount?: number;
@@ -474,10 +474,32 @@ const LESSON_TAG = "AULAS";
 const TOURNAMENT_STATUS_LABELS: Record<string, string> = {
   DRAFT: "Rascunho",
   PUBLISHED: "Publicado",
-  LIVE: "Live",
+  LOCKED: "Bloqueado",
+  DATE_CHANGED: "Data alterada",
+  FINISHED: "Concluído",
+  CANCELLED: "Cancelado",
   COMPLETED: "Concluído",
   ARCHIVED: "Arquivado",
 };
+
+const TERMINAL_TOURNAMENT_STATUSES = new Set(["DRAFT", "CANCELLED", "FINISHED", "COMPLETED", "ARCHIVED"]);
+
+function resolveEventTimestamp(value?: string | Date | null) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  const ts = date.getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function isTournamentInProgress(event: PadelEventSummary, nowTs: number) {
+  const statusKey = (event.status || "").toUpperCase();
+  if (TERMINAL_TOURNAMENT_STATUSES.has(statusKey)) return false;
+  const startTs = resolveEventTimestamp(event.startsAt);
+  if (startTs === null || nowTs < startTs) return false;
+  const endTs = resolveEventTimestamp(event.endsAt);
+  if (endTs !== null && nowTs > endTs) return false;
+  return true;
+}
 
 const badge = (tone: "green" | "amber" | "slate" = "slate") =>
   `rounded-full border px-2 py-[4px] text-[11px] ${
@@ -1062,8 +1084,6 @@ export default function PadelHubClient({
   const [trainerActionLoading, setTrainerActionLoading] = useState<string | null>(null);
   const [trainerError, setTrainerError] = useState<string | null>(null);
   const [trainerMessage, setTrainerMessage] = useState<string | null>(null);
-  const [newTrainerUsername, setNewTrainerUsername] = useState("");
-  const [creatingTrainer, setCreatingTrainer] = useState(false);
   const [lessonTitle, setLessonTitle] = useState("");
   const [lessonDuration, setLessonDuration] = useState(String(LESSON_DURATION_OPTIONS[1]));
   const [lessonPrice, setLessonPrice] = useState("20");
@@ -1152,12 +1172,6 @@ export default function PadelHubClient({
   const [clubError, setClubError] = useState<string | null>(null);
   const [clubMessage, setClubMessage] = useState<string | null>(null);
   const [clubLocationQuery, setClubLocationQuery] = useState("");
-  const [clubLocationSuggestions, setClubLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
-  const [clubLocationSearchLoading, setClubLocationSearchLoading] = useState(false);
-  const [clubLocationSearchError, setClubLocationSearchError] = useState<string | null>(null);
-  const [clubLocationDetailsLoading, setClubLocationDetailsLoading] = useState(false);
-  const clubLocationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clubLocationDetailsSeq = useRef(0);
 
   const [drawerClubId, setDrawerClubId] = useState<number | null>(initialClubs[0]?.id ?? null);
   const [courts, setCourts] = useState<PadelClubCourt[]>([]);
@@ -1513,8 +1527,11 @@ export default function PadelHubClient({
     () => padelEvents.filter((event) => event.isInterclub),
     [padelEvents],
   );
-  const liveEventsCount = useMemo(
-    () => padelEvents.filter((event) => (event.status || "").toUpperCase() === "LIVE").length,
+  const inProgressEventsCount = useMemo(
+    () => {
+      const nowTs = Date.now();
+      return padelEvents.filter((event) => isTournamentInProgress(event, nowTs)).length;
+    },
     [padelEvents],
   );
   const publishedEventsCount = useMemo(
@@ -1573,10 +1590,10 @@ export default function PadelHubClient({
         label: `${opsSummary.invalidStateCount} inconsistências de estado.`,
       });
     }
-    if (opsSummary.liveMatchesCount > 0) {
+    if (opsSummary.inProgressMatchesCount > 0) {
       alerts.push({
-        key: "live",
-        label: `${opsSummary.liveMatchesCount} jogos a decorrer.`,
+        key: "in-progress",
+        label: `${opsSummary.inProgressMatchesCount} jogos a decorrer.`,
       });
     }
     return alerts;
@@ -1598,7 +1615,7 @@ export default function PadelHubClient({
       { key: "conversion", label: "Conversão", value: conversionLabel },
       { key: "matchmaking", label: "Matchmaking médio", value: matchmakingLabel },
       { key: "waitlist", label: "Waitlist", value: opsSummary?.waitlistCount ?? 0 },
-      { key: "live", label: "Jogos live", value: opsSummary?.liveMatchesCount ?? 0 },
+      { key: "in-progress", label: "Jogos em curso", value: opsSummary?.inProgressMatchesCount ?? 0 },
       { key: "delayed", label: "Atrasos", value: opsSummary?.delayedMatchesCount ?? 0 },
       { key: "refunds", label: "Reembolsos", value: opsSummary?.refundPendingCount ?? 0 },
       { key: "invalid", label: "Inconsistências", value: opsSummary?.invalidStateCount ?? 0 },
@@ -1976,41 +1993,6 @@ export default function PadelHubClient({
     }
   };
 
-  const handleCreateTrainerProfile = async () => {
-    if (!organizationId) return;
-    const value = newTrainerUsername.trim();
-    if (!value) {
-      setTrainerError("Indica o username do treinador.");
-      return;
-    }
-    setCreatingTrainer(true);
-    setTrainerError(null);
-    setTrainerMessage(null);
-    try {
-      const trainersApiPath = buildOrgApiPath("/trainers");
-      if (!trainersApiPath) throw new Error("Organização indisponível.");
-      const res = await fetch(trainersApiPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ organizationId, username: value }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        throw new Error(sanitizeUiErrorMessage(json?.error, "Não foi possível criar o perfil."));
-      }
-      setNewTrainerUsername("");
-      setTrainerMessage("Perfil de treinador criado.");
-      toast("Perfil de treinador criado.", "ok");
-      if (mutateTrainers) await mutateTrainers();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao criar perfil.";
-      setTrainerError(message);
-      toast(message, "err");
-    } finally {
-      setCreatingTrainer(false);
-    }
-  };
-
   const handleCreateLesson = async () => {
     const title = lessonTitle.trim();
     if (!title) {
@@ -2340,8 +2322,6 @@ export default function PadelHubClient({
     setClubMessage(null);
     setSlugError(null);
     setClubLocationQuery("");
-    setClubLocationSuggestions([]);
-    setClubLocationSearchError(null);
     setClubModalOpen(true);
   };
 
@@ -2378,8 +2358,6 @@ export default function PadelHubClient({
     setClubMessage(null);
     setSlugError(null);
     setClubLocationQuery(resolvedLocation.formatted || club.name || "");
-    setClubLocationSuggestions([]);
-    setClubLocationSearchError(null);
     setClubModalOpen(true);
   };
 
@@ -2438,73 +2416,6 @@ export default function PadelHubClient({
       latitude: Number.isFinite(details.lat ?? NaN) ? details.lat ?? prev.latitude : prev.latitude,
       longitude: Number.isFinite(details.lng ?? NaN) ? details.lng ?? prev.longitude : prev.longitude,
     }));
-  };
-
-  useEffect(() => {
-    const query = clubLocationQuery.trim();
-    if (query.length < 2) {
-      setClubLocationSuggestions([]);
-      setClubLocationSearchError(null);
-      return;
-    }
-    if (clubLocationSearchTimeout.current) {
-      clearTimeout(clubLocationSearchTimeout.current);
-    }
-    setClubLocationSearchError(null);
-    clubLocationSearchTimeout.current = setTimeout(async () => {
-      setClubLocationSearchLoading(true);
-      try {
-        const items = await fetchGeoAutocomplete(query);
-        setClubLocationSuggestions(items);
-      } catch (err) {
-        console.warn("[padel/club] autocomplete falhou", err);
-        setClubLocationSuggestions([]);
-        setClubLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
-      } finally {
-        setClubLocationSearchLoading(false);
-      }
-    }, 240);
-
-    return () => {
-      if (clubLocationSearchTimeout.current) {
-        clearTimeout(clubLocationSearchTimeout.current);
-      }
-    };
-  }, [clubLocationQuery]);
-
-  const handleSelectClubLocationSuggestion = async (item: GeoAutocompleteItem) => {
-    setClubForm((prev) => ({
-      ...prev,
-      addressId: "",
-      locationProviderId: item.providerId,
-      locationFormattedAddress: item.label,
-      locationSourceProvider: item.sourceProvider ?? null,
-      locationConfidenceScore: null,
-      locationValidationStatus: null,
-      latitude: Number.isFinite(item.lat ?? NaN) ? item.lat ?? null : null,
-      longitude: Number.isFinite(item.lng ?? NaN) ? item.lng ?? null : null,
-      address: item.address || prev.address,
-      city: item.city || prev.city,
-    }));
-    setClubLocationQuery(item.label);
-    setClubLocationSuggestions([]);
-    setClubLocationSearchError(null);
-    const seq = ++clubLocationDetailsSeq.current;
-    setClubLocationDetailsLoading(true);
-    try {
-      const details = await fetchGeoDetails(item.providerId, {
-        lat: item.lat,
-        lng: item.lng,
-      });
-      if (clubLocationDetailsSeq.current !== seq) return;
-      applyClubGeoDetails(details, item.label);
-    } catch (err) {
-      console.warn("[padel/club] detalhes falharam", err);
-    } finally {
-      if (clubLocationDetailsSeq.current === seq) {
-        setClubLocationDetailsLoading(false);
-      }
-    }
   };
 
   const handleSubmitClub = async () => {
@@ -2573,8 +2484,6 @@ export default function PadelHubClient({
       setClubModalOpen(false);
       setClubForm({ ...DEFAULT_FORM, courtsCount: String(courtsCount) });
       setClubLocationQuery("");
-      setClubLocationSuggestions([]);
-      setClubLocationSearchError(null);
       setDrawerClubId(club.id);
       trackEvent(clubForm.id ? "padel_club_updated" : "padel_club_created", { clubId: club.id });
 
@@ -2873,7 +2782,7 @@ export default function PadelHubClient({
     if (!selectedClub) return;
     const selectedMember = staffMode === "existing" ? staffOptions.find((m) => m.userId === staffForm.staffMemberId) : null;
     if (staffMode === "existing" && !selectedMember) {
-      setStaffError("Escolhe um membro do staff global.");
+      setStaffError("Escolhe um membro da equipa global.");
       return;
     }
     const inviteEmail = staffForm.email.trim().toLowerCase();
@@ -3626,7 +3535,7 @@ export default function PadelHubClient({
       {
         id: "open-wizard",
         label: "Criar torneio",
-        description: "Abrir wizard Padel.",
+        description: "Abrir assistente de padel.",
         shortcut: "G",
         run: () =>
           router.push(
@@ -3645,7 +3554,7 @@ export default function PadelHubClient({
       {
         id: "open-calendar",
         label: "Calendário",
-        description: "Agenda e auto-schedule.",
+        description: "Agenda e agendamento automático.",
         shortcut: "C",
         run: () => setPadelSection("calendar"),
         enabled: toolMode === "TOURNAMENTS",
@@ -3683,7 +3592,7 @@ export default function PadelHubClient({
       {
         id: "open-courts",
         label: "Campos",
-        description: "Configurar courts e disponibilidade.",
+        description: "Configurar campos e disponibilidade.",
         run: () => setPadelSection("courts"),
         enabled: toolMode === "CLUB",
       },
@@ -3711,41 +3620,41 @@ export default function PadelHubClient({
       {
         id: "open-partnerships",
         label: "Parcerias operacionais",
-        description: "Acordos, claims e overrides entre clubes.",
+        description: "Acordos, reivindicações e exceções entre clubes.",
         run: () => runPartnershipAction(),
         enabled: toolMode === "CLUB",
       },
       {
-        id: "open-live",
-        label: "LiveHub",
-        description: "Abrir painel live.",
+        id: "open-ops",
+        label: "Detalhes do torneio",
+        description: "Abrir painel operacional.",
         run: () => {
           if (!eventId) return;
           if (!organizationId) return;
-          window.open(buildOrgHref(organizationId, `/padel/tournaments/${eventId}/live`), "_blank");
+          window.open(buildOrgHref(organizationId, `/events/${eventId}`), "_blank");
         },
         enabled: Boolean(eventId),
       },
       {
         id: "open-monitor",
-        label: "Monitor TV",
-        description: "Abrir monitor público.",
+        label: "Página pública",
+        description: "Abrir página pública.",
         run: () => {
           if (!selectedEvent?.slug) return;
-          window.open(`/eventos/${selectedEvent.slug}/monitor`, "_blank");
+          window.open(`/eventos/${selectedEvent.slug}`, "_blank");
         },
         enabled: Boolean(selectedEvent?.slug),
       },
       {
         id: "preview-schedule",
-        label: "Simular auto-schedule",
+        label: "Simular agendamento automático",
         description: "Pré-visualizar agenda.",
         run: () => previewAutoSchedule(),
         enabled: Boolean(eventId),
       },
       {
         id: "apply-schedule",
-        label: "Aplicar auto-schedule",
+        label: "Aplicar agendamento automático",
         description: "Gerar calendário real.",
         run: () => runAutoSchedule(),
         enabled: Boolean(eventId),
@@ -3805,7 +3714,7 @@ export default function PadelHubClient({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Operação de torneios</p>
-              <p className="text-sm text-white/70">Lista rápida, estado e atalhos para live/configuração.</p>
+              <p className="text-sm text-white/70">Lista rápida, estado e atalhos para operação/configuração.</p>
             </div>
             <Link href={tournamentsCreateHref} className={CTA_PAD_PRIMARY_SM}>
               Novo torneio
@@ -3822,8 +3731,8 @@ export default function PadelHubClient({
               <p className="mt-1 text-xl font-semibold text-white">{publishedEventsCount}</p>
             </div>
             <div className="rounded-xl border border-white/12 bg-black/35 p-3">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Live</p>
-              <p className="mt-1 text-xl font-semibold text-white">{liveEventsCount}</p>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Em curso</p>
+              <p className="mt-1 text-xl font-semibold text-white">{inProgressEventsCount}</p>
             </div>
             <div className="rounded-xl border border-white/12 bg-black/35 p-3">
               <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Interclubes</p>
@@ -3842,8 +3751,9 @@ export default function PadelHubClient({
               {sortedPadelEvents.slice(0, 12).map((event) => {
                 const statusKey = (event.status || "").toUpperCase();
                 const statusLabel = TOURNAMENT_STATUS_LABELS[statusKey] || statusKey || "—";
-                const liveTone =
-                  statusKey === "LIVE"
+                const inProgress = isTournamentInProgress(event, Date.now());
+                const statusTone =
+                  inProgress
                     ? "border-emerald-300/60 bg-emerald-400/10 text-emerald-100"
                     : "border-white/20 bg-white/5 text-white/70";
                 return (
@@ -3860,14 +3770,14 @@ export default function PadelHubClient({
                           {event.isInterclub ? " · Interclubes" : ""}
                         </p>
                       </div>
-                      <span className={`rounded-full border px-2 py-1 text-[11px] ${liveTone}`}>{statusLabel}</span>
+                      <span className={`rounded-full border px-2 py-1 text-[11px] ${statusTone}`}>{statusLabel}</span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Link href={organizationId ? buildOrgHref(organizationId, `/events/${event.id}`) : buildOrgHubHref("/organizations")} className={CTA_PAD_SECONDARY_SM}>
                         Abrir
                       </Link>
-                      <Link href={organizationId ? buildOrgHref(organizationId, `/events/${event.id}/live`) : buildOrgHubHref("/organizations")} className={CTA_PAD_SECONDARY_SM}>
-                        Live
+                      <Link href={organizationId ? buildOrgHref(organizationId, `/events/${event.id}`) : buildOrgHubHref("/organizations")} className={CTA_PAD_SECONDARY_SM}>
+                        Detalhes
                       </Link>
                       <button
                         type="button"
@@ -4068,8 +3978,8 @@ export default function PadelHubClient({
                             if (kind === "match") {
                               const match = matchesById.get(parsedId);
                               if (!match?.courtId) {
-                                setCalendarWarning("Define primeiro o court do jogo para o mover.");
-                                toast("Define o court do jogo antes de mover", "warn");
+                                setCalendarWarning("Define primeiro o campo do jogo para o mover.");
+                                toast("Define o campo do jogo antes de mover", "warn");
                                 return;
                               }
                             }
@@ -4633,8 +4543,8 @@ export default function PadelHubClient({
               {autoScheduleCapacity && autoScheduleCapacity.matchesNeeded > autoScheduleCapacity.totalSlots && (
                 <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
                   Capacidade recomendada (estimativa): {autoScheduleCapacity.matchesNeeded} jogos para ~
-                  {autoScheduleCapacity.totalSlots} slots ({autoScheduleCapacity.courts} courts). Ajusta janela,
-                  duração ou courts se quiseres mais folga. Este aviso não bloqueia.
+                  {autoScheduleCapacity.totalSlots} slots ({autoScheduleCapacity.courts} campos). Ajusta janela,
+                  duração ou campos se quiseres mais folga. Este aviso não bloqueia.
                 </div>
               )}
               {calendarEventStart && calendarEventEnd && (
@@ -4992,7 +4902,7 @@ export default function PadelHubClient({
                   {pendingPartnershipsCount > 0 ? ` · ${pendingPartnershipsCount} pendentes` : ""}
                 </p>
                 <p className="text-[12px] text-white/65">
-                  Gestão dedicada de acordos, claims e overrides entre organizações.
+                  Gestão dedicada de acordos, reivindicações e exceções entre organizações.
                 </p>
               </div>
               <button
@@ -5129,7 +5039,7 @@ export default function PadelHubClient({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos & equipa</p>
-                  <p className="text-sm text-white/70">Campos ativos e staff herdável para o wizard.</p>
+                  <p className="text-sm text-white/70">Campos ativos e equipa herdável para o assistente.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="sr-only" htmlFor="club-switcher">
@@ -5353,7 +5263,7 @@ export default function PadelHubClient({
                 <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-white">Staff do clube</p>
+                      <p className="text-sm font-semibold text-white">Equipa do clube</p>
                       <p className="text-[11px] text-white/60">
                         {staff.length} membros · {inheritedStaffCount} herdam para torneios
                       </p>
@@ -5365,8 +5275,8 @@ export default function PadelHubClient({
                     {[
                       {
                         key: "existing",
-                        label: "Staff do organização",
-                        desc: "Reaproveita quem já tens no staff global e herda para torneios.",
+                        label: "Equipa da organização",
+                        desc: "Reaproveita quem já tens na equipa global e herda para torneios.",
                       },
                       {
                         key: "external",
@@ -5416,7 +5326,7 @@ export default function PadelHubClient({
                         <div className="rounded-lg border border-white/15 bg-white/5 p-3 text-[12px] text-white/75">
                           <p className="font-semibold text-white/90">Resumo rápido</p>
                           <p className="text-white/70">
-                            Herdado do staff global; ficará marcado como herdado neste clube e nos torneios.
+                            Herdado da equipa global; ficará marcado como herdado neste clube e nos torneios.
                           </p>
                         </div>
                       )}
@@ -5445,7 +5355,7 @@ export default function PadelHubClient({
                     >
                       <option value="ADMIN_CLUBE">Admin clube</option>
                       <option value="DIRETOR_PROVA">Diretor / Árbitro</option>
-                      <option value="STAFF">Staff de campo</option>
+                      <option value="STAFF">Equipa de campo</option>
                     </select>
                     <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
                       {[
@@ -5493,7 +5403,7 @@ export default function PadelHubClient({
                   </div>
 
                   <div className="space-y-2 rounded-lg border border-white/12 bg-white/5 p-2 text-[12px] text-white/80">
-                    {staff.length === 0 && <p className="text-white/60">Sem staff.</p>}
+                    {staff.length === 0 && <p className="text-white/60">Sem equipa.</p>}
                     {staff.map((s) => (
                       <div
                         key={s.id}
@@ -6111,7 +6021,7 @@ export default function PadelHubClient({
             </div>
             {interclubEvents.length === 0 && (
               <p className="text-[11px] text-white/60">
-                Não há torneios interclubes. Ativa o modo interclubes no wizard do torneio.
+                Não há torneios interclubes. Ativa o modo interclubes no assistente do torneio.
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
@@ -6286,7 +6196,7 @@ export default function PadelHubClient({
                     <div>
                       <p className="text-sm font-semibold text-white">{post.title || "Atualização"}</p>
                       <p className="text-[11px] text-white/60">
-                        {post.author?.fullName || post.author?.username || "Staff"} ·{" "}
+                        {post.author?.fullName || post.author?.username || "Equipa"} ·{" "}
                         {post.createdAt ? formatShortDate(post.createdAt) : "—"}
                       </p>
                     </div>
@@ -6313,13 +6223,13 @@ export default function PadelHubClient({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/team", { staff: "convidados" }) : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/team") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:border-white/40"
               >
                 Equipa
               </Link>
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/team/trainers") : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/treinadores") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/80 hover:border-white/35"
               >
                 Perfil treinador
@@ -6450,33 +6360,11 @@ export default function PadelHubClient({
             </div>
           )}
 
-          {!trainerErrorLabel && (
-            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 space-y-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-              <div>
-                <p className="text-sm font-semibold text-white">Adicionar treinador</p>
-                <p className="text-[11px] text-white/60">Cria o perfil via username e publica quando estiver pronto.</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  value={newTrainerUsername}
-                  onChange={(e) => setNewTrainerUsername(e.target.value)}
-                  placeholder="@username"
-                  className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateTrainerProfile}
-                  disabled={creatingTrainer}
-                  className={CTA_PAD_PRIMARY_SM}
-                >
-                  {creatingTrainer ? "A criar…" : "Criar perfil"}
-                </button>
-              </div>
-              {(trainerError || trainerMessage) && (
-                <p className={`text-[12px] ${trainerError ? "text-rose-200" : "text-emerald-200"}`}>
-                  {trainerError || trainerMessage}
-                </p>
-              )}
+          {(trainerError || trainerMessage) && (
+            <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
+              <p className={`text-[12px] ${trainerError ? "text-rose-200" : "text-emerald-200"}`}>
+                {trainerError || trainerMessage}
+              </p>
             </div>
           )}
         </div>
@@ -6642,8 +6530,8 @@ export default function PadelHubClient({
                 </h3>
                 <p className="text-[11px] text-white/60">
                   {isOwnClubForm
-                    ? "Completa morada e campos para o wizard."
-                    : "Regista so o necessario e afina depois."}
+                    ? "Completa morada e campos para o assistente."
+                    : "Regista só o necessário e afina depois."}
                 </p>
                 {isPartnerClubForm && clubForm.id && (
                   <p className="text-[11px] text-amber-200">Clube parceiro é sincronizado e não permite alterações base.</p>
@@ -6709,10 +6597,11 @@ export default function PadelHubClient({
                     </span>
                   </div>
                   <div className="space-y-2">
-                      <input
+                      <AddressCombobox
+                        label="Pesquisar morada"
                         value={clubLocationQuery}
-                        onChange={(e) => {
-                          setClubLocationQuery(e.target.value);
+                        onValueChange={(next) => {
+                          setClubLocationQuery(next);
                           setClubForm((prev) => ({
                             ...prev,
                             addressId: "",
@@ -6723,43 +6612,21 @@ export default function PadelHubClient({
                             locationValidationStatus: null,
                           }));
                         }}
-                        placeholder="Pesquisar morada"
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
+                        addressId={clubForm.addressId || null}
+                        onAddressIdChange={(next) => {
+                          setClubForm((prev) => ({
+                            ...prev,
+                            addressId: next ?? "",
+                          }));
+                        }}
+                        onDetailsResolved={(details: GeoDetailsItem | null) => {
+                          applyClubGeoDetails(details, details?.formattedAddress ?? clubLocationQuery);
+                        }}
+                        minChars={2}
+                        maxItems={10}
+                        enableRecents
+                        enableGeolocationCta
                       />
-                      {clubLocationSearchError && (
-                        <p className="text-[11px] text-rose-200">{clubLocationSearchError}</p>
-                      )}
-                      {clubLocationSearchLoading ? (
-                        <p className="text-[11px] text-white/60">A procurar moradas...</p>
-                      ) : clubLocationSuggestions.length === 0 ? (
-                        <p className="text-[11px] text-white/60">Sugestões aparecem aqui.</p>
-                      ) : (
-                        <div className="max-h-40 space-y-2 overflow-auto">
-                          {clubLocationSuggestions.map((item) => (
-                            <button
-                              key={item.providerId}
-                              type="button"
-                              onClick={() => handleSelectClubLocationSuggestion(item)}
-                              className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-left text-[12px] text-white/80 hover:border-cyan-300/50"
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="font-semibold text-white">{item.label}</span>
-                                <div className="flex items-center gap-2 text-[10px] text-white/60">
-                                  <span>{item.city || "—"}</span>
-                                  {item.sourceProvider === "APPLE_MAPS" && (
-                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em]">
-                                      Apple
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {clubLocationDetailsLoading && (
-                        <p className="text-[11px] text-white/50">A validar morada...</p>
-                      )}
                       {Boolean(clubForm.addressId) && clubForm.locationFormattedAddress && (
                         <div className="space-y-1 text-[11px] text-emerald-200">
                           <p>Morada confirmada: {clubForm.locationFormattedAddress}</p>
@@ -6845,7 +6712,7 @@ export default function PadelHubClient({
                   onChange={(e) => setClubForm((p) => ({ ...p, isActive: e.target.checked }))}
                   className="h-4 w-4"
                 />
-                {isOwnClubForm ? "Ativo (disponível no wizard)" : "Disponível para torneios"}
+                {isOwnClubForm ? "Ativo (disponível no assistente)" : "Disponível para torneios"}
               </label>
               <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
                 {clubError && <span className="text-red-300">{clubError}</span>}
@@ -6997,10 +6864,10 @@ export default function PadelHubClient({
                     {selectedEvent?.slug && (
                       <button
                         type="button"
-                        onClick={() => window.open(`/eventos/${selectedEvent.slug}/monitor`, "_blank")}
+                        onClick={() => window.open(`/eventos/${selectedEvent.slug}`, "_blank")}
                         className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
                       >
-                        Monitor TV
+                        Página pública
                       </button>
                     )}
                     {eventId && (
@@ -7008,11 +6875,11 @@ export default function PadelHubClient({
                         type="button"
                         onClick={() => {
                           if (!organizationId) return;
-                          window.open(buildOrgHref(organizationId, `/padel/tournaments/${eventId}/live`), "_blank");
+                          window.open(buildOrgHref(organizationId, `/events/${eventId}`), "_blank");
                         }}
                         className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:border-white/35"
                       >
-                        LiveHub
+                        Detalhes
                       </button>
                     )}
                   </div>
@@ -7027,8 +6894,8 @@ export default function PadelHubClient({
           title={clubDialog.nextActive ? "Reativar clube?" : "Arquivar clube?"}
           description={
             clubDialog.nextActive
-              ? "O clube volta a aparecer no wizard e sugestões."
-              : "O clube ficará inativo e deixa de aparecer nas sugestões do wizard."
+              ? "O clube volta a aparecer no assistente e nas sugestões."
+              : "O clube ficará inativo e deixa de aparecer nas sugestões do assistente."
           }
           consequences={
             clubDialog.nextActive
@@ -7046,8 +6913,8 @@ export default function PadelHubClient({
         <ConfirmDestructiveActionDialog
           open
           title="Apagar clube?"
-          description="Remove definitivamente este clube e os campos associados. Não aparecerá mais no hub ou no wizard."
-          consequences={["Ação permanente.", "Campos e staff associados deixam de estar disponíveis."]}
+          description="Remove definitivamente este clube e os campos associados. Não aparecerá mais no painel nem no assistente."
+          consequences={["Ação permanente.", "Campos e equipa associada deixam de estar disponíveis."]}
           confirmLabel="Apagar"
           dangerLevel="high"
           onClose={() => setDeleteClubDialog(null)}
@@ -7061,13 +6928,13 @@ export default function PadelHubClient({
           title={courtDialog.nextActive ? "Reativar campo?" : "Desativar campo?"}
           description={
             courtDialog.nextActive
-              ? "O campo volta a ser sugerido no wizard."
+              ? "O campo volta a ser sugerido no assistente."
               : "O campo fica inativo e deixa de ser sugerido."
           }
           consequences={
             courtDialog.nextActive
               ? ["Mantém a ordem e atributos."]
-              : ["Sai das sugestões do wizard.", "Podes reativar mais tarde."]
+              : ["Sai das sugestões do assistente.", "Podes reativar mais tarde."]
           }
           confirmLabel={courtDialog.nextActive ? "Reativar" : "Desativar"}
           dangerLevel="medium"
@@ -7080,7 +6947,7 @@ export default function PadelHubClient({
         <ConfirmDestructiveActionDialog
           open
           title="Apagar campo?"
-          description="Remove definitivamente este campo. Não aparecerá mais no hub ou no wizard."
+          description="Remove definitivamente este campo. Não aparecerá mais no painel nem no assistente."
           consequences={["Ação permanente.", "Podes criar outro mais tarde."]}
           confirmLabel="Apagar"
           dangerLevel="high"

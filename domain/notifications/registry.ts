@@ -92,8 +92,8 @@ const ROLE_LABELS: Record<string, string> = {
   OWNER: "owner",
   CO_OWNER: "co-owner",
   ADMIN: "admin",
-  STAFF: "staff",
-  TRAINER: "treinador",
+  STAFF: "colaborador",
+  TRAINER: "colaborador",
   PROMOTER: "promotor",
   VIEWER: "membro",
 };
@@ -640,7 +640,7 @@ const registry: Record<NotificationType, RegistryEntry> = {
     build: () => ({
       title: "Chat",
       body: "Há novidades no chat.",
-      ctaUrl: "/organizacao/chat",
+      ctaUrl: "/messages",
       ctaLabel: "Abrir chat",
     }),
   },
@@ -661,7 +661,7 @@ const registry: Record<NotificationType, RegistryEntry> = {
     build: () => ({
       title: "Chat",
       body: "Tens um novo anúncio no chat.",
-      ctaUrl: "/organizacao/chat",
+      ctaUrl: "/messages",
       ctaLabel: "Abrir chat",
     }),
   },
@@ -671,7 +671,7 @@ const registry: Record<NotificationType, RegistryEntry> = {
     build: () => ({
       title: "Nova mensagem",
       body: "Tens uma nova mensagem.",
-      ctaUrl: "/organizacao/chat",
+      ctaUrl: "/messages",
       ctaLabel: "Abrir chat",
     }),
   },

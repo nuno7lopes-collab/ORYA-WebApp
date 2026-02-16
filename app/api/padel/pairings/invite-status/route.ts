@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { normalizeEmail } from "@/lib/utils/email";
-import { normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolveLocale, t } from "@/lib/i18n";
 import {
@@ -92,6 +92,7 @@ async function _GET(req: NextRequest) {
   }
   const userId = data.user.id;
   const normalizedEmail = normalizeEmail(data.user.email ?? null);
+  const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
 
   const [pairing, profile] = await Promise.all([
     prisma.padelPairing.findUnique({
@@ -148,7 +149,10 @@ async function _GET(req: NextRequest) {
 
   const username = normalizeIdentifier(profile?.username);
   const usernameWithAt = username ? `@${username}` : null;
-  const normalizedPhone = profile?.contactPhone ? normalizePhone(profile.contactPhone) : null;
+  const normalizedPhone =
+    profile?.contactPhone && isValidPhone(profile.contactPhone)
+      ? normalizePhone(profile.contactPhone, phoneOptions)
+      : null;
 
   const identifiers = new Set(
     [normalizedEmail, username, usernameWithAt, normalizedPhone].filter(Boolean) as string[],
@@ -159,7 +163,9 @@ async function _GET(req: NextRequest) {
     const invited = normalizeIdentifier(slot.invitedContact);
     if (!invited) return false;
     const invitedPlain = invited.startsWith("@") ? invited.slice(1) : invited;
-    const invitedPhone = normalizePhone(invitedPlain) || invitedPlain.replace(/[^\d]/g, "");
+    const invitedPhone = isValidPhone(invitedPlain)
+      ? normalizePhone(invitedPlain, phoneOptions)
+      : invitedPlain.replace(/[^\d]/g, "");
     return identifiers.has(invited) || identifiers.has(invitedPlain) || identifiers.has(invitedPhone);
   });
 

@@ -7,6 +7,7 @@ export function saleSummaryRepo(tx: FinanceReadModelClient = prisma) {
   return {
     create: (args: Prisma.SaleSummaryCreateArgs) => tx.saleSummary.create(args),
     update: (args: Prisma.SaleSummaryUpdateArgs) => tx.saleSummary.update(args),
+    updateMany: (args: Prisma.SaleSummaryUpdateManyArgs) => tx.saleSummary.updateMany(args),
     upsert: (args: Prisma.SaleSummaryUpsertArgs) => tx.saleSummary.upsert(args),
     deleteMany: (args: Prisma.SaleSummaryDeleteManyArgs) => tx.saleSummary.deleteMany(args),
   };

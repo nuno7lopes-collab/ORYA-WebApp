@@ -6,11 +6,11 @@ import { cn } from "@/lib/utils";
 import { normalizeOrganizationPathname } from "@/app/org/_internal/core/topbarRouteUtils";
 
 const CRM_NAV = [
-  { id: "clientes", label: "Clientes", href: "/org/crm/clientes" },
-  { id: "segmentos", label: "Segmentos", href: "/org/crm/segmentos" },
-  { id: "campanhas", label: "Campanhas", href: "/org/crm/campanhas", feature: "CRM_CAMPAIGNS" as const },
-  { id: "journeys", label: "Journeys", href: "/org/crm/journeys" },
-  { id: "relatorios", label: "Relatórios", href: "/org/crm/relatorios" },
+  { id: "clientes", label: "Clientes", href: "/org/crm/customers" },
+  { id: "segmentos", label: "Segmentos", href: "/org/crm/segments" },
+  { id: "campanhas", label: "Campanhas", href: "/org/crm/campaigns", feature: "CRM_CAMPAIGNS" as const },
+  { id: "journeys", label: "Jornadas", href: "/org/crm/journeys" },
+  { id: "relatorios", label: "Relatórios", href: "/org/crm/reports" },
   { id: "loyalty", label: "Pontos & recompensas", href: "/org/crm/loyalty" },
 ];
 

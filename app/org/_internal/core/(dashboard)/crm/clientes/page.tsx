@@ -89,7 +89,7 @@ const CONTACT_TYPE_LABELS: Record<string, string> = {
   CUSTOMER: "Cliente",
   LEAD: "Lead",
   FOLLOWER: "Seguidor",
-  STAFF: "Staff",
+  STAFF: "Equipa",
   GUEST: "Convidado",
 };
 
@@ -568,7 +568,7 @@ export default function CrmClientesPage() {
           {items.map((item) => (
             <Link
               key={item.id}
-              href={`/org/crm/clientes/${item.id}`}
+              href={`/org/crm/customers/${item.id}`}
               className={cn(DASHBOARD_CARD, "p-4 transition hover:border-white/25")}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">

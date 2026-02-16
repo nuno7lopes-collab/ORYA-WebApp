@@ -35,4 +35,17 @@ describe("organization canonical href helpers", () => {
     expect(appendOrganizationIdToHref("/organizacao", null)).toBe("/organizacao");
     expect(appendOrganizationIdToHref("/org/7/overview?organizationId=7", 7)).toBe("/org/7/overview");
   });
+
+  it("appendOrganizationIdToHref canoniza shorthands /org/* para rotas canónicas", () => {
+    expect(appendOrganizationIdToHref("/org/overview?section=ferramentas&organizationId=7", 7)).toBe(
+      "/org/7/overview?section=ferramentas",
+    );
+    expect(appendOrganizationIdToHref("/org/become", 7)).toBe("/org-hub/create");
+    expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/7/team");
+    expect(appendOrganizationIdToHref("/org/treinadores", 7)).toBe("/org/7/team/trainers");
+    expect(appendOrganizationIdToHref("/org/eventos/novo", 7)).toBe("/org/7/events/new");
+    expect(appendOrganizationIdToHref("/org/reservas?tab=availability", 7)).toBe("/org/7/bookings?tab=availability");
+    expect(appendOrganizationIdToHref("/org/analyze?section=financas", 7)).toBe("/org/7/finance");
+    expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/7/analytics?tab=ops");
+  });
 });

@@ -1,1 +1,1 @@
-export { default } from "@/app/org/[orgId]/settings/page";
+export { default } from "@/app/org/_internal/core/(dashboard)/settings/verify/page";

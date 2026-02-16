@@ -5,6 +5,13 @@ import { clearUsernameForOwner } from "@/lib/globalUsernames";
 import { resolveGroupMemberForOrg, revokeGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
+import {
+  getOrganizationSuspensionSnapshot,
+  normalizeOrganizationDangerReasonCode,
+  ORGANIZATION_SUSPENSION_WINDOW_DAYS,
+} from "@/lib/organizationSuspension";
+import { requireOrganizationStepUp } from "@/lib/organizationStepUp";
+import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -53,9 +60,25 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
     if (!membership || membership.role !== "OWNER") {
       return fail(403, "ONLY_OWNER_CAN_DELETE");
     }
+
+    const payload = (await req.json().catch(() => null)) as
+      | {
+          reasonCode?: unknown;
+          stepUpChallengeId?: unknown;
+          stepUpCode?: unknown;
+        }
+      | null;
+    const reasonCode = normalizeOrganizationDangerReasonCode(payload?.reasonCode, "OWNER_DELETE");
+
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { officialEmail: true, officialEmailVerifiedAt: true },
+      select: {
+        id: true,
+        status: true,
+        updatedAt: true,
+        officialEmail: true,
+        officialEmailVerifiedAt: true,
+      },
     });
     if (!organization) {
       return fail(404, "ORGANIZATION_NOT_FOUND");
@@ -75,6 +98,52 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
         { status: 403 },
       );
     }
+    if (organization.status !== "SUSPENDED") {
+      return fail(409, "SUSPEND_REQUIRED_BEFORE_DELETE");
+    }
+
+    const suspension = await getOrganizationSuspensionSnapshot({
+      organizationId,
+      status: organization.status,
+      updatedAt: organization.updatedAt ?? null,
+    });
+    if (suspension.reactivationWindowOpen) {
+      return respondError(
+        ctx,
+        {
+          errorCode: "REACTIVATION_WINDOW_OPEN",
+          message: "A organização ainda está na janela de reativação.",
+          retryable: false,
+          details: {
+            graceWindowDays: ORGANIZATION_SUSPENSION_WINDOW_DAYS,
+            remainingWindowDays: suspension.remainingWindowDays,
+            reactivationDeadlineAt: suspension.reactivationDeadlineAt,
+          },
+        },
+        { status: 409 },
+      );
+    }
+
+    const stepUp = await requireOrganizationStepUp({
+      organizationId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      action: "ORG_DELETE",
+      challengeId: payload?.stepUpChallengeId,
+      code: payload?.stepUpCode,
+    });
+    if (!stepUp.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: stepUp.errorCode,
+          message: stepUp.message,
+          retryable: false,
+          details: stepUp.details,
+        },
+        { status: stepUp.status },
+      );
+    }
 
     // Bloquear se existir algum bilhete ativo/usado associado a eventos desta org
     const hasSales = await prisma.ticket.count({
@@ -87,11 +156,11 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
       return fail(400, "Não é possível apagar: existem bilhetes vendidos nesta organização.");
     }
 
-    // Soft delete simples: marcar como SUSPENDED, libertar username e limpar memberships efetivos.
+    // Soft delete definitivo pós-janela: manter histórico e remover acesso operativo.
     await prisma.$transaction(async (tx) => {
       await tx.organization.update({
         where: { id: organizationId },
-        data: { status: "SUSPENDED", username: null },
+        data: { username: null },
       });
       const currentMembers = await listEffectiveOrganizationMembers({
         organizationId,
@@ -104,6 +173,18 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
           client: tx,
         });
       }
+    });
+    await recordOrganizationAuditSafe({
+      organizationId,
+      actorUserId: user.id,
+      action: "ORGANIZATION_DELETED_FINAL",
+      metadata: {
+        source: "settings_danger_zone",
+        reasonCode,
+        graceWindowDays: ORGANIZATION_SUSPENSION_WINDOW_DAYS,
+        suspendedAt: suspension.suspendedAt?.toISOString() ?? null,
+        reactivationDeadlineAt: suspension.reactivationDeadlineAt?.toISOString() ?? null,
+      },
     });
     await clearUsernameForOwner({ ownerType: "organization", ownerId: organizationId });
 

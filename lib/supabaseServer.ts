@@ -44,6 +44,18 @@ function extractBearerToken(authorizationHeader?: string | null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function isSecureCookieRuntime() {
+  const appEnv = String(
+    process.env.APP_ENV ??
+      process.env.NEXT_PUBLIC_APP_ENV ??
+      process.env.NODE_ENV ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return appEnv === "production" || appEnv === "prod" || appEnv === "stage";
+}
+
 /**
  * Server-side Supabase client (SSR + Route Handlers)
  * - Safe cookie reading
@@ -63,7 +75,7 @@ export async function createSupabaseServer() {
     cookieDomain === "localhost" || cookieDomain.endsWith(".localhost");
   const isSecure =
     !isLocalhostDomain &&
-    process.env.NODE_ENV === "production";
+    isSecureCookieRuntime();
 
   const supabase = createServerClient(
     env.supabaseUrl,

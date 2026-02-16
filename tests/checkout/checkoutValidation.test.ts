@@ -39,6 +39,34 @@ describe("checkout guest validation", () => {
     expect(result.normalized.email).toBe("ana@orya.pt");
     expect(result.normalized.phone).toBe("+351912345678");
   });
+
+  it("adds default international prefix when missing", () => {
+    const result = validateGuestDetails({
+      name: "Ana Silva",
+      email: "ana@orya.pt",
+      emailConfirm: "ana@orya.pt",
+      phone: "912 345 678",
+    });
+
+    expect(result.hasErrors).toBe(false);
+    expect(result.normalized.phone).toBe("+351912345678");
+  });
+
+  it("uses locale hint for international prefix", () => {
+    const result = validateGuestDetails(
+      {
+        name: "Ana Silva",
+        email: "ana@orya.pt",
+        emailConfirm: "ana@orya.pt",
+        phone: "2125550100",
+      },
+      {},
+      { phoneLocale: "en-US" },
+    );
+
+    expect(result.hasErrors).toBe(false);
+    expect(result.normalized.phone).toBe("+12125550100");
+  });
 });
 
 describe("checkout idempotency key", () => {

@@ -170,13 +170,12 @@ function parsePositiveOrgId(raw: string | null | undefined) {
 
 const LEGACY_DOCS_URL = "/docs/org-canonical-migration";
 
-function mapOrgHubAliasRewrite(req: NextRequest): URL | null {
-  void req;
-  return null;
-}
-
 function isLegacyApiRoute(pathname: string) {
   return pathname === "/api/organizacao" || pathname.startsWith("/api/organizacao/");
+}
+
+function isRemovedPublicServiceAvailabilityRoute(pathname: string) {
+  return /^\/api\/servicos\/\d+\/(slots|disponibilidade)(?:\/|$)/i.test(pathname);
 }
 
 function isLegacyWebRoute(pathname: string) {
@@ -184,6 +183,12 @@ function isLegacyWebRoute(pathname: string) {
 }
 
 const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
+  "/eventos",
+  "/reservas",
+  "/inscricoes",
+  "/staff",
+  "/treinadores",
+  "/organizacoes",
   "/manage",
   "/operations",
   "/promote",
@@ -199,8 +204,9 @@ const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
   "/servicos",
   "/loja",
   "/perfil",
-  "/profile/seguidores",
+  "/profile",
   "/trainers",
+  "/torneios",
   "/tournaments",
   "/crm/clientes",
   "/crm/segmentos",
@@ -218,6 +224,14 @@ function isRemovedCanonicalOrgWebRoute(pathname: string) {
   if (rest.startsWith("/padel/torneios")) return true;
   if (rest.startsWith("/padel/tournaments/new")) return true;
   return REMOVED_CANONICAL_ORG_WEB_PREFIXES.some((prefix) => rest === prefix || rest.startsWith(`${prefix}/`));
+}
+
+function isLegacyOrgShorthandRoute(pathname: string) {
+  const match = pathname.match(/^\/org(?:\/([^/]+))?(?:\/|$)/i);
+  if (!match) return false;
+  const head = match[1] ?? null;
+  if (!head) return true;
+  return !/^\d+$/.test(head);
 }
 
 function hasInvalidOrgContextSources(req: NextRequest) {
@@ -317,7 +331,7 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  if (isLegacyApiRoute(req.nextUrl.pathname)) {
+  if (isLegacyApiRoute(req.nextUrl.pathname) || isRemovedPublicServiceAvailabilityRoute(req.nextUrl.pathname)) {
     console.warn(
       `[proxy][legacy_removed] ${JSON.stringify({
         errorCode: "LEGACY_ROUTE_REMOVED",
@@ -331,7 +345,11 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  if (isLegacyWebRoute(req.nextUrl.pathname) || isRemovedCanonicalOrgWebRoute(req.nextUrl.pathname)) {
+  if (
+    isLegacyWebRoute(req.nextUrl.pathname) ||
+    isRemovedCanonicalOrgWebRoute(req.nextUrl.pathname) ||
+    isLegacyOrgShorthandRoute(req.nextUrl.pathname)
+  ) {
     console.warn(
       `[proxy][legacy_removed] ${JSON.stringify({
         errorCode: "LEGACY_ROUTE_REMOVED",
@@ -351,8 +369,7 @@ export async function proxy(req: NextRequest) {
     return res;
   }
 
-  const canonicalAliasRewrite = mapOrgHubAliasRewrite(req);
-  const url = canonicalAliasRewrite ?? req.nextUrl.clone();
+  const url = req.nextUrl.clone();
   const shouldRewriteRoot = adminHost && url.pathname === "/";
   if (shouldRewriteRoot) {
     url.pathname = "/admin";
@@ -378,7 +395,7 @@ export async function proxy(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  const res = shouldRewriteRoot || Boolean(canonicalAliasRewrite)
+  const res = shouldRewriteRoot
     ? NextResponse.rewrite(url, { request: { headers: requestHeaders } })
     : NextResponse.next({ request: { headers: requestHeaders } });
   applyRequestContextHeaders(res.headers, requestContext);

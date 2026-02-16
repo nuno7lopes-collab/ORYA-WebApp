@@ -952,7 +952,7 @@ export default function CrmSegmentosPage() {
           {filteredSegments.map((segment) => (
             <Link
               key={segment.id}
-              href={`/org/crm/segmentos/${segment.id}`}
+              href={`/org/crm/segments/${segment.id}`}
               className={cn(DASHBOARD_CARD, "p-4 transition hover:border-white/25")}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">

@@ -347,6 +347,9 @@ async function _POST(req: NextRequest) {
     if (!Object.values(OrganizationMemberRole).includes(roleRaw as OrganizationMemberRole)) {
       return fail(400, "INVALID_ROLE");
     }
+    if (roleRaw === "TRAINER") {
+      return fail(400, "INVALID_ROLE");
+    }
     const rolePackPolicy = resolveRolePackForRole({
       role: roleRaw as OrganizationMemberRole,
       rolePackRaw,
@@ -710,9 +713,6 @@ async function _PATCH(req: NextRequest) {
         }
 
         const role = invite.role as OrganizationMemberRole;
-        if (role === "TRAINER" && !viewerUsername) {
-          throw new Error("TRAINER_USERNAME_REQUIRED");
-        }
         const rolePackPolicy = resolveRolePackForRole({
           role,
           rolePackRaw: invite.rolePack ?? null,
@@ -929,7 +929,7 @@ async function _PATCH(req: NextRequest) {
       if (err instanceof Error && err.message === "FORBIDDEN") {
         throw err;
       }
-      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE", "INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
+      if (err instanceof Error && ["INVITE_NOT_PENDING", "INVITE_EXPIRED", "UNKNOWN_ACTION", "ONLY_OWNER_CAN_CANCEL_OWNER_INVITE", "INVALID_ROLE", "INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
         throw err;
       }
       throw err;
@@ -963,10 +963,7 @@ async function _PATCH(req: NextRequest) {
       if (err.message === "INVITE_NOT_PENDING" || err.message === "INVITE_EXPIRED") {
         return fail(400, err.message);
       }
-      if (err.message === "TRAINER_USERNAME_REQUIRED") {
-        return fail(409, "TRAINER_USERNAME_REQUIRED");
-      }
-      if (["INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
+      if (["INVALID_ROLE", "INVALID_ROLE_PACK", "ROLE_PACK_NOT_ALLOWED", "ROLE_PACK_REQUIRED", "ROLE_PACK_INCOMPATIBLE"].includes(err.message)) {
         return fail(400, err.message);
       }
       if (err.message === "UNKNOWN_ACTION") {

@@ -1,4 +1,4 @@
-// app/org/eventos/[id]/page.tsx
+// app/org/events/[id]/page.tsx
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -39,7 +39,6 @@ type EventWithTickets = {
     canonical: Prisma.JsonValue | null;
   } | null;
   status: string;
-  liveVisibility: "PUBLIC" | "PRIVATE" | "DISABLED";
   coverImageUrl: string | null;
   isGratis: boolean;
   ticketTypes: Array<{
@@ -163,7 +162,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   }
 
   const isPadelEvent = event.templateType === "PADEL";
-  const eventRouteBase = isPadelEvent ? "/org/padel/torneios" : "/org/eventos";
+  const eventRouteBase = isPadelEvent ? "/org/padel/tournaments" : "/org/events";
   const primaryLabel = isPadelEvent ? "torneio" : "evento";
   const ticketLabelPlural = isPadelEvent ? "inscrições" : "bilhetes";
   const ticketLabelPluralCap = isPadelEvent ? "Inscrições" : "Bilhetes";
@@ -379,11 +378,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       })
     : [];
   const backHref = eventRouteBase;
-  const liveHref = `${eventRouteBase}/${event.id}/live`;
-  const hubBaseHref = isPadelEvent ? `/org/padel/torneios?section=padel-tournaments` : null;
+  const operationsHref = `${eventRouteBase}/${event.id}`;
+  const hubBaseHref = isPadelEvent ? `/org/padel/tournaments?section=padel-tournaments` : null;
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
-  const hubClubHref = isPadelEvent ? `/org/padel/clube?section=padel-club&padel=clubs` : null;
-  const hubCourtsHref = isPadelEvent ? `/org/padel/clube?section=padel-club&padel=courts` : null;
+  const hubClubHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
+  const hubCourtsHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=courts` : null;
   const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
 
   const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];
@@ -404,7 +403,6 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       ? advancedSettings.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))
       : [];
   const courtsCount = courtIds.length > 0 ? courtIds.length : event.padelTournamentConfig?.numberOfCourts ?? 0;
-  const liveReady = event.liveVisibility !== "DISABLED";
   const padelStatusItems = isPadelEvent
     ? [
         {
@@ -415,9 +413,9 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         },
         {
           key: "courts",
-          label: "Courts",
+          label: "Campos",
           status: courtsCount > 0 ? "ok" : "missing",
-          detail: courtsCount > 0 ? `${courtsCount} court(s)` : "Sem courts",
+          detail: courtsCount > 0 ? `${courtsCount} campo(s)` : "Sem campos",
         },
         {
           key: "categories",
@@ -432,14 +430,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           detail: padelTicketsReady ? "Por categoria" : "Faltam por categoria",
         },
         {
-          key: "live",
-          label: "Live",
-          status: liveReady ? "ok" : "missing",
-          detail: liveReady ? "Visível" : "Desativado",
-        },
-        {
           key: "staff",
-          label: "Staff",
+          label: "Equipa",
           status: partnerClubs.length > 0 ? (staffIds.length > 0 ? "ok" : "missing") : staffIds.length > 0 ? "ok" : "optional",
           detail:
             staffIds.length > 0
@@ -465,15 +457,14 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   if (activePadelCategoryIds.length === 0) generateIssues.push("Sem categorias ativas");
   if (categoriesWithPairings.length === 0) generateIssues.push("Duplas insuficientes (mín. 2)");
 
-  const readyForLive = padelMatchesCount > 0 && liveReady;
-  const liveIssues: string[] = [];
-  if (padelMatchesCount === 0) liveIssues.push("Sem jogos gerados");
-  if (!liveReady) liveIssues.push("Live desativado");
+  const readyForOperations = padelMatchesCount > 0;
+  const operationsIssues: string[] = [];
+  if (padelMatchesCount === 0) operationsIssues.push("Sem jogos gerados");
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
   const publicPageHref = `/eventos/${event.slug}`;
-  const monitorHref = `/eventos/${event.slug}/monitor`;
-  const scoreHref = `/eventos/${event.slug}/score`;
+  const monitorHref = publicPageHref;
+  const scoreHref = publicPageHref;
   const calendarPublicHref = `/eventos/${event.slug}/calendario`;
   const rankingPublicHref = `/eventos/${event.slug}/ranking`;
 
@@ -501,24 +492,24 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           external: true,
         },
         {
-          key: "live",
-          label: "Live Ops",
-          description: readyForLive ? "Live pronto para abrir." : liveIssues.join(" · ") || "Configura o live.",
-          href: liveHref,
-          tone: readyForLive ? ("success" as const) : ("warning" as const),
+          key: "operations",
+          label: "Operação",
+          description: readyForOperations ? "Operação pronta." : operationsIssues.join(" · ") || "Configura o torneio.",
+          href: operationsHref,
+          tone: readyForOperations ? ("success" as const) : ("warning" as const),
         },
         {
           key: "monitor",
-          label: "Monitor TV",
-          description: "Ecrã para courts e público.",
+          label: "Página pública",
+          description: "Abrir página pública do torneio.",
           href: monitorHref,
           tone: "neutral" as const,
           external: true,
         },
         {
           key: "placar",
-          label: "Placar ao vivo",
-          description: "Resultados em tempo real.",
+          label: "Resultados",
+          description: "Resultados e classificações.",
           href: scoreHref,
           tone: "neutral" as const,
           external: true,
@@ -526,7 +517,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         {
           key: "calendar",
           label: "Calendário público",
-          description: "Agenda e horários por court.",
+          description: "Agenda e horários por campo.",
           href: calendarPublicHref,
           tone: "neutral" as const,
           external: true,
@@ -541,15 +532,15 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         },
         {
           key: "widgets",
-          label: "Widgets & exports",
-          description: "Embed e ficheiros oficiais.",
+          label: "Integrações e exportações",
+          description: "Incorporações e ficheiros oficiais.",
           href: "#padel-widgets",
           tone: "neutral" as const,
           external: false,
         },
         {
           key: "governance",
-          label: "Roles & lifecycle",
+          label: "Funções e ciclo de vida",
           description: "Direção, árbitros e estado.",
           href: "#padel-governance",
           tone: "neutral" as const,
@@ -581,7 +572,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
             <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Gestão de {primaryLabel}</p>
-            <h1 className="text-2xl font-semibold tracking-tight">Detalhes &amp; waves</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Detalhes e fases</h1>
             <p className="line-clamp-2 text-sm text-white/70">{event.title}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px]">
@@ -593,14 +584,9 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 Calendário do Hub
               </a>
             )}
-            <a href={liveHref} className={CTA_SECONDARY}>
-              Preparar Live
+            <a href={operationsHref} className={CTA_SECONDARY}>
+              Operação
             </a>
-            {event.tournament?.id && (
-              <a href={`${liveHref}?tab=preview&edit=1`} className={CTA_SECONDARY}>
-                Live Ops
-              </a>
-            )}
             <a href={publicPageHref} className={CTA_PRIMARY}>
               Ver página pública
             </a>
@@ -615,17 +601,17 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Operação premium</p>
               <h2 className="text-xl font-semibold text-white">Atalhos do torneio</h2>
               <p className="text-[12px] text-white/65">
-                Abrir live, monitor, calendário e distribuição com um clique.
+                Abrir operação, calendário e distribuição com um clique.
               </p>
             </div>
             <span
               className={`rounded-full border px-3 py-1 text-[11px] ${
-                readyForLive
+                readyForOperations
                   ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-50"
                   : "border-amber-400/50 bg-amber-500/10 text-amber-50"
               }`}
             >
-              {readyForLive ? "Live pronto" : "Pré-live"}
+              {readyForOperations ? "Operação pronta" : "Pré-operação"}
             </span>
           </div>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -645,16 +631,16 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               </a>
             ))}
           </div>
-          {(generateIssues.length > 0 || liveIssues.length > 0) && (
+          {(generateIssues.length > 0 || operationsIssues.length > 0) && (
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
               {generateIssues.length > 0 && (
                 <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
                   Geração de jogos: {generateIssues.join(" · ")}
                 </span>
               )}
-              {liveIssues.length > 0 && (
+              {operationsIssues.length > 0 && (
                 <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
-                  Live: {liveIssues.join(" · ")}
+                  Operação: {operationsIssues.join(" · ")}
                 </span>
               )}
             </div>
@@ -752,7 +738,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                   )}
                   {hubCourtsHref && (
                     <a href={hubCourtsHref} className={CTA_SECONDARY}>
-                      Courts
+                      Campos
                     </a>
                   )}
                   {hubCategoriesHref && (
@@ -765,8 +751,8 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                       Calendário
                     </a>
                   )}
-                  <a href={liveHref} className={CTA_SECONDARY}>
-                    Live
+                  <a href={operationsHref} className={CTA_SECONDARY}>
+                    Operação
                   </a>
                 </div>
               )}
@@ -801,18 +787,18 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
                 <div
                   className={`rounded-xl border px-3 py-2 ${
-                    readyForLive ? "border-emerald-400/50 bg-emerald-500/10" : "border-amber-400/50 bg-amber-500/10"
+                    readyForOperations ? "border-emerald-400/50 bg-emerald-500/10" : "border-amber-400/50 bg-amber-500/10"
                   }`}
                 >
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para Live</p>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para operação</p>
                   <p className="mt-2 text-sm text-white/80">
-                    {readyForLive
+                    {readyForOperations
                       ? `OK · ${padelMatchesCount} jogo(s) prontos`
-                      : liveIssues.join(" · ")}
+                      : operationsIssues.join(" · ")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                    <a href={liveHref} className={CTA_SECONDARY}>
-                      Preparar Live
+                    <a href={operationsHref} className={CTA_SECONDARY}>
+                      Operação
                     </a>
                     {hubCalendarHref && (
                       <a href={hubCalendarHref} className={CTA_SECONDARY}>
@@ -831,7 +817,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               <span className="font-semibold">
                 {formatMoney(cheapestWave.price ?? 0)}
               </span>{" "}
-              ({totalWaves} wave{totalWaves !== 1 ? "s" : ""})
+              ({totalWaves} lote{totalWaves !== 1 ? "s" : ""})
             </p>
           )}
 
@@ -859,7 +845,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 {event.padelTournamentConfig.club?.addressRef?.formattedAddress ?? "Morada em falta"}
               </p>
               <p className="text-white/75">
-                Courts usados: {event.padelTournamentConfig.numberOfCourts}
+                Campos usados: {event.padelTournamentConfig.numberOfCourts}
               </p>
               {partnerClubs.length > 0 && (
                 <div className="text-[12px] text-white/70">
@@ -881,18 +867,18 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/55 mt-2">Opções avançadas</p>
                   <p className="text-white/75">
                     Limite total: {advancedSettings.maxEntriesTotal ?? "—"} · Waitlist:{" "}
-                    {advancedSettings.waitlistEnabled ? "on" : "off"} · 2ª categoria:{" "}
+                    {advancedSettings.waitlistEnabled ? "ativa" : "desativada"} · 2ª categoria:{" "}
                     {advancedSettings.allowSecondCategory ? "sim" : "não"} · Cancelar jogos:{" "}
                     {advancedSettings.allowCancelGames ? "sim" : "não"} · Jogo padrão:{" "}
                     {advancedSettings.gameDurationMinutes ?? "—"} min
                   </p>
                   {advancedSettings.courtsFromClubs?.length ? (
                     <div className="mt-2 space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Courts incluídos</p>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Campos incluídos</p>
                       <div className="flex flex-wrap gap-2">
                         {advancedSettings.courtsFromClubs.map((c, idx) => (
                           <span key={`${c.id}-${idx}`} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                            {c.name || "Court"} · {c.clubName || `Clube ${c.clubId ?? ""}`} {c.indoor ? "(Indoor)" : ""}
+                            {c.name || "Campo"} · {c.clubName || `Clube ${c.clubId ?? ""}`} {c.indoor ? "(Coberto)" : ""}
                           </span>
                         ))}
                       </div>
@@ -900,11 +886,11 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                   ) : null}
                   {advancedSettings.staffFromClubs?.length ? (
                     <div className="mt-2 space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Staff herdado</p>
+                      <p className="text-[11px] uppercase tracking-[0.14em] text-white/55">Equipa herdada</p>
                       <div className="flex flex-wrap gap-2">
                         {advancedSettings.staffFromClubs.map((s, idx) => (
                           <span key={`${s.email}-${idx}`} className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                            {s.email || s.role || "Staff"} · {s.role || "Role"} · {s.clubName || "Clube"}
+                            {s.email || s.role || "Equipa"} · {s.role || "Função"} · {s.clubName || "Clube"}
                           </span>
                         ))}
                       </div>

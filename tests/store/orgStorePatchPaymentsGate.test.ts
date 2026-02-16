@@ -9,7 +9,8 @@ const resolveOrganizationIdFromRequest = vi.hoisted(() => vi.fn());
 const ensureLojaModuleAccess = vi.hoisted(() => vi.fn());
 const ensureOrganizationEmailVerified = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
-  store: { findFirst: vi.fn(), update: vi.fn() },
+  store: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  storeProduct: { count: vi.fn() },
   organization: { findUnique: vi.fn() },
 }));
 
@@ -37,6 +38,8 @@ beforeEach(async () => {
   ensureOrganizationEmailVerified.mockReset();
   prisma.store.findFirst.mockReset();
   prisma.store.update.mockReset();
+  prisma.store.create.mockReset();
+  prisma.storeProduct.count.mockReset();
   prisma.organization.findUnique.mockReset();
 
   isUnauthenticatedError.mockReturnValue(false);
@@ -49,7 +52,16 @@ beforeEach(async () => {
   });
   ensureLojaModuleAccess.mockResolvedValue({ ok: true });
   ensureOrganizationEmailVerified.mockReturnValue({ ok: true });
-  prisma.store.findFirst.mockResolvedValue({ id: 44 });
+  prisma.store.findFirst.mockResolvedValue({
+    id: 44,
+    status: "CLOSED",
+    catalogLocked: false,
+    checkoutEnabled: false,
+    showOnProfile: false,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  });
+  prisma.storeProduct.count.mockResolvedValue(0);
   prisma.organization.findUnique.mockResolvedValue({
     id: 12,
     orgType: "EXTERNAL",
@@ -68,7 +80,7 @@ describe("PATCH /api/org/[orgId]/store payments gate", () => {
     const req = new NextRequest("http://localhost/api/org/12/store", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status: "ACTIVE" }),
+      body: JSON.stringify({ showOnProfile: true }),
     });
 
     const res = await PATCH(req);
@@ -78,5 +90,65 @@ describe("PATCH /api/org/[orgId]/store payments gate", () => {
     expect(body.ok).toBe(false);
     expect(body.errorCode).toBe("PAYMENTS_NOT_READY");
     expect(prisma.store.update).not.toHaveBeenCalled();
+  });
+
+  it("blocks publish when no public products exist", async () => {
+    prisma.organization.findUnique.mockResolvedValue({
+      id: 12,
+      orgType: "EXTERNAL",
+      officialEmail: "org@example.com",
+      officialEmailVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      stripeAccountId: "acct_123",
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+    });
+
+    const req = new NextRequest("http://localhost/api/org/12/store", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ showOnProfile: true }),
+    });
+
+    const res = await PATCH(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("STORE_PUBLIC_PRODUCTS_REQUIRED");
+    expect(prisma.store.update).not.toHaveBeenCalled();
+  });
+
+  it("allows hide even when payments are not ready", async () => {
+    prisma.store.findFirst.mockResolvedValue({
+      id: 44,
+      status: "ACTIVE",
+      catalogLocked: false,
+      checkoutEnabled: true,
+      showOnProfile: true,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    prisma.store.update.mockResolvedValue({
+      id: 44,
+      status: "ACTIVE",
+      catalogLocked: false,
+      checkoutEnabled: true,
+      showOnProfile: false,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    const req = new NextRequest("http://localhost/api/org/12/store", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ showOnProfile: false }),
+    });
+
+    const res = await PATCH(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(prisma.store.update).toHaveBeenCalled();
   });
 });

@@ -93,6 +93,37 @@ type WorkspaceResponse = {
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const resolveActionError = (raw: unknown, fallback: string) => sanitizeUiErrorMessage(raw, fallback);
+const AGREEMENT_ACTION_LABEL: Record<"approve" | "pause" | "revoke", string> = {
+  approve: "Aprovar",
+  pause: "Pausar",
+  revoke: "Revogar",
+};
+const AGREEMENT_STATUS_LABEL: Record<string, string> = {
+  PENDING: "Pendente",
+  APPROVED: "Aprovado",
+  PAUSED: "Pausado",
+  REVOKED: "Revogado",
+  EXPIRED: "Expirado",
+};
+const CLAIM_STATUS_LABEL: Record<string, string> = {
+  CLAIMED: "Reivindicada",
+  RELEASED: "Libertada",
+  CANCELLED: "Cancelada",
+};
+const CASE_STATUS_LABEL: Record<string, string> = {
+  OPEN: "Aberto",
+  AUTO_RESOLVED: "Resolvido automaticamente",
+  PENDING_COMPENSATION: "Compensação pendente",
+  MANUAL_RESOLVED: "Resolvido manualmente",
+  CANCELLED: "Cancelado",
+};
+const GRANT_ROLE_LABEL: Record<string, string> = {
+  DIRETOR_PROVA: "Diretor de prova",
+  REFEREE: "Árbitro",
+  SCOREKEEPER: "Marcador",
+  STREAMER: "Streaming",
+};
+const toStatusLabel = (value: string, labels: Record<string, string>) => labels[value] ?? value;
 
 function toLocalDateTime(value: string | null | undefined) {
   if (!value) return "";
@@ -295,11 +326,11 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar grant."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar permissão."));
         return;
       }
       setGrantUserId("");
-      setActionFeedback("Grant criado.");
+      setActionFeedback("Permissão criada.");
       await mutate();
     } finally {
       setActionBusy(null);
@@ -317,7 +348,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       );
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível revogar grant."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível revogar permissão."));
         return;
       }
       await mutate();
@@ -336,7 +367,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
         agreementId: agreement.id,
         targetType: "COURT_SLOT",
         reasonCode: overrideReasonCode,
-        reason: overrideReason || "Override operacional",
+        reason: overrideReason || "Exceção operacional",
       };
       if (overrideEventId) body.eventId = Number(overrideEventId);
       if (overrideCourtId) body.courtId = Number(overrideCourtId);
@@ -349,10 +380,10 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar override."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar exceção."));
         return;
       }
-      setActionFeedback("Override criado.");
+      setActionFeedback("Exceção criada.");
       await mutate();
     } finally {
       setActionBusy(null);
@@ -379,7 +410,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
           agreementId: agreement.id,
           targetType: "COURT_SLOT",
           reasonCode: "PARTNERSHIP_CONFLICT",
-          reason: `Override contextual de claim ${claim.claimId ?? "N/A"} (${claim.sourceType ?? "SOURCE"}:${claim.sourceId ?? "-"})`,
+          reason: `Exceção contextual da reivindicação ${claim.claimId ?? "N/D"} (${claim.sourceType ?? "ORIGEM"}:${claim.sourceId ?? "-"})`,
           eventId: claim.sourceType === "EVENT" && claim.sourceId ? Number(claim.sourceId) : undefined,
           courtId: claim.courtId ?? undefined,
           startsAt: claim.startAt ?? undefined,
@@ -388,7 +419,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const createdJson = await createRes.json().catch(() => null);
       if (!createRes.ok || !createdJson?.ok || !createdJson?.override?.id) {
-        setActionFeedback(resolveActionError(createdJson?.error, "Não foi possível criar override contextual."));
+        setActionFeedback(resolveActionError(createdJson?.error, "Não foi possível criar exceção contextual."));
         return;
       }
 
@@ -400,12 +431,12 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const executeJson = await executeRes.json().catch(() => null);
       if (!executeRes.ok || !executeJson?.ok) {
-        setActionFeedback(resolveActionError(executeJson?.error, "Override criado, mas falhou execução."));
+        setActionFeedback(resolveActionError(executeJson?.error, "Exceção criada, mas a execução falhou."));
         await mutate();
         return;
       }
 
-      setActionFeedback(`Override ${overrideId} criado e executado a partir da claim.`);
+      setActionFeedback(`Exceção ${overrideId} criada e executada a partir da reivindicação.`);
       await mutate();
     } finally {
       setActionBusy(null);
@@ -424,10 +455,10 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível executar override."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível executar exceção."));
         return;
       }
-      setActionFeedback("Override executado.");
+      setActionFeedback("Exceção executada.");
       await mutate();
     } finally {
       setActionBusy(null);
@@ -485,12 +516,12 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar claim."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível criar reivindicação."));
         return;
       }
       setClaimStartsAt("");
       setClaimEndsAt("");
-      setActionFeedback("Claim criada.");
+      setActionFeedback("Reivindicação criada.");
       await mutate();
     } finally {
       setActionBusy(null);
@@ -513,7 +544,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível atualizar claim."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível atualizar reivindicação."));
         return;
       }
       await mutate();
@@ -546,7 +577,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        setActionFeedback(resolveActionError(json?.error, "Não foi possível ajustar janela da claim."));
+        setActionFeedback(resolveActionError(json?.error, "Não foi possível ajustar a janela da reivindicação."));
         return;
       }
       setEditingClaimId(null);
@@ -571,8 +602,8 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       <header className="rounded-2xl border border-white/15 bg-white/[0.04] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Workspace de Parceria #{agreementId}</h1>
-            <p className="text-sm text-white/70">Operação partilhada: acordo, janelas, grants, overrides e calendário.</p>
+            <h1 className="text-xl font-semibold">Painel de parceria #{agreementId}</h1>
+            <p className="text-sm text-white/70">Operação partilhada: acordo, janelas, permissões, exceções e calendário.</p>
           </div>
           <Link
             href={`/org/padel/parcerias${organizationId ? `?organizationId=${organizationId}` : ""}`}
@@ -585,12 +616,14 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
       </header>
 
       {isLoading || !agreement ? (
-        <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-sm text-white/70">A carregar workspace...</div>
+        <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-sm text-white/70">A carregar painel...</div>
       ) : (
         <>
           <section className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Estado: {agreement.status}</span>
+              <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">
+                Estado: {toStatusLabel(agreement.status, AGREEMENT_STATUS_LABEL)}
+              </span>
               <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Clube dono #{agreement.ownerClubId}</span>
               <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Clube parceiro {agreement.partnerClubId ?? "—"}</span>
             </div>
@@ -603,7 +636,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   disabled={Boolean(actionBusy)}
                   className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
                 >
-                  {actionBusy === `agreement:${action}` ? "A executar..." : action.toUpperCase()}
+                  {actionBusy === `agreement:${action}` ? "A executar..." : AGREEMENT_ACTION_LABEL[action]}
                 </button>
               ))}
             </div>
@@ -618,7 +651,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   onChange={(event) => setNewWindowCourtId(event.target.value)}
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 >
-                  <option value="">Todos os courts</option>
+                  <option value="">Todos os campos</option>
                   {courts.map((court) => (
                     <option key={`court-option-${court.id}`} value={court.id}>
                       #{court.id} · {court.name}
@@ -628,19 +661,19 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 <input
                   value={newWindowStartMinute}
                   onChange={(event) => setNewWindowStartMinute(event.target.value)}
-                  placeholder="startMinute"
+                  placeholder="Minuto inicial"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <input
                   value={newWindowEndMinute}
                   onChange={(event) => setNewWindowEndMinute(event.target.value)}
-                  placeholder="endMinute"
+                  placeholder="Minuto final"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <input
                   value={newWindowWeekdayMask}
                   onChange={(event) => setNewWindowWeekdayMask(event.target.value)}
-                  placeholder="weekdayMask"
+                  placeholder="Máscara semanal"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
               </div>
@@ -656,7 +689,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 {windows.map((windowItem) => (
                   <div key={`window-${windowItem.id}`} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs">
                     <p>
-                      #{windowItem.id} · Court {windowItem.ownerCourtId ?? "ALL"} · {windowItem.startMinute}-{windowItem.endMinute}
+                      #{windowItem.id} · Campo {windowItem.ownerCourtId ?? "TODOS"} · {windowItem.startMinute}-{windowItem.endMinute}
                     </p>
                     <div className="mt-2 flex gap-2">
                       <button
@@ -680,12 +713,12 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
             </article>
 
             <article className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Grants</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Permissões</h2>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 <input
                   value={grantUserId}
                   onChange={(event) => setGrantUserId(event.target.value)}
-                  placeholder="userId"
+                  placeholder="ID do utilizador"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <select
@@ -717,13 +750,13 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 disabled={Boolean(actionBusy) || !grantUserId || !grantStartsAt || !grantExpiresAt}
                 className="mt-3 rounded-full border border-white/20 px-3 py-1 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
               >
-                {actionBusy === "grant:create" ? "A criar..." : "Adicionar grant"}
+                {actionBusy === "grant:create" ? "A criar..." : "Adicionar permissão"}
               </button>
               <div className="mt-3 space-y-2">
                 {grants.map((grant) => (
                   <div key={`grant-${grant.id}`} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs">
                     <p>
-                      #{grant.id} · {grant.role} · {grant.userId}
+                      #{grant.id} · {toStatusLabel(grant.role, GRANT_ROLE_LABEL)} · {grant.userId}
                     </p>
                     <p className="text-white/70">
                       {toLocalDateTime(grant.startsAt)} → {toLocalDateTime(grant.expiresAt)}
@@ -743,18 +776,18 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
 
           <section className="grid gap-5 lg:grid-cols-2">
             <article className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Overrides</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Exceções</h2>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 <input
                   value={overrideEventId}
                   onChange={(event) => setOverrideEventId(event.target.value)}
-                  placeholder="eventId"
+                  placeholder="ID do evento"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <input
                   value={overrideCourtId}
                   onChange={(event) => setOverrideCourtId(event.target.value)}
-                  placeholder="courtId"
+                  placeholder="ID do campo"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <input
@@ -772,13 +805,13 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 <input
                   value={overrideReasonCode}
                   onChange={(event) => setOverrideReasonCode(event.target.value)}
-                  placeholder="reasonCode"
+                  placeholder="Código do motivo"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <input
                   value={overrideReason}
                   onChange={(event) => setOverrideReason(event.target.value)}
-                  placeholder="reason"
+                  placeholder="Motivo"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
               </div>
@@ -788,7 +821,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 disabled={Boolean(actionBusy) || !overrideReasonCode || !overrideReason}
                 className="mt-3 rounded-full border border-white/20 px-3 py-1 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
               >
-                {actionBusy === "override:create" ? "A criar..." : "Criar override"}
+                {actionBusy === "override:create" ? "A criar..." : "Criar exceção"}
               </button>
               <div className="mt-3 space-y-2">
                 {overrides.map((item) => (
@@ -819,7 +852,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   cases.map((item) => (
                     <div key={`case-${item.id}`} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-xs">
                       <p>
-                        Caso #{item.id} · {item.status}
+                        Caso #{item.id} · {toStatusLabel(item.status, CASE_STATUS_LABEL)}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(["OPEN", "PENDING_COMPENSATION", "MANUAL_RESOLVED", "CANCELLED"] as const).map((status) => (
@@ -829,7 +862,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                             onClick={() => patchCaseStatus(item.id, status)}
                             className="rounded-full border border-white/20 px-2 py-1 text-[11px] hover:border-white/40"
                           >
-                            {status}
+                            {toStatusLabel(status, CASE_STATUS_LABEL)}
                           </button>
                         ))}
                       </div>
@@ -843,12 +876,12 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
           <section className="rounded-2xl border border-white/12 bg-white/[0.03] p-4">
             <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Calendário partilhado</h2>
             <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/65">Operação de claims</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-white/65">Operação de reivindicações</p>
               <div className="mt-2 grid gap-2 md:grid-cols-5">
                 <input
                   value={claimEventId}
                   onChange={(event) => setClaimEventId(event.target.value)}
-                  placeholder="eventId"
+                  placeholder="ID do evento"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
                 <select
@@ -856,7 +889,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   onChange={(event) => setClaimCourtId(event.target.value)}
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 >
-                  <option value="">Court</option>
+                  <option value="">Campo</option>
                   {courts.map((court) => (
                     <option key={`claim-court-${court.id}`} value={court.id}>
                       #{court.id} · {court.name}
@@ -881,20 +914,20 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   disabled={Boolean(actionBusy) || !claimEventId || !claimCourtId || !claimStartsAt || !claimEndsAt}
                   className="rounded-xl border border-white/20 px-3 py-2 text-xs text-white/85 hover:border-white/40 disabled:opacity-60"
                 >
-                  {actionBusy === "claim:create" ? "A criar..." : "Criar claim"}
+                  {actionBusy === "claim:create" ? "A criar..." : "Criar reivindicação"}
                 </button>
               </div>
               <div className="mt-3 space-y-2">
                 {claims.length === 0 ? (
-                  <p className="text-xs text-white/60">Sem claims no intervalo.</p>
+                  <p className="text-xs text-white/60">Sem reivindicações no intervalo.</p>
                 ) : (
                   claims.map((claim) => (
                     <div key={`claim-item-${claim.id}`} className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-xs">
                       <p>
-                        Claim #{claim.id} · Court {claim.courtId ?? "—"} · {claim.status}
+                        Reivindicação #{claim.id} · Campo {claim.courtId ?? "—"} · {toStatusLabel(claim.status, CLAIM_STATUS_LABEL)}
                       </p>
                       <p className="text-white/70">
-                        {toLocalDateTime(claim.startAt)} → {toLocalDateTime(claim.endAt)} · source {claim.sourceType}:{claim.sourceId}
+                        {toLocalDateTime(claim.startAt)} → {toLocalDateTime(claim.endAt)} · origem {claim.sourceType}:{claim.sourceId}
                       </p>
                       <div className="mt-2 flex gap-2">
                         <button
@@ -934,7 +967,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 )}
                 {editingClaimId && (
                   <div className="rounded-lg border border-white/15 bg-black/45 px-3 py-2 text-xs">
-                    <p className="mb-2 text-white/75">Editar janela da claim #{editingClaimId}</p>
+                    <p className="mb-2 text-white/75">Editar janela da reivindicação #{editingClaimId}</p>
                     <div className="grid gap-2 md:grid-cols-3">
                       <input
                         type="datetime-local"
@@ -976,7 +1009,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
             </div>
             <div className="mt-3 grid gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Lane Dona</p>
+                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Faixa proprietária</p>
                 <div className="space-y-2 text-xs">
                   {calendar.masterLane.map((row) => (
                     <div key={row.id} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1">
@@ -987,7 +1020,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 </div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Lane Parceira</p>
+                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Faixa parceira</p>
                 <div className="space-y-2 text-xs">
                   {calendar.partnerLane.map((row) => (
                     <div key={row.id} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1">
@@ -998,14 +1031,14 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 </div>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/30 p-3">
-                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Lane Partilhada</p>
+                <p className="mb-2 text-xs uppercase tracking-[0.14em] text-white/65">Faixa partilhada</p>
                 <div className="space-y-2 text-xs">
                   {sharedCalendarRows.map((row) => (
                     <div key={row.id} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1">
                       <p>{row.id}</p>
                       <p className="text-white/70">{toLocalDateTime(row.startAt)} → {toLocalDateTime(row.endAt)}</p>
                       <p className="text-[11px] text-white/60">
-                        Court {row.courtId ?? "—"} · conflitos dona: {row.conflictsOwner} · conflitos parceira: {row.conflictsPartner}
+                        Campo {row.courtId ?? "—"} · conflitos dona: {row.conflictsOwner} · conflitos parceira: {row.conflictsPartner}
                       </p>
                       <div className="mt-1 flex flex-wrap gap-2">
                         {typeof row.claimId === "string" && row.claimId.length > 0 && (
@@ -1059,7 +1092,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                             disabled={Boolean(actionBusy)}
                             className="rounded-full border border-amber-300/40 px-2 py-1 text-[11px] text-amber-100 hover:border-amber-200/70 disabled:opacity-50"
                           >
-                            Resolver via override
+                            Resolver via exceção
                           </button>
                         )}
                       </div>

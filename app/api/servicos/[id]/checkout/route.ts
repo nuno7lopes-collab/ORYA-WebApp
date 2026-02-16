@@ -26,7 +26,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
-import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 
@@ -53,6 +53,7 @@ async function _POST(
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const guestInput = payload?.guest ?? null;
     const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
     const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
@@ -60,7 +61,7 @@ async function _POST(
     const guestConsent = guestInput?.consent === true;
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
     const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
-    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
+    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw, phoneOptions) : "";
     const bookingId = Number(payload?.bookingId);
     const paymentMethodRaw =
       typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;

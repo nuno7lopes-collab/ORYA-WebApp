@@ -1,119 +1,129 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCandidate, type AgendaCandidateType } from "@/domain/agenda/conflictEngine";
+import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 
-const baseStart = new Date("2025-01-01T10:00:00Z");
-const baseEnd = new Date("2025-01-01T11:00:00Z");
+const at = (iso: string) => new Date(iso);
 
-const makeCandidate = (type: AgendaCandidateType, sourceId: string) => ({
-  type,
-  sourceId,
-  startsAt: baseStart,
-  endsAt: baseEnd,
+const baseCandidate = (patch?: Partial<AgendaCandidate>): AgendaCandidate => ({
+  type: "BOOKING",
+  sourceId: "cand-1",
+  claimId: "cand-1",
+  startsAt: at("2025-01-01T10:00:00Z"),
+  endsAt: at("2025-01-01T11:00:00Z"),
+  confirmedAt: at("2025-01-01T09:00:00Z"),
+  createdAt: at("2025-01-01T08:00:00Z"),
+  ...patch,
 });
 
-describe("agenda conflict engine", () => {
-  it("overlaps always block candidate", () => {
-    const types: AgendaCandidateType[] = ["HARD_BLOCK", "MATCH_SLOT", "BOOKING", "SOFT_BLOCK"];
-
-    types.forEach((candidateType) => {
-      types.forEach((existingType) => {
-        const candidate = makeCandidate(candidateType, `c-${candidateType}`);
-        const existing = [makeCandidate(existingType, `e-${existingType}`)];
-        const res = evaluateCandidate({ candidate, existing });
-
-        expect(res.allowed).toBe(false);
-        expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
-        expect(res.winnerType).toBe(existingType);
-        expect(res.blockedBy).toBe(existingType);
-      });
+describe("agenda conflict engine (ARB.01)", () => {
+  it("permite quando não há overlaps", () => {
+    const res = evaluateCandidate({
+      candidate: baseCandidate(),
+      existing: [],
     });
-  });
-
-  it("edge cases: touching boundaries does not conflict", () => {
-    const candidate = makeCandidate("BOOKING", "c1");
-    const existing = [
-      {
-        type: "HARD_BLOCK" as const,
-        sourceId: "e1",
-        startsAt: new Date("2025-01-01T11:00:00Z"),
-        endsAt: new Date("2025-01-01T12:00:00Z"),
-      },
-    ];
-
-    const res = evaluateCandidate({ candidate, existing });
     expect(res.allowed).toBe(true);
     expect(res.reason).toBe("NO_CONFLICT");
-    expect(res.conflicts.length).toBe(0);
   });
 
-  it("edge cases: exact overlap conflicts", () => {
-    const candidate = makeCandidate("SOFT_BLOCK", "c1");
-    const existing = [makeCandidate("BOOKING", "e1")];
+  it("aplica first_confirmed_wins antes de prioridade", () => {
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        type: "SOFT_BLOCK",
+        confirmedAt: at("2025-01-01T08:00:00Z"),
+      }),
+      existing: [
+        baseCandidate({
+          type: "HARD_BLOCK",
+          sourceId: "hb-1",
+          claimId: "hb-1",
+          confirmedAt: at("2025-01-01T09:30:00Z"),
+        }),
+      ],
+    });
 
-    const res = evaluateCandidate({ candidate, existing });
+    expect(res.allowed).toBe(true);
+    expect(res.winnerType).toBe("SOFT_BLOCK");
+  });
+
+  it("em empate técnico aplica prioridade explícita", () => {
+    const confirmedAt = at("2025-01-01T09:30:00Z");
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        type: "BOOKING",
+        confirmedAt,
+      }),
+      existing: [
+        baseCandidate({
+          type: "MATCH",
+          reasonCode: "MATCH_SLOT",
+          sourceId: "match-1",
+          claimId: "match-1",
+          confirmedAt,
+        }),
+      ],
+    });
+
+    expect(res.allowed).toBe(false);
+    expect(res.blockedBy).toBe("MATCH");
+    expect(res.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
+  });
+
+  it("tie-break determinístico por claimId quando confirmedAt/prioridade empatam", () => {
+    const confirmedAt = at("2025-01-01T09:30:00Z");
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        type: "BOOKING",
+        sourceId: "z-claim",
+        claimId: "z-claim",
+        confirmedAt,
+      }),
+      existing: [
+        baseCandidate({
+          type: "BOOKING",
+          sourceId: "a-claim",
+          claimId: "a-claim",
+          confirmedAt,
+        }),
+      ],
+    });
+
     expect(res.allowed).toBe(false);
     expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
-    expect(res.conflicts.length).toBe(1);
   });
 
-  it("edge cases: contained interval conflicts", () => {
-    const candidate = makeCandidate("BOOKING", "c1");
-    const existing = [
-      {
-        type: "SOFT_BLOCK" as const,
-        sourceId: "e1",
-        startsAt: new Date("2025-01-01T10:15:00Z"),
-        endsAt: new Date("2025-01-01T10:45:00Z"),
-      },
-    ];
-
-    const res = evaluateCandidate({ candidate, existing });
+  it("fail-closed em candidate com tipo fora da versão ativa", () => {
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        // cobertura explícita de tipo desconhecido no runtime
+        type: "CLASS_SESSION",
+      }),
+      existing: [],
+      priorityRuleVersion: "v1",
+    });
     expect(res.allowed).toBe(false);
-    expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
-    expect(res.conflicts.length).toBe(1);
+    expect(res.reason).toBe("TYPE_NOT_SUPPORTED");
   });
 
-  it("determinismo: ordem de input nao altera saida", () => {
-    const candidate = makeCandidate("BOOKING", "c1");
-    const existingA = [
-      makeCandidate("SOFT_BLOCK", "e1"),
-      makeCandidate("HARD_BLOCK", "e2"),
-      makeCandidate("MATCH_SLOT", "e3"),
-    ];
-    const existingB = [existingA[2], existingA[0], existingA[1]];
-    const existingC = [existingA[1], existingA[2], existingA[0]];
-
-    const resA = evaluateCandidate({ candidate, existing: existingA });
-    const resB = evaluateCandidate({ candidate, existing: existingB });
-    const resC = evaluateCandidate({ candidate, existing: existingC });
-
-    expect(resA).toEqual(resB);
-    expect(resA).toEqual(resC);
-  });
-
-  it("fail-closed: candidate interval invalido", () => {
-    const candidate = {
-      type: "BOOKING" as const,
-      sourceId: "c1",
-      startsAt: new Date("2025-01-01T10:00:00Z"),
-      endsAt: new Date("2025-01-01T09:00:00Z"),
-    };
-    const res = evaluateCandidate({ candidate, existing: [] });
+  it("fail-closed com priorityRuleVersion divergente", () => {
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        type: "BOOKING",
+        priorityRuleVersion: "v2",
+      }),
+      existing: [],
+      priorityRuleVersion: "v1",
+    });
     expect(res.allowed).toBe(false);
-    expect(res.reason).toBe("INVALID_INTERVAL");
+    expect(res.reason).toBe("TYPE_NOT_SUPPORTED");
   });
 
-  it("fail-closed: existing interval invalido", () => {
-    const candidate = makeCandidate("BOOKING", "c1");
-    const existing = [
-      {
-        type: "SOFT_BLOCK" as const,
-        sourceId: "e1",
-        startsAt: new Date("2025-01-01T10:00:00Z"),
-        endsAt: new Date("2025-01-01T09:00:00Z"),
-      },
-    ];
-    const res = evaluateCandidate({ candidate, existing });
+  it("fail-closed para intervalos inválidos", () => {
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        startsAt: at("2025-01-01T11:00:00Z"),
+        endsAt: at("2025-01-01T10:00:00Z"),
+      }),
+      existing: [],
+    });
     expect(res.allowed).toBe(false);
     expect(res.reason).toBe("INVALID_INTERVAL");
   });

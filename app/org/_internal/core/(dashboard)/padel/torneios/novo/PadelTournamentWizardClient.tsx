@@ -555,7 +555,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       }
       const eventId = json?.data?.event?.id ?? json?.event?.id;
       if (!eventId) {
-        router.push(appendOrganizationIdToHref("/org/padel/torneios", organizationId));
+        router.push(appendOrganizationIdToHref("/org/padel/tournaments", organizationId));
         return;
       }
 
@@ -572,7 +572,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             PADEL_V2_DISABLED: "Padel V2 não ativo",
             FORMAT_MISSING: "Formato do torneio",
             CLUB_MISSING: "Clube",
-            COURTS_MISSING: "Courts",
+            COURTS_MISSING: "Campos",
             CATEGORIES_MISSING: "Categorias",
             CATEGORY_PRICES_MISSING: "Preços por categoria",
             REGISTRATION_WINDOW_INVALID: "Janela de inscrições inválida",
@@ -587,7 +587,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         }
       }
 
-      router.push(appendOrganizationIdToHref(`/org/padel/torneios/${eventId}`, organizationId));
+      router.push(appendOrganizationIdToHref(`/org/padel/tournaments/${eventId}`, organizationId));
     } catch (err) {
       setError(
         err instanceof Error
@@ -603,7 +603,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] py-10 text-white">
       <div className="mx-auto w-full max-w-5xl space-y-8 px-4">
         <header className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Padel Wizard</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Assistente de padel</p>
           <h1 className="text-3xl font-semibold">Novo torneio de Padel</h1>
           <p className="text-sm text-white/65">
             Fluxo dedicado para padel: escolhe clube, categorias e regras num único passo.
@@ -681,7 +681,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           <div>
             <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Inscrições & agenda</p>
             <p className="text-sm text-white/70">
-              Define timezone, janela de inscrições e padrões para o calendário (auto-schedule).
+              Define o fuso horário, a janela de inscrições e os padrões para o calendário (agendamento automático).
             </p>
           </div>
 
@@ -814,7 +814,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                 onChange={(e) => setWaitlistEnabled(e.target.checked)}
                 className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
               />
-              Waitlist ativa (quando não há vaga)
+              Lista de espera ativa (quando não há vaga)
             </label>
           </div>
 
@@ -830,7 +830,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
               <p className="font-semibold">Capacidade recomendada (estimativa)</p>
               <p>
-                Com {capacityWarnings.courts} courts cabem ~{capacityWarnings.totalSlots} jogos na janela. Isso dá ~
+                Com {capacityWarnings.courts} campos cabem ~{capacityWarnings.totalSlots} jogos na janela. Isso dá ~
                 {capacityWarnings.slotsPerCategory} jogos por categoria.
               </p>
               {capacityWarnings.warnings.length > 0 ? (
@@ -857,7 +857,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             </div>
             <Link
               href={appendOrganizationIdToHref(
-                "/org/padel/torneios?section=padel-tournaments&padel=categories",
+                "/org/padel/tournaments?section=padel-tournaments&padel=categories",
                 organizationId,
               )}
               className="text-[12px] text-white/70 underline"
@@ -1060,7 +1060,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           {selectedClub && courts.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Courts</p>
+                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos</p>
                 <label className="flex items-center gap-2 text-[12px] text-white/70">
                   <input
                     type="checkbox"
@@ -1100,7 +1100,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
             Rascunho criado.{" "}
             <Link
-              href={appendOrganizationIdToHref(`/org/padel/torneios/${draftEventId}`, organizationId)}
+              href={appendOrganizationIdToHref(`/org/padel/tournaments/${draftEventId}`, organizationId)}
               className="underline"
             >
               Abrir torneio
@@ -1125,7 +1125,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           >
             {savingMode === "PUBLISH" ? "A publicar…" : "Publicar"}
           </button>
-          <span className="text-[12px] text-white/60">Wizard dedicado a Padel. Sem bilhetes.</span>
+          <span className="text-[12px] text-white/60">Assistente dedicado a padel. Sem bilhetes.</span>
         </div>
       </div>
     </div>

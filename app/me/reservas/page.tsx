@@ -389,7 +389,7 @@ export default function MinhasReservasPage() {
       if (booking.durationMinutes) {
         qs.set("durationMinutes", String(booking.durationMinutes));
       }
-      const res = await fetch(`/api/servicos/${booking.service.id}/slots?${qs.toString()}`);
+      const res = await fetch(`/api/servicos/${booking.service.id}/calendario?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao carregar horários.");
@@ -467,7 +467,7 @@ export default function MinhasReservasPage() {
       if (booking.durationMinutes) {
         qs.set("durationMinutes", String(booking.durationMinutes));
       }
-      const res = await fetch(`/api/servicos/${booking.service.id}/slots?${qs.toString()}`);
+      const res = await fetch(`/api/servicos/${booking.service.id}/calendario?${qs.toString()}`);
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao carregar horários.");

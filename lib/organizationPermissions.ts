@@ -3,22 +3,21 @@ import { OrganizationMemberRole } from "@prisma/client";
 const ROLE_WEIGHT: Record<OrganizationMemberRole, number> = {
   [OrganizationMemberRole.PROMOTER]: 0,
   [OrganizationMemberRole.STAFF]: 1,
-  [OrganizationMemberRole.TRAINER]: 1,
   [OrganizationMemberRole.ADMIN]: 2,
   [OrganizationMemberRole.CO_OWNER]: 3,
   [OrganizationMemberRole.OWNER]: 4,
 };
 
 const ADMIN_MANAGEABLE = new Set<OrganizationMemberRole>([
+  OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
   OrganizationMemberRole.PROMOTER,
 ]);
 
 const CO_OWNER_MANAGEABLE = new Set<OrganizationMemberRole>([
+  OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
   OrganizationMemberRole.PROMOTER,
 ]);
 
@@ -45,14 +44,13 @@ export function canManageMembers(
   if (actorRole === OrganizationMemberRole.CO_OWNER) {
     if (
       targetCurrentRole === OrganizationMemberRole.OWNER ||
-      targetCurrentRole === OrganizationMemberRole.CO_OWNER ||
-      desiredRole === OrganizationMemberRole.OWNER ||
-      desiredRole === OrganizationMemberRole.CO_OWNER
+      desiredRole === OrganizationMemberRole.OWNER
     ) {
       return false;
     }
     const target = targetCurrentRole ?? desiredRole;
-    return target ? CO_OWNER_MANAGEABLE.has(target) : true;
+    if (target && !CO_OWNER_MANAGEABLE.has(target)) return false;
+    return desiredRole ? CO_OWNER_MANAGEABLE.has(desiredRole) : true;
   }
 
   if (actorRole === OrganizationMemberRole.ADMIN) {

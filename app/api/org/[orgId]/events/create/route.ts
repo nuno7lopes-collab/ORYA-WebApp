@@ -71,7 +71,6 @@ type CreateOrganizationEventBody = {
   resaleMode?: string; // ALWAYS | AFTER_SOLD_OUT | DISABLED
   pricingMode?: string | null;
   coverImageUrl?: string | null;
-  liveVisibility?: string;
   payoutMode?: string; // ORGANIZATION | PLATFORM
   feeMode?: string;
   platformFeeBps?: number;
@@ -100,8 +99,6 @@ type CreateOrganizationEventBody = {
     staffIds?: number[];
   } | null;
 };
-
-type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type PadelConfigInput = {
   padelClubId?: number | null;
@@ -378,11 +375,6 @@ async function _POST(req: NextRequest) {
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
-    const liveVisibilityRaw = body.liveVisibility?.toUpperCase();
-    const liveVisibility: LiveVisibility =
-      liveVisibilityRaw === "PUBLIC" || liveVisibilityRaw === "PRIVATE" || liveVisibilityRaw === "DISABLED"
-        ? (liveVisibilityRaw as LiveVisibility)
-        : "PUBLIC";
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
     let ticketTypesData = ticketTypesInput
@@ -799,7 +791,6 @@ async function _POST(req: NextRequest) {
           endsAt,
           addressId: addressRecord.id,
           pricingMode,
-          liveVisibility,
           status: eventStatus,
           ...(timezone ? { timezone } : {}),
           resaleMode,

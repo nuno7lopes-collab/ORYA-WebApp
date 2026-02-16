@@ -116,8 +116,8 @@ const toPublicCard = (item: LegacyEventListItem): PublicEventCard => {
   };
 };
 
-const formatLiveWindowLabel = (status: AgoraEvent["agoraStatus"], startsInMinutes: number | null) => {
-  if (status === "LIVE") return "A acontecer agora";
+const formatNowWindowLabel = (status: AgoraEvent["agoraStatus"], startsInMinutes: number | null) => {
+  if (status === "NOW") return "A acontecer agora";
   if (status === "SOON" && startsInMinutes !== null) {
     if (startsInMinutes <= 1) return "Começa já";
     return `Começa em ${startsInMinutes}m`;
@@ -137,7 +137,7 @@ const toAgoraEvent = (item: PublicEventCard): AgoraEvent => {
 
   let agoraStatus: AgoraEvent["agoraStatus"] = "UPCOMING";
   if (startMs !== null && endMs !== null && now >= startMs && now <= endMs) {
-    agoraStatus = "LIVE";
+    agoraStatus = "NOW";
   } else if (startsInMinutes !== null && startsInMinutes <= 90) {
     agoraStatus = "SOON";
   }
@@ -148,11 +148,11 @@ const toAgoraEvent = (item: PublicEventCard): AgoraEvent => {
     endsAt: normalizedEndsAt,
     agoraStatus,
     startsInMinutes,
-    liveWindowLabel: formatLiveWindowLabel(agoraStatus, startsInMinutes),
+    nowWindowLabel: formatNowWindowLabel(agoraStatus, startsInMinutes),
   };
 };
 
-const filterFutureOrLive = (items: AgoraEvent[], now: number) =>
+const filterFutureOrNow = (items: AgoraEvent[], now: number) =>
   items.filter((event) => {
     if (event.status === "CANCELLED") return false;
     const endMs = parseEventDateMs(event.endsAt ?? event.startsAt ?? null);
@@ -198,7 +198,7 @@ export const fetchAgoraPage = async (
   let mapped = page.events.map((item) => toAgoraEvent(toPublicCard(item)));
 
   if (mode === "agora") {
-    mapped = filterFutureOrLive(mapped, Date.now());
+    mapped = filterFutureOrNow(mapped, Date.now());
   }
 
   if (mode === "agora" && cursor == null && mapped.length === 0) {

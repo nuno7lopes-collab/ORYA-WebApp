@@ -54,6 +54,16 @@ async function _POST(req: NextRequest) {
       res.cookies.set({
         name: "orya_admin_mfa",
         value: "",
+        path: "/",
+        maxAge: 0,
+        ...(cookieDomain ? { domain: cookieDomain } : {}),
+      });
+
+      // logout canónico limpa também cookies de contexto UI.
+      res.cookies.set({
+        name: "orya_organization",
+        value: "",
+        path: "/",
         maxAge: 0,
         ...(cookieDomain ? { domain: cookieDomain } : {}),
       });

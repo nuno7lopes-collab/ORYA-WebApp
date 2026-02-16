@@ -95,7 +95,7 @@ export default function InvoicesClient({
   const downloadCsv = () => {
     if (!items.length) return;
     const rows = [
-      ["Data", "Evento", "Payout Mode", "Subtotal", "Desconto", "Taxas", "Total", "Líquido", "Bilhetes"],
+      ["Data", "Evento", "Modo de pagamento", "Subtotal", "Desconto", "Taxas", "Total", "Líquido", "Bilhetes"],
       ...items.map((sale) => [
         sale.createdAt,
         sale.event?.title ?? "",
@@ -114,7 +114,7 @@ export default function InvoicesClient({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "invoices.csv";
+    a.download = "faturacao.csv";
     a.click();
     URL.revokeObjectURL(url);
   };

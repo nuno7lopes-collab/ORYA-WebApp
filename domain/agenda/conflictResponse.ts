@@ -18,6 +18,14 @@ const pickPrimaryConflict = (decision: ConflictDecision) => {
   return decision.conflicts[0];
 };
 
+const toAgendaCandidateType = (value: string | null | undefined): AgendaCandidateType | undefined => {
+  if (value === "HARD_BLOCK") return "HARD_BLOCK";
+  if (value === "MATCH") return "MATCH";
+  if (value === "BOOKING") return "BOOKING";
+  if (value === "SOFT_BLOCK") return "SOFT_BLOCK";
+  return undefined;
+};
+
 export function buildAgendaConflictPayload(params: {
   decision?: ConflictDecision | null;
   fallbackReason?: "MISSING_EXISTING_DATA";
@@ -35,7 +43,7 @@ export function buildAgendaConflictPayload(params: {
   return {
     errorCode: "AGENDA_CONFLICT",
     details: {
-      blockedByType: params.decision.blockedBy ?? primary?.withType,
+      blockedByType: toAgendaCandidateType(params.decision.blockedBy ?? primary?.withType),
       blockedBySourceId: primary?.withSourceId,
       reason: params.decision.reason,
     },

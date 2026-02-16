@@ -5,7 +5,7 @@ import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 const baseStart = new Date("2025-02-01T10:00:00Z");
 const baseEnd = new Date("2025-02-01T11:00:00Z");
 
-const makeCandidate = (type: "HARD_BLOCK" | "MATCH_SLOT" | "BOOKING" | "SOFT_BLOCK", sourceId: string) => ({
+const makeCandidate = (type: "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK", sourceId: string) => ({
   type,
   sourceId,
   startsAt: baseStart,
@@ -15,25 +15,25 @@ const makeCandidate = (type: "HARD_BLOCK" | "MATCH_SLOT" | "BOOKING" | "SOFT_BLO
 describe("agenda conflict integration", () => {
   it("booking collides with matchslot -> AGENDA_CONFLICT", () => {
     const candidate = makeCandidate("BOOKING", "booking-1");
-    const existing = [makeCandidate("MATCH_SLOT", "match-1")];
+    const existing = [makeCandidate("MATCH", "match-1")];
     const decision = evaluateCandidate({ candidate, existing });
 
     expect(decision.allowed).toBe(false);
     const payload = buildAgendaConflictPayload({ decision });
     expect(payload.errorCode).toBe("AGENDA_CONFLICT");
-    expect(payload.details.blockedByType).toBe("MATCH_SLOT");
-    expect(payload.details.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
+    expect(payload.details.blockedByType).toBe("MATCH");
+    expect(payload.details.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
   });
 
   it("auto-schedule collides with hardblock", () => {
-    const candidate = makeCandidate("MATCH_SLOT", "match-2");
+    const candidate = makeCandidate("MATCH", "match-2");
     const existing = [makeCandidate("HARD_BLOCK", "block-1")];
     const decision = evaluateCandidate({ candidate, existing });
 
     expect(decision.allowed).toBe(false);
     const payload = buildAgendaConflictPayload({ decision });
     expect(payload.details.blockedByType).toBe("HARD_BLOCK");
-    expect(payload.details.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
+    expect(payload.details.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
   });
 
   it("touching boundaries are allowed", () => {
@@ -57,7 +57,7 @@ describe("agenda conflict integration", () => {
     const decision = evaluateCandidate({ candidate, existing });
 
     expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
+    expect(decision.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
   });
 
   it("booking overrides soft block", () => {
@@ -65,8 +65,8 @@ describe("agenda conflict integration", () => {
     const existing = [makeCandidate("SOFT_BLOCK", "soft-2")];
     const decision = evaluateCandidate({ candidate, existing });
 
-    expect(decision.allowed).toBe(false);
-    expect(decision.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).toBe("OVERRIDES_LOWER_PRIORITY");
   });
 
   it("missing existing data -> fail closed", () => {

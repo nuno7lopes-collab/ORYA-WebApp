@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { Prisma, OrganizationFormSubmissionStatus } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,6 +111,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
       return jsonWrap({ ok: false, error: "Formulário não disponível." }, { status: 404 });
     }
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const normalizedAnswers: Record<string, unknown> = {};
     let emailAnswer: string | null = null;
 
@@ -150,7 +151,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
             if (!isValidPhone(trimmedString)) {
               return jsonWrap({ ok: false, error: `Telefone inválido em "${field.label}".` }, { status: 400 });
             }
-            normalizedAnswers[key] = normalizePhone(trimmedString) || trimmedString;
+            normalizedAnswers[key] = normalizePhone(trimmedString, phoneOptions) || trimmedString;
           }
           break;
         }

@@ -29,6 +29,7 @@ type StoreSnapshot = {
   catalogLocked: boolean;
   checkoutEnabled: boolean;
   showOnProfile: boolean;
+  publicProductsCount?: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -39,15 +40,6 @@ type OrgStoreToolClientProps = {
 
 const STORE_VIEWS = ["overview", "catalog", "orders", "shipping", "marketing", "settings"] as const;
 type StoreView = (typeof STORE_VIEWS)[number];
-
-const VIEW_LABELS: Record<StoreView, string> = {
-  overview: "Visão geral",
-  catalog: "Catálogo",
-  orders: "Encomendas",
-  shipping: "Envios",
-  marketing: "Marketing",
-  settings: "Definições",
-};
 
 const VIEW_SUBNAV = {
   overview: [] as const,
@@ -276,22 +268,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
   return (
     <section className="space-y-4 text-white">
-      <header className="rounded-3xl border border-white/12 bg-gradient-to-r from-[#0b1226]/80 via-[#101b39]/75 to-[#050811]/90 px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Loja</p>
-            <h1 className="text-2xl font-semibold text-white">{VIEW_LABELS[view]}</h1>
-            <p className="text-sm text-white/70">Gestão dedicada da ferramenta de loja.</p>
-          </div>
-          <Link
-            href={buildStoreHref("overview")}
-            className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/15"
-          >
-            Ir para overview
-          </Link>
-        </div>
-      </header>
-
       {storeError ? (
         <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
           {storeError}
@@ -301,7 +277,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
       {view === "overview" || !hasStore ? (
         <StoreActivationCard
           title="Loja da organização"
-          description="Cria, publica e mantém a tua loja pronta para vendas."
+          description="Controla publicação da loja no perfil público."
           endpoint={endpoints.base}
           storeEnabled={storeEnabled}
           initialStore={store}
@@ -311,9 +287,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
 
       {!hasStore ? (
         <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-4 text-sm text-white/75">
-          {loadingStore
-            ? "A carregar estado da loja..."
-            : "Ainda não existe loja criada. Usa o painel acima para criar e desbloquear as restantes secções."}
+          {loadingStore ? "A carregar estado da loja..." : "Sem dados da loja de momento."}
         </div>
       ) : (
         <>

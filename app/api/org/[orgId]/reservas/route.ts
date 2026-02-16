@@ -10,7 +10,7 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
+import { AddressSourceProvider, OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { createBooking } from "@/domain/bookings/commands";
@@ -25,7 +25,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
 ];
 
 const PENDING_HOLD_MINUTES = 10;
@@ -165,7 +164,8 @@ async function _GET(req: NextRequest) {
       (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ??
       "PROFESSIONAL";
     let scopeFilter: Record<string, unknown> | null = null;
-    if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+    if (membership.role === OrganizationMemberRole.STAFF) {
+      const isCoach = membership.rolePack === OrganizationRolePack.COACH;
       const scopes = await resolveReservasScopesForMember({
         organizationId: organization.id,
         userId: profile.id,
@@ -173,7 +173,7 @@ async function _GET(req: NextRequest) {
       if (!scopes.hasAny) {
         return respondOk(ctx, { items: [] });
       }
-      if (membership.role === OrganizationMemberRole.TRAINER) {
+      if (isCoach) {
         const trainerProfessionalIds = await resolveTrainerProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
@@ -392,10 +392,10 @@ async function _POST(req: NextRequest) {
     }
 
     const isStaff = membership.role === OrganizationMemberRole.STAFF;
-    const isTrainer = membership.role === OrganizationMemberRole.TRAINER;
+    const isCoach = isStaff && membership.rolePack === OrganizationRolePack.COACH;
     let memberScopes: Awaited<ReturnType<typeof resolveReservasScopesForMember>> | null = null;
     let trainerProfessionalIds: number[] = [];
-    if (isStaff || isTrainer) {
+    if (isStaff) {
       memberScopes = await resolveReservasScopesForMember({
         organizationId: organization.id,
         userId: profile.id,
@@ -403,7 +403,7 @@ async function _POST(req: NextRequest) {
       if (!memberScopes.hasAny) {
         return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
       }
-      if (isTrainer) {
+      if (isCoach) {
         trainerProfessionalIds = await resolveTrainerProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
@@ -539,7 +539,7 @@ async function _POST(req: NextRequest) {
           if (!memberScopes.resourceIds.includes(resourceIdRaw)) {
             return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
           }
-        } else if (isStaff || isTrainer) {
+        } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         if (allowedResourceIds && !allowedResourceIds.includes(resourceIdRaw)) {
@@ -560,7 +560,7 @@ async function _POST(req: NextRequest) {
       } else {
         if (memberScopes?.resourceIds?.length) {
           scopeIds = memberScopes.resourceIds;
-        } else if (isStaff || isTrainer) {
+        } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
         const resources = await prisma.reservationResource.findMany({
@@ -585,10 +585,10 @@ async function _POST(req: NextRequest) {
           if (!memberScopes.professionalIds.includes(professionalIdRaw)) {
             return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
           }
-        } else if (isStaff || isTrainer) {
+        } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
         }
-        if (isTrainer) {
+        if (isCoach) {
           const allowedTrainers = memberScopes?.professionalIds?.length
             ? intersectIds(trainerProfessionalIds, memberScopes.professionalIds)
             : trainerProfessionalIds;
@@ -611,7 +611,7 @@ async function _POST(req: NextRequest) {
       } else {
         if (memberScopes?.professionalIds?.length) {
           scopeIds = memberScopes.professionalIds;
-        } else if (isTrainer) {
+        } else if (isCoach) {
           scopeIds = trainerProfessionalIds;
         } else if (isStaff) {
           return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
@@ -651,7 +651,7 @@ async function _POST(req: NextRequest) {
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
+    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -692,18 +692,6 @@ async function _POST(req: NextRequest) {
           ],
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
-      }),
-      prisma.softBlock.findMany({
-        where: {
-          organizationId: service.organizationId,
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-          OR: [
-            { scopeType: "ORGANIZATION" },
-            ...(scopeIds.length > 0 ? [{ scopeType, scopeId: { in: scopeIds } }] : []),
-          ],
-        },
-        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
       prisma.classSession.findMany({
         where: {
@@ -797,25 +785,6 @@ async function _POST(req: NextRequest) {
         endsAt: session.endsAt,
       });
     });
-    softBlocks.forEach((block) => {
-      if (block.scopeType === "ORGANIZATION") {
-        existing.push({
-          type: "SOFT_BLOCK",
-          sourceId: String(block.id),
-          startsAt: block.startsAt,
-          endsAt: block.endsAt,
-        });
-        return;
-      }
-      if (block.scopeId !== scopeIdForConflict) return;
-      existing.push({
-        type: "SOFT_BLOCK",
-        sourceId: String(block.id),
-        startsAt: block.startsAt,
-        endsAt: block.endsAt,
-      });
-    });
-
     const decision = evaluateCandidate({ candidate, existing });
     if (!decision.allowed) {
       const conflict = agendaConflictResponse(decision);

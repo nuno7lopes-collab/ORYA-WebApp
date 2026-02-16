@@ -13,6 +13,7 @@ const prisma = vi.hoisted(() => ({
   organizationOfficialEmailRequest: {
     updateMany: vi.fn(),
     create: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
   },
@@ -41,6 +42,7 @@ beforeEach(async () => {
   prisma.organization.update.mockReset();
   prisma.organizationOfficialEmailRequest.updateMany.mockReset();
   prisma.organizationOfficialEmailRequest.create.mockReset();
+  prisma.organizationOfficialEmailRequest.findFirst.mockReset();
   prisma.organizationOfficialEmailRequest.findUnique.mockReset();
   prisma.organizationOfficialEmailRequest.update.mockReset();
   prisma.$transaction.mockClear();
@@ -64,6 +66,15 @@ describe("official email flow", () => {
       token: "t1",
       expiresAt: new Date("2026-01-01T00:00:00Z"),
     });
+    prisma.organizationOfficialEmailRequest.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 10,
+        newEmail: "team@org.pt",
+        expiresAt: new Date("2026-01-01T00:00:00Z"),
+        createdAt: new Date("2025-12-31T00:00:00Z"),
+        token: "t1",
+      });
 
     const req = new NextRequest("http://localhost/api/org-hub/organizations/settings/official-email", {
       method: "POST",
@@ -88,6 +99,7 @@ describe("official email flow", () => {
       publicName: "Org",
       username: "org",
     });
+    prisma.organizationOfficialEmailRequest.findFirst.mockResolvedValue(null);
 
     const req = new NextRequest("http://localhost/api/org-hub/organizations/settings/official-email", {
       method: "POST",
@@ -100,6 +112,7 @@ describe("official email flow", () => {
 
   it("owner can confirm official email", async () => {
     resolveGroupMemberForOrg.mockResolvedValue({ role: "OWNER" });
+    prisma.organizationOfficialEmailRequest.findFirst.mockResolvedValue(null);
     prisma.organizationOfficialEmailRequest.findUnique.mockResolvedValue({
       id: 11,
       organizationId: 1,

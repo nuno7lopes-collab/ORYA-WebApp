@@ -6,7 +6,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import { getAgendaItemsForOrganization } from "@/domain/agendaReadModel/query";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
@@ -42,7 +42,7 @@ async function _GET(req: NextRequest) {
   const organizationId = resolveOrganizationIdFromRequest(req);
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationId ?? undefined,
-    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"],
+    roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!organization || !membership) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -105,7 +105,8 @@ async function _GET(req: NextRequest) {
 
   let scopeFilter: { courtIds?: number[]; resourceIds?: number[]; professionalIds?: number[] } | null = null;
   let scopeMode: "OR" | "AND" = "OR";
-  if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+  if (membership.role === OrganizationMemberRole.STAFF) {
+    const isCoach = membership.rolePack === OrganizationRolePack.COACH;
     const scopes = await resolveReservasScopesForMember({
       organizationId: organization.id,
       userId: user.id,
@@ -113,7 +114,7 @@ async function _GET(req: NextRequest) {
     if (!scopes.hasAny) {
       return jsonWrap({ ok: true, items: [] }, { status: 200 });
     }
-    if (membership.role === OrganizationMemberRole.TRAINER) {
+    if (isCoach) {
       const trainerProfessionalIds = await resolveTrainerProfessionalIds({
         organizationId: organization.id,
         userId: user.id,

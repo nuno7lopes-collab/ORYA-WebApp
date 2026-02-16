@@ -1,12 +1,10 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
 import OrganizationProfileHeader from "@/app/components/profile/OrganizationProfileHeader";
-import OrganizationAgendaTabs from "@/app/components/profile/OrganizationAgendaTabs";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import MobileProfileOverview from "@/app/components/mobile/MobileProfileOverview";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
@@ -21,17 +19,18 @@ import {
 } from "@/lib/organizationCategories";
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
-import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { shouldShowStoreOnPublicProfile } from "@/lib/publicOrganizationProfile";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import ReservasBookingSection from "@/app/[username]/_components/ReservasBookingSection";
-import { ensurePublicProfileLayout, type PublicProfileModuleType } from "@/lib/publicProfileLayout";
 import { formatEventLocationLabel, pickCanonicalField } from "@/lib/location/eventLocation";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { normalizeUsernameInput } from "@/lib/username";
@@ -284,15 +283,12 @@ function buildAgendaGroups(events: OrganizationEvent[], pastEventIds?: Set<numbe
       { addressRef: event.addressRef ?? null },
       "",
     ).trim();
-    if (!locationLabel) {
-      continue;
-    }
     const item: AgendaItem = {
       id: event.id,
       slug: event.slug,
       title: event.title,
       timeLabel: formatTimeLabel(event.startsAt as Date, timezone),
-      locationLabel,
+      locationLabel: locationLabel || "Local por anunciar",
       isPast: pastEventIds?.has(event.id) ?? false,
       isGratis: event.isGratis,
       templateType: event.templateType ?? null,
@@ -381,11 +377,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         publicWebsite: true,
         publicInstagram: true,
         publicYoutube: true,
+        publicTiktok: true,
+        publicLinkedin: true,
         publicDescription: true,
         publicHours: true,
-        publicProfileLayout: true,
         infoRules: true,
-        infoFaq: true,
         infoRequirements: true,
         infoPolicies: true,
         infoLocationNotes: true,
@@ -447,6 +443,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const publicWebsite = organizationProfile.publicWebsite?.trim() || null;
     const publicInstagram = organizationProfile.publicInstagram?.trim() || null;
     const publicYoutube = organizationProfile.publicYoutube?.trim() || null;
+    const publicTiktok = (organizationProfile as { publicTiktok?: string | null }).publicTiktok?.trim() || null;
+    const publicLinkedin = (organizationProfile as { publicLinkedin?: string | null }).publicLinkedin?.trim() || null;
     const publicWebsiteHref = publicWebsite
       ? (() => {
           const normalized = /^https?:\/\//i.test(publicWebsite)
@@ -476,7 +474,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     });
     const allowPaidServices = paidGate.ok;
 
-    const [events, followersCount, followRow, forms, services, professionals, resources, reviews] = await Promise.all([
+    const [events, followersCount, followRow, forms, services, professionals, resources] = await Promise.all([
       prisma.event.findMany({
         where: {
           organizationId: organizationProfile.id,
@@ -645,20 +643,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             select: { id: true, label: true, capacity: true },
           })
         : Promise.resolve([] as Array<{ id: number; label: string; capacity: number }>),
-      hasReservasModule
-        ? prisma.serviceReview.findMany({
-            where: { organizationId: organizationProfile.id, isVerified: true },
-            orderBy: { createdAt: "desc" },
-            take: 8,
-            select: {
-              id: true,
-              rating: true,
-              comment: true,
-              createdAt: true,
-              user: { select: { fullName: true, avatarUrl: true } },
-            },
-          })
-        : Promise.resolve([] as Array<{ id: number; rating: number; comment: string | null; createdAt: Date; user: { fullName: string | null; avatarUrl: string | null } | null }>),
     ]);
 
     const orgEvents: OrganizationEvent[] = events.map((event) => {
@@ -684,11 +668,8 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       select: { id: true, status: true, showOnProfile: true, catalogLocked: true, checkoutEnabled: true, currency: true },
     });
     const storeEnabled = isStoreFeatureEnabled();
-    const storeState = resolveStoreState(store);
-    const storeVisibleOnProfile = storeState !== "DISABLED" && storeState !== "HIDDEN";
     const storeId = store?.id ?? null;
-    const storePublic = storeEnabled && storeState === "ACTIVE";
-    const [storeProducts, storeProductsCount] = storePublic && storeId !== null
+    const [storeProducts, storeProductsCount] = storeId !== null
       ? await Promise.all([
           prisma.storeProduct.findMany({
             where: { storeId, visibility: "PUBLIC" },
@@ -727,11 +708,6 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       label: resource.label,
       capacity: resource.capacity,
     }));
-    const reviewsCount = reviews.length;
-    const reviewsAverage =
-      reviewsCount > 0
-        ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviewsCount
-        : null;
 
     const categoryEvents = operationTemplate
       ? orgEvents.filter(
@@ -760,12 +736,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const initialIsFollowing = Boolean(followRow);
     const followersTotal = followersCount ?? 0;
     const pastEventIds = new Set(pastEvents.map((event) => event.id));
-    const agendaUpcomingEvents = spotlightEvent
-      ? upcomingEvents.filter((event) => event.id !== spotlightEvent.id)
-      : upcomingEvents;
-    const upcomingGroups = buildAgendaGroups(agendaUpcomingEvents, pastEventIds);
-    const pastGroups = buildAgendaGroups(pastEvents, pastEventIds);
-    const allGroups = buildAgendaGroups([...upcomingEvents, ...pastEvents], pastEventIds);
+    const agendaEvents = [...upcomingEvents, ...pastEvents].sort(
+      (a, b) => (b.startsAt?.getTime() ?? 0) - (a.startsAt?.getTime() ?? 0),
+    );
+    const agendaGroups = buildAgendaGroups(agendaEvents, pastEventIds);
+    const agendaTotal = agendaEvents.length;
     const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
     const featuredForm =
       publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
@@ -777,594 +752,307 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
           : "Comprar bilhete"
       : "Comprar bilhete";
     const spotlightCtaHref = spotlightEvent ? buildTicketHref(spotlightEvent.slug) : null;
-    const inscriptionsCoverUrl = getEventCoverUrl(spotlightEvent?.coverImageUrl ?? null, {
-      seed:
-        spotlightEvent?.slug ??
-        spotlightEvent?.id ??
-        organizationProfile.username ??
-        organizationProfile.id,
-      width: 900,
-      quality: 70,
-      format: "webp",
-    });
     const featuredFormDateLabel = featuredForm
       ? formatFormDateRange(featuredForm.startAt, featuredForm.endAt)
       : null;
     const featuredFormCapacityLabel = featuredForm?.capacity
       ? `${featuredForm.capacity} vagas`
       : null;
-    const agendaTotal = upcomingEvents.length + pastEvents.length;
-    const profileLayout = ensurePublicProfileLayout(organizationProfile.publicProfileLayout ?? null);
-    const showServicesModule = hasReservasModule && services.length > 0;
-    const showAgendaModule = showAgenda && agendaTotal > 0;
-    const showFormsModule = hasInscricoes && publicForms.length > 0;
-    const showGalleryModule = reviews.length > 0;
-    const showAboutModule = Boolean(publicDescription?.trim());
-    const servicesLayoutModule = profileLayout.modules.find((module) => module.type === "SERVICES");
-    const servicesSettings = servicesLayoutModule?.settings ?? {};
-    const featuredServiceIds = Array.isArray(servicesSettings.featuredServiceIds)
-      ? servicesSettings.featuredServiceIds
-          .map((id) => Number(id))
-          .filter((id) => Number.isFinite(id))
-      : [];
-    const servicesCarouselEnabled = servicesSettings.carouselEnabled !== false;
-    const servicesCtaLabel =
-      typeof servicesSettings.ctaLabel === "string" && servicesSettings.ctaLabel.trim().length > 0
-        ? servicesSettings.ctaLabel.trim()
-        : "Agendar";
-    const servicesCtaHref =
-      typeof servicesSettings.ctaHref === "string" && servicesSettings.ctaHref.trim().length > 0
-        ? servicesSettings.ctaHref.trim()
-        : "#reservar";
-    const servicesShowStats = servicesSettings.showStats !== false;
-    const agendaLayoutModule = profileLayout.modules.find((module) => module.type === "EVENTS_AGENDA");
-    const agendaSettings = agendaLayoutModule?.settings ?? {};
-    const agendaShowSpotlight = agendaSettings.showSpotlight !== false;
-    const formsLayoutModule = profileLayout.modules.find((module) => module.type === "FORMS");
-    const formsSettings = formsLayoutModule?.settings ?? {};
-    const formsCtaLabel =
-      typeof formsSettings.ctaLabel === "string" && formsSettings.ctaLabel.trim().length > 0
-        ? formsSettings.ctaLabel.trim()
-        : "Responder";
-    const reviewsLayoutModule = profileLayout.modules.find((module) => module.type === "GALLERY");
-    const reviewsSettings = reviewsLayoutModule?.settings ?? {};
-    const reviewsMaxItems =
-      typeof reviewsSettings.maxItems === "number" && Number.isFinite(reviewsSettings.maxItems)
-        ? Math.max(1, Math.min(12, Math.floor(reviewsSettings.maxItems)))
-        : 8;
-    const displayReviews = reviews.slice(0, reviewsMaxItems);
-
-    const padelPlayersCount =
-      hasTorneiosModule
-        ? await prisma.padelPlayerProfile.count({ where: { organizationId: organizationProfile.id } })
-        : 0;
-
-    const padelTopPlayers =
-      hasTorneiosModule
-        ? await prisma.padelPlayerProfile.findMany({
-            where: { organizationId: organizationProfile.id, isActive: true },
-            orderBy: { createdAt: "desc" },
-            take: 4,
-            select: {
-              id: true,
-              displayName: true,
-              fullName: true,
-              level: true,
-              gender: true,
-            },
-          })
-        : [];
-
-    const trainerProfiles =
-      hasTorneiosModule
-        ? await prisma.trainerProfile.findMany({
-            where: { organizationId: organizationProfile.id, isPublished: true, reviewStatus: "APPROVED" },
-            include: { user: { select: { id: true, fullName: true, username: true, avatarUrl: true } } },
-            orderBy: { updatedAt: "desc" },
-          })
-        : [];
-    const trainerUserIds = trainerProfiles.map((trainer) => trainer.userId);
-    const trainerServices = trainerUserIds.length
-      ? await prisma.service.findMany({
-          where: {
-            organizationId: organizationProfile.id,
-            instructorId: { in: trainerUserIds },
-            isActive: true,
-          },
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            title: true,
-            durationMinutes: true,
-            unitPriceCents: true,
-            currency: true,
-            instructorId: true,
-          },
-        })
-      : [];
-    const trainerServicesByUser = new Map<string, typeof trainerServices>();
-    trainerServices.forEach((service) => {
-      if (!service.instructorId) return;
-      const current = trainerServicesByUser.get(service.instructorId) ?? [];
-      trainerServicesByUser.set(service.instructorId, [...current, service]);
-    });
-
-    const servicesModuleContent = showServicesModule ? (
-      <section className="space-y-5 sm:space-y-6">
-        <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Reservas</p>
-              <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
-              {servicesShowStats && (
-                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-white/65 sm:gap-2 sm:text-[12px]">
-                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                    {reviewsAverage ? `${reviewsAverage.toFixed(1)} ★` : "Novo"}
-                  </span>
-                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                    {reviewsCount} avaliações
-                  </span>
-                  <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-                    {organizationCity ?? "Localização"}
-                  </span>
-                </div>
-              )}
-            </div>
-            <a
-              href={servicesCtaHref}
-              className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
-            >
-              {servicesCtaLabel}
-            </a>
-          </div>
-        </div>
-
-        <div id="reservar">
-          <ReservasBookingSection
-            organization={{
-              id: organizationProfile.id,
-              publicName: organizationProfile.publicName,
-              businessName: organizationProfile.businessName,
-              city: organizationCity,
-              username: organizationProfile.username ?? null,
-              timezone: organizationProfile.timezone ?? "Europe/Lisbon",
-              address: organizationAddress,
-              reservationAssignmentMode:
-                organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
-            }}
-            services={services.map((service) => ({
-              ...service,
-              coverImageUrl: service.coverImageUrl ?? null,
-              locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-            }))}
-            professionals={professionalsList}
-            resources={resourcesList}
-            initialServiceId={initialServiceId}
-            featuredServiceIds={featuredServiceIds}
-            servicesLayout={servicesCarouselEnabled ? "carousel" : "grid"}
-          />
-        </div>
-      </section>
-    ) : null;
-
-    const aboutModuleContent = showAboutModule ? (
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Sobre</p>
-        <p className="mt-2 text-[13px] text-white/70 sm:text-sm">
-          {publicDescription || "Descrição indisponível."}
-        </p>
-      </div>
-    ) : null;
-
-    const galleryModuleContent = showGalleryModule ? (
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Galeria</p>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {displayReviews.map((review) => (
-            <div key={review.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-white">{review.user?.fullName || "Cliente"}</p>
-                <span className="text-[12px] text-white/70">{review.rating} ★</span>
-              </div>
-              {review.comment && <p className="mt-2 text-[12px] text-white/70">{review.comment}</p>}
-            </div>
-          ))}
-        </div>
-      </div>
-    ) : null;
-
-    const heroModuleContent = (
-      <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-[#0f1529]/85 via-[#141c38]/75 to-[#060b14]/95 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Hero</p>
-        <h2 className="mt-2 text-2xl font-semibold text-white">{orgDisplayName}</h2>
-        <p className="mt-2 max-w-2xl text-sm text-white/70">
-          {publicDescription?.trim() || "Perfil oficial ORYA."}
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-white/70">
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-            {followersTotal} seguidores
-          </span>
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-            {operationMeta.label}
-          </span>
-          {organizationCity ? (
-            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-              {organizationCity}
-            </span>
-          ) : null}
-        </div>
-      </section>
-    );
-
-    const agendaModuleContent = showAgendaModule ? (
-      <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <OrganizationAgendaTabs
-          title="Agenda pública"
-          anchorId="agenda"
-          layout="stack"
-          upcomingGroups={upcomingGroups}
-          pastGroups={pastGroups}
-          allGroups={allGroups}
-          upcomingCount={upcomingEvents.length}
-          pastCount={pastEvents.length}
-          totalCount={agendaTotal}
-          prelude={
-            agendaShowSpotlight ? (
-              <EventSpotlightCard
-                event={spotlightEvent}
-                label={`Próximo ${operationMeta.noun}`}
-                emptyLabel={`Sem ${operationMeta.noun} anunciado`}
-                ctaLabel={spotlightCtaLabel}
-                ctaHref={spotlightCtaHref}
-                variant="embedded"
-              />
-            ) : null
-          }
-        />
-      </div>
-    ) : null;
-
-    const formsModuleContent = showFormsModule ? (
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="absolute inset-0" aria-hidden="true">
-          <div className="absolute inset-0 bg-gradient-to-r from-[#05070f]/95 via-[#0b1124]/85 to-transparent" />
-          <div className="absolute inset-y-0 right-0 w-2/3">
-            <div
-              className="absolute inset-0 bg-cover bg-center opacity-80"
-              style={{ backgroundImage: `url(${inscriptionsCoverUrl})` }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-l from-transparent via-black/40 to-[#05070f]/95" />
-          </div>
-        </div>
-
-        <div className="relative z-10 space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
-          <h3 className="text-lg font-semibold text-white">
-            {featuredForm?.title || "Formulário em preparação"}
-          </h3>
-          {featuredFormDateLabel || featuredFormCapacityLabel ? (
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
-              {featuredFormDateLabel && (
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                  {featuredFormDateLabel}
-                </span>
-              )}
-              {featuredFormCapacityLabel && (
-                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
-                  {featuredFormCapacityLabel}
-                </span>
-              )}
-            </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            {featuredForm ? (
-              <Link
-                href={`/inscricoes/${featuredForm.id}`}
-                className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-              >
-                {formsCtaLabel}
-              </Link>
-            ) : (
-              <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
-                Em breve
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
-    ) : null;
+    const showAgendaSection = showAgenda;
+    const showReservasSection = hasReservasModule;
+    const showFormsSection = hasInscricoes;
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
-    const storeHasProducts = storeProducts.length > 0;
     const storePreviewLimit = 8;
     const storePreviewItems = storeProducts.slice(0, storePreviewLimit);
     const storeHasMore = storeProductsCount > storePreviewLimit;
     const storeCompactGrid = storeProductsCount > 0 && storeProductsCount <= 4;
-    const storeStatus = !storeEnabled
-      ? {
-          label: "Loja indisponivel",
-          description: "A funcionalidade da loja esta temporariamente desativada.",
-          tone: "amber",
-        }
-      : storeState === "LOCKED"
+    const showStoreSection =
+      storeEnabled &&
+      shouldShowStoreOnPublicProfile({
+        status: store?.status ?? null,
+        showOnProfile: store?.showOnProfile ?? false,
+        publicProductCount: storeProductsCount,
+      });
+
+    const fixedSections = [
+      showAgendaSection
         ? {
-            label: "Catalogo fechado",
-            description: "O catalogo esta em manutencao e sera atualizado em breve.",
-            tone: "amber",
-          }
-        : storeState === "DISABLED" || storeState === "HIDDEN" || storeState === "CHECKOUT_DISABLED"
-          ? {
-              label: "Loja fechada",
-              description: "Volta em breve para veres os produtos disponiveis.",
-              tone: "slate",
-            }
-          : storeHasProducts
-            ? {
-                label: "Loja ativa",
-                description: "Produtos oficiais com checkout rapido ORYA.",
-                tone: "emerald",
-              }
-            : {
-                label: "Produtos em preparacao",
-                description: "Os primeiros produtos vao aparecer aqui muito em breve.",
-                tone: "slate",
-              };
-    const storeStatusClasses =
-      storeStatus.tone === "emerald"
-        ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
-        : storeStatus.tone === "amber"
-          ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
-          : "border-white/15 bg-white/10 text-white/70";
-    const storeFallbackTitle = storeStatus.tone === "amber" ? "Em atualizacao" : "Em breve";
-    const storeFallbackBody =
-      storeStatus.tone === "amber"
-        ? "Estamos a atualizar o catalogo para garantir a melhor experiencia."
-        : "Assim que a loja estiver pronta, vais ver produtos oficiais e compras diretas aqui.";
-    const storeFallbackFooter =
-      storeStatus.tone === "amber"
-        ? "Obrigado pela paciencia."
-        : "Segue esta organizacao para receber novidades.";
-    const storeCtaClasses = storePublic
-      ? "rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-      : "rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/80";
-    const showStoreModule = storeVisibleOnProfile;
-    const storeModuleContent = showStoreModule ? (
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#121a33]/75 to-[#060b14]/95 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-5">
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white/8 to-transparent" />
-        <div className="relative space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-lg font-semibold text-white">Produtos oficiais</h3>
-                <span
-                  className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${storeStatusClasses}`}
-                >
-                  {storeStatus.label}
-                </span>
-              </div>
-              <p className="text-[12px] text-white/60">Checkout ORYA.</p>
-            </div>
-            <Link href={storeBaseHref} className={storeCtaClasses}>
-              Visitar loja
-            </Link>
-          </div>
-
-          {storePublic && storeHasProducts ? (
-            <div
-              className={
-                storeCompactGrid
-                  ? "flex flex-wrap gap-3"
-                  : "grid auto-cols-[150px] grid-flow-col gap-3 overflow-x-auto pb-2 sm:auto-cols-[170px]"
-              }
-            >
-              {storePreviewItems.map((product) => {
-                const image = product.images[0];
-                const compareAt = product.compareAtPriceCents ?? null;
-                const hasDiscount =
-                  typeof compareAt === "number" && compareAt > product.priceCents;
-                const discount = hasDiscount
-                  ? Math.round(((compareAt - product.priceCents) / compareAt) * 100)
-                  : null;
-                const isNew =
-                  now.getTime() - product.createdAt.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                return (
-                  <Link
-                    key={product.id}
-                    href={`${storeBaseHref}/produto/${product.slug}`}
-                    className={`group rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30 hover:bg-black/30 ${
-                      storeCompactGrid ? "w-[150px] sm:w-[170px]" : "w-full"
-                    }`}
-                  >
-                    <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
-                      {image ? (
-                        <Image
-                          src={image.url}
-                          alt={image.altText || product.name}
-                          fill
-                          sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
-                          className="object-cover transition group-hover:scale-[1.02]"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
-                          Sem imagem
+            id: "agenda-publica",
+            content: (
+              <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-xl font-semibold text-white">Agenda pública</h2>
+                    <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/70">
+                      {agendaTotal} itens
+                    </span>
+                  </div>
+                  <EventSpotlightCard
+                    event={spotlightEvent}
+                    label={`Próximo ${operationMeta.noun}`}
+                    emptyLabel={`Sem ${operationMeta.noun} anunciado`}
+                    ctaLabel={spotlightCtaLabel}
+                    ctaHref={spotlightCtaHref}
+                    variant="embedded"
+                  />
+                  {agendaGroups.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
+                      Agenda em preparação. Os eventos e torneios aparecem aqui por ordem do mais recente para o mais antigo.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {agendaGroups.map((group) => (
+                        <div key={group.key} className="space-y-2">
+                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
+                          <div className="space-y-2">
+                            {group.items.map((item) => {
+                              const href = item.isPast
+                                ? `/eventos/${item.slug}`
+                                : `/eventos/${item.slug}?checkout=1#bilhetes`;
+                              return (
+                                <Link
+                                  key={item.id}
+                                  href={href}
+                                  className="group flex items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                                >
+                                  <div>
+                                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
+                                    <p className="text-sm font-semibold text-white">{item.title}</p>
+                                    <p className="text-[12px] text-white/60">{item.locationLabel}</p>
+                                  </div>
+                                  <span
+                                    className={`rounded-full border px-3 py-1 text-[11px] ${
+                                      item.isPast
+                                        ? "border-white/15 bg-white/5 text-white/60"
+                                        : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
+                                    }`}
+                                  >
+                                    {item.isPast
+                                      ? "Ver resumo"
+                                      : item.templateType === "PADEL"
+                                        ? "Inscrever agora"
+                                        : item.isGratis
+                                          ? "Garantir lugar"
+                                          : "Comprar bilhete"}
+                                  </span>
+                                </Link>
+                              );
+                            })}
+                          </div>
                         </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                      <div className="absolute left-3 top-3 flex gap-2">
-                        {isNew ? (
-                          <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-emerald-100">
-                            Novo
-                          </span>
-                        ) : null}
-                        {discount ? (
-                          <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-white/80">
-                            -{discount}%
-                          </span>
-                        ) : null}
-                      </div>
+                      ))}
                     </div>
-                    <div className="mt-3 space-y-1">
-                      <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
-                      <div className="flex items-center gap-2 text-[11px] text-white/70">
-                        <span className="text-white">{formatMoney(product.priceCents, product.currency)}</span>
-                        {hasDiscount ? (
-                          <span className="text-white/40 line-through">
-                            {formatMoney(compareAt, product.currency)}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  {storeStatus.label}
-                </p>
-                <p className="mt-2 text-sm text-white/70">{storeStatus.description}</p>
-              </div>
-              <div className="rounded-2xl border border-white/12 bg-black/30 p-3 text-sm text-white/70">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">
-                  {storeFallbackTitle}
-                </p>
-                <p className="mt-2">{storeFallbackBody}</p>
-                <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/60">
-                  {storeFallbackFooter}
+                  )}
                 </div>
-              </div>
-            </div>
-          )}
-          {storePublic && storeHasProducts && storeHasMore ? (
-            <div className="flex justify-end">
-              <Link href={storeBaseHref} className="text-[11px] text-white/60 hover:text-white/90">
-                Ver todos · {storeProductsCount}+
-              </Link>
-            </div>
-          ) : null}
-        </div>
-      </section>
-    ) : null;
-
-    const infoFaqRaw = (organizationProfile as { infoFaq?: string | null }).infoFaq ?? null;
-    const faqText = typeof infoFaqRaw === "string" ? infoFaqRaw.trim() : "";
-    const showFaqModule = faqText.length > 0;
-    const faqModuleContent = showFaqModule ? (
-      <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">FAQ</p>
-        <p className="mt-2 whitespace-pre-wrap text-[13px] text-white/70 sm:text-sm">{faqText}</p>
-      </section>
-    ) : null;
-
-    const contactItems = [
-      publicWebsiteHref ? { label: "Website", value: publicWebsiteHref, href: publicWebsiteHref } : null,
-      publicInstagram ? { label: "Instagram", value: publicInstagram, href: publicInstagram } : null,
-      publicYoutube ? { label: "YouTube", value: publicYoutube, href: publicYoutube } : null,
-      contactEmail ? { label: "Email", value: contactEmail, href: `mailto:${contactEmail}` } : null,
-    ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
-    const secondaryContacts = contactItems.filter((item) => item.label !== "Email");
-    const showContactModule = contactItems.length > 0;
-    const contactModuleContent = showContactModule ? (
-      <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Contacto</p>
-        <div className="mt-3 space-y-2 text-[12px] text-white/75">
-          {contactItems.map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/25"
-            >
-              <span className="text-white/60">{item.label}</span>
-              <span className="text-white">{item.value}</span>
-            </a>
-          ))}
-        </div>
-      </section>
-    ) : null;
-
-    const moduleContentByType: Record<PublicProfileModuleType, ReactNode> = {
-      HERO: heroModuleContent,
-      ABOUT: aboutModuleContent,
-      EVENTS_AGENDA: agendaModuleContent,
-      STORE: storeModuleContent,
-      SERVICES: servicesModuleContent,
-      FORMS: formsModuleContent,
-      GALLERY: galleryModuleContent,
-      FAQ: faqModuleContent,
-      CONTACT: contactModuleContent,
-    };
-
-    const modulesToRender = profileLayout.modules.filter(
-      (module) => module.enabled && moduleContentByType[module.type],
-    );
-    const showPadelSection =
-      hasTorneiosModule && (padelPlayersCount > 0 || padelTopPlayers.length > 0);
-    const showTrainerSection = hasTorneiosModule && trainerProfiles.length > 0;
-    const showEmptyModulesFallback =
-      modulesToRender.length === 0 && !showPadelSection && !showTrainerSection;
-    const emptyModulesFallback = (
-      <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#0b1124]/75 to-[#070c16]/95 p-7 shadow-[0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-        <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-12 -top-12 h-48 w-48 rounded-full bg-[#6BFFFF]/12 blur-[120px]" />
-          <div className="absolute -right-8 top-6 h-40 w-40 rounded-full bg-[#FF7AD1]/12 blur-[120px]" />
-          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white/8 to-transparent" />
-        </div>
-        <div className="relative grid gap-6 md:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-4">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-white/70">
-              <span className="h-2 w-2 rounded-full bg-emerald-300/70 shadow-[0_0_12px_rgba(16,185,129,0.6)]" />
-              Perfil em preparação
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-white">Estamos a preparar novidades</h3>
-              <p className="text-sm text-white/70">
-                Este perfil vai ficar ativo muito em breve. Assim que os primeiros modulos forem publicados,
-                vais ver servicos, eventos, torneios, formularios e loja.
-              </p>
-            </div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-white/50">
-              Sem modulos ativos
-            </div>
-          </div>
-          <div className="rounded-2xl border border-white/12 bg-black/30 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Contacto principal</p>
-            {contactEmail ? (
-              <a
-                href={`mailto:${contactEmail}`}
-                className="mt-3 flex items-center justify-between rounded-2xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100 transition hover:border-emerald-200/70 hover:bg-emerald-400/15"
-              >
-                <span className="font-semibold">{contactEmail}</span>
-                <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-200/80">
-                  Enviar email
-                </span>
-              </a>
-            ) : (
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
-                Email por anunciar.
-              </div>
-            )}
-            {secondaryContacts.length > 0 ? (
-              <div className="mt-4 space-y-2 text-[12px] text-white/70">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Outros canais</p>
-                {secondaryContacts.map((item) => (
-                  <a
-                    key={item.label}
-                    href={item.href}
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:border-white/25"
+              </section>
+            ),
+          }
+        : null,
+      showReservasSection
+        ? {
+            id: "reservas",
+            content: (
+              <section className="space-y-4">
+                <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Reservas</p>
+                      <h2 className="text-xl font-semibold text-white sm:text-2xl">{orgDisplayName}</h2>
+                      <p className="mt-2 text-[12px] text-white/70">
+                        Gestão pública de serviços e disponibilidade da organização.
+                      </p>
+                    </div>
+                    <a
+                      href="#reservar"
+                      className="w-full rounded-full bg-white px-5 py-2 text-center text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)] sm:w-auto"
+                    >
+                      Reservar agora
+                    </a>
+                  </div>
+                </div>
+                {services.length > 0 ? (
+                  <div id="reservar">
+                    <ReservasBookingSection
+                      organization={{
+                        id: organizationProfile.id,
+                        publicName: organizationProfile.publicName,
+                        businessName: organizationProfile.businessName,
+                        city: organizationCity,
+                        username: organizationProfile.username ?? null,
+                        timezone: organizationProfile.timezone ?? "Europe/Lisbon",
+                        address: organizationAddress,
+                        reservationAssignmentMode:
+                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
+                      }}
+                      services={services.map((service) => ({
+                        ...service,
+                        coverImageUrl: service.coverImageUrl ?? null,
+                        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+                      }))}
+                      professionals={professionalsList}
+                      resources={resourcesList}
+                      initialServiceId={initialServiceId}
+                      featuredServiceIds={[]}
+                      servicesLayout="grid"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                    Sem serviços públicos disponíveis de momento.
+                  </div>
+                )}
+              </section>
+            ),
+          }
+        : null,
+      showFormsSection
+        ? {
+            id: "formularios",
+            content: (
+              <section className="rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
+                  <h3 className="text-lg font-semibold text-white">
+                    {featuredForm?.title || "Formulários em preparação"}
+                  </h3>
+                  {featuredFormDateLabel || featuredFormCapacityLabel ? (
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
+                      {featuredFormDateLabel && (
+                        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                          {featuredFormDateLabel}
+                        </span>
+                      )}
+                      {featuredFormCapacityLabel && (
+                        <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                          {featuredFormCapacityLabel}
+                        </span>
+                      )}
+                    </div>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {featuredForm ? (
+                      <Link
+                        href={`/inscricoes/${featuredForm.id}`}
+                        className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                      >
+                        Abrir formulário
+                      </Link>
+                    ) : (
+                      <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
+                        Sem formulários públicos
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </section>
+            ),
+          }
+        : null,
+      showStoreSection
+        ? {
+            id: "loja",
+            content: (
+              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#121a33]/75 to-[#060b14]/95 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-5">
+                <div className="relative space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-semibold text-white">Produtos oficiais</h3>
+                        <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-100">
+                          Loja ativa
+                        </span>
+                      </div>
+                    </div>
+                    <Link
+                      href={storeBaseHref}
+                      className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                    >
+                      Visitar loja
+                    </Link>
+                  </div>
+                  <div
+                    className={
+                      storeCompactGrid
+                        ? "flex flex-wrap gap-3"
+                        : "grid auto-cols-[150px] grid-flow-col gap-3 overflow-x-auto pb-2 sm:auto-cols-[170px]"
+                    }
                   >
-                    <span className="text-white/60">{item.label}</span>
-                    <span className="text-white">{item.value}</span>
-                  </a>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </section>
-    );
+                    {storePreviewItems.map((product) => {
+                      const image = product.images[0];
+                      const compareAt = product.compareAtPriceCents ?? null;
+                      const hasDiscount =
+                        typeof compareAt === "number" && compareAt > product.priceCents;
+                      const discount = hasDiscount
+                        ? Math.round(((compareAt - product.priceCents) / compareAt) * 100)
+                        : null;
+                      const isNew =
+                        now.getTime() - product.createdAt.getTime() <= 1000 * 60 * 60 * 24 * 30;
+                      return (
+                        <Link
+                          key={product.id}
+                          href={`${storeBaseHref}/produto/${product.slug}`}
+                          className={`group rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30 hover:bg-black/30 ${
+                            storeCompactGrid ? "w-[150px] sm:w-[170px]" : "w-full"
+                          }`}
+                        >
+                          <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
+                            {image ? (
+                              <Image
+                                src={image.url}
+                                alt={image.altText || product.name}
+                                fill
+                                sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
+                                className="object-cover transition group-hover:scale-[1.02]"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                                Sem imagem
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                            <div className="absolute left-3 top-3 flex gap-2">
+                              {isNew ? (
+                                <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-emerald-100">
+                                  Novo
+                                </span>
+                              ) : null}
+                              {discount ? (
+                                <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-white/80">
+                                  -{discount}%
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-3 space-y-1">
+                            <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
+                            <div className="flex items-center gap-2 text-[11px] text-white/70">
+                              <span className="text-white">{formatMoney(product.priceCents, product.currency)}</span>
+                              {hasDiscount ? (
+                                <span className="text-white/40 line-through">
+                                  {formatMoney(compareAt, product.currency)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                  {storeHasMore ? (
+                    <div className="flex justify-end">
+                      <Link href={storeBaseHref} className="text-[11px] text-white/60 hover:text-white/90">
+                        Ver todos · {storeProductsCount}+
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ),
+          }
+        : null,
+    ].filter(Boolean) as Array<{ id: string; content: ReactNode }>;
 
     return (
       <main className="relative min-h-screen w-full overflow-hidden text-white">
@@ -1392,141 +1080,26 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             youtubeHref={publicYoutube}
             websiteHref={publicWebsiteHref}
             contactEmail={contactEmail}
+            tiktokHref={publicTiktok}
+            linkedinHref={publicLinkedin}
           />
 
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-8">
-              {modulesToRender.length > 0 ? (
+              {fixedSections.length > 0 ? (
                 <div className="grid gap-6 md:grid-cols-2">
-                  {modulesToRender.map((module) => {
-                    const content = moduleContentByType[module.type];
-                    if (!content) return null;
-                    return (
-                      <div
-                        key={module.id}
-                        className={module.width === "full" ? "md:col-span-2" : ""}
-                      >
-                        {content}
-                      </div>
-                    );
-                  })}
+                  {fixedSections.map((section, index) => (
+                    <div
+                      key={section.id}
+                      className={index === 0 || section.id === "reservas" ? "md:col-span-2" : ""}
+                    >
+                      {section.content}
+                    </div>
+                  ))}
                 </div>
-              ) : showEmptyModulesFallback ? (
-                emptyModulesFallback
-              ) : null}
-
-              {showPadelSection && (
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Centro de competição</p>
-                    <h2 className="text-xl font-semibold text-white">PADEL oficial</h2>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-3xl border border-white/12 bg-white/5 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Jogadores</p>
-                      <p className="mt-2 text-2xl font-semibold text-white">{padelPlayersCount}</p>
-                      <p className="text-[12px] text-white/60">Perfis ativos na competição.</p>
-                      {padelTopPlayers.length > 0 ? (
-                        <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-white/70">
-                          {padelTopPlayers.map((player) => (
-                            <span
-                              key={player.id}
-                              className="rounded-full border border-white/15 bg-white/10 px-3 py-1"
-                            >
-                              {player.displayName || player.fullName || "Jogador"}{player.level ? ` · ${player.level}` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-3 text-[12px] text-white/50">Top players a definir.</p>
-                      )}
-                    </div>
-                    <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050912]/90 p-5 text-sm text-white/75 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Histórico oficial</p>
-                      <p className="mt-2 text-[12px] text-white/70">
-                        Aqui vês campeões e resultados oficiais assim que forem publicados.
-                      </p>
-                      <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/70">
-                        Temporada atual em preparação.
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {showTrainerSection && (
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Treinadores</p>
-                    <h2 className="text-xl font-semibold text-white">Conhece a equipa</h2>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {trainerProfiles.map((trainer) => {
-                      const displayName =
-                        trainer.user?.fullName || trainer.user?.username || "Treinador";
-                      const trainerSlug = trainer.user?.username || trainer.user?.id || "";
-                      const trainerHref = trainerSlug
-                        ? `/${organizationProfile.username ?? usernameParam}/treinadores/${trainerSlug}`
-                        : null;
-                      const services = trainerServicesByUser.get(trainer.userId) ?? [];
-                      const primaryService = services[0] ?? null;
-                      return (
-                        <div
-                          key={trainer.userId}
-                          className="rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl space-y-3"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="h-12 w-12 overflow-hidden rounded-full border border-white/15 bg-white/10">
-                              {trainer.user?.avatarUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={trainer.user.avatarUrl}
-                                  alt={displayName}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : null}
-                            </div>
-                            <div>
-                              <p className="text-sm font-semibold text-white">{displayName}</p>
-                            </div>
-                          </div>
-                          {trainer.bio && (
-                            <p className="text-[12px] text-white/70 line-clamp-3">{trainer.bio}</p>
-                          )}
-                          {primaryService ? (
-                            <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-white/70">
-                              <span>
-                                {primaryService.title} · {primaryService.durationMinutes} min
-                              </span>
-                              <span>
-                                {(primaryService.unitPriceCents / 100).toFixed(2)} {primaryService.currency}
-                              </span>
-                            </div>
-                          ) : (
-                            <p className="text-[12px] text-white/50">Aulas em breve.</p>
-                          )}
-                          <div className="flex flex-wrap gap-2">
-                            {primaryService && (
-                              <Link
-                                href={`/${organizationProfile.username ?? usernameParam}?serviceId=${primaryService.id}`}
-                                className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-100"
-                              >
-                                Reservar aula
-                              </Link>
-                            )}
-                            {trainerHref && (
-                              <Link
-                                href={trainerHref}
-                                className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/70"
-                              >
-                                Ver perfil
-                              </Link>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+              ) : (
+                <section className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                  Este perfil público está em preparação.
                 </section>
               )}
             </div>

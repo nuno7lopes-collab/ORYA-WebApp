@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { setUsernameForOwner, UsernameTakenError, normalizeAndValidateUsername } from "@/lib/globalUsernames";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { normalizeProfileAvatarUrl, normalizeProfileCoverUrl } from "@/lib/profileMedia";
 import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 interface SaveBasicBody {
   fullName?: string;
@@ -94,14 +94,17 @@ async function _POST(req: NextRequest) {
           ? null
           : undefined;
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     let normalizedPhone: string | null | undefined = undefined;
     if (rawPhone !== undefined) {
       if (rawPhone === null || rawPhone === "") {
         normalizedPhone = null;
       } else if (typeof rawPhone === "string") {
-        const parsed = parsePhoneNumberFromString(rawPhone.trim(), "PT");
-        if (parsed && parsed.isPossible()) {
-          normalizedPhone = parsed.number; // E.164
+        const phoneValue = rawPhone.trim();
+        if (!phoneValue) {
+          normalizedPhone = null;
+        } else if (isValidPhone(phoneValue)) {
+          normalizedPhone = normalizePhone(phoneValue, phoneOptions);
         } else {
           return jsonWrap(
             { ok: false, error: "Telefone inválido." },

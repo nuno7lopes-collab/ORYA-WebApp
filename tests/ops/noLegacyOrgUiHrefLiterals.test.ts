@@ -27,4 +27,19 @@ describe("canonical org UI href guardrail", () => {
 
     expect(output).toBe("");
   });
+
+  it("blocks literal /org legacy shorthand hrefs in canonical org UI surfaces", () => {
+    const output = runRg([
+      "-n",
+      "(href\\s*=\\s*\\{?['\"]|pathname\\s*:\\s*['\"])/org/(overview|manage|analyze|promote|profile|eventos|reservas|treinadores|crm/clientes|crm/segmentos|crm/campanhas|crm/relatorios|inscricoes|padel/clube|padel/torneios|chat|promo|scan|staff|become|organizations)",
+      "app/org",
+      "app/components",
+      "--glob",
+      "*.ts",
+      "--glob",
+      "*.tsx",
+    ]);
+
+    expect(output).toBe("");
+  });
 });

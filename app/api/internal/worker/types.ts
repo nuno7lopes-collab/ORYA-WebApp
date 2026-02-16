@@ -11,7 +11,9 @@ export type OperationType =
   | "APPLY_PROMO_REDEMPTION"
   | "CLAIM_GUEST_PURCHASE"
   | "SEND_EMAIL_OUTBOX"
-  | "OUTBOX_EVENT";
+  | "OUTBOX_EVENT"
+  | "BOOKING_SPLIT_OFFSESSION_CHARGE"
+  | "AGENDA_ARBITRATION_COMPENSATION";
 
 export type OperationRecord = {
   id: number;

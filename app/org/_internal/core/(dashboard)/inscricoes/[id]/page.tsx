@@ -451,7 +451,7 @@ export default function InscricaoDetailPage() {
     );
   }
 
-  const formBasePath = `/org/inscricoes/${form.id}`;
+  const formBasePath = `/org/forms/${form.id}`;
   const buildHref = (patch: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams?.toString());
     Object.entries(patch).forEach(([key, value]) => {
@@ -587,7 +587,7 @@ export default function InscricaoDetailPage() {
         setDeleting(false);
         return;
       }
-      router.push(appendOrganizationIdToHref("/org/inscricoes", organizationId));
+      router.push(appendOrganizationIdToHref("/org/forms", organizationId));
       router.refresh();
     } catch (err) {
       console.error("[inscricoes][delete] erro", err);
@@ -618,7 +618,7 @@ export default function InscricaoDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <Link
-            href="/org/inscricoes"
+            href="/org/forms"
             className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
           >
             Voltar
@@ -1017,7 +1017,7 @@ export default function InscricaoDetailPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold">Exportar respostas</h2>
-                  <p className="text-[12px] text-white/60">CSV pronto para Excel ou Sheets.</p>
+                  <p className="text-[12px] text-white/60">CSV pronto para Excel ou Folhas Google.</p>
                 </div>
                 <span className="text-[12px] text-white/60">{responsesCount} registos</span>
               </div>

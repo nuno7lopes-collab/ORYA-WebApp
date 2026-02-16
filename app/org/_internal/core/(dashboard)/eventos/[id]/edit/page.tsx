@@ -74,7 +74,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
     pricingMode: event.pricingMode ?? undefined,
     ticketPrices: event.ticketTypes.map((t) => t.price ?? 0),
   });
-  const eventRouteBase = isPadelEvent ? "/org/padel/torneios" : "/org/eventos";
+  const eventRouteBase = isPadelEvent ? "/org/padel/tournaments" : "/org/events";
   const primaryLabelTitle = isPadelEvent ? "Torneio" : "Evento";
   const fallbackHref = eventRouteBase;
 
@@ -160,8 +160,6 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
           interestTags: event.interestTags ?? [],
           isGratis: isGratis,
           coverImageUrl: event.coverImageUrl,
-          liveVisibility: event.liveVisibility,
-          liveStreamUrl: event.liveStreamUrl,
           accessPolicy: event.accessPolicies?.[0] ?? null,
           payoutMode: event.payoutMode,
         }}

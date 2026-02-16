@@ -41,7 +41,7 @@ import { ApiError } from "../../lib/api";
 const WS_PING_INTERVAL_MS = 25000;
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
 const WS_PROTOCOL_BASE = "orya-chat.v1";
-const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
+const WS_APP_VERSION = process.env.EXPO_PUBLIC_APP_VERSION?.trim() || "1.0.0";
 
 type UnifiedMessage = {
   id: string;
@@ -243,30 +243,42 @@ export default function ChatThreadScreen() {
     const connect = () => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
       const wsUrl = new URL(wsBase);
-      wsUrl.searchParams.set("scope", "b2c");
-      wsUrl.searchParams.set("platform", "mobile");
-      const ws = new WebSocket(wsUrl.toString(), [
-        WS_PROTOCOL_BASE,
-        `${WS_AUTH_PROTOCOL_PREFIX}${accessToken}`,
-      ]);
+      const ws = new WebSocket(wsUrl.toString(), [WS_PROTOCOL_BASE]);
       wsRef.current = ws;
+      let handshakeReady = false;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "conversation:sync" }));
-        stopWsPing();
-        wsPingRef.current = setInterval(() => {
-          try {
-            ws.send(JSON.stringify({ type: "ping" }));
-          } catch {
-            // ignore
-          }
-        }, WS_PING_INTERVAL_MS);
+        ws.send(
+          JSON.stringify({
+            auth: `Bearer ${accessToken}`,
+            app_version: WS_APP_VERSION,
+            context: {
+              type: "dm",
+              id: threadId,
+            },
+            client_platform: "mobile",
+          }),
+        );
       };
 
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
           if (!payload || typeof payload !== "object") return;
+          if (payload.type === "handshake:ok") {
+            handshakeReady = true;
+            ws.send(JSON.stringify({ type: "conversation:sync" }));
+            stopWsPing();
+            wsPingRef.current = setInterval(() => {
+              try {
+                ws.send(JSON.stringify({ type: "ping" }));
+              } catch {
+                // ignore
+              }
+            }, WS_PING_INTERVAL_MS);
+            return;
+          }
+          if (!handshakeReady) return;
           if (payload.type === "message:new" && payload.conversationId === threadId) {
             const incoming = payload.message as UnifiedMessage;
             setMessages((prev) => {
@@ -322,11 +334,16 @@ export default function ChatThreadScreen() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         stopWsPing();
         wsRef.current = null;
         if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
-        wsReconnectRef.current = setTimeout(connect, 2000);
+        const reason = typeof event.reason === "string" ? event.reason : "";
+        const reconnectDelayMs = reason === "RATE_LIMITED" ? 60000 : 2000;
+        if (reason === "RATE_LIMITED") {
+          setError("Muitas tentativas de ligação ao chat. Tenta novamente em 1 minuto.");
+        }
+        wsReconnectRef.current = setTimeout(connect, reconnectDelayMs);
       };
     };
 

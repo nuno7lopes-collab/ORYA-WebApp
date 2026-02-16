@@ -195,7 +195,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 
 ### 5.7 Calendario da organizacao mae (grupo)
 - Deve ser **projecao agregada read-only** das filiais por default.
-- Escrita da mae em filial deve ser comando delegado explicito (auditado).
+- Nao existe escrita direta da mae em agenda/reservas das filiais; a mae apenas abre pedido formal para a autoridade da filial (auditado).
 
 ## 6) Multi-org: como fechar
 
@@ -215,7 +215,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 - Filial mantem autonomia operacional.
 - Mae pode:
   - observar tudo (se permissao),
-  - emitir override delegado (se politica permitir).
+  - solicitar override a org autoridade da filial (sem commit direto da mae).
 
 ## 7) Parcerias entre organizacoes: fecho recomendado
 
@@ -324,7 +324,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 8. **D08 APROVADO_OWNER (A com baixa burocracia)**: org dona tem autoridade final; friccao extra so em acoes criticas.
 10. **D10 APROVADO_OWNER (A)**: mae com visao global total.
 11. **D11 APROVADO_OWNER (A)**: filtros completos (filial/profissional/recurso/tipo) para evitar confusao.
-12. **D12 APROVADO_OWNER (A + regra de governanca B)**: mae pode aplicar hard blocks; filiais continuam com equipa e gestao propria; filial pode pedir remocao, mas aprovacao final e sempre da mae.
+12. **D12 APROVADO_OWNER (A ajustado)**: mae e view-only operacional na agenda/reservas; hard block e override final pertencem sempre a org autoridade da filial; mae pode apenas solicitar fluxo formal auditado.
 13. **D13 APROVADO_OWNER (A)**: timeline pessoal inclui booking de servico.
 16. **D16 APROVADO_OWNER (A)**: override exige motivo padrao + texto.
 17. **D17 APROVADO_OWNER (A com politica de notificacao por impacto)**: audit/evento sempre; notificacao apenas quando ha impacto real em clientes/inscritos/staff afetado.
@@ -345,9 +345,9 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 9. **D09 APROVADO_OWNER (A ajustado)**: capacidade por recurso com modos `SINGLE`, `FIXED_N`, `UNBOUNDED`; calendario respeita modo configurado por tipo de recurso/profissional.
 14. **D14 APROVADO_OWNER (A ajustado)**: labels separados na agenda pessoal; para evitar ambiguidade usar `RESERVA_SERVICO` e `BILHETE_EVENTO` (quando modulo de bilhete existir).
 15. **D15 APROVADO_OWNER (A ajustado)**: timeline pessoal unica com filtros por tipo; eventos de bilhete sao timeline pessoal (nao ocupacao de recurso no motor).
-18. **D18 APROVADO_OWNER (B)**: bypass de hard-stop so para OWNER/ADMIN, com motivo e auditoria reforcada; para impacto alto, confirmacao adicional.
+18. **D18 APROVADO_OWNER (B ajustado)**: bypass de hard-stop so para OWNER/CO_OWNER/ADMIN, com motivo e auditoria reforcada; para impacto alto, confirmacao adicional.
 22. **D22 APROVADO_OWNER (A)**: motor fica sem `PENDING_CLAIM` em v1 (`CLAIMED/RELEASED/CANCELLED` apenas).
-24. **D24 APROVADO_OWNER (A ajustado)**: no-show mantem historico auditavel e liberta ocupacao futura; reversao por `OWNER/ADMIN` ate `T+24h`, sem motivo obrigatorio.
+24. **D24 APROVADO_OWNER (A ajustado)**: no-show mantem historico auditavel e liberta ocupacao futura; reversao por `OWNER/CO_OWNER/ADMIN` ate `T+24h`, sem motivo obrigatorio.
 27. **D27 APROVADO_OWNER (A)**: versao explicita de contrato API (`v1`, `v2`) obrigatoria.
 28. **D28 APROVADO_OWNER (A faseado)**: SLO alvo p95 de commit: fase inicial `<=500ms`, alvo final `<=300ms`.
 29. **D29 APROVADO_OWNER (A+B)**: alertas em tempo real + relatorio semanal.
@@ -386,7 +386,7 @@ Esta decisao equilibra escalabilidade, isolamento de tenancy, rastreabilidade e 
 ### 14.2 "No-show"
 - Significa: a sessao/jogo/reserva estava marcada mas a pessoa nao compareceu.
 - E estado operacional/financeiro, nao mecanismo de agendamento.
-- Regra acordada: marcar apos inicio, manter historico e auditoria, nao bloquear ocupacoes futuras por si so; reversao ate `T+24h` por `OWNER/ADMIN`.
+- Regra acordada: marcar apos inicio, manter historico e auditoria, nao bloquear ocupacoes futuras por si so; reversao ate `T+24h` por `OWNER/CO_OWNER/ADMIN`.
 
 ## 15) Verificacao anti-ambiguidade dos 8 principios centrais
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _PATCH(req: NextRequest) {
@@ -19,6 +19,7 @@ async function _PATCH(req: NextRequest) {
 
     const payload = await req.json().catch(() => ({}));
     const rawPhone = typeof payload?.contactPhone === "string" ? payload.contactPhone.trim() : "";
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     if (!rawPhone || !isValidPhone(rawPhone)) {
       return jsonWrap(
         { ok: false, error: "Telefone inválido. Usa um número real (podes incluir indicativo, ex.: +351...)." },
@@ -26,7 +27,7 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    const normalized = normalizePhone(rawPhone);
+    const normalized = normalizePhone(rawPhone, phoneOptions);
     await prisma.profile.update({
       where: { id: user.id },
       data: { contactPhone: normalized },

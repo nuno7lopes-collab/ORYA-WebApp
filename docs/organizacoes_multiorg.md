@@ -70,12 +70,12 @@
   - Stripe account,
   - dados fiscais,
   - payouts,
-  - official email,
   - transfer ownership,
   - delete organization,
   - entrada/saida de group,
   - remocao do OWNER,
   - alteracoes criticas de conta.
+- Official email segue contrato dedicado de settings e pode ser gerido por `OWNER` e `CO_OWNER` com confirmacao e auditoria.
 
 ## 8) Contrato de Contexto, Rotas e Canonicalidade
 - /api/org/:orgId/*: orgId canonical por path.

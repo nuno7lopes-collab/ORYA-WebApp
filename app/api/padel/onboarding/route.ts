@@ -3,7 +3,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Gender, PadelPreferredSide } from "@prisma/client";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -13,12 +12,15 @@ import {
   UsernameTakenError,
 } from "@/lib/globalUsernames";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
-const normalizePhone = (value: string | null | undefined) => {
+const normalizePhoneForStorage = (
+  value: string | null | undefined,
+  options?: Parameters<typeof normalizePhone>[1],
+) => {
   if (value === undefined) return undefined;
   if (value === null || value.trim() === "") return null;
-  const parsed = parsePhoneNumberFromString(value.trim(), "PT");
-  if (parsed && parsed.isPossible()) return parsed.number;
+  if (isValidPhone(value)) return normalizePhone(value, options);
   return null;
 };
 
@@ -145,9 +147,10 @@ async function _POST(req: NextRequest) {
     const gender: Gender | null =
       genderRaw === "MALE" || genderRaw === "FEMALE" ? (genderRaw as Gender) : existingProfile.gender ?? null;
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const normalizedPhone =
       body.contactPhone !== undefined
-        ? normalizePhone(body.contactPhone)
+        ? normalizePhoneForStorage(body.contactPhone, phoneOptions)
         : existingProfile.contactPhone ?? null;
 
     if (body.contactPhone !== undefined && normalizedPhone === null) {

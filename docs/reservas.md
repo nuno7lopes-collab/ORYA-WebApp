@@ -155,7 +155,7 @@
   - só após início da reserva,
   - exige snapshot,
   - sem fee financeiro por default nesta fase (foco operacional/CRM),
-  - reversão permitida por `OWNER/ADMIN` até `T+24h`, sem motivo obrigatório, com trilho de auditoria.
+  - reversão permitida por `OWNER/CO_OWNER/ADMIN` até `T+24h`, sem motivo obrigatório, com trilho de auditoria.
 
 ### 5.9 Convites, split e charges
 - Convites: limite `MAX_INVITES = 20`, dedupe por contacto, token único.
@@ -445,7 +445,7 @@
 19. DECIDIDO: `DISPUTED` fica reservado para casos financeiros/reconciliação (não estado operacional do dia a dia).
 20. DECIDIDO: manter transição automática `CONFIRMED -> COMPLETED` por cron (com `autoCompleteGrace` por policy).
 21. DECIDIDO: `autoCompleteGrace` default `+2h`, configurável por policy entre `0h` e `72h`.
-22. DECIDIDO: `NO_SHOW` pode ser revertido por `OWNER/ADMIN` até `T+24h` (auditável).
+22. DECIDIDO: `NO_SHOW` pode ser revertido por `OWNER/CO_OWNER/ADMIN` até `T+24h` (auditável).
 23. DECIDIDO: manter `CANCELLED_BY_*` como canónico operacional; UI mostra apenas "Cancelado".
 
 ### D) Política de conflito/agenda
@@ -563,7 +563,7 @@
 - Acordado com owner: fail-closed com backfill automático (SLO) e runbook de remediação.
 - Acordado com owner: disponibilidade pública converge para contrato canónico único.
 - Acordado com owner: localização canónica usa `APPLE_MAPS` (IP apenas auxiliar), sem provider manual nesta fase.
-- Acordado com owner: no-show é marcado após início e pode ser revertido até `T+24h` por `OWNER/ADMIN`, sem motivo obrigatório (com auditoria).
+- Acordado com owner: no-show é marcado após início e pode ser revertido até `T+24h` por `OWNER/CO_OWNER/ADMIN`, sem motivo obrigatório (com auditoria).
 - Acordado com owner: em impacto de cliente, override pode seguir pedido de troca **ou** cancelamento com reembolso total imediato.
 - Acordado com owner: capacidade canónica por modo (`SINGLE`, `FIXED_N`, `UNBOUNDED`) com allow-list por policy para uso de `UNBOUNDED`.
 - Acordado com owner: hold padrão fixo de 10m.

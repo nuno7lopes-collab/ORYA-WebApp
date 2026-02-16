@@ -180,7 +180,7 @@ function AgendaCard({
 }) {
   const slug = extractEventSlug(item.ctaHref);
   const detailHref = item.ctaHref ?? (slug ? `/eventos/${slug}` : null);
-  const chatHref = slug ? `/eventos/${slug}/live` : null;
+  const chatHref = slug ? `/eventos/${slug}` : null;
   const cover = getEventCoverUrl(null, {
     seed: slug ?? item.id,
     width: 600,

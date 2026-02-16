@@ -12,7 +12,6 @@ import {
   usePadelMyMatches,
   usePadelRankings,
   usePadelSummary,
-  usePublicTournamentPulse,
 } from "../../features/tournaments/hooks";
 import { formatCurrency, formatDate } from "../../lib/formatters";
 import { useTranslation } from "@orya/shared";
@@ -42,7 +41,6 @@ export default function PadelHubScreen() {
   const matchesQuery = usePadelMyMatches({ scope: "upcoming", limit: 3 }, Boolean(summaryQuery.data));
   const discoverQuery = usePadelDiscover({ date: "upcoming", limit: 6 }, true);
   const rankingsQuery = usePadelRankings({ scope: "global", limit: 5 }, true);
-  const tournamentPulseQuery = usePublicTournamentPulse(true);
 
   const profile = summaryQuery.data?.profile ?? null;
   const stats = summaryQuery.data?.stats ?? null;
@@ -312,28 +310,6 @@ export default function PadelHubScreen() {
               );
             })}
           </View>
-
-          <SectionHeader
-            title="Radar público"
-            subtitle="Sinal canónico dos endpoints públicos de torneios."
-          />
-          <GlassCard intensity={50}>
-            {tournamentPulseQuery.isLoading ? (
-              <Text className="text-white/60 text-sm">A carregar radar de torneios…</Text>
-            ) : tournamentPulseQuery.isError ? (
-              <Text className="text-white/60 text-sm">Radar indisponível neste momento.</Text>
-            ) : (
-              <View className="gap-2">
-                <Text className="text-white text-sm font-semibold">
-                  {tournamentPulseQuery.data?.list?.length ?? 0} torneios publicados
-                </Text>
-                <Text className="text-white/65 text-xs">
-                  Estrutura: {tournamentPulseQuery.data?.structure ? "ok" : "n/d"} · Live:{" "}
-                  {tournamentPulseQuery.data?.live ? "ok" : "n/d"}
-                </Text>
-              </View>
-            )}
-          </GlassCard>
 
           <SectionHeader
             title={t("events:padel.hub.rankingsTitle")}

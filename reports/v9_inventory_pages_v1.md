@@ -226,7 +226,7 @@ Total: 249
 | /org/[orgId]/settings/verify | app/org/[orgId]/settings/verify/page.tsx | - | public |
 | /org/[orgId]/store | app/org/[orgId]/store/page.tsx | - | public |
 | /org/[orgId]/team | app/org/[orgId]/team/page.tsx | - | public |
-| /org/[orgId]/team/trainers | app/org/[orgId]/team/trainers/page.tsx | - | public |
+| /org/[orgId]/treinadores | app/org/[orgId]/treinadores/page.tsx | - | public |
 | /organization-terms | app/organization-terms/page.tsx | - | public |
 | /padel/duplas | app/padel/duplas/page.tsx | - | padel |
 | /padel/rankings | app/padel/rankings/page.tsx | - | padel |

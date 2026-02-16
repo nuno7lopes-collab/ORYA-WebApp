@@ -245,7 +245,7 @@ Estas decisões ficam mantidas e fechadas; o que falta é execução técnica fa
 | 19 | Fechado | Desempates por preset com override, em sintonia com autoagendamento. |
 | 20 | Fechado | NON_STOP com regra oficial integrada, cronómetro sincronizado e motor operacional completo. |
 | 21 | Fechado | Delay policy default oficial: `CASCADE_SAME_COURT`. |
-| 22 | Fechado | Delay/replan em live: Owner/Admin/Diretor Prova; staff apenas com permissão explícita. |
+| 22 | Fechado | Delay/replan em live: Owner/Co-owner/Admin/Diretor Prova; staff apenas com permissão explícita. |
 | 23 | Fechado | Bloqueio automático de edição de resultado após janela temporal de segurança. |
 | 24 | Fechado | WO/retirement/injury com confirmação única qualificada (`DIRETOR_PROVA` ou `REFEREE`) e gate obrigatório de diretor por torneio. |
 | 25 | Fechado | Perfil mostra títulos ganhos por torneio. |
@@ -347,7 +347,7 @@ Decisão fechada do owner:
   - Semântica técnica de confirmado:
     - confirmação só é válida com persistência atómica de `slot + claims` no mesmo commit;
     - qualquer falha numa claim invalida a operação completa (rollback total).
-  - Se houver conflito crítico, abre fluxo de revisão para Owner/Admin da organização dona.
+  - Se houver conflito crítico, abre fluxo de revisão para Owner/Co-owner/Admin da organização dona.
   - Apenas com `override` explícito e auditável pode haver alteração de slot confirmado.
 - `Override` exige:
   - cálculo de impacto,
@@ -410,7 +410,7 @@ Decisão fechada do owner:
 - WO/retirement/injury pode ser confirmado por `DIRETOR_PROVA` ou `REFEREE`.
 - Hard gate: nenhum torneio publica sem pelo menos 1 `DIRETOR_PROVA` atribuído.
 - Se confirmado por `REFEREE`, notificação automática ao `DIRETOR_PROVA` e trilho de auditoria reforçado.
-- Em fases críticas (meias/final), exigir confirmação por `DIRETOR_PROVA` ou `Owner/Admin`.
+- Em fases críticas (meias/final), exigir confirmação por `DIRETOR_PROVA` ou `Owner/Co-owner/Admin`.
 
 ### 9.8 ID 27 — Ranking (modelo robusto)
 Decisões fechadas do owner:

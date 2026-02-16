@@ -161,6 +161,7 @@ async function _POST(req: NextRequest) {
   }
 
   const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
+  const resolvedCheckinMethod = resolveCheckinMethodForEntitlement(ent.type);
   if (!policyResolution.ok) {
     return allow({
       allow: false,
@@ -169,8 +170,7 @@ async function _POST(req: NextRequest) {
     });
   }
   if (policyResolution.policy) {
-    const method = resolveCheckinMethodForEntitlement(ent.type);
-    if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
+    if (!resolvedCheckinMethod || !policyResolution.policy.checkinMethods.includes(resolvedCheckinMethod)) {
       return allow({
         allow: false,
         reasonCode: "NOT_ALLOWED",
@@ -262,6 +262,7 @@ async function _POST(req: NextRequest) {
           entitlementId: ent.id,
           eventId,
           deviceId: deviceId ?? "unknown",
+          method: resolvedCheckinMethod,
           resultCode: CheckinResultCode.OK,
           checkedInBy: null,
           purchaseId: ent.purchaseId,

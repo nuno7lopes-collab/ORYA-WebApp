@@ -125,7 +125,7 @@ export default function ProfissionaisPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: member.userId,
-          name: member.fullName || member.username || "Staff",
+          name: member.fullName || member.username || "Equipa",
           roleTitle: "",
           priority: 0,
         }),
@@ -184,7 +184,7 @@ export default function ProfissionaisPage() {
           <h1 className={DASHBOARD_TITLE}>Profissionais</h1>
           <p className={DASHBOARD_MUTED}>Gere equipa e disponibilidade.</p>
         </div>
-        <Link href="/org/reservas" className={CTA_SECONDARY}>
+        <Link href="/org/bookings" className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -360,7 +360,7 @@ export default function ProfissionaisPage() {
                         <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
                           {item.isActive ? "Desativar" : "Ativar"}
                         </button>
-                        <Link href={`/org/reservas/profissionais/${item.id}`} className={CTA_PRIMARY}>
+                        <Link href={`/org/bookings/profissionais/${item.id}`} className={CTA_PRIMARY}>
                           Disponibilidade
                         </Link>
                       </div>

@@ -117,7 +117,7 @@ export default function RecursosPage() {
           <h1 className={DASHBOARD_TITLE}>Recursos</h1>
           <p className={DASHBOARD_MUTED}>Mesas, salas ou recursos reservaveis.</p>
         </div>
-        <Link href="/org/reservas" className={CTA_SECONDARY}>
+        <Link href="/org/bookings" className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -180,7 +180,7 @@ export default function RecursosPage() {
                     <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
                       {item.isActive ? "Desativar" : "Ativar"}
                     </button>
-                    <Link href={`/org/reservas/recursos/${item.id}`} className={CTA_PRIMARY}>
+                    <Link href={`/org/bookings/recursos/${item.id}`} className={CTA_PRIMARY}>
                       Disponibilidade
                     </Link>
                   </div>

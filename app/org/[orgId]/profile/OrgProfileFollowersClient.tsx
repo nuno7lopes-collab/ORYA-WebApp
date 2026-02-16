@@ -34,7 +34,7 @@ export default function OrgProfileFollowersClient({ orgId }: OrgProfileFollowers
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !Array.isArray(json.items)) {
-        throw new Error(json?.error || "Nao foi possivel carregar seguidores.");
+        throw new Error(json?.error || "Não foi possível carregar seguidores.");
       }
       setItems(json.items as OrganizationFollowerItem[]);
     } catch (err) {
@@ -64,10 +64,10 @@ export default function OrgProfileFollowersClient({ orgId }: OrgProfileFollowers
       <section className="rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Profile Tool</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Followers</h1>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramenta de perfil</p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Seguidores</h1>
             <p className="mt-1 text-sm text-white/65">
-              Comunidade da organizacao com pesquisa rapida e acesso direto a cada perfil.
+              Comunidade da organização com pesquisa rápida e acesso direto a cada perfil.
             </p>
           </div>
           <button
@@ -89,7 +89,7 @@ export default function OrgProfileFollowersClient({ orgId }: OrgProfileFollowers
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Pesquisar follower..."
+            placeholder="Pesquisar seguidor..."
             className="w-full rounded-full border border-white/20 bg-black/25 px-4 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF] sm:w-72"
           />
         </div>
@@ -102,7 +102,7 @@ export default function OrgProfileFollowersClient({ orgId }: OrgProfileFollowers
 
         {!loading && !error && filteredItems.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-white/12 bg-black/20 px-4 py-6 text-center text-sm text-white/65">
-            Nenhum follower corresponde a pesquisa.
+            Nenhum seguidor corresponde à pesquisa.
           </div>
         ) : null}
 

@@ -143,7 +143,7 @@ function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflict
 
 const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
   HARD_BLOCK: "bloqueio",
-  MATCH_SLOT: "jogo",
+  MATCH: "jogo",
   BOOKING: "reserva",
   SOFT_BLOCK: "bloqueio suave",
 };
@@ -617,10 +617,11 @@ async function _POST(req: NextRequest) {
         return;
       }
       addExisting(match.courtId, {
-        type: "MATCH_SLOT",
+        type: "MATCH",
         sourceId: String(match.id),
         startsAt: start,
         endsAt: end,
+        reasonCode: "MATCH_SLOT",
       });
     });
 
@@ -673,17 +674,19 @@ async function _POST(req: NextRequest) {
       if (!bucket) {
         return jsonWrap(agendaConflictResponse(), { status: 503 });
       }
+      const candidateType: AgendaCandidateType = "MATCH";
       const candidate: AgendaCandidate = {
-        type: "MATCH_SLOT",
+        type: candidateType,
         sourceId: String(update.matchId),
         startsAt: update.start,
         endsAt: update.end,
+        reasonCode: "MATCH_SLOT",
       };
       const decision = evaluateCandidate({ candidate, existing: bucket });
       if (!decision.allowed) {
         return jsonWrap(agendaConflictResponse(decision), { status: 409 });
       }
-      const agendaWarning = buildAgendaWarning(decision, candidate.type);
+      const agendaWarning = buildAgendaWarning(decision, candidateType);
       if (agendaWarning) {
         warnings.push({
           matchId: update.matchId,

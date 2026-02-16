@@ -201,6 +201,9 @@ export type OrganizationMembersResponse = {
 
 export type ChatEvent =
   | {
+      type: "handshake:ok";
+    }
+  | {
       type: "message:new";
       conversationId: string;
       message: Message;

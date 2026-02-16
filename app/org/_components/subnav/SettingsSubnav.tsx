@@ -10,8 +10,7 @@ export default function SettingsSubnav({ orgId, className }: { orgId: number | n
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "general", label: "General", href: buildOrgHref(orgId, "/settings") },
-        { id: "verify", label: "Verify", href: buildOrgHref(orgId, "/settings/verify") },
+        { id: "general", label: "Geral", href: buildOrgHref(orgId, "/settings") },
       ]}
     />
   );

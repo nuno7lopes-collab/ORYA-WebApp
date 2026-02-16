@@ -39,7 +39,6 @@ import crypto from "crypto";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { logError, logInfo, logWarn } from "@/lib/observability/logger";
 import { sendPurchaseConfirmationEmail } from "@/lib/emailSender";
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computeCombinedFees } from "@/lib/fees";
 import { normalizePaymentScenario } from "@/lib/paymentScenario";
 import { issueGuestTicketAccessToken } from "@/lib/guestTickets/accessTokens";
@@ -58,6 +57,7 @@ import { ensureEntriesForConfirmedPairing } from "@/domain/tournaments/ensureEnt
 import { resolveOwner } from "@/lib/ownership/resolveOwner";
 import { resolveRegistrationStatusFromSlots, upsertPadelRegistrationForPairing } from "@/domain/padelRegistration";
 import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 import {
   queuePartnerPaid,
   queueDeadlineExpired,
@@ -532,22 +532,7 @@ export async function fulfillPayment(intent: Stripe.PaymentIntent, stripeEventId
     return;
   }
 
-  const normalizePhone = (phone: string | null | undefined, defaultCountry: CountryCode = "PT") => {
-    if (!phone) return null;
-    const cleaned = phone.trim();
-    if (!cleaned) return null;
-    const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
-    if (parsed && parsed.isPossible() && parsed.isValid()) {
-      return parsed.number;
-    }
-    const regexPT = /^(?:\+351)?9[1236]\d{7}$/;
-    if (regexPT.test(cleaned)) {
-      const digits = cleaned.replace(/[^\d]/g, "");
-      return digits.startsWith("351") ? `+${digits}` : `+351${digits}`;
-    }
-    return null;
-  };
-  const guestPhone = normalizePhone(guestPhoneRaw);
+  const guestPhone = guestPhoneRaw && isValidPhone(guestPhoneRaw) ? normalizePhone(guestPhoneRaw) : null;
   const purchaseId =
     typeof meta.purchaseId === "string" && meta.purchaseId.trim() !== ""
       ? meta.purchaseId.trim()

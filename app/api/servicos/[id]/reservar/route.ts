@@ -27,13 +27,13 @@ import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
-import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const PENDING_HOLD_MINUTES = 10;
-const MAX_PENDING_PER_USER = 3;
+const MAX_PENDING_PER_USER = 1;
 const SLOT_STEP_MINUTES = 15;
 
 function getRequestMeta(req: NextRequest) {
@@ -101,6 +101,7 @@ async function _POST(
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const guestInput = payload?.guest ?? null;
     const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
     const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
@@ -108,7 +109,7 @@ async function _POST(
     const guestConsent = guestInput?.consent === true;
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
     const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
-    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
+    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw, phoneOptions) : "";
     const startsAtRaw = typeof payload?.startsAt === "string" ? payload.startsAt : null;
     const startsAt = startsAtRaw ? new Date(startsAtRaw) : null;
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
@@ -434,7 +435,7 @@ async function _POST(
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
+    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -475,18 +476,6 @@ async function _POST(
           ],
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
-      }),
-      prisma.softBlock.findMany({
-        where: {
-          organizationId: service.organizationId,
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-          OR: [
-            { scopeType: "ORGANIZATION" },
-            ...(scopeIds.length > 0 ? [{ scopeType, scopeId: { in: scopeIds } }] : []),
-          ],
-        },
-        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
       prisma.classSession.findMany({
         where: {
@@ -553,31 +542,6 @@ async function _POST(
         sourceId: String(booking.id),
         startsAt: booking.startsAt,
         endsAt: end,
-      });
-    });
-    softBlocks.forEach((block) => {
-      if (block.scopeType === "ORGANIZATION") {
-        scopeIds.forEach((scopeId) => {
-          const bucket = existingByScope.get(scopeId);
-          if (!bucket) return;
-          bucket.push({
-            type: "SOFT_BLOCK",
-            sourceId: String(block.id),
-            startsAt: block.startsAt,
-            endsAt: block.endsAt,
-          });
-        });
-        return;
-      }
-      const scopeId = block.scopeId ?? null;
-      if (!scopeId) return;
-      const bucket = existingByScope.get(scopeId);
-      if (!bucket) return;
-      bucket.push({
-        type: "SOFT_BLOCK",
-        sourceId: String(block.id),
-        startsAt: block.startsAt,
-        endsAt: block.endsAt,
       });
     });
     classSessions.forEach((session) => {

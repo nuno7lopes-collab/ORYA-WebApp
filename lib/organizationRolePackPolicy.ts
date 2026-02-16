@@ -8,15 +8,14 @@ const ROLE_PACKS_BY_ROLE: Record<OrganizationMemberRole, readonly OrganizationRo
     OrganizationRolePack.CLUB_MANAGER,
     OrganizationRolePack.TOURNAMENT_DIRECTOR,
     OrganizationRolePack.FRONT_DESK,
+    OrganizationRolePack.COACH,
     OrganizationRolePack.REFEREE,
   ],
-  TRAINER: [OrganizationRolePack.COACH],
   PROMOTER: [],
 };
 
 const DEFAULT_ROLE_PACK_BY_ROLE: Partial<Record<OrganizationMemberRole, OrganizationRolePack>> = {
   STAFF: OrganizationRolePack.FRONT_DESK,
-  TRAINER: OrganizationRolePack.COACH,
 };
 
 export type RolePackPolicyErrorCode =

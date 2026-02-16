@@ -93,7 +93,7 @@ const resolveMatchUserIds = (participants: MatchParticipantRef[] | null | undefi
 
 const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
   HARD_BLOCK: "bloqueio",
-  MATCH_SLOT: "jogo",
+  MATCH: "jogo",
   BOOKING: "reserva",
   SOFT_BLOCK: "bloqueio suave",
 };
@@ -190,10 +190,11 @@ async function loadCourtCandidates(params: {
     if (!start || !end) return;
     if (!(start < endsAt && end > startsAt)) return;
     candidates.push({
-      type: "MATCH_SLOT",
+      type: "MATCH",
       sourceId: String(match.id),
       startsAt: start,
       endsAt: end,
+      reasonCode: "MATCH_SLOT",
     });
   });
 
@@ -1120,16 +1121,17 @@ async function _PATCH(req: NextRequest) {
     }
 
     const candidate: AgendaCandidate = {
-      type: "MATCH_SLOT",
+      type: "MATCH",
       sourceId: String(match.id),
       startsAt: desiredStart,
       endsAt: desiredEnd,
+      reasonCode: "MATCH_SLOT",
     };
     const decision = evaluateCandidate({ candidate, existing: existingCandidates });
     if (!decision.allowed) {
       return jsonWrap(agendaConflictResponse(decision), { status: 409 });
     }
-    const agendaWarning = buildAgendaWarning(decision, "MATCH_SLOT");
+    const agendaWarning = buildAgendaWarning(decision, "MATCH");
 
     if (desiredStart && desiredEnd && (courtId || match.courtId)) {
       const overlappingMatch = await prisma.eventMatchSlot.findFirst({

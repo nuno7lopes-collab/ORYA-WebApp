@@ -118,7 +118,6 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
       title: true,
       status: true,
       timezone: true,
-      liveStreamUrl: true,
       accessPolicies: {
         orderBy: { policyVersion: "desc" },
         take: 1,
@@ -160,10 +159,6 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
     },
     locale,
   );
-  const streamUrl =
-    typeof (match.score as Record<string, unknown> | null)?.liveStreamUrl === "string"
-      ? ((match.score as Record<string, unknown>).liveStreamUrl as string)
-      : event.liveStreamUrl ?? null;
 
   return (
     <div className="min-h-screen bg-black px-4 py-8 text-white">
@@ -210,13 +205,6 @@ export default async function PadelMatchPage({ params, searchParams }: PageProps
           </div>
         </div>
 
-        {streamUrl && (
-          <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50">
-            <a href={streamUrl} target="_blank" rel="noreferrer" className="underline">
-              {t("watchStream", locale)}
-            </a>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ type DiscoverEvent = EventCardDTO & {
 };
 
 type DiscoverData = {
-  liveEvents: DiscoverEvent[];
+  currentEvents: DiscoverEvent[];
   fallbackEvents: DiscoverEvent[];
   weekEvents: DiscoverEvent[];
 };
@@ -19,7 +19,7 @@ type DiscoverTab = "eventos" | "torneios" | "reservas";
 
 type TimingTag = {
   label: string;
-  tone: "live" | "soon" | "default";
+  tone: "now" | "soon" | "default";
 };
 
 const EVENT_SELECT = {
@@ -38,7 +38,7 @@ const EVENT_SELECT = {
 type RawEvent = Prisma.EventGetPayload<{ select: typeof EVENT_SELECT }>;
 type TicketPriceRange = { min: number | null; max: number | null };
 
-const LIVE_LIMIT = 8;
+const CURRENT_LIMIT = 8;
 const FALLBACK_LIMIT = 6;
 const WEEK_LIMIT = 10;
 const NEARBY_RADIUS_KM = 35;
@@ -190,7 +190,7 @@ export function buildTimingTag(event: DiscoverEvent, now: Date): TimingTag {
   }
 
   if (event.startsAt <= now && event.endsAt >= now) {
-    return { label: "Agora", tone: "live" };
+    return { label: "Agora", tone: "now" };
   }
 
   const diffMs = Math.max(event.startsAt.getTime() - now.getTime(), 0);
@@ -229,7 +229,7 @@ export async function getDiscoverData(options?: {
   const rangeEnd = options?.range === "today" ? todayEnd : weekEnd;
   const scopeWhere = buildDiscoverWhere(options?.tab);
 
-  const [liveRaw, upcomingRaw] = await Promise.all([
+  const [currentRaw, upcomingRaw] = await Promise.all([
     prisma.event.findMany({
       where: {
         ...scopeWhere,
@@ -251,11 +251,11 @@ export async function getDiscoverData(options?: {
     }),
   ]);
 
-  const allEventIds = Array.from(new Set([...liveRaw, ...upcomingRaw].map((event) => event.id)));
+  const allEventIds = Array.from(new Set([...currentRaw, ...upcomingRaw].map((event) => event.id)));
   const priceMap = await buildTicketPriceMap(allEventIds);
 
-  const liveEvents = filterValidEvents(
-    liveRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
+  const currentEvents = filterValidEvents(
+    currentRaw.map((event) => mapDiscoverEvent(event, priceMap)).filter((event): event is DiscoverEvent => Boolean(event)),
   );
 
   const upcomingEvents = filterValidEvents(
@@ -270,8 +270,8 @@ export async function getDiscoverData(options?: {
   const priceMin = typeof options?.priceMin === "number" ? options.priceMin : null;
   const priceMax = typeof options?.priceMax === "number" ? options.priceMax : null;
   const filteredUpcoming = filterByPrice(nearbyFiltered, priceMin, priceMax);
-  const filteredLive = filterByPrice(
-    options?.range === "near" ? filterNearby(liveEvents, options.lat, options.lng) : liveEvents,
+  const filteredCurrent = filterByPrice(
+    options?.range === "near" ? filterNearby(currentEvents, options.lat, options.lng) : currentEvents,
     priceMin,
     priceMax,
   );
@@ -280,7 +280,7 @@ export async function getDiscoverData(options?: {
   const fallbackSource = upcomingToday.length > 0 ? upcomingToday : filteredUpcoming;
 
   const data = {
-    liveEvents: filteredLive.slice(0, LIVE_LIMIT),
+    currentEvents: filteredCurrent.slice(0, CURRENT_LIMIT),
     fallbackEvents: fallbackSource.slice(0, FALLBACK_LIMIT),
     weekEvents: filteredUpcoming.slice(0, WEEK_LIMIT),
   };

@@ -7,6 +7,7 @@ import { StoreAddressType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 type PrefillResponse = {
   ok: boolean;
@@ -157,11 +158,15 @@ async function _GET(req: NextRequest) {
           }
         : null;
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const metadata = user.user_metadata as { full_name?: string; name?: string } | null;
+    const phoneCandidate = profile?.contactPhone ?? lastOrder?.customerPhone ?? null;
+    const normalizedPhone =
+      phoneCandidate && isValidPhone(phoneCandidate) ? normalizePhone(phoneCandidate, phoneOptions) : phoneCandidate;
     const customer = {
       name: profile?.fullName ?? lastOrder?.customerName ?? metadata?.full_name ?? metadata?.name ?? null,
       email: user.email ?? lastOrder?.customerEmail ?? null,
-      phone: profile?.contactPhone ?? lastOrder?.customerPhone ?? null,
+      phone: normalizedPhone,
     };
 
     return respondOk(ctx, {

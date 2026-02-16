@@ -10,10 +10,10 @@ export default function MarketingSubnav({ orgId, className }: { orgId: number | 
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/marketing", { marketing: "overview" }) },
-        { id: "promos", label: "Promos", href: buildOrgHref(orgId, "/marketing", { marketing: "promos" }) },
-        { id: "promoters", label: "Promoters", href: buildOrgHref(orgId, "/marketing", { marketing: "promoters" }) },
-        { id: "content", label: "Content", href: buildOrgHref(orgId, "/marketing", { marketing: "content" }) },
+        { id: "overview", label: "Resumo", href: buildOrgHref(orgId, "/marketing", { marketing: "overview" }) },
+        { id: "promos", label: "Promoções", href: buildOrgHref(orgId, "/marketing", { marketing: "promos" }) },
+        { id: "promoters", label: "Promotores", href: buildOrgHref(orgId, "/marketing", { marketing: "promoters" }) },
+        { id: "content", label: "Conteúdo", href: buildOrgHref(orgId, "/marketing", { marketing: "content" }) },
       ]}
     />
   );

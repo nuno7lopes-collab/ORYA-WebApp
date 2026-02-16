@@ -8,8 +8,8 @@ import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { getEventCoverUrl } from "@/lib/eventCover";
-import { fetchGeoAutocomplete, fetchGeoDetails } from "@/lib/geo/client";
-import type { GeoAutocompleteItem } from "@/lib/geo/provider";
+import { AddressCombobox } from "@/components/ui/address-combobox";
+import type { GeoDetailsItem } from "@/lib/geo/types";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import {
   CTA_DANGER,
@@ -241,17 +241,8 @@ export default function ServicoDetalhePage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [formLocationMode, setFormLocationMode] = useState<LocationMode>("FIXED");
   const [formAddressQuery, setFormAddressQuery] = useState("");
-  const [formAddressSuggestions, setFormAddressSuggestions] = useState<GeoAutocompleteItem[]>([]);
-  const [formAddressLoading, setFormAddressLoading] = useState(false);
-  const [formAddressError, setFormAddressError] = useState<string | null>(null);
-  const [showFormAddressSuggestions, setShowFormAddressSuggestions] = useState(false);
   const [formAddressId, setFormAddressId] = useState<string | null>(null);
   const [formAddressLabel, setFormAddressLabel] = useState<string | null>(null);
-  const formAddressSeqRef = useRef(0);
-  const formAddressDetailsSeqRef = useRef(0);
-  const formAddressSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const formAddressBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeFormProviderRef = useRef<string | null>(null);
   const [formPolicyId, setFormPolicyId] = useState("");
   const [linkedProfessionalIds, setLinkedProfessionalIds] = useState<number[]>([]);
   const [linkedResourceIds, setLinkedResourceIds] = useState<number[]>([]);
@@ -316,10 +307,6 @@ export default function ServicoDetalhePage() {
     setFormAddressId(service.addressId ?? null);
     setFormAddressLabel(service.addressRef?.formattedAddress ?? null);
     setFormAddressQuery(service.addressRef?.formattedAddress ?? "");
-    setFormAddressSuggestions([]);
-    setFormAddressError(null);
-    setShowFormAddressSuggestions(false);
-    activeFormProviderRef.current = null;
     setFormPolicyId(service.policyId ? String(service.policyId) : "");
     setLinkedProfessionalIds(service.professionalLinks?.map((link) => link.professionalId) ?? []);
     setLinkedResourceIds(service.resourceLinks?.map((link) => link.resourceId) ?? []);
@@ -329,91 +316,6 @@ export default function ServicoDetalhePage() {
     if (seriesValidFrom) return;
     setSeriesValidFrom(new Date().toISOString().slice(0, 10));
   }, [seriesValidFrom]);
-
-  useEffect(() => {
-    if (formLocationMode !== "FIXED") {
-      if (formAddressSearchTimeoutRef.current) {
-        clearTimeout(formAddressSearchTimeoutRef.current);
-      }
-      setFormAddressSuggestions([]);
-      setFormAddressLoading(false);
-      setFormAddressError(null);
-      return;
-    }
-    const query = formAddressQuery.trim();
-    if (query.length < 2) {
-      setFormAddressSuggestions([]);
-      setFormAddressLoading(false);
-      setFormAddressError(null);
-      return;
-    }
-    if (formAddressSearchTimeoutRef.current) {
-      clearTimeout(formAddressSearchTimeoutRef.current);
-    }
-    setFormAddressError(null);
-    const seq = ++formAddressSeqRef.current;
-    formAddressSearchTimeoutRef.current = setTimeout(async () => {
-      setFormAddressLoading(true);
-      try {
-        const items = await fetchGeoAutocomplete(query);
-        if (formAddressSeqRef.current === seq) {
-          setFormAddressSuggestions(items);
-        }
-      } catch (err) {
-        if (formAddressSeqRef.current === seq) {
-          setFormAddressSuggestions([]);
-          setFormAddressError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
-        }
-      } finally {
-        if (formAddressSeqRef.current === seq) {
-          setFormAddressLoading(false);
-        }
-      }
-    }, 280);
-
-    return () => {
-      if (formAddressSearchTimeoutRef.current) {
-        clearTimeout(formAddressSearchTimeoutRef.current);
-      }
-    };
-  }, [formLocationMode, formAddressQuery]);
-
-  const handleSelectFormAddressSuggestion = async (item: GeoAutocompleteItem) => {
-    setFormAddressError(null);
-    setFormAddressId(null);
-    setFormAddressLabel(item.label);
-    setFormAddressQuery(item.label);
-    setFormAddressSuggestions([]);
-    setShowFormAddressSuggestions(false);
-    activeFormProviderRef.current = item.providerId;
-    const seq = ++formAddressDetailsSeqRef.current;
-    setFormAddressLoading(true);
-    try {
-      const details = await fetchGeoDetails(item.providerId, {
-        lat: item.lat,
-        lng: item.lng,
-      });
-      if (formAddressDetailsSeqRef.current !== seq) return;
-      if (activeFormProviderRef.current !== item.providerId) return;
-      const addressId = details?.addressId ?? null;
-      if (!addressId) {
-        setFormAddressError("Morada inválida.");
-        return;
-      }
-      const formatted = details?.formattedAddress ?? item.label;
-      setFormAddressId(addressId);
-      setFormAddressLabel(formatted);
-      setFormAddressQuery(formatted);
-    } catch (err) {
-      if (formAddressDetailsSeqRef.current === seq) {
-        setFormAddressError(err instanceof Error ? err.message : "Falha ao normalizar morada.");
-      }
-    } finally {
-      if (formAddressDetailsSeqRef.current === seq) {
-        setFormAddressLoading(false);
-      }
-    }
-  };
 
   useEffect(() => {
     if (!addonsData?.items) return;
@@ -758,7 +660,7 @@ export default function ServicoDetalhePage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao criar pack.");
+        throw new Error(json?.error || "Erro ao criar pacote.");
       }
       setPackQuantity("5");
       setPackPrice("90");
@@ -766,7 +668,7 @@ export default function ServicoDetalhePage() {
       setPackRecommended(true);
       mutatePacks();
     } catch (err) {
-      setPackError(err instanceof Error ? err.message : "Erro ao criar pack.");
+      setPackError(err instanceof Error ? err.message : "Erro ao criar pacote.");
     } finally {
       setPackSaving(false);
     }
@@ -792,11 +694,11 @@ export default function ServicoDetalhePage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao atualizar pack.");
+        throw new Error(json?.error || "Erro ao atualizar pacote.");
       }
       mutatePacks();
     } catch (err) {
-      setPackError(err instanceof Error ? err.message : "Erro ao atualizar pack.");
+      setPackError(err instanceof Error ? err.message : "Erro ao atualizar pacote.");
     } finally {
       setPackSavingId(null);
     }
@@ -1052,10 +954,6 @@ export default function ServicoDetalhePage() {
                   setFormAddressId(null);
                   setFormAddressLabel(null);
                   setFormAddressQuery("");
-                  setFormAddressSuggestions([]);
-                  setFormAddressError(null);
-                  setShowFormAddressSuggestions(false);
-                  activeFormProviderRef.current = null;
                 }
               }}
             >
@@ -1065,74 +963,38 @@ export default function ServicoDetalhePage() {
           </div>
           {formLocationMode === "FIXED" && (
             <div>
-              <label className="text-sm text-white/80">Morada (Apple Maps)</label>
-              <div className="relative mt-1 overflow-visible">
-                <input
-                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={formAddressQuery}
-                  onChange={(event) => {
-                    const next = event.target.value;
-                    setFormAddressQuery(next);
-                    setFormAddressId(null);
+              <AddressCombobox
+                label="Morada (Apple Maps)"
+                className="mt-1"
+                value={formAddressQuery}
+                onValueChange={(next) => {
+                  setFormAddressQuery(next);
+                  if (!next.trim()) {
                     setFormAddressLabel(null);
-                    setFormAddressError(null);
-                    activeFormProviderRef.current = null;
-                    setShowFormAddressSuggestions(true);
-                  }}
-                  onFocus={() => setShowFormAddressSuggestions(true)}
-                  onBlur={() => {
-                    if (formAddressBlurTimeoutRef.current) {
-                      clearTimeout(formAddressBlurTimeoutRef.current);
-                    }
-                    formAddressBlurTimeoutRef.current = setTimeout(
-                      () => setShowFormAddressSuggestions(false),
-                      120,
-                    );
-                  }}
-                  placeholder="Procura um local ou morada"
-                />
-                {showFormAddressSuggestions && (
-                  <div className="mt-2 w-full max-h-56 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
-                    {formAddressLoading ? (
-                      <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar…</div>
-                    ) : formAddressError ? (
-                      <div className="px-3 py-2 text-sm text-amber-100">{formAddressError}</div>
-                    ) : formAddressSuggestions.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-white/60">Sem sugestões.</div>
-                    ) : (
-                      formAddressSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion.providerId}
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => handleSelectFormAddressSuggestion(suggestion)}
-                          className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                        >
-                          <div className="flex w-full items-center justify-between gap-3">
-                            <span className="font-semibold text-white">{suggestion.label}</span>
-                            <div className="flex items-center gap-2 text-[12px] text-white/65">
-                              <span>{suggestion.city || "—"}</span>
-                              {suggestion.sourceProvider === "APPLE_MAPS" && (
-                                <span className="rounded-full border border-white/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em]">
-                                  Apple
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                  }
+                }}
+                addressId={formAddressId}
+                onAddressIdChange={(next) => {
+                  setFormAddressId(next);
+                  if (!next) {
+                    setFormAddressLabel(null);
+                  }
+                }}
+                onDetailsResolved={(details: GeoDetailsItem | null) => {
+                  if (!details?.addressId) {
+                    setFormAddressLabel(null);
+                    return;
+                  }
+                  setFormAddressLabel(details.formattedAddress?.trim() || details.address?.trim() || null);
+                }}
+                minChars={2}
+                maxItems={10}
+                enableRecents
+                enableGeolocationCta
+              />
               {formAddressId && (
                 <div className="mt-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
                   Morada confirmada: {formAddressLabel || formAddressQuery}
-                </div>
-              )}
-              {formAddressError && (
-                <div className="mt-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                  {formAddressError}
                 </div>
               )}
             </div>
@@ -1168,7 +1030,7 @@ export default function ServicoDetalhePage() {
           <button
             type="button"
             className={CTA_SECONDARY}
-            onClick={() => router.push(appendOrganizationIdToHref("/org/reservas", organizationId))}
+            onClick={() => router.push(appendOrganizationIdToHref("/org/bookings", organizationId))}
           >
             Voltar
           </button>
@@ -1972,7 +1834,7 @@ export default function ServicoDetalhePage() {
           type="button"
           className={CTA_SECONDARY}
           onClick={() =>
-            router.push(appendOrganizationIdToHref("/org/reservas?tab=availability", organizationId))
+            router.push(appendOrganizationIdToHref("/org/bookings?tab=availability", organizationId))
           }
         >
           Abrir agenda
@@ -2036,13 +1898,13 @@ export default function ServicoDetalhePage() {
           )}
 
           <button type="button" className={CTA_PRIMARY} onClick={handlePackCreate} disabled={packSaving}>
-            {packSaving ? "A criar..." : "Criar pack"}
+            {packSaving ? "A criar..." : "Criar pacote"}
           </button>
 
           <div className="space-y-3">
             {packs.length === 0 && (
               <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-                Sem packs criados.
+                Sem pacotes criados.
               </div>
             )}
             {packs.map((pack) => {
@@ -2052,7 +1914,7 @@ export default function ServicoDetalhePage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-white">
-                      {draft?.label || pack.label || "Pack"} · {draft?.quantity ?? pack.quantity} unidades
+                      {draft?.label || pack.label || "Pacote"} · {draft?.quantity ?? pack.quantity} unidades
                     </p>
                     <p className="text-[12px] text-white/60">
                       {draft?.price ? `${draft.price} ${service?.currency ?? "EUR"}` : formatMoney(pack.packPriceCents, service?.currency ?? "EUR")}

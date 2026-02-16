@@ -722,7 +722,7 @@ export default function ReservasBookingClient({
       params.set("addons", addonsParam);
     }
 
-    fetch(`/api/servicos/${selectedServiceId}/slots?${params.toString()}`, { cache: "no-store" })
+    fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (!data?.ok) {

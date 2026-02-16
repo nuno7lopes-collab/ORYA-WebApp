@@ -5,8 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import DoubleRange from "@/app/components/mobile/DoubleRange";
 import { cn } from "@/lib/utils";
-import { fetchGeoAutocomplete } from "@/lib/geo/client";
-import type { GeoAutocompleteItem } from "@/lib/geo/types";
+import { AddressCombobox } from "@/components/ui/address-combobox";
+import type { GeoDetailsItem } from "@/lib/geo/types";
 import type { DiscoverDateFilter, DiscoverWorld } from "@/app/descobrir/_lib/discoverFeed";
 
 const WORLD_ORDER: DiscoverWorld[] = ["padel", "events", "services"];
@@ -91,13 +91,12 @@ export default function DiscoverFilters({
   const [priceMax, setPriceMax] = useState(initialPriceMax);
   const [distanceKm, setDistanceKm] = useState<number>(initialDistanceKm ?? 5);
   const [distanceTouched, setDistanceTouched] = useState(false);
-  const [suggestions, setSuggestions] = useState<GeoAutocompleteItem[]>([]);
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [cityAddressId, setCityAddressId] = useState<string | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [isPriceOpen, setIsPriceOpen] = useState(false);
   const priceRef = useRef<HTMLDivElement | null>(null);
-  const suggestionsRef = useRef<HTMLDivElement | null>(null);
   const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cityTypingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const distanceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latParam = searchParams.get("lat");
@@ -131,18 +130,6 @@ export default function DiscoverFilters({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [isPriceOpen]);
-
-  useEffect(() => {
-    if (!suggestionsOpen) return;
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (suggestionsRef.current && target && !suggestionsRef.current.contains(target)) {
-        setSuggestionsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [suggestionsOpen]);
 
   const updateParams = (updater: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -285,25 +272,23 @@ export default function DiscoverFilters({
   }, [distanceKm, hasCoords]);
 
   useEffect(() => {
-    const trimmed = city.trim();
-    if (!trimmed || trimmed.length < 2) {
-      setSuggestions([]);
-      setSuggestionsOpen(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      fetchGeoAutocomplete(trimmed)
-        .then((items) => {
-          setSuggestions(items);
-          setSuggestionsOpen(true);
-        })
-        .catch(() => {
-          setSuggestions([]);
-          setSuggestionsOpen(false);
-        });
+    if (cityTypingRef.current) clearTimeout(cityTypingRef.current);
+    if (city.trim() === currentCity.trim()) return;
+    cityTypingRef.current = setTimeout(() => {
+      applyCity(city);
     }, 350);
-    return () => clearTimeout(timer);
-  }, [city]);
+    return () => {
+      if (cityTypingRef.current) clearTimeout(cityTypingRef.current);
+    };
+  }, [city, currentCity]);
+
+  const applyCityFromDetails = (details: GeoDetailsItem | null) => {
+    if (!details) return;
+    const nextCity = (details.city || details.formattedAddress || details.name || city).trim();
+    if (!nextCity) return;
+    setCity(nextCity);
+    applyCity(nextCity);
+  };
 
   const applyCity = (nextCity: string) => {
     setCity(nextCity);
@@ -330,38 +315,21 @@ export default function DiscoverFilters({
             className="w-full rounded-2xl border border-white/12 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
           />
         </div>
-        <div className="relative" ref={suggestionsRef}>
-          <div className="flex flex-col gap-2">
-            <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">Cidade</label>
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") applyCity(city);
-              }}
-              placeholder="Lisboa, Porto..."
-              className="w-full rounded-2xl border border-white/12 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
-            />
-          </div>
-          {suggestionsOpen && suggestions.length > 0 && (
-            <div className="absolute z-40 mt-2 w-full rounded-2xl border border-white/10 bg-[#0b1224]/95 p-2 backdrop-blur-xl">
-              {suggestions.map((item) => (
-                <button
-                  key={item.providerId}
-                  type="button"
-                  className="flex w-full flex-col gap-1 rounded-xl px-3 py-2 text-left text-xs text-white/80 hover:bg-white/5"
-                  onClick={() => {
-                    const label = item.city || item.name || item.label;
-                    applyCity(label || "");
-                    setSuggestionsOpen(false);
-                  }}
-                >
-                  <span className="text-sm text-white">{item.label}</span>
-                  {item.city && <span className="text-[11px] text-white/50">{item.city}</span>}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex flex-col gap-2">
+          <AddressCombobox
+            label="Cidade"
+            value={city}
+            onValueChange={(next) => {
+              setCity(next);
+              setCityAddressId(null);
+            }}
+            addressId={cityAddressId}
+            onAddressIdChange={setCityAddressId}
+            onDetailsResolved={applyCityFromDetails}
+            inputClassName="w-full rounded-2xl border border-white/12 bg-white/5 px-4 py-2 text-sm text-white outline-none focus:border-white/30"
+            placeholder="Lisboa, Porto..."
+            enableGeolocationCta={false}
+          />
         </div>
       </div>
 

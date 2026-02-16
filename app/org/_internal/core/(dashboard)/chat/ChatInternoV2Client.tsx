@@ -31,7 +31,7 @@ const TYPING_TTL_MS = 8000;
 const MAX_COMMANDS = 5;
 const EMOJI_CHOICES = ["👍", "❤️", "😂", "🎯", "👏", "😅"];
 const WS_PROTOCOL_BASE = "orya-chat.v1";
-const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
+const WS_APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION?.trim() || "1.0.0";
 
 type Reaction = {
   messageId: string;
@@ -185,6 +185,9 @@ type SearchResult = {
 };
 
 type ChatEvent =
+  | {
+      type: "handshake:ok";
+    }
   | {
       type: "message:new";
       conversationId: string;
@@ -961,10 +964,13 @@ export default function ChatInternoV2Client() {
     }, WS_PING_INTERVAL_MS);
   }, [sendWsMessage, stopWsPing]);
 
-  const scheduleWsReconnect = useCallback(() => {
+  const scheduleWsReconnect = useCallback((delayOverrideMs?: number) => {
     if (wsReconnectRef.current || isOfflineRef.current) return;
-    const delay = wsBackoffRef.current;
-    wsBackoffRef.current = Math.min(delay * 1.7, 10000);
+    const useOverride = Number.isFinite(delayOverrideMs) && (delayOverrideMs as number) > 0;
+    const delay = useOverride ? Math.trunc(delayOverrideMs as number) : wsBackoffRef.current;
+    wsBackoffRef.current = useOverride
+      ? Math.max(10000, Math.min(Math.trunc(delay * 1.2), 60000))
+      : Math.min(delay * 1.7, 10000);
     wsReconnectRef.current = setTimeout(() => {
       wsReconnectRef.current = null;
       connectWsRef.current?.();
@@ -1240,44 +1246,60 @@ export default function ChatInternoV2Client() {
     }
 
     const wsUrl = new URL(wsBaseUrl);
-    wsUrl.searchParams.set("organizationId", String(orgId));
-
-    const ws = new WebSocket(wsUrl.toString(), [
-      WS_PROTOCOL_BASE,
-      `${WS_AUTH_PROTOCOL_PREFIX}${token}`,
-    ]);
+    const ws = new WebSocket(wsUrl.toString(), [WS_PROTOCOL_BASE]);
     wsRef.current = ws;
+    let handshakeReady = false;
 
     ws.onopen = () => {
-      wsConnectingRef.current = false;
-      wsBackoffRef.current = 500;
-      setWsStatus("open");
-      startWsPing();
-      sendWsMessage({ type: "conversation:sync" });
-      loadConversations({ incremental: true });
-      const activeId = activeConversationIdRef.current;
-      if (activeId) {
-        loadMessages({ conversationId: activeId, refreshWindow: true });
-      }
+      ws.send(
+        JSON.stringify({
+          auth: `Bearer ${token}`,
+          app_version: WS_APP_VERSION,
+          context: {
+            type: "org",
+            id: `org_${orgId}`,
+          },
+          client_platform: "web",
+        }),
+      );
     };
 
     ws.onmessage = (messageEvent) => {
       try {
         const parsed = JSON.parse(messageEvent.data) as ChatEvent;
         if (!parsed?.type) return;
+        if (parsed.type === "handshake:ok") {
+          handshakeReady = true;
+          wsConnectingRef.current = false;
+          wsBackoffRef.current = 500;
+          setWsStatus("open");
+          startWsPing();
+          sendWsMessage({ type: "conversation:sync" });
+          loadConversations({ incremental: true });
+          const activeId = activeConversationIdRef.current;
+          if (activeId) {
+            loadMessages({ conversationId: activeId, refreshWindow: true });
+          }
+          return;
+        }
+        if (!handshakeReady) return;
         handleChatEvent(parsed);
       } catch {
         // ignore malformed payloads
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      const reason = typeof event.reason === "string" ? event.reason : "";
       wsConnectingRef.current = false;
       setWsStatus("closed");
+      if (reason === "RATE_LIMITED") {
+        setWsError("RATE_LIMITED");
+      }
       stopWsPing();
       wsRef.current = null;
       if (!isOfflineRef.current) {
-        scheduleWsReconnect();
+        scheduleWsReconnect(reason === "RATE_LIMITED" ? 60000 : undefined);
       }
     };
 
@@ -2400,7 +2422,7 @@ export default function ChatInternoV2Client() {
         ref={centerPaneRef}
         tabIndex={-1}
         className="flex min-h-0 min-w-0 flex-col bg-[var(--orya-surface-2)] outline-none focus:ring-2 focus:ring-[#6BFFFF]/50"
-        aria-label="Conversacao ativa"
+        aria-label="Conversação ativa"
       >
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-2">
           <div className="flex items-center gap-2.5">
@@ -2926,7 +2948,7 @@ export default function ChatInternoV2Client() {
               <input
                 value={membersSearch}
                 onChange={(event) => setMembersSearch(event.target.value)}
-                placeholder="Pesquisar por nome ou role"
+                placeholder="Pesquisar por nome ou função"
                 className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               />
             </div>
@@ -2968,7 +2990,7 @@ export default function ChatInternoV2Client() {
                           )}
                           aria-hidden="true"
                         />
-                        <span className={subtlePill}>{member.role === "ADMIN" ? "Admin" : "Membro"}</span>
+                        <span className={subtlePill}>{member.role === "ADMIN" ? "Administrador" : "Membro"}</span>
                       </div>
                     </div>
                   );

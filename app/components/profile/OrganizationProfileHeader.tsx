@@ -22,6 +22,8 @@ type OrganizationProfileHeaderProps = {
   isVerified?: boolean;
   instagramHref?: string | null;
   youtubeHref?: string | null;
+  tiktokHref?: string | null;
+  linkedinHref?: string | null;
   websiteHref?: string | null;
   contactEmail?: string | null;
 };
@@ -47,6 +49,8 @@ export default function OrganizationProfileHeader({
   isPublic = true,
   instagramHref,
   youtubeHref,
+  tiktokHref,
+  linkedinHref,
   websiteHref,
   contactEmail,
 }: OrganizationProfileHeaderProps) {
@@ -60,7 +64,7 @@ export default function OrganizationProfileHeader({
   const mailtoHref = contactEmail ? `mailto:${contactEmail}` : null;
   const iconBaseClass =
     "inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/8 text-white/85 transition hover:border-white/40 hover:bg-white/12";
-  const editProfileHref = buildOrgHref(organizationId, "/profile");
+  const editProfileHref = buildOrgHref(organizationId, "/settings");
 
   useEffect(() => {
     setAvatar(avatarUrl);
@@ -163,6 +167,38 @@ export default function OrganizationProfileHeader({
             <path
               fill="currentColor"
               d="M21.6 7.2a2.7 2.7 0 0 0-1.9-1.9C18 4.8 12 4.8 12 4.8s-6 0-7.7.5a2.7 2.7 0 0 0-1.9 1.9A28.3 28.3 0 0 0 2 12a28.3 28.3 0 0 0 .4 4.8 2.7 2.7 0 0 0 1.9 1.9c1.7.5 7.7.5 7.7.5s6 0 7.7-.5a2.7 2.7 0 0 0 1.9-1.9A28.3 28.3 0 0 0 22 12a28.3 28.3 0 0 0-.4-4.8ZM10 15.5v-7l6 3.5-6 3.5Z"
+            />
+          </svg>
+        </a>
+      )}
+      {tiktokHref && (
+        <a
+          href={tiktokHref}
+          target="_blank"
+          rel="noreferrer"
+          className={`${iconBaseClass} border-white/35 bg-white/14 text-white`}
+          aria-label="TikTok"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M14.8 4.5c.6 1.1 1.5 1.8 2.8 2V9a7 7 0 0 1-2.8-.8v6.2a4.7 4.7 0 1 1-4.6-4.7c.3 0 .6 0 .9.1v2.5a2.1 2.1 0 1 0 1.2 2V4.5h2.5Z"
+            />
+          </svg>
+        </a>
+      )}
+      {linkedinHref && (
+        <a
+          href={linkedinHref}
+          target="_blank"
+          rel="noreferrer"
+          className={`${iconBaseClass} border-blue-300/45 bg-blue-500/14 text-blue-100`}
+          aria-label="LinkedIn"
+        >
+          <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M6.3 8.1a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3ZM4.9 9.4h2.8V19H4.9V9.4Zm4.5 0H12v1.3h.1c.4-.8 1.4-1.6 2.8-1.6c3 0 3.6 2 3.6 4.5V19h-2.9v-4.9c0-1.2 0-2.7-1.7-2.7s-1.9 1.3-1.9 2.6V19H9.4V9.4Z"
             />
           </svg>
         </a>

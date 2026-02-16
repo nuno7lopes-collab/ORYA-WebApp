@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordCrmIngestOutbox } from "@/domain/crm/outbox";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 import type {
   ConsentStatus,
   ConsentType,
@@ -59,6 +60,9 @@ export async function ingestCrmInteraction(
     input.idempotencyKey?.trim() ||
     input.externalId?.trim() ||
     (input.sourceId ? `${input.type}:${input.sourceType}:${input.sourceId}` : eventId);
+  const contactPhoneRaw = typeof input.contactPhone === "string" ? input.contactPhone.trim() : "";
+  const normalizedContactPhone =
+    contactPhoneRaw && isValidPhone(contactPhoneRaw) ? normalizePhone(contactPhoneRaw) : null;
 
   const payload = {
     interaction: {
@@ -75,7 +79,7 @@ export async function ingestCrmInteraction(
       userId: input.userId ?? null,
       emailIdentityId: input.emailIdentityId ?? null,
       email: input.contactEmail ?? null,
-      phone: input.contactPhone ?? null,
+      phone: normalizedContactPhone,
       displayName: input.displayName ?? null,
       contactType: input.contactType ?? null,
       legalBasis: input.legalBasis ?? null,

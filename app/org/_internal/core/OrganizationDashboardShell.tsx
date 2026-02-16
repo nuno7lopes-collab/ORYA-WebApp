@@ -102,7 +102,7 @@ export default function OrganizationDashboardShell({
   user: OrganizationShellUser | null;
   role?: string | null;
   isSuspended: boolean;
-  emailVerification?: { isVerified: boolean; email: string | null } | null;
+  emailVerification?: { isVerified: boolean; email: string | null; pendingEmail?: string | null } | null;
   platformOfficialEmail?: string | null;
   children: ReactNode;
 }) {
@@ -113,10 +113,13 @@ export default function OrganizationDashboardShell({
     pathname?.startsWith("/org/settings") ||
     pathname?.startsWith("/org/owner/confirm") ||
     pathname?.includes("/settings");
-  const isChatRoute = pathname?.startsWith("/org/chat") || pathname?.includes("/chat");
+  const isChatRoute = Boolean(pathname && (/^\/org\/\d+\/chat(?:\/|$)/.test(pathname) || pathname.includes("/chat")));
+  const isOverviewRoute = pathname?.includes("/overview") ?? false;
   const emailGateActive = Boolean(emailVerification && !emailVerification.isVerified);
   const [emailGateDismissed, setEmailGateDismissed] = useState(false);
   const [emailGateToast, setEmailGateToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [suspensionActionLoading, setSuspensionActionLoading] = useState(false);
+  const [suspensionActionMessage, setSuspensionActionMessage] = useState<string | null>(null);
   const showEmailGate = emailGateActive && !emailGateDismissed && !isSettingsRoute;
   const syncInFlightRef = useRef(false);
   const lastSyncAttemptRef = useRef<{ id: number; at: number } | null>(null);
@@ -230,6 +233,57 @@ export default function OrganizationDashboardShell({
     });
   };
   const settingsHref = activeOrg?.id ? buildOrgHref(activeOrg.id, "/settings") : buildOrgHubHref("/organizations");
+  const canReactivateSuspendedOrg = Boolean(isSuspended && role === "OWNER" && activeOrg?.id);
+
+  const handleReactivateSuspendedOrg = async () => {
+    if (!activeOrg?.id) return;
+    setSuspensionActionLoading(true);
+    setSuspensionActionMessage(null);
+    try {
+      const invoke = async (stepUp?: { stepUpChallengeId?: string; stepUpCode?: string }) => {
+        const res = await fetch(`/api/org-hub/organizations/${activeOrg.id}/suspend`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reasonCode: "OWNER_RESTORE",
+            ...(stepUp?.stepUpChallengeId ? { stepUpChallengeId: stepUp.stepUpChallengeId } : {}),
+            ...(stepUp?.stepUpCode ? { stepUpCode: stepUp.stepUpCode } : {}),
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        return { res, json };
+      };
+
+      let { res, json } = await invoke();
+      if ((!res.ok || json?.ok === false) && String(json?.errorCode ?? json?.error ?? "").toUpperCase() === "STEP_UP_REQUIRED") {
+        const challengeId = typeof json?.details?.challengeId === "string" ? json.details.challengeId : undefined;
+        const input =
+          typeof window !== "undefined"
+            ? window.prompt("Introduz o código de confirmação (6 dígitos) para reativar a organização:")
+            : null;
+        const code = typeof input === "string" ? input.trim() : "";
+        if (!code) {
+          setSuspensionActionMessage("Operação cancelada. Código não introduzido.");
+          return;
+        }
+        const retry = await invoke({ stepUpChallengeId: challengeId, stepUpCode: code });
+        res = retry.res;
+        json = retry.json;
+      }
+
+      if (!res.ok || json?.ok === false) {
+        setSuspensionActionMessage(json?.message || json?.error || "Não foi possível reativar.");
+        return;
+      }
+      setSuspensionActionMessage("Organização reativada.");
+      router.refresh();
+    } catch (err) {
+      console.error("[organization-shell][reactivate]", err);
+      setSuspensionActionMessage("Erro inesperado ao reativar.");
+    } finally {
+      setSuspensionActionLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen w-full min-w-0 flex-col text-white">
@@ -270,7 +324,7 @@ export default function OrganizationDashboardShell({
               <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="space-y-1">
-                    <p className="font-semibold">Organizacao suspensa.</p>
+                    <p className="font-semibold">Organização suspensa.</p>
                     <p className="text-[12px] text-amber-100/80">
                       Apenas leitura. Se precisares de ajuda,{" "}
                       {platformOfficialEmail ? (
@@ -289,7 +343,20 @@ export default function OrganizationDashboardShell({
                       )}
                     </p>
                   </div>
+                  {canReactivateSuspendedOrg ? (
+                    <button
+                      type="button"
+                      onClick={handleReactivateSuspendedOrg}
+                      disabled={suspensionActionLoading}
+                      className="inline-flex items-center rounded-full border border-amber-200/60 bg-amber-200/15 px-4 py-2 text-[12px] font-semibold text-amber-50 hover:bg-amber-200/25 disabled:opacity-60"
+                    >
+                      {suspensionActionLoading ? "A reativar…" : "Reativar organização"}
+                    </button>
+                  ) : null}
                 </div>
+                {suspensionActionMessage ? (
+                  <p className="mt-2 text-[12px] text-amber-100">{suspensionActionMessage}</p>
+                ) : null}
               </div>
             ) : null}
             {showEmailGate ? (
@@ -324,7 +391,7 @@ export default function OrganizationDashboardShell({
                 className={cn(
                   "relative isolate overflow-hidden",
                   isChatRoute && "h-full min-h-0",
-                  isSuspended && "pointer-events-none select-none opacity-80",
+                  isSuspended && !isOverviewRoute && !isSettingsRoute && "pointer-events-none select-none opacity-80",
                 )}
                 aria-disabled={isSuspended || undefined}
               >

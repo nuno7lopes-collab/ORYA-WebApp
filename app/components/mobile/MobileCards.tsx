@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { defaultBlurDataURL } from "@/lib/image";
 
-type TagTone = "live" | "soon" | "default";
+type TagTone = "now" | "soon" | "default";
 
 type StatusTagProps = {
   label: string;
@@ -52,7 +52,7 @@ type EventListCardProps = {
 
 export function StatusTag({ label, tone = "default", className }: StatusTagProps) {
   const toneClass =
-    tone === "live"
+    tone === "now"
       ? "border-[#ff5bd6]/60 bg-[#ff5bd6]/15 text-[#ffd7f4]"
       : tone === "soon"
         ? "border-[#6bffff]/50 bg-[#6bffff]/15 text-[#d7fbff]"

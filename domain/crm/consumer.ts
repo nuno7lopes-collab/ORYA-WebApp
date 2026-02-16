@@ -12,6 +12,7 @@ import { CRM_OUTBOX_EVENTS } from "@/domain/crm/outbox";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
 import { normalizeEmail } from "@/lib/utils/email";
 import { applyLoyaltyForInteraction } from "@/lib/loyalty/engine";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 
 const CRM_EVENT_TYPE_SET = new Set(["crm.interaction", "crm.padel_profile"]);
 
@@ -86,6 +87,13 @@ function parseDate(value: unknown): Date | null {
   return null;
 }
 
+function normalizeContactPhone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || !isValidPhone(trimmed)) return null;
+  return normalizePhone(trimmed);
+}
+
 function parseCrmInteractionPayload(raw: Record<string, unknown>) {
   const interactionRaw = (raw.interaction && typeof raw.interaction === "object" ? raw.interaction : raw) as Record<
     string,
@@ -124,7 +132,7 @@ function parseCrmInteractionPayload(raw: Record<string, unknown>) {
     userId: typeof contactRaw.userId === "string" ? contactRaw.userId : null,
     emailIdentityId: typeof contactRaw.emailIdentityId === "string" ? contactRaw.emailIdentityId : null,
     email: typeof contactRaw.email === "string" ? contactRaw.email : null,
-    phone: typeof contactRaw.phone === "string" ? contactRaw.phone : null,
+    phone: normalizeContactPhone(contactRaw.phone),
     displayName: typeof contactRaw.displayName === "string" ? contactRaw.displayName : null,
     contactType: typeof contactRaw.contactType === "string" ? contactRaw.contactType : null,
     legalBasis: typeof contactRaw.legalBasis === "string" ? contactRaw.legalBasis : null,
@@ -787,7 +795,7 @@ export async function consumeCrmEventLog(eventLogId: string) {
       contact.email = authUser.email;
     }
     if (!contact.phone && profile?.contactPhone) {
-      contact.phone = profile.contactPhone;
+      contact.phone = normalizeContactPhone(profile.contactPhone);
     }
   }
 

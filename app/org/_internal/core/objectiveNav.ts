@@ -1,6 +1,6 @@
 import { resolvePrimaryModule, type OperationModule } from "@/lib/organizationCategories";
 
-export type ObjectiveTab = "create" | "manage" | "promote" | "analyze" | "profile";
+export type ObjectiveTab = "create" | "manage" | "promote" | "analyze";
 
 export type ObjectiveNavContext = {
   primaryModule?: string | null;
@@ -27,15 +27,15 @@ const PRIMARY_META: Record<
 > = {
   EVENTOS: {
     createLabel: "Criar evento",
-    createHref: "/org/eventos/novo",
+    createHref: "/org/events/new",
   },
   TORNEIOS: {
     createLabel: "Criar torneio",
-    createHref: "/org/padel/torneios/novo",
+    createHref: "/org/padel/tournaments/create",
   },
   RESERVAS: {
     createLabel: "Criar serviço",
-    createHref: "/org/reservas?create=service",
+    createHref: "/org/bookings?create=service",
   },
 };
 const PADEL_CLUB_SECTION = "padel-club";
@@ -70,14 +70,22 @@ export function getObjectiveSections(
     if (manageBase) {
       return section === "eventos" ? manageBase : `${manageBase}?section=${section}`;
     }
-    return `/org/manage?section=${section}`;
+    if (section === "eventos") return "/org/events";
+    if (section === "reservas") return "/org/bookings";
+    if (section === "inscricoes") return "/org/forms";
+    if (section === PADEL_CLUB_SECTION) return "/org/padel/clubs";
+    if (section === PADEL_TOURNAMENTS_SECTION) return "/org/padel/tournaments";
+    if (section === "staff") return "/org/team";
+    if (section === "chat") return "/org/chat";
+    if (section === "crm") return "/org/crm/customers";
+    return "/org/events";
   };
 
   if (objective === "create") {
     sections.push({
       id: "overview",
-      label: "Dashboard",
-      href: "/org/overview",
+      label: "Painel",
+      href: "/org",
     });
     sections.push({
       id: "primary",
@@ -88,7 +96,7 @@ export function getObjectiveSections(
       sections.push({
         id: "inscricoes",
         label: "Formulários",
-        href: "/org/inscricoes",
+        href: "/org/forms",
       });
     }
     const focusId = options?.focusSectionId ?? null;
@@ -103,7 +111,7 @@ export function getObjectiveSections(
     const focusId = options?.focusSectionId ?? null;
     const operationOverride = options?.operationOverride ?? null;
     if (focusId === "inscricoes" && hasModule(context.modules, "INSCRICOES")) {
-      const listHref = "/org/inscricoes";
+      const listHref = "/org/forms";
       const detailBase = options?.inscricoesBasePath ?? null;
       const canDeepLink = Boolean(detailBase);
       return [
@@ -126,7 +134,7 @@ export function getObjectiveSections(
     }
 
     if (operationOverride === "RESERVAS") {
-      const baseHref = "/org/reservas";
+      const baseHref = "/org/bookings";
       sections.push({
         id: "agenda",
         label: "Agenda",
@@ -239,7 +247,7 @@ export function getObjectiveSections(
         sections.push({
           id: "inscricoes",
           label: "Formulários",
-          href: "/org/inscricoes",
+          href: "/org/forms",
         });
       }
       if (focusId) {
@@ -274,7 +282,7 @@ export function getObjectiveSections(
       sections.push({
         id: "checkin",
         label: "Check-in",
-        href: "/org/scan",
+        href: "/org/check-in",
       });
     }
     if (hasModule(context.modules, "CRM")) {
@@ -283,9 +291,9 @@ export function getObjectiveSections(
         label: "CRM",
         href: "/org/crm",
         items: [
-          { id: "crm-clientes", label: "Clientes", href: "/org/crm/clientes" },
-          { id: "crm-segmentos", label: "Segmentos", href: "/org/crm/segmentos" },
-          { id: "crm-campanhas", label: "Campanhas", href: "/org/crm/campanhas" },
+          { id: "crm-clientes", label: "Clientes", href: "/org/crm/customers" },
+          { id: "crm-segmentos", label: "Segmentos", href: "/org/crm/segments" },
+          { id: "crm-campanhas", label: "Campanhas", href: "/org/crm/campaigns" },
           { id: "crm-loyalty", label: "Pontos & recompensas", href: "/org/crm/loyalty" },
         ],
       });
@@ -294,7 +302,7 @@ export function getObjectiveSections(
       sections.push({
         id: "inscricoes",
         label: "Formulários",
-        href: "/org/inscricoes",
+        href: "/org/forms",
       });
     }
     if (focusId) {
@@ -305,7 +313,7 @@ export function getObjectiveSections(
   }
 
   if (objective === "promote") {
-    const baseHref = "/org/promote?section=marketing&marketing=";
+    const baseHref = "/org/marketing?marketing=";
     sections.push({
       id: "overview",
       label: "Visão geral",
@@ -334,50 +342,34 @@ export function getObjectiveSections(
     return sections;
   }
 
-  if (objective === "profile") {
-    const sections = [
-      {
-        id: "perfil",
-        label: "Perfil",
-        href: "/org/profile",
-      },
-    ];
-    const focusId = options?.focusSectionId ?? null;
-    if (focusId) {
-      const focused = sections.find((section) => section.id === focusId);
-      return focused ? [focused] : sections;
-    }
-    return sections;
-  }
-
   if (objective === "analyze") {
     sections.push(
       {
         id: "overview",
         label: "Visão geral",
-        href: "/org/analyze?section=overview",
+        href: "/org/finance?tab=analyze&section=overview",
       },
       {
         id: "vendas",
         label: "Vendas",
-        href: "/org/analyze?section=vendas",
+        href: "/org/finance?tab=analyze&section=vendas",
       },
     );
     sections.push(
       {
         id: "financas",
         label: "Finanças",
-        href: "/org/analyze?section=financas",
+        href: "/org/finance?tab=analyze&section=financas",
       },
       {
         id: "invoices",
         label: "Faturação",
-        href: "/org/analyze?section=invoices",
+        href: "/org/finance?tab=analyze&section=invoices",
       },
       {
         id: "ops",
-        label: "Ops Feed",
-        href: "/org/analyze?section=ops",
+        label: "Feed operacional",
+        href: "/org/finance?tab=analyze&section=ops",
       },
     );
     const focusId = options?.focusSectionId ?? null;

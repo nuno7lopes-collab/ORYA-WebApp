@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getOrgTransferEnabled, getPlatformFees, getPlatformOfficialEmail } from "@/lib/platformSettings";
-import { isValidPhone, normalizePhone } from "@/lib/phone";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { isValidWebsite } from "@/lib/validation/organization";
 import {
@@ -14,9 +14,10 @@ import {
 } from "@/lib/profileMedia";
 import { sendEmail } from "@/lib/emailClient";
 import { requireOrganizationIdFromRequest } from "@/lib/organizationId";
-import { mergeLayoutWithDefaults, sanitizePublicProfileLayout } from "@/lib/publicProfileLayout";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
+import { normalizePublicSocialUrl } from "@/lib/publicSocialLinks";
+import { ensureOrganizationEmailVerified, ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { getOrganizationSuspensionSnapshot } from "@/lib/organizationSuspension";
 import {
   DEFAULT_PRIMARY_MODULE,
   parsePrimaryModule,
@@ -195,7 +196,16 @@ async function _GET(req: NextRequest) {
     const memberPermissionsModel = (prisma as {
       organizationMemberPermission?: { findMany?: (args: unknown) => Promise<unknown[]> };
     }).organizationMemberPermission;
-    const [platformFees, orgTransferEnabled, platformOfficialEmail, organizationAddressRef, organizationModules, memberPermissions] =
+    const [
+      platformFees,
+      orgTransferEnabled,
+      platformOfficialEmail,
+      organizationAddressRef,
+      organizationModules,
+      pendingOfficialEmailRequest,
+      memberPermissions,
+      organizationSuspension,
+    ] =
       await Promise.all([
         getPlatformFees(),
         getOrgTransferEnabled(),
@@ -213,6 +223,13 @@ async function _GET(req: NextRequest) {
               orderBy: { moduleKey: "asc" },
             })
           : Promise.resolve([]),
+        organization
+          ? prisma.organizationOfficialEmailRequest.findFirst({
+              where: { organizationId: organization.id, status: "PENDING" },
+              select: { id: true, newEmail: true, createdAt: true, expiresAt: true },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            })
+          : Promise.resolve(null),
         organization && membership
           ? memberPermissionsModel?.findMany
             ? memberPermissionsModel.findMany({
@@ -226,6 +243,13 @@ async function _GET(req: NextRequest) {
               })
             : Promise.resolve([])
           : Promise.resolve([]),
+        organization
+          ? getOrganizationSuspensionSnapshot({
+              organizationId: organization.id,
+              status: organization.status,
+              updatedAt: organization.updatedAt ?? null,
+            })
+          : Promise.resolve(null),
       ]);
 
     const profilePayload = {
@@ -264,6 +288,24 @@ async function _GET(req: NextRequest) {
           alertsPayoutEnabled: (organization as { alertsPayoutEnabled?: boolean | null }).alertsPayoutEnabled ?? false,
           officialEmail: (organization as { officialEmail?: string | null }).officialEmail ?? null,
           officialEmailVerifiedAt: (organization as { officialEmailVerifiedAt?: Date | null }).officialEmailVerifiedAt ?? null,
+          officialEmailPending: pendingOfficialEmailRequest
+            ? {
+                requestId: pendingOfficialEmailRequest.id,
+                newEmail: pendingOfficialEmailRequest.newEmail,
+                createdAt: pendingOfficialEmailRequest.createdAt,
+                expiresAt: pendingOfficialEmailRequest.expiresAt,
+              }
+            : null,
+          suspension: organizationSuspension
+            ? {
+                isSuspended: organizationSuspension.isSuspended,
+                suspendedAt: organizationSuspension.suspendedAt,
+                reactivationDeadlineAt: organizationSuspension.reactivationDeadlineAt,
+                reactivationWindowOpen: organizationSuspension.reactivationWindowOpen,
+                remainingWindowDays: organizationSuspension.remainingWindowDays,
+                suspensionTimestampUnknown: organizationSuspension.suspensionTimestampUnknown,
+              }
+            : null,
           brandingAvatarUrl: (organization as { brandingAvatarUrl?: string | null }).brandingAvatarUrl ?? null,
           brandingCoverUrl: (organization as { brandingCoverUrl?: string | null }).brandingCoverUrl ?? null,
           brandingPrimaryColor: (organization as { brandingPrimaryColor?: string | null }).brandingPrimaryColor ?? null,
@@ -282,11 +324,11 @@ async function _GET(req: NextRequest) {
           publicWebsite: (organization as { publicWebsite?: string | null }).publicWebsite ?? null,
           publicInstagram: (organization as { publicInstagram?: string | null }).publicInstagram ?? null,
           publicYoutube: (organization as { publicYoutube?: string | null }).publicYoutube ?? null,
+          publicTiktok: (organization as { publicTiktok?: string | null }).publicTiktok ?? null,
+          publicLinkedin: (organization as { publicLinkedin?: string | null }).publicLinkedin ?? null,
           publicDescription: (organization as { publicDescription?: string | null }).publicDescription ?? null,
           publicHours: (organization as { publicHours?: string | null }).publicHours ?? null,
-          publicProfileLayout: (organization as { publicProfileLayout?: unknown }).publicProfileLayout ?? null,
           infoRules: (organization as { infoRules?: string | null }).infoRules ?? null,
-          infoFaq: (organization as { infoFaq?: string | null }).infoFaq ?? null,
           infoRequirements: (organization as { infoRequirements?: string | null }).infoRequirements ?? null,
           infoPolicies: (organization as { infoPolicies?: string | null }).infoPolicies ?? null,
           infoLocationNotes: (organization as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
@@ -400,11 +442,11 @@ async function _PATCH(req: NextRequest) {
       publicWebsite,
       publicInstagram,
       publicYoutube,
+      publicTiktok,
+      publicLinkedin,
       publicDescription,
       publicHours,
-      publicProfileLayout,
       infoRules,
-      infoFaq,
       infoRequirements,
       infoPolicies,
       infoLocationNotes,
@@ -423,7 +465,6 @@ async function _PATCH(req: NextRequest) {
     const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
     const reservationAssignmentModeProvided = Object.prototype.hasOwnProperty.call(body, "reservationAssignmentMode");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
-    const publicProfileLayoutProvided = Object.prototype.hasOwnProperty.call(body, "publicProfileLayout");
     const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
     const brandingAvatarProvided = Object.prototype.hasOwnProperty.call(body, "brandingAvatarUrl");
     const brandingCoverProvided = Object.prototype.hasOwnProperty.call(body, "brandingCoverUrl");
@@ -479,6 +520,19 @@ async function _PATCH(req: NextRequest) {
     if (!membership || !["OWNER", "CO_OWNER", "ADMIN"].includes(membership.role)) {
       return fail(403, "Apenas Owner ou Admin podem alterar estas definições.");
     }
+    const writeGate = ensureOrganizationWriteAccess(organization, { reasonCode: "ORG_SETTINGS" });
+    if (!writeGate.ok && writeGate.errorCode === "KILL_SWITCH_ACTIVE") {
+      return respondError(
+        ctx,
+        {
+          errorCode: writeGate.errorCode,
+          message: writeGate.message ?? "A organização está em modo restrito.",
+          retryable: false,
+          details: writeGate,
+        },
+        { status: 403 },
+      );
+    }
     const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "ORG_SETTINGS" });
     if (!emailGate.ok) {
       return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
@@ -502,11 +556,11 @@ async function _PATCH(req: NextRequest) {
         "publicWebsite",
         "publicInstagram",
         "publicYoutube",
+        "publicTiktok",
+        "publicLinkedin",
         "publicDescription",
         "publicHours",
-        "publicProfileLayout",
         "infoRules",
-        "infoFaq",
         "infoRequirements",
         "infoPolicies",
         "infoLocationNotes",
@@ -519,9 +573,12 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const profileUpdates: Record<string, unknown> = {};
     if (typeof fullName === "string") profileUpdates.fullName = fullName.trim() || null;
-    if (typeof contactPhone === "string") profileUpdates.contactPhone = normalizePhone(contactPhone.trim()) || null;
+    if (typeof contactPhone === "string") {
+      profileUpdates.contactPhone = normalizePhone(contactPhone.trim(), phoneOptions) || null;
+    }
     if (typeof alertsEmail === "string" && alertsEmail.trim()) {
       const email = alertsEmail.trim();
       const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -535,25 +592,6 @@ async function _PATCH(req: NextRequest) {
     const publicNameInput = typeof publicName === "string" ? publicName.trim() : undefined;
     const addressIdInput = typeof addressId === "string" ? addressId.trim() : undefined;
     const showAddressPubliclyInput = typeof showAddressPublicly === "boolean" ? showAddressPublicly : undefined;
-    const normalizeSocialLink = (value: string, kind: "instagram" | "youtube") => {
-      const trimmed = value.trim();
-      if (!trimmed) return { value: null as string | null };
-      let normalized = trimmed;
-      if (trimmed.startsWith("@")) {
-        normalized =
-          kind === "instagram"
-            ? `https://instagram.com/${trimmed.slice(1)}`
-            : `https://youtube.com/@${trimmed.slice(1)}`;
-      } else if (!/^https?:\/\//i.test(trimmed)) {
-        normalized = `https://${trimmed}`;
-      }
-      if (!isValidWebsite(normalized)) {
-        return {
-          error: `${kind === "instagram" ? "Instagram" : "YouTube"} inválido. Usa um URL válido.`,
-        };
-      }
-      return { value: normalized };
-    };
 
     if (businessNameClean !== undefined) organizationUpdates.businessName = businessNameClean || null;
     if (publicNameInput !== undefined) {
@@ -595,19 +633,33 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    if (typeof publicInstagram === "string") {
-      const normalized = normalizeSocialLink(publicInstagram, "instagram");
+    if (typeof publicInstagram === "string" || publicInstagram === null) {
+      const normalized = normalizePublicSocialUrl(publicInstagram, "instagram");
       if (normalized.error) {
         return fail(400, normalized.error);
       }
       organizationUpdates.publicInstagram = normalized.value;
     }
-    if (typeof publicYoutube === "string") {
-      const normalized = normalizeSocialLink(publicYoutube, "youtube");
+    if (typeof publicYoutube === "string" || publicYoutube === null) {
+      const normalized = normalizePublicSocialUrl(publicYoutube, "youtube");
       if (normalized.error) {
         return fail(400, normalized.error);
       }
       organizationUpdates.publicYoutube = normalized.value;
+    }
+    if (typeof publicTiktok === "string" || publicTiktok === null) {
+      const normalized = normalizePublicSocialUrl(publicTiktok, "tiktok");
+      if (normalized.error) {
+        return fail(400, normalized.error);
+      }
+      organizationUpdates.publicTiktok = normalized.value;
+    }
+    if (typeof publicLinkedin === "string" || publicLinkedin === null) {
+      const normalized = normalizePublicSocialUrl(publicLinkedin, "linkedin");
+      if (normalized.error) {
+        return fail(400, normalized.error);
+      }
+      organizationUpdates.publicLinkedin = normalized.value;
     }
     if (typeof publicDescription === "string") {
       organizationUpdates.publicDescription = publicDescription.trim() || null;
@@ -615,22 +667,8 @@ async function _PATCH(req: NextRequest) {
     if (typeof publicHours === "string") {
       organizationUpdates.publicHours = publicHours.trim() || null;
     }
-    if (publicProfileLayoutProvided) {
-      if (publicProfileLayout === null) {
-        organizationUpdates.publicProfileLayout = null;
-      } else {
-        const sanitizedLayout = sanitizePublicProfileLayout(publicProfileLayout);
-        if (!sanitizedLayout) {
-          return fail(400, "Layout do perfil inválido.");
-        }
-        organizationUpdates.publicProfileLayout = mergeLayoutWithDefaults(sanitizedLayout);
-      }
-    }
     if (typeof infoRules === "string") {
       organizationUpdates.infoRules = infoRules.trim() || null;
-    }
-    if (typeof infoFaq === "string") {
-      organizationUpdates.infoFaq = infoFaq.trim() || null;
     }
     if (typeof infoRequirements === "string") {
       organizationUpdates.infoRequirements = infoRequirements.trim() || null;

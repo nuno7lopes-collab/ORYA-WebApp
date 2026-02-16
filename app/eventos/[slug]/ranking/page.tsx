@@ -72,12 +72,6 @@ export default async function EventRankingPage({ params, searchParams }: PagePro
                 >
                   {t("calendarLabel", locale)}
                 </Link>
-                <Link
-                  href={`/eventos/${slug}/score`}
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
-                >
-                  {t("liveScoreButtonLabel", locale)}
-                </Link>
               </div>
             </div>
             {coverUrl && (

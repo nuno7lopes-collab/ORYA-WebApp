@@ -27,9 +27,14 @@ type RefundsResponse =
 const REASON_FILTERS = [
   { key: "ALL", label: "Todos" },
   { key: "CANCELLED", label: "Cancelado" },
-  { key: "DELETED", label: "Apagado" },
+  { key: "DELETED", label: "Eliminado" },
   { key: "DATE_CHANGED", label: "Mudança de data" },
 ];
+const REASON_LABELS: Record<string, string> = {
+  CANCELLED: "Cancelado",
+  DELETED: "Eliminado",
+  DATE_CHANGED: "Mudança de data",
+};
 
 const formatMoney = (cents: number, currency?: string | null) =>
   `${(cents / 100).toFixed(2)} ${currency || "EUR"}`;
@@ -114,6 +119,7 @@ export default function RefundsPanel() {
     () => items.reduce((sum, item) => sum + (item.baseAmountCents ?? 0), 0),
     [items],
   );
+  const mapReasonLabel = (value: string) => REASON_LABELS[value] ?? value;
 
   const downloadCsv = () => {
     if (!items.length) return;
@@ -134,18 +140,14 @@ export default function RefundsPanel() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "refunds.csv";
+    link.download = "reembolsos.csv";
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/92 backdrop-blur-3xl p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Reembolsos</h3>
-          <p className="text-[12px] text-white/65">Histórico e motivos.</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"
           onClick={downloadCsv}
@@ -181,7 +183,7 @@ export default function RefundsPanel() {
         <input
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Pesquisar compra ou payment intent..."
+          placeholder="Pesquisar por compra ou intenção de pagamento..."
           className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white placeholder:text-white/40"
         />
         <label className="flex flex-col gap-1 text-white/60">
@@ -205,7 +207,7 @@ export default function RefundsPanel() {
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
-        Total listado: <span className="text-white">{formatMoney(totalRefunded, items[0]?.currency)}</span>
+        Total apresentado: <span className="text-white">{formatMoney(totalRefunded, items[0]?.currency)}</span>
       </div>
 
       {error && (
@@ -236,7 +238,7 @@ export default function RefundsPanel() {
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-white">{item.eventTitle}</p>
                 <p className="text-[11px] text-white/60">
-                  Compra {item.purchaseId ? `${item.purchaseId.slice(0, 6)}…` : "—"} · {item.reason}
+                  Compra {item.purchaseId ? `${item.purchaseId.slice(0, 6)}…` : "—"} · {mapReasonLabel(item.reason)}
                 </p>
                 <p className="text-[10px] text-white/45">Reembolso {formatDateTime(item.refundedAt || item.createdAt)}</p>
               </div>

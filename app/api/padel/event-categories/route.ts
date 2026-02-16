@@ -27,7 +27,6 @@ type LinkInput = {
   format?: string | null;
   capacityTeams?: number | null;
   capacityPlayers?: number | null;
-  liveStreamUrl?: string | null;
   isEnabled?: boolean;
   isHidden?: boolean;
 };
@@ -289,7 +288,6 @@ async function _POST(req: NextRequest) {
         format: format ?? undefined,
         capacityTeams,
         capacityPlayers,
-        liveStreamUrl: typeof link.liveStreamUrl === "string" ? link.liveStreamUrl.trim() || null : null,
         isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : undefined,
         isHidden: typeof link.isHidden === "boolean" ? link.isHidden : undefined,
       },
@@ -299,7 +297,6 @@ async function _POST(req: NextRequest) {
         format: format ?? undefined,
         capacityTeams,
         capacityPlayers,
-        liveStreamUrl: typeof link.liveStreamUrl === "string" ? link.liveStreamUrl.trim() || null : null,
         isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : true,
         isHidden: typeof link.isHidden === "boolean" ? link.isHidden : false,
       },

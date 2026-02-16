@@ -47,6 +47,7 @@ export default async function OrganizationDashboardLayout({ children }: { childr
   let activeOrganization: OrganizationSwitcherOption["organization"] | null = null;
   let activeRole: string | null = null;
   let activeModules: string[] = [];
+  let activePendingOfficialEmail: string | null = null;
   let profile:
     | { fullName: string | null; username: string | null; avatarUrl: string | null; updatedAt: Date | null }
     | null = null;
@@ -98,14 +99,23 @@ export default async function OrganizationDashboardLayout({ children }: { childr
 
     if (activeOrganization) {
       try {
-        const modulesRows = await prisma.organizationModuleEntry.findMany({
-          where: { organizationId: activeOrganization.id, enabled: true },
-          select: { moduleKey: true },
-          orderBy: { moduleKey: "asc" },
-        });
+        const [modulesRows, pendingRequest] = await Promise.all([
+          prisma.organizationModuleEntry.findMany({
+            where: { organizationId: activeOrganization.id, enabled: true },
+            select: { moduleKey: true },
+            orderBy: { moduleKey: "asc" },
+          }),
+          prisma.organizationOfficialEmailRequest.findFirst({
+            where: { organizationId: activeOrganization.id, status: "PENDING" },
+            select: { newEmail: true },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          }),
+        ]);
         activeModules = modulesRows.map((row) => row.moduleKey);
+        activePendingOfficialEmail = normalizeOfficialEmail(pendingRequest?.newEmail ?? null);
       } catch {
         activeModules = [];
+        activePendingOfficialEmail = null;
       }
     }
 
@@ -199,7 +209,15 @@ export default async function OrganizationDashboardLayout({ children }: { childr
         user={userInfo}
         role={activeRole}
         isSuspended={isSuspended}
-        emailVerification={activeOrganization ? { isVerified: isEmailVerified, email: officialEmailNormalized } : null}
+        emailVerification={
+          activeOrganization
+            ? {
+                isVerified: isEmailVerified,
+                email: officialEmailNormalized,
+                pendingEmail: activePendingOfficialEmail,
+              }
+            : null
+        }
         platformOfficialEmail={platformOfficialEmail}
       >
         {children}

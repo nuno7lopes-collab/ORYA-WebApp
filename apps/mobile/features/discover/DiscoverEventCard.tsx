@@ -116,7 +116,7 @@ const formatServiceNextAvailability = (nextAvailability?: string | null): string
   return formatDateRange(nextAvailability);
 };
 
-const isLiveNow = (item: PublicEventCard): boolean => {
+const isCurrentNow = (item: PublicEventCard): boolean => {
   if (!item.startsAt || !item.endsAt) return false;
   const start = new Date(item.startsAt).getTime();
   const end = new Date(item.endsAt).getTime();
@@ -261,7 +261,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     : formatDateRange(event?.startsAt, event?.endsAt);
 
   const isHighlighted = !isService && Boolean(event?.isHighlighted);
-  const liveNow = !isService && event ? isLiveNow(event) : false;
+  const currentNow = !isService && event ? isCurrentNow(event) : false;
   const relativeStart = isService
     ? formatServiceRelativeStart(service?.nextAvailability)
     : formatRelativeStart(event?.startsAt);
@@ -550,7 +550,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                     <View className="flex-row items-center justify-between px-3 pt-3">
                       <View className="flex-row flex-wrap items-center gap-2">
                         <GlassPill label={category} />
-                        {!isService && liveNow ? <GlassPill label={t("events:badges.live")} variant="accent" /> : null}
+                        {!isService && currentNow ? <GlassPill label={t("common:time.now")} variant="accent" /> : null}
                         {!isService && isHighlighted ? <GlassPill label={t("events:badges.featured")} variant="accent" /> : null}
                         {relativeStart ? <GlassPill label={relativeStart} variant="muted" /> : null}
                         {!isService && distanceLabel ? (

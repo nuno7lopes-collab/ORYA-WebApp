@@ -1857,7 +1857,7 @@ export default function ChatPreviewPage() {
                           <Fragment key={message.id}>
                             <div className="my-3 flex justify-center">
                               <span className="rounded-full border border-white/10 bg-white/8 px-3 py-1 text-[11px] text-white/55">
-                                {message.text || "Atualizacao do sistema"}
+                                {message.text || "Atualização do sistema"}
                               </span>
                             </div>
                             {shouldShowNewMessagesDivider &&
@@ -2231,7 +2231,7 @@ export default function ChatPreviewPage() {
                                       disabled={message.status === "sending" || message.status === "failed"}
                                       className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                                     >
-                                      {isPinned ? "Remover fixacao" : "Fixar"}
+                                      {isPinned ? "Remover fixação" : "Fixar"}
                                     </button>
                                     <button
                                       type="button"
@@ -2577,7 +2577,7 @@ export default function ChatPreviewPage() {
               <div className="absolute inset-0 z-40 flex">
                 <button
                   type="button"
-                  aria-label="Fechar criacao"
+                  aria-label="Fechar criação"
                   onClick={handleCloseCreate}
                   className="absolute inset-0 bg-black/40"
                 />
@@ -2798,7 +2798,7 @@ export default function ChatPreviewPage() {
               <div className="absolute inset-0 z-40 flex items-center justify-center">
                 <button
                   type="button"
-                  aria-label="Fechar confirmacao"
+                  aria-label="Fechar confirmação"
                   onClick={handleCloseLeave}
                   className="absolute inset-0 bg-black/40"
                 />

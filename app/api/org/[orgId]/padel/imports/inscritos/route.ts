@@ -37,6 +37,7 @@ import {
 } from "@/domain/padel/imports";
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -197,6 +198,7 @@ async function _POST(req: NextRequest) {
   if (!sheet) return fail(400, "EMPTY_FILE");
   const rows = worksheetToJson(sheet);
   if (rows.length === 0) return fail(400, "NO_ROWS");
+  const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
 
   const {
     rows: parsedRows,
@@ -204,6 +206,9 @@ async function _POST(req: NextRequest) {
     invalidRows,
     nonEmptyRows,
   } = parsePadelImportRows(rows, {
+    phoneLocale: phoneOptions.defaultLocale ?? null,
+    phoneCountryIso2: phoneOptions.defaultCountryIso2 ?? null,
+    defaultPhoneCallingCode: phoneOptions.defaultCountryCallingCode,
     categoryById,
     categoryByLabel,
     defaultCategoryId: config.defaultCategoryId ?? null,

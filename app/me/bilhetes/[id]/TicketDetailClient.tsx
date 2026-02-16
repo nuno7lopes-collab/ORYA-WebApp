@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
-import TicketLiveQr from "@/app/components/tickets/TicketLiveQr";
+import TicketDynamicQr from "@/app/components/tickets/TicketDynamicQr";
 import useSWR from "swr";
 import { resolveLocale, t } from "@/lib/i18n";
 
@@ -377,7 +377,7 @@ export default function TicketDetailClient({ entitlementId }: Props) {
                 <h2 className="mt-2 text-lg font-semibold">{t("ticketQrTitle", locale)}</h2>
                 <div className="mt-4 flex items-center justify-center">
                   {ticket.actions?.canShowQr && ticket.qrToken ? (
-                    <TicketLiveQr qrToken={ticket.qrToken} />
+                    <TicketDynamicQr qrToken={ticket.qrToken} />
                   ) : (
                     <div className="rounded-2xl border border-white/15 bg-black/30 px-6 py-8 text-sm text-white/65">
                       {t("ticketQrUnavailable", locale)}

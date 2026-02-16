@@ -70,10 +70,6 @@ const ensureProfileListener = () => {
 };
 
 const fetcher = async (url: string) => {
-  const sessionRes = await supabaseBrowser.auth.getSession();
-  if (!sessionRes.data.session) {
-    return { user: null, profile: null };
-  }
   const res = await fetch(url, { credentials: "include", cache: "no-store" });
   if (res.status === 401) {
     // Sem sessão válida → devolve user/profile null sem erro
@@ -100,6 +96,7 @@ export function useUser() {
     },
   );
   const migratedRef = useRef(false);
+  const bootstrapInFlightRef = useRef(false);
 
   // Forçar refresh quando o estado de auth muda (sign in/out) para evitar estado preso
   useEffect(() => {
@@ -150,6 +147,22 @@ export function useUser() {
       });
     }
   }, [data?.user]);
+
+  // /api/auth/me é read-only; quando há sessão sem profile, dispara bootstrap idempotente.
+  useEffect(() => {
+    if (!data?.user || data?.needsEmailConfirmation || data?.profile) return;
+    if (bootstrapInFlightRef.current) return;
+    bootstrapInFlightRef.current = true;
+    fetch("/api/auth/bootstrap", {
+      method: "POST",
+      credentials: "include",
+    })
+      .catch(() => null)
+      .finally(() => {
+        bootstrapInFlightRef.current = false;
+        mutate();
+      });
+  }, [data?.needsEmailConfirmation, data?.profile, data?.user, mutate]);
 
   return {
     user: data?.user ?? null,

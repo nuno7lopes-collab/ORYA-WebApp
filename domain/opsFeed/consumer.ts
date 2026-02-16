@@ -23,7 +23,7 @@ export const OPS_FEED_EVENT_TYPES = new Set([
   "inventory.low_stock",
 ]);
 
-const CHAT_ORG_ROLES = ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"] as const;
+const CHAT_ORG_ROLES = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"] as const;
 
 function isUniqueViolation(err: unknown) {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";

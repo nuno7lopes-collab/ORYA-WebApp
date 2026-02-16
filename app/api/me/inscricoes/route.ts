@@ -50,7 +50,7 @@ async function _GET() {
           ? "FULL"
           : "SINGLE";
 
-    let nextAction: "NONE" | "PAY_PARTNER" | "CONFIRM_GUARANTEE" | "VIEW_LIVE" = "NONE";
+    let nextAction: "NONE" | "PAY_PARTNER" | "CONFIRM_GUARANTEE" | "VIEW_EVENT" = "NONE";
     const lifecycleStatus = pairing
       ? mapRegistrationToPairingLifecycle(
           pairing.registration?.status ?? PadelRegistrationStatus.PENDING_PARTNER,
@@ -59,8 +59,8 @@ async function _GET() {
       : null;
     if (lifecycleStatus === "PENDING_PARTNER_PAYMENT") nextAction = "PAY_PARTNER";
     if (pairing?.guaranteeStatus === "REQUIRES_ACTION") nextAction = "CONFIRM_GUARANTEE";
-    if (!pairing && entry.event?.slug) nextAction = "VIEW_LIVE";
-    if (nextAction === "NONE" && entry.event?.slug) nextAction = "VIEW_LIVE";
+    if (!pairing && entry.event?.slug) nextAction = "VIEW_EVENT";
+    if (nextAction === "NONE" && entry.event?.slug) nextAction = "VIEW_EVENT";
 
     const isCancelled = pairing?.pairingStatus === "CANCELLED" || lifecycleStatus === "CANCELLED_INCOMPLETE";
     const isComplete = pairing?.pairingStatus === "COMPLETE";
@@ -73,8 +73,8 @@ async function _GET() {
           : "Pendente";
 
     const partnerSlot = pairing?.slots?.find((s) => s.profileId && s.profileId !== entry.userId);
-    const liveUrl = entry.event?.slug
-      ? `/eventos/${entry.event.slug}/live${pairing?.id ? `?pairingId=${pairing.id}` : ""}`
+    const eventUrl = entry.event?.slug
+      ? `/eventos/${entry.event.slug}${pairing?.id ? `?pairingId=${pairing.id}` : ""}`
       : null;
     const pairingUrl =
       entry.event?.slug && pairing?.id
@@ -85,8 +85,8 @@ async function _GET() {
         ? pairingUrl
         : nextAction === "CONFIRM_GUARANTEE"
           ? pairingUrl
-          : nextAction === "VIEW_LIVE" && liveUrl
-            ? liveUrl
+          : nextAction === "VIEW_EVENT" && eventUrl
+            ? eventUrl
             : null;
 
     return {
@@ -105,7 +105,7 @@ async function _GET() {
       badge,
       paymentStatusLabel,
       nextAction,
-      liveLink: liveUrl,
+      eventLink: eventUrl,
       pairingId: pairing?.id ?? null,
       ctaUrl,
     };

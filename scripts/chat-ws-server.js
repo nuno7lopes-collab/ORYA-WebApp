@@ -1,4 +1,5 @@
 // WS Gateway para chat interno (first-party)
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
@@ -13,7 +14,9 @@ const PRESENCE_KEY_PREFIX = "chat:presence:";
 const TYPING_KEY_PREFIX = "chat:typing:";
 const LAST_SEEN_DEBOUNCE_PREFIX = "chat:last_seen_debounce:";
 const WS_PROTOCOL_BASE = "orya-chat.v1";
-const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
+const HANDSHAKE_TIMEOUT_MS = Number(process.env.CHAT_WS_HANDSHAKE_TIMEOUT_MS || 5000);
+const HANDSHAKE_RATE_LIMIT_WINDOW_MS = Number(process.env.CHAT_WS_HANDSHAKE_RATE_LIMIT_WINDOW_MS || 60_000);
+const HANDSHAKE_RATE_LIMIT_MAX_ATTEMPTS = Number(process.env.CHAT_WS_HANDSHAKE_RATE_LIMIT_MAX_ATTEMPTS || 30);
 
 const PRESENCE_TTL_SECONDS = Number(process.env.CHAT_PRESENCE_TTL_SECONDS || 60);
 const TYPING_TTL_SECONDS = Number(process.env.CHAT_TYPING_TTL_SECONDS || 5);
@@ -22,6 +25,36 @@ const AUTH_RECHECK_MS = Number(process.env.CHAT_WS_AUTH_RECHECK_MS || 10 * 60 * 
 
 const ALLOWED_ROLES = new Set(["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER"]);
 const B2C_CONTEXT_TYPES = new Set(["EVENT", "USER_DM", "USER_GROUP", "ORG_CONTACT", "BOOKING", "SERVICE"]);
+
+function emitWsMetric(metricName, payload = {}) {
+  try {
+    console.info(
+      JSON.stringify({
+        type: "ws.metric",
+        metric: metricName,
+        timestamp: new Date().toISOString(),
+        ...payload,
+      }),
+    );
+  } catch {
+    // ignore logging failures
+  }
+}
+
+function emitWsLog(eventName, payload = {}) {
+  try {
+    console.info(
+      JSON.stringify({
+        type: "ws.log",
+        event: eventName,
+        timestamp: new Date().toISOString(),
+        ...payload,
+      }),
+    );
+  } catch {
+    // ignore logging failures
+  }
+}
 
 function loadEnv() {
   if (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) return;
@@ -139,6 +172,7 @@ const connections = new Map();
 const conversationConnections = new Map();
 const organizationConnections = new Map();
 const userConnections = new Map();
+const handshakeAttemptsByClient = new Map();
 
 function addToMap(map, key, ws) {
   const set = map.get(key) || new Set();
@@ -166,17 +200,6 @@ function broadcast(set, payload) {
   }
 }
 
-function parseCookies(cookieHeader) {
-  if (!cookieHeader) return {};
-  return cookieHeader.split(";").reduce((acc, part) => {
-    const [rawKey, ...rest] = part.trim().split("=");
-    if (!rawKey) return acc;
-    const value = rest.join("=");
-    acc[rawKey] = decodeURIComponent(value || "");
-    return acc;
-  }, {});
-}
-
 function parseProtocolHeader(headerValue) {
   if (!headerValue) return [];
   const raw = Array.isArray(headerValue) ? headerValue.join(",") : String(headerValue);
@@ -186,15 +209,55 @@ function parseProtocolHeader(headerValue) {
     .filter(Boolean);
 }
 
-function extractTokenFromProtocols(headerValue) {
-  const protocols = parseProtocolHeader(headerValue);
-  for (const protocol of protocols) {
-    if (protocol.startsWith(WS_AUTH_PROTOCOL_PREFIX)) {
-      const token = protocol.slice(WS_AUTH_PROTOCOL_PREFIX.length).trim();
-      if (token) return token;
-    }
+function resolveClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const forwardedValue = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (typeof forwardedValue === "string" && forwardedValue.trim()) {
+    const first = forwardedValue.split(",")[0]?.trim();
+    if (first) return first;
   }
-  return null;
+  const realIp = req.headers["x-real-ip"];
+  const realIpValue = Array.isArray(realIp) ? realIp[0] : realIp;
+  if (typeof realIpValue === "string" && realIpValue.trim()) {
+    return realIpValue.trim();
+  }
+  const remoteAddress = req.socket?.remoteAddress;
+  return typeof remoteAddress === "string" && remoteAddress.trim() ? remoteAddress.trim() : "unknown";
+}
+
+function consumeHandshakeRateLimit(clientKey) {
+  const key = clientKey || "unknown";
+  const now = Date.now();
+  const existing = handshakeAttemptsByClient.get(key);
+  if (!existing || now - existing.windowStart >= HANDSHAKE_RATE_LIMIT_WINDOW_MS) {
+    handshakeAttemptsByClient.set(key, { windowStart: now, attempts: 1 });
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  if (existing.attempts >= HANDSHAKE_RATE_LIMIT_MAX_ATTEMPTS) {
+    const retryAfterMs = Math.max(0, HANDSHAKE_RATE_LIMIT_WINDOW_MS - (now - existing.windowStart));
+    return { allowed: false, retryAfterMs };
+  }
+
+  existing.attempts += 1;
+  handshakeAttemptsByClient.set(key, existing);
+  return { allowed: true, retryAfterMs: 0 };
+}
+
+function extractBearerToken(rawAuth) {
+  if (typeof rawAuth !== "string") return null;
+  const trimmed = rawAuth.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(/\s+/);
+  if (parts.length < 2) return null;
+  if (parts[0].toLowerCase() !== "bearer") return null;
+  const token = parts.slice(1).join(" ").trim();
+  return token || null;
+}
+
+function isValidSemver(value) {
+  if (typeof value !== "string") return false;
+  return /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(value.trim());
 }
 
 function getClientPlatform(url, headers) {
@@ -281,17 +344,6 @@ async function listEffectiveOrgMemberships(userId) {
   }
 
   return memberships;
-}
-
-async function resolveOrganizationId(userId, orgIdFromQuery, cookieHeader) {
-  if (orgIdFromQuery) return orgIdFromQuery;
-  const cookies = parseCookies(cookieHeader);
-  const cookieOrgId = Number(cookies.orya_organization || "");
-  if (cookieOrgId) return cookieOrgId;
-
-  const memberships = await listEffectiveOrgMemberships(userId);
-  const membership = memberships.find((entry) => ALLOWED_ROLES.has(entry.role));
-  return membership?.organizationId ?? null;
 }
 
 async function ensureOrgAccess(userId, organizationId) {
@@ -438,80 +490,85 @@ const wss = new WebSocketServer({
   port,
   host,
   handleProtocols: (protocols) => {
-    if (!protocols || protocols.size === 0) return undefined;
+    if (!protocols || protocols.size === 0) return false;
     if (protocols.has(WS_PROTOCOL_BASE)) return WS_PROTOCOL_BASE;
-    const first = protocols.values().next().value;
-    return first || false;
+    return false;
   },
 });
 
 wss.on("connection", (ws, req) => {
   (async () => {
+    const handshakeStartedAt = Date.now();
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-    const tokenFromProtocol = extractTokenFromProtocols(req.headers["sec-websocket-protocol"]);
-    const token = tokenFromProtocol;
-    const orgIdParam = Number(url.searchParams.get("organizationId") || "");
-    const scopeParam = url.searchParams.get("scope");
-    const forceB2C = scopeParam === "b2c";
-    const clientPlatform = getClientPlatform(url, req.headers);
+    const fallbackPlatform = getClientPlatform(url, req.headers);
+    const clientIp = resolveClientIp(req);
+    const correlationId = crypto.randomUUID();
+    let state = null;
+    let handshakeComplete = false;
 
-    const user = await validateToken(token);
-    if (!user) {
-      ws.close(4001, "UNAUTHENTICATED");
-      return;
-    }
-
-    const organizationId = forceB2C ? null : await resolveOrganizationId(user.id, orgIdParam || null, req.headers.cookie);
-    const scope = organizationId ? "org" : "b2c";
-
-    if (scope === "b2c" && clientPlatform !== "mobile") {
-      ws.close(4003, "MOBILE_APP_REQUIRED");
-      return;
-    }
-
-    if (scope === "org") {
-      const membership = await ensureOrgAccess(user.id, organizationId);
-      if (!membership) {
-        ws.close(4003, "FORBIDDEN");
-        return;
+    const rejectHandshake = (params) => {
+      const { reason, code, userId = null, organizationId = null, platform = null } = params;
+      emitWsMetric("ws.handshake.failure_count", {
+        reason,
+        code,
+        userId,
+        organizationId,
+        platform,
+        clientIp,
+        correlationId,
+        handshakeLatencyMs: Date.now() - handshakeStartedAt,
+      });
+      if (reason === "ORG_CONTEXT_REQUIRED") {
+        emitWsMetric("ws.handshake.rejected.missing_context_count", {
+          userId,
+          correlationId,
+        });
       }
-    }
-
-    const conversationIds = await getConversationIds(user.id, organizationId, scope);
-    const state = {
-      userId: user.id,
-      organizationId,
-      conversations: new Set(conversationIds),
-      token,
-      authTimer: null,
-      scope,
+      if (reason === "UPGRADE_REQUIRED" || reason === "MOBILE_APP_REQUIRED") {
+        emitWsMetric("ws.handshake.rejected.version_gate_count", {
+          reason,
+          userId,
+          correlationId,
+        });
+      }
+      emitWsLog("ws.handshake.rejected", {
+        reason,
+        code,
+        userId,
+        organizationId,
+        platform,
+        clientIp,
+        correlationId,
+      });
+      try {
+        ws.close(code, reason);
+      } catch {
+        // ignore close failures
+      }
     };
 
-    connections.set(ws, state);
-    if (organizationId) {
-      addToMap(organizationConnections, organizationId, ws);
-    }
-    addToMap(userConnections, user.id, ws);
-    for (const convoId of conversationIds) {
-      addToMap(conversationConnections, convoId, ws);
-    }
-
-    await setPresenceOnline(user.id);
-    if (organizationId) {
-      await publishEvent({
-        type: "presence:update",
-        organizationId,
-        userId: user.id,
-        status: "online",
+    const handshakeTimeout = setTimeout(() => {
+      if (handshakeComplete) return;
+      rejectHandshake({
+        reason: "ORG_CONTEXT_REQUIRED",
+        code: 4003,
+        platform: fallbackPlatform || null,
       });
-    }
+    }, HANDSHAKE_TIMEOUT_MS);
 
-    state.authTimer = setInterval(async () => {
-      const valid = await validateToken(state.token);
-      if (!valid) {
-        ws.close(4001, "AUTH_EXPIRED");
+    const parseOrganizationId = (rawId) => {
+      if (typeof rawId === "number" && Number.isFinite(rawId)) {
+        const normalized = Math.floor(rawId);
+        return normalized > 0 ? normalized : null;
       }
-    }, AUTH_RECHECK_MS);
+      if (typeof rawId !== "string") return null;
+      const value = rawId.trim();
+      if (!value) return null;
+      if (/^\d+$/.test(value)) return Number(value);
+      const prefixed = /^org_(\d+)$/i.exec(value);
+      if (prefixed?.[1]) return Number(prefixed[1]);
+      return null;
+    };
 
     ws.on("message", (data) => {
       (async () => {
@@ -519,9 +576,197 @@ wss.on("connection", (ws, req) => {
         try {
           payload = JSON.parse(data.toString());
         } catch {
+          if (!handshakeComplete) {
+            rejectHandshake({
+              reason: "ORG_CONTEXT_REQUIRED",
+              code: 4003,
+              platform: fallbackPlatform || null,
+            });
+          }
           return;
         }
         if (!payload || typeof payload !== "object") return;
+
+        if (!handshakeComplete) {
+          const rateLimit = consumeHandshakeRateLimit(clientIp);
+          if (!rateLimit.allowed) {
+            rejectHandshake({
+              reason: "RATE_LIMITED",
+              code: 4008,
+              platform: fallbackPlatform || null,
+            });
+            return;
+          }
+
+          const authHeader = typeof payload.auth === "string" ? payload.auth : "";
+          const token = extractBearerToken(authHeader);
+          const appVersion = typeof payload.app_version === "string" ? payload.app_version.trim() : "";
+          const context = payload.context && typeof payload.context === "object" ? payload.context : null;
+          const contextType =
+            context && typeof context.type === "string" ? context.type.trim().toLowerCase() : "";
+          const contextIdRaw = context ? context.id : null;
+          const clientPlatform =
+            (typeof payload.client_platform === "string" && payload.client_platform.trim().toLowerCase()) ||
+            fallbackPlatform ||
+            "";
+
+          if (!token) {
+            rejectHandshake({
+              reason: "UNAUTHORIZED",
+              code: 4001,
+              platform: clientPlatform || null,
+            });
+            return;
+          }
+          if (!isValidSemver(appVersion)) {
+            rejectHandshake({
+              reason: "UPGRADE_REQUIRED",
+              code: 4003,
+              platform: clientPlatform || null,
+            });
+            return;
+          }
+          if (!contextType) {
+            rejectHandshake({
+              reason: "ORG_CONTEXT_REQUIRED",
+              code: 4003,
+              platform: clientPlatform || null,
+            });
+            return;
+          }
+
+          const user = await validateToken(token);
+          if (!user) {
+            rejectHandshake({
+              reason: "UNAUTHORIZED",
+              code: 4001,
+              platform: clientPlatform || null,
+            });
+            return;
+          }
+
+          let scope = "org";
+          let organizationId = null;
+
+          if (contextType === "org") {
+            organizationId = parseOrganizationId(contextIdRaw);
+            if (!organizationId) {
+              rejectHandshake({
+                reason: "ORG_CONTEXT_REQUIRED",
+                code: 4003,
+                userId: user.id,
+                platform: clientPlatform || null,
+              });
+              return;
+            }
+            const membership = await ensureOrgAccess(user.id, organizationId);
+            if (!membership) {
+              rejectHandshake({
+                reason: "FORBIDDEN",
+                code: 4003,
+                userId: user.id,
+                organizationId,
+                platform: clientPlatform || null,
+              });
+              return;
+            }
+          } else if (contextType === "dm" || contextType === "b2c") {
+            if (clientPlatform !== "mobile") {
+              rejectHandshake({
+                reason: "MOBILE_APP_REQUIRED",
+                code: 4003,
+                userId: user.id,
+                platform: clientPlatform || null,
+              });
+              return;
+            }
+            scope = "b2c";
+          } else {
+            rejectHandshake({
+              reason: "ORG_CONTEXT_REQUIRED",
+              code: 4003,
+              userId: user.id,
+              platform: clientPlatform || null,
+            });
+            return;
+          }
+
+          const conversationIds = await getConversationIds(user.id, organizationId, scope);
+          state = {
+            userId: user.id,
+            organizationId,
+            conversations: new Set(conversationIds),
+            token,
+            authTimer: null,
+            scope,
+          };
+          handshakeComplete = true;
+          clearTimeout(handshakeTimeout);
+
+          emitWsMetric("ws.handshake.success_count", {
+            userId: user.id,
+            organizationId,
+            scope,
+            platform: clientPlatform || null,
+            correlationId,
+            handshakeLatencyMs: Date.now() - handshakeStartedAt,
+          });
+          emitWsMetric("ws.handshake.latency_ms", {
+            userId: user.id,
+            organizationId,
+            scope,
+            correlationId,
+            value: Date.now() - handshakeStartedAt,
+          });
+          emitWsLog("ws.handshake.accepted", {
+            userId: user.id,
+            organizationId,
+            scope,
+            platform: clientPlatform || null,
+            correlationId,
+          });
+
+          connections.set(ws, state);
+          if (organizationId) {
+            addToMap(organizationConnections, organizationId, ws);
+          }
+          addToMap(userConnections, user.id, ws);
+          for (const convoId of conversationIds) {
+            addToMap(conversationConnections, convoId, ws);
+          }
+
+          await setPresenceOnline(user.id);
+          if (organizationId) {
+            await publishEvent({
+              type: "presence:update",
+              organizationId,
+              userId: user.id,
+              status: "online",
+            });
+          }
+
+          state.authTimer = setInterval(async () => {
+            const valid = await validateToken(state.token);
+            if (!valid) {
+              emitWsMetric("ws.socket.closed.revoked_token_count", {
+                userId: state.userId,
+                organizationId: state.organizationId,
+                scope: state.scope,
+                correlationId,
+              });
+              emitWsLog("ws.socket.revoked_token", {
+                userId: state.userId,
+                organizationId: state.organizationId,
+                scope: state.scope,
+                correlationId,
+              });
+              ws.close(4001, "UNAUTHORIZED");
+            }
+          }, AUTH_RECHECK_MS);
+
+          ws.send(JSON.stringify({ type: "handshake:ok" }));
+          return;
+        }
 
         if (payload.type === "ping") {
           await setPresenceOnline(state.userId);
@@ -554,7 +799,6 @@ wss.on("connection", (ws, req) => {
             conversationId,
             userId: state.userId,
           });
-          return;
         }
       })().catch((err) => {
         console.warn("[chat-ws] erro a processar mensagem", err);
@@ -563,6 +807,9 @@ wss.on("connection", (ws, req) => {
 
     ws.on("close", () => {
       (async () => {
+        clearTimeout(handshakeTimeout);
+        if (!state) return;
+
         connections.delete(ws);
         if (state.organizationId) {
           removeFromMap(organizationConnections, state.organizationId, ws);

@@ -10,6 +10,7 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { getProfileCoverUrl, sanitizeProfileCoverUrl } from "@/lib/profileCover";
 import { appendOrganizationIdToHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
+import type { OrganizationRolePack } from "@prisma/client";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -57,13 +58,14 @@ type ProfileResponse = {
   organization: { id: number; username: string | null; publicName: string | null } | null;
   user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
   role: string | null;
+  rolePack?: OrganizationRolePack | null;
   error?: string;
 };
 
 export default function TrainerProfilePage() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
-  const loginRedirectHref = appendOrganizationIdToHref("/org/treinadores", getOrganizationIdFromBrowser());
+  const loginRedirectHref = appendOrganizationIdToHref("/org/team/trainers", getOrganizationIdFromBrowser());
   const { data, isLoading, mutate } = useSWR<ProfileResponse>(
     user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile") : null,
     fetcher,
@@ -84,7 +86,8 @@ export default function TrainerProfilePage() {
   const organization = data?.organization ?? profile?.organization ?? null;
   const profileUser = profile?.user ?? data?.user ?? null;
   const role = data?.role ?? null;
-  const canEdit = role === "TRAINER";
+  const rolePack = data?.rolePack ?? null;
+  const canEdit = role === "STAFF" && rolePack === "COACH";
   const displayName = profileUser?.fullName || profileUser?.username || "Treinador";
   const reviewStatus = profile?.reviewStatus ?? "DRAFT";
   const statusLabel =
@@ -253,10 +256,10 @@ export default function TrainerProfilePage() {
           </p>
           {canEdit && (
             <div className="flex flex-wrap gap-2">
-              <Link href="/org/reservas" className={CTA_SECONDARY}>
+              <Link href="/org/bookings" className={CTA_SECONDARY}>
                 Ver agenda
               </Link>
-              <Link href="/org/reservas?create=service" className={CTA_SECONDARY}>
+              <Link href="/org/bookings?create=service" className={CTA_SECONDARY}>
                 Criar serviço
               </Link>
             </div>
@@ -265,7 +268,7 @@ export default function TrainerProfilePage() {
 
         {!canEdit && !isLoading && (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            O perfil só pode ser editado por membros com role Treinador.
+            O perfil só pode ser editado por colaboradores com pack Coach.
           </div>
         )}
 

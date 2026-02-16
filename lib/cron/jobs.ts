@@ -22,6 +22,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     endpoint: "/api/cron/bookings/cleanup",
   },
   {
+    key: "bookings-split-garantido",
+    envIntervalMs: "CRON_BOOKINGS_SPLIT_GARANTIDO_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/bookings/split-garantido",
+  },
+  {
     key: "reservations-cleanup",
     envIntervalMs: "CRON_RESERVATIONS_INTERVAL_MS",
     defaultIntervalMs: 60_000,
@@ -48,6 +55,13 @@ export const CRON_JOBS: CronJobDefinition[] = [
     defaultIntervalMs: 300_000,
     method: "POST",
     endpoint: "/api/cron/padel/matchmaking",
+  },
+  {
+    key: "padel-arbitration-compensation",
+    envIntervalMs: "CRON_PADEL_ARBITRATION_COMPENSATION_INTERVAL_MS",
+    defaultIntervalMs: 300_000,
+    method: "POST",
+    endpoint: "/api/cron/padel/arbitration-compensation",
   },
   {
     key: "padel-split-reminders",

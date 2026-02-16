@@ -7,17 +7,13 @@ import { buildOrgHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationId
 
 type OrganizationScanPageProps = {
   embedded?: boolean;
-  mode?: "scanner" | "list" | "sessions" | "logs" | "devices";
+  mode?: "scanner" | "sessions" | "logs" | "devices";
 };
 
 const MODE_COPY: Record<NonNullable<OrganizationScanPageProps["mode"]>, { title: string; subtitle: string }> = {
   scanner: {
     title: "Modo Receção · Scanner",
     subtitle: "Validação QR rápida com confirmação explícita.",
-  },
-  list: {
-    title: "Modo Receção · Lista",
-    subtitle: "Validação assistida por pesquisa e seleção manual.",
   },
   sessions: {
     title: "Modo Receção · Sessões",

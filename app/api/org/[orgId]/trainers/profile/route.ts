@@ -1,7 +1,12 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { OrganizationMemberRole, NotificationType, TrainerProfileReviewStatus } from "@prisma/client";
+import {
+  NotificationType,
+  OrganizationMemberRole,
+  OrganizationRolePack,
+  TrainerProfileReviewStatus,
+} from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { createNotification } from "@/lib/notifications";
@@ -16,7 +21,7 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
-  OrganizationMemberRole.TRAINER,
+  OrganizationMemberRole.STAFF,
 ];
 
 const MAX_BIO = 900;
@@ -107,6 +112,7 @@ async function _GET(req: NextRequest) {
         organization: profile?.organization ?? organization,
         user: profile?.user ?? null,
         role: membership.role,
+        rolePack: membership.rolePack ?? null,
       },
       { status: 200 },
     );
@@ -155,8 +161,11 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    if (membership.role !== OrganizationMemberRole.TRAINER) {
-      return fail(ctx, 403, "ONLY_TRAINER_CAN_EDIT");
+    if (
+      membership.role !== OrganizationMemberRole.STAFF ||
+      membership.rolePack !== OrganizationRolePack.COACH
+    ) {
+      return fail(ctx, 403, "ONLY_COACH_CAN_EDIT");
     }
 
     const title = typeof body?.title === "string" ? body.title.trim() : "";
@@ -218,7 +227,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (requestReview) {
-      const trainersHref = buildOrgHref(organization.id, "/team/trainers");
+      const trainersHref = buildOrgHref(organization.id, "/treinadores");
       await createNotification({
         userId: user.id,
         type: NotificationType.SYSTEM_ANNOUNCE,

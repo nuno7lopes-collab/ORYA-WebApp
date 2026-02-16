@@ -7,12 +7,13 @@ import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { notifyOrganizationBookingChangeResponse } from "@/lib/reservas/bookingChangeNotifications";
 import { CrmInteractionSource, CrmInteractionType, EntitlementStatus, EntitlementType, SourceType, type Prisma } from "@prisma/client";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
-import { logError } from "@/lib/observability/logger";
+import { logError, logInfo } from "@/lib/observability/logger";
 import {
   BOOKING_CONFIRMATION_SNAPSHOT_VERSION,
   buildBookingConfirmationSnapshot,
   type BookingConfirmationPaymentMeta,
 } from "@/lib/reservas/confirmationSnapshot";
+import { emitSplitRuntimeAlert, settleBookingSplitRuntime } from "@/domain/bookings/splitGarantido";
 import { normalizeEmail } from "@/lib/utils/email";
 import { updateBooking } from "@/domain/bookings/commands";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
@@ -22,9 +23,35 @@ function parseNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function emitSplitRuntimeMetric(metric: string, payload: Record<string, unknown>) {
+  logInfo("split.runtime.metric", {
+    metric,
+    timestamp: new Date().toISOString(),
+    ...payload,
+  });
+}
+
 function parseId(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function extractPaymentMethodId(intent: Stripe.PaymentIntent) {
+  if (!intent.payment_method) return null;
+  if (typeof intent.payment_method === "string") return intent.payment_method;
+  if (typeof intent.payment_method === "object" && typeof intent.payment_method.id === "string") {
+    return intent.payment_method.id;
+  }
+  return null;
+}
+
+function extractCustomerId(intent: Stripe.PaymentIntent) {
+  if (!intent.customer) return null;
+  if (typeof intent.customer === "string") return intent.customer;
+  if (typeof intent.customer === "object" && typeof intent.customer.id === "string") {
+    return intent.customer.id;
+  }
+  return null;
 }
 
 const toInt = (value: unknown) => {
@@ -92,16 +119,29 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
   const organizationId = parseId(meta.organizationId);
   const userId = typeof meta.userId === "string" ? meta.userId : null;
   const platformFeeCents = parseNumber(meta.platformFeeCents) ?? 0;
+  const offsessionPaymentMethodId = extractPaymentMethodId(intent);
+  const offsessionCustomerId = extractCustomerId(intent);
 
   const amountCents = intent.amount_received ?? intent.amount ?? 0;
   const { stripeFeeCents, stripeChargeId } = await resolveStripeFee(intent);
+  const lateRefundPlan = await prisma.$transaction(async (tx) => {
+    let localLateRefundPlan:
+      | {
+          splitId: number;
+          bookingId: number;
+          participantId: number;
+          paymentIntentId: string;
+          amountCents: number;
+          organizationId: number;
+        }
+      | null = null;
 
-  await prisma.$transaction(async (tx) => {
     const participant = await tx.bookingSplitParticipant.findUnique({
       where: { id: splitParticipantId },
       include: {
         split: {
           include: {
+            settlementSnapshot: { select: { id: true } },
             booking: {
                 select: {
                   id: true,
@@ -123,6 +163,12 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
                 },
               },
             },
+            organization: {
+              select: {
+                orgType: true,
+                stripeAccountId: true,
+              },
+            },
           },
         },
       },
@@ -138,6 +184,17 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       throw new Error("BOOKING_SPLIT_BOOKING_MISMATCH");
     }
 
+    if (participant.split.captureBeforeAt && participant.split.captureBeforeAt.getTime() < Date.now()) {
+      emitSplitRuntimeAlert("capture_attempt_after_captureBefore", {
+        splitId: participant.splitId,
+        bookingId: participant.split.booking.id,
+        organizationId: participant.split.organizationId,
+        paymentIntentId: intent.id,
+        captureBeforeAt: participant.split.captureBeforeAt.toISOString(),
+        captureBeforeSource: participant.split.captureBeforeSource,
+      });
+    }
+
     if (participant.status !== "PAID") {
       await tx.bookingSplitParticipant.update({
         where: { id: participant.id },
@@ -145,26 +202,57 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
           status: "PAID",
           paidAt: new Date(),
           paymentIntentId: intent.id,
+          offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
+          offsessionCustomerId: offsessionCustomerId ?? undefined,
           shareCents: amountCents,
           platformFeeCents,
         },
       });
+    } else if (offsessionPaymentMethodId || offsessionCustomerId) {
+      await tx.bookingSplitParticipant.update({
+        where: { id: participant.id },
+        data: {
+          offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
+          offsessionCustomerId: offsessionCustomerId ?? undefined,
+        },
+      });
+    }
+
+    const splitClosedForCollection =
+      participant.split.status !== "OPEN" ||
+      participant.split.railState === "DEBT" ||
+      Boolean(participant.split.settledAt) ||
+      Boolean(participant.split.settlementSnapshot);
+    if (splitClosedForCollection) {
+      localLateRefundPlan = {
+        splitId: participant.splitId,
+        bookingId: participant.split.booking.id,
+        participantId: participant.id,
+        paymentIntentId: intent.id,
+        amountCents,
+        organizationId: participant.split.organizationId,
+      };
+      return localLateRefundPlan;
     }
 
     const remaining = await tx.bookingSplitParticipant.count({
       where: { splitId: participant.splitId, status: { not: "PAID" } },
     });
-    if (remaining > 0) return;
+    if (remaining > 0) return localLateRefundPlan;
 
-    await tx.bookingSplit.update({
-      where: { id: participant.splitId },
-      data: { status: "COMPLETED" },
+    const settlement = await settleBookingSplitRuntime({
+      tx,
+      splitId: participant.splitId,
+      now: new Date(),
+      correlationId: intent.id,
+      allowBeforeDeadline: true,
     });
+    if (settlement.state !== "SETTLED") return localLateRefundPlan;
 
     const booking = participant.split.booking;
-    if (!booking || booking.status === "CONFIRMED") return;
+    if (!booking || booking.status === "CONFIRMED") return localLateRefundPlan;
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(booking.status)) {
-      return;
+      return localLateRefundPlan;
     }
 
     const result = await confirmPendingBooking({
@@ -210,7 +298,46 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
         policyId: parseId(meta.policyId) ?? null,
       },
     });
+
+    return localLateRefundPlan;
   });
+
+  if (lateRefundPlan) {
+    try {
+      await refundBookingPayment({
+        bookingId: lateRefundPlan.bookingId,
+        paymentIntentId: lateRefundPlan.paymentIntentId,
+        reason: "LATE_SPLIT_PAYMENT_AFTER_SETTLE",
+        amountCents: lateRefundPlan.amountCents,
+        idempotencyKey: `refund:BOOKING_SPLIT_LATE:${lateRefundPlan.participantId}:${lateRefundPlan.paymentIntentId}`,
+      });
+      emitSplitRuntimeMetric("split_late_refund_count", {
+        result: "success",
+        splitId: lateRefundPlan.splitId,
+        bookingId: lateRefundPlan.bookingId,
+        organizationId: lateRefundPlan.organizationId,
+        paymentIntentId: lateRefundPlan.paymentIntentId,
+        correlationId: lateRefundPlan.paymentIntentId,
+      });
+    } catch (err) {
+      emitSplitRuntimeMetric("split_late_refund_count", {
+        result: "failed",
+        splitId: lateRefundPlan.splitId,
+        bookingId: lateRefundPlan.bookingId,
+        organizationId: lateRefundPlan.organizationId,
+        paymentIntentId: lateRefundPlan.paymentIntentId,
+        correlationId: lateRefundPlan.paymentIntentId,
+      });
+      emitSplitRuntimeAlert("late_refund_failed", {
+        bookingId: lateRefundPlan.bookingId,
+        participantId: lateRefundPlan.participantId,
+        organizationId: lateRefundPlan.organizationId,
+        paymentIntentId: lateRefundPlan.paymentIntentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }
 
   return true;
 }

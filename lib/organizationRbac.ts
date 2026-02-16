@@ -97,13 +97,8 @@ const ROLE_BASE_ACCESS: Record<OrganizationMemberRole, Partial<Record<Organizati
     LOJA: "EDIT",
     INSCRICOES: "EDIT",
   },
-  TRAINER: {
-    TORNEIOS: "EDIT",
-    RESERVAS: "VIEW",
-  },
-  PROMOTER: {
-    MARKETING: "EDIT",
-  },
+  // PROMOTER existe como role top-level, mas sem poderes default por agora.
+  PROMOTER: {},
 };
 
 type RolePackAccess = {
@@ -160,12 +155,11 @@ const ROLE_CHECKIN_ACCESS: Record<OrganizationMemberRole, CheckinAccessLevel> = 
   CO_OWNER: "EDIT",
   ADMIN: "EDIT",
   STAFF: "EDIT",
-  TRAINER: "NONE",
   PROMOTER: "NONE",
 };
 
 const ADMIN_ROLE_SET = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
-const ROLE_PACK_ROLE_SET = new Set<OrganizationMemberRole>(["STAFF", "TRAINER"]);
+const ROLE_PACK_ROLE_SET = new Set<OrganizationMemberRole>(["STAFF"]);
 
 function shouldUseRolePack(role: OrganizationMemberRole | null | undefined, rolePack?: OrganizationRolePack | null) {
   if (!rolePack) return false;

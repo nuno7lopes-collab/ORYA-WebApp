@@ -23,28 +23,28 @@ export default function CheckInSubnav({ orgId, className }: { orgId: number | nu
         },
         {
           id: "list",
-          label: "List",
+          label: "Lista",
           href: buildOrgHref(orgId, "/check-in/list"),
           isActive: ({ normalizedPathname, searchParams }) =>
             normalizedPathname === `${basePath}/list` || searchParams.get("mode") === "list",
         },
         {
           id: "sessions",
-          label: "Sessions",
+          label: "Sessões",
           href: buildOrgHref(orgId, "/check-in/sessions"),
           isActive: ({ normalizedPathname, searchParams }) =>
             normalizedPathname === `${basePath}/sessions` || searchParams.get("mode") === "sessions",
         },
         {
           id: "logs",
-          label: "Logs",
+          label: "Registos",
           href: buildOrgHref(orgId, "/check-in/logs"),
           isActive: ({ normalizedPathname, searchParams }) =>
             normalizedPathname === `${basePath}/logs` || searchParams.get("mode") === "logs",
         },
         {
           id: "devices",
-          label: "Devices",
+          label: "Dispositivos",
           href: buildOrgHref(orgId, "/check-in/devices"),
           isActive: ({ normalizedPathname, searchParams }) =>
             normalizedPathname === `${basePath}/devices` || searchParams.get("mode") === "devices",

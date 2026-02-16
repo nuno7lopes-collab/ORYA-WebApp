@@ -112,13 +112,13 @@ export default function OrganizationCategoriesPage() {
             </div>
             <div className="flex gap-2">
               <Link
-                href={`${cat.preset === "padel" ? "/org/padel/torneios" : "/org/eventos"}?cat=${cat.template}`}
+                href={`${cat.preset === "padel" ? "/org/padel/tournaments" : "/org/events"}?cat=${cat.template}`}
                 className="flex-1 rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 text-center"
               >
                 Ver eventos
               </Link>
               <Link
-                href={`${cat.preset === "padel" ? "/org/padel/torneios/novo" : "/org/eventos/novo"}?preset=${cat.preset}`}
+                href={`${cat.preset === "padel" ? "/org/padel/tournaments/create" : "/org/events/new"}?preset=${cat.preset}`}
                 className={`${CTA_PRIMARY} flex-1 justify-center px-3 py-1.5 text-[12px]`}
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}

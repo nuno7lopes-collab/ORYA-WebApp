@@ -5,6 +5,7 @@ import { AuthModalProvider } from "@/app/components/autenticação/AuthModalCont
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { ensureDashboardAccess } from "@/app/org/_internal/core/_lib/dashboardAccess";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 export const runtime = "nodejs";
 
@@ -31,16 +32,33 @@ export default async function OrganizationRouterPage({
   const resolvedSearchParams = await Promise.resolve(searchParams);
 
   const tabParam = typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams?.tab : null;
+  const sectionParam = typeof resolvedSearchParams?.section === "string" ? resolvedSearchParams.section : null;
   const targetBase =
     tabParam === "manage"
-      ? "/org/manage"
+      ? sectionParam === "reservas"
+        ? buildOrgHref(activeOrganizationId, "/bookings")
+        : sectionParam === "inscricoes"
+          ? buildOrgHref(activeOrganizationId, "/forms")
+          : sectionParam === "padel-club"
+            ? buildOrgHref(activeOrganizationId, "/padel/clubs")
+            : sectionParam === "padel-tournaments"
+              ? buildOrgHref(activeOrganizationId, "/padel/tournaments")
+              : sectionParam === "staff"
+                ? buildOrgHref(activeOrganizationId, "/team")
+                : sectionParam === "chat"
+                  ? buildOrgHref(activeOrganizationId, "/chat")
+                  : sectionParam === "crm"
+                    ? buildOrgHref(activeOrganizationId, "/crm/customers")
+                    : buildOrgHref(activeOrganizationId, "/events")
       : tabParam === "analyze"
-        ? "/org/analyze"
+        ? sectionParam === "financas" || sectionParam === "invoices"
+          ? buildOrgHref(activeOrganizationId, "/finance")
+          : buildOrgHref(activeOrganizationId, "/analytics")
         : tabParam === "promote"
-          ? "/org/promote"
+          ? buildOrgHref(activeOrganizationId, "/marketing")
           : tabParam === "profile"
-            ? "/org/profile"
-            : "/org/overview";
+            ? buildOrgHref(activeOrganizationId, "/settings")
+            : buildOrgHref(activeOrganizationId, "/overview");
 
   const params = new URLSearchParams();
   if (resolvedSearchParams) {
@@ -53,9 +71,7 @@ export default async function OrganizationRouterPage({
       }
     }
   }
-  if (!params.get("organizationId")) {
-    params.set("organizationId", String(activeOrganizationId));
-  }
+  params.delete("organizationId");
 
   const query = params.toString();
   if (tabParam || query) {

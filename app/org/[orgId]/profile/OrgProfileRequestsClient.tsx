@@ -43,7 +43,7 @@ export default function OrgProfileRequestsClient() {
       const res = await fetch("/api/social/follow-requests", { cache: "no-store" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !Array.isArray(json.items)) {
-        throw new Error(json?.error || "Nao foi possivel carregar pedidos.");
+        throw new Error(json?.error || "Não foi possível carregar pedidos.");
       }
       setItems(json.items as FollowRequestItem[]);
     } catch (err) {
@@ -79,7 +79,7 @@ export default function OrgProfileRequestsClient() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Nao foi possivel atualizar o pedido.");
+        throw new Error(json?.error || "Não foi possível atualizar o pedido.");
       }
       setItems((prev) => prev.filter((item) => item.id !== requestId));
     } catch (err) {
@@ -94,10 +94,10 @@ export default function OrgProfileRequestsClient() {
       <section className="rounded-3xl border border-white/12 bg-white/5 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Profile Tool</p>
-            <h1 className="mt-1 text-2xl font-semibold text-white">Requests</h1>
+            <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Ferramenta de perfil</p>
+            <h1 className="mt-1 text-2xl font-semibold text-white">Pedidos</h1>
             <p className="mt-1 text-sm text-white/65">
-              Pedidos pendentes para seguir a tua conta, com decisao imediata.
+              Pedidos pendentes para seguir a tua conta, com decisão imediata.
             </p>
           </div>
           <button

@@ -12,7 +12,7 @@ import { OrganizationMemberRole } from "@prisma/client";
 import ChatPreviewClient from "./preview/ChatPreviewClient";
 import ChatInternoClient from "./ChatInternoClient";
 import ChannelRequestsPanel from "./ChannelRequestsPanel";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, parseOrganizationId } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationChatPage({
   searchParams,
@@ -33,12 +33,10 @@ export default async function OrganizationChatPage({
     OrganizationMemberRole.CO_OWNER,
     OrganizationMemberRole.ADMIN,
     OrganizationMemberRole.STAFF,
-    OrganizationMemberRole.TRAINER,
   ]);
 
   if (!organization || !membership || !allowedRoles.has(membership.role)) {
-    const target = appendOrganizationIdToHref("/org/organizations", organization?.id ?? null);
-    redirect(target);
+    redirect(buildOrgHubHref("/organizations"));
   }
 
   const rawOrgId = Array.isArray(resolvedSearchParams?.organizationId)
@@ -55,8 +53,11 @@ export default async function OrganizationChatPage({
           params.set(key, value);
         }
     }
-    params.set("organizationId", String(organization.id));
-    const target = `/org/chat?${params.toString()}`;
+    const target = buildOrgHref(organization.id, "/chat");
+    const query = params.toString();
+    if (query) {
+      redirect(`${target}?${query}`);
+    }
     redirect(target);
   }
 
@@ -78,15 +79,15 @@ export default async function OrganizationChatPage({
       <div className={cn("w-full space-y-4 py-8 text-white")}>
         <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
           <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Chat interno</p>
-          <h1 className="text-2xl font-semibold">Módulo desativado</h1>
+          <h1 className="text-2xl font-semibold">Ferramenta desativada</h1>
           <p className="text-sm text-white/70">
-            Ativa o módulo nas apps da organização para começares a usar o chat interno.
+            Ativa a ferramenta nas apps da organização para começares a usar o chat interno.
           </p>
           <Link
-            href={appendOrganizationIdToHref("/org/overview?section=modulos", organization.id)}
+            href={buildOrgHref(organization.id, "/overview", { section: "ferramentas" })}
             className={`${CTA_SECONDARY} mt-4 text-[12px]`}
           >
-            Gerir apps
+            Gerir ferramentas
           </Link>
         </div>
       </div>

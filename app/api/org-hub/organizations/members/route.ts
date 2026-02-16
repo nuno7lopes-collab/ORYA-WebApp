@@ -189,6 +189,9 @@ async function _PATCH(req: NextRequest) {
     if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
       return fail(400, "INVALID_ROLE");
     }
+    if (role === "TRAINER") {
+      return fail(400, "INVALID_ROLE");
+    }
     const rolePackPolicy = resolveRolePackForRole({
       role: role as OrganizationMemberRole,
       rolePackRaw,

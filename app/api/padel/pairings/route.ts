@@ -47,8 +47,21 @@ import { queuePairingInvite, queueWaitlistJoined } from "@/domain/notifications/
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
 import { ensurePadelPlayerProfileId, upsertPadelPlayerProfile } from "@/domain/padel/playerProfile";
 import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+
+function normalizeInvitedContact(
+  value: string | null | undefined,
+  options?: Parameters<typeof normalizePhone>[1],
+) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("@")) return trimmed.toLowerCase();
+  if (trimmed.includes("@")) return trimmed.toLowerCase();
+  return isValidPhone(trimmed) ? normalizePhone(trimmed, options) : trimmed;
+}
 
 const pairingSlotSelect = {
   id: true,
@@ -92,6 +105,7 @@ const pairingReadSelect = {
 async function syncPlayersFromSlots({
   organizationId,
   slots,
+  phoneOptions,
 }: {
   organizationId: number;
   slots: Array<{
@@ -99,6 +113,7 @@ async function syncPlayersFromSlots({
     invitedContact: string | null;
     invitedUserId: string | null;
   }>;
+  phoneOptions?: { defaultCountryIso2?: string | null; defaultLocale?: string | null; defaultCountryCallingCode?: string };
 }) {
   const profileIds = Array.from(
     new Set(
@@ -136,6 +151,9 @@ async function syncPlayersFromSlots({
       fullName: contact,
       email,
       phone,
+      phoneCountryIso2: phoneOptions?.defaultCountryIso2 ?? null,
+      phoneLocale: phoneOptions?.defaultLocale ?? null,
+      phoneCallingCode: phoneOptions?.defaultCountryCallingCode,
     });
   }
 }
@@ -158,10 +176,11 @@ async function _POST(req: NextRequest) {
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
-  const invitedContactNormalized =
-    typeof body?.invitedContact === "string" && body.invitedContact.trim().length > 0
-      ? body.invitedContact.trim()
-      : null;
+  const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
+  const invitedContactNormalized = normalizeInvitedContact(
+    typeof body?.invitedContact === "string" ? body.invitedContact : null,
+    phoneOptions,
+  );
   const targetUserId =
     typeof body?.targetUserId === "string" && body.targetUserId.trim().length > 0
       ? body.targetUserId.trim()
@@ -881,6 +900,7 @@ async function _POST(req: NextRequest) {
     // Auto-criar perfis de jogador para o organização (roster)
     await syncPlayersFromSlots({
       organizationId,
+      phoneOptions,
       slots: result.pairing.slots.map((s) => ({
         profileId: (s as { profileId?: string | null }).profileId ?? null,
         invitedContact: (s as { invitedContact?: string | null }).invitedContact ?? null,

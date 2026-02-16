@@ -13,7 +13,6 @@ export type OrgToolKey =
   | "padel-club"
   | "padel-tournaments"
   | "marketing"
-  | "profile"
   | "settings";
 
 function stripTrailingSlash(pathname: string) {
@@ -55,10 +54,11 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   if (rest.startsWith("/forms")) return "forms";
   if (rest.startsWith("/chat")) return "chat";
   if (rest.startsWith("/team")) return "team";
+  if (rest.startsWith("/treinadores")) return "team";
   if (rest.startsWith("/padel/clubs")) return "padel-club";
   if (rest.startsWith("/padel/tournaments")) return "padel-tournaments";
   if (rest.startsWith("/marketing")) return "marketing";
-  if (rest.startsWith("/profile")) return "profile";
+  if (rest.startsWith("/profile")) return "settings";
   if (rest.startsWith("/settings")) return "settings";
   return "dashboard";
 }

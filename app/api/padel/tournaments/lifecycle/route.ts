@@ -25,7 +25,6 @@ const GOVERNED_TIERS = new Set(["OURO", "MAJOR"]);
 const TIERS_GATED_LIFECYCLE_STATES = new Set<PadelTournamentLifecycleStatus>([
   PadelTournamentLifecycleStatus.PUBLISHED,
   PadelTournamentLifecycleStatus.LOCKED,
-  PadelTournamentLifecycleStatus.LIVE,
   PadelTournamentLifecycleStatus.COMPLETED,
 ]);
 
@@ -74,7 +73,6 @@ async function _GET(req: NextRequest) {
           lifecycleStatus: true,
           publishedAt: true,
           lockedAt: true,
-          liveAt: true,
           completedAt: true,
           cancelledAt: true,
           lifecycleUpdatedAt: true,
@@ -150,7 +148,6 @@ async function _POST(req: NextRequest) {
           lifecycleStatus: true,
           publishedAt: true,
           lockedAt: true,
-          liveAt: true,
           completedAt: true,
           cancelledAt: true,
         },
@@ -277,9 +274,8 @@ async function _POST(req: NextRequest) {
     if ((event.padelTournamentConfig as Record<string, unknown>)[field]) return;
     lifecycleUpdate[field] = now;
   };
-  ensureAt("publishedAt", ["PUBLISHED", "LOCKED", "LIVE", "COMPLETED"].includes(nextStatus));
-  ensureAt("lockedAt", ["LOCKED", "LIVE", "COMPLETED"].includes(nextStatus));
-  ensureAt("liveAt", ["LIVE", "COMPLETED"].includes(nextStatus));
+  ensureAt("publishedAt", ["PUBLISHED", "LOCKED", "COMPLETED"].includes(nextStatus));
+  ensureAt("lockedAt", ["LOCKED", "COMPLETED"].includes(nextStatus));
   ensureAt("completedAt", nextStatus === "COMPLETED");
   ensureAt("cancelledAt", nextStatus === "CANCELLED");
 
@@ -296,7 +292,6 @@ async function _POST(req: NextRequest) {
         lifecycleStatus: true,
         publishedAt: true,
         lockedAt: true,
-        liveAt: true,
         completedAt: true,
         cancelledAt: true,
         lifecycleUpdatedAt: true,
@@ -368,7 +363,7 @@ async function _POST(req: NextRequest) {
   });
 
   try {
-    if (["PUBLISHED", "LOCKED", "LIVE", "COMPLETED"].includes(nextStatus)) {
+    if (["PUBLISHED", "LOCKED", "COMPLETED"].includes(nextStatus)) {
       const syncEvent = await prisma.event.findUnique({
         where: { id: event.id },
         select: {

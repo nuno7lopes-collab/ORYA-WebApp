@@ -17,7 +17,6 @@ type LifecyclePayload = {
   lifecycleStatus: PadelTournamentLifecycleStatus;
   publishedAt?: string | null;
   lockedAt?: string | null;
-  liveAt?: string | null;
   completedAt?: string | null;
   cancelledAt?: string | null;
   lifecycleUpdatedAt?: string | null;
@@ -129,7 +128,6 @@ export default function PadelTournamentLifecyclePanel({ eventId }: { eventId: nu
       <div className="mt-4 grid gap-2 text-[11px] text-white/70 sm:grid-cols-2">
         <div>Publicado: {formatLifecycleDate(lifecycle?.publishedAt)}</div>
         <div>Bloqueado: {formatLifecycleDate(lifecycle?.lockedAt)}</div>
-        <div>Live: {formatLifecycleDate(lifecycle?.liveAt)}</div>
         <div>Concluído: {formatLifecycleDate(lifecycle?.completedAt)}</div>
         <div>Cancelado: {formatLifecycleDate(lifecycle?.cancelledAt)}</div>
         <div>Atualizado: {formatLifecycleDate(lifecycle?.lifecycleUpdatedAt)}</div>

@@ -138,13 +138,6 @@ export const resolveMobileLink = (
       return buildNative("/notifications", "", source);
     }
   }
-  if (path === "/organizacao/chat") {
-    const conversationId = url.searchParams.get("conversationId");
-    if (conversationId) {
-      return buildNative(`/messages/${conversationId}`, "", source);
-    }
-    return buildNative("/messages", "", source);
-  }
   if (parts[0] === "org" && parts[2] === "chat") {
     const conversationId = url.searchParams.get("conversationId");
     if (conversationId) {

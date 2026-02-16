@@ -7,11 +7,12 @@ import Stripe from "stripe";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { handleRefund } from "@/app/api/stripe/webhook/route";
 import { OperationType } from "../types";
 import { refundPurchase } from "@/lib/refunds/refundService";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
-import { PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode } from "@prisma/client";
+import { BookingSplitOffsessionAttemptStatus, PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode, ProcessorFeesStatus } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
 import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
 import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
@@ -93,6 +94,8 @@ const PRIORITY_TYPES = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
+const BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS = 3;
+const AGENDA_ARBITRATION_COMP_MAX_ATTEMPTS = 3;
 
 function shouldSkipOperationsTransaction() {
   if (process.env.OPERATIONS_SKIP_TX === "true") return true;
@@ -254,6 +257,489 @@ function buildOwnerKey(params: { ownerUserId?: string | null; ownerIdentityId?: 
   const guest = normalizeEmail(params.guestEmail);
   if (guest) return `email:${guest}`;
   return "unknown";
+}
+
+function parsePositiveInt(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.trunc(parsed);
+  return rounded > 0 ? rounded : null;
+}
+
+function normalizeText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeUuid(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)
+    ? normalized
+    : null;
+}
+
+function emitArbitrationMetric(metric: string, payload: Record<string, unknown>) {
+  logInfo("arbitration.runtime.metric", {
+    metric,
+    timestamp: new Date().toISOString(),
+    ...payload,
+  });
+}
+
+type AgendaArbitrationDecisionRow = {
+  id: string;
+  compensationStatus: string | null;
+  createdAt: Date;
+  resourceKey: string;
+  authorityOrgId: number;
+  priorityRuleVersion: string;
+  correlationId: string | null;
+  metadata: Prisma.JsonValue | null;
+};
+
+function isCompensationStatusTerminal(status: string | null) {
+  return status === "SUCCEEDED" || status === "FAILED";
+}
+
+function shouldForceCompensationFailure(metadata: Prisma.JsonValue | null) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const forceA = (metadata as Record<string, unknown>).forceCompensationFail;
+  const forceB = (metadata as Record<string, unknown>).forceCompensationFailure;
+  return forceA === true || forceB === true;
+}
+
+async function upsertAgendaArbitrationCompensationAttempt(params: {
+  arbitrationDecisionId: string;
+  attemptNo: number;
+  status: "SUCCEEDED" | "FAILED_RETRYABLE" | "FAILED_FINAL";
+  errorCode?: string | null;
+}) {
+  await prisma.$executeRaw(
+    Prisma.sql`
+      INSERT INTO app_v3.agenda_arbitration_compensation_attempts (
+        arbitration_decision_id,
+        attempt_no,
+        status,
+        error_code
+      )
+      VALUES (
+        ${params.arbitrationDecisionId}::uuid,
+        ${params.attemptNo},
+        ${params.status}::app_v3."AgendaArbitrationCompensationAttemptStatus",
+        ${params.errorCode ?? null}
+      )
+      ON CONFLICT (arbitration_decision_id, attempt_no)
+      DO UPDATE SET
+        status = EXCLUDED.status,
+        error_code = EXCLUDED.error_code;
+    `,
+  );
+}
+
+async function setAgendaArbitrationCompensationStatus(params: {
+  arbitrationDecisionId: string;
+  status: "OPEN" | "IN_PROGRESS" | "SUCCEEDED" | "FAILED";
+}) {
+  await prisma.$executeRaw(
+    Prisma.sql`
+      UPDATE app_v3.agenda_arbitration_decisions
+      SET compensation_status = ${params.status}::app_v3."AgendaArbitrationCompensationStatus",
+          updated_at = now()
+      WHERE id = ${params.arbitrationDecisionId}::uuid;
+    `,
+  );
+}
+
+function extractPaymentMethodId(intent: Stripe.PaymentIntent) {
+  const paymentMethod = intent.payment_method;
+  if (!paymentMethod) return null;
+  if (typeof paymentMethod === "string") return paymentMethod;
+  if (typeof paymentMethod === "object" && typeof paymentMethod.id === "string") return paymentMethod.id;
+  return null;
+}
+
+function extractCustomerId(intent: Stripe.PaymentIntent) {
+  const customer = intent.customer;
+  if (!customer) return null;
+  if (typeof customer === "string") return customer;
+  if (typeof customer === "object" && typeof customer.id === "string") return customer.id;
+  return null;
+}
+
+function classifyOffsessionAttemptStatus(params: {
+  intentStatus: string | null;
+  attemptNo: number;
+}) {
+  if (params.intentStatus === "succeeded") {
+    return BookingSplitOffsessionAttemptStatus.SUCCEEDED;
+  }
+  if (params.attemptNo >= BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS) {
+    return BookingSplitOffsessionAttemptStatus.FAILED_FINAL;
+  }
+  return BookingSplitOffsessionAttemptStatus.FAILED_RETRYABLE;
+}
+
+function classifyOffsessionAttemptError(params: {
+  attemptNo: number;
+}) {
+  return params.attemptNo >= BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS
+    ? BookingSplitOffsessionAttemptStatus.FAILED_FINAL
+    : BookingSplitOffsessionAttemptStatus.FAILED_RETRYABLE;
+}
+
+async function upsertBookingSplitOffsessionAttempt(params: {
+  splitId: number;
+  participantId: number;
+  attemptNo: number;
+  status: BookingSplitOffsessionAttemptStatus;
+  paymentIntentId?: string | null;
+  errorCode?: string | null;
+}) {
+  await prisma.bookingSplitOffsessionAttempt.upsert({
+    where: {
+      splitId_participantId_attemptNo: {
+        splitId: params.splitId,
+        participantId: params.participantId,
+        attemptNo: params.attemptNo,
+      },
+    },
+    update: {
+      status: params.status,
+      paymentIntentId: params.paymentIntentId ?? null,
+      errorCode: params.errorCode ?? null,
+    },
+    create: {
+      splitId: params.splitId,
+      participantId: params.participantId,
+      attemptNo: params.attemptNo,
+      status: params.status,
+      paymentIntentId: params.paymentIntentId ?? null,
+      errorCode: params.errorCode ?? null,
+    },
+  });
+}
+
+async function processBookingSplitOffsessionCharge(op: OperationRecord) {
+  const payload = op.payload ?? {};
+  const splitId = parsePositiveInt(payload.splitId);
+  const participantId = parsePositiveInt(payload.participantId);
+  const attemptNo = parsePositiveInt(payload.attemptNo);
+  const correlationId = normalizeText(payload.correlationId) ?? `op:${op.id}`;
+
+  if (!splitId || !participantId || !attemptNo) {
+    throw new Error("BOOKING_SPLIT_OFFSESSION_PAYLOAD_INVALID");
+  }
+  if (attemptNo > BOOKING_SPLIT_OFFSESSION_MAX_ATTEMPTS) {
+    throw new Error("BOOKING_SPLIT_OFFSESSION_ATTEMPT_OUT_OF_RANGE");
+  }
+
+  const participant = await prisma.bookingSplitParticipant.findUnique({
+    where: { id: participantId },
+    select: {
+      id: true,
+      splitId: true,
+      userId: true,
+      shareCents: true,
+      platformFeeCents: true,
+      status: true,
+      offsessionPaymentMethodId: true,
+      offsessionCustomerId: true,
+      split: {
+        select: {
+          id: true,
+          bookingId: true,
+          organizationId: true,
+          status: true,
+          railState: true,
+          currency: true,
+          organization: {
+            select: {
+              orgType: true,
+              stripeAccountId: true,
+              stripeChargesEnabled: true,
+              stripePayoutsEnabled: true,
+            },
+          },
+          booking: {
+            select: {
+              id: true,
+              serviceId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!participant || participant.splitId !== splitId) {
+    throw new Error("BOOKING_SPLIT_PARTICIPANT_NOT_FOUND");
+  }
+
+  const split = participant.split;
+  if (!split) {
+    throw new Error("BOOKING_SPLIT_NOT_FOUND");
+  }
+
+  if (participant.status === "PAID") {
+    await upsertBookingSplitOffsessionAttempt({
+      splitId: split.id,
+      participantId: participant.id,
+      attemptNo,
+      status: BookingSplitOffsessionAttemptStatus.SUCCEEDED,
+      errorCode: "ALREADY_PAID",
+    });
+    return;
+  }
+
+  if (split.status !== "OPEN" || split.railState !== "OFFSESSION_PI") {
+    await upsertBookingSplitOffsessionAttempt({
+      splitId: split.id,
+      participantId: participant.id,
+      attemptNo,
+      status: BookingSplitOffsessionAttemptStatus.FAILED_FINAL,
+      errorCode: "SPLIT_NOT_COLLECTABLE",
+    });
+    return;
+  }
+
+  const paymentMethodId = normalizeText(participant.offsessionPaymentMethodId);
+  if (!paymentMethodId) {
+    await upsertBookingSplitOffsessionAttempt({
+      splitId: split.id,
+      participantId: participant.id,
+      attemptNo,
+      status: BookingSplitOffsessionAttemptStatus.SKIPPED_NO_PAYMENT_METHOD,
+      errorCode: "NO_PAYMENT_METHOD",
+    });
+    return;
+  }
+
+  const amountCents = Math.max(0, Number(participant.shareCents ?? 0));
+  if (amountCents <= 0) {
+    await upsertBookingSplitOffsessionAttempt({
+      splitId: split.id,
+      participantId: participant.id,
+      attemptNo,
+      status: BookingSplitOffsessionAttemptStatus.FAILED_FINAL,
+      errorCode: "INVALID_AMOUNT",
+    });
+    return;
+  }
+
+  const sourceId = String(split.bookingId);
+  const purchaseId = `booking_${split.bookingId}_split_${participant.id}_offsession_${attemptNo}`;
+  const currency = (split.currency || "EUR").toUpperCase();
+  const platformFeeCents = Math.max(0, Number(participant.platformFeeCents ?? 0));
+
+  let intent: Stripe.PaymentIntent | null = null;
+  try {
+    const ensured = await ensurePaymentIntent({
+      purchaseId,
+      orgId: split.organizationId,
+      sourceType: SourceType.BOOKING,
+      sourceId,
+      amountCents,
+      currency,
+      intentParams: {
+        payment_method_types: ["card"],
+        payment_method: paymentMethodId,
+        customer: normalizeText(participant.offsessionCustomerId) ?? undefined,
+        off_session: true,
+        confirm: true,
+        description: `Reserva serviço ${split.booking?.serviceId ?? split.bookingId} (split offsession)`,
+      },
+      metadata: {
+        serviceBooking: "1",
+        bookingSplit: "1",
+        bookingSplitOffsession: "1",
+        bookingSplitId: String(split.id),
+        bookingSplitParticipantId: String(participant.id),
+        bookingId: String(split.bookingId),
+        serviceId: split.booking?.serviceId ? String(split.booking.serviceId) : "",
+        orgId: String(split.organizationId),
+        userId: participant.userId ?? "",
+        shareCents: String(amountCents),
+        platformFeeCents: String(platformFeeCents),
+        sourceType: SourceType.BOOKING,
+        sourceId,
+        currency,
+        correlationId,
+      },
+      orgContext: {
+        stripeAccountId: split.organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: split.organization?.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled: split.organization?.stripePayoutsEnabled ?? false,
+        orgType: split.organization?.orgType ?? null,
+      },
+      requireStripe: split.organization?.orgType !== "PLATFORM",
+      resolvedSnapshot: {
+        orgId: split.organizationId,
+        customerIdentityId: participant.userId ?? null,
+        snapshot: {
+          currency,
+          gross: amountCents,
+          discounts: 0,
+          taxes: 0,
+          platformFee: platformFeeCents,
+          total: amountCents,
+          netToOrgPending: Math.max(0, amountCents - platformFeeCents),
+          processorFeesStatus: ProcessorFeesStatus.PENDING,
+          processorFeesActual: null,
+          feeMode: "INCLUDED",
+          feeBps: 0,
+          feeFixed: 0,
+          feePolicyVersion: "BOOKING_SPLIT_GARANTIDO_V1",
+          promoPolicyVersion: null,
+          sourceType: SourceType.BOOKING,
+          sourceId,
+          lineItems: [
+            {
+              quantity: 1,
+              unitPriceCents: amountCents,
+              totalAmountCents: amountCents,
+              currency,
+              sourceLineId: String(participant.id),
+              label: `Reserva ${split.bookingId} (split offsession)`,
+            },
+          ],
+        },
+      },
+      customerIdentityId: participant.userId ?? null,
+      paymentEvent: {
+        userId: participant.userId ?? null,
+        amountCents,
+        platformFeeCents,
+      },
+    });
+    intent = ensured.paymentIntent;
+  } catch (err) {
+    const status = classifyOffsessionAttemptError({ attemptNo });
+    const errorCode =
+      err && typeof err === "object" && "code" in err && typeof err.code === "string"
+        ? err.code
+        : err instanceof Error
+          ? err.message
+          : "OFFSESSION_CREATE_FAILED";
+    await upsertBookingSplitOffsessionAttempt({
+      splitId: split.id,
+      participantId: participant.id,
+      attemptNo,
+      status,
+      errorCode,
+    });
+    return;
+  }
+
+  const resolvedPaymentMethodId = extractPaymentMethodId(intent);
+  const resolvedCustomerId = extractCustomerId(intent);
+  if (resolvedPaymentMethodId || resolvedCustomerId) {
+    await prisma.bookingSplitParticipant.update({
+      where: { id: participant.id },
+      data: {
+        offsessionPaymentMethodId: resolvedPaymentMethodId ?? participant.offsessionPaymentMethodId,
+        offsessionCustomerId: resolvedCustomerId ?? participant.offsessionCustomerId,
+      },
+    });
+  }
+
+  const status = classifyOffsessionAttemptStatus({
+    intentStatus: intent.status,
+    attemptNo,
+  });
+  await upsertBookingSplitOffsessionAttempt({
+    splitId: split.id,
+    participantId: participant.id,
+    attemptNo,
+    status,
+    paymentIntentId: intent.id,
+    errorCode: status === BookingSplitOffsessionAttemptStatus.SUCCEEDED ? null : intent.status,
+  });
+
+  if (status === BookingSplitOffsessionAttemptStatus.SUCCEEDED) {
+    const handled = await fulfillServiceBookingIntent(intent);
+    if (!handled) {
+      throw new Error("BOOKING_SPLIT_OFFSESSION_FULFILL_NOT_HANDLED");
+    }
+  }
+}
+
+async function processAgendaArbitrationCompensation(op: OperationRecord) {
+  const payload = op.payload ?? {};
+  const arbitrationDecisionId = normalizeUuid(payload.arbitrationDecisionId ?? payload.arbitrationId);
+  const attemptNo = parsePositiveInt(payload.attemptNo);
+  const correlationId = normalizeText(payload.correlationId) ?? `op:${op.id}`;
+
+  if (!arbitrationDecisionId || !attemptNo) {
+    throw new Error("AGENDA_ARBITRATION_COMPENSATION_PAYLOAD_INVALID");
+  }
+  if (attemptNo > AGENDA_ARBITRATION_COMP_MAX_ATTEMPTS) {
+    throw new Error("AGENDA_ARBITRATION_COMPENSATION_ATTEMPT_OUT_OF_RANGE");
+  }
+
+  const decisionRows = await prisma.$queryRaw<AgendaArbitrationDecisionRow[]>(
+    Prisma.sql`
+      SELECT
+        id,
+        compensation_status as "compensationStatus",
+        created_at as "createdAt",
+        resource_key as "resourceKey",
+        authority_org_id as "authorityOrgId",
+        priority_rule_version as "priorityRuleVersion",
+        correlation_id as "correlationId",
+        metadata
+      FROM app_v3.agenda_arbitration_decisions
+      WHERE id = ${arbitrationDecisionId}::uuid
+      LIMIT 1
+    `,
+  );
+  const decision = decisionRows[0] ?? null;
+  if (!decision || !decision.compensationStatus) return;
+  if (isCompensationStatusTerminal(decision.compensationStatus)) return;
+
+  if (decision.compensationStatus === "OPEN") {
+    await setAgendaArbitrationCompensationStatus({
+      arbitrationDecisionId: decision.id,
+      status: "IN_PROGRESS",
+    });
+  }
+
+  const forceFailure = shouldForceCompensationFailure(decision.metadata);
+  if (!forceFailure) {
+    await upsertAgendaArbitrationCompensationAttempt({
+      arbitrationDecisionId: decision.id,
+      attemptNo,
+      status: "SUCCEEDED",
+      errorCode: null,
+    });
+    await setAgendaArbitrationCompensationStatus({
+      arbitrationDecisionId: decision.id,
+      status: "SUCCEEDED",
+    });
+    return;
+  }
+
+  const retryable = attemptNo < AGENDA_ARBITRATION_COMP_MAX_ATTEMPTS;
+  await upsertAgendaArbitrationCompensationAttempt({
+    arbitrationDecisionId: decision.id,
+    attemptNo,
+    status: retryable ? "FAILED_RETRYABLE" : "FAILED_FINAL",
+    errorCode: "COMPENSATION_FAILED",
+  });
+  await setAgendaArbitrationCompensationStatus({
+    arbitrationDecisionId: decision.id,
+    status: retryable ? "IN_PROGRESS" : "FAILED",
+  });
+
+  if (!retryable) {
+    emitArbitrationMetric("arbitration.compensation.failed_rate", {
+      value: 1,
+      arbitrationId: decision.id,
+      resourceKey: decision.resourceKey,
+      authorityOrgId: decision.authorityOrgId,
+      priorityRuleVersion: decision.priorityRuleVersion,
+      correlationId: decision.correlationId ?? correlationId,
+    });
+  }
 }
 
 async function markEntitlementsStatusByPurchase(purchaseId: string, status: EntitlementStatus) {
@@ -852,6 +1338,10 @@ async function processOperation(op: OperationRecord) {
       return processClaimGuestPurchase(op);
     case "SEND_EMAIL_OUTBOX":
       return processSendEmailOutbox(op);
+    case "BOOKING_SPLIT_OFFSESSION_CHARGE":
+      return processBookingSplitOffsessionCharge(op);
+    case "AGENDA_ARBITRATION_COMPENSATION":
+      return processAgendaArbitrationCompensation(op);
     case "OUTBOX_EVENT": {
       const payload = op.payload ?? {};
       const eventType = typeof payload.eventType === "string" ? payload.eventType : null;

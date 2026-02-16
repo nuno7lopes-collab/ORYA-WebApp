@@ -82,9 +82,9 @@ const INVITE_TYPE_LABEL: Record<InviteType, string> = {
   TEAM_MEMBER: "Equipa",
 };
 
-type OrgBadgeRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "TRAINER" | "PROMOTER";
+type OrgBadgeRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER";
 const isOrganizationBadgeRole = (role: string): role is OrgBadgeRole =>
-  ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "TRAINER", "PROMOTER"].includes(role);
+  ["OWNER", "CO_OWNER", "ADMIN", "STAFF", "PROMOTER"].includes(role);
 
 const resolveInviteContextLabel = (invite: InviteItem) => {
   const inviteType = invite.inviteType ?? "ORGANIZATION_MEMBER";
@@ -122,7 +122,6 @@ export default function OrganizationInvitesClient({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const orgIdFallback = getOrganizationIdFromBrowser();
   const orgHomeHref = orgIdFallback ? buildOrgHref(orgIdFallback, "/overview") : buildOrgHubHref("/organizations");
-  const orgBecomeHref = buildOrgHubHref("/create");
 
   const inviteIdParam = searchParams.get("invite") ?? searchParams.get("inviteId") ?? initialInviteId;
   const tokenParam = searchParams.get("token") ?? initialToken;
@@ -204,12 +203,6 @@ export default function OrganizationInvitesClient({
                 className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/80 transition hover:border-white/30"
               >
                 {t("orgInvitesGoOrgs", locale)}
-              </Link>
-              <Link
-                href={orgBecomeHref}
-                className="rounded-full border border-white/20 bg-gradient-to-r from-cyan-300/80 via-sky-300/80 to-purple-300/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#05060f] shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition hover:brightness-110"
-              >
-                {t("orgInvitesCreateOrg", locale)}
               </Link>
             </div>
           </div>

@@ -28,15 +28,12 @@ import TeamSubnav from "@/app/org/_components/subnav/TeamSubnav";
 import PadelClubSubnav from "@/app/org/_components/subnav/PadelClubSubnav";
 import PadelTournamentsSubnav from "@/app/org/_components/subnav/PadelTournamentsSubnav";
 import MarketingSubnav from "@/app/org/_components/subnav/MarketingSubnav";
-import ProfileSubnav from "@/app/org/_components/subnav/ProfileSubnav";
-import SettingsSubnav from "@/app/org/_components/subnav/SettingsSubnav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
-const TOPBAR_FLOAT_OFFSET = 12;
 const TOPBAR_MIN_HEIGHT = 64;
 const TOPBAR_MAX_HEIGHT = 220;
-const TOPBAR_MIN_RENDERED_HEIGHT = TOPBAR_MIN_HEIGHT + TOPBAR_FLOAT_OFFSET;
-const TOPBAR_MAX_RENDERED_HEIGHT = TOPBAR_MAX_HEIGHT + TOPBAR_FLOAT_OFFSET;
+const TOPBAR_MIN_RENDERED_HEIGHT = TOPBAR_MIN_HEIGHT;
+const TOPBAR_MAX_RENDERED_HEIGHT = TOPBAR_MAX_HEIGHT;
 const SCROLL_TOP_THRESHOLD = 24;
 const SCROLL_NOISE_THRESHOLD = 2;
 const SCROLL_DIRECTION_THRESHOLD = 16;
@@ -79,28 +76,33 @@ type OrganizationMeResponse = {
   organization?: {
     officialEmail?: string | null;
     officialEmailVerifiedAt?: string | null;
+    officialEmailPending?: {
+      requestId: number;
+      newEmail: string;
+      createdAt: string;
+      expiresAt?: string | null;
+    } | null;
   } | null;
   paymentsStatus?: "NO_STRIPE" | "PENDING" | "READY";
   paymentsMode?: "CONNECT" | "PLATFORM";
 };
 
 const TOOL_META: Record<OrgToolKey, { label: string; moduleKey: string | null }> = {
-  dashboard: { label: "Dashboard", moduleKey: null },
-  events: { label: "Events", moduleKey: "EVENTOS" },
-  bookings: { label: "Bookings", moduleKey: "RESERVAS" },
+  dashboard: { label: "Painel", moduleKey: null },
+  events: { label: "Eventos", moduleKey: "EVENTOS" },
+  bookings: { label: "Reservas", moduleKey: "RESERVAS" },
   "check-in": { label: "Check-in", moduleKey: "CHECKIN" },
-  finance: { label: "Finance", moduleKey: "FINANCEIRO" },
-  analytics: { label: "Analytics", moduleKey: "ANALYTICS" },
+  finance: { label: "Finanças", moduleKey: "FINANCEIRO" },
+  analytics: { label: "Análises", moduleKey: "ANALYTICS" },
   crm: { label: "CRM", moduleKey: "CRM" },
-  store: { label: "Store", moduleKey: "LOJA" },
-  forms: { label: "Forms", moduleKey: "INSCRICOES" },
-  chat: { label: "Chat", moduleKey: "MENSAGENS" },
-  team: { label: "Team", moduleKey: "STAFF" },
+  store: { label: "Loja", moduleKey: "LOJA" },
+  forms: { label: "Formulários", moduleKey: "INSCRICOES" },
+  chat: { label: "Chat interno", moduleKey: "MENSAGENS" },
+  team: { label: "Equipa", moduleKey: "STAFF" },
   "padel-club": { label: "Gestão de Clube Padel", moduleKey: "TORNEIOS" },
   "padel-tournaments": { label: "Torneios de Padel", moduleKey: "TORNEIOS" },
-  marketing: { label: "Marketing", moduleKey: "MARKETING" },
-  profile: { label: "Profile", moduleKey: "PERFIL_PUBLICO" },
-  settings: { label: "Settings", moduleKey: "DEFINICOES" },
+  marketing: { label: "Promoções", moduleKey: "MARKETING" },
+  settings: { label: "Definições", moduleKey: "DEFINICOES" },
 };
 
 const MODULE_ICON_GRADIENTS: Record<string, string> = {
@@ -116,7 +118,6 @@ const MODULE_ICON_GRADIENTS: Record<string, string> = {
   CRM: "from-[#F97316]/35 via-[#38BDF8]/30 to-[#22D3EE]/35",
   MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
   LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
-  PERFIL_PUBLICO: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
   DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
 };
 
@@ -180,8 +181,6 @@ export default function OrganizationTopBar({
       return <PadelTournamentsSubnav orgId={orgId} className="w-full max-w-full" />;
     }
     if (activeTool === "marketing") return <MarketingSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "profile") return <ProfileSubnav orgId={orgId} className="w-full max-w-full" />;
-    if (activeTool === "settings") return <SettingsSubnav orgId={orgId} className="w-full max-w-full" />;
     return null;
   }, [activeOrg?.id, activeTool]);
 
@@ -198,10 +197,16 @@ export default function OrganizationTopBar({
     if (!orgData) return false;
     const officialEmailNormalized = normalizeOfficialEmail(orgData.organization?.officialEmail ?? null);
     const emailVerified = Boolean(officialEmailNormalized && orgData.organization?.officialEmailVerifiedAt);
+    const pendingEmailNormalized = normalizeOfficialEmail(orgData.organization?.officialEmailPending?.newEmail ?? null);
+    const hasPendingChange = Boolean(
+      emailVerified &&
+        pendingEmailNormalized &&
+        pendingEmailNormalized !== officialEmailNormalized,
+    );
     const paymentsMode = orgData.paymentsMode ?? null;
     const paymentsStatus = orgData.paymentsStatus ?? null;
     const paymentsReady = paymentsMode === "PLATFORM" || paymentsStatus === "READY";
-    return !emailVerified || !paymentsReady;
+    return !emailVerified || !paymentsReady || hasPendingChange;
   }, [orgData]);
 
   useEffect(() => {
@@ -274,6 +279,7 @@ export default function OrganizationTopBar({
     if (!orgData) return [];
     const officialEmailVerifiedAt = orgData.organization?.officialEmailVerifiedAt ?? null;
     const officialEmail = normalizeOfficialEmail(orgData.organization?.officialEmail ?? null);
+    const pendingEmail = normalizeOfficialEmail(orgData.organization?.officialEmailPending?.newEmail ?? null);
     const emailVerified = Boolean(officialEmail && officialEmailVerifiedAt);
     const paymentsStatus = orgData.paymentsStatus ?? null;
     const paymentsMode = orgData.paymentsMode ?? null;
@@ -284,6 +290,13 @@ export default function OrganizationTopBar({
         label: officialEmail ? "Email por verificar" : "Email obrigatório",
         href: activeOrg?.id ? buildOrgHref(activeOrg.id, "/settings") : buildOrgHubHref("/organizations"),
         tone: "danger",
+      });
+    } else if (pendingEmail && pendingEmail !== officialEmail) {
+      items.push({
+        key: "email_pending_change",
+        label: "Alteração de email pendente",
+        href: activeOrg?.id ? buildOrgHref(activeOrg.id, "/settings") : buildOrgHubHref("/organizations"),
+        tone: "warning",
       });
     }
     if (paymentsMode === "CONNECT" && paymentsStatus && paymentsStatus !== "READY") {
@@ -434,7 +447,7 @@ export default function OrganizationTopBar({
     <div
       ref={topbarRef}
       className={cn(
-        "fixed inset-x-0 top-0 z-[70] pt-3 transition-transform duration-300 ease-out",
+        "fixed inset-x-0 top-0 z-[70] transition-transform duration-300 ease-out",
         isVisible ? "translate-y-0" : "-translate-y-full",
       )}
     >
@@ -455,7 +468,8 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href={dashboardHref}
-              className="group flex h-11 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
+              className="group flex h-11 min-w-0 shrink-0 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 text-sm text-white/85 shadow-[0_12px_38px_rgba(0,0,0,0.3)] transition hover:bg-white/10"
+              aria-label={`Voltar ao painel (${currentApp.label})`}
             >
               {currentApp.moduleKey ? (
                 <span
@@ -467,8 +481,9 @@ export default function OrganizationTopBar({
                   <ModuleIcon moduleKey={currentApp.moduleKey} className="h-4 w-4" aria-hidden="true" />
                 </span>
               ) : null}
-              <span className="text-sm font-semibold text-white">{currentApp.label}</span>
-              <span className="text-white/50 opacity-0 transition group-hover:opacity-100">←</span>
+              <span className="max-w-[180px] truncate text-[13px] font-semibold text-white">
+                {currentApp.label}
+              </span>
             </Link>
           </div>
           <div className="order-3 flex w-full min-w-0 items-center gap-2 lg:order-none lg:flex-1">
@@ -476,12 +491,7 @@ export default function OrganizationTopBar({
           </div>
 
           <div className="order-2 ml-auto flex items-center gap-2 lg:order-none">
-          {isOrgDataLoading ? (
-            <div className="hidden items-center gap-2 sm:flex">
-              <span className="h-[26px] w-[120px] animate-pulse rounded-full border border-white/10 bg-white/5" />
-              <span className="h-[26px] w-[88px] animate-pulse rounded-full border border-white/10 bg-white/5" />
-            </div>
-          ) : (
+          {!isOrgDataLoading && (
             activationItems.map((item) => (
               <Link
                 key={item.key}

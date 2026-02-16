@@ -6,8 +6,6 @@ import { headers } from "next/headers";
 import WavesSectionClient, { type WaveTicket, type WaveStatus } from "./WavesSectionClient";
 import Link from "next/link";
 import EventPageClient from "./EventPageClient";
-import EventLiveClient from "./EventLiveClient";
-import PadelPublicTablesClient from "./PadelPublicTablesClient";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import type { Metadata } from "next";
 import type { Prisma } from "@prisma/client";
@@ -145,20 +143,6 @@ type EventResale = {
   } | null;
   ticketTypeName?: string | null;
 };
-type PadelStandingRow = {
-  entityId: number;
-  pairingId: number | null;
-  playerId?: number | null;
-  points: number;
-  wins: number;
-  draws?: number;
-  losses: number;
-  setsFor: number;
-  setsAgainst: number;
-  label?: string | null;
-  players?: Array<{ id?: number | null; name?: string | null; username?: string | null }> | null;
-};
-
 const EVENT_BG_MASK = `linear-gradient(
   to bottom,
   rgba(0,0,0,var(--event-bg-mask-alpha-1,1)) var(--event-bg-mask-stop-1,0%),
@@ -257,7 +241,6 @@ export default async function EventPage({
     templateType: true,
     coverImageUrl: true,
     timezone: true,
-    liveVisibility: true,
     organizationId: true,
     ticketTypes: {
       select: {
@@ -475,12 +458,6 @@ export default async function EventPage({
           ? t("competitionPublic", locale)
           : t("competitionCancelled", locale)
     : null;
-  const viewParam =
-    typeof resolvedSearchParams?.view === "string" ? resolvedSearchParams.view : null;
-  const showLiveInline = viewParam === "live";
-  const liveHref = `/eventos/${slug}/live`;
-  const liveInlineHref = `/eventos/${slug}?view=live`;
-
   const resolvedLocation = resolveEventLocation({
     addressRef: event.addressRef ?? null,
   });
@@ -501,8 +478,6 @@ export default async function EventPage({
   const safeOrganization = organizationDisplay || t("organizationFallback", locale);
   const organizationAvatarUrl = event.organization?.brandingAvatarUrl?.trim() || null;
   const organizationHandle = organizationUsername ? `@${organizationUsername}` : null;
-  const liveVisibility = event.liveVisibility ?? "PUBLIC";
-
   // Nota: no modelo atual, não determinamos o utilizador autenticado neste
   // Server Component para evitar erros de escrita de cookies.
   // A verificação de "já tens bilhete" pode ser feita no cliente.
@@ -717,43 +692,6 @@ export default async function EventPage({
     const cheapest = filtered.reduce((min, cur) => (cur.price < min.price ? cur : min), filtered[0]);
     return cheapest.id ?? null;
   })();
-
-  let padelStandingsEntityType: "PAIRING" | "PLAYER" = "PAIRING";
-  let padelStandings: Record<string, PadelStandingRow[]> = {};
-
-  const canShowPadelTables = isPadel && padelV2Enabled && isPublicEvent && padelCompetitionState === "PUBLIC";
-  if (canShowPadelTables) {
-    if (baseUrl) {
-      try {
-        const standingsRes = await fetch(
-          `${baseUrl}/api/padel/standings?eventId=${event.id}`,
-          { cache: "no-store" },
-        );
-        if (standingsRes.ok) {
-          const data = (await standingsRes.json().catch(() => null)) as
-            | { ok?: boolean; entityType?: "PAIRING" | "PLAYER"; groups?: Record<string, PadelStandingRow[]> }
-            | null;
-          if (data?.ok && data.groups) {
-            padelStandingsEntityType = data.entityType === "PLAYER" ? "PLAYER" : "PAIRING";
-            padelStandings = Object.fromEntries(
-              Object.entries(data.groups).map(([group, rows]) => [
-                group,
-                rows.map((row) => ({
-                  ...row,
-                  setsFor: row.setsFor ?? 0,
-                  setsAgainst: row.setsAgainst ?? 0,
-                })),
-              ]),
-            );
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao carregar standings padel", slug, err);
-      }
-    }
-
-  }
-  const shouldShowPadelTables = canShowPadelTables;
 
   const backgroundDefaults = {
     blur: 56,
@@ -1093,123 +1031,6 @@ export default async function EventPage({
                 {descriptionText}
               </p>
             </section>
-
-            <section className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8" id="live">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                    <span>{t("liveLabel", locale)}</span>
-                    <span className="h-1 w-1 rounded-full bg-white/30" />
-                    <span>{isPadel ? t("liveSectionPadelSubtitle", locale) : t("liveSectionDefaultSubtitle", locale)}</span>
-                    {liveVisibility !== "PUBLIC" && (
-                      <>
-                        <span className="h-1 w-1 rounded-full bg-white/30" />
-                        <span>
-                          {liveVisibility === "PRIVATE"
-                            ? t("liveVisibilityPrivate", locale)
-                            : t("liveVisibilityDisabled", locale)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  <h3 className="mt-3 text-xl font-semibold">
-                    {isPadel ? t("liveSectionTitlePadel", locale) : t("liveSectionTitleDefault", locale)}
-                  </h3>
-                  <p className="mt-2 text-xs text-white/60">
-                    {isPadel
-                      ? t("liveSectionPadelDescription", locale)
-                      : t("liveSectionDefaultDescription", locale)}
-                  </p>
-                </div>
-                {liveVisibility !== "DISABLED" && (
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={liveHref}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
-                    >
-                      {t("openLiveLabel", locale)}
-                    </Link>
-                    <Link
-                      href={liveInlineHref}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
-                    >
-                      {t("viewHereLabel", locale)}
-                    </Link>
-                    {isPadel && (
-                      <Link
-                        href={`/eventos/${slug}/score`}
-                        className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-white/10"
-                      >
-                        {t("liveScoreButtonLabel", locale)}
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {liveVisibility === "DISABLED" ? (
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
-                  {t("liveHubDisabledMessage", locale)}
-                </div>
-              ) : showLiveInline ? (
-                <div className="mt-4">
-                  <EventLiveClient slug={slug} variant="inline" locale={locale} />
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/40 px-4 py-3 text-sm text-white/70">
-                  {isPadel
-                    ? t("liveHubOpenHintPadel", locale)
-                    : t("liveHubOpenHintDefault", locale)}
-                </div>
-              )}
-            </section>
-
-            {shouldShowPadelTables && (
-              <section
-                id="padel-classificacoes"
-                className="rounded-3xl border border-white/10 bg-black/45 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl md:p-8 animate-fade-slide"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-white/60">
-                      <span>{t("padel", locale)}</span>
-                      <span className="h-1 w-1 rounded-full bg-white/30" />
-                      <span>{t("standings", locale)}</span>
-                    </div>
-                    <h3 className="mt-3 text-xl font-semibold">{t("standings", locale)}</h3>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
-                    <Link
-                      href={`/eventos/${slug}/ranking`}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
-                    >
-                      {t("rankingLabel", locale)}
-                    </Link>
-                    <Link
-                      href={`/eventos/${slug}/calendario`}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
-                    >
-                      {t("calendarLabel", locale)}
-                    </Link>
-                    <Link
-                      href={`/eventos/${slug}/monitor`}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 hover:bg-white/10"
-                    >
-                      {t("monitorLabel", locale)}
-                    </Link>
-                  </div>
-                </div>
-
-                <PadelPublicTablesClient
-                  eventId={event.id}
-                  eventSlug={event.slug}
-                  initialEntityType={padelStandingsEntityType}
-                  initialStandings={padelStandings}
-                  locale={locale}
-                  timezone={safeTimezone}
-                />
-              </section>
-            )}
 
           </div>
 

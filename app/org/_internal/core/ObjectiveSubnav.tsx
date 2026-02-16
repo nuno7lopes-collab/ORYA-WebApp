@@ -30,7 +30,6 @@ const OBJECTIVE_LABELS: Record<ObjectiveTab, string> = {
   manage: "Gerir",
   promote: "Promoções",
   analyze: "Analisar",
-  profile: "Perfil",
 };
 
 type ObjectiveSubnavProps = {
@@ -90,12 +89,10 @@ export default function ObjectiveSubnav({
   const isCanonicalOrgPath = pathname?.startsWith("/org/");
   const moduleBasePath = isCanonicalOrgPath
     ? null
-    : pathname?.startsWith("/org/eventos")
-      ? "/org/eventos"
-      : pathname?.startsWith("/org/torneios") ||
-          pathname?.startsWith("/org/padel") ||
-          pathname?.startsWith("/org/tournaments")
-        ? "/org/padel/torneios"
+    : pathname?.startsWith("/org/events")
+      ? "/org/events"
+      : pathname?.startsWith("/org/padel")
+        ? "/org/padel/tournaments"
       : null;
   const sectionParam = searchParams?.get("section");
   const sectionOperationOverride =
@@ -107,16 +104,14 @@ export default function ObjectiveSubnav({
           ? "TORNEIOS"
           : null;
   const pathnameOperationOverride =
-    pathname?.startsWith("/org/reservas") ||
+    pathname?.startsWith("/org/bookings") ||
     (isCanonicalOrgPath && (pathname?.includes("/bookings") || pathname?.includes("/servicos") || pathname?.includes("/services")))
       ? "RESERVAS"
-      : pathname?.startsWith("/org/eventos") ||
+      : pathname?.startsWith("/org/events") ||
           (isCanonicalOrgPath && (pathname?.includes("/events") || pathname?.includes("/eventos")))
         ? "EVENTOS"
-        : pathname?.startsWith("/org/torneios") ||
-            pathname?.startsWith("/org/padel") ||
-            pathname?.startsWith("/org/tournaments") ||
-            (isCanonicalOrgPath && (pathname?.includes("/padel") || pathname?.includes("/tournaments") || pathname?.includes("/torneios")))
+        : pathname?.startsWith("/org/padel") ||
+            (isCanonicalOrgPath && pathname?.includes("/padel"))
           ? "TORNEIOS"
           : null;
   const operationOverride = sectionOperationOverride ?? pathnameOperationOverride;

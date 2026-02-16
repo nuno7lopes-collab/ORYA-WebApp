@@ -30,7 +30,7 @@ export default function RecursoDisponibilidadePage() {
   }, [data?.items, resourceId]);
 
   if (!Number.isFinite(resourceId)) {
-    return <div className="text-white">Recurso invalido.</div>;
+    return <div className="text-white">Recurso inválido.</div>;
   }
 
   return (
@@ -41,9 +41,9 @@ export default function RecursoDisponibilidadePage() {
           <h1 className={DASHBOARD_TITLE}>
             Disponibilidade · {resource?.label ?? "Recurso"}
           </h1>
-          <p className={DASHBOARD_MUTED}>Configura horarios e excecoes.</p>
+          <p className={DASHBOARD_MUTED}>Configura horários e exceções.</p>
         </div>
-        <Link href="/org/reservas/recursos" className={CTA_SECONDARY}>
+        <Link href="/org/bookings/recursos" className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -54,7 +54,7 @@ export default function RecursoDisponibilidadePage() {
           A disponibilidade do recurso é gerida no calendário principal, usando o filtro de recursos.
         </p>
         <Link
-          href={`/org/reservas?tab=availability&resourceId=${resourceId}`}
+          href={`/org/bookings?tab=availability&resourceId=${resourceId}`}
           className={CTA_SECONDARY}
         >
           Abrir agenda

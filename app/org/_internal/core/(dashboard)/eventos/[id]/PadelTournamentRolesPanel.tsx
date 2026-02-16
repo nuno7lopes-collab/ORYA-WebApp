@@ -76,20 +76,20 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
           code === "USER_NOT_MEMBER"
             ? "Utilizador não é membro da organização."
             : code === "ROLE_ALREADY_ASSIGNED"
-              ? "Role já atribuída."
-              : code === "USER_NOT_FOUND"
+              ? "Função já atribuída."
+            : code === "USER_NOT_FOUND"
                 ? "Utilizador não encontrado."
-                : sanitizeUiErrorMessage(code, "Erro ao atribuir role.");
+                : sanitizeUiErrorMessage(code, "Erro ao atribuir função.");
         setError(msg);
         return;
       }
       setIdentifier("");
-      setMessage("Role atribuída.");
+      setMessage("Função atribuída.");
       mutate();
       setTimeout(() => setMessage(null), 2500);
     } catch (err) {
       console.error("[padel/roles] add", err);
-      setError("Erro ao atribuir role.");
+      setError("Erro ao atribuir função.");
     } finally {
       setSaving(false);
     }
@@ -103,15 +103,15 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
       const res = await fetch(`/api/padel/tournaments/roles?id=${id}`, { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        setError(sanitizeUiErrorMessage(json?.error, "Erro ao remover role."));
+        setError(sanitizeUiErrorMessage(json?.error, "Erro ao remover função."));
         return;
       }
-      setMessage("Role removida.");
+      setMessage("Função removida.");
       mutate();
       setTimeout(() => setMessage(null), 2500);
     } catch (err) {
       console.error("[padel/roles] remove", err);
-      setError("Erro ao remover role.");
+      setError("Erro ao remover função.");
     } finally {
       setRemovingId(null);
     }
@@ -121,7 +121,7 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
     <div className="rounded-2xl border border-white/12 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Roles do torneio</p>
+          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Funções do torneio</p>
           <p className="text-sm text-white/70">Define árbitros, diretores e operações por evento.</p>
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function PadelTournamentRolesPanel({ eventId }: { eventId: number
 
       <div className="mt-4 space-y-2">
         {items.length === 0 && (
-          <p className="text-[12px] text-white/60">Sem roles atribuídas.</p>
+          <p className="text-[12px] text-white/60">Sem funções atribuídas.</p>
         )}
         {items.map((item) => {
           const name = item.user?.fullName || item.user?.username || "Utilizador";

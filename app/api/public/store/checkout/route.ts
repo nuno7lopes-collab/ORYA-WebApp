@@ -22,6 +22,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { finalizeFreeStoreCheckout } from "@/domain/finance/freeStoreCheckout";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -194,6 +195,10 @@ async function _POST(req: NextRequest) {
     }
 
     const payload = parsed.data;
+    const customerPhoneRaw = payload.customer.phone?.trim() ?? "";
+    if (customerPhoneRaw && !isValidPhone(customerPhoneRaw)) {
+      return fail("INVALID_PHONE", "Telefone inválido.", 400);
+    }
     const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
     const idempotencyKey = (payload.idempotencyKey ?? idempotencyKeyHeader ?? "").trim() || null;
     const supabase = await createSupabaseServer();
@@ -627,6 +632,11 @@ async function _POST(req: NextRequest) {
     if (requiresShipping && !shippingAddress) {
       return fail("ADDRESS_REQUIRED", "Morada obrigatoria.", 400);
     }
+    const phoneOptions = resolvePhoneNormalizationOptions({
+      headers: req.headers,
+      countryIso2: shippingAddress?.countryCode ?? billingAddress?.countryCode ?? null,
+    });
+    const customerPhone = customerPhoneRaw ? normalizePhone(customerPhoneRaw, phoneOptions) : null;
 
     const organization = store.organization;
     if (!organization) {
@@ -698,7 +708,7 @@ async function _POST(req: NextRequest) {
           currency: store.currency,
           customerEmail: payload.customer.email,
           customerName: payload.customer.name,
-          customerPhone: payload.customer.phone ?? null,
+          customerPhone,
           notes: payload.notes ?? null,
           purchaseId: providedPurchaseId ?? null,
           addresses: {

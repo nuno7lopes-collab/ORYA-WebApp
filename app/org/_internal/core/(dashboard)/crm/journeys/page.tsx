@@ -704,12 +704,12 @@ export default function CrmJourneysPage() {
       const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/crm/journeys/${journeyId}`));
       const json = (await res.json().catch(() => null)) as JourneyDetailResponse | null;
       if (!res.ok || !json?.ok || !json.journey) {
-        throw new Error(json?.message ?? json?.error ?? "Falha ao abrir journey");
+        throw new Error(json?.message ?? json?.error ?? "Falha ao abrir jornada");
       }
       parseJourneyToComposer(json.journey);
-      setSuccess("Journey carregada no composer.");
+      setSuccess("Jornada carregada no editor.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao abrir journey");
+      setError(err instanceof Error ? err.message : "Erro ao abrir jornada");
     } finally {
       setLoadingEditorId(null);
     }
@@ -738,7 +738,7 @@ export default function CrmJourneysPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.message ?? json?.error ?? "Falha ao guardar journey");
+        throw new Error(json?.message ?? json?.error ?? "Falha ao guardar jornada");
       }
 
       if (!isEditing && json?.journey?.id) {
@@ -746,9 +746,9 @@ export default function CrmJourneysPage() {
       }
 
       await mutate();
-      setSuccess(isEditing ? "Journey atualizada." : "Journey criada em rascunho.");
+      setSuccess(isEditing ? "Jornada atualizada." : "Jornada criada em rascunho.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao guardar journey");
+      setError(err instanceof Error ? err.message : "Erro ao guardar jornada");
     } finally {
       setSavingComposer(false);
     }
@@ -764,12 +764,12 @@ export default function CrmJourneysPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        throw new Error(json?.message ?? json?.error ?? "Falha na ação da journey");
+        throw new Error(json?.message ?? json?.error ?? "Falha na ação da jornada");
       }
       await mutate();
-      setSuccess(action === "publish" ? "Journey publicada." : "Journey pausada.");
+      setSuccess(action === "publish" ? "Jornada publicada." : "Jornada pausada.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao atualizar journey");
+      setError(err instanceof Error ? err.message : "Erro ao atualizar jornada");
     } finally {
       setRowActionId(null);
     }
@@ -779,7 +779,7 @@ export default function CrmJourneysPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <p className={DASHBOARD_LABEL}>CRM</p>
-        <h1 className={DASHBOARD_TITLE}>Journeys</h1>
+        <h1 className={DASHBOARD_TITLE}>Jornadas</h1>
         <p className={DASHBOARD_MUTED}>Composer visual com passos, condições, delays e ações multicanal.</p>
       </header>
 
@@ -797,7 +797,7 @@ export default function CrmJourneysPage() {
       <section className={cn(DASHBOARD_CARD, "space-y-4 p-4")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-white">
-            {editingJourneyId ? "Composer de Journey (edição)" : "Composer de Journey"}
+            {editingJourneyId ? "Editor de jornadas (edição)" : "Editor de jornadas"}
           </h2>
           <div className="flex items-center gap-2 text-[11px] text-white/60">
             <span>{steps.length} passos</span>
@@ -1158,8 +1158,8 @@ export default function CrmJourneysPage() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Journeys</h2>
-          <span className="text-[11px] text-white/50">{journeys.length} journeys</span>
+          <h2 className="text-sm font-semibold text-white">Jornadas</h2>
+          <span className="text-[11px] text-white/50">{journeys.length} jornadas</span>
         </div>
 
         <div className="grid gap-3">
@@ -1190,7 +1190,7 @@ export default function CrmJourneysPage() {
                     onClick={() => handleOpenEditor(journey.id)}
                     disabled={loadingEditorId === journey.id}
                   >
-                    {loadingEditorId === journey.id ? "A abrir..." : "Editar no composer"}
+                    {loadingEditorId === journey.id ? "A abrir..." : "Editar no editor"}
                   </button>
                   {!isPublished ? (
                     <button
@@ -1216,7 +1216,7 @@ export default function CrmJourneysPage() {
             );
           })}
           {!isLoading && journeys.length === 0 ? (
-            <div className={cn(DASHBOARD_CARD, "p-6 text-center text-[12px] text-white/60")}>Sem journeys criadas.</div>
+            <div className={cn(DASHBOARD_CARD, "p-6 text-center text-[12px] text-white/60")}>Sem jornadas criadas.</div>
           ) : null}
         </div>
       </section>

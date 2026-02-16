@@ -12,10 +12,9 @@ describe("resolveMobileLink org routing", () => {
     });
   });
 
-  it("keeps legacy org chat compatibility mapping", () => {
+  it("rejects legacy org chat links", () => {
     expect(resolveMobileLink("https://orya.pt/organizacao/chat?conversationId=xyz")).toEqual({
-      kind: "native",
-      path: "/messages/xyz",
+      kind: "none",
     });
   });
 

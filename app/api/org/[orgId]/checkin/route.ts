@@ -210,12 +210,12 @@ async function _POST(req: NextRequest) {
   }
 
   const policyResolution = await resolvePolicyForCheckin(eventId, ent.policyVersionApplied);
+  const resolvedCheckinMethod = resolveCheckinMethodForEntitlement(ent.type);
   if (!policyResolution.ok) {
     return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
   }
   if (policyResolution.policy) {
-    const method = resolveCheckinMethodForEntitlement(ent.type);
-    if (!method || !policyResolution.policy.checkinMethods.includes(method)) {
+    if (!resolvedCheckinMethod || !policyResolution.policy.checkinMethods.includes(resolvedCheckinMethod)) {
       return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
     }
   }
@@ -272,6 +272,7 @@ async function _POST(req: NextRequest) {
           entitlementId: ent.id,
           eventId,
           deviceId,
+          method: resolvedCheckinMethod,
           resultCode: CheckinResultCode.OK,
           checkedInBy: userId,
           purchaseId: ent.purchaseId,

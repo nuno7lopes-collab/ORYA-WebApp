@@ -269,7 +269,7 @@ export async function fetchDiscoverFeed(params: DiscoverFeedParams): Promise<Dis
 }
 
 export type DiscoverEventBuckets = {
-  liveEvents: PublicEventCard[];
+  currentEvents: PublicEventCard[];
   soonEvents: PublicEventCard[];
   cityEvents: PublicEventCard[];
 };
@@ -282,7 +282,7 @@ export function splitDiscoverEvents(
   const soonHours = opts.soonHours ?? 72;
   const soonLimit = now.getTime() + soonHours * 60 * 60 * 1000;
 
-  const liveEvents = events.filter((event) => {
+  const currentEvents = events.filter((event) => {
     const start = toDate(event.startsAt);
     const end = toDate(event.endsAt);
     if (!start || !end) return false;
@@ -311,5 +311,5 @@ export function splitDiscoverEvents(
     });
   }
 
-  return { liveEvents, soonEvents, cityEvents };
+  return { currentEvents, soonEvents, cityEvents };
 }

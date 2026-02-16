@@ -10,24 +10,14 @@ import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal"
 import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { getEventCoverSuggestionIds, getEventCoverUrl, parseEventCoverToken } from "@/lib/eventCover";
-import { fetchGeoAutocompleteWithMeta, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 import { useToast } from "@/components/ui/toast-provider";
-import { partitionSuggestionsByCountry } from "@/lib/geo/autocompletePolicy";
-import { trackEvent } from "@/lib/analytics";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
-import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
-import {
-  MAX_RECENT_LOCATIONS,
-  RECENT_LOCATION_KEY,
-  distanceKm,
-  formatDistanceLabel,
-  isFiniteCoordinate,
-  sanitizeRecentLocation,
-} from "@/lib/geo/locationUx";
+import type { GeoDetailsItem } from "@/lib/geo/types";
+import { AddressCombobox } from "@/components/ui/address-combobox";
 import type { Prisma } from "@prisma/client";
 
 const TicketTypeStatus = {
@@ -38,8 +28,6 @@ const TicketTypeStatus = {
 } as const;
 
 type TicketTypeStatus = (typeof TicketTypeStatus)[keyof typeof TicketTypeStatus];
-
-type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 type TicketTypeUI = {
   id: number;
@@ -62,7 +50,6 @@ type PadelCategoryLink = {
   format?: string | null;
   capacityTeams?: number | null;
   capacityPlayers?: number | null;
-  liveStreamUrl?: string | null;
   isEnabled: boolean;
   isHidden: boolean;
   category?: {
@@ -131,8 +118,6 @@ type EventEditClientProps = {
     templateType: string | null;
     isGratis: boolean;
     coverImageUrl: string | null;
-    liveVisibility: LiveVisibility;
-    liveStreamUrl: string | null;
     accessPolicy?: {
       mode?: string | null;
       guestCheckoutAllowed?: boolean | null;
@@ -195,27 +180,11 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const initialAddress = event.addressRef?.formattedAddress ?? "";
   const [locationAddressId, setLocationAddressId] = useState<string | null>(event.addressId ?? null);
   const [locationQuery, setLocationQuery] = useState(initialAddress);
-  const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
-  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
-  const [locationSearchLoading, setLocationSearchLoading] = useState(false);
-  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
-  const [locationBiasError, setLocationBiasError] = useState<string | null>(null);
-  const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
-  const [locationProviderId, setLocationProviderId] = useState<string | null>(
-    event.addressRef?.sourceProviderPlaceId ?? null,
-  );
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(
     event.addressRef?.formattedAddress ?? null,
   );
   const [locationLat, setLocationLat] = useState<number | null>(event.addressRef?.latitude ?? null);
   const [locationLng, setLocationLng] = useState<number | null>(event.addressRef?.longitude ?? null);
-  const [locationBias, setLocationBias] = useState<{ lat: number; lng: number } | null>(null);
-  const [requestingLocationBias, setRequestingLocationBias] = useState(false);
-  const [recentLocationItems, setRecentLocationItems] = useState<GeoAutocompleteItem[]>([]);
-  const [expectedCountryCode, setExpectedCountryCode] = useState<string | null>(null);
-  const [effectiveCountryCode, setEffectiveCountryCode] = useState<string | null>(null);
-  const [queryCountryIntentCode, setQueryCountryIntentCode] = useState<string | null>(null);
-  const [showForeignSuggestions, setShowForeignSuggestions] = useState(false);
   const [templateType] = useState(event.templateType ?? "OTHER");
   const isPadel = templateType === "PADEL";
   const ticketLabel = isPadel ? "inscrição" : "bilhete";
@@ -224,7 +193,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const ticketLabelArticle = isPadel ? "da" : "do";
   const ticketLabelThis = isPadel ? "esta inscrição" : "este bilhete";
   const ticketLabelNew = isPadel ? "nova inscrição" : "novo bilhete";
-  const eventRouteBase = isPadel ? "/org/padel/torneios" : "/org/eventos";
+  const eventRouteBase = isPadel ? "/org/padel/tournaments" : "/org/events";
   const organizationPrimaryModule =
     (organizationStatus as { organization?: { primaryModule?: string | null } } | null)?.organization
       ?.primaryModule ?? null;
@@ -246,10 +215,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         format: "webp",
       })
     : null;
-  const [liveVisibility, setLiveVisibility] = useState<LiveVisibility>(
-    event.liveVisibility ?? "PUBLIC",
-  );
-  const [liveStreamUrl, setLiveStreamUrl] = useState(event.liveStreamUrl ?? "");
   const accessMode =
     typeof event.accessPolicy?.mode === "string"
       ? event.accessPolicy.mode.trim().toUpperCase()
@@ -339,12 +304,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const startsRef = useRef<HTMLDivElement | null>(null);
   const endsRef = useRef<HTMLDivElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
-  const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const suggestionBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const locationSearchSeq = useRef(0);
-  const locationDetailsSeq = useRef(0);
-  const activeProviderRef = useRef<string | null>(null);
-  const locationBypassAnalyticsRef = useRef<string | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement | null>(null);
   const pushToast = (message: string, tone: "success" | "error" = "error") => {
     publishToast(message, { variant: tone === "success" ? "success" : "error" });
@@ -367,7 +326,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const primaryLabelTitle = isPadel ? "Torneio" : "Evento";
   const primaryLabelPlural = isPadel ? "Torneios" : "Eventos";
   const templateLabel = isPadel ? "Padel" : "Evento padrão";
-  const livePreviewUrl = `/eventos/${event.slug}/live`;
   const inputClass = (invalid: boolean) =>
     `w-full rounded-md border ${invalid ? "border-amber-400/60 focus:border-amber-300" : "border-white/15 focus:border-white/60"} bg-black/20 px-3 py-2 text-sm outline-none`;
   const locationError = fieldErrors.location ?? null;
@@ -395,207 +353,24 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     return padelCategories.filter((cat) => !linkedIds.has(cat.id));
   }, [padelCategories, padelCategoryLinks]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(RECENT_LOCATION_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      const safe = parsed
-        .map((entry) => sanitizeRecentLocation(entry))
-        .filter((entry): entry is GeoAutocompleteItem => Boolean(entry))
-        .slice(0, MAX_RECENT_LOCATIONS);
-      setRecentLocationItems(safe);
-    } catch {
-      // ignore parse/storage failures
-    }
-  }, []);
-
-  useEffect(() => {
-    const query = locationQuery.trim();
-    if (query.length < 2) {
-      setLocationSuggestions([]);
-      setLocationSearchError(null);
-      setExpectedCountryCode(null);
-      setEffectiveCountryCode(null);
-      setQueryCountryIntentCode(null);
-      setShowForeignSuggestions(false);
+  const applyGeoDetails = (details: GeoDetailsItem | null) => {
+    if (!details) {
+      setLocationFormattedAddress(null);
+      setLocationLat(null);
+      setLocationLng(null);
       return;
     }
-    if (locationSearchTimeout.current) {
-      clearTimeout(locationSearchTimeout.current);
-    }
-    setLocationSearchError(null);
-    const seq = ++locationSearchSeq.current;
-    locationSearchTimeout.current = setTimeout(async () => {
-      setLocationSearchLoading(true);
-      try {
-        const result = await fetchGeoAutocompleteWithMeta(query, locationBias ?? undefined);
-        if (locationSearchSeq.current === seq) {
-          setLocationSuggestions(result.items);
-          setExpectedCountryCode(result.expectedCountryCode);
-          setEffectiveCountryCode(result.effectiveCountryCode);
-          setQueryCountryIntentCode(result.queryCountryIntentCode);
-          setShowForeignSuggestions(false);
-        }
-      } catch (err) {
-        console.warn("[eventos/edit] autocomplete falhou", err);
-        if (locationSearchSeq.current === seq) {
-          setLocationSuggestions([]);
-          setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
-          setExpectedCountryCode(null);
-          setEffectiveCountryCode(null);
-          setQueryCountryIntentCode(null);
-          setShowForeignSuggestions(false);
-        }
-      } finally {
-        if (locationSearchSeq.current === seq) {
-          setLocationSearchLoading(false);
-        }
-      }
-    }, 280);
-
-    return () => {
-      if (locationSearchTimeout.current) {
-        clearTimeout(locationSearchTimeout.current);
-      }
-    };
-  }, [locationQuery, locationBias]);
-
-  useEffect(() => {
-    const queryLength = locationQuery.trim().length;
-    const bypassActive = Boolean(
-      queryLength >= 2 &&
-      expectedCountryCode &&
-      effectiveCountryCode &&
-      expectedCountryCode !== effectiveCountryCode,
-    );
-    if (!bypassActive) {
-      locationBypassAnalyticsRef.current = null;
-      return;
-    }
-
-    const signature = `${expectedCountryCode}:${effectiveCountryCode}:${queryCountryIntentCode ?? ""}`;
-    if (locationBypassAnalyticsRef.current === signature) return;
-    locationBypassAnalyticsRef.current = signature;
-    trackEvent("geo_autocomplete_country_bypass_triggered", {
-      formContext: "event_edit",
-      expectedCountryCode,
-      effectiveCountryCode,
-      queryCountryIntentCode,
-      queryLength,
-    });
-  }, [effectiveCountryCode, expectedCountryCode, locationQuery, queryCountryIntentCode]);
-
-  const rememberRecentLocation = (item: GeoAutocompleteItem) => {
-    setRecentLocationItems((prev) => {
-      const next = [item, ...prev.filter((entry) => entry.providerId !== item.providerId)].slice(0, MAX_RECENT_LOCATIONS);
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(RECENT_LOCATION_KEY, JSON.stringify(next));
-        } catch {
-          // ignore storage failures
-        }
-      }
-      return next;
-    });
-  };
-
-  const requestLocationBias = () => {
-    if (requestingLocationBias) return;
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      setLocationBiasError("Este browser não suporta geolocalização.");
-      return;
-    }
-    setRequestingLocationBias(true);
-    setLocationBiasError(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocationBias({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setRequestingLocationBias(false);
-      },
-      () => {
-        setLocationBiasError("Não foi possível obter a tua localização.");
-        setRequestingLocationBias(false);
-      },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-    );
-  };
-
-  const applyGeoDetails = (details: GeoDetailsItem | null, fallbackName?: string | null) => {
-    if (!details) return;
-    const resolvedLabel = details.formattedAddress || details.name || fallbackName || null;
+    const resolvedLabel = details.formattedAddress || details.name || null;
     setLocationFormattedAddress(resolvedLabel);
     setLocationAddressId(details.addressId ?? null);
-    if (details.providerId) {
-      setLocationProviderId(details.providerId);
-    }
     if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
       setLocationLat(details.lat);
       setLocationLng(details.lng);
+    } else {
+      setLocationLat(null);
+      setLocationLng(null);
     }
-    const nextLabel = resolvedLabel || "";
-    if (nextLabel) setLocationQuery(nextLabel);
-  };
-
-  const handleSelectGeoSuggestion = async (
-    item: GeoAutocompleteItem,
-    options?: { isForeign?: boolean },
-  ) => {
-    const queryLength = locationQuery.trim().length;
-    if (options?.isForeign) {
-      trackEvent("geo_autocomplete_foreign_selected", {
-        formContext: "event_edit",
-        expectedCountryCode,
-        effectiveCountryCode,
-        queryCountryIntentCode,
-        queryLength,
-      });
-    }
-    setLocationProviderId(item.providerId);
-    setLocationAddressId(null);
-    activeProviderRef.current = item.providerId;
-    setLocationLat(item.lat);
-    setLocationLng(item.lng);
-    setLocationQuery(item.label);
-    setLocationFormattedAddress(item.label);
-    setLocationSuggestions([]);
-    setShowLocationSuggestions(false);
-    setShowForeignSuggestions(false);
-    setLocationSearchError(null);
-    setLocationBiasError(null);
-    rememberRecentLocation(item);
-
-    const seq = ++locationDetailsSeq.current;
-    setLocationDetailsLoading(true);
-    try {
-      const details = await fetchGeoDetails(item.providerId, {
-        lat: item.lat,
-        lng: item.lng,
-      });
-      if (locationDetailsSeq.current !== seq) return;
-      if (activeProviderRef.current !== item.providerId) return;
-      applyGeoDetails(details, item.name || item.label);
-      if (details) {
-        rememberRecentLocation({
-          providerId: details.providerId || item.providerId,
-          label: details.formattedAddress || details.name || item.label,
-          name: details.name || item.name,
-          city: details.city || item.city,
-          address: details.formattedAddress || details.address || item.address,
-          lat: isFiniteCoordinate(details.lat) ? details.lat : item.lat,
-          lng: isFiniteCoordinate(details.lng) ? details.lng : item.lng,
-          sourceProvider: details.sourceProvider || item.sourceProvider || "APPLE_MAPS",
-        });
-      }
-    } catch (err) {
-      console.warn("[eventos/edit] detalhes falharam", err);
-    } finally {
-      if (locationDetailsSeq.current === seq) {
-        setLocationDetailsLoading(false);
-      }
-    }
+    if (resolvedLabel) setLocationQuery(resolvedLabel);
   };
 
   const updatePadelCategoryDraft = (categoryId: number, patch: Partial<PadelCategoryDraft>) => {
@@ -954,7 +729,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       setStripeAlert(
         `Podes gerir o ${primaryLabel}, mas só vender ${ticketLabelPlural} pagos depois de ligares o Stripe.`,
       );
-      setError(`Liga o Stripe em Finanças & Payouts para vender ${ticketLabelPlural} pagos.`);
+      setError(`Liga o Stripe em Finanças e transferências para vender ${ticketLabelPlural} pagos.`);
       ctaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
@@ -1020,8 +795,6 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           interestTags,
           isGratis,
           coverImageUrl: coverUrl,
-          liveVisibility,
-          liveStreamUrl: liveStreamUrl.trim() || null,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
         }),
@@ -1133,46 +906,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const progress = steps.length > 1 ? Math.min(100, (currentStep / (steps.length - 1)) * 100) : 100;
 
   const renderStepContent = () => {
-    const trimmedLocationQuery = locationQuery.trim();
-    const waitingForLocationQuery = trimmedLocationQuery.length < 2;
     const selectedLocationLabel = locationFormattedAddress || locationQuery || "Local selecionado";
-    const selectedLocationDistance =
-      locationBias && isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng)
-        ? formatDistanceLabel(distanceKm(locationBias, { lat: locationLat, lng: locationLng }))
-        : null;
-    const groupedSuggestions = partitionSuggestionsByCountry(locationSuggestions, effectiveCountryCode);
-    const hasLocalSuggestions = groupedSuggestions.local.length > 0 || groupedSuggestions.unknown.length > 0;
-    const showForeignFallback = !hasLocalSuggestions && groupedSuggestions.foreign.length > 0;
-    const primarySuggestions = showForeignFallback
-      ? groupedSuggestions.foreign
-      : [...groupedSuggestions.local, ...groupedSuggestions.unknown];
-    const collapsedForeignSuggestions = showForeignFallback ? [] : groupedSuggestions.foreign;
-    const bypassActive = Boolean(
-      expectedCountryCode &&
-      effectiveCountryCode &&
-      expectedCountryCode !== effectiveCountryCode,
-    );
-    const showForeignFallbackNotice =
-      !waitingForLocationQuery &&
-      !locationSearchLoading &&
-      !locationSearchError &&
-      showForeignFallback;
-
-    const handleToggleForeignSuggestions = () => {
-      setShowForeignSuggestions((prev) => {
-        const next = !prev;
-        if (next) {
-          trackEvent("geo_autocomplete_foreign_section_opened", {
-            formContext: "event_edit",
-            expectedCountryCode,
-            effectiveCountryCode,
-            queryCountryIntentCode,
-            queryLength: trimmedLocationQuery.length,
-          });
-        }
-        return next;
-      });
-    };
 
     const baseBlock = (
       <div className="space-y-4">
@@ -1263,261 +997,40 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <p className="text-[11px] text-white/55">Usado para personalização e ranking.</p>
         </div>
 
-        <div id="livehub" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Live</p>
-              <p className="text-sm text-white/80">Visibilidade e stream.</p>
-            </div>
-            <a
-              href={livePreviewUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-white/20 px-3 py-1 text-[11px] font-semibold text-white/80 hover:border-white/40"
-            >
-              Abrir
-            </a>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Visibilidade</label>
-              <select
-                value={liveVisibility}
-                onChange={(e) => setLiveVisibility(e.target.value as LiveVisibility)}
-                className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
-              >
-                <option value="PUBLIC">Público</option>
-                <option value="PRIVATE">Privado (só participantes)</option>
-                <option value="DISABLED">Desativado</option>
-              </select>
-              <p className="text-[11px] text-white/55">Público, privado ou oculto.</p>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">URL da livestream</label>
-              <input
-                value={liveStreamUrl}
-                onChange={(e) => setLiveStreamUrl(e.target.value)}
-                placeholder="https://youtu.be/..."
-                className="w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/60"
-              />
-              <p className="text-[11px] text-white/55">Vazio = sem vídeo.</p>
-            </div>
-          </div>
-        </div>
-
         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4 sm:px-5 sm:py-5 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Local / Morada</label>
-              <p className="text-[11px] text-white/60">
-                Escreve pelo menos 2 caracteres e escolhe uma sugestão válida do Apple Maps.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={requestLocationBias}
-              disabled={requestingLocationBias}
-              className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
-            >
-              {requestingLocationBias
-                ? "A obter localização..."
-                : locationBias
-                  ? "Localização atual ativa"
-                  : "Usar localização atual"}
-            </button>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Local / Morada</label>
+            <p className="text-[11px] text-white/60">
+              Escreve pelo menos 2 caracteres e escolhe uma sugestão válida do Apple Maps.
+            </p>
           </div>
 
           <div className="space-y-3">
-            <div className="relative overflow-visible">
-              <input
-                ref={locationSearchRef}
-                value={locationQuery}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setLocationQuery(next);
-                  setLocationSearchError(null);
-                  setLocationBiasError(null);
-                  if (locationProviderId || locationAddressId) {
-                    setLocationProviderId(null);
-                    setLocationAddressId(null);
-                    activeProviderRef.current = null;
-                    setLocationFormattedAddress(null);
-                    setLocationLat(null);
-                    setLocationLng(null);
-                  }
-                  setShowForeignSuggestions(false);
-                  setShowLocationSuggestions(true);
-                }}
-                onFocus={() => setShowLocationSuggestions(true)}
-                onBlur={() => {
-                  if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
-                  suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
-                }}
-                aria-invalid={Boolean(fieldErrors.location)}
-                className={inputClass(Boolean(fieldErrors.location))}
-                placeholder="Procura uma morada, rua, cidade ou espaço"
-              />
+            <AddressCombobox
+              label="Local / Morada"
+              value={locationQuery}
+              onValueChange={(next) => {
+                setLocationQuery(next);
+                setLocationFormattedAddress(null);
+                setLocationLat(null);
+                setLocationLng(null);
+              }}
+              addressId={locationAddressId}
+              onAddressIdChange={setLocationAddressId}
+              onDetailsResolved={applyGeoDetails}
+              inputRef={locationSearchRef}
+              inputClassName={inputClass(Boolean(fieldErrors.location))}
+              placeholder="Procura uma morada, rua, cidade ou espaço"
+            />
 
-              {showLocationSuggestions && (
-                <div className="mt-2 w-full max-h-72 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
-                  {waitingForLocationQuery ? (
-                    <div className="space-y-3 px-3 py-3">
-                      <div className="space-y-1">
-                        <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Sugestões</p>
-                        <p className="text-[12px] text-white/70">Começa a escrever para procurar locais.</p>
-                      </div>
-                      {recentLocationItems.length > 0 ? (
-                        <div className="space-y-1">
-                          <p className="text-[11px] text-white/55">Recentes</p>
-                          {recentLocationItems.map((suggestion) => (
-                            <button
-                              key={`recent-${suggestion.providerId}`}
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => handleSelectGeoSuggestion(suggestion)}
-                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/8 px-2 py-2 text-left hover:bg-white/8"
-                            >
-                              <div>
-                                <p className="text-sm font-semibold text-white">{suggestion.label}</p>
-                                <p className="text-[11px] text-white/60">{suggestion.city || suggestion.address || "—"}</p>
-                              </div>
-                              <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Recente</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[12px] text-white/55">Sem localizações recentes neste dispositivo.</p>
-                      )}
-                    </div>
-                  ) : locationSearchLoading ? (
-                    <div className="px-3 py-2 text-sm text-white/70">A procurar...</div>
-                  ) : locationSearchError ? (
-                    <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
-                  ) : primarySuggestions.length === 0 ? (
-                    <div className="space-y-1 px-3 py-2 text-sm text-white/65">
-                      <p>Sem sugestões para este texto.</p>
-                      <p className="text-[12px] text-white/50">Tenta rua + cidade (ex: &quot;Rua de Ceuta Porto&quot;).</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {bypassActive ? (
-                        <div className="px-3 py-2 text-[11px] text-cyan-100/90">
-                          Pesquisa global ativada por país na query.
-                        </div>
-                      ) : null}
-                      {showForeignFallbackNotice ? (
-                        <div className="px-3 py-2 text-[11px] text-amber-100/90">
-                          Sem resultados no país esperado; a mostrar globais.
-                        </div>
-                      ) : null}
-                      {primarySuggestions.map((suggestion) => {
-                        const suggestionDistance =
-                          locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                            ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                            : null;
-                        return (
-                          <button
-                            key={suggestion.providerId}
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: showForeignFallback })}
-                            className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                          >
-                            <div className="flex w-full items-start justify-between gap-3">
-                              <div className="space-y-0.5">
-                                <span className="block font-semibold text-white">{suggestion.label}</span>
-                                {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
-                                  <span className="block text-[12px] text-white/60">
-                                    {suggestion.secondaryLabel || suggestion.address || suggestion.city}
-                                  </span>
-                                )}
-                              </div>
-                              {suggestionDistance && (
-                                <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                                  {suggestionDistance}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {collapsedForeignSuggestions.length > 0 ? (
-                        <div className="border-t border-white/10">
-                          <button
-                            type="button"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={handleToggleForeignSuggestions}
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-semibold text-white/75 hover:bg-white/8"
-                          >
-                            <span>Outros países ({collapsedForeignSuggestions.length})</span>
-                            <span aria-hidden>{showForeignSuggestions ? "▴" : "▾"}</span>
-                          </button>
-                          {showForeignSuggestions ? (
-                            <div className="border-t border-white/5">
-                              {collapsedForeignSuggestions.map((suggestion) => {
-                                const suggestionDistance =
-                                  locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                                    ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                                    : null;
-                                return (
-                                  <button
-                                    key={`foreign-${suggestion.providerId}`}
-                                    type="button"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: true })}
-                                    className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                                  >
-                                    <div className="flex w-full items-start justify-between gap-3">
-                                      <div className="space-y-0.5">
-                                        <span className="block font-semibold text-white">{suggestion.label}</span>
-                                        {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
-                                          <span className="block text-[12px] text-white/60">
-                                            {suggestion.secondaryLabel || suggestion.address || suggestion.city}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {suggestionDistance && (
-                                        <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                                          {suggestionDistance}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {locationBiasError && <p className="text-[11px] text-amber-100">{locationBiasError}</p>}
-
-            {(locationProviderId || locationAddressId || locationFormattedAddress) && (
+            {(locationAddressId || locationFormattedAddress) && (
               <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-white">{selectedLocationLabel}</p>
-                    <p className="text-[11px] text-white/55">
-                      {locationDetailsLoading ? "A validar morada..." : "Morada selecionada."}
-                    </p>
-                  </div>
-                  {selectedLocationDistance && (
-                    <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                      {selectedLocationDistance}
-                    </span>
-                  )}
-                </div>
+                <p className="font-semibold text-white">{selectedLocationLabel}</p>
+                <p className="text-[11px] text-white/55">Morada selecionada.</p>
               </div>
             )}
 
-            {isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng) && (
+            {typeof locationLat === "number" && typeof locationLng === "number" && (
               <AppleLocationMapPreview lat={locationLat} lng={locationLng} label={selectedLocationLabel} />
             )}
           </div>
@@ -1530,7 +1043,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           )}
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium">Template</label>
+          <label className="text-sm font-medium">Modelo</label>
           <div className="rounded-md border border-white/15 bg-black/20 px-3 py-2 text-sm text-white/80">
             {templateLabel}
           </div>
@@ -1690,7 +1203,14 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-white/70">
             Bilhetes (não removemos, só terminamos venda)
           </h2>
-          <Link href={`/org/analyze?section=vendas&eventId=${event.id}`} className="text-[11px] text-[#6BFFFF]">
+          <Link
+            href={
+              organizationId
+                ? `/org/${organizationId}/finance?tab=analyze&section=vendas&eventId=${event.id}`
+                : `/org/finance?tab=analyze&section=vendas&eventId=${event.id}`
+            }
+            className="text-[11px] text-[#6BFFFF]"
+          >
             Ver vendas →
           </Link>
         </div>
@@ -2048,7 +1568,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             </div>
             <div className="text-right text-[12px] text-white/60">
               <p>Estado: {isGratis ? "Grátis" : "Pago"}</p>
-              <p>Template: {templateLabel}</p>
+              <p>Modelo: {templateLabel}</p>
             </div>
           </div>
 

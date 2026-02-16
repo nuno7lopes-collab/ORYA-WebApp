@@ -10,7 +10,7 @@ import {
   hasAnyActiveModule,
 } from "@/lib/organizationModules";
 import type { OrganizationModule } from "@/lib/organizationCategories";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, buildOrgHref } from "@/lib/organizationIdUtils";
 
 type ModuleGuardLayoutProps = {
   children: ReactNode;
@@ -23,7 +23,7 @@ export default async function ModuleGuardLayout({
   children,
   requiredModules,
   mode = "any",
-  redirectTo = "/org/overview?section=modulos",
+  redirectTo,
 }: ModuleGuardLayoutProps) {
   const supabase = await createSupabaseServer();
   const {
@@ -58,7 +58,9 @@ export default async function ModuleGuardLayout({
       : hasAnyActiveModule(activeModules, requiredModules);
 
   if (!hasAccess) {
-    redirect(appendOrganizationIdToHref(redirectTo, organization.id));
+    const defaultTarget = buildOrgHref(organization.id, "/overview", { section: "ferramentas" });
+    const target = redirectTo ? appendOrganizationIdToHref(redirectTo, organization.id) : defaultTarget;
+    redirect(target);
   }
 
   return <>{children}</>;

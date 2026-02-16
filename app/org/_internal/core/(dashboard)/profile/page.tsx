@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import DashboardClient from "../../DashboardClient";
 import { ensureDashboardAccess } from "@/app/org/_internal/core/_lib/dashboardAccess";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationProfilePage({
   searchParams,
@@ -20,10 +20,9 @@ export default async function OrganizationProfilePage({
       }
     }
   }
-  if (!params.get("organizationId")) {
-    params.set("organizationId", String(activeOrganizationId));
-    redirect(`/org/profile?${params.toString()}`);
-  }
-
-  return <DashboardClient hasOrganization defaultObjective="profile" defaultSection="perfil" />;
+  params.delete("organizationId");
+  params.delete("org");
+  const query = params.toString();
+  const target = buildOrgHref(activeOrganizationId, "/settings");
+  redirect(`${target}${query ? `?${query}` : ""}`);
 }

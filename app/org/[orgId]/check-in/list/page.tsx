@@ -1,5 +1,14 @@
-import OrganizationScanPage from "@/app/org/_internal/core/(dashboard)/scan/page";
+import OrgCheckInOperationsClient from "../OrgCheckInOperationsClient";
 
-export default function OrgCheckInListPage() {
-  return <OrganizationScanPage embedded mode="list" />;
+export default async function OrgCheckInListPage({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const resolved = await params;
+  const orgId = Number(resolved.orgId);
+  if (!Number.isFinite(orgId) || orgId <= 0) {
+    return null;
+  }
+  return <OrgCheckInOperationsClient orgId={orgId} mode="list" />;
 }

@@ -33,7 +33,6 @@ describe("resolveNotificationLink", () => {
 
   it("maps eventos slug to mobile event route", () => {
     expectNative("/eventos/campeonato", "/event/campeonato?source=notifications");
-    expectNative("/eventos/campeonato/live", "/event/campeonato?source=notifications");
     expectNative(
       "https://www.orya.pt/eventos/campeonato",
       "/event/campeonato?source=notifications",
@@ -51,9 +50,9 @@ describe("resolveNotificationLink", () => {
     expectNative("https://www.orya.pt/social?tab=notifications", "/notifications?source=notifications");
   });
 
-  it("maps organization chat conversation", () => {
-    expectNative("/organizacao/chat?conversationId=abc", "/messages/abc?source=notifications");
-    expectNative("/organizacao/chat", "/messages?source=notifications");
+  it("rejects legacy organization chat links", () => {
+    expect(resolveNotificationLink("/organizacao/chat?conversationId=abc")).toEqual({ kind: "none" });
+    expect(resolveNotificationLink("/organizacao/chat")).toEqual({ kind: "none" });
   });
 
   it("keeps already mobile paths", () => {

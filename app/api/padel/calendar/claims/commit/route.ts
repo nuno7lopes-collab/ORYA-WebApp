@@ -20,6 +20,9 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+import { getRequestContext } from "@/lib/http/requestContext";
+import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
+import { enqueueOperation } from "@/lib/operations/enqueue";
 
 type ClaimInput = {
   resourceType: AgendaResourceClaimType;
@@ -37,6 +40,50 @@ type ResolvedClaimInput = ClaimInput & {
 };
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const ACTIVE_PRIORITY_RULE_VERSION = "v1";
+const AGENDA_ARBITRATION_COMPENSATION_OPERATION = "AGENDA_ARBITRATION_COMPENSATION";
+
+type ArbitrationCandidateType = "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
+
+function mapSourceTypeToArbitrationType(sourceType: SourceType): ArbitrationCandidateType | null {
+  if (sourceType === SourceType.HARD_BLOCK) return "HARD_BLOCK";
+  if (sourceType === SourceType.SOFT_BLOCK) return "SOFT_BLOCK";
+  if (sourceType === SourceType.BOOKING) return "BOOKING";
+  if (
+    sourceType === SourceType.MATCH ||
+    sourceType === SourceType.EVENT ||
+    sourceType === SourceType.TOURNAMENT ||
+    sourceType === SourceType.PADEL_REGISTRATION ||
+    sourceType === SourceType.CLASS_SESSION
+  ) {
+    return "MATCH";
+  }
+  return null;
+}
+
+function computeArbitrationInputHash(input: Record<string, unknown>) {
+  return crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex");
+}
+
+function emitArbitrationMetric(metric: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({ kind: "arbitration_metric", metric, ...payload }));
+}
+
+function extractReasonCode(metadata: Prisma.JsonObject | null | undefined): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).reasonCode;
+  if (typeof raw !== "string") return null;
+  const normalized = raw.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function extractConfirmedAt(metadata: Prisma.JsonObject | null | undefined): Date | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).confirmedAt;
+  if (typeof raw !== "string") return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
 function parseDate(value: unknown): Date | null {
   if (typeof value !== "string") return null;
@@ -361,15 +408,42 @@ async function _POST(req: NextRequest) {
   );
 
   const bundleId = crypto.randomUUID();
+  const requestCtx = getRequestContext(req, { orgId: auth.organizationId });
+  const priorityRuleVersionRaw = typeof body.priorityRuleVersion === "string" ? body.priorityRuleVersion.trim() : "";
+  const priorityRuleVersion = priorityRuleVersionRaw || ACTIVE_PRIORITY_RULE_VERSION;
+  if (priorityRuleVersion !== ACTIVE_PRIORITY_RULE_VERSION) {
+    return jsonWrap(
+      {
+        ok: false,
+        error: "ARBITRATION_PRIORITY_RULE_UNSUPPORTED",
+      },
+      { status: 409 },
+    );
+  }
+  const arbitrationStartedAt = Date.now();
+  const arbitrationCounters = {
+    evaluated: 0,
+    allowed: 0,
+    blocked: 0,
+    failClosed: 0,
+    overrides: 0,
+    compensationRequired: 0,
+  };
+  const conflictsByResourceKey = new Map<string, number>();
 
   try {
-    const created = await prisma.$transaction(async (tx) => {
+    const txResult = await prisma.$transaction(async (tx) => {
+      const compensationQueue: Array<{
+        arbitrationDecisionId: string;
+        resourceKey: string;
+        authorityOrgId: number;
+      }> = [];
       for (const key of lockKeys) {
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
       }
 
       for (const claim of resolvedClaims) {
-        const conflict = await tx.agendaResourceClaim.findFirst({
+        const overlapping = await tx.agendaResourceClaim.findMany({
           where: {
             resourceKey: claim.resourceKey,
             status: AgendaResourceClaimStatus.CLAIMED,
@@ -382,42 +456,270 @@ async function _POST(req: NextRequest) {
             sourceId: true,
             startsAt: true,
             endsAt: true,
+            createdAt: true,
+            updatedAt: true,
+            metadata: true,
+            organizationId: true,
             resourceType: true,
             resourceId: true,
             authorityOrgId: true,
             resourceKey: true,
           },
+          orderBy: [{ startsAt: "asc" }, { id: "asc" }],
         });
-        if (conflict) {
-          throw Object.assign(new Error("RESOURCE_CLAIM_CONFLICT"), {
-            status: 409,
-            conflict,
-          });
+        if (overlapping.length > 0) {
+          conflictsByResourceKey.set(claim.resourceKey, (conflictsByResourceKey.get(claim.resourceKey) ?? 0) + 1);
         }
-      }
 
-      await tx.agendaResourceClaim.createMany({
-        data: resolvedClaims.map((claim) => ({
-          bundleId,
-          organizationId: auth.organizationId,
-          authorityOrgId: claim.authorityOrgId,
-          eventId: event.id,
-          sourceType: claim.sourceType,
+        const candidateType = mapSourceTypeToArbitrationType(claim.sourceType);
+        const candidateReasonCode = extractReasonCode(claim.metadata);
+        const candidate: AgendaCandidate = {
+          type: candidateType ?? `UNSUPPORTED_${claim.sourceType}`,
           sourceId: claim.sourceId,
-          resourceType: claim.resourceType,
-          resourceId: claim.resourceId,
-          resourceKey: claim.resourceKey,
+          claimId: `${claim.sourceType}:${claim.sourceId}`,
           startsAt: claim.startsAt,
           endsAt: claim.endsAt,
-          status: AgendaResourceClaimStatus.CLAIMED,
-          metadata: claim.metadata,
-        })),
-      });
+          confirmedAt: extractConfirmedAt(claim.metadata),
+          createdAt: claim.startsAt,
+          reasonCode: candidateReasonCode,
+          priorityRuleVersion,
+        };
 
-      return tx.agendaResourceClaim.findMany({
+        const existingCandidates: AgendaCandidate[] = overlapping.map((existing) => ({
+          type: mapSourceTypeToArbitrationType(existing.sourceType) ?? `UNSUPPORTED_${existing.sourceType}`,
+          sourceId: existing.sourceId,
+          claimId: existing.id,
+          startsAt: existing.startsAt,
+          endsAt: existing.endsAt,
+          confirmedAt: extractConfirmedAt(existing.metadata as Prisma.JsonObject | null | undefined),
+          createdAt: existing.createdAt ?? existing.updatedAt ?? existing.startsAt,
+          reasonCode: extractReasonCode(existing.metadata as Prisma.JsonObject | null | undefined),
+          priorityRuleVersion,
+        }));
+
+        const decision = evaluateCandidate({
+          candidate,
+          existing: existingCandidates,
+          priorityRuleVersion,
+        });
+
+        arbitrationCounters.evaluated += 1;
+        if (decision.allowed) arbitrationCounters.allowed += 1;
+        if (!decision.allowed) arbitrationCounters.blocked += 1;
+        if (!decision.allowed && decision.reason === "TYPE_NOT_SUPPORTED") arbitrationCounters.failClosed += 1;
+
+        const arbitrationId = crypto.randomUUID();
+        const inputHash = computeArbitrationInputHash({
+          resourceKey: claim.resourceKey,
+          authorityOrgId: claim.authorityOrgId,
+          priorityRuleVersion,
+          candidate: {
+            type: candidate.type,
+            sourceId: candidate.sourceId,
+            startsAt: candidate.startsAt.toISOString(),
+            endsAt: candidate.endsAt.toISOString(),
+            reasonCode: candidate.reasonCode ?? null,
+          },
+          existing: overlapping.map((item) => ({
+            id: item.id,
+            sourceType: item.sourceType,
+            sourceId: item.sourceId,
+            startsAt: item.startsAt.toISOString(),
+            endsAt: item.endsAt.toISOString(),
+            reasonCode: extractReasonCode(item.metadata as Prisma.JsonObject | null | undefined),
+          })),
+        });
+
+        const releasedClaimIds =
+          decision.allowed && overlapping.length > 0
+            ? overlapping.map((item) => item.id)
+            : [];
+        const requiresCompensation =
+          releasedClaimIds.length > 0 &&
+          overlapping.some((existing) => existing.organizationId !== auth.organizationId);
+
+        if (releasedClaimIds.length > 0) {
+          await tx.agendaResourceClaim.updateMany({
+            where: {
+              id: { in: releasedClaimIds },
+              status: AgendaResourceClaimStatus.CLAIMED,
+            },
+            data: { status: AgendaResourceClaimStatus.RELEASED },
+          });
+          arbitrationCounters.overrides += 1;
+        }
+        if (requiresCompensation) arbitrationCounters.compensationRequired += 1;
+
+        await tx.agendaArbitrationDecision.create({
+          data: {
+            id: arbitrationId,
+            resourceKey: claim.resourceKey,
+            authorityOrgId: claim.authorityOrgId,
+            priorityRuleVersion,
+            inputHash,
+            decision: decision.allowed ? "ALLOW" : "BLOCK",
+            ruleApplied: decision.reason,
+            winnerClaimId: null,
+            blockedClaimId: releasedClaimIds[0] ?? overlapping[0]?.id ?? null,
+            reasonCode: candidateReasonCode ?? null,
+            actorUserId: auth.userId,
+            actorOrganizationId: auth.organizationId,
+            bundleId,
+            compensationStatus: requiresCompensation ? "OPEN" : null,
+            correlationId: requestCtx.correlationId,
+            metadata: {
+              arbitrationId,
+              ruleVersion: priorityRuleVersion,
+              decisionReason: decision.reason,
+              conflictCount: overlapping.length,
+              releasedClaimIds,
+              candidateType: candidate.type,
+              candidateSourceType: claim.sourceType,
+            },
+          },
+        });
+        if (requiresCompensation) {
+          compensationQueue.push({
+            arbitrationDecisionId: arbitrationId,
+            resourceKey: claim.resourceKey,
+            authorityOrgId: claim.authorityOrgId,
+          });
+        }
+
+        console.log(
+          JSON.stringify({
+            kind: "arbitration_decision",
+            arbitrationId,
+            resourceKey: claim.resourceKey,
+            authorityOrgId: claim.authorityOrgId,
+            priorityRuleVersion,
+            decision: decision.allowed ? "ALLOW" : "BLOCK",
+            reasonCode: candidateReasonCode ?? null,
+            ruleApplied: decision.reason,
+            releasedClaimIds,
+            correlationId: requestCtx.correlationId,
+          }),
+        );
+
+        if (!decision.allowed) {
+          const failClosed = decision.reason === "TYPE_NOT_SUPPORTED";
+          throw Object.assign(new Error(failClosed ? "ARBITRATION_FAIL_CLOSED" : "RESOURCE_CLAIM_CONFLICT"), {
+            status: 409,
+            conflict: {
+              resourceKey: claim.resourceKey,
+              authorityOrgId: claim.authorityOrgId,
+              sourceType: claim.sourceType,
+              sourceId: claim.sourceId,
+              priorityRuleVersion,
+              decision,
+              existing: overlapping,
+            },
+          });
+        }
+
+        await tx.agendaResourceClaim.create({
+          data: {
+            bundleId,
+            organizationId: auth.organizationId,
+            authorityOrgId: claim.authorityOrgId,
+            eventId: event.id,
+            sourceType: claim.sourceType,
+            sourceId: claim.sourceId,
+            resourceType: claim.resourceType,
+            resourceId: claim.resourceId,
+            resourceKey: claim.resourceKey,
+            startsAt: claim.startsAt,
+            endsAt: claim.endsAt,
+            status: AgendaResourceClaimStatus.CLAIMED,
+            metadata: {
+              ...claim.metadata,
+              priorityRuleVersion,
+            },
+          },
+        });
+      }
+
+      const claimsCreated = await tx.agendaResourceClaim.findMany({
         where: { organizationId: auth.organizationId, bundleId },
         orderBy: [{ startsAt: "asc" }, { id: "asc" }],
       });
+      return { claimsCreated, compensationQueue };
+    });
+    const created = txResult.claimsCreated;
+
+    for (const queueItem of txResult.compensationQueue) {
+      await enqueueOperation({
+        operationType: AGENDA_ARBITRATION_COMPENSATION_OPERATION,
+        dedupeKey: `agenda_arbitration_comp:${queueItem.arbitrationDecisionId}:1`,
+        payload: {
+          arbitrationDecisionId: queueItem.arbitrationDecisionId,
+          attemptNo: 1,
+          correlationId: requestCtx.correlationId,
+          resourceKey: queueItem.resourceKey,
+          authorityOrgId: queueItem.authorityOrgId,
+        },
+        correlations: {
+          eventId: event.id,
+          organizationId: auth.organizationId,
+        },
+      });
+    }
+
+    const arbitrationLatencyMs = Date.now() - arbitrationStartedAt;
+    emitArbitrationMetric("arbitration.decision.latency_ms", {
+      organizationId: auth.organizationId,
+      authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+      priorityRuleVersion,
+      value: arbitrationLatencyMs,
+      correlationId: requestCtx.correlationId,
+    });
+    emitArbitrationMetric("arbitration.override.rate", {
+      organizationId: auth.organizationId,
+      authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+      priorityRuleVersion,
+      evaluated: arbitrationCounters.evaluated,
+      overrides: arbitrationCounters.overrides,
+      value:
+        arbitrationCounters.evaluated > 0
+          ? arbitrationCounters.overrides / arbitrationCounters.evaluated
+          : 0,
+      correlationId: requestCtx.correlationId,
+    });
+    emitArbitrationMetric("arbitration.compensation.failed_rate", {
+      organizationId: auth.organizationId,
+      authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+      priorityRuleVersion,
+      value: 0,
+      compensationRequired: arbitrationCounters.compensationRequired,
+      correlationId: requestCtx.correlationId,
+    });
+    for (const [resourceKey, conflictCount] of conflictsByResourceKey) {
+      emitArbitrationMetric("arbitration.conflicts.by_resourceKey", {
+        organizationId: auth.organizationId,
+        authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+        priorityRuleVersion,
+        resourceKey,
+        value: conflictCount,
+        correlationId: requestCtx.correlationId,
+      });
+    }
+
+    emitArbitrationMetric("arbitration.decision_count", {
+      organizationId: auth.organizationId,
+      authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+      evaluated: arbitrationCounters.evaluated,
+      allowed: arbitrationCounters.allowed,
+      blocked: arbitrationCounters.blocked,
+      failClosed: arbitrationCounters.failClosed,
+      overrides: arbitrationCounters.overrides,
+      priorityRuleVersion,
+      correlationId: requestCtx.correlationId,
+    });
+    // Compatibilidade transitória com dashboards legados.
+    emitArbitrationMetric("arbitration.decision_latency_ms", {
+      organizationId: auth.organizationId,
+      value: arbitrationLatencyMs,
+      correlationId: requestCtx.correlationId,
     });
 
     await recordOrganizationAuditSafe({
@@ -428,6 +730,7 @@ async function _POST(req: NextRequest) {
         eventId: event.id,
         bundleId,
         claimCount: created.length,
+        priorityRuleVersion,
         claims: created.map((claim) => ({
           id: claim.id,
           resourceType: claim.resourceType,
@@ -458,9 +761,11 @@ async function _POST(req: NextRequest) {
         ? (error as { conflict?: unknown }).conflict
         : undefined;
     const message =
-      error instanceof Error && error.message === "RESOURCE_CLAIM_CONFLICT"
-        ? "RESOURCE_CLAIM_CONFLICT"
-        : "CLAIMS_COMMIT_FAILED";
+      error instanceof Error && error.message === "ARBITRATION_FAIL_CLOSED"
+        ? "ARBITRATION_FAIL_CLOSED"
+        : error instanceof Error && error.message === "RESOURCE_CLAIM_CONFLICT"
+          ? "RESOURCE_CLAIM_CONFLICT"
+          : "CLAIMS_COMMIT_FAILED";
     return jsonWrap({ ok: false, error: message, ...(conflict ? { conflict } : {}) }, { status });
   }
 }

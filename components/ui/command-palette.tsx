@@ -26,6 +26,10 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   useEffect(() => {
     if (!open) return;
+    // Avoid opening the virtual keyboard automatically on touch/mobile devices.
+    if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) {
+      return;
+    }
     const timer = setTimeout(() => inputRef?.current?.focus(), 0);
     return () => clearTimeout(timer);
   }, [inputRef, open]);

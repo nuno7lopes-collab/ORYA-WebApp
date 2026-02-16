@@ -5,7 +5,12 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { CrmInteractionSource, CrmInteractionType, OrganizationMemberRole } from "@prisma/client";
+import {
+  CrmInteractionSource,
+  CrmInteractionType,
+  OrganizationMemberRole,
+  OrganizationRolePack,
+} from "@prisma/client";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
@@ -25,7 +30,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
 ];
 
 function parseId(value: string) {
@@ -168,7 +172,8 @@ async function _POST(
       if (!booking) {
         return { error: fail(404, "BOOKING_NOT_FOUND", "Reserva não encontrada.") };
       }
-      if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+      if (membership.role === OrganizationMemberRole.STAFF) {
+        const isCoach = membership.rolePack === OrganizationRolePack.COACH;
         const scopes = await resolveReservasScopesForMember({
           organizationId: organization.id,
           userId: profile.id,
@@ -176,7 +181,7 @@ async function _POST(
         if (!scopes.hasAny) {
           return { error: fail(403, "FORBIDDEN", "Sem permissões.") };
         }
-        if (membership.role === OrganizationMemberRole.TRAINER) {
+        if (isCoach) {
           const trainerProfessionalIds = await resolveTrainerProfessionalIds({
             organizationId: organization.id,
             userId: profile.id,

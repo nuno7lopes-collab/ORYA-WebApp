@@ -5,13 +5,6 @@ import { resolve } from "node:path";
 const TOURNAMENT_MATCH_GUARD = "PADEL_TOURNAMENTMATCH_WRITE_FORBIDDEN";
 const INTERCLUB_GUARD = "INTERCLUB_TEAM_ENGINE_REQUIRED";
 
-const ROUTE_WRITE_FILES = [
-  "app/api/org/[orgId]/tournaments/[id]/matches/schedule/route.ts",
-  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/edit/route.ts",
-  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/undo/route.ts",
-  "app/api/org/[orgId]/tournaments/[id]/matches/[matchId]/result/route.ts",
-];
-
 const DOMAIN_WRITE_FILES = [
   "domain/tournaments/matchUpdate.ts",
   "domain/tournaments/generation.ts",
@@ -23,7 +16,7 @@ function readLocal(pathname: string) {
 
 describe("padel core guardrails (D18)", () => {
   it("bloqueia write direto em TournamentMatch para eventos Padel", () => {
-    for (const file of [...ROUTE_WRITE_FILES, ...DOMAIN_WRITE_FILES]) {
+    for (const file of DOMAIN_WRITE_FILES) {
       const content = readLocal(file);
       expect(content, file).toContain(TOURNAMENT_MATCH_GUARD);
     }

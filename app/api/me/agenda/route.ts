@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -123,6 +123,7 @@ async function _GET(req: NextRequest) {
     const [
       ticketRows,
       reservationRows,
+      bookingRows,
       entryRows,
       matchRows,
       submissionRows,
@@ -192,6 +193,32 @@ async function _GET(req: NextRequest) {
                   longitude: true,
                 },
               },
+            },
+          },
+        },
+      }),
+      prisma.booking.findMany({
+        where: {
+          userId,
+          startsAt: { gte: start, lte: end },
+          status: {
+            in: [
+              "PENDING_CONFIRMATION",
+              "PENDING",
+              "CONFIRMED",
+              "DISPUTED",
+              "NO_SHOW",
+              "COMPLETED",
+            ],
+          },
+        },
+        select: {
+          id: true,
+          startsAt: true,
+          durationMinutes: true,
+          service: {
+            select: {
+              title: true,
             },
           },
         },
@@ -363,6 +390,7 @@ async function _GET(req: NextRequest) {
         } | null;
       },
       status: string,
+      labelOverride?: string,
     ) => {
       if (!isAgendaEventComplete(event)) return;
       const priority = participationPriority[status] ?? 1;
@@ -377,7 +405,7 @@ async function _GET(req: NextRequest) {
           startAt: event.startsAt.toISOString(),
           endAt: event.endsAt ? event.endsAt.toISOString() : null,
           status,
-          label: templateLabel(event.templateType ?? null),
+          label: labelOverride ?? templateLabel(event.templateType ?? null),
           coverImageUrl: resolveEventCover(event.coverImageUrl ?? null, event.slug ?? event.id),
           ctaHref: `/eventos/${event.slug}`,
           ctaLabel: "Abrir evento",
@@ -386,7 +414,7 @@ async function _GET(req: NextRequest) {
     };
 
     ticketRows.forEach((row) => {
-      if (row.event) upsertEvent(row.event, "BILHETE");
+      if (row.event) upsertEvent(row.event, "BILHETE", "BILHETE_EVENTO");
     });
     entryRows.forEach((row) => {
       if (row.event) upsertEvent(row.event, "INSCRITO");
@@ -395,10 +423,24 @@ async function _GET(req: NextRequest) {
       upsertEvent(event, "STAFF");
     });
     reservationRows.forEach((row) => {
-      if (row.event) upsertEvent(row.event, "RESERVA");
+      if (row.event) upsertEvent(row.event, "RESERVA", "BILHETE_EVENTO");
     });
 
     const items: AgendaItem[] = Array.from(eventMap.values()).map((entry) => entry.item);
+
+    bookingRows.forEach((booking) => {
+      const endAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+      items.push({
+        id: `booking-${booking.id}`,
+        type: "RESERVA",
+        title: booking.service?.title?.trim() || "Reserva de serviço",
+        startAt: booking.startsAt.toISOString(),
+        endAt: endAt.toISOString(),
+        label: "RESERVA_SERVICO",
+        ctaHref: "/me/reservas",
+        ctaLabel: "Ver reserva",
+      });
+    });
 
     matchRows.forEach((match) => {
       if (!isAgendaEventComplete(match.event)) return;
@@ -414,7 +456,7 @@ async function _GET(req: NextRequest) {
         endAt: match.plannedEndAt ? match.plannedEndAt.toISOString() : null,
         label: "Jogo",
         coverImageUrl: resolveEventCover(match.event.coverImageUrl ?? null, match.event.slug ?? match.event.id),
-        ctaHref: match.event.slug ? `/eventos/${match.event.slug}/live` : null,
+        ctaHref: match.event.slug ? `/eventos/${match.event.slug}` : null,
         ctaLabel: "Ver jogo",
       });
     });

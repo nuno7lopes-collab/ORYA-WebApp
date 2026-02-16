@@ -296,7 +296,6 @@ export default function ProfileHeader({
         onChange={(e) => setNameInput(e.target.value)}
         className="rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-lg font-semibold text-white focus:outline-none focus:border-white/40"
         maxLength={80}
-        autoFocus
       />
       <button
         onClick={() => runSave({ fullName: nameInput })}
@@ -342,7 +341,6 @@ export default function ProfileHeader({
             onChange={(e) => setUsernameInput(e.target.value)}
             className="rounded-xl border border-white/15 bg-black/50 px-3 py-1.5 text-sm text-white focus:outline-none focus:border-white/40"
             maxLength={24}
-            autoFocus
           />
           <button
             onClick={() => runSave({ username: usernameInput })}

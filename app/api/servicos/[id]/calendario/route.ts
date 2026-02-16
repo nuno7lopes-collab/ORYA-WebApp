@@ -9,6 +9,7 @@ import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/l
 import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { GET as SlotsGet } from "@/app/api/servicos/[id]/slots/route";
 
 const SLOT_STEP_MINUTES = 15;
 
@@ -72,6 +73,11 @@ async function _GET(
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
     return jsonWrap({ ok: false, error: "Serviço inválido." }, { status: 400 });
+  }
+
+  // Contracto canónico: /calendario suporta visão mensal e diária.
+  if (req.nextUrl.searchParams.get("day")) {
+    return SlotsGet(req, { params: Promise.resolve({ id: resolved.id }) });
   }
 
   try {

@@ -1298,6 +1298,9 @@ export default function Step2Pagamento() {
         emailMismatch: "Email e confirmação não coincidem.",
         phoneInvalid: "Telemóvel inválido. Usa apenas dígitos e opcional + no início.",
       },
+      {
+        phoneLocale: typeof navigator !== "undefined" ? navigator.language : null,
+      },
     );
     const nextErrors = {
       ...validation.errors,
@@ -1310,6 +1313,7 @@ export default function Step2Pagamento() {
       setError("Revê os dados e o consentimento para continuar como convidado.");
       return;
     }
+    setGuestPhone(validation.normalized.phone ?? "");
 
     atualizarDados({
       additional: {

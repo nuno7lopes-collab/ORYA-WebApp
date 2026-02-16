@@ -56,9 +56,12 @@ async function _GET(req: NextRequest) {
 
   const organization = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { id: true },
+    select: { id: true, status: true },
   });
   if (!organization) {
+    return fail(ctx, 404, "ORG_NOT_FOUND");
+  }
+  if (organization.status !== "ACTIVE") {
     return fail(ctx, 404, "ORG_NOT_FOUND");
   }
 

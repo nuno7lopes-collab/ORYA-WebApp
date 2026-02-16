@@ -50,7 +50,38 @@ async function _GET(req: NextRequest) {
       take: limit,
     });
 
-    return jsonWrap({ ok: true, organizationId: organization.id, items }, { status: 200 });
+    const userIds = Array.from(
+      new Set(
+        items
+          .flatMap((entry) => [entry.actorUserId, entry.fromUserId, entry.toUserId])
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      ),
+    );
+    const profiles = userIds.length
+      ? await prisma.profile.findMany({
+          where: { id: { in: userIds }, isDeleted: false },
+          select: { id: true, fullName: true, username: true, avatarUrl: true },
+        })
+      : [];
+    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+
+    const normalizedItems = items.map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      createdAt: entry.createdAt?.toISOString() ?? null,
+      metadata: entry.metadata ?? null,
+      actor: entry.actorUserId
+        ? profileById.get(entry.actorUserId) ?? { id: entry.actorUserId, fullName: null, username: null, avatarUrl: null }
+        : null,
+      fromUser: entry.fromUserId
+        ? profileById.get(entry.fromUserId) ?? { id: entry.fromUserId, fullName: null, username: null, avatarUrl: null }
+        : null,
+      toUser: entry.toUserId
+        ? profileById.get(entry.toUserId) ?? { id: entry.toUserId, fullName: null, username: null, avatarUrl: null }
+        : null,
+    }));
+
+    return jsonWrap({ ok: true, organizationId: organization.id, items: normalizedItems }, { status: 200 });
   } catch (err) {
     console.error("[organização/audit][GET]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

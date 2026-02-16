@@ -10,7 +10,7 @@ export default async function PadelTournamentWizard({ searchParams }: Props) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const orgId = resolveOrganizationIdFromSearchParams(resolvedSearchParams);
   if (!orgId) {
-    const target = await appendOrganizationIdToRedirectHref("/org/padel/torneios/novo", resolvedSearchParams);
+    const target = await appendOrganizationIdToRedirectHref("/org/padel/tournaments/create", resolvedSearchParams);
     redirect(target);
   }
   return <PadelTournamentWizardClient organizationId={orgId} />;

@@ -16,7 +16,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { createNotification, shouldNotify } from "@/lib/notifications";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -30,7 +30,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
 ];
 
 const SLOT_STEP_MINUTES = 15;
@@ -184,7 +183,8 @@ async function _POST(
     if (!booking) {
       return fail(ctx, 404, "BOOKING_NOT_FOUND", "Reserva não encontrada.");
     }
-    if (membership.role === OrganizationMemberRole.STAFF || membership.role === OrganizationMemberRole.TRAINER) {
+    if (membership.role === OrganizationMemberRole.STAFF) {
+      const isCoach = membership.rolePack === OrganizationRolePack.COACH;
       const scopes = await resolveReservasScopesForMember({
         organizationId: organization.id,
         userId: profile.id,
@@ -192,7 +192,7 @@ async function _POST(
       if (!scopes.hasAny) {
         return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
       }
-      if (membership.role === OrganizationMemberRole.TRAINER) {
+      if (isCoach) {
         const trainerProfessionalIds = await resolveTrainerProfessionalIds({
           organizationId: organization.id,
           userId: profile.id,
@@ -345,7 +345,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
+    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.service.organizationId,
@@ -379,18 +379,6 @@ async function _POST(
           ],
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
-      }),
-      prisma.softBlock.findMany({
-        where: {
-          organizationId: booking.service.organizationId,
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-          OR: [
-            { scopeType: "ORGANIZATION" },
-            ...(scopeIds.length > 0 ? [{ scopeType, scopeId: { in: scopeIds } }] : []),
-          ],
-        },
-        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
       prisma.classSession.findMany({
         where: {
@@ -480,25 +468,6 @@ async function _POST(
         endsAt: session.endsAt,
       });
     });
-    softBlocks.forEach((block) => {
-      if (block.scopeType === "ORGANIZATION") {
-        existing.push({
-          type: "SOFT_BLOCK",
-          sourceId: String(block.id),
-          startsAt: block.startsAt,
-          endsAt: block.endsAt,
-        });
-        return;
-      }
-      if (block.scopeId !== scopeIdForConflict) return;
-      existing.push({
-        type: "SOFT_BLOCK",
-        sourceId: String(block.id),
-        startsAt: block.startsAt,
-        endsAt: block.endsAt,
-      });
-    });
-
     const decision = evaluateCandidate({ candidate, existing });
     if (!decision.allowed) {
       const conflict = agendaConflictResponse(decision);

@@ -233,7 +233,6 @@ const EVENT_SCHEMA_SAFE_SELECT = {
   description: true,
   type: true,
   templateType: true,
-  liveVisibility: true,
   organizationId: true,
   startsAt: true,
   endsAt: true,
@@ -242,7 +241,6 @@ const EVENT_SCHEMA_SAFE_SELECT = {
   status: true,
   timezone: true,
   coverImageUrl: true,
-  liveStreamUrl: true,
   createdAt: true,
   updatedAt: true,
   ownerUserId: true,
@@ -281,8 +279,6 @@ const EVENT_BASELINE_COLUMNS = new Set([
   "resale_mode",
   "fee_mode",
   "payout_mode",
-  "live_stream_url",
-  "live_visibility",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

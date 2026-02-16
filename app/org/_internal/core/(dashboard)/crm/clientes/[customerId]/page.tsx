@@ -334,7 +334,7 @@ export default function CrmCustomerDetailPage() {
               <div key={note.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
                 <p className="text-[12px] text-white/80">{note.body}</p>
                 <p className="mt-1 text-[11px] text-white/40">
-                  {note.author.fullName || note.author.username || "Staff"} · {formatDate(note.createdAt)}
+                  {note.author.fullName || note.author.username || "Equipa"} · {formatDate(note.createdAt)}
                 </p>
               </div>
             ))}

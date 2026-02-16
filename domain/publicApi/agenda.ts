@@ -17,6 +17,9 @@ export async function listPublicAgenda(params: {
   return prisma.agendaItem.findMany({
     where: {
       organizationId,
+      organization: {
+        status: "ACTIVE",
+      },
       sourceType: sourceTypes?.length ? { in: sourceTypes } : undefined,
       ...rangeFilter,
       ...(padelClubId ? { padelClubId } : {}),

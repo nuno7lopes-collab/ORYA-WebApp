@@ -241,7 +241,7 @@ export default function PoliticasReservaPage() {
           </p>
         </div>
 
-        <Link href="/org/reservas" className={CTA_SECONDARY}>
+        <Link href="/org/bookings" className={CTA_SECONDARY}>
           Voltar a Reservas
         </Link>
       </section>
@@ -335,7 +335,7 @@ export default function PoliticasReservaPage() {
             </div>
 
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-              <p className="font-semibold text-white">Preview</p>
+              <p className="font-semibold text-white">Pré-visualização</p>
               <p className="mt-2">
                 Cancelamento:{" "}
                 {editDraft.allowCancellation

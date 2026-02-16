@@ -9,6 +9,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -258,10 +259,12 @@ async function _POST(req: NextRequest) {
   });
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
+  const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
   const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : fullName;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
-  const phone = typeof body.phone === "string" ? body.phone.trim() : null;
+  const phoneRaw = typeof body.phone === "string" ? body.phone.trim() : "";
+  const phone = phoneRaw && isValidPhone(phoneRaw) ? normalizePhone(phoneRaw, phoneOptions) : null;
   const genderRaw = typeof body.gender === "string" ? body.gender.trim().toUpperCase() : null;
   const gender =
     genderRaw && Object.values(Gender).includes(genderRaw as Gender) ? (genderRaw as Gender) : null;
@@ -277,6 +280,7 @@ async function _POST(req: NextRequest) {
   const notes = typeof body.notes === "string" ? body.notes.trim() : null;
 
   if (!fullName) return jsonWrap({ ok: false, error: "FULLNAME_REQUIRED" }, { status: 400 });
+  if (phoneRaw && !phone) return jsonWrap({ ok: false, error: "INVALID_PHONE" }, { status: 400 });
 
   const userIdInput = typeof body.userId === "string" ? body.userId.trim() : null;
 

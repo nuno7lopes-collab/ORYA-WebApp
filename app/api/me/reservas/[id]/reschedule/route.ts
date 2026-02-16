@@ -282,7 +282,7 @@ async function _POST(
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings, softBlocks, classSessions] = await Promise.all([
+    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: booking.organizationId,
@@ -316,15 +316,6 @@ async function _POST(
           ],
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
-      }),
-      prisma.softBlock.findMany({
-        where: {
-          organizationId: booking.organizationId,
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-          OR: [{ scopeType: "ORGANIZATION" }, { scopeType, scopeId: { in: scopeIds } }],
-        },
-        select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
       }),
       prisma.classSession.findMany({
         where: {
@@ -414,15 +405,6 @@ async function _POST(
         endsAt: session.endsAt,
       });
     });
-    softBlocks.forEach((block) => {
-      if (block.scopeType === "ORGANIZATION") {
-        existing.push({ type: "SOFT_BLOCK", sourceId: String(block.id), startsAt: block.startsAt, endsAt: block.endsAt });
-        return;
-      }
-      if (block.scopeId !== scopeIdForConflict) return;
-      existing.push({ type: "SOFT_BLOCK", sourceId: String(block.id), startsAt: block.startsAt, endsAt: block.endsAt });
-    });
-
     const conflictDecision = evaluateCandidate({ candidate, existing });
     if (!conflictDecision.allowed) {
       const conflict = agendaConflictResponse(conflictDecision);

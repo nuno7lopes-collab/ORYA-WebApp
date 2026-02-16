@@ -1,27 +1,16 @@
-// app/api/auth/me/route.ts
+import type { User } from "@supabase/supabase-js";
 import { jsonWrap } from "@/lib/api/wrapResponse";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
-import type { User } from "@supabase/supabase-js";
-import { setUsernameForOwner, UsernameTakenError } from "@/lib/globalUsernames";
-import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
-import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { linkPendingWorkforceInvitesToUser } from "@/lib/workforceInvites";
-
-type SupabaseUserMetadata = {
-  full_name?: string;
-  name?: string;
-  avatar_url?: string;
-  pending_username?: string;
-};
 
 type ApiAuthMeResponse = {
   user: {
     id: string;
     email: string | null;
     emailConfirmed: boolean;
+    emailConfirmedAt: string | null;
   } | null;
   profile: {
     id: string;
@@ -51,155 +40,25 @@ type ApiAuthMeResponse = {
 async function _GET() {
   try {
     const supabase = await createSupabaseServer();
-
     const {
       data: { user },
       error,
     } = await supabase.auth.getUser();
 
     if (error || !user) {
-      // Sessão ausente ou inválida → 401 limpo (evita spam de logs)
-      return jsonWrap(
-        { user: null, profile: null },
-        { status: 401 },
-      );
+      return jsonWrap({ user: null, profile: null }, { status: 401 });
     }
 
     const supaUser = user as User;
-    const emailConfirmed =
-      Boolean(supaUser.email_confirmed_at) ||
-      Boolean((supaUser as { confirmed_at?: string | null })?.confirmed_at) ||
-      false;
+    const emailConfirmedAt =
+      supaUser.email_confirmed_at ??
+      ((supaUser as { confirmed_at?: string | null })?.confirmed_at ?? null);
+    const emailConfirmed = Boolean(emailConfirmedAt);
 
-    const userMetadata = (user.user_metadata ?? {}) as SupabaseUserMetadata;
+    // /api/auth/me é estritamente read-only: nenhuma mutação síncrona neste endpoint.
+    const profile = await prisma.profile.findUnique({ where: { id: user.id } });
+    const notificationPrefs = profile ? await getNotificationPrefs(user.id).catch(() => null) : null;
 
-    const userId = user.id;
-
-    // Garantir Profile 1-1 com auth.users sem writes recorrentes no endpoint de leitura.
-    const notificationPrefsPromise = getNotificationPrefs(userId).catch(() => null);
-    let initialProfile = await prisma.profile.findUnique({ where: { id: userId } });
-    if (!initialProfile) {
-      try {
-        initialProfile = await prisma.profile.create({
-          data: {
-            id: userId,
-            username: null,
-            fullName: userMetadata.full_name ?? userMetadata.name ?? null,
-            avatarUrl: normalizeProfileAvatarUrl(userMetadata.avatar_url ?? null),
-            roles: ["user"],
-            visibility: "PUBLIC",
-          },
-        });
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === "P2002"
-        ) {
-          initialProfile = await prisma.profile.findUnique({ where: { id: userId } });
-        } else {
-          throw err;
-        }
-      }
-    }
-    if (!initialProfile) {
-      throw new Error("PROFILE_INIT_FAILED");
-    }
-    const notificationPrefs = await notificationPrefsPromise;
-    let profile = initialProfile;
-
-    const pendingUsername = typeof userMetadata.pending_username === "string" ? userMetadata.pending_username : null;
-
-    // Atribuir username pendente se ainda não existir
-    if (!profile.username && pendingUsername) {
-      try {
-        await prisma.$transaction(async (tx) => {
-          await setUsernameForOwner({
-            username: pendingUsername,
-            ownerType: "user",
-            ownerId: userId,
-            tx,
-            allowReservedForEmail: user.email ?? null,
-          });
-          await tx.profile.update({
-            where: { id: userId },
-            data: { username: pendingUsername },
-          });
-        });
-        const refreshedProfile = await prisma.profile.findUnique({ where: { id: userId } });
-        if (refreshedProfile) {
-          profile = refreshedProfile;
-        }
-      } catch (err) {
-        if (err instanceof UsernameTakenError) {
-          // outro utilizador já registou o @ entretanto; deixa username nulo
-          console.warn("[auth/me] pending_username já ocupado");
-        } else {
-          console.error("[auth/me] erro ao aplicar pending_username:", err);
-        }
-      }
-    }
-
-    if (!profile) {
-      throw new Error("PROFILE_MISSING");
-    }
-    let resolvedProfile = profile;
-
-    const hasUserOnboardingData =
-      Boolean(resolvedProfile.fullName?.trim()) && Boolean(resolvedProfile.username?.trim());
-
-    if (!resolvedProfile.onboardingDone && hasUserOnboardingData) {
-      try {
-        resolvedProfile = await prisma.profile.update({
-          where: { id: userId },
-          data: { onboardingDone: true },
-        });
-      } catch (err) {
-        console.warn("[auth/me] falha ao marcar onboardingDone:", err);
-      }
-    }
-
-    const profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS" =
-      resolvedProfile.visibility === "PUBLIC"
-        ? "PUBLIC"
-        : resolvedProfile.visibility === "FOLLOWERS"
-          ? "FOLLOWERS"
-          : "PRIVATE";
-
-    const onboardingDone = resolvedProfile.onboardingDone || hasUserOnboardingData;
-
-    if (emailConfirmed) {
-      await linkPendingWorkforceInvitesToUser({
-        userId,
-        email: user.email ?? null,
-      }).catch((err) => {
-        console.warn("[auth/me] workforce invite link failed:", err);
-      });
-    }
-
-    const safeProfile: ApiAuthMeResponse["profile"] = {
-      id: resolvedProfile.id,
-      username: resolvedProfile.username,
-      fullName: resolvedProfile.fullName,
-      avatarUrl: resolvedProfile.avatarUrl,
-      coverUrl: resolvedProfile.coverUrl,
-      updatedAt: resolvedProfile.updatedAt ?? null,
-      bio: resolvedProfile.bio,
-      contactPhone: resolvedProfile.contactPhone,
-      isVerified: resolvedProfile.is_verified,
-      favouriteCategories: resolvedProfile.favouriteCategories,
-      onboardingDone,
-      roles: resolvedProfile.roles,
-      visibility: resolvedProfile.visibility,
-      allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
-      allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
-      allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
-      allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
-      allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
-      allowMarketingCampaigns: notificationPrefs?.allowMarketingCampaigns ?? true,
-      profileVisibility,
-    };
-
-    // Se email não está confirmado, força o frontend a continuar em modo "verify"
     if (!emailConfirmed) {
       return jsonWrap(
         {
@@ -207,13 +66,36 @@ async function _GET() {
             id: user.id,
             email: user.email ?? null,
             emailConfirmed,
+            emailConfirmedAt,
           },
           profile: null,
           needsEmailConfirmation: true,
-        },
+        } satisfies ApiAuthMeResponse,
         { status: 200 },
       );
     }
+
+    if (!profile) {
+      return jsonWrap(
+        {
+          user: {
+            id: user.id,
+            email: user.email ?? null,
+            emailConfirmed,
+            emailConfirmedAt,
+          },
+          profile: null,
+        } satisfies ApiAuthMeResponse,
+        { status: 200 },
+      );
+    }
+
+    const profileVisibility: "PUBLIC" | "PRIVATE" | "FOLLOWERS" =
+      profile.visibility === "PUBLIC"
+        ? "PUBLIC"
+        : profile.visibility === "FOLLOWERS"
+          ? "FOLLOWERS"
+          : "PRIVATE";
 
     return jsonWrap(
       {
@@ -221,17 +103,37 @@ async function _GET() {
           id: user.id,
           email: user.email ?? null,
           emailConfirmed,
+          emailConfirmedAt,
         },
-        profile: safeProfile,
-      },
+        profile: {
+          id: profile.id,
+          username: profile.username,
+          fullName: profile.fullName,
+          avatarUrl: profile.avatarUrl,
+          coverUrl: profile.coverUrl,
+          updatedAt: profile.updatedAt ?? null,
+          bio: profile.bio,
+          contactPhone: profile.contactPhone,
+          isVerified: profile.is_verified,
+          favouriteCategories: profile.favouriteCategories,
+          onboardingDone: profile.onboardingDone,
+          roles: profile.roles,
+          visibility: profile.visibility,
+          allowEmailNotifications: notificationPrefs?.allowEmailNotifications ?? true,
+          allowEventReminders: notificationPrefs?.allowEventReminders ?? true,
+          allowFollowRequests: notificationPrefs?.allowFollowRequests ?? true,
+          allowSalesAlerts: notificationPrefs?.allowSalesAlerts ?? true,
+          allowSystemAnnouncements: notificationPrefs?.allowSystemAnnouncements ?? true,
+          allowMarketingCampaigns: notificationPrefs?.allowMarketingCampaigns ?? true,
+          profileVisibility,
+        },
+      } satisfies ApiAuthMeResponse,
       { status: 200 },
     );
   } catch (err) {
     console.error("GET /api/auth/me error:", err);
-    return jsonWrap(
-      { user: null, profile: null },
-      { status: 500 }
-    );
+    return jsonWrap({ user: null, profile: null }, { status: 500 });
   }
 }
+
 export const GET = withApiEnvelope(_GET);

@@ -20,25 +20,15 @@ import { resolveMemberModuleAccess } from "@/lib/organizationRbac";
 import { OrganizationMemberRole, OrganizationModule, OrganizationRolePack } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { parseOrganizationModules, resolvePrimaryModule } from "@/lib/organizationCategories";
-import { fetchGeoAutocompleteWithMeta, fetchGeoDetails } from "@/lib/geo/client";
 import { AppleMapsLoader } from "@/app/components/maps/AppleMapsLoader";
 import { AppleLocationMapPreview } from "@/app/components/maps/AppleLocationMapPreview";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
-import type { GeoAutocompleteItem, GeoDetailsItem } from "@/lib/geo/provider";
-import { partitionSuggestionsByCountry } from "@/lib/geo/autocompletePolicy";
-import { trackEvent } from "@/lib/analytics";
+import type { GeoDetailsItem } from "@/lib/geo/types";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
-import {
-  MAX_RECENT_LOCATIONS,
-  RECENT_LOCATION_KEY,
-  distanceKm,
-  formatDistanceLabel,
-  isFiniteCoordinate,
-  sanitizeRecentLocation,
-} from "@/lib/geo/locationUx";
+import { AddressCombobox } from "@/components/ui/address-combobox";
 
 type TicketTypeRow = {
   name: string;
@@ -47,8 +37,6 @@ type TicketTypeRow = {
   publicAccess?: boolean;
   padelCategoryId?: number | null;
 };
-
-type LiveVisibility = "PUBLIC" | "PRIVATE" | "DISABLED";
 
 const DRAFT_KEY = "orya-organization-new-event-draft";
 
@@ -322,23 +310,10 @@ export function NewOrganizationEventPage({
   const [endsAt, setEndsAt] = useState("");
   const [interestTags, setInterestTags] = useState<InterestId[]>([]);
   const [locationQuery, setLocationQuery] = useState("");
-  const [locationSuggestions, setLocationSuggestions] = useState<GeoAutocompleteItem[]>([]);
-  const [locationSearchLoading, setLocationSearchLoading] = useState(false);
-  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
-  const [locationBiasError, setLocationBiasError] = useState<string | null>(null);
-  const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
-  const [locationProviderId, setLocationProviderId] = useState<string | null>(null);
   const [locationAddressId, setLocationAddressId] = useState<string | null>(null);
   const [locationFormattedAddress, setLocationFormattedAddress] = useState<string | null>(null);
   const [locationLat, setLocationLat] = useState<number | null>(null);
   const [locationLng, setLocationLng] = useState<number | null>(null);
-  const [locationBias, setLocationBias] = useState<{ lat: number; lng: number } | null>(null);
-  const [requestingLocationBias, setRequestingLocationBias] = useState(false);
-  const [recentLocationItems, setRecentLocationItems] = useState<GeoAutocompleteItem[]>([]);
-  const [expectedCountryCode, setExpectedCountryCode] = useState<string | null>(null);
-  const [effectiveCountryCode, setEffectiveCountryCode] = useState<string | null>(null);
-  const [queryCountryIntentCode, setQueryCountryIntentCode] = useState<string | null>(null);
-  const [showForeignSuggestions, setShowForeignSuggestions] = useState(false);
   const [ticketTypes, setTicketTypes] = useState<TicketTypeRow[]>([]);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -347,7 +322,6 @@ export function NewOrganizationEventPage({
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [showTicketsModal, setShowTicketsModal] = useState(false);
-  const [showLiveVisibilityModal, setShowLiveVisibilityModal] = useState(false);
   const [schedulePopover, setSchedulePopover] = useState<
     "startDate" | "startTime" | "endDate" | "endTime" | null
   >(null);
@@ -378,7 +352,6 @@ export function NewOrganizationEventPage({
     useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
   const [coverPage, setCoverPage] = useState(1);
   const [isGratisEvent, setIsFreeEvent] = useState(false);
-  const [liveVisibility, setLiveVisibility] = useState<LiveVisibility>("PUBLIC");
   const [freeTicketName, setFreeTicketName] = useState("Inscrição");
   const [freeTicketPublicAccess, setFreeTicketPublicAccess] = useState(true);
   const [freeCapacity, setFreeCapacity] = useState("");
@@ -401,7 +374,6 @@ export function NewOrganizationEventPage({
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [errorSummary, setErrorSummary] = useState<{ field: FieldKey; message: string }[]>([]);
-  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [pendingFocusField, setPendingFocusField] = useState<FieldKey | null>(null);
   const [creationSuccess, setCreationSuccess] = useState<{ eventId?: number; slug?: string } | null>(null);
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
@@ -429,12 +401,6 @@ export function NewOrganizationEventPage({
   const coverModalRef = useRef<HTMLDivElement | null>(null);
   const ticketsModalRef = useRef<HTMLDivElement | null>(null);
   const modalOverflowRef = useRef<{ body: string; html: string } | null>(null);
-  const suggestionBlurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const locationSearchSeq = useRef(0);
-  const locationDetailsSeq = useRef(0);
-  const activeProviderRef = useRef<string | null>(null);
-  const locationBypassAnalyticsRef = useRef<string | null>(null);
 
   useEffect(() => {
     setPortalRoot(document.body);
@@ -490,11 +456,11 @@ export function NewOrganizationEventPage({
   const ticketLabelIndefinite = isPadelPreset ? "uma" : "um";
   const freeTicketPlaceholder = isPadelPreset ? "Inscrição" : "Entrada";
   const freeTicketLabel = isPadelPreset ? "Inscrição grátis" : "Entrada grátis";
-  const detailBasePath = isPadelPreset ? "/org/padel/torneios" : "/org/eventos";
+  const detailBasePath = isPadelPreset ? "/org/padel/tournaments" : "/org/events";
   const isPadelWizard = forcePreset === "padel";
   const wizardTitle = isPadelWizard ? "Criar torneio de padel" : `Criar novo ${primaryLabel}`;
   const wizardSubtitle = isPadelWizard
-    ? "Assistente dedicado para definir clube, courts, categorias, inscrições e regras."
+    ? "Assistente dedicado para definir clube, campos, categorias, inscrições e regras."
     : null;
   const coverSuggestions = useMemo(
     () => getEventCoverSuggestionIds({ templateType: templateHint, primaryModule }),
@@ -612,7 +578,7 @@ export function NewOrganizationEventPage({
       return "A tua organização ainda não está ativa.";
     }
     if (!hasCurrentModule) {
-      return `Ativa o módulo de ${primaryLabelPlural} nas apps da organização.`;
+      return `Ativa a ferramenta de ${primaryLabelPlural} nas apps da organização.`;
     }
     if (!canCreateEvents) {
       return `Sem permissões para criar ${primaryLabelPlural} nesta organização.`;
@@ -702,7 +668,6 @@ export function NewOrganizationEventPage({
         coverUrl: string | null;
         selectedPreset: string | null;
         isGratisEvent: boolean;
-        liveVisibility: LiveVisibility;
         freeTicketName: string;
         freeTicketPublicAccess: boolean;
         freeCapacity: string;
@@ -735,7 +700,6 @@ export function NewOrganizationEventPage({
       setCoverUrl(draft.coverUrl ?? null);
       setSelectedPreset(draft.selectedPreset ?? null);
       setIsFreeEvent(Boolean(draft.isGratisEvent));
-      setLiveVisibility(draft.liveVisibility ?? "PUBLIC");
       setFreeTicketName(draft.freeTicketName || freeTicketPlaceholder);
       setFreeTicketPublicAccess(draft.freeTicketPublicAccess ?? true);
       setFreeCapacity(normalizeIntegerInput(draft.freeCapacity || ""));
@@ -1074,7 +1038,6 @@ export function NewOrganizationEventPage({
     if (!club) return;
     const resolved = resolvePadelClubLocation(club);
     const composed = resolved.formatted?.trim() || resolved.city?.trim() || club.name || "";
-    setLocationProviderId(club.addressRef?.sourceProviderPlaceId || null);
     setLocationAddressId(club.addressId || null);
     setLocationFormattedAddress(resolved.formatted || null);
     setLocationLat(typeof club.addressRef?.latitude === "number" ? club.addressRef?.latitude ?? null : null);
@@ -1082,206 +1045,24 @@ export function NewOrganizationEventPage({
     setLocationQuery(composed || "");
   }, [selectedPreset, selectedPadelClubId, padelClubs?.items]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem(RECENT_LOCATION_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      const safe = parsed
-        .map((entry) => sanitizeRecentLocation(entry))
-        .filter((entry): entry is GeoAutocompleteItem => Boolean(entry))
-        .slice(0, MAX_RECENT_LOCATIONS);
-      setRecentLocationItems(safe);
-    } catch {
-      // ignore parse/storage failures
-    }
-  }, []);
-
-  useEffect(() => {
-    const query = locationQuery.trim();
-    if (query.length < 2) {
-      setLocationSuggestions([]);
-      setLocationSearchError(null);
-      setExpectedCountryCode(null);
-      setEffectiveCountryCode(null);
-      setQueryCountryIntentCode(null);
-      setShowForeignSuggestions(false);
+  const applyGeoDetails = (details: GeoDetailsItem | null) => {
+    if (!details) {
+      setLocationFormattedAddress(null);
+      setLocationLat(null);
+      setLocationLng(null);
       return;
     }
-    if (locationSearchTimeout.current) {
-      clearTimeout(locationSearchTimeout.current);
-    }
-    setLocationSearchError(null);
-    const seq = ++locationSearchSeq.current;
-    locationSearchTimeout.current = setTimeout(async () => {
-      setLocationSearchLoading(true);
-      try {
-        const result = await fetchGeoAutocompleteWithMeta(query, locationBias ?? undefined);
-        if (locationSearchSeq.current === seq) {
-          setLocationSuggestions(result.items);
-          setExpectedCountryCode(result.expectedCountryCode);
-          setEffectiveCountryCode(result.effectiveCountryCode);
-          setQueryCountryIntentCode(result.queryCountryIntentCode);
-          setShowForeignSuggestions(false);
-        }
-      } catch (err) {
-        console.warn("[eventos/novo] autocomplete falhou", err);
-        if (locationSearchSeq.current === seq) {
-          setLocationSuggestions([]);
-          setLocationSearchError(err instanceof Error ? err.message : "Falha ao obter sugestões.");
-          setExpectedCountryCode(null);
-          setEffectiveCountryCode(null);
-          setQueryCountryIntentCode(null);
-          setShowForeignSuggestions(false);
-        }
-      } finally {
-        if (locationSearchSeq.current === seq) {
-          setLocationSearchLoading(false);
-        }
-      }
-    }, 280);
-
-    return () => {
-      if (locationSearchTimeout.current) {
-        clearTimeout(locationSearchTimeout.current);
-      }
-    };
-  }, [locationQuery, locationBias]);
-
-  useEffect(() => {
-    const queryLength = locationQuery.trim().length;
-    const bypassActive = Boolean(
-      queryLength >= 2 &&
-      expectedCountryCode &&
-      effectiveCountryCode &&
-      expectedCountryCode !== effectiveCountryCode,
-    );
-    if (!bypassActive) {
-      locationBypassAnalyticsRef.current = null;
-      return;
-    }
-
-    const signature = `${expectedCountryCode}:${effectiveCountryCode}:${queryCountryIntentCode ?? ""}`;
-    if (locationBypassAnalyticsRef.current === signature) return;
-    locationBypassAnalyticsRef.current = signature;
-    trackEvent("geo_autocomplete_country_bypass_triggered", {
-      formContext: "event_new",
-      expectedCountryCode,
-      effectiveCountryCode,
-      queryCountryIntentCode,
-      queryLength,
-    });
-  }, [effectiveCountryCode, expectedCountryCode, locationQuery, queryCountryIntentCode]);
-
-  const rememberRecentLocation = (item: GeoAutocompleteItem) => {
-    setRecentLocationItems((prev) => {
-      const next = [item, ...prev.filter((entry) => entry.providerId !== item.providerId)].slice(0, MAX_RECENT_LOCATIONS);
-      if (typeof window !== "undefined") {
-        try {
-          window.localStorage.setItem(RECENT_LOCATION_KEY, JSON.stringify(next));
-        } catch {
-          // ignore storage failures
-        }
-      }
-      return next;
-    });
-  };
-
-  const requestLocationBias = () => {
-    if (requestingLocationBias) return;
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      setLocationBiasError("Este browser não suporta geolocalização.");
-      return;
-    }
-    setRequestingLocationBias(true);
-    setLocationBiasError(null);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocationBias({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setRequestingLocationBias(false);
-      },
-      () => {
-        setLocationBiasError("Não foi possível obter a tua localização.");
-        setRequestingLocationBias(false);
-      },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
-    );
-  };
-
-  const applyGeoDetails = (details: GeoDetailsItem | null, fallbackName?: string | null) => {
-    if (!details) return;
-    const resolvedLabel = details.formattedAddress || details.name || fallbackName || null;
+    const resolvedLabel = details.formattedAddress || details.name || null;
     setLocationFormattedAddress(resolvedLabel);
     setLocationAddressId(details.addressId ?? null);
-    if (details.providerId) {
-      setLocationProviderId(details.providerId);
-    }
     if (Number.isFinite(details.lat ?? NaN) && Number.isFinite(details.lng ?? NaN)) {
       setLocationLat(details.lat);
       setLocationLng(details.lng);
+    } else {
+      setLocationLat(null);
+      setLocationLng(null);
     }
-    const nextLabel = resolvedLabel || "";
-    if (nextLabel) setLocationQuery(nextLabel);
-  };
-
-  const handleSelectGeoSuggestion = async (
-    item: GeoAutocompleteItem,
-    options?: { isForeign?: boolean },
-  ) => {
-    const queryLength = locationQuery.trim().length;
-    if (options?.isForeign) {
-      trackEvent("geo_autocomplete_foreign_selected", {
-        formContext: "event_new",
-        expectedCountryCode,
-        effectiveCountryCode,
-        queryCountryIntentCode,
-        queryLength,
-      });
-    }
-    setLocationProviderId(item.providerId);
-    setLocationAddressId(null);
-    activeProviderRef.current = item.providerId;
-    setLocationLat(item.lat);
-    setLocationLng(item.lng);
-    setLocationQuery(item.label);
-    setLocationFormattedAddress(item.label);
-    setLocationSearchError(null);
-    setLocationBiasError(null);
-    setShowLocationSuggestions(false);
-    setShowForeignSuggestions(false);
-    rememberRecentLocation(item);
-
-    const seq = ++locationDetailsSeq.current;
-    setLocationDetailsLoading(true);
-    try {
-      const details = await fetchGeoDetails(item.providerId, {
-        lat: item.lat,
-        lng: item.lng,
-      });
-      if (locationDetailsSeq.current !== seq) return;
-      if (activeProviderRef.current !== item.providerId) return;
-      applyGeoDetails(details, item.name || item.label);
-      if (details) {
-        rememberRecentLocation({
-          providerId: details.providerId || item.providerId,
-          label: details.formattedAddress || details.name || item.label,
-          name: details.name || item.name,
-          city: details.city || item.city,
-          address: details.formattedAddress || details.address || item.address,
-          lat: isFiniteCoordinate(details.lat) ? details.lat : item.lat,
-          lng: isFiniteCoordinate(details.lng) ? details.lng : item.lng,
-          sourceProvider: details.sourceProvider || item.sourceProvider || "APPLE_MAPS",
-        });
-      }
-    } catch (err) {
-      console.warn("[eventos/novo] detalhes falharam", err);
-    } finally {
-      if (locationDetailsSeq.current === seq) {
-        setLocationDetailsLoading(false);
-      }
-    }
+    if (resolvedLabel) setLocationQuery(resolvedLabel);
   };
 
   const baseInputClasses =
@@ -1364,7 +1145,7 @@ export function NewOrganizationEventPage({
             <div className="flex items-center justify-between">
               <label className={`${labelClass} m-0`}>Clube</label>
               <span className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white/65">
-                Courts: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Sel: {selectedPadelCourtIds.length || "—"}
+                Campos: {padelCourts?.items?.filter((c) => c.isActive).length ?? "—"} · Sel.: {selectedPadelCourtIds.length || "—"}
               </span>
             </div>
               <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
@@ -1414,7 +1195,7 @@ export function NewOrganizationEventPage({
                 </select>
                 {orgPadelClubs.length === 0 && (
                   <div ref={padelCategoriesRef} className="space-y-2">
-                    <p className="text-[12px] text-white/60">Sem clubes na tua organizacao.</p>
+                    <p className="text-[12px] text-white/60">Sem clubes na tua organização.</p>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1427,13 +1208,13 @@ export function NewOrganizationEventPage({
                         }}
                         className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                       >
-                        Procurar no diretorio
+                        Procurar no diretório
                       </button>
                       <Link
-                        href="/org/padel/clube?section=padel-club&padel=clubs"
+                        href="/org/padel/clubs?section=padel-club&padel=clubs"
                         className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                       >
-                        Criar clube rapido
+                        Criar clube rápido
                       </Link>
                     </div>
                   </div>
@@ -1477,7 +1258,7 @@ export function NewOrganizationEventPage({
                 <input
                   value={padelDirectoryQuery}
                   onChange={(e) => setPadelDirectoryQuery(e.target.value)}
-                  placeholder="Pesquisar clube, cidade, organizacao"
+                  placeholder="Pesquisar clube, cidade, organização"
                   className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
                 />
                 {padelDirectoryError && (
@@ -1486,7 +1267,7 @@ export function NewOrganizationEventPage({
                 {padelDirectoryLoading ? (
                   <p className="text-[12px] text-white/60">A procurar clubes...</p>
                 ) : padelDirectoryClubs.length === 0 ? (
-                  <p className="text-[12px] text-white/60">Sem resultados no diretorio.</p>
+                  <p className="text-[12px] text-white/60">Sem resultados no diretório.</p>
                 ) : (
                   <div className="space-y-2">
                     {padelDirectoryClubs.map((club) => {
@@ -1523,10 +1304,10 @@ export function NewOrganizationEventPage({
           </div>
 
           <div className="space-y-2">
-            <label className={labelClass}>Courts</label>
+            <label className={labelClass}>Campos</label>
             <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-56 overflow-auto space-y-2">
               {!selectedPadelClubId && (
-                <p className="text-[12px] text-white/60">Seleciona um clube para carregar courts.</p>
+                <p className="text-[12px] text-white/60">Seleciona um clube para carregar campos.</p>
               )}
               {selectedPadelClubId &&
                 (padelCourts?.items || [])
@@ -1559,23 +1340,23 @@ export function NewOrganizationEventPage({
                     );
                   })}
               {selectedPadelClubId && !padelCourts?.items?.length && (
-                <p className="text-[12px] text-white/60">Sem courts.</p>
+                <p className="text-[12px] text-white/60">Sem campos.</p>
               )}
               {selectedPadelCourtIds.length === 0 && (padelCourts?.items?.length || 0) > 0 && (
-                <p className="text-[11px] text-red-200">Seleciona 1 court.</p>
+                <p className="text-[11px] text-red-200">Seleciona 1 campo.</p>
               )}
             </div>
           </div>
         </div>
 
         <div className="space-y-2">
-          <label className={labelClass}>Staff</label>
+          <label className={labelClass}>Equipa</label>
           {padelClubMode === "PARTNER" && (
             <p className="text-[11px] text-amber-200">Obrigatório para clubes parceiros.</p>
           )}
           <div className="rounded-2xl border border-white/12 bg-white/[0.04] p-3 max-h-48 overflow-auto space-y-2">
             {!selectedPadelClubId && (
-              <p className="text-[12px] text-white/60">Seleciona um clube para carregar staff.</p>
+              <p className="text-[12px] text-white/60">Seleciona um clube para carregar equipa.</p>
             )}
             {selectedPadelClubId &&
               (padelStaff?.items || []).map((member) => {
@@ -1598,13 +1379,13 @@ export function NewOrganizationEventPage({
                       }}
                       className="accent-white"
                     />
-                    <span>{member.fullName || member.email || "Staff"}</span>
+                    <span>{member.fullName || member.email || "Equipa"}</span>
                     {member.inheritToEvents && <span className="text-[10px] text-emerald-300">auto</span>}
                   </label>
                 );
               })}
             {selectedPadelClubId && !padelStaff?.items?.length && (
-              <p className="text-[12px] text-white/60">Sem staff.</p>
+              <p className="text-[12px] text-white/60">Sem equipa.</p>
             )}
           </div>
         </div>
@@ -1884,8 +1665,6 @@ export function NewOrganizationEventPage({
     ticketLabelPlural,
   ]);
 
-  const liveSummary =
-    liveVisibility === "PUBLIC" ? "Público" : liveVisibility === "PRIVATE" ? "Privado" : "Desativado";
   const hasPublicTickets = useMemo(() => {
     if (isGratisEvent) return freeTicketPublicAccess;
     if (ticketTypes.length === 0) return true;
@@ -1948,13 +1727,13 @@ export function NewOrganizationEventPage({
     },
     {
       key: "courts",
-      label: "Courts",
+      label: "Campos",
       status: padelCourtsOk ? "ok" : "missing",
       detail: padelCourtsOk
         ? `${selectedPadelCourtIds.length} selecionado(s).`
         : selectedPadelClubId
-          ? "Seleciona pelo menos 1 court."
-          : "Seleciona um clube para carregar courts.",
+          ? "Seleciona pelo menos 1 campo."
+          : "Seleciona um clube para carregar campos.",
     },
     {
       key: "categories",
@@ -1970,15 +1749,15 @@ export function NewOrganizationEventPage({
     },
     {
       key: "staff",
-      label: "Staff",
+      label: "Equipa",
       status: padelStaffStatus,
       detail:
         padelStaffStatus === "ok"
           ? `${selectedPadelStaffIds.length} selecionado(s).`
           : padelStaffStatus === "missing"
             ? selectedPadelClubId
-              ? "Seleciona staff local do clube parceiro."
-              : "Seleciona um clube para carregar staff."
+              ? "Seleciona equipa local do clube parceiro."
+              : "Seleciona um clube para carregar equipa."
             : "Opcional (recomendado).",
     },
   ];
@@ -2036,7 +1815,7 @@ export function NewOrganizationEventPage({
       if (!selectedPadelClubId) {
         issues.push({ field: "padel", message: "Seleciona um clube de padel para o torneio." });
       } else if (selectedPadelCourtIds.length === 0) {
-        issues.push({ field: "padel", message: "Seleciona pelo menos 1 court para o torneio de padel." });
+        issues.push({ field: "padel", message: "Seleciona pelo menos 1 campo para o torneio de padel." });
       }
       if (
         padelClubMode === "PARTNER" &&
@@ -2044,7 +1823,7 @@ export function NewOrganizationEventPage({
         selectedPadelStaffIds.length === 0 &&
         (padelStaff?.items?.length ?? 0) > 0
       ) {
-        issues.push({ field: "padel", message: "Seleciona staff local para o clube parceiro." });
+        issues.push({ field: "padel", message: "Seleciona equipa local para o clube parceiro." });
       }
     }
 
@@ -2220,7 +1999,6 @@ export function NewOrganizationEventPage({
 
   const isAnyModalOpen =
     isTicketsModalOpen ||
-    showLiveVisibilityModal ||
     showDescriptionModal ||
     showCoverModal ||
     showCoverCropModal;
@@ -2475,7 +2253,6 @@ export function NewOrganizationEventPage({
         ticketTypes: preparedTickets,
         coverImageUrl: coverUrl,
         accessPolicy,
-        liveVisibility,
         payoutMode: isPlatformPayout ? "PLATFORM" : "ORGANIZATION",
         padel:
           selectedPreset === "padel"
@@ -2548,11 +2325,9 @@ export function NewOrganizationEventPage({
   const resetForm = () => {
     setSelectedPreset(null);
     setShowTicketsModal(false);
-    setShowLiveVisibilityModal(false);
     setSchedulePopover(null);
     setShowDescriptionModal(false);
     setShowCoverModal(false);
-    setShowLocationSuggestions(false);
     setTitle("");
     setDescription("");
     setStartsAt("");
@@ -2562,19 +2337,10 @@ export function NewOrganizationEventPage({
     setEndDateInput("");
     setEndTimeInput("");
     setLocationQuery("");
-    setLocationSuggestions([]);
-    setLocationSearchLoading(false);
-    setLocationDetailsLoading(false);
-    setLocationProviderId(null);
     setLocationAddressId(null);
-    activeProviderRef.current = null;
     setLocationFormattedAddress(null);
-    setLocationSearchError(null);
-    setLocationBiasError(null);
     setLocationLat(null);
     setLocationLng(null);
-    setLocationBias(null);
-    setRequestingLocationBias(false);
     setTicketTypes([]);
     setIsFreeEvent(false);
     setFreeTicketName(freeTicketPlaceholder);
@@ -3101,46 +2867,7 @@ export function NewOrganizationEventPage({
   };
 
   const renderLocationPanel = () => {
-    const trimmedQuery = locationQuery.trim();
-    const waitingForTyping = trimmedQuery.length < 2;
     const selectedLabel = locationFormattedAddress || locationQuery || "Local selecionado";
-    const selectedDistance =
-      locationBias && isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng)
-        ? formatDistanceLabel(distanceKm(locationBias, { lat: locationLat, lng: locationLng }))
-        : null;
-    const groupedSuggestions = partitionSuggestionsByCountry(locationSuggestions, effectiveCountryCode);
-    const hasLocalSuggestions = groupedSuggestions.local.length > 0 || groupedSuggestions.unknown.length > 0;
-    const showForeignFallback = !hasLocalSuggestions && groupedSuggestions.foreign.length > 0;
-    const primarySuggestions = showForeignFallback
-      ? groupedSuggestions.foreign
-      : [...groupedSuggestions.local, ...groupedSuggestions.unknown];
-    const collapsedForeignSuggestions = showForeignFallback ? [] : groupedSuggestions.foreign;
-    const bypassActive = Boolean(
-      expectedCountryCode &&
-      effectiveCountryCode &&
-      expectedCountryCode !== effectiveCountryCode,
-    );
-    const showForeignFallbackNotice =
-      !waitingForTyping &&
-      !locationSearchLoading &&
-      !locationSearchError &&
-      showForeignFallback;
-
-    const handleToggleForeignSuggestions = () => {
-      setShowForeignSuggestions((prev) => {
-        const next = !prev;
-        if (next) {
-          trackEvent("geo_autocomplete_foreign_section_opened", {
-            formContext: "event_new",
-            expectedCountryCode,
-            effectiveCountryCode,
-            queryCountryIntentCode,
-            queryLength: trimmedQuery.length,
-          });
-        }
-        return next;
-      });
-    };
 
     return (
       <div className="space-y-4 animate-fade-slide">
@@ -3152,207 +2879,31 @@ export function NewOrganizationEventPage({
             </p>
           </div>
 
-          <div className="relative overflow-visible">
-            <input
-              type="text"
-              ref={locationSearchRef}
-              value={locationQuery}
-              onChange={(e) => {
-                const next = e.target.value;
-                setLocationQuery(next);
-                setLocationSearchError(null);
-                setLocationBiasError(null);
-                if (locationProviderId || locationAddressId) {
-                  setLocationProviderId(null);
-                  setLocationAddressId(null);
-                  activeProviderRef.current = null;
-                  setLocationFormattedAddress(null);
-                  setLocationLat(null);
-                  setLocationLng(null);
-                }
-                setShowForeignSuggestions(false);
-                setShowLocationSuggestions(true);
-              }}
-              onFocus={() => setShowLocationSuggestions(true)}
-              onBlur={() => {
-                if (suggestionBlurTimeout.current) clearTimeout(suggestionBlurTimeout.current);
-                suggestionBlurTimeout.current = setTimeout(() => setShowLocationSuggestions(false), 120);
-              }}
-              aria-invalid={Boolean(fieldErrors.location)}
-              className={inputClass(Boolean(fieldErrors.location))}
-              placeholder="Procura uma morada, rua, cidade ou espaço"
-            />
+          <AddressCombobox
+            label="Local / Morada"
+            value={locationQuery}
+            onValueChange={(next) => {
+              setLocationQuery(next);
+              setLocationFormattedAddress(null);
+              setLocationLat(null);
+              setLocationLng(null);
+            }}
+            addressId={locationAddressId}
+            onAddressIdChange={setLocationAddressId}
+            onDetailsResolved={applyGeoDetails}
+            inputRef={locationSearchRef}
+            inputClassName={inputClass(Boolean(fieldErrors.location))}
+            placeholder="Procura uma morada, rua, cidade ou espaço"
+          />
 
-            {showLocationSuggestions && (
-              <div className="mt-2 w-full max-h-72 overflow-y-auto rounded-xl border border-white/12 bg-black/90 shadow-xl backdrop-blur-2xl">
-                {waitingForTyping ? (
-                  <div className="space-y-3 px-3 py-3">
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Sugestões</p>
-                      <p className="text-[12px] text-white/70">Começa a escrever para procurar locais.</p>
-                    </div>
-                    {recentLocationItems.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-[11px] text-white/55">Recentes</p>
-                        {recentLocationItems.map((suggestion) => (
-                          <button
-                            key={`recent-${suggestion.providerId}`}
-                            type="button"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => handleSelectGeoSuggestion(suggestion)}
-                            className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/8 px-2 py-2 text-left hover:bg-white/8"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-white">{suggestion.label}</p>
-                              <p className="text-[11px] text-white/60">{suggestion.city || suggestion.address || "—"}</p>
-                            </div>
-                            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Recente</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[12px] text-white/55">Sem localizações recentes nesta conta/dispositivo.</p>
-                    )}
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={requestLocationBias}
-                      disabled={requestingLocationBias}
-                      className="rounded-full border border-white/20 px-3 py-1.5 text-[11px] text-white/80 hover:border-white/40 disabled:opacity-60"
-                    >
-                      {requestingLocationBias
-                        ? "A obter localização atual..."
-                        : locationBias
-                          ? "Localização atual ativa"
-                          : "Usar localização atual para melhorar sugestões"}
-                    </button>
-                    {locationBiasError && <p className="text-[11px] text-amber-100">{locationBiasError}</p>}
-                  </div>
-                ) : locationSearchLoading ? (
-                  <div className="px-3 py-2 text-sm text-white/70 animate-pulse">A procurar...</div>
-                ) : locationSearchError ? (
-                  <div className="px-3 py-2 text-sm text-amber-100">{locationSearchError}</div>
-                ) : primarySuggestions.length === 0 ? (
-                  <div className="space-y-1 px-3 py-2 text-sm text-white/65">
-                    <p>Sem sugestões para este texto.</p>
-                    <p className="text-[12px] text-white/50">Tenta rua + cidade, por exemplo: &quot;Rua de Ceuta Porto&quot;.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {bypassActive ? (
-                      <div className="px-3 py-2 text-[11px] text-cyan-100/90">
-                        Pesquisa global ativada por país na query.
-                      </div>
-                    ) : null}
-                    {showForeignFallbackNotice ? (
-                      <div className="px-3 py-2 text-[11px] text-amber-100/90">
-                        Sem resultados no país esperado; a mostrar globais.
-                      </div>
-                    ) : null}
-                    {primarySuggestions.map((suggestion) => {
-                      const suggestionDistance =
-                        locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                          ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                          : null;
-                      return (
-                        <button
-                          key={suggestion.providerId}
-                          type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: showForeignFallback })}
-                          className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                        >
-                          <div className="flex w-full items-start justify-between gap-3">
-                            <div className="space-y-0.5">
-                              <span className="block font-semibold text-white">{suggestion.label}</span>
-                              {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
-                                <span className="block text-[12px] text-white/60">
-                                  {suggestion.secondaryLabel || suggestion.address || suggestion.city}
-                                </span>
-                              )}
-                            </div>
-                            {suggestionDistance && (
-                              <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                                {suggestionDistance}
-                              </span>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
-                    {collapsedForeignSuggestions.length > 0 ? (
-                      <div className="border-t border-white/10">
-                        <button
-                          type="button"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={handleToggleForeignSuggestions}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-semibold text-white/75 hover:bg-white/8"
-                        >
-                          <span>Outros países ({collapsedForeignSuggestions.length})</span>
-                          <span aria-hidden>{showForeignSuggestions ? "▴" : "▾"}</span>
-                        </button>
-                        {showForeignSuggestions ? (
-                          <div className="border-t border-white/5">
-                            {collapsedForeignSuggestions.map((suggestion) => {
-                              const suggestionDistance =
-                                locationBias && isFiniteCoordinate(suggestion.lat) && isFiniteCoordinate(suggestion.lng)
-                                  ? formatDistanceLabel(distanceKm(locationBias, { lat: suggestion.lat, lng: suggestion.lng }))
-                                  : null;
-                              return (
-                                <button
-                                  key={`foreign-${suggestion.providerId}`}
-                                  type="button"
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() => handleSelectGeoSuggestion(suggestion, { isForeign: true })}
-                                  className="flex w-full flex-col items-start gap-1 border-b border-white/5 px-3 py-2 text-left text-sm hover:bg-white/8 last:border-0 transition"
-                                >
-                                  <div className="flex w-full items-start justify-between gap-3">
-                                    <div className="space-y-0.5">
-                                      <span className="block font-semibold text-white">{suggestion.label}</span>
-                                      {(suggestion.secondaryLabel || suggestion.address || suggestion.city) && (
-                                        <span className="block text-[12px] text-white/60">
-                                          {suggestion.secondaryLabel || suggestion.address || suggestion.city}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {suggestionDistance && (
-                                      <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                                        {suggestionDistance}
-                                      </span>
-                                    )}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {(locationProviderId || locationAddressId || locationFormattedAddress) && (
+          {(locationAddressId || locationFormattedAddress) && (
             <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/75">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-white">{selectedLabel}</p>
-                  <p className="text-[11px] text-white/55">
-                    {locationDetailsLoading ? "A validar morada..." : "Morada selecionada."}
-                  </p>
-                </div>
-                {selectedDistance && (
-                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/65">
-                    {selectedDistance}
-                  </span>
-                )}
-              </div>
+              <p className="font-semibold text-white">{selectedLabel}</p>
+              <p className="text-[11px] text-white/55">Morada selecionada.</p>
             </div>
           )}
 
-          {isFiniteCoordinate(locationLat) && isFiniteCoordinate(locationLng) && (
+          {typeof locationLat === "number" && typeof locationLng === "number" && (
             <AppleLocationMapPreview lat={locationLat} lng={locationLng} label={selectedLabel} />
           )}
 
@@ -3417,7 +2968,7 @@ export function NewOrganizationEventPage({
                   <button
                     type="button"
                     onClick={() =>
-                      router.push(appendOrganizationIdToHref("/org/analyze?section=financas", organizationId))
+                      router.push(appendOrganizationIdToHref("/org/finance", organizationId))
                     }
                     className={`${CTA_PRIMARY} px-3 py-1 text-[11px]`}
                   >
@@ -3743,86 +3294,6 @@ export function NewOrganizationEventPage({
                 </div>
                 <div ref={ticketsModalRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
                   {renderTicketsPanel()}
-                </div>
-              </div>
-            </div>
-          </div>,
-          portalRoot,
-        )
-      : null;
-
-  const renderLivePanel = () => (
-    <div className="space-y-4 animate-fade-slide">
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-        <div>
-          <p className={labelClass}>Live</p>
-          <p className="text-[12px] text-white/60">Visibilidade do Live.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {([
-            { value: "PUBLIC", label: "Público" },
-            { value: "PRIVATE", label: "Privado" },
-            { value: "DISABLED", label: "Desativado" },
-          ] as const).map((opt) => (
-            <button
-              key={`live-${opt.value}`}
-              type="button"
-              onClick={() => setLiveVisibility(opt.value)}
-              className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-                liveVisibility === opt.value
-                  ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-100"
-                  : "border-white/20 bg-black/40 text-white/70"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        {liveVisibility === "PRIVATE" && (
-          <p className="text-[11px] text-white/55">Privado: apenas participantes e organização.</p>
-        )}
-      </div>
-    </div>
-  );
-
-  const liveVisibilityModal =
-    showLiveVisibilityModal && portalRoot
-      ? createPortal(
-          <div className={MODAL_SHELL_CLASS}>
-            <div
-              className={MODAL_OVERLAY_CLASS}
-              onClick={() => setShowLiveVisibilityModal(false)}
-              aria-hidden
-            />
-            <div
-              className={MODAL_CONTENT_WRAP_CLASS}
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setShowLiveVisibilityModal(false);
-                }
-              }}
-            >
-              <div
-                className={`flex w-full max-w-3xl max-h-[calc(100vh-6rem)] flex-col ${MODAL_PANEL_CLASS}`}
-                role="dialog"
-                aria-modal="true"
-                aria-label="Live"
-              >
-                <div className={MODAL_HEADER_CLASS}>
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Live</p>
-                    <p className="text-sm font-semibold text-white">Visibilidade</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowLiveVisibilityModal(false)}
-                    className={`${CTA_PRIMARY} px-3 py-1 text-[12px]`}
-                  >
-                    Concluir
-                  </button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-4">
-                  {renderLivePanel()}
                 </div>
               </div>
             </div>
@@ -4533,17 +4004,6 @@ export function NewOrganizationEventPage({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => setShowLiveVisibilityModal(true)}
-                    className="group flex w-full items-center justify-between gap-4 px-3 py-3 text-left transition hover:bg-white/6"
-                  >
-                    <div className="space-y-1">
-                      <p className={labelClass}>Live</p>
-                      <p className="text-[12px] text-white/75">{liveSummary}</p>
-                    </div>
-                    <span className="text-[12px] text-white/60 group-hover:text-white/85">Abrir</span>
-                  </button>
                 </div>
               </div>
 
@@ -4558,7 +4018,7 @@ export function NewOrganizationEventPage({
                       <p className="text-[12px] text-white/70">Configuração</p>
                     </div>
                     <Link
-                      href="/org/padel/clube?section=padel-club"
+                      href="/org/padel/clubs?section=padel-club"
                       className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
                     >
                       Hub
@@ -4606,8 +4066,8 @@ export function NewOrganizationEventPage({
                       </div>
                       <p className="text-[11px] text-white/60">
                         {padelClubMode === "PARTNER"
-                          ? "Usa um clube de terceiros. Procura no diretorio e confirma o staff local."
-                          : "Usa um clube da tua organização para gerir courts e staff."}
+                          ? "Usa um clube de terceiros. Procura no diretório e confirma a equipa local."
+                          : "Usa um clube da tua organização para gerir campos e equipa."}
                       </p>
                       {padelClubMode === "PARTNER" && (
                         <div className="flex flex-wrap gap-2">
@@ -4622,13 +4082,13 @@ export function NewOrganizationEventPage({
                             }}
                             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                           >
-                            Abrir diretorio
+                            Abrir diretório
                           </button>
                           <Link
-                            href="/org/padel/clube?section=padel-club&padel=clubs"
+                            href="/org/padel/clubs?section=padel-club&padel=clubs"
                             className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                           >
-                            Criar clube rapido
+                            Criar clube rápido
                           </Link>
                         </div>
                       )}
@@ -5016,9 +4476,9 @@ export function NewOrganizationEventPage({
                       <div className="space-y-1">
                         <p className={labelClass}>Operação</p>
                         <p className="text-sm text-white/80">
-                          Clube: {selectedPadelClub?.name ?? "—"} · Courts: {selectedPadelCourtIds.length || "—"}
+                          Clube: {selectedPadelClub?.name ?? "—"} · Campos: {selectedPadelCourtIds.length || "—"}
                         </p>
-                        <p className="text-[11px] text-white/60">Staff: {selectedPadelStaffIds.length || "—"}</p>
+                        <p className="text-[11px] text-white/60">Equipa: {selectedPadelStaffIds.length || "—"}</p>
                       </div>
                       <span className="text-[12px] text-white/60">
                         {padelAdvancedOpen ? "Fechar" : "Editar"}
@@ -5054,9 +4514,9 @@ export function NewOrganizationEventPage({
                 variant={hasPaidTicket ? "error" : "warning"}
                 title="Conclui os passos para vender"
                 message={stripeAlert}
-                actionLabel="Abrir Finanças & Payouts"
+                actionLabel="Abrir Finanças e transferências"
                 onAction={() =>
-                  router.push(appendOrganizationIdToHref("/org/analyze?section=financas", organizationId))
+                  router.push(appendOrganizationIdToHref("/org/finance", organizationId))
                 }
               />
             )}
@@ -5072,7 +4532,6 @@ export function NewOrganizationEventPage({
           </div>
 
         {ticketsModal}
-        {liveVisibilityModal}
         {descriptionModal}
         {coverModal}
       </div>

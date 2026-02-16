@@ -209,7 +209,6 @@ export default function PadelTournamentTabs({
   const locale = resolveLocale(searchParams?.get("lang"));
   const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias">("duplas");
   const [configMessage, setConfigMessage] = useState<string | null>(null);
-  const [widgetBase, setWidgetBase] = useState("");
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"preview" | "import" | null>(null);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -262,11 +261,6 @@ export default function PadelTournamentTabs({
     if (selectedCategoryId && categoryOptions.some((c) => c.id === selectedCategoryId)) return;
     setSelectedCategoryId(categoryOptions[0].id ?? null);
   }, [categoryOptions, selectedCategoryId]);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setWidgetBase(window.location.origin);
-    }
-  }, []);
   useEffect(() => {
     setGenerationMessage(null);
     setGenerationError(null);
@@ -548,7 +542,7 @@ export default function PadelTournamentTabs({
 
   const matchesSummary = {
     pending: matches.filter((m) => m.status === "PENDING").length,
-    live: matches.filter((m) => m.status === "IN_PROGRESS" || m.status === "LIVE").length,
+    inProgress: matches.filter((m) => m.status === "IN_PROGRESS").length,
     done: matches.filter((m) => m.status === "DONE").length,
   };
   const groupMatchesCount = matches.filter((m) => m.roundType === "GROUPS").length;
@@ -565,7 +559,6 @@ export default function PadelTournamentTabs({
         resultType: "NORMAL" | "WALKOVER" | "RETIREMENT" | "INJURY";
         winnerSide: "" | "A" | "B";
         photoUrl: string | null;
-        streamUrl: string;
         saving?: boolean;
         uploading?: boolean;
         error?: string | null;
@@ -592,10 +585,6 @@ export default function PadelTournamentTabs({
     const score = (m.score || {}) as Record<string, unknown>;
     return typeof score.photoUrl === "string" ? score.photoUrl : null;
   };
-  const getStreamUrl = (m: Match) => {
-    const score = (m.score || {}) as Record<string, unknown>;
-    return typeof score.liveStreamUrl === "string" ? score.liveStreamUrl : "";
-  };
 
   useEffect(() => {
     setResultDrafts((prev) => {
@@ -610,7 +599,6 @@ export default function PadelTournamentTabs({
             resultType: getResultType(m),
             winnerSide: getWinnerSide(m),
             photoUrl: getPhotoUrl(m),
-            streamUrl: getStreamUrl(m),
             saving: next[m.id]?.saving ?? false,
             uploading: next[m.id]?.uploading ?? false,
             error: next[m.id]?.error ?? null,
@@ -632,7 +620,6 @@ export default function PadelTournamentTabs({
       resultType: "NORMAL" | "WALKOVER" | "RETIREMENT" | "INJURY";
       winnerSide: "" | "A" | "B";
       photoUrl: string | null;
-      streamUrl: string;
       saving?: boolean;
       uploading?: boolean;
       error?: string | null;
@@ -741,7 +728,7 @@ export default function PadelTournamentTabs({
     const code = value.toUpperCase();
     switch (code) {
       case "OVERRIDE_NOT_ALLOWED":
-        return "Só o owner/co-owner pode gerar eliminatórias com grupos incompletos.";
+        return "Só Dono/Co-dono pode gerar eliminatórias com grupos incompletos.";
       case "CATEGORY_NOT_AVAILABLE":
         return "Categoria indisponível para este torneio.";
       case "EVENT_NOT_FOUND":
@@ -887,11 +874,11 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage(`Template "${template.label}" aplicado.`);
+      setConfigMessage(`Modelo "${template.label}" aplicado.`);
       mutateConfig();
       setTimeout(() => setConfigMessage(null), 2000);
     } else {
-      setConfigMessage("Erro ao aplicar template.");
+      setConfigMessage("Erro ao aplicar modelo.");
       setTimeout(() => setConfigMessage(null), 2500);
     }
   }
@@ -925,7 +912,7 @@ export default function PadelTournamentTabs({
     if (needsOverride) {
       if (!isOwnerRole) {
         setGenerationPhase(phase);
-        setGenerationError("Só o owner/co-owner pode forçar eliminatórias com grupos incompletos.");
+        setGenerationError("Só Dono/Co-dono pode forçar eliminatórias com grupos incompletos.");
         return;
       }
       const confirmed = window.confirm(
@@ -1005,7 +992,7 @@ export default function PadelTournamentTabs({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "padel_import_template.csv";
+    a.download = "padel_import_modelo.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1547,7 +1534,6 @@ export default function PadelTournamentTabs({
       ...(sets.length > 0 ? { sets } : {}),
       ...(draft.winnerSide ? { winnerSide: draft.winnerSide } : {}),
       ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
-      ...(draft.streamUrl ? { liveStreamUrl: draft.streamUrl.trim() } : {}),
     };
 
     const res = isSpecialResult
@@ -1581,7 +1567,7 @@ export default function PadelTournamentTabs({
     updateResultDraft(matchId, { saving: false });
   }
 
-  async function saveLiveScore(matchId: number) {
+  async function savePartialScore(matchId: number) {
     const draft = resultDrafts[matchId];
     if (!draft) return;
     const scoreText = draft.scoreText || "";
@@ -1597,7 +1583,6 @@ export default function PadelTournamentTabs({
     const score: Record<string, unknown> = {
       ...(sets.length > 0 ? { sets } : {}),
       ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
-      ...(draft.streamUrl ? { liveStreamUrl: draft.streamUrl.trim() } : {}),
     };
 
     const res = await fetch(`/api/padel/matches`, {
@@ -1613,33 +1598,6 @@ export default function PadelTournamentTabs({
           : data?.error === "INVALID_SCORE"
             ? "Score inválido. Ajusta o parcial."
             : "Erro ao guardar score.";
-      updateResultDraft(matchId, { saving: false, error });
-      return;
-    }
-    mutateMatches();
-    updateResultDraft(matchId, { saving: false });
-  }
-
-  async function saveStreamLink(matchId: number) {
-    const draft = resultDrafts[matchId];
-    if (!draft) return;
-    updateResultDraft(matchId, { saving: true, error: null });
-    const score: Record<string, unknown> = {
-      ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
-      ...(draft.streamUrl ? { liveStreamUrl: draft.streamUrl.trim() } : {}),
-    };
-
-    const res = await fetch(`/api/padel/matches`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: matchId, score }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      const error =
-        data?.error === "MATCH_DISPUTED"
-          ? "Jogo em disputa. Apenas ADMIN pode editar."
-          : "Erro ao guardar stream.";
       updateResultDraft(matchId, { saving: false, error });
       return;
     }
@@ -1815,33 +1773,14 @@ export default function PadelTournamentTabs({
             </a>
           )}
         </div>
-        <label className="flex flex-col gap-1 text-[11px] text-white/70">
-          <span className="text-white/60">Stream (opcional)</span>
-          <input
-            type="url"
-            placeholder="https://youtube.com/..."
-            value={draft.streamUrl}
-            onChange={(e) => updateResultDraft(m.id, { streamUrl: e.target.value })}
-            disabled={lockedByDispute}
-            className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
-          />
-        </label>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => saveLiveScore(m.id)}
+            onClick={() => savePartialScore(m.id)}
             disabled={draft.saving || draft.uploading || lockedByDispute}
             className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
           >
-            Guardar live
-          </button>
-          <button
-            type="button"
-            onClick={() => saveStreamLink(m.id)}
-            disabled={draft.saving || draft.uploading || lockedByDispute}
-            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
-          >
-            Guardar stream
+            Guardar parcial
           </button>
           <button
             type="button"
@@ -1889,7 +1828,7 @@ export default function PadelTournamentTabs({
           <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Jogos</p>
           <p className="text-2xl font-semibold text-white">{matches.length}</p>
           <p className="text-[12px] text-white/70">
-            Pendentes {matchesSummary.pending} · Live {matchesSummary.live} · Terminados {matchesSummary.done}
+            Pendentes {matchesSummary.pending} · Em curso {matchesSummary.inProgress} · Terminados {matchesSummary.done}
           </p>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
@@ -1914,10 +1853,10 @@ export default function PadelTournamentTabs({
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Analitica avancada</p>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Analítica avançada</p>
               <p className="text-white/70">
-                Ocupacao {analytics.occupancy}% · Media {analytics.avgMatchMinutes} min · Atraso{" "}
-                {analytics.avgDelayMinutes ?? 0} min · Courts {analytics.courts}
+                Ocupação {analytics.occupancy}% · Média {analytics.avgMatchMinutes} min · Atraso{" "}
+                {analytics.avgDelayMinutes ?? 0} min · Campos {analytics.courts}
               </p>
               <p className="text-white/60 text-[11px]">
                 Jogos {analytics.matches ?? matches.length} · Atrasados {analytics.delayedMatches ?? 0} · Janela{" "}
@@ -1936,10 +1875,10 @@ export default function PadelTournamentTabs({
               {analytics.courtsBreakdown.slice(0, 6).map((court: any) => (
                 <div key={`court-${court.courtId}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
                   <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                    Court {court.name || court.courtId}
+                    Campo {court.name || court.courtId}
                   </p>
                   <p className="text-white/70">
-                    {court.matches} jogos · {court.minutes} min · {court.occupancy}% ocupacao
+                    {court.matches} jogos · {court.minutes} min · {court.occupancy}% ocupação
                   </p>
                 </div>
               ))}
@@ -1966,7 +1905,7 @@ export default function PadelTournamentTabs({
           )}
           {Array.isArray(analytics.courtDayBreakdown) && analytics.courtDayBreakdown.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Ocupacao por court/dia</p>
+              <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Ocupação por campo/dia</p>
               <div className="grid gap-2 md:grid-cols-2">
                 {analytics.courtDayBreakdown.slice(0, 6).map((row: any) => (
                   <div
@@ -1974,10 +1913,10 @@ export default function PadelTournamentTabs({
                     className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
                   >
                     <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      {row.date} · Court {row.courtName || row.courtId}
+                      {row.date} · Campo {row.courtName || row.courtId}
                     </p>
                     <p className="text-white/70">
-                      {row.matches} jogos · {row.minutes} min · {row.occupancy}% ocupacao
+                      {row.matches} jogos · {row.minutes} min · {row.occupancy}% ocupação
                     </p>
                   </div>
                 ))}
@@ -2075,58 +2014,15 @@ export default function PadelTournamentTabs({
           href={orgApi(`/padel/exports/analytics?eventId=${eventId}&format=xlsx`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
-          Analytics (Excel)
+          Análises (Excel)
         </a>
         <a
           href={orgApi(`/padel/exports/analytics?eventId=${eventId}&format=csv`)}
           className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
         >
-          Analytics (CSV)
+          Análises (CSV)
         </a>
       </section>
-      {eventSlug && (
-        <section
-          id="padel-widgets"
-          className="scroll-mt-24 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[12px] text-white/80 space-y-2"
-        >
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Widgets</p>
-          <p className="text-white/70">Usa estes iframes no site do clube.</p>
-          <div className="grid gap-2 md:grid-cols-3">
-            {[
-              {
-                label: "Próximos jogos",
-                url: `${widgetBase}/widgets/padel/next?slug=${eventSlug}`,
-              },
-              {
-                label: "Classificações",
-                url: `${widgetBase}/widgets/padel/standings?eventId=${eventId}`,
-              },
-              {
-                label: "Bracket",
-                url: `${widgetBase}/widgets/padel/bracket?slug=${eventSlug}`,
-              },
-              {
-                label: "Inscrições",
-                url: `${widgetBase}/widgets/padel/inscricoes?slug=${eventSlug}`,
-              },
-              {
-                label: "Calendário",
-                url: `${widgetBase}/widgets/padel/calendar?slug=${eventSlug}`,
-              },
-            ].map((w) => (
-              <label key={w.label} className="space-y-1 text-[11px] text-white/60">
-                <span>{w.label}</span>
-                <textarea
-                  readOnly
-                  className="min-h-[70px] w-full rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-[11px] text-white/80"
-                  value={`<iframe src=\"${w.url}\" style=\"width:100%;border:0;min-height:240px\"></iframe>`}
-                />
-              </label>
-            ))}
-          </div>
-        </section>
-      )}
-
       {formatRequested && formatEffective && formatRequested !== formatEffective && (
         <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-[12px] text-amber-50">
           Pedido: {formatLabel(formatRequested)}. Em uso: {formatLabel(formatEffective)} (Beta).
@@ -2191,7 +2087,7 @@ export default function PadelTournamentTabs({
           )}
           <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Templates rápidos</p>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Modelos rápidos</p>
               <p className="text-[12px] text-white/70">Modelos para grupos + playoffs.</p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2439,16 +2335,9 @@ export default function PadelTournamentTabs({
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">TV Monitor</p>
                 <p className="text-[12px] text-white/70">Rodapé e patrocinadores do clube.</p>
               </div>
-              {eventSlug && (
-                <a
-                  href={`/eventos/${eventSlug}/monitor`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:border-white/40"
-                >
-                  Abrir monitor
-                </a>
-              )}
+              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+                Configuração interna
+              </span>
             </div>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-white/60">Mensagem de rodapé</span>
@@ -2644,7 +2533,7 @@ export default function PadelTournamentTabs({
                 onClick={downloadImportTemplate}
                 className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
               >
-                Template CSV
+                Modelo CSV
               </button>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -2891,7 +2780,7 @@ export default function PadelTournamentTabs({
               </p>
               {supportsKnockout && groupMissing > 0 && (
                 <p className="text-[11px] text-amber-200">
-                  Faltam {groupMissing} jogo{groupMissing === 1 ? "" : "s"} de grupos. Só owner/co-owner pode forçar.
+                  Faltam {groupMissing} jogo{groupMissing === 1 ? "" : "s"} de grupos. Só Dono/Co-dono pode forçar.
                 </p>
               )}
             </div>

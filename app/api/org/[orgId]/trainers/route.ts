@@ -1,12 +1,17 @@
 import { NextRequest } from "next/server";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
-import { NotificationType, OrganizationMemberRole, OrganizationModule, TrainerProfileReviewStatus } from "@prisma/client";
+import {
+  NotificationType,
+  OrganizationMemberRole,
+  OrganizationModule,
+  OrganizationRolePack,
+  TrainerProfileReviewStatus,
+} from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { parseOrganizationId, resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { createNotification } from "@/lib/notifications";
-import { setGroupMemberRoleForOrg } from "@/lib/organizationGroupAccess";
 import { getEffectiveOrganizationMember, listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -82,9 +87,12 @@ async function _GET(req: NextRequest) {
 
     const trainerMembers = await listEffectiveOrganizationMembers({
       organizationId: organization.id,
-      roles: [OrganizationMemberRole.TRAINER],
+      roles: [OrganizationMemberRole.STAFF],
     });
-    const trainerUserIds = trainerMembers.map((m) => m.userId);
+    const coachMembers = trainerMembers.filter(
+      (member) => member.rolePack === OrganizationRolePack.COACH,
+    );
+    const trainerUserIds = coachMembers.map((m) => m.userId);
     const users = trainerUserIds.length
       ? await prisma.profile.findMany({
           where: { id: { in: trainerUserIds }, isDeleted: false },
@@ -100,7 +108,7 @@ async function _GET(req: NextRequest) {
 
     const profileByUser = new Map(trainerProfiles.map((profile) => [profile.userId, profile]));
 
-    const items = trainerMembers.map((member) => {
+    const items = coachMembers.map((member) => {
       const profile = profileByUser.get(member.userId) ?? null;
       const userProfile = userById.get(member.userId);
       return {
@@ -171,8 +179,12 @@ async function _PATCH(req: NextRequest) {
       userId: targetUserId,
     });
 
-    if (!trainerMembership || trainerMembership.role !== OrganizationMemberRole.TRAINER) {
-      return fail(ctx, 404, "NOT_TRAINER");
+    if (
+      !trainerMembership ||
+      trainerMembership.role !== OrganizationMemberRole.STAFF ||
+      trainerMembership.rolePack !== OrganizationRolePack.COACH
+    ) {
+      return fail(ctx, 404, "NOT_COACH");
     }
 
     const existingProfile = await prisma.trainerProfile.findUnique({
@@ -241,7 +253,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (action === "APPROVE" || action === "REJECT") {
-      const trainersHref = buildOrgHref(organization.id, "/team/trainers");
+      const trainersHref = buildOrgHref(organization.id, "/treinadores");
       await createNotification({
         userId: targetUserId,
         type: NotificationType.SYSTEM_ANNOUNCE,
@@ -278,12 +290,6 @@ async function _POST(req: NextRequest) {
 
     const body = await req.json().catch(() => null);
     const organizationId = parseOrganizationId(body?.organizationId);
-    const rawUsername = typeof body?.username === "string" ? body.username.trim() : "";
-    const username = rawUsername.startsWith("@") ? rawUsername.slice(1) : rawUsername;
-
-    if (!username) {
-      return fail(ctx, 400, "MISSING_USERNAME");
-    }
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -305,57 +311,7 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 403, "FORBIDDEN");
     }
 
-    const targetProfile = await prisma.profile.findFirst({
-      where: { username: { equals: username, mode: "insensitive" } },
-      select: { id: true, username: true },
-    });
-
-    if (!targetProfile) {
-      return fail(ctx, 404, "USERNAME_NOT_FOUND");
-    }
-
-    const existingMember = await getEffectiveOrganizationMember({
-      organizationId: organization.id,
-      userId: targetProfile.id,
-    });
-
-    let assignedTrainerRole = false;
-    const protectedRoles: OrganizationMemberRole[] = [
-      OrganizationMemberRole.OWNER,
-      OrganizationMemberRole.CO_OWNER,
-      OrganizationMemberRole.ADMIN,
-    ];
-    if (!existingMember) {
-      await setGroupMemberRoleForOrg({
-        organizationId: organization.id,
-        userId: targetProfile.id,
-        role: OrganizationMemberRole.TRAINER,
-      });
-      assignedTrainerRole = true;
-    } else if (
-      existingMember.role !== OrganizationMemberRole.TRAINER &&
-      !protectedRoles.includes(existingMember.role)
-    ) {
-      await setGroupMemberRoleForOrg({
-        organizationId: organization.id,
-        userId: targetProfile.id,
-        role: OrganizationMemberRole.TRAINER,
-      });
-      assignedTrainerRole = true;
-    }
-
-    const profile = await prisma.trainerProfile.upsert({
-      where: { organizationId_userId: { organizationId: organization.id, userId: targetProfile.id } },
-      update: {},
-      create: {
-        organizationId: organization.id,
-        userId: targetProfile.id,
-        isPublished: false,
-        reviewStatus: TrainerProfileReviewStatus.DRAFT,
-      },
-    });
-
-    return respondOk(ctx, { profile }, { status: 200 });
+    return fail(ctx, 410, "TRAINER_CREATE_FLOW_REMOVED");
   } catch (err) {
     console.error("[organizacao/trainers][POST]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");

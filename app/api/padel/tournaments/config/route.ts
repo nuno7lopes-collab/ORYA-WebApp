@@ -45,7 +45,6 @@ const TOURNAMENT_CONFIG_SELECT = {
   lifecycleStatus: true,
   publishedAt: true,
   lockedAt: true,
-  liveAt: true,
   completedAt: true,
   cancelledAt: true,
   lifecycleUpdatedAt: true,
@@ -503,37 +502,6 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const hasLiveSponsors = Object.prototype.hasOwnProperty.call(body, "liveSponsors");
-  let liveSponsors: Record<string, unknown> | null | undefined = undefined;
-  if (hasLiveSponsors) {
-    if (body.liveSponsors === null) {
-      liveSponsors = null;
-    } else if (body.liveSponsors && typeof body.liveSponsors === "object") {
-      const payload = body.liveSponsors as Record<string, unknown>;
-      const sanitizeSlot = (value: unknown) => {
-        if (!value || typeof value !== "object") return null;
-        const slot = value as Record<string, unknown>;
-        const label = typeof slot.label === "string" ? slot.label.trim() : "";
-        const logoUrl = typeof slot.logoUrl === "string" ? slot.logoUrl.trim() : "";
-        const url = typeof slot.url === "string" ? slot.url.trim() : "";
-        if (!label && !logoUrl && !url) return null;
-        return {
-          label: label || null,
-          logoUrl: logoUrl || null,
-          url: url || null,
-        };
-      };
-      liveSponsors = {
-        hero: sanitizeSlot(payload.hero),
-        sideA: sanitizeSlot(payload.sideA),
-        sideB: sanitizeSlot(payload.sideB),
-        nowPlaying: sanitizeSlot(payload.nowPlaying),
-      };
-    } else {
-      liveSponsors = null;
-    }
-  }
-
   if (!Number.isFinite(eventId) || !organizationIdBody) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
@@ -579,7 +547,7 @@ async function _POST(req: NextRequest) {
       });
       const lifecycleLocked =
         existing?.lifecycleStatus &&
-        ["LOCKED", "LIVE", "COMPLETED"].includes(existing.lifecycleStatus);
+        ["LOCKED", "COMPLETED"].includes(existing.lifecycleStatus);
       const hasCompetitiveConfigChange =
         hasFormat ||
         hasEnabledFormats ||
@@ -639,7 +607,6 @@ async function _POST(req: NextRequest) {
         ...(scoreRules !== undefined ? { scoreRules } : {}),
         ...(featuredMatchId !== undefined ? { featuredMatchId } : {}),
         ...(goalLimits !== undefined ? { goalLimits } : {}),
-        ...(liveSponsors !== undefined ? { liveSponsors } : {}),
         formatRequested: formatEffective,
         formatEffective,
         generationVersion: "v1-groups-ko",

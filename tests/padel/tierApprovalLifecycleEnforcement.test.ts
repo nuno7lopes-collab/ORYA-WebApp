@@ -52,7 +52,6 @@ describe("padel lifecycle tier governance", () => {
         lifecycleStatus: "DRAFT",
         publishedAt: null,
         lockedAt: null,
-        liveAt: null,
         completedAt: null,
         cancelledAt: null,
       },

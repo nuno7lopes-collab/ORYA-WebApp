@@ -80,9 +80,6 @@ export function checkPadelRegistrationWindow(params: RegistrationCheckParams): R
     if (lifecycle === "LOCKED") {
       return { ok: false, code: "INSCRIPTIONS_CLOSED" };
     }
-    if (lifecycle === "LIVE") {
-      return { ok: false, code: "TOURNAMENT_STARTED" };
-    }
     if (lifecycle === "COMPLETED") {
       return { ok: false, code: "INSCRIPTIONS_CLOSED" };
     }

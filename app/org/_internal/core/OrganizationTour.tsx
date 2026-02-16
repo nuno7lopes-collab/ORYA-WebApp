@@ -32,7 +32,7 @@ const steps: Step[] = [
   {
     id: "create-event",
     title: "Criar evento",
-    body: "Usa templates de Padel ou eventos gerais e publica em minutos.",
+    body: "Usa modelos de padel ou eventos gerais e publica em minutos.",
     anchor: "[data-tour='criar-evento']",
     ctaLabel: "Seguinte",
     ctaAction: { type: "next" },
@@ -40,7 +40,7 @@ const steps: Step[] = [
   {
     id: "finance",
     title: "Finanças & Stripe",
-    body: "Liga o Stripe/Connect, acompanha receita, payouts e alertas.",
+    body: "Liga o Stripe/Connect, acompanha receita, transferências e alertas.",
     anchor: "[data-tour='finance']",
     ctaLabel: "Seguinte",
     ctaAction: { type: "next" },
@@ -56,7 +56,7 @@ const steps: Step[] = [
   {
     id: "staff",
     title: "Equipa & acessos",
-    body: "Convida staff, define papéis e controla quem faz check-in.",
+    body: "Convida a equipa, define papéis e controla quem faz check-in.",
     anchor: "[data-tour='staff']",
     ctaLabel: "Seguinte",
     ctaAction: { type: "next" },

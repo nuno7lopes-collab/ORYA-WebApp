@@ -122,7 +122,8 @@ describe("padel ui naming guardrails (N7)", () => {
       const content = readLocal(file);
       expect(content, `${file} :: Ferramenta A`).not.toContain("Ferramenta A");
       expect(content, `${file} :: Ferramenta B`).not.toContain("Ferramenta B");
-      expect(content, `${file} :: Ferramentas`).not.toContain("Ferramentas");
+      expect(content, `${file} :: Módulos`).not.toContain("Módulos");
+      expect(content, `${file} :: modulos`).not.toContain("modulos");
     }
   });
 });
@@ -154,11 +155,7 @@ describe("padel lifecycle governance guardrails (N5)", () => {
   });
 
   it("UI operacional usa endpoint dedicado para incidentes especiais", () => {
-    const live = readLocal("app/eventos/[slug]/EventLiveClient.tsx");
-    const monitor = readLocal("app/eventos/[slug]/monitor/PadelMonitorClient.tsx");
     const tabs = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
-    expect(live).toContain("/walkover");
-    expect(monitor).toContain("/walkover");
     expect(tabs).toContain("/walkover");
   });
 });

@@ -16,16 +16,16 @@ export default function CrmToolSubnav({
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "customers", label: "Customers", href: buildOrgHref(orgId, "/crm/customers") },
-        { id: "segments", label: "Segments", href: buildOrgHref(orgId, "/crm/segments") },
+        { id: "customers", label: "Clientes", href: buildOrgHref(orgId, "/crm/customers") },
+        { id: "segments", label: "Segmentos", href: buildOrgHref(orgId, "/crm/segments") },
         {
           id: "campaigns",
-          label: "Campaigns",
+          label: "Campanhas",
           href: buildOrgHref(orgId, "/crm/campaigns"),
         },
-        { id: "journeys", label: "Journeys", href: buildOrgHref(orgId, "/crm/journeys") },
-        { id: "reports", label: "Reports", href: buildOrgHref(orgId, "/crm/reports") },
-        { id: "loyalty", label: "Loyalty", href: buildOrgHref(orgId, "/crm/loyalty") },
+        { id: "journeys", label: "Jornadas", href: buildOrgHref(orgId, "/crm/journeys") },
+        { id: "reports", label: "Relatórios", href: buildOrgHref(orgId, "/crm/reports") },
+        { id: "loyalty", label: "Fidelização", href: buildOrgHref(orgId, "/crm/loyalty") },
       ]}
     />
   );

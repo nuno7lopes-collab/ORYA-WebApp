@@ -13,6 +13,7 @@ import { computeCombinedFees } from "@/lib/fees";
 import { SourceType, PaymentStatus, ProcessorFeesStatus } from "@prisma/client";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getBookingState } from "@/lib/reservas/bookingState";
+import { BOOKING_SPLIT_CANONICAL_MODE, emitSplitRuntimeAlert } from "@/domain/bookings/splitGarantido";
 
 const ORYA_CARD_FEE_BPS = 100;
 
@@ -24,6 +25,24 @@ function fail(
   retryable = status >= 500,
 ) {
   return respondError(ctx, { errorCode, message, retryable }, { status });
+}
+
+function extractIntentPaymentMethodId(intent: { payment_method?: string | { id?: string } | null }) {
+  if (!intent.payment_method) return null;
+  if (typeof intent.payment_method === "string") return intent.payment_method;
+  if (typeof intent.payment_method === "object" && typeof intent.payment_method.id === "string") {
+    return intent.payment_method.id;
+  }
+  return null;
+}
+
+function extractIntentCustomerId(intent: { customer?: string | { id?: string } | null }) {
+  if (!intent.customer) return null;
+  if (typeof intent.customer === "string") return intent.customer;
+  if (typeof intent.customer === "object" && typeof intent.customer.id === "string") {
+    return intent.customer.id;
+  }
+  return null;
 }
 
 async function _POST(
@@ -77,10 +96,14 @@ async function _POST(
             splitPayment: {
               select: {
                 id: true,
+                splitMode: true,
                 status: true,
                 pricingMode: true,
+                railState: true,
                 currency: true,
                 deadlineAt: true,
+                captureBeforeAt: true,
+                captureBeforeSource: true,
                 participants: {
                   select: {
                     id: true,
@@ -113,8 +136,26 @@ async function _POST(
     if (!split || split.status !== "OPEN") {
       return fail(ctx, 409, "SPLIT_INACTIVE", "Pagamento dividido indisponível.");
     }
+    if (split.splitMode !== BOOKING_SPLIT_CANONICAL_MODE) {
+      return fail(
+        ctx,
+        410,
+        "LEGACY_SPLIT_MODE_REMOVED",
+        "Contrato legado removido. Usa `splitMode=SPLIT_GARANTIDO`.",
+      );
+    }
     if (split.deadlineAt && split.deadlineAt < new Date()) {
       return fail(ctx, 409, "SPLIT_EXPIRED", "O prazo de pagamento expirou.");
+    }
+    if (split.captureBeforeAt && split.captureBeforeAt.getTime() < Date.now()) {
+      emitSplitRuntimeAlert("capture_attempt_after_captureBefore", {
+        splitId: split.id,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        captureBeforeAt: split.captureBeforeAt.toISOString(),
+        captureBeforeSource: split.captureBeforeSource,
+        correlationId: ctx.correlationId,
+      });
     }
 
     const participant =
@@ -280,6 +321,8 @@ async function _POST(
     });
 
     const intent = ensured.paymentIntent;
+    const offsessionPaymentMethodId = extractIntentPaymentMethodId(intent);
+    const offsessionCustomerId = extractIntentCustomerId(intent);
     await prisma.$transaction(async (tx) => {
       await tx.bookingSplitParticipant.update({
         where: { id: participant.id },
@@ -287,6 +330,8 @@ async function _POST(
           shareCents: totalCents,
           platformFeeCents,
           paymentIntentId: intent.id,
+          offsessionPaymentMethodId: offsessionPaymentMethodId ?? undefined,
+          offsessionCustomerId: offsessionCustomerId ?? undefined,
         },
       });
 

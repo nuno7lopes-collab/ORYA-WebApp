@@ -31,7 +31,7 @@ export default function ProfissionalDisponibilidadePage() {
   }, [data?.items, professionalId]);
 
   if (!Number.isFinite(professionalId)) {
-    return <div className="text-white">Profissional invalido.</div>;
+    return <div className="text-white">Profissional inválido.</div>;
   }
 
   return (
@@ -42,9 +42,9 @@ export default function ProfissionalDisponibilidadePage() {
           <h1 className={DASHBOARD_TITLE}>
             Disponibilidade · {professional?.name ?? "Profissional"}
           </h1>
-          <p className={DASHBOARD_MUTED}>Configura horarios e excecoes.</p>
+          <p className={DASHBOARD_MUTED}>Configura horários e exceções.</p>
         </div>
-        <Link href="/org/reservas/profissionais" className={CTA_SECONDARY}>
+        <Link href="/org/bookings/profissionais" className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -55,7 +55,7 @@ export default function ProfissionalDisponibilidadePage() {
           A disponibilidade do profissional é gerida no calendário principal, usando o filtro de profissionais.
         </p>
         <Link
-          href={`/org/reservas?tab=availability&professionalId=${professionalId}`}
+          href={`/org/bookings?tab=availability&professionalId=${professionalId}`}
           className={CTA_SECONDARY}
         >
           Abrir agenda

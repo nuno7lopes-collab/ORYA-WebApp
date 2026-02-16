@@ -24,13 +24,35 @@ describe("proxy org canonical hard-cut", () => {
     expect(body.namespace).toBe("api");
   });
 
+  it("returns 410 for removed public availability routes", async () => {
+    const slotsReq = new NextRequest("http://localhost/api/servicos/9/slots?day=2026-03-01");
+    const slotsRes = await proxy(slotsReq);
+    expect(slotsRes.status).toBe(410);
+    const slotsBody = await slotsRes.json();
+    expect(slotsBody.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(slotsBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(slotsBody.namespace).toBe("api");
+
+    const disponibilidadeReq = new NextRequest("http://localhost/api/servicos/9/disponibilidade?day=2026-03-01");
+    const disponibilidadeRes = await proxy(disponibilidadeReq);
+    expect(disponibilidadeRes.status).toBe(410);
+    const disponibilidadeBody = await disponibilidadeRes.json();
+    expect(disponibilidadeBody.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(disponibilidadeBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(disponibilidadeBody.namespace).toBe("api");
+  });
+
   it("returns 410 for removed PT legacy slugs under /org/:orgId", async () => {
     const legacyPaths = [
       "/org/42/financas",
       "/org/42/checkin",
       "/org/42/loja",
+      "/org/42/eventos",
+      "/org/42/reservas",
+      "/org/42/treinadores",
       "/org/42/manage",
       "/org/42/promote",
+      "/org/42/torneios",
       "/org/42/tournaments",
       "/org/42/padel",
       "/org/42/padel/torneios",
@@ -52,6 +74,40 @@ describe("proxy org canonical hard-cut", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+  });
+
+  it("returns 410 for shorthand /org/overview using organizationId context", async () => {
+    const req = new NextRequest("http://localhost/org/overview?organizationId=42&section=ferramentas");
+    const res = await proxy(req);
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+  });
+
+  it("returns 410 for shorthand /org/overview using organization cookie fallback", async () => {
+    const req = new NextRequest("http://localhost/org/overview?section=ferramentas", {
+      headers: {
+        cookie: "orya_organization=42",
+      },
+    });
+    const res = await proxy(req);
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+  });
+
+  it("returns 410 for shorthand /org/treinadores", async () => {
+    const req = new NextRequest("http://localhost/org/treinadores");
+    const res = await proxy(req);
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
   });
 
   it("rejects org context via query/header in /api/org/:orgId", async () => {

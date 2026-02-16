@@ -10,8 +10,7 @@ export default function TeamSubnav({ orgId, className }: { orgId: number | null;
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "members", label: "Members", href: buildOrgHref(orgId, "/team") },
-        { id: "trainers", label: "Trainers", href: buildOrgHref(orgId, "/team/trainers") },
+        { id: "members", label: "Membros", href: buildOrgHref(orgId, "/team") },
       ]}
     />
   );

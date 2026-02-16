@@ -4,7 +4,6 @@ export const TOURNAMENT_LIFECYCLE_ORDER: PadelTournamentLifecycleStatus[] = [
   "DRAFT",
   "PUBLISHED",
   "LOCKED",
-  "LIVE",
   "COMPLETED",
   "CANCELLED",
 ];
@@ -15,8 +14,7 @@ const LIFECYCLE_TRANSITIONS: Record<
 > = {
   DRAFT: ["PUBLISHED", "CANCELLED"],
   PUBLISHED: ["LOCKED", "CANCELLED"],
-  LOCKED: ["LIVE", "CANCELLED"],
-  LIVE: ["COMPLETED", "CANCELLED"],
+  LOCKED: ["COMPLETED", "CANCELLED"],
   COMPLETED: [],
   CANCELLED: [],
 };
@@ -25,7 +23,6 @@ export const TOURNAMENT_LIFECYCLE_LABELS: Record<PadelTournamentLifecycleStatus,
   DRAFT: "Rascunho",
   PUBLISHED: "Publicado",
   LOCKED: "Bloqueado",
-  LIVE: "Live",
   COMPLETED: "Concluído",
   CANCELLED: "Cancelado",
 };

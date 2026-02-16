@@ -5,7 +5,6 @@ export type OrganizationUiRole =
   | "CO_OWNER"
   | "ADMIN"
   | "STAFF"
-  | "TRAINER"
   | "PROMOTER";
 
 const ROLE_SET = new Set<OrganizationUiRole>([
@@ -13,7 +12,6 @@ const ROLE_SET = new Set<OrganizationUiRole>([
   "CO_OWNER",
   "ADMIN",
   "STAFF",
-  "TRAINER",
   "PROMOTER",
 ]);
 
@@ -40,11 +38,11 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
   const isCoOwner = normalized === "CO_OWNER";
   const isAdmin = normalized === "ADMIN";
   const isStaff = normalized === "STAFF";
-  const isTrainer = normalized === "TRAINER";
   const isPromoter = normalized === "PROMOTER";
   const isAdminOrAbove = isOwner || isCoOwner || isAdmin;
   const isManager = isAdminOrAbove;
   const isPromoterOnly = isPromoter && !isAdminOrAbove;
+  const isCoach = normalized === "STAFF" && normalizedPack === OrganizationRolePack.COACH;
   return {
     role: normalized,
     rolePack: normalizedPack,
@@ -52,7 +50,8 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
     isCoOwner,
     isAdmin,
     isStaff,
-    isTrainer,
+    isTrainer: false,
+    isCoach,
     isPromoter,
     isAdminOrAbove,
     isPromoterOnly,
@@ -60,7 +59,9 @@ export function getOrganizationRoleFlags(role?: string | null, rolePack?: string
     canManageMembers: isManager,
     canEditOrg: isManager,
     canViewOperationalSettings: isManager,
-    canViewTrainerHub: isTrainer || isManager,
-    canPromote: isAdminOrAbove || isPromoter,
+    canViewTrainerHub: isCoach || isManager,
+    // "Promote" aqui significa acesso a ferramenta/flows de marketing (nao "ser promotor").
+    // PROMOTER nao tem comportamento/permissoes especiais por agora.
+    canPromote: isAdminOrAbove,
   };
 }

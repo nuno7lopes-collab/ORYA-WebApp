@@ -14,13 +14,12 @@ function runRg(args: string[]) {
 describe("canonical org web slugs guardrail", () => {
   it("blocks PT/legacy /org/:orgId slug literals in canonical surfaces", () => {
     const output = runRg([
+      "--pcre2",
       "-n",
-      "/org/(\\$\\{[^}]+\\}|\\[orgId\\]|\\d+)/(financas|loja|checkin|manage|promote|tournaments|trainers|crm/(clientes|segmentos|campanhas|relatorios)|padel/(clube|torneios))",
+      "(?<!/api)/org/(\\$\\{[^}]+\\}|\\[orgId\\]|\\d+)/(financas|loja|checkin|manage|promote|tournaments|trainers|treinadores|eventos|reservas|inscricoes|staff|crm/(clientes|segmentos|campanhas|relatorios)|padel/(clube|torneios))(\\?|/|\\\"|'|`|$)",
       "app/org",
-      "app/org/_internal/core/DashboardClient.tsx",
-      "app/org/_internal/core/OrganizationPublicProfilePanel.tsx",
-      "app/org/_internal/core/(dashboard)/loja/page.tsx",
-      "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx",
+      "app/components",
+      "lib",
       "--glob",
       "*.ts",
       "--glob",

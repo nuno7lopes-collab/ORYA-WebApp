@@ -23,10 +23,10 @@ describe("padel rule snapshot guardrails (D18.12)", () => {
 });
 
 describe("padel config lock guardrails (N5)", () => {
-  it("bloqueia alterações competitivas após LOCKED/LIVE/COMPLETED", () => {
+  it("bloqueia alterações competitivas após LOCKED/COMPLETED", () => {
     const configRoute = readLocal("app/api/padel/tournaments/config/route.ts");
     expect(configRoute).toContain("TOURNAMENT_CONFIG_LOCKED");
-    expect(configRoute).toContain("[\"LOCKED\", \"LIVE\", \"COMPLETED\"]");
+    expect(configRoute).toContain("[\"LOCKED\", \"COMPLETED\"]");
     expect(configRoute).toContain("hasCompetitiveConfigChange");
   });
 });

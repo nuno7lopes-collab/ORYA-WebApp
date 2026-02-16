@@ -19,9 +19,9 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(schema).toContain("executedByUserId      String?   @map(\"executed_by_user_id\") @db.Uuid");
     expect(schema).toContain("executionStatus       String?   @map(\"execution_status\")");
     expect(schema).toContain("model AgendaResourceClaim {");
-    expect(schema).toContain("bundleId     String?                 @map(\"bundle_id\") @db.Uuid");
-    expect(schema).toContain("authorityOrgId Int                   @map(\"authority_org_id\")");
-    expect(schema).toContain("resourceKey  String                  @map(\"resource_key\") @db.Text");
+    expect(schema).toMatch(/bundleId\s+String\?\s+@map\("bundle_id"\)\s+@db\.Uuid/);
+    expect(schema).toMatch(/authorityOrgId\s+Int\s+@map\("authority_org_id"\)/);
+    expect(schema).toMatch(/resourceKey\s+String\s+@map\("resource_key"\)\s+@db\.Text/);
     expect(schema).toContain("enum PadelPartnershipStatus {");
     expect(schema).toContain("enum PadelPartnershipPriorityMode {");
     expect(schema).toContain("enum PadelPartnershipCompensationStatus {");

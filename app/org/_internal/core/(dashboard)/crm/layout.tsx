@@ -8,7 +8,7 @@ import { OrganizationMemberRole, OrganizationStatus } from "@prisma/client";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { prisma } from "@/lib/prisma";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 
 export default async function CrmLayout({ children }: { children: ReactNode }) {
   const supabase = await createSupabaseServer();
@@ -27,7 +27,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
   });
 
   if (!organization || !membership) {
-    redirect(appendOrganizationIdToHref("/org/overview?section=modulos", organization?.id ?? null));
+    redirect(buildOrgHubHref("/organizations"));
   }
 
   const crmAccess = await ensureCrmModuleAccess(
@@ -42,7 +42,7 @@ export default async function CrmLayout({ children }: { children: ReactNode }) {
     },
   );
   if (!crmAccess.ok) {
-    redirect(appendOrganizationIdToHref("/org/overview?section=modulos", organization.id));
+    redirect(buildOrgHref(organization.id, "/overview", { section: "ferramentas" }));
   }
 
   return <div className="space-y-6">{children}</div>;

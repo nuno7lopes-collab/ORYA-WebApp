@@ -27,7 +27,7 @@ import type {
 const WS_PING_INTERVAL_MS = 25000;
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const WS_PROTOCOL_BASE = "orya-chat.v1";
-const WS_AUTH_PROTOCOL_PREFIX = "orya-chat.auth.";
+const WS_APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION?.trim() || "1.0.0";
 
 type PendingMessage = {
   id: string;
@@ -718,10 +718,13 @@ export function useChatPreviewData() {
     }, WS_PING_INTERVAL_MS);
   }, [sendWsMessage, stopWsPing]);
 
-  const scheduleWsReconnect = useCallback(() => {
+  const scheduleWsReconnect = useCallback((delayOverrideMs?: number) => {
     if (wsReconnectRef.current || isOfflineRef.current) return;
-    const delay = wsBackoffRef.current;
-    wsBackoffRef.current = Math.min(delay * 1.7, 10000);
+    const useOverride = Number.isFinite(delayOverrideMs) && (delayOverrideMs as number) > 0;
+    const delay = useOverride ? Math.trunc(delayOverrideMs as number) : wsBackoffRef.current;
+    wsBackoffRef.current = useOverride
+      ? Math.max(10000, Math.min(Math.trunc(delay * 1.2), 60000))
+      : Math.min(delay * 1.7, 10000);
     wsReconnectRef.current = setTimeout(() => {
       wsReconnectRef.current = null;
       connectWsRef.current?.();
@@ -1026,43 +1029,56 @@ export function useChatPreviewData() {
     }
 
     const wsUrl = new URL(wsBaseUrl);
-    wsUrl.searchParams.set("organizationId", String(orgId));
-
-    const ws = new WebSocket(wsUrl.toString(), [
-      WS_PROTOCOL_BASE,
-      `${WS_AUTH_PROTOCOL_PREFIX}${token}`,
-    ]);
+    const ws = new WebSocket(wsUrl.toString(), [WS_PROTOCOL_BASE]);
     wsRef.current = ws;
+    let handshakeReady = false;
 
     ws.onopen = () => {
-      wsConnectingRef.current = false;
-      wsBackoffRef.current = 500;
-      setConnectionState("connected");
-      startWsPing();
-      sendWsMessage({ type: "conversation:sync" });
-      loadConversationsRef.current?.({ incremental: true });
-      const activeId = activeConversationIdRef.current;
-      if (activeId) {
-        loadMessagesRef.current?.({ conversationId: activeId, includeMembers: false });
-      }
+      ws.send(
+        JSON.stringify({
+          auth: `Bearer ${token}`,
+          app_version: WS_APP_VERSION,
+          context: {
+            type: "org",
+            id: `org_${orgId}`,
+          },
+          client_platform: "web",
+        }),
+      );
     };
 
     ws.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data) as ChatEvent;
         if (!parsed?.type) return;
+        if (parsed.type === "handshake:ok") {
+          handshakeReady = true;
+          wsConnectingRef.current = false;
+          wsBackoffRef.current = 500;
+          setConnectionState("connected");
+          startWsPing();
+          sendWsMessage({ type: "conversation:sync" });
+          loadConversationsRef.current?.({ incremental: true });
+          const activeId = activeConversationIdRef.current;
+          if (activeId) {
+            loadMessagesRef.current?.({ conversationId: activeId, includeMembers: false });
+          }
+          return;
+        }
+        if (!handshakeReady) return;
         handleChatEventRef.current?.(parsed);
       } catch {
         // ignore
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      const reason = typeof event.reason === "string" ? event.reason : "";
       wsConnectingRef.current = false;
       setConnectionState("reconnecting");
       stopWsPing();
       wsRef.current = null;
-      scheduleWsReconnect();
+      scheduleWsReconnect(reason === "RATE_LIMITED" ? 60000 : undefined);
     };
 
     ws.onerror = () => {

@@ -10,8 +10,8 @@ export default function ChatSubnav({ orgId, className }: { orgId: number | null;
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "inbox", label: "Inbox", href: buildOrgHref(orgId, "/chat") },
-        { id: "preview", label: "Preview", href: buildOrgHref(orgId, "/chat/preview") },
+        { id: "inbox", label: "Caixa de entrada", href: buildOrgHref(orgId, "/chat") },
+        { id: "preview", label: "Pré-visualização", href: buildOrgHref(orgId, "/chat/preview") },
       ]}
     />
   );

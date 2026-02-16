@@ -37,24 +37,24 @@ const COPY_VARIANTS = [
       link: string;
       promoCode?: string | null;
     }) =>
-      `Ja tens plano? ${data.title} em ${data.when} ${data.location ? `(${data.location})` : ""}.` +
-      `${data.promoCode ? ` Usa o codigo ${data.promoCode}.` : ""} ${data.link}`,
+      `Já tens plano? ${data.title} em ${data.when} ${data.location ? `(${data.location})` : ""}.` +
+      `${data.promoCode ? ` Usa o código ${data.promoCode}.` : ""} ${data.link}`,
   },
   {
     id: "last-call",
-    label: "Ultimas vagas",
+    label: "Últimas vagas",
     build: (data: {
       title: string;
       when: string;
       link: string;
       promoCode?: string | null;
     }) =>
-      `Ultimas vagas para ${data.title} (${data.when}).` +
-      `${data.promoCode ? ` Codigo ${data.promoCode} ativo.` : ""} ${data.link}`,
+      `Últimas vagas para ${data.title} (${data.when}).` +
+      `${data.promoCode ? ` Código ${data.promoCode} ativo.` : ""} ${data.link}`,
   },
   {
     id: "promo",
-    label: "Promocao",
+    label: "Promoção",
     build: (data: {
       title: string;
       when: string;
@@ -168,7 +168,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
   if (!events.length) {
     return (
       <div className={cn(DASHBOARD_CARD, "p-4 text-sm text-white/70")}>
-        Sem eventos para gerar conteudos.
+        Sem eventos para gerar conteúdos.
       </div>
     );
   }
@@ -179,9 +179,9 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-lg font-semibold text-white">Gerador de links</h3>
-            <p className="text-[12px] text-white/65">UTM + promo para partilhas rapidas.</p>
+            <p className="text-[12px] text-white/65">UTM + promo para partilhas rápidas.</p>
           </div>
-          <Link href="/org/crm/campanhas" className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}>
+          <Link href="/org/crm/campaigns" className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}>
             Ir para campanhas
           </Link>
         </div>
@@ -201,13 +201,13 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             </select>
           </label>
           <label className="text-[12px] text-white/70">
-            Codigo promocional (opcional)
+            Código promocional (opcional)
             <select
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={selectedPromoId}
               onChange={(event) => setSelectedPromoId(event.target.value)}
             >
-              <option value="none">Sem codigo</option>
+              <option value="none">Sem código</option>
               {availablePromos.map((promo) => (
                 <option key={promo.id} value={String(promo.id)}>
                   {promo.code}
@@ -216,7 +216,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             </select>
           </label>
           <label className="text-[12px] text-white/70">
-            UTM source
+            Origem UTM
             <input
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={utmSource}
@@ -224,7 +224,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             />
           </label>
           <label className="text-[12px] text-white/70">
-            UTM medium
+            Canal UTM
             <input
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               value={utmMedium}
@@ -232,7 +232,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             />
           </label>
           <label className="text-[12px] text-white/70">
-            UTM campaign
+            Campanha UTM
             <input
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               placeholder={selectedEvent?.slug || "campanha"}
@@ -241,7 +241,7 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             />
           </label>
           <label className="text-[12px] text-white/70">
-            UTM content
+            Conteúdo UTM
             <input
               className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
               placeholder="story, feed, parceiro"
@@ -269,8 +269,8 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
 
       <div className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
         <div>
-          <h3 className="text-lg font-semibold text-white">Textos rapidos</h3>
-          <p className="text-[12px] text-white/65">Copias prontas com o link e promo.</p>
+          <h3 className="text-lg font-semibold text-white">Textos rápidos</h3>
+          <p className="text-[12px] text-white/65">Cópias prontas com o link e promoção.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           {shareTemplates.map((template) => (

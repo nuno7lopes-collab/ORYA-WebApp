@@ -134,6 +134,12 @@ const jobs = [
     intervalMs: getInterval("CRON_BOOKINGS_INTERVAL_MS", 60000),
   },
   {
+    name: "bookings-split-garantido",
+    method: "POST",
+    path: "/api/cron/bookings/split-garantido",
+    intervalMs: getInterval("CRON_BOOKINGS_SPLIT_GARANTIDO_INTERVAL_MS", 300000),
+  },
+  {
     name: "reservations-cleanup",
     method: "GET",
     path: "/api/cron/reservations/cleanup",
@@ -156,6 +162,12 @@ const jobs = [
     method: "POST",
     path: "/api/cron/padel/matchmaking",
     intervalMs: getInterval("CRON_PADEL_MATCHMAKING_INTERVAL_MS", 300000),
+  },
+  {
+    name: "padel-arbitration-compensation",
+    method: "POST",
+    path: "/api/cron/padel/arbitration-compensation",
+    intervalMs: getInterval("CRON_PADEL_ARBITRATION_COMPENSATION_INTERVAL_MS", 300000),
   },
   {
     name: "padel-split-reminders",

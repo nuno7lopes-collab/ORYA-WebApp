@@ -15,6 +15,48 @@ function getClient(tx?: DbClient) {
   return (tx ?? prisma) as any;
 }
 
+async function resolveIdentityIdByTombstone(identityId: string, tx?: DbClient): Promise<string> {
+  const client = getClient(tx);
+  if (!client.identityTombstone || typeof client.identityTombstone.findUnique !== "function") {
+    return identityId;
+  }
+
+  let current = identityId;
+  const seen = new Set<string>();
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (seen.has(current)) return current;
+    seen.add(current);
+
+    const tombstone = await client.identityTombstone.findUnique({
+      where: { fromIdentityId: current },
+      select: { toIdentityId: true },
+    });
+    if (!tombstone?.toIdentityId || tombstone.toIdentityId === current) return current;
+    current = tombstone.toIdentityId;
+  }
+  return current;
+}
+
+async function findIdentityById(identityId: string, tx?: DbClient) {
+  const client = getClient(tx);
+  if (!client.emailIdentity || typeof client.emailIdentity.findUnique !== "function") return null;
+  return client.emailIdentity.findUnique({
+    where: { id: identityId },
+    select: { id: true, emailNormalized: true, userId: true, emailVerifiedAt: true },
+  });
+}
+
+export async function resolveIdentityForRead(identityId: string, tx?: DbClient): Promise<IdentityResult> {
+  const resolvedId = await resolveIdentityIdByTombstone(identityId, tx);
+  const identity = await findIdentityById(resolvedId, tx);
+  return {
+    id: identity?.id ?? null,
+    emailNormalized: identity?.emailNormalized ?? null,
+    userId: identity?.userId ?? null,
+    emailVerifiedAt: identity?.emailVerifiedAt ?? null,
+  };
+}
+
 async function fetchUserEmailNormalized(userId: string, tx?: DbClient): Promise<string | null> {
   const client = getClient(tx);
   if (!client.users || typeof client.users.findUnique !== "function") return null;
@@ -42,7 +84,7 @@ export async function ensureEmailIdentity(params: {
 
   let identity = await client.emailIdentity.findUnique({
     where: { emailNormalized },
-    select: { id: true, userId: true, emailVerifiedAt: true },
+    select: { id: true, emailNormalized: true, userId: true, emailVerifiedAt: true },
   });
 
   if (!identity) {
@@ -52,12 +94,12 @@ export async function ensureEmailIdentity(params: {
           emailNormalized,
           ...(params.userId ? { userId: params.userId } : {}),
         },
-        select: { id: true, userId: true, emailVerifiedAt: true },
+        select: { id: true, emailNormalized: true, userId: true, emailVerifiedAt: true },
       });
     } catch {
       identity = await client.emailIdentity.findUnique({
         where: { emailNormalized },
-        select: { id: true, userId: true, emailVerifiedAt: true },
+        select: { id: true, emailNormalized: true, userId: true, emailVerifiedAt: true },
       });
     }
   } else if (params.userId && !identity.userId) {
@@ -68,9 +110,31 @@ export async function ensureEmailIdentity(params: {
     identity = { ...identity, userId: params.userId };
   }
 
+  const resolvedId = identity?.id
+    ? await resolveIdentityIdByTombstone(identity.id, params.tx)
+    : null;
+  if (resolvedId && identity?.id && resolvedId !== identity.id) {
+    const resolvedIdentity = await findIdentityById(resolvedId, params.tx);
+    if (resolvedIdentity) {
+      identity = {
+        id: resolvedIdentity.id,
+        userId: resolvedIdentity.userId,
+        emailVerifiedAt: resolvedIdentity.emailVerifiedAt,
+      };
+    }
+  }
+
+  if (params.userId && identity?.id && !identity.userId) {
+    await client.emailIdentity.update({
+      where: { id: identity.id },
+      data: { userId: params.userId },
+    });
+    identity = { ...identity, userId: params.userId };
+  }
+
   return {
     id: identity?.id ?? null,
-    emailNormalized,
+    emailNormalized: (identity as { emailNormalized?: string | null } | null)?.emailNormalized ?? emailNormalized,
     userId: identity?.userId ?? params.userId ?? null,
     emailVerifiedAt: identity?.emailVerifiedAt ?? null,
   };
@@ -97,7 +161,12 @@ export async function getUserIdentityIds(userId: string, tx?: DbClient): Promise
     where: { userId },
     select: { id: true },
   });
-  if (identities.length) return identities.map((identity: { id: string }) => identity.id);
+  if (identities.length) {
+    const resolved = await Promise.all(
+      identities.map((identity: { id: string }) => resolveIdentityIdByTombstone(identity.id, tx)),
+    );
+    return Array.from(new Set(resolved));
+  }
 
   const resolved = await resolveIdentityForUser({ userId, tx });
   return resolved.id ? [resolved.id] : [];

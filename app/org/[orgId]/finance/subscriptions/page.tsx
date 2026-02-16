@@ -6,5 +6,5 @@ export default async function Page({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  redirect(`/org/${orgId}/finance?tab=invoices&finance=subscriptions`);
+  redirect(`/org/${orgId}/finance?tab=analyze&section=invoices`);
 }

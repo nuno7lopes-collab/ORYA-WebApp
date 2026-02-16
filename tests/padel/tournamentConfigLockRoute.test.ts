@@ -46,7 +46,6 @@ function buildLockedConfig(overrides?: Record<string, unknown>) {
     updatedAt: new Date("2026-02-13T12:00:00.000Z"),
     publishedAt: new Date("2026-02-13T12:00:00.000Z"),
     lockedAt: new Date("2026-02-13T12:00:00.000Z"),
-    liveAt: null,
     completedAt: null,
     cancelledAt: null,
     lifecycleUpdatedAt: new Date("2026-02-13T12:00:00.000Z"),
@@ -113,7 +112,7 @@ describe("POST /api/padel/tournaments/config lock contract", () => {
     expect(tx.padelTournamentConfig.upsert).not.toHaveBeenCalled();
   });
 
-  it("permite apenas campos live operacionais após LOCKED", async () => {
+  it("permite apenas campos operacionais após LOCKED", async () => {
     const tx = {
       padelTournamentConfig: {
         findUnique: vi
@@ -123,8 +122,7 @@ describe("POST /api/padel/tournaments/config lock contract", () => {
             buildLockedConfig({
               advancedSettings: {
                 featuredMatchId: 77,
-                tvMonitor: { footerText: "Live", sponsors: ["Marca X"] },
-                liveSponsors: { hero: { label: "Hero", logoUrl: null, url: null } },
+                tvMonitor: { footerText: "Agora", sponsors: ["Marca X"] },
               },
             }),
           ),
@@ -141,8 +139,7 @@ describe("POST /api/padel/tournaments/config lock contract", () => {
         eventId: 1,
         organizationId: 99,
         featuredMatchId: 77,
-        tvMonitor: { footerText: "Live", sponsors: ["Marca X"] },
-        liveSponsors: { hero: { label: "Hero" } },
+        tvMonitor: { footerText: "Agora", sponsors: ["Marca X"] },
       }),
     });
 
@@ -152,8 +149,7 @@ describe("POST /api/padel/tournaments/config lock contract", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.config.advancedSettings.featuredMatchId).toBe(77);
-    expect(body.config.advancedSettings.tvMonitor.footerText).toBe("Live");
-    expect(body.config.advancedSettings.liveSponsors.hero.label).toBe("Hero");
+    expect(body.config.advancedSettings.tvMonitor.footerText).toBe("Agora");
     expect(tx.padelTournamentConfig.upsert).toHaveBeenCalledTimes(1);
   });
 });

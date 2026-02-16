@@ -143,7 +143,7 @@ export function resolveCanonicalOrgHref(
       return { pathname: buildOrgHref(organizationId, "/marketing"), search: nextSearch };
     }
     if (tab === "profile") {
-      return { pathname: buildOrgHref(organizationId, "/profile"), search: nextSearch };
+      return { pathname: buildOrgHref(organizationId, "/settings"), search: nextSearch };
     }
     if (tab === "analyze") {
       if (section === "financas" || section === "invoices") {
@@ -175,11 +175,15 @@ export function resolveCanonicalOrgHref(
   }
 
   if (suffix === "/profile") {
-    return { pathname: buildOrgHref(organizationId, "/profile"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/settings"), search: nextSearch };
   }
 
   if (suffix === "/profile/seguidores") {
-    return { pathname: buildOrgHref(organizationId, "/profile/followers"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/settings"), search: nextSearch };
+  }
+
+  if (suffix.startsWith("/profile/")) {
+    return { pathname: buildOrgHref(organizationId, "/settings"), search: nextSearch };
   }
 
   if (suffix === "/scan") {
@@ -305,32 +309,6 @@ export function resolveCanonicalOrgHref(
   if (suffix === "/padel/clube") {
     return { pathname: buildOrgHref(organizationId, "/padel/clubs"), search: nextSearch };
   }
-  if (suffix === "/padel/torneios") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
-  }
-  if (suffix === "/padel/torneios/novo") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
-  }
-  if (suffix.startsWith("/padel/torneios/")) {
-    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/padel/torneios/".length)}`), search: nextSearch };
-  }
-
-  if (suffix === "/torneios") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments"), search: nextSearch };
-  }
-  if (suffix === "/torneios/novo") {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
-  }
-  if (suffix.startsWith("/torneios/")) {
-    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/torneios/".length)}`), search: nextSearch };
-  }
-  if (suffix.startsWith("/tournaments/new")) {
-    return { pathname: buildOrgHref(organizationId, "/padel/tournaments/create"), search: nextSearch };
-  }
-  if (suffix.startsWith("/tournaments/")) {
-    return { pathname: buildOrgHref(organizationId, `/padel/tournaments/${suffix.slice("/tournaments/".length)}`), search: nextSearch };
-  }
-
   if (suffix === "/crm") {
     return { pathname: buildOrgHref(organizationId, "/crm"), search: nextSearch };
   }
@@ -383,8 +361,23 @@ export function appendOrganizationIdToHref(href: string, organizationId: number 
     }
     if (isOrgShorthandPath) {
       if (!resolvedOrgId) return href;
-      const suffix = pathname === "/org" ? "/overview" : pathname.slice("/org".length) || "/overview";
-      url.pathname = buildOrgHref(resolvedOrgId, suffix);
+      // Keep dashboard shorthand (/org and /org + overview alias) while preserving query params.
+      const isDashboardShorthand = /^\/org(?:\/overview)?$/i.test(pathname);
+      if (isDashboardShorthand) {
+        url.pathname = buildOrgHref(resolvedOrgId, "/overview");
+      } else {
+        // Map legacy shorthand routes (/org/events, /org/bookings, /org/analytics, etc)
+        // to their canonical /org/:orgId equivalents.
+        const legacyPathname = `/organizacao${pathname.slice("/org".length)}`;
+        const resolved = resolveCanonicalOrgHref(legacyPathname, url.searchParams, resolvedOrgId);
+        if (resolved) {
+          url.pathname = resolved.pathname;
+          url.search = resolved.search.toString() ? `?${resolved.search.toString()}` : "";
+        } else {
+          const suffix = pathname.slice("/org".length) || "/overview";
+          url.pathname = buildOrgHref(resolvedOrgId, suffix);
+        }
+      }
       url.searchParams.delete("organizationId");
       url.searchParams.delete("org");
       if (isAbsolute) return url.toString();

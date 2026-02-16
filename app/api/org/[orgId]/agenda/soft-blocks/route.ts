@@ -259,7 +259,7 @@ async function loadSoftBlockExistingCandidates(params: {
       if (!start || !end) return;
       if (!(start < endsAt && end > startsAt)) return;
       candidates.push({
-        type: "MATCH_SLOT",
+        type: "MATCH",
         sourceId: String(match.id),
         startsAt: start,
         endsAt: end,

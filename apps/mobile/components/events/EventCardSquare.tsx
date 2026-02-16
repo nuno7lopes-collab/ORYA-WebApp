@@ -90,7 +90,7 @@ const resolveCountdownTag = (
     return t("common:time.endsIn", { value: formatCountdown(endsAtMs - now) });
   }
   if (startsAtMs && startsAtMs <= now && (!endsAtMs || endsAtMs > now)) {
-    return t("common:status.live");
+    return t("common:time.now");
   }
   return null;
 };
@@ -162,9 +162,9 @@ export const EventCardSquare = memo(function EventCardSquare({
   const date = formatEventDate(event.startsAt, event.endsAt);
   const priceState = resolvePriceState(event, t);
   const countdownTag = showCountdown ? resolveCountdownTag(event, now, t) : null;
-  const liveLabel = t("common:status.live");
-  const isLive = countdownTag === liveLabel;
-  const livePulse = useRef(new Animated.Value(1)).current;
+  const nowLabel = t("common:time.now");
+  const isNow = countdownTag === nowLabel;
+  const nowPulse = useRef(new Animated.Value(1)).current;
   const statusBadge = resolveStatusTag(event.status, t) ?? statusTag ?? null;
   const showStatusBadge =
     statusBadge && (event.status === "CANCELLED" || event.status === "PAST" || event.status === "DRAFT");
@@ -225,16 +225,16 @@ export const EventCardSquare = memo(function EventCardSquare({
   }, [showCountdown]);
 
   useEffect(() => {
-    if (!isLive) return;
+    if (!isNow) return;
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(livePulse, { toValue: 0.25, duration: 900, useNativeDriver: true }),
-        Animated.timing(livePulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(nowPulse, { toValue: 0.25, duration: 900, useNativeDriver: true }),
+        Animated.timing(nowPulse, { toValue: 1, duration: 900, useNativeDriver: true }),
       ]),
     );
     animation.start();
     return () => animation.stop();
-  }, [isLive, livePulse]);
+  }, [isNow, nowPulse]);
 
   useEffect(() => {
     let active = true;
@@ -340,9 +340,9 @@ export const EventCardSquare = memo(function EventCardSquare({
                     <Text style={styles.tagText}>{category}</Text>
                   </View>
                   {secondaryTag ? (
-                    <View style={[styles.tag, priceState?.isSoon ? styles.tagSoon : null, isLive ? styles.tagLive : null]}>
-                      {isLive ? (
-                        <Animated.View style={[styles.liveDot, { opacity: livePulse, transform: [{ scale: livePulse }] }]} />
+                    <View style={[styles.tag, priceState?.isSoon ? styles.tagSoon : null, isNow ? styles.tagNow : null]}>
+                      {isNow ? (
+                        <Animated.View style={[styles.nowDot, { opacity: nowPulse, transform: [{ scale: nowPulse }] }]} />
                       ) : null}
                       <Text style={styles.tagText}>{secondaryTag}</Text>
                     </View>
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.7)",
     borderColor: "rgba(210, 230, 255, 0.4)",
   },
-  tagLive: {
+  tagNow: {
     borderColor: "rgba(255, 120, 120, 0.55)",
   },
   tagText: {
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.2,
   },
-  liveDot: {
+  nowDot: {
     width: 6,
     height: 6,
     borderRadius: 3,

@@ -6,7 +6,7 @@ export const DASHBOARD_SUBHEADING = "text-sm text-white/78";
 export const DASHBOARD_SKELETON =
   "animate-pulse rounded-xl border border-white/10 orya-skeleton-surface";
 
-export const DASHBOARD_TITLE = "text-2xl font-semibold text-white";
+export const DASHBOARD_TITLE = "sr-only";
 export const DASHBOARD_LABEL = "text-[11px] uppercase tracking-[0.22em] text-white/70";
 
 export const CTA_PRIMARY =

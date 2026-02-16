@@ -1,4 +1,5 @@
 # Politicas de Organizacao - Documento Fechado (2026-02-14)
+Estado documental: `RASTREABILIDADE_TECNICA` (`NAO_NORMATIVO`)
 
 ## 1) Estado
 - Estado de produto: FECHADO.

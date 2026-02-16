@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import DashboardClient from "../../DashboardClient";
 import { ensureDashboardAccess } from "@/app/org/_internal/core/_lib/dashboardAccess";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 export default async function OrganizationManagePage({
   searchParams,
@@ -11,8 +11,10 @@ export default async function OrganizationManagePage({
   const resolvedSearchParams = await Promise.resolve(searchParams);
 
   const params = new URLSearchParams();
+  const sectionParam = typeof resolvedSearchParams?.section === "string" ? resolvedSearchParams.section : null;
   if (resolvedSearchParams) {
     for (const [key, value] of Object.entries(resolvedSearchParams)) {
+      if (key === "section") continue;
       if (typeof value === "string") {
         params.set(key, value);
       } else if (Array.isArray(value)) {
@@ -20,13 +22,26 @@ export default async function OrganizationManagePage({
       }
     }
   }
-  if (!params.get("organizationId")) {
-    params.set("organizationId", String(activeOrganizationId));
-    redirect(`/org/manage?${params.toString()}`);
-  }
+  params.delete("organizationId");
+  params.delete("org");
 
-  const defaultSection =
-    typeof resolvedSearchParams?.section === "string" ? resolvedSearchParams.section : "eventos";
+  const targetBase =
+    sectionParam === "reservas"
+      ? buildOrgHref(activeOrganizationId, "/bookings")
+      : sectionParam === "inscricoes"
+        ? buildOrgHref(activeOrganizationId, "/forms")
+        : sectionParam === "padel-club"
+          ? buildOrgHref(activeOrganizationId, "/padel/clubs")
+          : sectionParam === "padel-tournaments"
+            ? buildOrgHref(activeOrganizationId, "/padel/tournaments")
+            : sectionParam === "staff"
+              ? buildOrgHref(activeOrganizationId, "/team")
+              : sectionParam === "chat"
+                ? buildOrgHref(activeOrganizationId, "/chat")
+                : sectionParam === "crm"
+                  ? buildOrgHref(activeOrganizationId, "/crm/customers")
+                  : buildOrgHref(activeOrganizationId, "/events");
+  const query = params.toString();
+  redirect(`${targetBase}${query ? `?${query}` : ""}`);
 
-  return <DashboardClient hasOrganization defaultObjective="manage" defaultSection={defaultSection} />;
 }

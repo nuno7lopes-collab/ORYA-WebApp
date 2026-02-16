@@ -11,7 +11,6 @@ export const CHAT_ALLOWED_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.CO_OWNER,
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
-  OrganizationMemberRole.TRAINER,
 ];
 
 export class ChatContextError extends Error {

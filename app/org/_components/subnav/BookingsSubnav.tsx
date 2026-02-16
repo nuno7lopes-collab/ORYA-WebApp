@@ -10,14 +10,14 @@ export default function BookingsSubnav({ orgId, className }: { orgId: number | n
     <ToolSubnavShell
       className={className}
       items={[
-        { id: "overview", label: "Overview", href: buildOrgHref(orgId, "/bookings", { bookings: "overview" }) },
-        { id: "services", label: "Services", href: buildOrgHref(orgId, "/bookings/services") },
-        { id: "availability", label: "Availability", href: buildOrgHref(orgId, "/bookings", { tab: "availability", bookings: "availability" }) },
-        { id: "customers", label: "Customers", href: buildOrgHref(orgId, "/bookings/customers") },
-        { id: "professionals", label: "Professionals", href: buildOrgHref(orgId, "/bookings/professionals") },
-        { id: "resources", label: "Resources", href: buildOrgHref(orgId, "/bookings/resources") },
-        { id: "policies", label: "Policies", href: buildOrgHref(orgId, "/bookings/policies") },
-        { id: "integrations", label: "Integrations", href: buildOrgHref(orgId, "/bookings", { bookings: "integrations" }) },
+        { id: "overview", label: "Resumo", href: buildOrgHref(orgId, "/bookings", { bookings: "overview" }) },
+        { id: "services", label: "Serviços", href: buildOrgHref(orgId, "/bookings/services") },
+        { id: "availability", label: "Disponibilidade", href: buildOrgHref(orgId, "/bookings", { tab: "availability", bookings: "availability" }) },
+        { id: "customers", label: "Clientes", href: buildOrgHref(orgId, "/bookings/customers") },
+        { id: "professionals", label: "Profissionais", href: buildOrgHref(orgId, "/bookings/professionals") },
+        { id: "resources", label: "Recursos", href: buildOrgHref(orgId, "/bookings/resources") },
+        { id: "policies", label: "Políticas", href: buildOrgHref(orgId, "/bookings/policies") },
+        { id: "integrations", label: "Integrações", href: buildOrgHref(orgId, "/bookings", { bookings: "integrations" }) },
       ]}
     />
   );

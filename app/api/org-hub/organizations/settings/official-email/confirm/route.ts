@@ -80,8 +80,12 @@ async function _POST(req: NextRequest) {
     }
 
     const membership = await resolveGroupMemberForOrg({ organizationId: request.organizationId, userId: user.id });
-    if (!membership || membership.role !== OrganizationMemberRole.OWNER) {
-      return fail(403, "ONLY_OWNER_CAN_CONFIRM");
+    if (
+      !membership ||
+      (membership.role !== OrganizationMemberRole.OWNER &&
+        membership.role !== OrganizationMemberRole.CO_OWNER)
+    ) {
+      return fail(403, "ONLY_OWNER_OR_CO_OWNER_CAN_CONFIRM");
     }
 
     const now = new Date();

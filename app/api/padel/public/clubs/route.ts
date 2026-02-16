@@ -47,6 +47,9 @@ async function _GET(req: NextRequest) {
       isActive: true,
       deletedAt: null,
       kind: "OWN",
+      organization: {
+        status: "ACTIVE",
+      },
       ...(city && city.toLowerCase() !== "portugal" && PORTUGAL_CITIES.includes(city as (typeof PORTUGAL_CITIES)[number])
         ? { addressRef: { formattedAddress: { contains: city, mode: Prisma.QueryMode.insensitive } } }
         : {}),

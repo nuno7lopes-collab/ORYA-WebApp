@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-14
+Atualizado: 2026-02-15
 
 ## 00 Authority
 
@@ -42,8 +42,8 @@ Atualizado: 2026-02-14
 - Ticket: adicionado estado `DISPUTED` ao enum mínimo para consistência com chargebacks.
 - Editorial: numeração 15.1 corrigida + referências SSOT alinhadas.
 - Production Readiness: gate de go‑live + compliance/ops/DSAR/retention/release gates (Secção 19).
-- Stripe: Connect Standard + funds flow FECHADO + onboarding Standard (D04.00.01 / C02.X01).
-- Infra: backups Supabase→S3 + isolamento multi‑tenant (12.6.2 / 19.3.1).
+- Stripe: mapeamento por `orgType` FECHADO (`EXTERNAL`=Connect; `PLATFORM`=conta Stripe ORYA não-Connect) + onboarding Standard para `EXTERNAL` (D04.00.01 / C02.X01).
+- Infra (PROD_FUTURA): estratégia de backup/restore para operação em produção + isolamento multi‑tenant (12.6.2 / 19.3.1).
 - Check‑in: modo recinto (8.6) para fallback operacional sem offline QR.
 - Policy Defaults v1 FECHADO (Apêndice A).
 - Legal: sign‑off/versionamento FECHADO (19.1).
@@ -51,6 +51,12 @@ Atualizado: 2026-02-14
 - Retenção: unificada com autoridade legal única em 19.4.1; janelas de 12.2.1/A6 passam a operacionais (hot/warm).
 - Risk thresholds: autoridade única em 19.2.2; A7 fica apenas como resumo informativo sem números vinculativos.
 - Naming contratual: `orgId` + `customerIdentityId` como shape canónico único (sem aliases externos).
+- C01 (Agenda/Reservas): contrato atualizado para `resourceKey` global (`resourceType:authorityOrgId:resourceId`) e payload canónico cross-org.
+- Arbitragem cross-org: algoritmo explícito com prioridade `HARD_BLOCK > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`, `priorityRuleVersion` e fail-closed para tipo fora da versão ativa.
+- Split: contrato antigo D12 (48/24) revogado para norma ativa `SPLIT_GARANTIDO` (`S01..S09`), com `deadlineAt`, `SettlementSnapshot` imutável, rails monotónicos e validação Stripe sandbox.
+- Danger zone org: `suspend` owner-only com step-up obrigatório, auditoria before/after e reversão controlada na janela de 30 dias.
+- Suspensão organização v2: reativação self-service do `OWNER` no dashboard/settings dentro da janela de 30 dias; eliminação definitiva só após fim dessa janela.
+- Address autocomplete UX v1: dropdown canónico em overlay (sem reflow), relevância visual por secções e confirmação estrita por seleção normalizada (`addressId`).
 
 ### 00.6 Registo de Decisão Normativa (NORMATIVO)
 - Decisões FECHADO NÃO dependem de drafts/ficheiros temporários para serem válidas.
@@ -72,11 +78,16 @@ Atualizado: 2026-02-14
 #### 00.6.1 Ledger de transição (forward-only)
 | decisionId | owner | approvedAt | scope | status | rationale | migrationImpact |
 | --- | --- | --- | --- | --- | --- | --- |
-| SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | web legado passa a `301`; API legado passa a `410`; consumo frontend/mobile passa para `/org` e `/api/org*` |
+| SSOT-2026-02-12-ORG-ROUTING | Nuno | 2026-02-12 | routing web/api org namespaces | FECHADO | eliminar ambiguidade entre alias e canónico | hard-cut estrito: web/API legacy passam a `410`; `/org/<non-numeric>` passa a `410`; consumo frontend/mobile fica apenas em `/org/:orgId/*` e `/api/org*` |
 | SSOT-2026-02-13-ORG-HARDCUT-SUBNAV | Nuno | 2026-02-13 | hard-cut de legacy web + subnav dedicada por ferramenta | FECHADO | remover superfície legacy `/organizacao/*` e eliminar subnav partilhada no dashboard | `/organizacao/*` passa a `410`; slugs PT legacy em `/org/:orgId/*` passam a `410`; topbar resolve `toolKey -> subnav` 1:1; padel dividido em club/tournaments |
 | SSOT-2026-02-14-MULTIORG-GOVERNANCE | Nuno | 2026-02-14 | Group governance, onboarding atómico e owner transfer por Group | FECHADO | fechar contratos multi-org sem dupla verdade e com enforcement transacional | `Group.ownerUserId` vira fonte única; join/exit/transfer por `/api/org-hub/groups/*`; `/api/org-hub/become` e owner transfer por org ficam `410` |
 | SSOT-2026-02-14-SUPPORT-V1 | Nuno | 2026-02-14 | suporte v1 (form público + consola admin) | FECHADO | padronizar operação de suporte e trilha auditável | `POST /api/support/tickets`; admin em `/admin/suporte`; assunto canónico `[TICKET-<numero>] ...`; inbound email direto não abre ticket |
 | SSOT-2026-02-14-LEGACY-HARDCUT-GLOBAL | Nuno | 2026-02-14 | hard-cut físico global de namespaces legacy org | FECHADO | eliminar convivência física legacy e fechar canonicidade end-to-end | remover `app/api/organizacao/**` e `app/organizacao/**`; consumo interno só em `/api/org*`, `/api/org-hub/*`, `/api/org-system/*`, `/org/*`, `/org-hub/*` |
+| SSOT-2026-02-15-DASH-TOOLS-SETTINGS | Nuno | 2026-02-15 | dashboard ferramentas (visibilidade UI) + settings/nav + papéis PT | FECHADO | unificar linguagem de produto e separar capacidade de domínio vs visibilidade do dashboard | dashboard passa a "Ferramentas"; ocultar é só UI (não desativa backend) com preferência persistida por organização; `Settings` subnav remove `verify`; gestão de email oficial fica em `general`; rótulos de papel em PT (`Dono`, `Co-dono`) |
+| SSOT-2026-02-15-FECHO-UNIFICADO-PROPAGACAO | Nuno | 2026-02-15 | C01 payload/resourceKey, Arbitration Service, Split V2 (`SPLIT_GARANTIDO`), HP-11 operacional | FECHADO | consolidar contratos finais desta ronda no SSOT e eliminar drift documental | `C01` passa a `resourceKey+authorityOrgId`; arbitragem cross-org ganha prioridade explícita versionada; D12 (48/24) fica revogado para norma ativa `S01..S09`; `suspend` owner-only com step-up/auditoria/reversão 30 dias |
+| SSOT-2026-02-15-OFFICIAL-EMAIL-ROTATION-V2 | Nuno | 2026-02-15 | CAUTH.01 rotação de email oficial (ativo verificado + alteração pendente) | FECHADO | impedir regressão de estado verificado durante troca de email e formalizar cancelamento explícito do pendente | `Organization.officialEmail`/`officialEmailVerifiedAt` passam a representar apenas email ativo; pendente vive em `OrganizationOfficialEmailRequest`; contratos canónicos incluem `GET/POST/DELETE /api/org-hub/organizations/settings/official-email` + `POST /confirm`; UI separa ativo vs pendente |
+| SSOT-2026-02-15-ORG-SUSPENSION-REACTIVATION-V2 | Nuno | 2026-02-15 | HP-11 suspensão/reativação owner-only + delete pós-janela | FECHADO | corrigir lacuna operacional de reativação e garantir lifecycle consistente sem perda de estado | contrato canónico passa a `GET/POST/DELETE /api/org-hub/organizations/:id/suspend`; `DELETE /api/org-hub/organizations/:id` só após `SUSPENDED` + janela 30d expirada; reativação exclusiva de `OWNER`; username mantém reserva durante suspensão; org suspensa deixa de expor superfícies públicas por `organizationId` |
+| SSOT-2026-02-15-ADDRESS-AUTOCOMPLETE-UX-V1 | Nuno | 2026-02-15 | D11 UX operacional de procura de moradas (Address Service) | FECHADO | fechar consistência UX de topo sem quebrar invariantes canónicos de morada | dropdown passa a overlay em portal (sem empurrar layout), ranking visual em secções, confirmação obrigatória por seleção normalizada (`addressId`); texto livre sem seleção não pode virar morada canónica |
 ---
 
 
@@ -103,6 +114,12 @@ Atualizado: 2026-02-14
 - G11: Discovery, Search, Analytics e Ops Feed (`4` itens)
 - G12: Infra, Jobs, Outbox, Observabilidade e Release Gates (`20` itens)
 
+### 00.8 Autossuficiência do SSOT (NORMATIVO)
+- O SSOT deve ser lido como documento autossuficiente de regra e decisão final.
+- Referências a outros ficheiros existem apenas para rastreabilidade editorial/auditoria.
+- Nenhum contrato normativo depende da leitura de outro documento para ser válido.
+- Em conflito entre SSOT e documento auxiliar, prevalece sempre o SSOT.
+
 ## 01 Global Invariants (I*)
 
 Esta secção define os invariantes imutáveis da plataforma ORYA.
@@ -125,7 +142,7 @@ que viole um ou mais invariantes é considerada incorreta, mesmo que funcional.
 Cada domínio tem exatamente uma fonte autoritativa de verdade:
 - Payments & money state → `Payment` + `LedgerEntry`
 - Access rights → `Entitlement`
-- Identity → `Identity` (USER or GUEST_EMAIL)
+- Identity → `Identity` (conceito canónico externo), com persistência MVP em `EmailIdentity` e sem enum externo `USER/GUEST_EMAIL`
 - Organization context → `Organization`
 
 Dados derivados, caches, projeções e estado de UI NÃO PODEM ser
@@ -363,6 +380,9 @@ Conjunto canónico mínimo para endpoints de autenticação:
 Regra:
 - Producers MAY acrescentar novos `errorCode` sem breaking change (minor), desde que mantenham backward compatibility.
 - Consumers MUST tolerar códigos desconhecidos e usar fallback de UX seguro.
+- Mapeamentos canónicos obrigatórios no escopo auth:
+  - `THROTTLED` e `RATE_LIMIT_ERROR` => `RATE_LIMITED`
+  - `INTERNAL_ERROR` => `SERVER_ERROR`
 
 ⸻
 
@@ -514,7 +534,7 @@ Contratos ambíguos são considerados incompletos.
 D00) Fora de scope (v1–v3): API pública (terceiros)
 	•	Não vamos expor API pública/SDK para terceiros nesta fase.
 	•	Endpoint(s) públicos **first‑party** (ex.: páginas públicas/agenda) são permitidos, read‑only e rate‑limited.
-	•	Qualquer “Public API” com chaves/SDK é **futuro**: sem documentação externa, sem onboarding de parceiros e **desativado por defeito** em prod até decisão explícita.
+		•	Qualquer “Public API” com chaves/SDK é **futuro**: fora de escopo nesta fase DEV, sem documentação externa, sem onboarding de parceiros, sem implementação/deploy até revisão normativa explícita.
 	•	Integrações externas só via exports e integrações pontuais configuráveis (Fase 2+), sem “public API” aberta.
 
 
@@ -748,7 +768,7 @@ Objetivo: garantir que falhas na camada API não criam fuga de dados entre organ
 Legal Sign-off e Versionamento (FECHADO)
 - Todos os documentos legais (Termos, Privacidade, Cookies) são versionados:
   - `legalDocsVersion` (ex.: 1.0.0) + `effectiveAt`
-- Go‑Live Gate:
+- Gate de abertura de produção (PROD_FUTURA, fora do escopo DEV atual):
   - não se lança produção sem `legalDocsVersion` aprovado/revisto e links publicados no produto (web/app).
 - Alterações legais:
   - criam nova versão + changelog + data de entrada em vigor
@@ -813,7 +833,7 @@ ADITAMENTO FECHADO: estado e campos mínimos do `SafetyCase`.
   - audit log completo por caso
 
 19.2.4 Kill Switches — **FECHADO**
-ADITAMENTO FECHADO: switches operacionais compatíveis com Stripe Connect Standard.
+ADITAMENTO FECHADO: switches operacionais compatíveis com Stripe Connect (Standard nesta fase).
 - A) Kill switch por **EVENTO**
   - aplica: bloquear novos checkouts + ocultar da descoberta
   - mantém: suporte + gestão de refunds
@@ -831,7 +851,7 @@ ADITAMENTO FECHADO: switches operacionais compatíveis com Stripe Connect Standa
   - reversão: decisão em `SafetyCase` + expiração definida
   - audit: EventLog `safety.kill_switch.identity` + `reasonCode=KILL_SWITCH_IDENTITY`
 
-Nota (FECHADO): em Stripe Connect Standard, a ORYA não controla directamente payouts do Connected Account.
+Nota (FECHADO): em Stripe Connect (Standard nesta fase), a ORYA não controla directamente payouts do Connected Account.
 As medidas de mitigação são operacionais: bloquear novas vendas/checkouts, desactivar eventos, aplicar step‑up,
 limitar acções de risco e, quando aplicável, iniciar refunds/chargeback workflows.
 Qualquer controlo fino de transferências/payout holds é fora do v1.x e requer revisão do funds flow/account type.
@@ -1061,6 +1081,39 @@ Obrigatório em logs e métricas:
 #### Failure Mode
 Sem email oficial válido/verificado: bloquear ação (403), sem side effects.
 
+### CAUTH.01 Addendum v2 - Official Email Rotation (NORMATIVO)
+- decisionId: `SSOT-2026-02-15-OFFICIAL-EMAIL-ROTATION-V2`
+- owner: `Nuno`
+- approvedAt: `2026-02-15`
+- scope: rotação de `officialEmail` com estado ativo + pendente, sem dupla verdade no gate.
+- rationale: pedido de alteração pendente nunca pode degradar um estado já verificado.
+- migrationImpact:
+  - `POST /api/org-hub/organizations/settings/official-email` deixa de mutar `Organization.officialEmail`/`officialEmailVerifiedAt`.
+  - `DELETE /api/org-hub/organizations/settings/official-email` torna-se contrato canónico para cancelar pendente.
+  - `GET /api/org-hub/organizations/settings/official-email` expõe estado canónico (`active + pending`).
+  - confirmação mantém swap atómico no token (`POST /api/org-hub/organizations/settings/official-email/confirm`).
+
+Máquina de estados canónica:
+- `ACTIVE_VERIFIED`: `normalize(Organization.officialEmail)` existe e `officialEmailVerifiedAt != null`.
+- `PENDING_CHANGE`: existe `OrganizationOfficialEmailRequest(status=PENDING)` para a organização.
+- Estado permitido: `ACTIVE_VERIFIED` pode coexistir com `PENDING_CHANGE`.
+
+Invariantes obrigatórios:
+- `Organization.officialEmail` e `Organization.officialEmailVerifiedAt` representam apenas o estado ativo.
+- Pedido pendente não invalida o estado ativo verificado.
+- Cancelar pedido pendente não altera o estado ativo.
+- Confirmar token válido executa swap atómico para o novo email e marca verificado.
+- Regra de segurança: nunca piorar estado (`never degrade verified state`).
+
+Permissões:
+- `request`, `cancel`, `resend`: apenas `OWNER` e `CO_OWNER`.
+- `confirm`: `OWNER` e `CO_OWNER` (consistência operacional).
+
+Compatibilidade e migração legacy:
+- Runtime anterior violava esta regra ao sobrescrever `Organization.officialEmail` antes da confirmação.
+- v2 corrige o contrato para manter ativo+pendente em superfícies separadas.
+- Pendentes legados devem ser reconciliados em modo fail-safe: restaurar ativo verificável quando possível; caso contrário, resolução manual auditada.
+
 
 ## G03) Identidade, Auth, Sessao/Cookies e Mobile Access
 
@@ -1077,14 +1130,39 @@ Sem email oficial válido/verificado: bloquear ação (403), sem side effects.
 C12) Identity/Auth (SSOT + claim/merge) — **FECHADO**
 
 Regras:
-	•	Tipos: `USER` e `GUEST_EMAIL`.
+	•	A criação de conta (`email+password`) exige validação por e-mail; a conta só fica ativa para operar depois de `email_verified = true`.
+	•	Exceção: ao criar organização, `officialEmail` nasce com o e-mail do criador e vem automaticamente verificado; alterações posteriores seguem rotação v2 (pedido pendente + swap atómico na confirmação), sem invalidar o email ativo até confirmação.
+	•	Conta de profissional só é efetiva após verificação do respetivo e-mail; profissional sem conta é apenas registo histórico/visibilidade e não recebe permissões operacionais.
+	•	Quando um e-mail associado a profissional cria conta verificada, o histórico é mergeado automaticamente para a conta verificada e o evento é auditado em `IdentityMergeLog`.
+	•	Conceito canónico externo: `Identity` (para `customerIdentityId`, `ownerIdentityId`).
+	•	Persistência canónica MVP: `EmailIdentity`.
+	•	`USER/GUEST_EMAIL` deixam de ser enum normativo externo; passam a semântica de identidade por email com estado.
 	•	Email normalizado: `trim + NFKC + lowercase`; hash HMAC para dedupe.
-	•	Guest checkout cria/usa `Identity(GUEST_EMAIL)` por email normalizado.
-	•	Email verificado → **claim automático** para `Identity(USER)`:
-		–	mover Entitlements para o USER
+	•	`rawEmail` é preservado para display/auditoria; `emailNormalized` é usado para lookup/dedupe.
+	•	Regras provider-specific (`remove dots`, `remove +tag`) são proibidas como normalização global.
+	•	Email verificado forte = confirmação do IdP (`email_confirmed_at`) validada server-side.
+	•	Guest checkout cria/usa identidade por email em estado guest.
+	•	Email verificado -> claim automático para identidade associada ao utilizador verificado:
+		–	mover Entitlements para a identidade alvo canónica
 		–	criar registo de merge (auditável)
 		–	**não** alterar LedgerEntry nem Payment histórico
-	•	Merge é idempotente e nunca destrói histórico; identidade antiga fica como tombstone.
+		•	Merge é idempotente e nunca destrói histórico; identidade antiga fica como tombstone.
+		•	`IdentityMergeLog` e tombstone explícito são obrigatórios no contrato de identidade para auditoria pós-merge.
+		•	Campos mínimos obrigatórios de `IdentityMergeLog`: `mergeId`, `fromIdentityId`, `toIdentityId`, `reason`, `emailNormalized`, `emailHashHmac`, `triggerSource`, `idempotencyKey`, `mergedAt`, `mergedBy`, `artifactsMoved`, `status`, `failureCode?`.
+		•	Enums canónicos fechados de merge:
+			–	`reason = EMAIL_VERIFIED_CLAIM | PROFESSIONAL_AUTO_MERGE | MANUAL_SYSTEM_FIX`
+			–	`triggerSource = AUTH_VERIFY | PROFESSIONAL_LINK | SYSTEM_JOB`
+			–	`status = SUCCEEDED | NOOP_ALREADY_MERGED | FAILED`
+			•	Tombstone explícito obrigatório na identidade subsumida:
+				–	`IdentityTombstone` dedicado **ou** campo equivalente explícito de tombstone;
+				–	qualquer leitura de identidade tombstoned resolve para `toIdentityId`;
+				–	reativação silenciosa de identidade tombstoned é proibida.
+			•	Leitura de identidade tombstoned deve resolver para `toIdentityId` e impedir reativação silenciosa.
+	•	`ownerIdentityId` é o ownership canónico; `ownerUserId` é apenas auxiliar não-autoritativo.
+	•	`ownerKey` canónico de escrita: `identity:<ownerIdentityId>`.
+	•	`ownerKey` legacy (`user:`/`email:`) fica restrito a compatibilidade de leitura temporária até hard-cut final.
+	•	Gestão de segredo HMAC: `email_hmac = HMAC(key_vN, emailNormalized)` com `keyVersion` e janela de rotação (`vN` + `vN-1`).
+	•	A regra canónica de merge/tombstone está integralmente definida neste SSOT; `docs/identity_merge_log_spec.md` é apenas referência de rastreabilidade técnica.
 
 ---
 
@@ -1122,11 +1200,47 @@ Regras:
 		–	`POST /api/auth/logout`
 		–	`POST /api/auth/clear`
 		–	`GET|POST /api/auth/check-email`
+	•	Split canónico de consumo:
+		–	Web/server usam baseline `/api/auth/*`.
+		–	Mobile app usa autenticação direta no Supabase SDK e não depende do baseline `/api/auth/*`.
 	•	Todos os erros externos usam envelope canónico (`errorCode`, `message`, `retryable`, `correlationId`).
 	•	`send-otp` e `check-email` seguem política anti-enumeração (resposta genérica, sem leak de existência de conta).
 	•	`/api/auth/refresh` é o único contrato canónico para sincronizar sessão com cookies HttpOnly.
 	•	`/api/auth/me` é o read-model canónico de estado de autenticação no server.
-	•	Auth UI/UX (modal, cooldowns, componentes) é não-normativo e vive em `docs/planning_registry_v1.md`.
+	•	`/api/auth/me` é estritamente read-only (sem side effects síncronos); side effects vão para workers/eventos.
+		•	`/api/auth/me` em erro devolve erro canónico (`errorCode`, `httpStatus`, `message`, `details`) com semântica uniforme para cliente.
+		•	AuthModal segue fluxo canónico de recuperação:
+			–	em erro de auth existe no máximo 1 tentativa automática silenciosa de auto-recovery (auto-heal).
+			–	erro temporário (`network/timeout/5xx`) => retry simples (`Tentar novamente`), sem reset/logout automático.
+			–	sessão inválida/desincronizada (`401`, refresh falhado, token inválido) => após falha do auto-heal, mostrar apenas CTAs canónicos: `Tentar novamente` (`/api/auth/me`), `Entrar` (login normal), `Sair` (logout canónico) como secundário.
+			–	ação `limpar sessão local`/`reset` não aparece como ação primária/visível no fluxo normal; se existir, fica restrita a troubleshooting avançado (suporte/dev) com aviso explícito.
+			–	`/api/auth/clear` limpa apenas cookies/estado de autenticação por allowlist; é proibido apagar cookies não-auth (ex.: `orya_organization`, carrinho, preferências).
+			–	logout canónico limpa também cookies de contexto UI (Q38).
+			–	`factory reset local` é fluxo separado com step-up (Q39), fora do caminho normal do modal.
+		•	Matriz canónica de flags de cookies por ambiente (`dev/stage/prod`):
+			–	cookies de autenticação: `HttpOnly=true`, `Secure=true` em `stage/prod`, `SameSite=Lax` (ou mais restritivo por superfície);
+			–	cookies de contexto UI (`orya_organization`, `lastUsedOrg`): `HttpOnly=false`, `Secure=true` em `stage/prod`, nunca usados para autorização;
+			–	cookies de carrinho/preferências: `HttpOnly=false`, `Secure=true` em `stage/prod`, sem acesso a decisões de authz;
+			–	qualquer divergência da matriz por ambiente é drift normativo e bloqueia release.
+		•	Mapeamentos canónicos obrigatórios em auth scope:
+			–	`THROTTLED`/`RATE_LIMIT_ERROR` -> `RATE_LIMITED`
+			–	`INTERNAL_ERROR` -> `SERVER_ERROR`
+		•	Tabela oficial endpoint -> status -> errorCode canónico:
+			–	`POST /api/auth/login`: `200/400/401/403/429/500` | `MISSING_CREDENTIALS`, `INVALID_CREDENTIALS`, `EMAIL_NOT_CONFIRMED`, `FORBIDDEN`, `RATE_LIMITED`, `SERVER_ERROR`
+			–	`POST /api/auth/send-otp`: `200/400/429/500` | `INVALID_EMAIL`, `RATE_LIMITED`, `OTP_GENERATION_FAILED`, `EMAIL_SEND_FAILED`, `SERVER_ERROR`
+			–	`POST /api/auth/password/reset-request`: `200/400/429/500` | `INVALID_EMAIL`, `RATE_LIMITED`, `RESET_LINK_FAILED`, `EMAIL_SEND_FAILED`, `SERVER_ERROR`
+			–	`POST /api/auth/refresh`: `200/401/403/500` | `MISSING_TOKENS`, `INVALID_SESSION`, `UNAUTHENTICATED`, `FORBIDDEN`, `SERVER_ERROR`
+			–	`POST /api/auth/apple/link`: `200/400/401/409/500` | `APPLE_IDENTITY_MISSING`, `APPLE_IDENTITY_INVALID`, `UNAUTHENTICATED`, `ALREADY_LINKED`, `SERVER_ERROR`
+			–	`GET /api/auth/me`: `200/401/500` | `UNAUTHENTICATED`, `INVALID_SESSION`, `SERVER_ERROR`
+			–	`POST /api/auth/logout`: `200/401/500` | `UNAUTHENTICATED`, `LOGOUT_FAILED`, `SERVER_ERROR`
+			–	`POST /api/auth/clear`: `200/401/500` | `UNAUTHENTICATED`, `CLEAR_FAILED`, `SERVER_ERROR`
+			–	`GET|POST /api/auth/check-email`: `200/400/429/500` | `INVALID_EMAIL`, `RATE_LIMITED`, `SERVER_ERROR`
+		•	Não há contrato público novo de idempotência para `/send-otp` e `/reset-request`; internamente deve existir dedupe por janela + retry seguro.
+		•	SLOs mínimos G03 obrigatórios: `auth.login_success`, `auth.refresh_success`, `ws.connect_success`.
+		•	Painel de observabilidade G03 por `errorCode` canónico é obrigatório.
+		•	Runbook único de incidente G03 (`auth outage`, `session drift`, `claim backlog`, `ws gate`) é obrigatório.
+		•	Release gate deve bloquear deploy se houver drift SSOT x runtime em `C12`, `CAUTH.02`, `DORG.08`.
+		•	No AuthModal, o comportamento de recuperação/CTAs acima é normativo; detalhe visual de UI (layout/estilo/cópia secundária) permanece não-normativo e pode evoluir em `docs/planning_registry_v1.md`.
 
 ---
 
@@ -1136,7 +1250,7 @@ Regras:
 **Contract Name:** Public Auth API Contract Baseline
 **Current Version:** v1.0.0
 **Owner:** Domain: Identity/Auth
-**Primary Consumers:** WebApp auth UI, Mobile auth clients, internal session middlewares
+**Primary Consumers:** WebApp auth UI, internal session middlewares, mobile session consumers (auth direta via Supabase SDK)
 
 #### Purpose
 Definir baseline contratual dos endpoints públicos de autenticação, com anti-enumeração e envelope canónico.
@@ -1168,7 +1282,8 @@ DORG.08) Username Registry — normalização e anti-spoof (FECHADO)
 #### G03.006 (origem: DORG.09)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2332`.
 
-DORG.09) Perfil Mobile — UI/UX baseline (FECHADO)
+DORG.09) Perfil Mobile — UI/UX baseline (EM_REVIEW_SEPARADA)
+	•	Estado normativo: revisão UX separada (Q57/Q58); este bloco não bloqueia os contratos arquiteturais fechados.
 	•	Escopo: perfil de Utilizador (view pública/própria) + perfil público de Organização (view pública).
 	•	Padrão comum:
 		–	App Bar sticky, Hero com avatar/badges, CTA primário visível, Stats row, secções sticky, estados loading/empty/error.
@@ -1178,31 +1293,53 @@ DORG.09) Perfil Mobile — UI/UX baseline (FECHADO)
 		–	CTA `Follow/Unfollow` (outro user) e `Editar Perfil` (próprio).
 	•	Organização:
 		–	stats apenas `Seguidores`.
-		–	CTA primário derivado do módulo ativo (`Ver eventos`/`Reservar`/`Ver loja`/`Contactar`).
+		–	CTA primário derivado da ferramenta ativa (`Ver eventos`/`Reservar`/`Ver loja`/`Contactar`).
 	•	Ordem canónica de blocos org:
-		–	`HERO -> ABOUT -> EVENTS_AGENDA -> STORE -> SERVICES -> FORMS -> GALLERY -> FAQ -> CONTACT`.
-	•	Layout de perfil público de organização é controlado por `OrgPublicProfileLayout` versionado (edição apenas no painel org).
+		–	`AGENDA_PUBLICA -> RESERVAS -> FORMULARIOS -> LOJA`.
+	•	Perfil público de organização é fixo (sem editor de layout/blocos customizáveis).
+	•	`Hero`, `Sobre`, `Galeria`, `FAQ`, `Contacto`, `PADEL oficial` e `Treinadores` não são blocos públicos renderizáveis.
+	•	`Loja` é condicional: só aparece quando `status=ACTIVE`, `showOnProfile=true` e existe `>=1` produto `PUBLIC`.
 
 
 #### G03.003 (origem: D01.02)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2380`.
 
 D01.02) Mensagens & Chat — decisões de produto (FECHADO)
-	•	Mensagens para utilizador final **apenas na app** (sem chat na web).  
-	•	“Inbox” único de Mensagens: eventos + reservas/serviços + chats com organizações + chats entre utilizadores.  
-	•	Escopo `b2c` é **mobile-only** por contrato backend (HTTP + WebSocket): clientes não‑mobile recebem `MOBILE_APP_REQUIRED`; versões mobile fora da gate recebem `UPGRADE_REQUIRED`.  
-	•	Chat de evento segue D01.01 e é suportado integralmente no `b2c` (inbox, mensagens, read, notifications, delete, realtime).  
-	•	Chat de reservas/serviços: canal **só ativa** com a 1ª mensagem (não criar canal vazio).  
-	•	Chat de serviço (pré‑reserva): **apenas via pedido**; pedido **aprovado por staff** da organização.  
-	•	Chat org‑contact (cliente → organização): **pedido obrigatório**, aprovado por staff.  
-	•	Reserva: organização pode iniciar chat no **detalhe da reserva** (1ª mensagem cria canal).  
-	•	Chat interno da organização: **só canais** (sem mensagens diretas internas); admins criam por defeito; canais automáticos do sistema (Ops, evento, reserva).  
-	•	Canais cliente‑profissional: cliente vê o profissional; admins podem ver/escrever; identidade padrão para admins é “Organização”; identidade pessoal opcional quando necessário; admins **não aparecem** como membros visíveis ao cliente.  
-	•	Mensagens entre utilizadores: só entre amigos/seguidores confirmados; pedidos de mensagem para desconhecidos; grupos por convite.  
-	•	Notificações: push em todas as mensagens por defeito; opção de silenciar por conversa.  
-	•	Conteúdo: **texto-only**. Upload/presign de anexos está desativado e payloads com anexos são rejeitados (`ATTACHMENTS_DISABLED`).  
-	•	“Anular envio”: janela de **2 minutos**.  
-	•	Retenção: mensagens guardadas e chats de evento/reserva read‑only após fecho. Exceção única (one-off de migração): purge destrutivo de mensagens históricas com anexos + ficheiros/metadata para convergir para texto-only; não é política contínua.
+	•	Na UI web existe chat apenas em contexto de organização; não existem chats pessoais/web DMs fora do contexto da org.
+	•	No mobile coexistem chats pessoais (DMs entre utilizadores) e chats de organização.
+	•	Contrato explícito de acesso b2c: mobile login-only para rotas atuais e futuras.
+			•	Escopo `b2c` mantém gate de plataforma/versão (`MOBILE_APP_REQUIRED` / `UPGRADE_REQUIRED`) com semântica paritária entre HTTP e WebSocket.
+			•	`MIN_SUPPORTED_MOBILE_VERSION` é obrigatório por ambiente (sem default permissivo em produção).
+			•	Semver inválido em `app_version` bloqueia fail-closed com `UPGRADE_REQUIRED` + reason `APP_VERSION_INVALID`.
+			•	Kill switch de versão é separado por plataforma (`ios`/`android`).
+			•	`orya_organization` é cookie de contexto UI e nunca é aceite como autorização.
+			•	WS handshake web exige `context.type='org'` e `context.id`; se faltar contexto ou token não autorizar o contexto, handshake é rejeitado (fail-closed).
+			•	Handshake WS obrigatório usa payload JSON com `auth`, `app_version`, `context` e `device_attestation` opcional; falta de `auth|app_version|context` implica rejeição imediata.
+			•	Autenticação WS por token em subprotocol deixa de ser caminho canónico.
+			•	JWT claims WS mínimas: `sub`, `exp`, `org_ids` (ou `org_id` em single-tenancy), `roles/permissions/channel_permissions` quando aplicável e `context_bind` opcional.
+			•	Servidor deve validar explicitamente autorização do token para o `context.id`; token revogado implica encerramento ativo do socket.
+		•	Namespaces canónicos WS: `org:{org_id}:channel:{channel_id}`, `dm:user:{u1}:{u2}`, `public:global:{id}`, `cross-org:{authority_org_id}:{channel_id}`.
+		•	Códigos WS mínimos (paridade HTTP): `ORG_CONTEXT_REQUIRED`, `FORBIDDEN`, `UNAUTHORIZED`, `UPGRADE_REQUIRED`, `MOBILE_APP_REQUIRED`, `RATE_LIMITED`.
+		•	Observabilidade WS mínima obrigatória:
+			–	`ws.handshake.success_count` e `ws.handshake.failure_count`;
+			–	`ws.handshake.latency_ms` (`p50`, `p95`);
+			–	`ws.handshake.rejected.missing_context_count`;
+			–	`ws.handshake.rejected.version_gate_count`;
+			–	`ws.socket.closed.revoked_token_count`.
+		•	Log estruturado obrigatório para handshake, decisão de authz, rejeição e revogação, com `correlationId`.
+		•	O contrato canónico de handshake/claims/namespacing está integralmente definido neste SSOT; `docs/ws_handshake_and_jwt_claims.md` é referência de rastreabilidade.
+	•	Chat de reserva/serviço não é criado automaticamente; o canal nasce na primeira mensagem ou quando o utilizador abre explicitamente “falar com a organização”.
+	•	Chat interno da organização mantém modelo por canais.
+	•	Notificações: push por defeito com possibilidade de silenciar por conversa.
+	•	Anexos e links são permitidos em org-chat e em DMs pessoais mobile.
+	•	Antes de permitir acesso/abertura de anexo, o sistema impõe `virus scan + DLP + quotas`; estados via WS: `pending_scan -> ready | rejected`.
+	•	“Anular envio”: janela de **2 minutos**.
+	•	Retenção: mensagens guardadas e chats de evento/reserva read-only após fecho.
+	•	Implementação deve incluir gates de CI e testes automáticos (unit/integration/E2E) para handshake, authz, anexos e logout/socket lifecycle.
+	•	E2E de gate mobile obrigatório:
+		–	web -> `MOBILE_APP_REQUIRED`
+		–	mobile antiga -> `UPGRADE_REQUIRED`
+		–	mobile suportada -> `200`
 
 
 #### G03.004 (origem: D17)
@@ -1212,6 +1349,7 @@ D17) Integrações Apple — guardrails normativos (FECHADO)
 	•	Sign in with Apple é método suportado e obrigatório em iOS quando existirem logins de terceiros.
 	•	Push iOS usa APNs com token-based auth.
 	•	Universal links e share sheet iOS são suportados para superfícies públicas relevantes.
+	•	Fecho operacional de universal links exige evidência de entitlements iOS + teste em device real.
 	•	Apple Wallet/PassKit em v1.x mantém validação **online** por `EntitlementQrToken` (`tokenHash`), com updates/revogação por jobs idempotentes.
 	•	Offline signed QR permanece fora de v1.x e só pode entrar com payload assinado/versionado, rotação de chaves e revocation list sincronizada.
 	•	Address provider canónico continua em D11 (Apple Maps via Address Service).
@@ -1268,15 +1406,19 @@ DORG.01) Membership de Organização — fonte única de verdade (FECHADO)
 #### G04.007 (origem: DORG.03A)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2291`.
 
-DORG.03A) Módulos da Organização — fonte única + fail-closed (FECHADO)
-	•	Fonte única de ativação de módulos: `OrganizationModuleEntry.enabled=true`.
-	•	`RBAC` e `module enabled` são validações separadas e cumulativas:
+DORG.03A) Ferramentas da Organização — fonte única + fail-closed (FECHADO)
+	•	Fonte única canónica de capacidade por ferramenta: `OrganizationModuleEntry.enabled=true`.
+	•	`RBAC` e `tool enabled` são validações separadas e cumulativas:
 		–	sem membership/permissão => negar;
-		–	módulo desativado => negar, mesmo que o utilizador tenha role.
-	•	No perfil público da organização, um módulo só aparece se:
-		–	estiver ativo, e
+		–	ferramenta desativada => negar, mesmo que o utilizador tenha role.
+	•	No perfil público da organização, uma ferramenta só aparece se:
+		–	estiver ativa, e
 		–	tiver conteúdo publicável.
-	•	Toggle de módulo afeta dashboard e perfil público de forma determinística (sem bypass por URL direta).
+	•	Visibilidade no dashboard (mostrar/ocultar cards) é preferência de UI e NÃO altera capacidade de domínio.
+	•	Escopo da preferência de visibilidade no dashboard é por organização (não por utilizador).
+	•	Alteração da visibilidade no dashboard é permitida apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
+	•	Toggle canónico de ferramenta (enabled/disabled) afeta domínio e perfil público de forma determinística (sem bypass por URL direta).
+		•	Ferramentas estruturais no dashboard (não ocultáveis): `Definições`, `Finanças`, `Equipa`.
 
 
 #### G04.008 + G04.009 (origem: DORG.04A + DORG.05A)
@@ -1349,8 +1491,9 @@ D05.02) Step-up obrigatório em ações irreversíveis (FECHADO v1)
 D14) Multi-Organizações (empresa mãe → filiais)
 		•	OrganizationGroup (mãe) agrega Organizations (filiais)
 		•	RBAC suporta: permissões na mãe, permissões por filial, e papéis herdáveis/limitados (Secção 11)
-		•	A mãe atua como control plane administrativo do grupo para regras globais de agenda.
-		•	A mãe pode aplicar hard blocks globais; filial pode solicitar remoção, mas aprovação final é sempre da mãe (auditável).
+		•	A mãe atua como control plane administrativo apenas para governança de membership (entrada/saída de organizações do group).
+		•	Não existe autoridade operacional da mãe sobre agenda/reservas das filiais; sem hard blocks globais pela mãe.
+		•	Papéis da mãe não são auto-propagados para filiais; operação em filial exige papel local nessa organização.
 
 
 ## G05) Financas, Fees, Pricing, Payouts e Refunds
@@ -1697,7 +1840,9 @@ D04) Finanças determinística (Stripe Connect + Fees ORYA) — decisão única
 > Tudo o resto (SaleSummary, dashboards, exports) é **derivado**.
 
 Princípios
-- Stripe Connect obrigatório já (v1.x): cada Organization tem `stripeAccountId`.
+- Mapeamento financeiro por `orgType` é obrigatório:
+  - `orgType=EXTERNAL` usa Stripe Connect (tipo Standard por defeito nesta fase) com `Organization.stripeAccountId`.
+  - `orgType=PLATFORM` usa conta Stripe da ORYA (não-Connect / sem `transfer_data.destination`); `stripeAccountId` é opcional e apenas de referência.
 - **Finanças é o único gateway lógico**: nenhum módulo cria PaymentIntents/CheckoutSessions diretamente no Stripe.
   Endpoints especializados de checkout são permitidos **apenas** se delegarem ao domínio Finanças e respeitarem idempotência/policies canónicas.
 - Idempotência obrigatória em todas as operações: `idempotencyKey` por createCheckout/refund/reconcile.
@@ -1708,8 +1853,9 @@ Princípios
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2512`.
 
 D04.00) Stripe Connect — Account Type (FECHADO)
-- ORYA usa **Stripe Connect Standard** como tipo de conta por defeito para Organizações.
-- A conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
+- Para `orgType=EXTERNAL`, ORYA usa **Stripe Connect (Standard nesta fase)** como tipo de conta por defeito.
+- Para `orgType=PLATFORM`, checkout/capture/liquidação ocorrem na conta Stripe da ORYA (não-Connect).
+- Em `orgType=EXTERNAL`, a conta Stripe é do organizador (autonomia e responsabilidade fiscal/operacional).
 - A ORYA não cria nem gere contas Custom nesta fase.
 - Qualquer excepção (Express/Custom) só por decisão de produto + contrato (fora v1.x).
 
@@ -1721,10 +1867,14 @@ D04.00.01) Stripe Funds Flow (FECHADO)
 Objetivo: definir de forma única como o dinheiro flui e onde a ORYA consegue (ou não) aplicar “risk holds”.
 
 Decisão (v1.x):
-- Modelo: **Destination Charges + Application Fee** (Stripe Connect Standard).
-- A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
-  - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
-  - `transfer_data.destination` = `Organization.stripeAccountId`
+- `orgType=EXTERNAL`:
+  - Modelo: **Destination Charges + Application Fee** em Stripe Connect (Standard nesta fase).
+  - A cobrança ao cliente é criada pela ORYA (Finanças) para o evento/serviço (`sourceType/sourceId`), com:
+    - `application_fee_amount` = fee ORYA (conforme FeePolicyVersion)
+    - `transfer_data.destination` = `Organization.stripeAccountId`
+- `orgType=PLATFORM`:
+  - Checkout/capture/liquidação na conta Stripe da ORYA (não-Connect / sem destination transfer).
+  - `stripeAccountId` não participa em transferências neste modo.
 
 Implicações (normativas):
 - Refunds são iniciados pela ORYA (Finanças) e são idempotentes.
@@ -1899,7 +2049,7 @@ Implementação:
 D04.09 Refunds, cancelamentos e chargebacks (FECHADO)
 Cancelamento de evento:
 - Ao cancelar um evento: **refund automático** para todas as compras elegíveis.
-- Stripe Connect Standard:
+- Stripe Connect (Standard nesta fase):
   - o organizador paga os processing fees (quando Stripe não os devolve)
   - a ORYA devolve a sua `platformFee` (através de entrada de ledger de reversão)
 - O refund é idempotente e auditável (`RefundPolicyVersion` se houver regras variáveis).
@@ -2243,7 +2393,7 @@ Regras fechadas
 - respostas indistinguíveis (“token inválido” sem detalhes)
 
 5) Entitlement final (SSOT) + claim posterior (FECHADO)
-- compra gera `Entitlement` com `ownerIdentityId = Identity(GUEST_EMAIL)`
+- compra guest gera `Entitlement` com `ownerIdentityId` de identidade por email em estado guest
 - quando o user criar conta e verificar o mesmo email → claim automático (Secção 7.7)
 - **Propriedade do acesso nunca é OR entre campos.** Resolver sempre via `Entitlement.ownerIdentityId`.
 
@@ -2291,20 +2441,16 @@ D08.03 Imutabilidade temporal (depois de haver vendas) (FECHADO)
 ### Blocos normativos (conteúdo integral, ordem estável)
 
 #### G07.001 (origem: C01)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:758`.
+- Fonte: consolidação 2026-02-15 (`docs/calendario_motor_unico.md`, `docs/reservas.md`, `docs/arbitration_service_spec.md`).
 
 C01) Reservas ↔ Padel (agenda e slots)
 
-Padel cria slots/bloqueios via contrato; Reservas responde com conflitos/sugestões.
-
-Representação canónica de MatchSlot
-	•	CalendarBlock/Override: kind=BLOCK, reason=MATCH_SLOT, resourceId=courtId, start/end
-	•	Padel nunca escreve no calendário diretamente
-
-Resposta do contrato
-	•	conflitos hard detectados
-	•	sugestões de horários alternativos (Fase 1)
-	•	optimização/yield (Fase 3)
+Contrato canónico ativo:
+	•	Todo write-path de ocupação passa pelo motor único de agenda (sem bypass por módulo).
+	•	`resourceKey` global é obrigatório no formato `resourceType:authorityOrgId:resourceId`.
+	•	`sourceType` mantém-se canónico (`MATCH`, `BOOKING`, `HARD_BLOCK`, `SOFT_BLOCK` reservado); `MATCH_SLOT` é `reasonCode`.
+	•	Em ocupação multi-recurso, a confirmação existe apenas com commit atómico de `slot + claims + locks`.
+	•	Conflito canónico devolve explicação estruturada: quem bloqueou, origem e regra aplicada.
 
 ---
 
@@ -2312,20 +2458,20 @@ Resposta do contrato
 
 **Contract ID:** C01  
 **Contract Name:** Reservas ↔ Padel (agenda e slots)  
-**Current Version:** v3.0.0  
+**Current Version:** v3.1.0  
 **Owner:** Domain: Reservas (Agenda Engine)  
 **Primary Consumers:** Padel (Torneios), ORYA-WebApp (org dashboard), internal workers
 
 ---
 
 #### Purpose
-Define a interface canónica para criação/atualização de slots/bloqueios na agenda a partir do domínio Padel, com deteção de conflitos.
+Definir a interface canónica para criação/atualização de ocupação na agenda, com conflito determinístico e suporte cross-org por autoridade de recurso.
 
 ---
 
 #### Idempotency
 - **Idempotency Key:** idempotencyKey
-- **Scope:** per orgId + sourceType/sourceId
+- **Scope:** per `orgId + resourceKey + sourceType + sourceId`
 - **Guarantee:** repeated requests with the same key MUST NOT produce
   duplicate side effects.
 
@@ -2337,13 +2483,17 @@ If idempotency cannot be guaranteed, the contract is considered invalid.
 ```json
 {
   "orgId": "org_123",
+  "authorityOrgId": "org_999",
+  "resourceKey": "COURT:org_999:court_45",
+  "resourceType": "COURT",
   "resourceId": "court_45",
   "startAt": "2026-02-01T10:00:00Z",
   "endAt": "2026-02-01T11:30:00Z",
-  "reason": "MATCH_SLOT",
   "sourceType": "MATCH",
   "sourceId": "match_789",
-  "idempotencyKey": "slot:match_789"
+  "reasonCode": "MATCH_SLOT",
+  "priorityRuleVersion": "v1",
+  "idempotencyKey": "claim:match_789:court_45:2026-02-01T10:00:00Z"
 }
 ```
 
@@ -2352,6 +2502,7 @@ If idempotency cannot be guaranteed, the contract is considered invalid.
 {
   "accepted": true,
   "conflicts": [],
+  "ruleApplied": "FIRST_CONFIRMED_WINS",
   "correlationId": "corr_abc"
 }
 ```
@@ -2362,7 +2513,13 @@ Example:
 ```json
 {
   "errorCode": "AGENDA_CONFLICT",
-  "message": "Requested slot conflicts with an existing block",
+  "message": "Requested slot conflicts with existing claim",
+  "blockedBy": {
+    "sourceType": "HARD_BLOCK",
+    "sourceId": "hb_456",
+    "resourceKey": "COURT:org_999:court_45"
+  },
+  "ruleApplied": "HARD_BLOCK_PRIORITY",
   "retryable": false,
   "correlationId": "corr_abc"
 }
@@ -2376,7 +2533,7 @@ This contract MUST tolerate:
 - out-of-order delivery
 
 If ordering is required, the following key is authoritative:
-startAt
+`confirmedAt` (fallback `createdAt`)
 
 ---
 
@@ -2414,7 +2571,8 @@ On uncertainty or partial failure:
 ---
 
 #### Notes
-N/A
+- `MATCH_SLOT` é `reasonCode` operacional/contextual e não `AgendaSourceType` autónomo.
+- Disputas cross-org deste contrato seguem arbitragem canónica por `resourceKey` (ver `G07.007`).
 
 #### G07.002 (origem: C07)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:1482`.
@@ -2556,7 +2714,7 @@ Aditamento normativo (2026-02-14):
 		•	Auto-seleção de recurso (quando aplicável): menor capacidade válida, depois menor prioridade, depois menor `id`.
 		•	Prioridade operacional é opcional por configuração (`serviço`/`recurso`/`profissional`) e tem default neutro.
 		•	Overbooking: proibido por default nesta fase.
-		•	O core de scheduling/agenda não depende de feature flag de produto para ativação funcional em runtime (kill switches operacionais continuam permitidos).
+			•	O core de scheduling/agenda não depende de mecanismo runtime de ativação de funcionalidades (kill switches operacionais continuam permitidos).
 		•	Limite de pré-reserva pendente por identidade (`user` autenticado ou `guestEmail`): 1 ativa de cada vez.
 		•	Criação manual de reservas por backoffice não faz parte do contrato canónico v1; ocupação offline deve ser modelada por `HARD_BLOCK` auditável.
 		•	Hard block operacional:
@@ -2568,9 +2726,13 @@ Aditamento normativo (2026-02-14):
 		–	só fecha quando todas as pendências associadas estiverem resolvidas.
 	•	Hard block exige `reasonCode` obrigatório e texto livre opcional.
 	•	Catálogo de `reasonCode` é extensível por organização, com fallback genérico.
-	•	Toda ação de hard block é auditável (`createdBy/updatedBy`, timestamps, before/after).
+		•	Toda ação de hard block é auditável (`createdBy/updatedBy`, timestamps, before/after).
 
-Override **só manual** por Owner/Admin, com auditoria e notificações.  
+Namespace canónico de decisões desta ronda (2026-02-15):
+- Para evitar colisão de IDs globais `D*`, as decisões do pacote Calendário/Reservas desta ronda usam `DCAL-01..DCAL-36`.
+- Todos os `DCAL-*` mapeiam para este bloco canónico (`G07.003`) e para a matriz de fecho C01..C04.
+
+Override **só manual** por Owner/Co-owner/Admin, com auditoria e notificações.  
 Se o override mexer numa reserva de utilizador, existem duas vias válidas:
 - **pedido + aceitação** do cliente; ou
 - **cancelamento com reembolso total imediato** por decisão da organização.
@@ -2599,7 +2761,7 @@ D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
 			–	Utilizador: mês atual + 3 meses; passado oculto.
 		–	Organização: até fim do ano + 2 anos; passado em leitura.
 	•	Permissões:
-		–	Owner/Admin: tudo.
+			–	Owner/Co-owner/Admin: tudo.
 		–	Staff: apenas recursos atribuídos.
 		–	Trainer: aulas próprias em recursos atribuídos.
 		•	Override/mudança de reserva:
@@ -2623,10 +2785,10 @@ D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
 		•	No-show:
 			–	marcado apenas após início;
 			–	sem fee financeiro por default nesta fase (foco operacional/CRM);
-			–	reversão permitida até `T+24h` por `OWNER/ADMIN`, sem motivo obrigatório, com auditoria.
+			–	reversão permitida até `T+24h` por `OWNER/CO_OWNER/ADMIN`, sem motivo obrigatório, com auditoria.
 		•	Disponibilidade pública:
-			–	existe contrato público canónico único de disponibilidade (`GET /api/public/agenda`).
-			–	superfícies legadas de disponibilidade devem convergir para o contrato único e ser desativadas.
+			–	contrato público canónico de disponibilidade de serviço: `GET /api/servicos/:id/calendario`.
+			–	rotas legadas de disponibilidade (`GET /api/servicos/:id/slots` e `GET /api/servicos/:id/disponibilidade`) devolvem `410 LEGACY_ROUTE_REMOVED`.
 
 
 #### G07.006 (origem: D11)
@@ -2654,6 +2816,32 @@ Provider (decisão FECHADO)
 - `IP geolocation` pode ser usado apenas como sinal auxiliar (país/cidade aproximada, ranking e defaults), nunca como morada canónica.
 - Sem multi-provider e sem provider manual de localização nesta fase.
 - Exceção permitida: reverse geocode **no device** apenas como hint de UX (não é SSOT). A normalização e persistência continuam no backend.
+- Objetivo de UX: qualidade de sugestão "best-in-class", equivalente a apps de referência.
+- Ranking de sugestões deve ser multi-sinal (ordem de prioridade):
+  1) intenção textual da query (match semântico/tipográfico),
+  2) proximidade ao contexto da organização (país/cidade/região),
+  3) contexto local do utilizador (locale/fuso e sinais de sessão),
+  4) geosinal aproximado (IP) apenas como desempate.
+- É proibido usar IP como override rígido do resultado; IP só melhora ordenação.
+
+D11.1) UX operacional de autocomplete (FECHADO)
+- `decisionId`: `SSOT-2026-02-15-ADDRESS-AUTOCOMPLETE-UX-V1`
+- `owner`: `Nuno`
+- `approvedAt`: `2026-02-15`
+- `scope`: `Superfícies operacionais de procura de morada (dashboard/settings/eventos/reservas)`
+- `rationale`: `Eliminar UX fraca/inconsistente e garantir padrão de topo sem dupla verdade de morada.`
+- `migrationImpact`: `UI migra para combobox canónico com dropdown em overlay; estados legados inline devem ser removidos.`
+
+Regras normativas:
+- O dropdown de sugestões deve abrir em **overlay por cima da página** (portal/anchor), nunca aumentar altura do formulário nem deslocar blocos.
+- A persistência canónica depende sempre de seleção validada (`addressId` vindo de `details/normalize`); texto digitado sem seleção é apenas rascunho de input.
+- Recents, geolocation e contexto de sessão são sinais de UX/ranking; não substituem validação canónica e não produzem morada SSOT por si só.
+- O ranking visual deve expor pelo menos:
+  - secção de melhores sugestões;
+  - secção de resultados adicionais quando aplicável;
+  - separação explícita de resultados fora do país efetivo (expansível).
+- A interação por teclado é obrigatória (`ArrowUp/ArrowDown/Enter/Escape/Tab`) com foco e `aria-*` de combobox/listbox.
+- O provider continua único (`APPLE_MAPS`) via Address Service; client-side pode apenas refinar ordenação visual, sem reescrever a verdade canónica.
 
 Proteções (obrigatório)
 - Rate limiting por IP/user/org + quotas por módulo (para não estourar limites Apple).
@@ -2673,6 +2861,42 @@ Proteções (obrigatório)
 
 Detalhe de implementação/execução do Address Service é **não‑normativo** e vive em `docs/planning_registry_v1.md` (P7.3).
 
+#### G07.007 (origem: ARB.01)
+- Fonte: `docs/arbitration_service_spec.md` (consolidação normativa 2026-02-15).
+
+ARB.01) Arbitration Service Cross-Org (FECHADO)
+
+Escopo:
+	•	Definir autoridade única para disputas de ocupação cross-org.
+	•	Eliminar decisões ad-hoc entre organização dona e organizações parceiras.
+
+Regras canónicas:
+	•	Autoridade final da decisão é sempre da `authorityOrgId` do `resourceKey`.
+	•	Lock técnico obrigatório por `resourceKey + janela temporal`; sem lock, write rejeitado.
+	•	Persistência atómica obrigatória de `slot + claims + decisão de arbitragem`.
+	•	Algoritmo obrigatório:
+		1) validar tenancy/autoridade;
+		2) aplicar hard constraints;
+		3) aplicar `first_confirmed_wins`;
+		4) em empate técnico no mesmo instante/lote, aplicar prioridade explícita:
+		   `HARD_BLOCK > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
+		5) tipo de claim fora da `priorityRuleVersion` ativa => `fail-closed`;
+		6) tie-break determinístico: `confirmedAt -> claimId -> createdAt`;
+		7) persistir decisão + evidência da regra aplicada.
+	•	Override da org dona exige `reasonCode`, cálculo de impacto e compensação automática.
+		•	Estados mínimos de compensação: `PENDING_COMPENSATION`, `COMPENSATED_REBOOK`, `COMPENSATED_REFUND`, `COMPENSATION_FAILED`.
+		•	`COMPENSATION_FAILED` bloqueia conclusão do override.
+		•	Audit trail obrigatório: `arbitrationId`, `inputHash`, `priorityRuleVersion`, regra aplicada, decisão final, ator/org, timestamps e vínculo de compensação.
+		•	Observabilidade mínima obrigatória de arbitragem:
+			–	`arbitration.decision.latency_ms` (`p50`, `p95`);
+			–	`arbitration.override.rate`;
+			–	`arbitration.compensation.failed_rate`;
+			–	`arbitration.conflicts.by_resourceKey`.
+		•	Log estruturado obrigatório para decisão e override com `arbitrationId`, `resourceKey`, `authorityOrgId`, `priorityRuleVersion`, `reasonCode`, `correlationId`.
+		•	SLA/SLI de arbitragem é obrigatório por ambiente (`dev/stage/prod`) e deve estar ligado a runbook único de incidente cross-org.
+
+---
+
 ⸻
 
 
@@ -2680,7 +2904,7 @@ Detalhe de implementação/execução do Address Service é **não‑normativo**
 
 ### Escopo estrutural
 - Padel Tournament Core
-- Split Payment Padel
+- Split `SPLIT_GARANTIDO` (contrato financeiro canónico)
 
 ### Blocos normativos (conteúdo integral, ordem estável)
 
@@ -2804,70 +3028,59 @@ On uncertainty or partial failure:
 #### Notes
 Inscrição e bilhete permanecem entidades distintas; Entitlement é o acesso.
 
-#### G08.002 (origem: D12)
-- Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2976`.
+#### G08.002 (origem: S01..S09)
+- Fonte: `docs/SPLIT_V2.md` + `docs/split_v2_ssot.md` (consolidação normativa 2026-02-15).
 
-D12) Split Payment Padel — regra default (48/24) + resolução determinística (FECHADO)
+SPLIT_GARANTIDO (FECHADO)
 
-Objetivo: proteger a organização de buracos operacionais e dar saídas dignas ao utilizador.
+Escopo:
+	•	Contrato financeiro canónico de split para entidades transacionais (`targetType/targetId`: reservas, inscrições, eventos e equivalentes).
+	•	`SplitBundleStatus=OPEN` bloqueia alterações de `totalCents`/`targetEndAt` e bloqueia checkout principal enquanto existir split aberto.
 
-Regra base:
-	•	inscrição em dupla só fica CONFIRMED quando ambos pagam
-	•	existe estado pendente até T-24h do início do torneio
-	•	matchmaking (open matchmaking pool) só opera na janela T-48h → T-24h
+Invariantes obrigatórios:
+	•	Nome canónico único: `SPLIT_GARANTIDO`.
+	•	`sum(sharesCents) == totalCents`.
+	•	`deadlineAt` obrigatório.
+	•	`SettlementSnapshot` imutável para settle/retry/refund.
+	•	Idempotência forte em todos os comandos financeiros.
+	•	Rails monotónicos obrigatórios: `HOLD_CAPTURE -> OFFSESSION_PI -> DEBT`.
+	•	É proibido recalcular fees após snapshot.
 
-Estados canónicos (PadelRegistration):
-	•	PENDING_PARTNER (falta parceiro / convite ainda não aceite)
-	•	PENDING_PAYMENT (parceiro definido, falta pagamento)
-	•	MATCHMAKING (entrou no pool, aguardando emparelhamento)
-	•	CONFIRMED (dupla paga, vaga garantida)
-	•	EXPIRED (não regularizado até T-24h)
-	•	CANCELLED (ação explícita do utilizador/admin)
-	•	REFUNDED (quando aplicável, com policy versionada)
+Modelo operacional:
+	•	Fluxo de split é offline/server-side para fecho e recovery.
+	•	Garantia temporal do hold deve cobrir `deadlineAt + SAFETY_BUFFER`.
+	•	`replaceHold` é obrigatório quando a cobertura deixa de garantir o prazo.
+	•	Guards obrigatórios: `T-6h` e `T-2h`.
+	•	No deadline, settle com lock transacional e reconciliação no gateway antes do snapshot.
+	•	`paymentConfirmedAt` usa timestamp canónico do gateway (não timestamp de webhook).
+	•	Late payment após settle => refund automático idempotente (sem recalcular `outstanding`).
 
-Ações permitidas por janela temporal (contrato + UX):
-	1)	Antes de T-48h:
-		•	convidar, trocar parceiro
-		•	pagar ambos (captain pays / pay both)
-		•	entrar em matchmaking (opcional)
-	2)	T-48h → T-24h:
-		•	matchmaking ON
-		•	troca de parceiro ON (com regras)
-		•	pagar ambos ON
-		•	sair do matchmaking ON
-	3)	Depois de T-24h:
-		•	ou CONFIRMED ou EXPIRED (determinístico)
+	Cobrança de fallback e dívida:
+		•	Se capture do hold falhar de forma não recuperável, migrar para `OFFSESSION_PI`.
+		•	Se retries esgotarem até `retryUntilAt`, abrir `DEBT` e manter bloqueio por identidade conforme contrato.
+		•	Pagamentos manuais fora do contrato são proibidos.
+		•	`captureBeforeSource` obrigatório: `GATEWAY_EXPLICIT | CANONICAL_COMPUTED_TABLE`.
+		•	Precedência obrigatória: usar `GATEWAY_EXPLICIT` sempre que o gateway expuser `capture_before`; `CANONICAL_COMPUTED_TABLE` só quando não existir timestamp explícito.
 
-Parceiro sem conta:
-	•	parceiro pode ser só por email
-	•	o pedido de pagamento fica associado ao email
-	•	quando o utilizador cria conta com esse email, vê o pagamento pendente e consegue concluir
+	SettlementSnapshot canónico (campos mínimos):
+		•	`snapshotId`, `splitBundleId`, `targetType`, `targetId`, `computedAt`, `deadlineAt`, `settlingAt`.
+		•	`totalCents`, `paidShareIds[]`, `outstandingCents`, `currency`.
+		•	`feePolicyVersionApplied`, `feeModeApplied`, `platformFeeCentsTotal`, `sharesFeeBreakdown[]`, `payoutModeApplied`.
+		•	`orgId`, `destinationAccountRef?`, `captureBeforeSource`.
 
-Reminders (Jobs):
-	•	T-48h (entra janela matchmaking)
-	•	T-36h (pendente)
-	•	T-24h (última chamada + lock/resolve)
-	•	T-23h (estado final + próximos passos)
+	Mapeamento financeiro por `orgType`:
+		•	`EXTERNAL` => Stripe Connect (tipo Standard nesta fase).
+		•	`PLATFORM` => conta Stripe da ORYA (não-Connect / sem `transfer_data.destination`).
+		•	Validação obrigatória em Stripe sandbox (`test mode`) sem cobranças reais.
 
-Resolução aos T-24h:
-	•	se não estiver CONFIRMED:
-		•	inscrição → EXPIRED
-		•	vaga libertada
-		•	reembolso automático do que tiver sido pago (menos taxa de reembolso), segundo RefundPolicyVersion
+	Observabilidade e correlação operacionais mínimas:
+		•	Log estruturado obrigatório com correlação por `splitBundleId`, `paymentId`, `snapshotId`, `orgId`, `correlationId`.
+		•	Métricas mínimas: `split_settled_rate`, `split_charge_failed_recovered_rate`, `split_debt_open_rate`, `split_late_refund_count`, `split_fee_drift_count`.
+		•	Alertas mínimos: `settle_job_missed_deadlineAt`, `capture_attempt_after_captureBefore`, `late_refund_failed`, `fee_drift_detected`, `debt_open_rate_spike`.
 
-Refund fee:
-	•	definida como policy object versionado (RefundPolicyVersion) e auditável
-	•	sempre exibida ao utilizador antes de confirmar a inscrição (transparência)
-
-Auditoria:
-	•	todas as mudanças de estado e ações críticas geram EventLog + Audit trail.
-
-Clarificações finais (FECHADO):
-	•	Deadlines T‑48/T‑36/T‑24/T‑23 são calculadas na timezone canónica do evento (IANA, ver 12.7).
-	•	Validade temporal de pagamento usa o timestamp do processor; atraso de webhook não invalida pagamento capturado dentro da janela.
-	•	Se o torneio for reagendado, deadlines futuras são recalculadas apenas para inscrições não terminais.
-	•	Precedência terminal: refund confirmado domina estado final (`REFUNDED`); expiração sem refund mantém `EXPIRED`.
-	•	Troca de parceiro após pagamento parcial exige fluxo idempotente com reversões/refund conforme policy e novo pedido ao novo parceiro.
+Nota de precedência:
+	•	O texto histórico D12 (janela 48/24 para split Padel) fica revogado como norma ativa.
+	•	A norma ativa de split neste SSOT é o contrato `S01..S09` descrito neste bloco.
 
 
 #### G08.003 (origem: D12.05)
@@ -2929,7 +3142,7 @@ D18.04) C01 com enforcement obrigatório (FECHADO)
 
 D18.05) sourceType e AgendaSourceType unificados (FECHADO)
 			•	Separação Finance/Agenda mantém-se obrigatória.
-			•	`AgendaSourceType` oficial para ocupação operacional (v1 Reservas): `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK`.
+			•	Taxonomia `AgendaSourceType` para ocupação mantém `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK`, com `SOFT_BLOCK` reservado fora do write-path operacional de Reservas v1.
 			•	`CLASS_SESSION` fica reservado para evolução futura, fora do write-path v1 de Reservas.
 			•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
 			•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
@@ -2968,7 +3181,7 @@ D18.08) Perfil de jogador canónico (FECHADO)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:3129`.
 
 D18.09) Papel operacional de staff unificado (FECHADO)
-	•	Autorização canónica (quem pode executar ação) é definida por RBAC organizacional (`OrganizationMemberRole` + `RolePack` + permissões de módulo/capability).
+	•	Autorização canónica (quem pode executar ação) é definida por RBAC organizacional (`OrganizationMemberRole` + `RolePack` + permissões de ferramenta/capability).
 	•	Papel operacional Padel (quem está escalado para função) é uma camada separada, com catálogo canónico e escopo explícito.
 	•	Escopo `CLUB`: valores canónicos obrigatórios `ADMIN_CLUBE`, `DIRETOR_PROVA`, `STAFF` em enum de persistência.
 	•	Escopo `TOURNAMENT`: valores canónicos obrigatórios `DIRETOR_PROVA`, `REFEREE`, `SCOREKEEPER`, `STREAMER` em enum de persistência.
@@ -2977,7 +3190,7 @@ D18.09) Papel operacional de staff unificado (FECHADO)
 	•	Roles livres sem controlo semântico não podem ser norma de autorização e devem falhar fechado.
 	•	Incidentes operacionais (`WALKOVER`, `RETIREMENT`, `INJURY`) exigem metadados canónicos `confirmedByRole` e `confirmationSource`.
 	•	Quando incidente/resolução é confirmado por `REFEREE`, a plataforma deve notificar automaticamente perfis `DIRETOR_PROVA` do torneio (trilho auditável).
-	•	Em rondas críticas KO (meias/final), confirmação operacional exige direção (`DIRETOR_PROVA` ou `Owner/Admin`).
+	•	Em rondas críticas KO (meias/final), confirmação operacional exige direção (`DIRETOR_PROVA` ou `Owner/Co-owner/Admin`).
 
 
 #### G08.014 (origem: D18.10)
@@ -3159,9 +3372,8 @@ Analytics (derivado)
 
 7.1 Modelo de Identidade (FECHADO)
 - `Identity` é o “dono” canónico de coisas (tickets, bookings, etc.).
-- Tipos:
-  - `USER` (userId)
-  - `GUEST_EMAIL` (emailNormalizado + emailHash)
+- Persistência MVP canónica em `EmailIdentity` com estado por email.
+- `USER/GUEST_EMAIL` não são enum externo canónico; representam apenas estado operacional de identidade por email.
 - Permite:
   - compras como convidado (guest checkout) quando permitido pela `EventAccessPolicy` **na WebApp e no site** (app mobile é login‑only)
   - claim/merge posterior para user (quando o email for verificado)
@@ -3232,12 +3444,12 @@ Separação de enums (SSOT D07):
 7.7 Claim automático (guest → user) (FECHADO)
 Quando um utilizador cria conta e **verifica o email**:
 - Job/flow idempotente:
-  - encontra `Identity(GUEST_EMAIL)` daquele email
-  - move (claim) todos os entitlements elegíveis para `Identity(USER)`
+  - encontra a identidade por email em estado guest daquele email
+  - move (claim) todos os entitlements elegíveis para a identidade alvo canónica do utilizador
   - escreve `AuditLog` + `EventLog` (idempotencyKey = `emailHash+userId+batchVersion`)
 - Regra: o claim nunca altera o ledger; apenas ownership lógico de acesso.
-- WebApp: executar claim **automaticamente no login** (callback/useUser).
-- Mobile (app): não executa claim automático (app é login‑only e não suporta guest checkout).
+- O trigger canónico de claim é server-side (worker/evento); callback/useUser não é caminho normativo de mutação.
+- Mobile (app): mantém login-only e não executa claim automático client-side.
 
 7.8 Matriz de verdade (Payment × Ticket × Entitlement) — **FECHADO**
 Nota (escopo):
@@ -3340,6 +3552,7 @@ Regra de canonicidade (FECHADO):
 - API hub/sistema: **`/api/org-hub/*`** e **`/api/org-system/*`**
 - Alias web legado removido: **`/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
 - Namespace API legado: **`/api/organizacao/*`** responde com **`410 LEGACY_ROUTE_REMOVED`**.
+- Hard-cut adicional obrigatório: **`/org/<non-numeric>`** responde com **`410 LEGACY_ROUTE_REMOVED`** (sem rewrite/redirect de compatibilidade).
 - Implementação física canónica:
   - handlers ativos devem residir em namespace canónico;
   - re-export de handlers legacy para write-path canónico não é estado final aceitável.
@@ -3361,18 +3574,45 @@ Matriz canónica final (web):
 - Forms: `/org/:orgId/forms` (`forms`, `responses`, `settings`)
 - Chat: `/org/:orgId/chat` (`inbox`, `preview`)
 - Team: `/org/:orgId/team` (`members`, `trainers`)
+- Trainers canónico final: `/org/:orgId/team/trainers` (qualquer alias `treinadores` é legacy hard-cut).
 - Padel Club: `/org/:orgId/padel/clubs` (`clubs`, `courts`, `players`, `community`, `trainers`, `lessons`)
 - Padel Tournaments: `/org/:orgId/padel/tournaments` (`tournaments`, `create`, `calendar`, `categories`, `teams`, `players`)
 - Marketing: `/org/:orgId/marketing` (`overview`, `promos`, `promoters`, `content`)
-- Profile: `/org/:orgId/profile` (`profile`, `followers`, `requests`)
-- Settings: `/org/:orgId/settings` (`general`, `verify`)
+- Profile legacy: `/org/:orgId/profile*` removido com `410 LEGACY_ROUTE_REMOVED` (sem redirect)
+- Settings: `/org/:orgId/settings` (`general`)
+- Settings verify route: `/org/:orgId/settings/verify` existe para confirmação por token, sem item dedicado na subnav.
+- Official email em settings: gestão em `general`; ação permitida a `OWNER` e `CO_OWNER`.
+- Contratos canónicos de official email (settings):
+  - `GET /api/org-hub/organizations/settings/official-email`: devolve estado `active + pending`.
+  - `POST /api/org-hub/organizations/settings/official-email`: cria/substitui pedido pendente (sem mutar estado ativo).
+  - `DELETE /api/org-hub/organizations/settings/official-email`: cancela pendente (sem mutar estado ativo).
+  - `POST /api/org-hub/organizations/settings/official-email/confirm`: confirma token e aplica swap atómico.
+- Dashboard tools visibility:
+  - preferência de UI é por organização;
+  - persistência canónica em `GET/PATCH /api/org/:orgId/dashboard/tools/visibility`;
+  - alteração permitida apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
+- Danger zone em settings:
+  - `suspend` é ação exclusiva de `OWNER`;
+  - execução/reversão exigem step-up obrigatório;
+  - exige auditoria before/after com `reasonCode` obrigatório;
+  - reversão só é permitida dentro da janela de 30 dias;
+  - `delete` mantém fluxo definitivo separado e mais restrito.
+  - contratos canónicos:
+    - `GET /api/org-hub/organizations/:id/suspend` devolve estado de suspensão (inclui janela restante e elegibilidade de reativação);
+    - `POST /api/org-hub/organizations/:id/suspend` aplica suspensão (owner-only);
+    - `DELETE /api/org-hub/organizations/:id/suspend` reativa (owner-only) apenas se a janela de 30 dias estiver aberta.
+  - invariantes operacionais:
+    - durante suspensão, `username` da organização continua reservado (não reutilizável por outra entidade);
+    - durante suspensão, a organização não pode expor resultados públicos por `organizationId`;
+    - eliminação definitiva (`DELETE /api/org-hub/organizations/:id`) só pode ocorrer após suspensão e com janela de reativação encerrada.
 
 Hard-cut de slugs legacy em `/org/:orgId/*`:
-- Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `crm/clientes`, `manage`, `promote`, `tournaments`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
+- Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `eventos`, `reservas`, `treinadores`, `crm/clientes`, `manage`, `promote`, `tournaments`, `padel/clube`, `padel/torneios`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
 - Sem redirects internos para slugs legacy (política single-route-only).
 
 10.1 Multi-Organizações & Group Governance (FECHADO v1)
-- Fonte mandatória de produto para este domínio: `docs/organizacoes_multiorg.md`.
+- O contrato normativo deste domínio está integralmente neste SSOT.
+- `docs/organizacoes_multiorg.md` é referência de rastreabilidade e histórico editorial.
 - Modelo canónico:
   - `Group` (mãe) é superfície de agregação read-only, com exceção de governança de membership.
   - `Group` tem owner explícito (`OrganizationGroup.ownerUserId`) e único.
@@ -3442,13 +3682,61 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
   - remover `app/organizacao/**`;
   - manter apenas superfícies canónicas (`/api/org*`, `/api/org-hub/*`, `/api/org-system/*`, `/org/*`, `/org-hub/*`).
 
+10.4 Políticas de Organização (FECHADO)
+- Política hard obrigatória (HP):
+  - `HP-01`: gate de email oficial verificado para mutações sensíveis.
+  - `HP-02`: kill-switch por `Organization.status=SUSPENDED`.
+  - `HP-03`: invariante `orgType -> payoutMode`.
+  - `HP-04`: payments readiness gate para vendas pagas.
+  - `HP-05`: ferramenta ativa + RBAC para qualquer ação de domínio.
+  - `HP-06`: snapshot obrigatório para ações em reserva `CONFIRMED`.
+  - `HP-07`: lock de policy de acesso após uso/pagamento.
+  - `HP-08`: check-in protegido por janela temporal.
+  - `HP-09`: endereço canónico obrigatório em fluxos críticos.
+  - `HP-10`: mutações de parceria Padel com ownership estrito.
+  - `HP-11`: lifecycle de suspensão é owner-only e fail-closed:
+    - `suspend` em danger zone é exclusivo de `OWNER`, com step-up obrigatório e auditoria before/after;
+    - reativação (`DELETE /api/org-hub/organizations/:id/suspend`) é exclusiva de `OWNER` e só dentro da janela de 30 dias;
+    - eliminação definitiva (`DELETE /api/org-hub/organizations/:id`) só após janela de reativação expirada;
+    - `username` fica reservado durante suspensão;
+    - organização suspensa não pode aparecer em superfícies públicas por `organizationId`.
+- Assignment canónico da organização/serviço:
+  - `PROFESSIONAL_ONLY`, `RESOURCE_ONLY`, `PROFESSIONAL_AND_RESOURCE`.
+  - Valores legacy (`PROFESSIONAL|RESOURCE`) não são válidos como contrato final.
+- Defaults/clamps normativos de políticas personalizáveis:
+  - Reservas (`OrganizationPolicy`):
+    - `policyType`: `FLEXIBLE|MODERATE|RIGID|CUSTOM`.
+    - defaults bootstrap: `FLEXIBLE=1440`, `MODERATE=2880`, `RIGID=4320` minutos.
+    - `cancellationPenaltyBps` clamp `[0..10000]`.
+    - `guestBookingAllowed` default `false`; `noShowFeeCents` default `0`.
+  - CRM (`CrmOrganizationPolicy`):
+    - `timezone` default `Europe/Lisbon`.
+    - quiet hours clamp `[0..1439]`.
+    - caps: day `[0..100]`, week `[capDay..500]`, month `[capWeek..3000]`.
+  - Loyalty:
+    - `points` `[1..5000]`, `maxPointsPerDay <= 20000`, `maxPointsPerUser <= 200000`.
+    - `pointsCost` `[100..500000]`.
+  - Event access:
+    - `mode` default `UNLISTED`; invite TTL default `7 dias` quando aplicável.
+    - em padel, `requiresEntitlementForEntry=true` é forçado.
+  - Store:
+    - defaults: `status=CLOSED`, `catalogLocked=true`, `checkoutEnabled=false`, `showOnProfile=false`, `currency=EUR`.
+  - Fee organizacional:
+    - campos: `feeMode`, `platformFeeBps`, `platformFeeFixedCents`.
+    - `platformFeeBps` clamp `[0..5000]`, `platformFeeFixedCents` clamp `[0..5000]`.
+    - `feeMode` permanece lockado em `INCLUDED` nesta fase.
+- Regra temporal canónica:
+  - motor de agenda/reservas em blocos de 5 minutos;
+  - UI pode projetar grelha 15/30 min sem alterar cálculo canónico.
+- Estes contratos são fonte normativa direta no SSOT; documentação auxiliar não é pré-requisito de validade.
+
 ⸻
 
 11) RBAC v2 — roles, scopes e role packs
 
 11.1 Roles “reais”
 
-OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER
+OWNER, CO_OWNER, ADMIN, STAFF, PROMOTER
 
 11.1.1 Contrato canónico `role` + `rolePack` (FECHADO)
 - `role` define hierarquia e poder de decisão.
@@ -3456,16 +3744,26 @@ OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER
 - Regras obrigatórias:
   - OWNER, CO_OWNER, ADMIN e PROMOTER: `rolePack = null` (sem pack).
   - STAFF: `rolePack` obrigatório e compatível com:
-    - CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, REFEREE
-  - TRAINER: `rolePack` obrigatório e único:
-    - COACH
+    - CLUB_MANAGER, TOURNAMENT_DIRECTOR, FRONT_DESK, COACH, REFEREE
 - A mesma validação aplica-se em:
   - convite de membro
   - alteração de papel de membro
   - aceitação de convite
 - Convites legacy sem pack são normalizados ao aceitar:
   - STAFF → FRONT_DESK
-  - TRAINER → COACH
+- `TRAINER` é role legado removido; qualquer fluxo novo com `TRAINER` é inválido.
+
+11.1.2 Matriz hierárquica canónica (convite + mudança de papel)
+- `OWNER` pode atribuir: `OWNER`, `CO_OWNER`, `ADMIN`, `STAFF`, `PROMOTER`.
+- `CO_OWNER` pode atribuir: `CO_OWNER`, `ADMIN`, `STAFF`, `PROMOTER`.
+- `ADMIN` pode atribuir: `ADMIN`, `STAFF`, `PROMOTER`.
+- `STAFF` e `PROMOTER` não podem convidar nem promover.
+- Regra global: sem auto-promoção fora da matriz acima.
+
+11.1.3 Perfis profissionais
+- Conteúdo do perfil profissional é criado/editado apenas pela própria pessoa.
+- Organização não cria perfil de profissional por username/email no contexto de equipa.
+- Operação organizacional mantém-se via convite e gestão de permissões, não por criação de perfil.
 
 11.2 Scopes (mapeados ao repo)
 	•	EVENTS_* → EVENTOS
@@ -3476,13 +3774,13 @@ OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER
 	•	SHOP_* → LOJA
 	•	TEAM_* → STAFF
 	•	SETTINGS_* → DEFINICOES
-	•	CHECKIN_* → EVENTOS/TORNEIOS (até existir módulo próprio)
+	•	CHECKIN_* → EVENTOS/TORNEIOS (até existir ferramenta própria)
 
 11.3 Role Packs (presets)
 	•	CLUB_MANAGER → STAFF + PADEL_*, RESERVAS_*, CHECKIN_*, CRM_RW, TEAM_R, SETTINGS_R
 	•	TOURNAMENT_DIRECTOR → STAFF + PADEL_*, EVENTS_RW, CHECKIN_RW, RESERVAS_R
 	•	FRONT_DESK → STAFF + CHECKIN_*, RESERVAS_RW, EVENTS_R, CRM_R
-	•	COACH → TRAINER + RESERVAS_RW, PADEL_R, CRM_R
+	•	COACH → STAFF + RESERVAS_RW, PADEL_R, CRM_R
 	•	REFEREE → STAFF + PADEL_RW (matches/live), EVENTS_R, CHECKIN_R
 
 11.4 Multi-Organizações (mãe/filiais)
@@ -3494,6 +3792,11 @@ OWNER, CO_OWNER, ADMIN, STAFF, TRAINER, PROMOTER
 
 11.5 Roadmap CHECKIN module
 	•	Conteúdo movido para `docs/planning_registry_v1.md` (bloco de roadmap/check-in, não-normativo).
+
+11.6 Auditoria organizacional
+- Auditoria de equipa deve apresentar sempre o autor real da ação quando `actorUserId` existir.
+- `Sistema` só é usado quando a ação não tem ator humano associado.
+- Auditoria organizacional deve suportar secções por domínio (equipa, permissões, settings, operações).
 
 ⸻
 
@@ -3578,13 +3881,13 @@ Outputs:
 
 13) Pesquisa & Discovery (infra sem overkill) — **FECHADO**
 
-Stack canónica de produção imediata:
+Stack canónica para produção futura (fora do escopo do ciclo DEV atual):
 	•	Postgres full-text + trigram + filtros por tipo.
 	•	Index unificado derivado (owners continuam Eventos/Padel/Reservas/Serviços).
 	•	Rebuild por jobs + replay a partir de EventLog (idempotente).
 
 13.1 Ranking (v1) — **FECHADO**
-ADITAMENTO FECHADO: ranking mínimo e observabilidade para produção v1.
+ADITAMENTO FECHADO (PROD_FUTURA): ranking mínimo e observabilidade para produção v1.
 - Sinais mínimos (ordenados por impacto):
   - relevância textual (match exato + trigram)
   - proximidade (geo) quando aplicável
@@ -3600,7 +3903,7 @@ ADITAMENTO FECHADO: ranking mínimo e observabilidade para produção v1.
   - keyword stuffing → downrank com `reasonCode=RANKING_SPAM_KEYWORDS`
   - org com `risk.flagged` → downrank com `reasonCode=RANKING_RISK_FLAGGED`
 
-Ranking Unificado v2 (personalização avançada) está fora do cut-line de produção imediata e vive em `docs/planning_registry_v1.md` (planeamento não normativo).
+Ranking Unificado v2 (personalização avançada) está fora do cut-line da abertura de produção e vive em `docs/planning_registry_v1.md` (planeamento não normativo).
 
 ⸻
 
@@ -3609,7 +3912,7 @@ Ranking Unificado v2 (personalização avançada) está fora do cut-line de prod
 14.1 Admin global (admin.orya.pt)
 	•	gestão de organizações (KYC leve, settings globais)
 	•	fee policies globais + overrides
-	•	feature flags
+	•	kill switches operacionais (não ativação de funcionalidades)
 	•	health/ops dashboard (jobs, DLQ, falhas)
 	•	dispute tooling (visibilidade e trilhos)
 	•	gestão de templates de notificações
@@ -3637,6 +3940,7 @@ Se uma implementação contradizer D02/D04/D03, é bug de arquitectura, não é 
 ⸻
 
 ## 06 Production Gates (SLI/SLO, go-live, release gates)
+- Estado deste bloco: `PROD_FUTURA` (não bloqueia o ciclo DEV atual).
 
 ### 06.0 P0 endpoints (guardrails)
 Lista canónica de rotas P0 usada pelos gates de envelope/erro.
@@ -4512,8 +4816,8 @@ Production without runbooks is forbidden.
 
 ---
 
-17.1 Escopo de Produção (Cut Line v1.x) — **FECHADO**
-ADITAMENTO FECHADO: delimita o que entra em produção v1.0 e o que fica bloqueado.
+17.1 Escopo de Produção (Cut Line v1.x) — **PROD_FUTURA**
+ADITAMENTO FECHADO (PROD_FUTURA): delimita o que entra numa abertura de produção v1.0.
 
 A) IN (obrigatório para v1.0)
 	•	Eventos: criar/publicar/listar + gestão básica
@@ -4521,14 +4825,14 @@ A) IN (obrigatório para v1.0)
 	•	Finanças: checkout + webhooks + ledger append‑only + reconciliação
 	•	Entitlements: criação + revogação
 	•	Check‑in: scanner + consumo + logs
-	•	Org onboarding Stripe Connect Standard (KYC) — C02.X01
+	•	Org onboarding Stripe Connect (Standard nesta fase) (KYC) para `orgType=EXTERNAL` — C02.X01
 	•	RBAC mínimo (org scopes críticos)
 	•	Notificações essenciais (transaccionais + operacionais)
 	•	DSAR básico operativo (19.4)
 	•	Trust & Safety mínimo operativo (19.2)
 	•	Observabilidade mínima (SLIs + alertas críticos 14.1.1)
 
-B) OUT (consta neste SSOT, mas fica bloqueado/feature‑flagged em v1.0)
+B) OUT (fora de escopo nesta fase DEV; não implementado/não deployado)
 	•	QR offline assinado (S2) e validação offline
 	•	Ranking Unificado v2 (personalização avançada; detalhes em `docs/planning_registry_v1.md`)
 	•	Automações CRM complexas e campanhas
@@ -4540,27 +4844,29 @@ B.1) Matriz canónica por `sourceType` (v1.0)
 	•	`BOOKING`: IN (checkout paid/free, refund/dispute, entitlement; check‑in conforme policy).
 	•	`PADEL_REGISTRATION`: IN (checkout paid/split, refund/dispute, entitlement, check‑in conforme policy).
 	•	`STORE_ORDER`: IN (checkout paid/free, refund/dispute, entitlement quando aplicável).
-	•	`SUBSCRIPTION` e `MEMBERSHIP`: OUT (bloqueado em v1.0).
+	•	`SUBSCRIPTION` e `MEMBERSHIP`: OUT.
 
 C) Regra de execução (hard)
-	•	Tudo o que está OUT: UI escondida + endpoints protegidos + feature flag obrigatória + **403 por defeito**.
-	•	Qualquer activação exige aprovação explícita + `SafetyCase` quando aplicável (19.2).
+	•	Tudo o que está OUT é tratado como fora de escopo: não implementar e não fazer deploy nesta fase DEV.
+	•	Não usar mecanismos runtime de ativação de funcionalidades.
+	•	Quando existir rota/superfície legada correspondente, responder com `410 LEGACY_ROUTE_REMOVED` (não `403` por gating de ativação).
+	•	Qualquer inclusão futura no escopo exige revisão normativa explícita + aprovação do owner.
 
-D) Definição de Done para Go‑Live v1.0
-	•	Todos os itens IN operacionais **e** 19.0 Go‑Live Gate cumprido.
-	•	Cut‑line aplicado e verificado por testes (19.6).
+D) Critério para futura abertura de produção v1.0
+	•	Todos os itens IN operacionais **e** 19.0 Gate de abertura de produção cumprido.
+	•	Cut‑line aplicado e verificado por testes (19.6), apenas no ciclo pre-prod/prod.
 
 ⸻
 
-19.0 Go‑Live Gate (Fase 1) — **FECHADO**
-Pré‑requisitos mínimos antes de abrir produção real:
+19.0 Go‑Live Gate (Fase 1) — **PROD_FUTURA**
+Pré‑requisitos mínimos antes de abrir produção real (não aplicável ao ciclo DEV atual):
 - Documentos legais publicados e linkados (19.1).
 - Onboarding B2B para payouts completo (KYC + aceites).
 - DSAR básico ativo (19.4).
 - Trust & Safety mínimo (19.2).
 - Runbooks de suporte + escalação definidos (19.3).
 - Alertas críticos ativos (SLIs 14.1.1) + dashboards básicos.
-- Backups configurados + **1º teste de restore** executado (19.3).
+- Backups configurados + **1º teste de restore** executado (19.3) [PROD_FUTURA].
 - Release gates ativos (19.6) + guardrails 12.6.
 
 19.3 Suporte & Operação (quando falha às 02:00) — **FECHADO**
@@ -4598,25 +4904,26 @@ Degraded operation is preferred over full outage.
     - taxa de `payment.processing` > threshold
     - `processorFeesStatus` não fecha dentro de janela (p95)
     - drift jobs acusam inconsistências acima de threshold
-- Backups & Restore (targets internos):
+- Backups & Restore (targets internos) [PROD_FUTURA]:
   - RPO/RTO normativos (targets operacionais):
     - DB transaccional: RPO ≤ 1h, RTO ≤ 4h
     - Config/policies (fee policies, access policies): RPO ≤ 15m, RTO ≤ 2h
     - Logs/EventLog (auditoria): RPO ≤ 24h, RTO ≤ 12h
   - Backups automáticos + retenção por política.
-  - **Teste de restore inicial** obrigatório no Go‑Live.
+  - **Teste de restore inicial** obrigatório apenas na abertura de produção.
 
-19.3.1 Backups reais (Supabase → AWS) — **FECHADO**
-Como o DB está em Supabase na Fase 1, a estratégia de backup é:
+19.3.1 Backups reais (Supabase → AWS) — **PROD_FUTURA**
+Este bloco aplica-se a pre-prod/prod e está fora do escopo do ciclo DEV atual.
+Como o DB está em Supabase na Fase 1, a estratégia de backup para produção é:
 - Primário: PITR/Backups geridos pelo Supabase (conforme plano).
 - Secundário (AWS): export automatizado para S3 (diário) + retenção por policy:
   - dumps encriptados (KMS) + versioning + lifecycle (ex.: 30/90/365 dias conforme classe).
 - Restore:
   - runbook para restore via Supabase + validação pós‑restore (smoke tests).
-  - 1º restore test obrigatório antes do Go‑Live (19.0).
+  - 1º restore test obrigatório antes do Go‑Live (19.0), apenas para abertura de produção.
 
-19.6 Qualidade & Release Gates (DoD “produção”) — **FECHADO**
-- Nenhum release sem:
+19.6 Qualidade & Release Gates (DoD “produção”) — **PROD_FUTURA**
+- Nenhum release para produção sem:
   - Contract tests a passar (golden tests) — ver 12.6
   - Architecture tests a passar (owners, Stripe só em Finanças, etc.) — ver 12.6
   - Idempotência verificada nos fluxos críticos (checkout/refund/fulfillment/check‑in)
@@ -4786,10 +5093,11 @@ Guardrails:
 
 A9) Cutover Guardrails (Store Big-Bang compatibility) — FECHADO
 Guardrails normativos mínimos para cutovers destrutivos de domínio:
+- Aplicação: cutovers destrutivos em pre-prod/prod (PROD_FUTURA). Em `APP_ENV=dev`, rollback/recovery canónico usa branches + histórico Git.
 - Pré-condições obrigatórias:
   - janela de manutenção ativa
   - deploy freeze aplicado
-  - backup/restore validados
+  - backup/restore validados (apenas pre-prod/prod)
 - Gates obrigatórios pré-change:
   - `npm run gate:api-contract`
   - `npm run gate:api-ui-coverage`
@@ -4799,7 +5107,8 @@ Guardrails normativos mínimos para cutovers destrutivos de domínio:
 - Fail-hard policy:
   - qualquer guardrail/gate falhado bloqueia reabertura.
 - Rollback:
-  - restore integral + redeploy da versão anterior + verificação de consistência pós-restore.
+  - pre-prod/prod: restore integral + redeploy da versão anterior + verificação de consistência pós-restore.
+  - dev: rollback por branch/revert, sem dependência de backup operacional dedicado.
 
 
 #### G12.020 (origem: A10)
@@ -4856,9 +5165,9 @@ expected execution order.
 
 ### F4 — Guest Purchase → Claim Flow
 1. Guest checkout completed
-2. Entitlement issued to GUEST_EMAIL identity
+2. Entitlement issued to identity in guest email state
 3. Verification link sent
-4. Identity upgraded to USER
+4. Identity resolved to verified user-linked state
 5. Entitlement re-bound without mutation
 
 ---
@@ -4869,6 +5178,7 @@ expected execution order.
 ## 99) Índice ID de Origem -> ID Canónico
 | ID de Origem | ID Canónico | Grupo |
 | --- | --- | --- |
+| `DCAL-01..DCAL-36` | `G07.003` | `G07` |
 | `A1` | `G12.011` | `G12` |
 | `A10` | `G12.020` | `G12` |
 | `A2` | `G12.012` | `G12` |
@@ -4879,6 +5189,7 @@ expected execution order.
 | `A7` | `G12.017` | `G12` |
 | `A8` | `G12.018` | `G12` |
 | `A9` | `G12.019` | `G12` |
+| `ARB.01` | `G07.007` | `G07` |
 | `C-G01` | `G01.011` | `G01` |
 | `C-G02` | `G01.012` | `G01` |
 | `C-G03` | `G01.013` | `G01` |
@@ -4999,6 +5310,7 @@ expected execution order.
 | `O02` | `G12.008` | `G12` |
 | `O03` | `G12.009` | `G12` |
 | `O04` | `G12.010` | `G12` |
+| `S01..S09` | `G08.002` | `G08` |
 | `T01` | `G02.001` | `G02` |
 | `T02` | `G02.002` | `G02` |
 | `T03` | `G02.003` | `G02` |
@@ -5014,3 +5326,45 @@ expected execution order.
 node scripts/rebuild_ssot_registry_by_groups.mjs
 node scripts/verify_ssot_canonical_groups.mjs
 ```
+
+## 101) Aditamento Normativo Owner (2026-02-15)
+- Este aditamento propaga as decisões finais aprovadas pelo Owner (Nuno Lopes) e tem precedência normativa sobre texto histórico contraditório.
+- Hard-cut total de legacy em ambiente de desenvolvimento: sem redirects, sem convivência, sem re-exports finais de write-path.
+- Sem mecanismos runtime de ativação de funcionalidades nesta fase; controlo por branch/deploy.
+- Recuperação operacional desta fase de desenvolvimento: branches + histórico Git.
+- Testes automáticos são proteção obrigatória de regressão; merges críticos exigem CI com `unit + integration + e2e` verde.
+- `SPLIT_GARANTIDO` deve ser validado em Stripe sandbox (`test mode`), sem cobranças reais.
+- Regra de mapeamento por `orgType`:
+  - `EXTERNAL` usa Stripe Connect (tipo Standard nesta fase).
+  - `PLATFORM` usa conta Stripe da ORYA (nao-Connect / sem destination transfer).
+- `Arbitration Service` fica consolidado no bloco `G07.007` com prioridade explícita versionada e fail-closed para tipo fora da versão ativa.
+- Regras técnicas de split ficam consolidadas no bloco `G08.002` (`S01..S09` / `SPLIT_GARANTIDO`), substituindo norma histórica D12 (48/24).
+- Regras de hard-cut estão normativamente fechadas neste SSOT; `docs/legacy_cut_plan.md` é referência complementar.
+- Checklist de execução SSOT->CI->E2E->Observability->Runbook: `docs/implementation_checklist.md`.
+- Rastreabilidade documental desta propagação:
+  - `docs/arbitration_service_spec.md`
+  - `docs/identidade_auth_sessao_cookies_mobile_access.md`
+  - `docs/identity_merge_log_spec.md`
+  - `docs/ws_handshake_and_jwt_claims.md`
+  - `docs/legacy_cut_plan.md`
+  - `docs/split_v2_ssot.md`
+  - `docs/SPLIT_V2.md`
+  - `docs/organizacoes_multiorg.md`
+  - `docs/policies_organizacao_fechado.md`
+  - `docs/dashboard_org_decisions.md`
+  - `docs/fecho_unificado_normativo.md`
+
+## 102) Índice de Gaps (documentação)
+- Estado desta ronda: `EM_VERIFICACAO_EXECUCAO`.
+- Histórico desta ronda: índice reaberto para `EM_VERIFICACAO_DOCUMENTAL` durante a validação linha-a-linha e re-fechado após propagação integral no SSOT.
+- Verificacao aplicada: hard-cut editorial do documento de identidade com historico movido para anexo revogado (`docs/identidade_auth_historico_pre_fecho.md`) e contrato final unico ativo em `docs/identidade_auth_sessao_cookies_mobile_access.md`.
+- Revalidacao adicional (AuthModal + `/api/auth/clear`): fluxo canónico com maximo 1 auto-heal silencioso, CTAs canónicos sem reset primário e limpeza por allowlist auth sem apagar cookies nao-auth.
+- Revalidacao adicional (delta DEV sem PROD): remoção de linguagem de ativação runtime por funcionalidades, conversão de `OUT` para fora de escopo/não deployado, e rotulagem de backup/go-live como `PROD_FUTURA` fora do ciclo DEV.
+- Revalidacao de split mapping: consistência explícita por `orgType` (`EXTERNAL`=Connect; `PLATFORM`=conta Stripe ORYA não-Connect) no SSOT e artefactos associados.
+- Revalidacao de C01/arbitragem: payload canónico com `resourceKey+authorityOrgId`, arbitragem cross-org com `priorityRuleVersion` e prioridade explícita alinhada a Reservas.
+- Revalidacao de policies/dashboard: `suspend` mantém owner-only com step-up obrigatório, auditoria before/after e reversão controlada na janela de 30 dias.
+- Revalidacao adicional (deltas F0 aplicados): enums fechados de `IdentityMergeLog`, matriz de cookies por ambiente, métricas WS específicas, SLI/SLA/métricas de arbitragem, campos/observabilidade/alertas de split e defaults/clamps de policies.
+- Regra transitória de autoridade (B1..B9): os documentos de domínio fechados (`dashboard_org_decisions`, `calendario_motor_unico`, `organizacoes_multiorg`, `padel`, `reservas`, além de `identidade_auth_sessao_cookies_mobile_access` e `SPLIT_V2`/`split_v2_ssot`) prevalecem por área até propagação completa no SSOT.
+- Cutover documental final (B10..B11): após implementação e validação verde, SSOT volta a autoridade única e os auxiliares são removidos.
+- Nota de escopo: checklists de execução permanecem fora do escopo normativo.
+- Critério de manutenção: qualquer nova contradição documental reabre este indice para `EM_VERIFICACAO_DOCUMENTAL`.

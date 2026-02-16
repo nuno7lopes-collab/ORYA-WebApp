@@ -1,5 +1,10 @@
-import OrgProfileRequestsClient from "../OrgProfileRequestsClient";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <OrgProfileRequestsClient />;
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const resolved = await params;
+  redirect(`/org/${resolved.orgId}/settings`);
 }

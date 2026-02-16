@@ -354,22 +354,32 @@ function sanitizeStripeCliEnv(env) {
   const stripeEnv = { ...env };
   const apiKey = stripeEnv.STRIPE_API_KEY;
   const secretKey = stripeEnv.STRIPE_SECRET_KEY;
+  const testSecretKey = stripeEnv.STRIPE_SECRET_KEY_TEST;
 
   const isLiveKey = (val) =>
     typeof val === "string" &&
     (val.startsWith("sk_live_") || val.startsWith("rk_live_"));
-  const isTestSecretKey = (val) =>
-    typeof val === "string" && val.startsWith("sk_test_");
+  const isTestKey = (val) =>
+    typeof val === "string" &&
+    (val.startsWith("sk_test_") || val.startsWith("rk_test_"));
 
-  if (apiKey && isLiveKey(apiKey)) {
+  if (isLiveKey(stripeEnv.STRIPE_API_KEY)) {
     delete stripeEnv.STRIPE_API_KEY;
   }
 
-  if (!stripeEnv.STRIPE_API_KEY && secretKey) {
-    if (isTestSecretKey(secretKey)) {
+  if (isLiveKey(stripeEnv.STRIPE_SECRET_KEY)) {
+    delete stripeEnv.STRIPE_SECRET_KEY;
+  }
+
+  // Project-local test key has priority over inherited shell STRIPE_API_KEY.
+  if (isTestKey(testSecretKey)) {
+    if (apiKey && apiKey !== testSecretKey) {
+      console.log("[dev-all] Stripe CLI: overriding STRIPE_API_KEY with STRIPE_SECRET_KEY_TEST.");
+    }
+    stripeEnv.STRIPE_API_KEY = testSecretKey;
+  } else if (!stripeEnv.STRIPE_API_KEY && secretKey) {
+    if (isTestKey(secretKey)) {
       stripeEnv.STRIPE_API_KEY = secretKey;
-    } else if (isLiveKey(secretKey)) {
-      delete stripeEnv.STRIPE_SECRET_KEY;
     }
   }
 

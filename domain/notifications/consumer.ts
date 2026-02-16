@@ -12,7 +12,6 @@ import {
 import { deliverApnsPush } from "@/lib/push/apns";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
 import { CrmDeliveryStatus, NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type EventLogRecord = {
   eventId: string;
@@ -373,7 +372,7 @@ export async function deliverNotificationOutboxItem(item: {
     const body = "Consulta os detalhes no painel da organização.";
     const rawOrgId = typeof payload.organizationId === "number" ? payload.organizationId : Number(payload.organizationId);
     const resolvedOrgId = Number.isFinite(rawOrgId) ? rawOrgId : null;
-    const orgHref = appendOrganizationIdToHref("/organizacao", resolvedOrgId);
+    const orgHref = resolvedOrgId ? `/org/${resolvedOrgId}/overview` : "/org-hub/organizations";
     const notification = await createNotificationRecord({
       userId: item.userId,
       type: NotificationType.SYSTEM_ANNOUNCE,
@@ -775,10 +774,12 @@ export async function deliverNotificationOutboxItem(item: {
         : `/messages/${encodeURIComponent(threadId ?? "")}`
       : isB2C
         ? `/messages/${encodeURIComponent(conversationId ?? "")}`
-        : conversationId
-          ? `/organizacao/chat?conversationId=${encodeURIComponent(conversationId)}`
-          : "/organizacao/chat";
-    const ctaUrl = isB2C ? baseChatUrl : appendOrganizationIdToHref(baseChatUrl, orgId ?? null);
+        : orgId
+          ? conversationId
+            ? `/org/${orgId}/chat?conversationId=${encodeURIComponent(conversationId)}`
+            : `/org/${orgId}/chat`
+          : "/org-hub/organizations";
+    const ctaUrl = baseChatUrl;
 
     const notification = await createNotificationRecord({
       userId: item.userId,

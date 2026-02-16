@@ -34,11 +34,11 @@ import {
 } from "@prisma/client";
 import { FeeMode } from "@prisma/client";
 import { paymentScenarioSchema, type PaymentScenario } from "@/lib/paymentScenario";
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js/min";
 import { computePromoDiscountCents } from "@/lib/promoMath";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { normalizeEmail } from "@/lib/utils/email";
+import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { hasActiveEntitlementForEvent } from "@/lib/entitlements/accessChecks";
 import { getLatestPolicyForEvent } from "@/lib/checkin/accessPolicy";
 import { evaluateEventAccess } from "@/domain/access/evaluateAccess";
@@ -864,26 +864,6 @@ function intentError(
   return res;
 }
 
-function normalizePhone(phone: string | null | undefined, defaultCountry: CountryCode = "PT") {
-  if (!phone) return null;
-  const cleaned = phone.trim();
-  if (!cleaned) return null;
-
-  const parsed = parsePhoneNumberFromString(cleaned, defaultCountry);
-  if (parsed && parsed.isPossible() && parsed.isValid()) {
-    return parsed.number; // E.164
-  }
-
-  // fallback: regex simples para PT
-  const regexPT = /^(?:\+351)?9[1236]\d{7}$/;
-  if (regexPT.test(cleaned)) {
-    const digits = cleaned.replace(/[^\d]/g, "");
-    return digits.startsWith("351") ? `+${digits}` : `+351${digits}`;
-  }
-
-  return null;
-}
-
 async function hasExistingFreeEntryForUser(params: { eventId: number; userId: string }) {
   return hasActiveEntitlementForEvent({
     eventId: params.eventId,
@@ -969,11 +949,12 @@ async function _POST(req: NextRequest) {
       });
     }
 
+    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const guestEmailRaw = guest?.email?.trim() ?? "";
     const guestName = guest?.name?.trim() ?? "";
     const guestPhoneRaw = guest?.phone?.trim() ?? "";
     const guestConsent = guest?.consent === true;
-    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw) : "";
+    const guestPhone = guestPhoneRaw && isValidPhone(guestPhoneRaw) ? normalizePhone(guestPhoneRaw, phoneOptions) : "";
     const guestEmail = guestEmailRaw && isValidEmail(guestEmailRaw) ? guestEmailRaw : "";
 
     if (!userId) {
@@ -1137,7 +1118,7 @@ async function _POST(req: NextRequest) {
     const isAdmin = Array.isArray(profile?.roles) ? profile.roles.includes("admin") : false;
     // Atualizar contacto no perfil se fornecido (normalizado)
     if (userId && contact && contact.trim()) {
-      const normalizedContact = normalizePhone(contact.trim());
+      const normalizedContact = isValidPhone(contact.trim()) ? normalizePhone(contact.trim(), phoneOptions) : "";
       if (normalizedContact) {
         await prisma.profile.update({
           where: { id: userId },
@@ -1937,10 +1918,14 @@ async function _POST(req: NextRequest) {
               const username = profile?.username?.trim().toLowerCase() ?? "";
               const email =
                 userData?.user?.email?.trim().toLowerCase() ?? "";
-              const normalizedInvitedPhone = normalizePhone(invited) ?? invited.replace(/[^\d]/g, "");
+              const normalizedInvitedPhone = isValidPhone(invited)
+                ? normalizePhone(invited, phoneOptions)
+                : invited.replace(/[^\d]/g, "");
+              const userPhoneRaw = userData?.user?.phone ?? profile?.contactPhone ?? "";
               const normalizedUserPhone =
-                normalizePhone(userData?.user?.phone ?? profile?.contactPhone ?? null) ??
-                (userData?.user?.phone ?? profile?.contactPhone ?? "").replace(/[^\d]/g, "");
+                userPhoneRaw && isValidPhone(userPhoneRaw)
+                  ? normalizePhone(userPhoneRaw, phoneOptions)
+                  : userPhoneRaw.replace(/[^\d]/g, "");
               if (
                 (invited.includes("@") && email && invited === email) ||
                 (!invited.includes("@") && username && invited === username) ||

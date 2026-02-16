@@ -753,7 +753,6 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="O que queres fazer hoje?"
                   className="flex-1 bg-transparent text-base text-white placeholder:text-white/65 focus:outline-none"
-                  autoFocus
                 />
                 <button
                   type="button"

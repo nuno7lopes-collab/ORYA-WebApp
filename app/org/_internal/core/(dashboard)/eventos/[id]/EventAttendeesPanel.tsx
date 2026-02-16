@@ -205,7 +205,7 @@ export default function EventAttendeesPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px]">
-          <a href={`/org/scan?eventId=${eventId}`} className={CTA_PRIMARY}>
+          <a href={`/org/check-in?eventId=${eventId}`} className={CTA_PRIMARY}>
             Abrir check-in
           </a>
           <button type="button" className={CTA_SECONDARY} onClick={() => load(null, "reset")}>

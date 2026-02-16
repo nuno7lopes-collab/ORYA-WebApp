@@ -3,7 +3,6 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendOwnerTransferEmail } from "@/lib/emailSender";
 import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
-import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type OwnerTransferOutboxPayload = {
   transferId: string;
@@ -94,7 +93,7 @@ export async function handleOwnerTransferOutboxEvent(params: {
     const organizationName =
       transfer.organization?.publicName || transfer.organization?.username || "Organização ORYA";
     const baseUrl = getAppBaseUrl();
-    const staffHref = appendOrganizationIdToHref("/organizacao/manage?section=staff", payload.organizationId);
+    const staffHref = `/org/${payload.organizationId}/team`;
     await sendEmail({
       to: fromEmail,
       subject: `✅ Transferência concluída – ${organizationName}`,

@@ -109,9 +109,20 @@ function AuthModalContent({
       : null;
 
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const subtitleId = useId();
+
+  const syncPasswordsFromDom = useCallback(() => {
+    const livePassword = passwordInputRef.current?.value ?? "";
+    const liveConfirmPassword = confirmPasswordInputRef.current?.value ?? "";
+    setPassword((prev) => (prev === livePassword ? prev : livePassword));
+    setConfirmPassword((prev) =>
+      prev === liveConfirmPassword ? prev : liveConfirmPassword,
+    );
+  }, []);
 
   function clearPendingVerification() {
     setOtp("");
@@ -127,11 +138,24 @@ function AuthModalContent({
       }
     }
   }
+
+  function clearPasswordInputs() {
+    if (passwordInputRef.current) {
+      passwordInputRef.current.value = "";
+    }
+    if (confirmPasswordInputRef.current) {
+      confirmPasswordInputRef.current.value = "";
+    }
+  }
+
   function hardResetAuthState() {
     clearPendingVerification();
+    clearPasswordInputs();
     setEmail("");
     setPassword("");
     setConfirmPassword("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
     setOtp("");
     setLoginOtpSent(false);
     setVerifyOtpSent(false);
@@ -282,19 +306,6 @@ function AuthModalContent({
   }, [canClose, handleClose]);
 
   useEffect(() => {
-    const modalNode = modalRef.current;
-    if (!modalNode) return;
-
-    const focusableSelector =
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-    const autoTarget =
-      modalNode.querySelector<HTMLElement>("[data-autofocus='true']") ??
-      modalNode.querySelector<HTMLElement>(focusableSelector);
-    autoTarget?.focus();
-  }, [mode]);
-
-  useEffect(() => {
     if (mode !== "reset") {
       setResetEmailSent(false);
     }
@@ -305,6 +316,24 @@ function AuthModalContent({
       setVerifyOtpSent(false);
     }
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "login" && mode !== "signup") return;
+    // Safari/iOS autofill may not fire onChange; keep React state synced with live DOM values.
+    const tick = () => syncPasswordsFromDom();
+    const t0 = window.setTimeout(tick, 0);
+    const t1 = window.setTimeout(tick, 150);
+    const t2 = window.setTimeout(tick, 500);
+    const t3 = window.setTimeout(tick, 1200);
+    const interval = window.setInterval(tick, 2000);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+      window.clearInterval(interval);
+    };
+  }, [mode, syncPasswordsFromDom]);
 
   useEffect(() => {
     if (mode === "onboarding") {
@@ -461,20 +490,21 @@ function AuthModalContent({
   async function finishAuthAndMaybeOnboard() {
     const safeRedirect = sanitizeRedirectPath(redirectTo, "/me");
     try {
-      // Garantir que o servidor tem a sessão atualizada antes de pedir /api/auth/me
+      // Garantir sessão server-side antes de bootstrap/me.
       await syncSessionWithServer();
 
-      const res = await fetch("/api/auth/me", {
-        method: "GET",
+      const bootstrapRes = await fetch("/api/auth/bootstrap", {
+        method: "POST",
         credentials: "include",
       });
-
-      const data = await res.json().catch(() => null);
-      const needsEmailConfirmation = data?.needsEmailConfirmation;
+      const bootstrapData = await bootstrapRes.json().catch(() => null);
+      const needsEmailConfirmation = bootstrapData?.needsEmailConfirmation;
       if (needsEmailConfirmation) {
         const candidateEmail =
           (email && isEmailLike(email) ? email : "") ||
-          (typeof data?.user?.email === "string" && isEmailLike(data.user.email) ? data.user.email : "");
+          (typeof bootstrapData?.user?.email === "string" && isEmailLike(bootstrapData.user.email)
+            ? bootstrapData.user.email
+            : "");
         if (typeof window !== "undefined" && candidateEmail) {
           window.localStorage.setItem("orya_pending_email", candidateEmail);
           window.localStorage.setItem("orya_pending_step", "verify");
@@ -488,13 +518,24 @@ function AuthModalContent({
         return;
       }
 
-      if (!res.ok) {
-        closeModal();
-        router.push(safeRedirect);
+      if (!bootstrapRes.ok) {
+        setError(getErrorMessage(bootstrapData) ?? "Não foi possível preparar a sessão. Tenta novamente.");
+        setLoading(false);
         return;
       }
 
-      const onboardingDone = data?.profile?.onboardingDone;
+      const res = await fetch("/api/auth/me", {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(getErrorMessage(data) ?? "Sessão inválida ou desincronizada. Tenta novamente.");
+        setLoading(false);
+        return;
+      }
+
+      const onboardingDone = Boolean(data?.profile?.onboardingDone);
       // Atualiza SWR para refletir o novo estado de auth/profile imediatamente
       swrMutate("/api/auth/me");
 
@@ -509,8 +550,8 @@ function AuthModalContent({
       }
     } catch (err) {
       console.error("finishAuthAndMaybeOnboard error", err);
-      closeModal();
-      router.push(sanitizeRedirectPath(redirectTo, "/me"));
+      setError("Erro temporário de autenticação. Tenta novamente.");
+      setLoading(false);
     }
   }
 
@@ -519,8 +560,9 @@ function AuthModalContent({
     setLoading(true);
 
     const identifier = (email || "").trim().toLowerCase();
+    const passwordToUse = passwordInputRef.current?.value ?? password;
 
-    if (!identifier || !password) {
+    if (!identifier || !passwordToUse) {
       setError("Preenche o email/username e a password.");
       setLoading(false);
       return;
@@ -530,7 +572,7 @@ function AuthModalContent({
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ identifier, password: passwordToUse }),
         credentials: "include",
       });
       const data = await res.json().catch(() => null);
@@ -595,20 +637,22 @@ function AuthModalContent({
     setLoginOtpSent(false);
 
     const emailToUse = (email || "").trim().toLowerCase();
+    const passwordToUse = passwordInputRef.current?.value ?? password;
+    const confirmPasswordToUse = confirmPasswordInputRef.current?.value ?? confirmPassword;
 
-    if (!emailToUse || !password || !confirmPassword) {
+    if (!emailToUse || !passwordToUse || !confirmPasswordToUse) {
       setError("Preenche o email e ambas as passwords.");
       setLoading(false);
       return;
     }
 
-    if (password.length < 6) {
+    if (passwordToUse.length < 6) {
       setError("A password deve ter pelo menos 6 caracteres.");
       setLoading(false);
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (passwordToUse !== confirmPasswordToUse) {
       setError("As passwords não coincidem.");
       setLoading(false);
       return;
@@ -631,7 +675,7 @@ function AuthModalContent({
       const res = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailToUse, password }),
+        body: JSON.stringify({ email: emailToUse, password: passwordToUse }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
@@ -741,19 +785,20 @@ function AuthModalContent({
     setLoading(false);
   }
 
-  async function handleAuthRecoveryClear() {
+  async function handleCanonicalLogout() {
     try {
       setLoading(true);
-      await fetch("/api/auth/clear", { method: "POST" });
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       await supabaseBrowser.auth.signOut();
       if (typeof window !== "undefined") {
         clearPendingVerification();
       }
       await swrMutate("/api/auth/me");
-      setError("Sessão limpa. Tenta novamente.");
+      setError(null);
+      setMode("login");
     } catch (err) {
-      console.error("[AuthModal] auth clear error:", err);
-      setError("Não foi possível limpar a sessão local.");
+      console.error("[AuthModal] logout error:", err);
+      setError("Não foi possível terminar sessão.");
     } finally {
       setLoading(false);
     }
@@ -1067,7 +1112,6 @@ function AuthModalContent({
             </label>
             <input
               type={mode === "login" ? "text" : "email"}
-              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -1079,7 +1123,7 @@ function AuthModalContent({
               autoComplete={mode === "login" ? "username" : "email"}
               autoCapitalize="none"
               inputMode={mode === "login" ? "text" : "email"}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder={mode === "login" ? "nome@exemplo.com ou @username" : "nome@exemplo.com"}
             />
 
@@ -1088,19 +1132,29 @@ function AuthModalContent({
             </label>
             <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
               <input
+                ref={passwordInputRef}
                 type={showPassword ? "text" : "password"}
-                value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setError(null);
                 }}
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
-                className="flex-1 bg-transparent text-sm text-white outline-none"
+                className="flex-1 bg-transparent text-base md:text-sm text-white outline-none"
                 placeholder="••••••••"
               />
               <button
                 type="button"
-                onClick={() => setShowPassword((v) => !v)}
+                onClick={() => {
+                  const currentValue = passwordInputRef.current?.value ?? "";
+                  setShowPassword((v) => !v);
+                  window.setTimeout(() => {
+                    if (!passwordInputRef.current) return;
+                    if (!passwordInputRef.current.value && currentValue) {
+                      passwordInputRef.current.value = currentValue;
+                    }
+                    setPassword(passwordInputRef.current.value || currentValue);
+                  }, 0);
+                }}
                 className="text-[12px] text-white/70 hover:text-white"
               >
                 {showPassword ? "Ocultar" : "Mostrar"}
@@ -1129,19 +1183,29 @@ function AuthModalContent({
                 </label>
                 <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
                   <input
+                    ref={confirmPasswordInputRef}
                     type={showConfirmPassword ? "text" : "password"}
-                    value={confirmPassword}
                     onChange={(e) => {
                       setConfirmPassword(e.target.value);
                       setError(null);
                     }}
                     autoComplete="new-password"
-                    className="flex-1 bg-transparent text-sm text-white outline-none"
+                    className="flex-1 bg-transparent text-base md:text-sm text-white outline-none"
                     placeholder="••••••••"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    onClick={() => {
+                      const currentValue = confirmPasswordInputRef.current?.value ?? "";
+                      setShowConfirmPassword((v) => !v);
+                      window.setTimeout(() => {
+                        if (!confirmPasswordInputRef.current) return;
+                        if (!confirmPasswordInputRef.current.value && currentValue) {
+                          confirmPasswordInputRef.current.value = currentValue;
+                        }
+                        setConfirmPassword(confirmPasswordInputRef.current.value || currentValue);
+                      }, 0);
+                    }}
                     className="text-[12px] text-white/70 hover:text-white"
                   >
                     {showConfirmPassword ? "Ocultar" : "Mostrar"}
@@ -1291,7 +1355,6 @@ function AuthModalContent({
             <label className="block text-xs text-white/70 mb-1">Email</label>
             <input
               type="email"
-              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -1302,7 +1365,7 @@ function AuthModalContent({
               autoComplete="email"
               autoCapitalize="none"
               inputMode="email"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="nome@exemplo.com"
             />
             <label className="block text-xs text-white/70 mb-1">Código</label>
@@ -1316,7 +1379,7 @@ function AuthModalContent({
               }}
               autoComplete="one-time-code"
               inputMode="numeric"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="Código de 6 dígitos"
             />
             <div className="mt-2 text-[12px] text-white/65">
@@ -1372,7 +1435,6 @@ function AuthModalContent({
             <label className="mt-4 block text-xs text-white/70 mb-1">Email</label>
             <input
               type="email"
-              data-autofocus="true"
               value={email ?? ""}
               onChange={(e) => {
                 setEmail(e.target.value);
@@ -1381,7 +1443,7 @@ function AuthModalContent({
               autoComplete="email"
               autoCapitalize="none"
               inputMode="email"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="nome@exemplo.com"
             />
             <button
@@ -1416,18 +1478,17 @@ function AuthModalContent({
             </label>
             <input
               type="text"
-              data-autofocus="true"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoComplete="name"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
               placeholder="Ex.: Inês Martins"
             />
 
             <label className="mt-3 block text-xs text-white/70 mb-1">
               Username público
             </label>
-              <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">
+              <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white">
                 <span className="text-white/40 mr-1">@</span>
                 <input
                   type="text"
@@ -1523,14 +1584,24 @@ function AuthModalContent({
         {error && (
           <div className="mt-3 space-y-2">
             <p className="text-[12px] text-red-300 leading-snug">{error}</p>
-            <button
-              type="button"
-              onClick={handleAuthRecoveryClear}
-              disabled={loading}
-              className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
-            >
-              Limpar sessão local e tentar de novo
-            </button>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={finishAuthAndMaybeOnboard}
+                disabled={loading}
+                className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+              >
+                Tentar novamente
+              </button>
+              <button
+                type="button"
+                onClick={handleCanonicalLogout}
+                disabled={loading}
+                className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+              >
+                Sair
+              </button>
+            </div>
             {mode === "signup" && error.toLowerCase().includes("já tem conta") && (
               <div className="space-y-2 text-[12px] text-white/75">
                 <button

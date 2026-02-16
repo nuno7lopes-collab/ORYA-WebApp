@@ -98,10 +98,10 @@ function parseIntervals(drafts: TimeDraft[]) {
     const startMinute = timeToMinutes(draft.start);
     const endMinute = timeToMinutes(draft.end);
     if (startMinute == null || endMinute == null) {
-      return { ok: false, error: "Intervalo invalido. Usa o formato HH:MM." };
+      return { ok: false, error: "Intervalo inválido. Usa o formato HH:MM." };
     }
     if (endMinute <= startMinute) {
-      return { ok: false, error: "O fim do intervalo tem de ser depois do inicio." };
+      return { ok: false, error: "O fim do intervalo tem de ser depois do início." };
     }
     intervals.push({ startMinute, endMinute });
   }
@@ -119,7 +119,7 @@ export default function AvailabilityEditor({
   scopeType,
   scopeId,
   title = "Disponibilidade semanal",
-  subtitle = "Define os intervalos semanais e excecoes.",
+  subtitle = "Define os intervalos semanais e exceções.",
   hourHeight = 56,
 }: AvailabilityEditorProps) {
   const scopeParams = useMemo(() => {
@@ -279,13 +279,13 @@ export default function AvailabilityEditor({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao guardar override.");
+        throw new Error(json?.error || "Erro ao guardar exceção.");
       }
       setOverrideDate("");
       setOverrideIntervals([]);
       mutateAvailability();
     } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar override.");
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar exceção.");
     } finally {
       setOverrideSaving(false);
     }
@@ -297,11 +297,11 @@ export default function AvailabilityEditor({
       const res = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/disponibilidade/${overrideId}`), { method: "DELETE" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao remover override.");
+        throw new Error(json?.error || "Erro ao remover exceção.");
       }
       mutateAvailability();
     } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao remover override.");
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao remover exceção.");
     }
   };
 
@@ -508,14 +508,14 @@ export default function AvailabilityEditor({
         <p className={DASHBOARD_MUTED}>{subtitle}</p>
         {inheritsOrganization && (
           <p className="mt-2 text-[12px] text-white/60">
-            Sem horarios proprios. A usar disponibilidade base da organizacao.
+            Sem horários próprios. A usar disponibilidade base da organização.
           </p>
         )}
       </div>
 
       {!hasAvailability && !inheritsOrganization && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          Define horarios para permitir marcacoes.
+          Define horários para permitir marcações.
         </div>
       )}
 
@@ -703,13 +703,13 @@ export default function AvailabilityEditor({
               onChange={(e) => setOverrideKind(e.target.value as AvailabilityOverride["kind"])}
             >
               <option value="CLOSED">Fechado</option>
-              <option value="OPEN">Horario especial</option>
+              <option value="OPEN">Horário especial</option>
               <option value="BLOCK">Bloquear intervalos</option>
             </select>
           </div>
           <div className="flex items-end">
             <button type="button" className={CTA_PRIMARY} onClick={handleOverrideCreate} disabled={overrideSaving}>
-              {overrideSaving ? "A guardar..." : "Guardar override"}
+              {overrideSaving ? "A guardar..." : "Guardar exceção"}
             </button>
           </div>
         </div>
@@ -752,7 +752,7 @@ export default function AvailabilityEditor({
 
         <div className="space-y-2">
           {overrides.length === 0 && (
-            <p className="text-[12px] text-white/50">Sem overrides.</p>
+            <p className="text-[12px] text-white/50">Sem exceções.</p>
           )}
           {overrides.map((override) => {
             const dateLabel = new Date(override.date).toLocaleDateString("pt-PT", {
@@ -772,7 +772,7 @@ export default function AvailabilityEditor({
                     {override.kind === "CLOSED"
                       ? "Fechado"
                       : override.kind === "OPEN"
-                        ? "Horario especial"
+                        ? "Horário especial"
                         : "Bloqueio"}
                     {override.kind === "CLOSED" ? "" : ` · ${formatIntervals(override.intervals)}`}
                   </p>

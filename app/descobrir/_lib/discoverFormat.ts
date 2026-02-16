@@ -2,7 +2,7 @@ import type { PublicEventCard } from "@/domain/events/publicEventCard";
 
 export type TimingTag = {
   label: string;
-  tone: "live" | "soon" | "default";
+  tone: "now" | "soon" | "default";
 };
 
 const toDate = (value: string | null | undefined) => {
@@ -43,7 +43,7 @@ export function buildTimingTag(event: PublicEventCard, now: Date): TimingTag {
   }
 
   if (start <= now && end >= now) {
-    return { label: "Agora", tone: "live" };
+    return { label: "Agora", tone: "now" };
   }
 
   const diffMs = Math.max(start.getTime() - now.getTime(), 0);

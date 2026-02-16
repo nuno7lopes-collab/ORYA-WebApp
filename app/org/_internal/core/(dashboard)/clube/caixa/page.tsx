@@ -60,7 +60,7 @@ export default function ClubeCaixaPage() {
       <div>
         <p className={DASHBOARD_LABEL}>Clube</p>
         <h1 className={DASHBOARD_TITLE}>Caixa & reservas</h1>
-        <p className={DASHBOARD_MUTED}>Resumo rapido do movimento de reservas.</p>
+        <p className={DASHBOARD_MUTED}>Resumo rápido do movimento de reservas.</p>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">

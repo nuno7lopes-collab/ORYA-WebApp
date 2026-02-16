@@ -10,7 +10,12 @@ import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
-import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import {
+  buildOrgHref,
+  buildOrgHubHref,
+  parseOrganizationId,
+  parseOrganizationIdFromPathname,
+} from "@/lib/organizationIdUtils";
 
 type FormItem = {
   id: number;
@@ -73,7 +78,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
   const organizationIdFromQuery = parseOrganizationId(searchParams?.get("organizationId"));
   const organizationIdFromPath = parseOrganizationIdFromPathname(pathname);
   const organizationId = organizationIdFromQuery ?? organizationIdFromPath;
-  const baseHref = appendOrganizationIdToHref("/org/inscricoes", organizationId);
+  const baseHref = organizationId ? buildOrgHref(organizationId, "/forms") : buildOrgHubHref("/organizations");
   const { data, mutate, isLoading: loadingForms } = useSWR<FormsResponse>(
     user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/inscricoes") : null,
     fetcher,
@@ -140,7 +145,7 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
       setDescription("");
       mutate();
       if (json?.form?.id) {
-        router.push(appendOrganizationIdToHref(`/org/inscricoes/${json.form.id}`, organizationId));
+        router.push(organizationId ? buildOrgHref(organizationId, `/forms/${json.form.id}`) : buildOrgHubHref("/organizations"));
       }
       setCreating(false);
     } catch (err) {
@@ -217,9 +222,12 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
         </div>
         {moduleDisabled && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
-            <span>O módulo de Formulários está desativado para esta organização.</span>
-            <Link href="/org/overview?section=modulos" className={`${CTA_SECONDARY} text-[12px]`}>
-              Gerir apps
+            <span>A ferramenta de Formulários está desativada para esta organização.</span>
+            <Link
+              href={organizationId ? buildOrgHref(organizationId, "/overview", { section: "ferramentas" }) : buildOrgHubHref("/organizations")}
+              className={`${CTA_SECONDARY} text-[12px]`}
+            >
+              Gerir ferramentas
             </Link>
           </div>
         )}
@@ -318,13 +326,13 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
               </div>
               <div className="flex flex-wrap items-center gap-3 text-[12px]">
                 <Link
-                  href={`/org/inscricoes/${form.id}?tab=construcao`}
+                  href={`/org/forms/${form.id}?tab=construcao`}
                   className="rounded-full bg-white px-3 py-1 text-black"
                 >
                   Editar
                 </Link>
                 <Link
-                  href={`/org/inscricoes/${form.id}?tab=respostas&respostas=individual`}
+                  href={`/org/forms/${form.id}?tab=respostas&respostas=individual`}
                   className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
                 >
                   Respostas

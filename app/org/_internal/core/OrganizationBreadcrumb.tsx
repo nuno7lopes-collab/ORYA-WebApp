@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbSeparator, BreadcrumbPage } from "@/components/ui/breadcrumb";
-import { appendOrganizationIdToHref, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { buildOrgHref, buildOrgHubHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 const SECTION_LABELS: Record<string, string> = {
   overview: "Visão geral",
-  modulos: "Módulos",
+  ferramentas: "Ferramentas",
   eventos: "Eventos",
   "padel-club": "Gestão de Clube Padel",
   "padel-tournaments": "Torneios de Padel",
@@ -34,7 +34,6 @@ const SECTION_LABELS: Record<string, string> = {
   checkin: "Check-in",
   staff: "Equipa",
   settings: "Definições",
-  perfil: "Perfil público",
   marketing: "Promoções",
   promos: "Códigos promocionais",
   promoters: "Promotores e parcerias",
@@ -45,11 +44,10 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 const OBJECTIVE_LABELS: Record<string, string> = {
-  create: "Dashboard",
+  create: "Painel",
   manage: "Gerir",
   promote: "Promoções",
   analyze: "Analisar",
-  profile: "Perfil",
 };
 
 function resolveLabel(
@@ -60,26 +58,17 @@ function resolveLabel(
   preset?: string | null,
   padel?: string | null,
 ) {
-  if (pathname.startsWith("/org/torneios/novo") || pathname.startsWith("/org/padel/torneios/novo")) {
+  if (pathname.startsWith("/org/padel/tournaments/create")) {
     return "Criar torneio";
   }
-  if (pathname.startsWith("/org/eventos/novo")) return preset === "padel" ? "Criar torneio" : "Criar evento";
-  if (pathname.startsWith("/org/chat")) {
+  if (pathname.startsWith("/org/events/new")) return preset === "padel" ? "Criar torneio" : "Criar evento";
+  if (/^\/org\/\d+\/chat(?:\/|$)/.test(pathname)) {
     return "Chat interno";
   }
-  if (
-    (pathname.startsWith("/org/padel/torneios/") || pathname.startsWith("/org/torneios/")) &&
-    pathname.endsWith("/edit")
-  ) {
+  if (pathname.startsWith("/org/padel/tournaments/") && pathname.endsWith("/edit")) {
     return "Editar torneio";
   }
-  if (
-    (pathname.startsWith("/org/padel/torneios/") || pathname.startsWith("/org/torneios/")) &&
-    pathname.endsWith("/live")
-  ) {
-    return "Gerir · Preparar live";
-  }
-  if (pathname.startsWith("/org/padel/torneios") || pathname.startsWith("/org/torneios")) {
+  if (pathname.startsWith("/org/padel/tournaments")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     const padelLabel = padel ? SECTION_LABELS[padel] : null;
     const isPadelSection = section === "padel-club" || section === "padel-tournaments";
@@ -91,20 +80,20 @@ function resolveLabel(
     }
     return "Torneios de Padel";
   }
-  if (pathname.startsWith("/org/eventos")) {
+  if (pathname.startsWith("/org/events")) {
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "eventos") {
       return `Eventos · ${sectionLabel}`;
     }
     return "Eventos";
   }
-  if (pathname.startsWith("/org/reservas/novo")) return "Reservas · Criar serviço";
-  if (pathname.startsWith("/org/reservas/servicos")) return "Reservas · Serviços";
-  if (pathname.startsWith("/org/reservas/clientes")) return "Reservas · Clientes";
-  if (pathname.startsWith("/org/reservas/profissionais")) return "Reservas · Profissionais";
-  if (pathname.startsWith("/org/reservas/recursos")) return "Reservas · Recursos";
-  if (pathname.startsWith("/org/reservas/politicas")) return "Reservas · Políticas";
-  if (pathname.startsWith("/org/reservas")) {
+  if (pathname.startsWith("/org/bookings/novo")) return "Reservas · Criar serviço";
+  if (pathname.startsWith("/org/bookings/servicos")) return "Reservas · Serviços";
+  if (pathname.startsWith("/org/bookings/clientes")) return "Reservas · Clientes";
+  if (pathname.startsWith("/org/bookings/profissionais")) return "Reservas · Profissionais";
+  if (pathname.startsWith("/org/bookings/recursos")) return "Reservas · Recursos";
+  if (pathname.startsWith("/org/bookings/politicas")) return "Reservas · Políticas";
+  if (pathname.startsWith("/org/bookings")) {
     if (tab === "availability") return "Reservas · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
@@ -115,16 +104,12 @@ function resolveLabel(
   if (pathname.startsWith("/org/clube/membros")) return "Clube · Membros";
   if (pathname.startsWith("/org/clube/caixa")) return "Clube · Caixa";
   if (pathname.includes("/eventos/") && pathname.endsWith("/edit")) return "Editar evento";
-  if (pathname.includes("/eventos/") && pathname.endsWith("/live")) return "Gerir · Preparar live";
   if (pathname.includes("/eventos/")) return "Eventos";
-  if (pathname.startsWith("/org/inscricoes")) return "Formulários";
-  if (pathname.startsWith("/org/scan")) return "Check-in";
+  if (pathname.startsWith("/org/forms")) return "Formulários";
+  if (pathname.startsWith("/org/check-in")) return "Check-in";
   if (pathname.startsWith("/org/faturacao")) return "Finanças";
   if (pathname.startsWith("/org/pagamentos/invoices")) return "Faturação";
-  if (pathname.startsWith("/org/tournaments/") && pathname.endsWith("/finance")) return "Finanças do torneio";
-  if (pathname.startsWith("/org/tournaments/") && pathname.endsWith("/live")) return "Live do torneio";
-  if (pathname.startsWith("/org/tournaments/")) return "Torneios de Padel";
-  if (pathname.startsWith("/org/staff")) return "Equipa";
+  if (pathname.startsWith("/org/team")) return "Equipa";
   if (pathname.startsWith("/org/settings")) return "Definições";
   const objectiveLabel = OBJECTIVE_LABELS[tab];
   const sectionKey =
@@ -139,9 +124,8 @@ function resolveLabel(
   }
   if (objectiveLabel) return objectiveLabel;
 
-  if (tab === "overview") return "Dashboard";
-  if (tab === "profile") return "Perfil";
-  return "Dashboard";
+  if (tab === "overview") return "Painel";
+  return "Painel";
 }
 
 export function OrganizationBreadcrumb() {
@@ -152,8 +136,8 @@ export function OrganizationBreadcrumb() {
   const marketingParamRaw = searchParams?.get("marketing");
   const presetParamRaw = searchParams?.get("preset");
   const padelParamRaw = searchParams?.get("padel");
-  const organizationId = parseOrganizationId(searchParams?.get("organizationId"));
-  const dashboardHref = appendOrganizationIdToHref("/org/overview", organizationId);
+  const organizationId = parseOrgIdFromPathnameStrict(pathname ?? "");
+  const dashboardHref = organizationId ? buildOrgHref(organizationId, "/overview") : buildOrgHubHref("/organizations");
   const label = resolveLabel(
     pathname || "",
     tabParamRaw,
@@ -167,7 +151,7 @@ export function OrganizationBreadcrumb() {
     <Breadcrumb className="text-base md:text-lg font-semibold text-white/80">
         <BreadcrumbList className="gap-3">
         <BreadcrumbItem className="text-white/75 hover:text-white transition">
-          <Link href={dashboardHref}>Dashboard</Link>
+          <Link href={dashboardHref}>Painel</Link>
         </BreadcrumbItem>
         <BreadcrumbSeparator className="text-white/50" />
         <BreadcrumbItem>

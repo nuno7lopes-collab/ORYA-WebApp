@@ -6,6 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureLojaModuleAccess } from "@/lib/loja/access";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { canPublishStoreOnProfile } from "@/lib/publicOrganizationProfile";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { OrganizationMemberRole, StoreStatus } from "@prisma/client";
@@ -28,16 +29,54 @@ function normalizeStore(store: {
   showOnProfile: boolean;
   createdAt: Date;
   updatedAt: Date;
-}) {
+}, options?: { publicProductsCount?: number }) {
   return {
     id: store.id,
     status: store.status,
     catalogLocked: store.catalogLocked,
     checkoutEnabled: store.checkoutEnabled,
     showOnProfile: store.showOnProfile,
+    publicProductsCount: options?.publicProductsCount ?? 0,
     createdAt: store.createdAt.toISOString(),
     updatedAt: store.updatedAt.toISOString(),
   };
+}
+
+async function ensureStoreForOrganization(organizationId: number) {
+  const existing = await prisma.store.findFirst({
+    where: { ownerOrganizationId: organizationId },
+    select: {
+      id: true,
+      status: true,
+      catalogLocked: true,
+      checkoutEnabled: true,
+      showOnProfile: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  if (existing) {
+    return existing;
+  }
+  return prisma.store.create({
+    data: {
+      ownerOrganizationId: organizationId,
+      status: StoreStatus.CLOSED,
+      catalogLocked: false,
+      checkoutEnabled: false,
+      showOnProfile: false,
+      currency: "EUR",
+    },
+    select: {
+      id: true,
+      status: true,
+      catalogLocked: true,
+      checkoutEnabled: true,
+      showOnProfile: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
 }
 
 const updateStoreSchema = z.object({
@@ -97,20 +136,12 @@ async function _GET(req: NextRequest) {
       return fail(403, lojaAccess.error);
     }
 
-    const store = await prisma.store.findFirst({
-      where: { ownerOrganizationId: organization.id },
-      select: {
-        id: true,
-        status: true,
-        catalogLocked: true,
-        checkoutEnabled: true,
-        showOnProfile: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const store = await ensureStoreForOrganization(organization.id);
+    const publicProductsCount = await prisma.storeProduct.count({
+      where: { storeId: store.id, visibility: "PUBLIC" },
     });
 
-    return respondOk(ctx, {store: store ? normalizeStore(store) : null });
+    return respondOk(ctx, {store: normalizeStore(store, { publicProductsCount }) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -159,44 +190,11 @@ async function _POST(req: NextRequest) {
       return fail(403, lojaAccess.error);
     }
 
-    const existing = await prisma.store.findFirst({
-      where: { ownerOrganizationId: organization.id },
-      select: {
-        id: true,
-        status: true,
-        catalogLocked: true,
-        checkoutEnabled: true,
-        showOnProfile: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const store = await ensureStoreForOrganization(organization.id);
+    const publicProductsCount = await prisma.storeProduct.count({
+      where: { storeId: store.id, visibility: "PUBLIC" },
     });
-
-    if (existing) {
-      return respondOk(ctx, {store: normalizeStore(existing) });
-    }
-
-    const created = await prisma.store.create({
-      data: {
-        ownerOrganizationId: organization.id,
-        status: StoreStatus.CLOSED,
-        catalogLocked: true,
-        checkoutEnabled: false,
-        showOnProfile: false,
-        currency: "EUR",
-      },
-      select: {
-        id: true,
-        status: true,
-        catalogLocked: true,
-        checkoutEnabled: true,
-        showOnProfile: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
-
-    return respondOk(ctx, {store: normalizeStore(created) }, { status: 201 });
+    return respondOk(ctx, {store: normalizeStore(store, { publicProductsCount }) }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -245,13 +243,7 @@ async function _PATCH(req: NextRequest) {
       return fail(403, lojaAccess.error);
     }
 
-    const store = await prisma.store.findFirst({
-      where: { ownerOrganizationId: organization.id },
-      select: { id: true },
-    });
-    if (!store) {
-      return fail(404, "Loja ainda nao criada.");
-    }
+    const store = await ensureStoreForOrganization(organization.id);
 
     const organizationPayments = await prisma.organization.findUnique({
       where: { id: organization.id },
@@ -276,8 +268,19 @@ async function _PATCH(req: NextRequest) {
     }
 
     const payload = parsed.data;
+    const publicProductsCount = await prisma.storeProduct.count({
+      where: { storeId: store.id, visibility: "PUBLIC" },
+    });
+
+    const wantsPublish = payload.showOnProfile === true;
+    const wantsHide = payload.showOnProfile === false;
+    const nextStatus = payload.status ?? store.status;
+    const nextCheckoutEnabled = payload.checkoutEnabled ?? store.checkoutEnabled;
+    const nextShowOnProfile = payload.showOnProfile ?? store.showOnProfile;
     const wantsPublicActivation =
-      payload.status === StoreStatus.ACTIVE || payload.showOnProfile === true || payload.checkoutEnabled === true;
+      !wantsHide &&
+      (nextStatus === StoreStatus.ACTIVE || nextShowOnProfile === true || nextCheckoutEnabled === true);
+
     if (wantsPublicActivation) {
       const paymentsGate = getPublicStorePaymentsGate({
         orgType: organizationPayments.orgType,
@@ -304,14 +307,49 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
+    if (wantsPublish) {
+      const publishGate = canPublishStoreOnProfile(publicProductsCount);
+      if (!publishGate.ok) {
+        return respondError(
+          ctx,
+          {
+            errorCode: "STORE_PUBLIC_PRODUCTS_REQUIRED",
+            message: publishGate.error,
+            retryable: false,
+            details: { publicProductsCount },
+          },
+          { status: 409 },
+        );
+      }
+    }
+
+    const updateData: {
+      status?: StoreStatus;
+      catalogLocked?: boolean;
+      checkoutEnabled?: boolean;
+      showOnProfile?: boolean;
+    } = {};
+    if (typeof payload.status !== "undefined") updateData.status = payload.status;
+    if (typeof payload.catalogLocked !== "undefined") updateData.catalogLocked = payload.catalogLocked;
+    if (typeof payload.checkoutEnabled !== "undefined") updateData.checkoutEnabled = payload.checkoutEnabled;
+    if (typeof payload.showOnProfile !== "undefined") updateData.showOnProfile = payload.showOnProfile;
+
+    if (wantsPublish) {
+      updateData.status = StoreStatus.ACTIVE;
+      updateData.checkoutEnabled = true;
+      updateData.showOnProfile = true;
+    }
+    if (wantsHide) {
+      updateData.showOnProfile = false;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return respondOk(ctx, { store: normalizeStore(store, { publicProductsCount }) });
+    }
+
     const updated = await prisma.store.update({
       where: { id: store.id },
-      data: {
-        status: payload.status ?? undefined,
-        catalogLocked: payload.catalogLocked ?? undefined,
-        checkoutEnabled: payload.checkoutEnabled ?? undefined,
-        showOnProfile: payload.showOnProfile ?? undefined,
-      },
+      data: updateData,
       select: {
         id: true,
         status: true,
@@ -323,7 +361,7 @@ async function _PATCH(req: NextRequest) {
       },
     });
 
-    return respondOk(ctx, {store: normalizeStore(updated) });
+    return respondOk(ctx, { store: normalizeStore(updated, { publicProductsCount }) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");

@@ -1,4 +1,5 @@
 import { PadelPaymentMode } from "@prisma/client";
+import { isValidPhone, normalizePhone } from "@/lib/phone";
 
 export type ParsedPadelImportRow = {
   rowNumber: number;
@@ -27,6 +28,9 @@ export type PadelImportParseOptions = {
   categoryByLabel: Map<string, number>;
   defaultCategoryId: number | null;
   fallbackCategoryId: number | null;
+  phoneLocale?: string | null;
+  phoneCountryIso2?: string | null;
+  defaultPhoneCallingCode?: string;
 };
 
 export const normalizeImportHeader = (value: string) =>
@@ -89,6 +93,20 @@ export const resolveImportPositiveInt = (value: string | null) => {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
+const normalizeImportPhone = (
+  value: string,
+  options: { phoneLocale?: string | null; phoneCountryIso2?: string | null; defaultPhoneCallingCode?: string } = {},
+) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!isValidPhone(trimmed)) return trimmed;
+  return normalizePhone(trimmed, {
+    defaultLocale: options.phoneLocale ?? null,
+    defaultCountryIso2: options.phoneCountryIso2 ?? null,
+    defaultCountryCallingCode: options.defaultPhoneCallingCode,
+  });
+};
+
 const parseImportBoolean = (value: string | null, fallback: boolean) => {
   if (!value) return { value: fallback, ok: true };
   const normalized = normalizeImportLookup(value);
@@ -115,7 +133,15 @@ export function parsePadelImportRows(
   rows: Array<Record<string, unknown>>,
   options: PadelImportParseOptions,
 ): PadelImportParseResult {
-  const { categoryById, categoryByLabel, defaultCategoryId, fallbackCategoryId } = options;
+  const {
+    categoryById,
+    categoryByLabel,
+    defaultCategoryId,
+    fallbackCategoryId,
+    phoneLocale,
+    phoneCountryIso2,
+    defaultPhoneCallingCode,
+  } = options;
   const parsedRows: ParsedPadelImportRow[] = [];
   const errors: PadelImportError[] = [];
   const invalidRows = new Set<number>();
@@ -234,8 +260,16 @@ export function parsePadelImportRows(
       paymentMode: paymentModeResult.value,
       paid: paymentStatusResult.value,
       players: [
-        { name: name1.trim(), email: email1 ? email1.trim() : null, phone: phone1 ? phone1.trim() : null },
-        { name: name2.trim(), email: email2 ? email2.trim() : null, phone: phone2 ? phone2.trim() : null },
+        {
+          name: name1.trim(),
+          email: email1 ? email1.trim() : null,
+          phone: normalizeImportPhone(phone1, { phoneLocale, phoneCountryIso2, defaultPhoneCallingCode }),
+        },
+        {
+          name: name2.trim(),
+          email: email2 ? email2.trim() : null,
+          phone: normalizeImportPhone(phone2, { phoneLocale, phoneCountryIso2, defaultPhoneCallingCode }),
+        },
       ],
     });
   });
