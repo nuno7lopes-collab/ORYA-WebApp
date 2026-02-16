@@ -79,6 +79,35 @@ describe("proxy org canonical hard-cut", () => {
   });
 
   it("returns 410 for removed finance/analytics legacy sub-routes", async () => {
+    const req = new NextRequest("http://localhost/org/42/bookings/services");
+    const res = await proxy(req);
+
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+    expect(body.namespace).toBe("web");
+  });
+
+  it("returns 410 for removed legacy bookings query routes", async () => {
+    const legacyQueryPaths = [
+      "http://localhost/org/42/bookings?tab=availability",
+      "http://localhost/org/42/bookings?bookings=availability",
+      "http://localhost/org/42/bookings?bookings=prices",
+      "http://localhost/org/42/bookings?bookings=integrations",
+    ];
+    for (const path of legacyQueryPaths) {
+      const req = new NextRequest(path);
+      const res = await proxy(req);
+      expect(res.status).toBe(410);
+      const body = await res.json();
+      expect(body.error).toBe("LEGACY_ROUTE_REMOVED");
+      expect(body.errorCode).toBe("LEGACY_ROUTE_REMOVED");
+      expect(body.namespace).toBe("web");
+    }
+  });
+
+  it("returns 410 for removed finance/analytics legacy sub-routes", async () => {
     const req = new NextRequest("http://localhost/org/42/finance/subscriptions");
     const res = await proxy(req);
 

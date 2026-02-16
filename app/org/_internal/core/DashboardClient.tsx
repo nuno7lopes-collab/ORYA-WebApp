@@ -2226,6 +2226,17 @@ function OrganizacaoPageInner({
               flow: "Operações",
             }
           : null,
+        canAccessReservas
+          ? {
+              id: "calendar",
+              moduleKey: "RESERVAS",
+              title: "Calendário",
+              summary: "Visão operacional read-first da ocupação da organização.",
+              bullets: ["Agenda consolidada", "Vista semanal e diária", "Sem escrita direta de serviços"],
+              href: scopedOrganizationId ? `/org/${scopedOrganizationId}/calendar` : undefined,
+              flow: "Operações",
+            }
+          : null,
         canAccessTorneios
           ? {
               id: "padel-club",

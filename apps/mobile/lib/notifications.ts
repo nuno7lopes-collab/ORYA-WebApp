@@ -1,11 +1,9 @@
-import { resolveMobileLink, type ResolvedMobileLink } from "./links";
-
-export type ResolvedNotificationLink = ResolvedMobileLink;
+import {
+  resolveNotificationLink,
+  type ResolvedNotificationLink,
+} from "@/lib/mobile/notifications";
 
 type RouterLike = { push: (href: string) => void };
-
-export const resolveNotificationLink = (input?: string | null): ResolvedNotificationLink =>
-  resolveMobileLink(input, { source: "notifications", allowWeb: true });
 
 export const openNotificationLink = async (router: RouterLike, input?: string | null) => {
   const resolved = resolveNotificationLink(input);

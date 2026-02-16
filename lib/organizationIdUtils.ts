@@ -250,13 +250,26 @@ export function resolveCanonicalOrgHref(
   }
 
   if (suffix === "/reservas") {
+    const tab = nextSearch.get("tab")?.trim().toLowerCase() ?? null;
+    const bookings = nextSearch.get("bookings")?.trim().toLowerCase() ?? null;
+    nextSearch.delete("tab");
+    nextSearch.delete("bookings");
+    if (tab === "availability" || bookings === "availability") {
+      return { pathname: buildOrgHref(organizationId, "/bookings/availability"), search: nextSearch };
+    }
+    if (bookings === "prices") {
+      return { pathname: buildOrgHref(organizationId, "/bookings/prices"), search: nextSearch };
+    }
+    if (bookings === "integrations") {
+      return { pathname: buildOrgHref(organizationId, "/bookings/integrations"), search: nextSearch };
+    }
     return { pathname: buildOrgHref(organizationId, "/bookings"), search: nextSearch };
   }
   if (suffix === "/reservas/novo") {
     return { pathname: buildOrgHref(organizationId, "/bookings/new"), search: nextSearch };
   }
   if (suffix === "/reservas/servicos") {
-    return { pathname: buildOrgHref(organizationId, "/bookings/services"), search: nextSearch };
+    return { pathname: buildOrgHref(organizationId, "/bookings"), search: nextSearch };
   }
   if (suffix === "/reservas/clientes") {
     return { pathname: buildOrgHref(organizationId, "/bookings/customers"), search: nextSearch };
@@ -281,6 +294,12 @@ export function resolveCanonicalOrgHref(
   }
   if (suffix === "/reservas/politicas") {
     return { pathname: buildOrgHref(organizationId, "/bookings/policies"), search: nextSearch };
+  }
+  if (suffix === "/reservas/precos") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/prices"), search: nextSearch };
+  }
+  if (suffix === "/reservas/integracoes") {
+    return { pathname: buildOrgHref(organizationId, "/bookings/integrations"), search: nextSearch };
   }
 
   if (suffix === "/inscricoes") {

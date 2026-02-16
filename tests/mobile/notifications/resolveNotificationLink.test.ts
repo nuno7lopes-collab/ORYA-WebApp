@@ -1,20 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 
-vi.mock("/Users/nuno/orya/ORYA-WebApp/apps/mobile/lib/env", () => ({
-  getMobileEnv: () => ({
-    apiBaseUrl: "https://www.orya.pt",
-    appEnv: "test",
-  }),
-}));
-
-vi.mock("/Users/nuno/orya/ORYA-WebApp/apps/mobile/lib/env.ts", () => ({
-  getMobileEnv: () => ({
-    apiBaseUrl: "https://www.orya.pt",
-    appEnv: "test",
-  }),
-}));
-
-import { resolveNotificationLink } from "@/apps/mobile/lib/notifications";
+import { resolveNotificationLink } from "@/lib/mobile/notifications";
 
 const expectNative = (input: string, path: string) => {
   expect(resolveNotificationLink(input)).toEqual({ kind: "native", path });

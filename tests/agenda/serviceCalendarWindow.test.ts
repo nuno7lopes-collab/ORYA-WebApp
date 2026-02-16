@@ -46,7 +46,6 @@ vi.mock("@/lib/http/requestContext", () => ({
 }));
 
 import { GET as CalendarGet } from "@/app/api/servicos/[id]/calendario/route";
-import { GET as SlotsGet } from "@/app/api/servicos/[id]/slots/route";
 
 describe("service calendar window", () => {
   beforeEach(() => {
@@ -91,8 +90,8 @@ describe("service calendar window", () => {
   });
 
   it("bloqueia dias fora da janela", async () => {
-    const res = await SlotsGet(
-      new NextRequest("http://localhost/api/servicos/1/slots?day=2026-06-01"),
+    const res = await CalendarGet(
+      new NextRequest("http://localhost/api/servicos/1/calendario?day=2026-06-01"),
       { params: Promise.resolve({ id: "1" }) },
     );
 

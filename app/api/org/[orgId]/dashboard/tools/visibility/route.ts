@@ -8,7 +8,10 @@ import {
   getOrganizationDashboardHiddenToolIds,
   setOrganizationDashboardHiddenToolIds,
 } from "@/lib/organizationDashboardToolVisibility";
+import { NON_HIDEABLE_DASHBOARD_TOOL_IDS } from "@/lib/organizationDashboardTools";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const NON_HIDEABLE_TOOL_IDS = Array.from(NON_HIDEABLE_DASHBOARD_TOOL_IDS).sort();
 
 const canEditDashboardVisibility = (role: string | null | undefined) =>
   role === "OWNER" || role === "CO_OWNER" || role === "ADMIN";
@@ -51,6 +54,7 @@ async function _GET(req: NextRequest) {
         ok: true,
         hiddenToolIds,
         canEdit: canEditDashboardVisibility(access.membershipRole),
+        nonHideableToolIds: NON_HIDEABLE_TOOL_IDS,
       },
       { status: 200 },
     );
@@ -82,6 +86,7 @@ async function _PATCH(req: NextRequest) {
         ok: true,
         hiddenToolIds,
         canEdit: true,
+        nonHideableToolIds: NON_HIDEABLE_TOOL_IDS,
       },
       { status: 200 },
     );
@@ -93,4 +98,3 @@ async function _PATCH(req: NextRequest) {
 
 export const GET = withApiEnvelope(_GET);
 export const PATCH = withApiEnvelope(_PATCH);
-

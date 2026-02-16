@@ -1,9 +1,11 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 import { useState } from "react";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +37,11 @@ type MemberItem = {
 };
 
 export default function ProfissionaisPage() {
+  const params = useParams();
+  const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
+  const organizationId = Number(orgIdRaw);
+  const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
+
   const { data, mutate } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
     fetcher,
@@ -184,7 +191,7 @@ export default function ProfissionaisPage() {
           <h1 className={DASHBOARD_TITLE}>Profissionais</h1>
           <p className={DASHBOARD_MUTED}>Gere equipa e disponibilidade.</p>
         </div>
-        <Link href="/org/bookings" className={CTA_SECONDARY}>
+        <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -360,7 +367,10 @@ export default function ProfissionaisPage() {
                         <button type="button" className={CTA_SECONDARY} onClick={() => handleToggle(item)}>
                           {item.isActive ? "Desativar" : "Ativar"}
                         </button>
-                        <Link href={`/org/bookings/profissionais/${item.id}`} className={CTA_PRIMARY}>
+                        <Link
+                          href={appendOrganizationIdToHref(`/org/bookings/professionals/${item.id}`, canonicalOrganizationId)}
+                          className={CTA_PRIMARY}
+                        >
                           Disponibilidade
                         </Link>
                       </div>

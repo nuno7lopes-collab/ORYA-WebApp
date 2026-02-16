@@ -136,40 +136,45 @@ export function getObjectiveSections(
     if (operationOverride === "RESERVAS") {
       const baseHref = "/org/bookings";
       sections.push({
-        id: "agenda",
-        label: "Agenda",
+        id: "servicos",
+        label: "Serviços",
         href: manageBase ?? baseHref,
       });
       sections.push(
         {
           id: "disponibilidade",
           label: "Disponibilidade",
-          href: `${baseHref}?tab=availability`,
-        },
-        {
-          id: "servicos",
-          label: "Serviços",
-          href: `${baseHref}/servicos`,
+          href: `${baseHref}/availability`,
         },
         {
           id: "clientes",
           label: "Clientes",
-          href: `${baseHref}/clientes`,
+          href: `${baseHref}/customers`,
         },
         {
           id: "profissionais",
           label: "Profissionais",
-          href: `${baseHref}/profissionais`,
+          href: `${baseHref}/professionals`,
         },
         {
           id: "recursos",
           label: "Recursos",
-          href: `${baseHref}/recursos`,
+          href: `${baseHref}/resources`,
         },
         {
           id: "politicas",
           label: "Políticas",
-          href: `${baseHref}/politicas`,
+          href: `${baseHref}/policies`,
+        },
+        {
+          id: "precos",
+          label: "Preços",
+          href: `${baseHref}/prices`,
+        },
+        {
+          id: "integracoes",
+          label: "Integrações",
+          href: `${baseHref}/integrations`,
         },
       );
       if (focusId) {

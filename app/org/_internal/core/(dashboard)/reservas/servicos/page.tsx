@@ -1,8 +1,10 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +28,11 @@ type ServiceItem = {
 const formatPrice = (cents: number, currency: string) => `${(cents / 100).toFixed(2)} ${currency}`;
 
 export default function ReservasServicosPage() {
+  const params = useParams();
+  const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
+  const organizationId = Number(orgIdRaw);
+  const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
+
   const { data, isLoading } = useSWR<{ ok: boolean; items: ServiceItem[] }>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"),
     fetcher,
@@ -40,7 +47,7 @@ export default function ReservasServicosPage() {
           <h1 className={DASHBOARD_TITLE}>Serviços</h1>
           <p className={DASHBOARD_MUTED}>Cria e gere o catálogo de serviços.</p>
         </div>
-        <Link href="/org/bookings?create=service" className={CTA_PRIMARY}>
+        <Link href={appendOrganizationIdToHref("/org/bookings?create=service", canonicalOrganizationId)} className={CTA_PRIMARY}>
           Novo serviço
         </Link>
       </header>
@@ -54,7 +61,7 @@ export default function ReservasServicosPage() {
           {services.map((service) => (
             <Link
               key={service.id}
-              href={`/org/bookings/${service.id}`}
+              href={appendOrganizationIdToHref(`/org/bookings/${service.id}`, canonicalOrganizationId)}
               className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">

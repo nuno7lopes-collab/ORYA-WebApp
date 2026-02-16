@@ -87,14 +87,17 @@ function resolveLabel(
     }
     return "Eventos";
   }
-  if (pathname.startsWith("/org/bookings/novo")) return "Reservas · Criar serviço";
-  if (pathname.startsWith("/org/bookings/servicos")) return "Reservas · Serviços";
-  if (pathname.startsWith("/org/bookings/clientes")) return "Reservas · Clientes";
-  if (pathname.startsWith("/org/bookings/profissionais")) return "Reservas · Profissionais";
-  if (pathname.startsWith("/org/bookings/recursos")) return "Reservas · Recursos";
-  if (pathname.startsWith("/org/bookings/politicas")) return "Reservas · Políticas";
+  if (pathname.startsWith("/org/calendar/day")) return "Calendário · Dia";
+  if (pathname.startsWith("/org/calendar")) return "Calendário";
+  if (pathname.startsWith("/org/bookings/new")) return "Reservas · Criar serviço";
+  if (pathname.startsWith("/org/bookings/customers")) return "Reservas · Clientes";
+  if (pathname.startsWith("/org/bookings/professionals")) return "Reservas · Profissionais";
+  if (pathname.startsWith("/org/bookings/resources")) return "Reservas · Recursos";
+  if (pathname.startsWith("/org/bookings/policies")) return "Reservas · Políticas";
+  if (pathname.startsWith("/org/bookings/prices")) return "Reservas · Preços";
+  if (pathname.startsWith("/org/bookings/integrations")) return "Reservas · Integrações";
   if (pathname.startsWith("/org/bookings")) {
-    if (tab === "availability") return "Reservas · Disponibilidade";
+    if (pathname.startsWith("/org/bookings/availability")) return "Reservas · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
       return `Reservas · ${sectionLabel}`;

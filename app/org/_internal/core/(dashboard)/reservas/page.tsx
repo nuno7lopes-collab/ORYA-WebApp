@@ -4,7 +4,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   Elements,
@@ -19,7 +19,7 @@ import { AddressCombobox } from "@/components/ui/address-combobox";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
+import { appendOrganizationIdToHref, buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
 import BookingChargesPanel from "@/app/org/_internal/core/(dashboard)/reservas/_components/BookingChargesPanel";
 import {
@@ -496,8 +496,15 @@ const normalizeHourHeight = (value: number) =>
   Math.max(MIN_HOUR_HEIGHT, Math.min(MAX_HOUR_HEIGHT, Math.round(value / 4) * 4));
 
 export default function ReservasDashboardPage() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const bookingsFocusRaw = (searchParams?.get("bookings") ?? "overview").trim().toLowerCase();
+  const bookingsFocusFromPath = useMemo<"availability" | "prices" | "integrations" | null>(() => {
+    if (!pathname) return null;
+    const match = pathname.match(/^\/org\/\d+\/bookings\/(availability|prices|integrations)(?:\/|$)/i);
+    if (!match) return null;
+    return match[1].toLowerCase() as "availability" | "prices" | "integrations";
+  }, [pathname]);
+  const bookingsFocusRaw = (bookingsFocusFromPath ?? "overview").trim().toLowerCase();
   const bookingsFocus: BookingsFocus =
     bookingsFocusRaw === "availability" ||
     bookingsFocusRaw === "prices" ||
@@ -505,7 +512,17 @@ export default function ReservasDashboardPage() {
       ? bookingsFocusRaw
       : "overview";
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
-  const organizationId = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationIdFromPath = useMemo(() => {
+    if (!pathname) return null;
+    const match = pathname.match(/^\/org\/(\d+)(?:\/|$)/i);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [pathname]);
+  const organizationIdFromQuery = organizationIdParam ? Number(organizationIdParam) : null;
+  const organizationId = Number.isFinite(organizationIdFromQuery ?? Number.NaN)
+    ? organizationIdFromQuery
+    : organizationIdFromPath;
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
       ? `/api/org/${organizationId}/me`
@@ -903,13 +920,15 @@ export default function ReservasDashboardPage() {
   }, [assignmentMode, canFilterByProfessional, canFilterByResource, searchParams]);
 
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    setCalendarTab(tab === "availability" ? "availability" : "agenda");
+    const calendarTabFromPath = pathname?.match(/^\/org\/\d+\/bookings\/availability(?:\/|$)/i)
+      ? "availability"
+      : "agenda";
+    setCalendarTab(calendarTabFromPath);
     const view = searchParams.get("view");
     if (view === "day" || view === "week") {
       setCalendarView(view);
     }
-  }, [searchParams]);
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     scrollInitRef.current = false;
@@ -2520,12 +2539,12 @@ export default function ReservasDashboardPage() {
               </button>
             </div>
             <div className="grid gap-2 text-[12px]">
-              <Link href="/org/bookings" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
+              <Link href={appendOrganizationIdToHref("/org/bookings", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
                 Agenda principal
               </Link>
               {canFilterByProfessional && (
                 <Link
-                  href="/org/bookings/profissionais"
+                  href={appendOrganizationIdToHref("/org/bookings/professionals", organizationId)}
                   className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
                 >
                   Profissionais
@@ -2533,19 +2552,19 @@ export default function ReservasDashboardPage() {
               )}
               {canFilterByResource && (
                 <Link
-                  href="/org/bookings/recursos"
+                  href={appendOrganizationIdToHref("/org/bookings/resources", organizationId)}
                   className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
                 >
                   Recursos
                 </Link>
               )}
               <Link
-                href="/org/bookings?tab=availability"
+                href={appendOrganizationIdToHref("/org/bookings/availability", organizationId)}
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
               >
                 Editar disponibilidade
               </Link>
-              <Link href="/org/bookings/politicas" className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
+              <Link href={appendOrganizationIdToHref("/org/bookings/policies", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
                 Politicas de cancelamento
               </Link>
             </div>
@@ -2603,7 +2622,7 @@ export default function ReservasDashboardPage() {
                 <button type="button" onClick={showServiceDrawer} className="text-[#6BFFFF]">
                   Novo serviço
                 </button>
-                <Link href="/org/bookings/servicos" className="text-white/50">
+                <Link href={appendOrganizationIdToHref("/org/bookings", organizationId)} className="text-white/50">
                   Gerir
                 </Link>
               </div>
@@ -2625,7 +2644,7 @@ export default function ReservasDashboardPage() {
               {services.slice(0, 4).map((service) => (
                 <Link
                   key={service.id}
-                  href={`/org/bookings/${service.id}`}
+                  href={appendOrganizationIdToHref(`/org/bookings/${service.id}`, organizationId)}
                   className="block rounded-xl border border-white/10 bg-white/5 px-3 py-2"
                 >
                   <p className="text-[12px] font-semibold text-white">{service.title}</p>
@@ -3282,7 +3301,7 @@ export default function ReservasDashboardPage() {
 
             <div className="mt-6 space-y-2">
               {drawerBooking.service?.id && (
-                <Link href={`/org/bookings/${drawerBooking.service.id}`} className={CTA_SECONDARY}>
+                <Link href={appendOrganizationIdToHref(`/org/bookings/${drawerBooking.service.id}`, organizationId)} className={CTA_SECONDARY}>
                   Ver serviço
                 </Link>
               )}

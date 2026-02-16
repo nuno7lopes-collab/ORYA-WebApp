@@ -600,3 +600,21 @@
 - Acordado com owner: cron naming por domínio, runbook único obrigatório, SLOs iniciais canónicos (`checkout`, `conflict`, `refund`, `no-show`) e dashboard de integridade completo.
 - Acordado com owner: migração/cutover executa por ondas com hard-cut final e sem compatibilidade legacy fora da superfície canónica.
 - Acordado com owner: pendências de split são retiradas do fecho v1 e passam para trilho dedicado `SPLIT_V2`.
+
+## 12) B2 — Bookings Write-Model + Hard-Cut de Legacy (FECHADO)
+- `bookings` é o write-model completo de reservas:
+  - serviços (`/org/:orgId/bookings`),
+  - disponibilidade (`/org/:orgId/bookings/availability`),
+  - profissionais (`/org/:orgId/bookings/professionals`),
+  - recursos (`/org/:orgId/bookings/resources`),
+  - policies (`/org/:orgId/bookings/policies`),
+  - preços (`/org/:orgId/bookings/prices`),
+  - integrações (`/org/:orgId/bookings/integrations`),
+  - clientes (`/org/:orgId/bookings/customers`).
+- Hard-cut obrigatório em web:
+  - `/org/:orgId/bookings/services` -> `410 LEGACY_ROUTE_REMOVED`.
+  - `/org/:orgId/bookings?tab=availability` -> `410 LEGACY_ROUTE_REMOVED`.
+  - `/org/:orgId/bookings?bookings=availability|prices|integrations` -> `410 LEGACY_ROUTE_REMOVED`.
+- Disponibilidade pública canónica mantém endpoint único:
+  - `GET /api/servicos/:id/calendario`.
+  - `GET /api/servicos/:id/slots` e `GET /api/servicos/:id/disponibilidade` -> `410 LEGACY_ROUTE_REMOVED`.

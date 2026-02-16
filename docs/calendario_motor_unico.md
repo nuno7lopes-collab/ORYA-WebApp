@@ -429,3 +429,13 @@ Principio 8:
 4. Tie-break final: `confirmedAt` e depois `claimId` (fallback `createdAt`).
 5. Excecao so por override autorizado e auditado.
 6. Em incerteza tecnica/conflito irresolvevel, fail-closed.
+
+## 16) B2 — Calendar Read-First (FECHADO)
+- `calendar` e superfície operacional de leitura (read-first) para ocupação consolidada.
+- Escrita direta no calendário permanece excecional e auditável (`hard block` e `override`); não é fluxo principal de gestão de serviços.
+- Contrato web canónico:
+  - `/org/:orgId/calendar`
+  - `/org/:orgId/calendar/day`
+- Fronteira de domínio obrigatória:
+  - `calendar`: leitura operacional e monitorização.
+  - `bookings`: write-model de reservas e configuração operacional.

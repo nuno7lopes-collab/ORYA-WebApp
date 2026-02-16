@@ -187,6 +187,19 @@ function isLegacyWebRoute(pathname: string) {
   return pathname === "/organizacao" || pathname.startsWith("/organizacao/");
 }
 
+function isRemovedCanonicalBookingsServicesRoute(pathname: string) {
+  return /^\/org\/\d+\/bookings\/services(?:\/|$)/i.test(pathname);
+}
+
+function hasRemovedCanonicalBookingsLegacyQuery(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
+  if (!/^\/org\/\d+\/bookings\/?$/i.test(pathname)) return false;
+  const tab = req.nextUrl.searchParams.get("tab")?.trim().toLowerCase() ?? null;
+  if (tab === "availability") return true;
+  const bookings = req.nextUrl.searchParams.get("bookings")?.trim().toLowerCase() ?? null;
+  return bookings === "availability" || bookings === "prices" || bookings === "integrations";
+}
+
 const REMOVED_CANONICAL_ORG_WEB_PREFIXES = [
   "/eventos",
   "/reservas",
@@ -408,6 +421,8 @@ export async function proxy(req: NextRequest) {
 
   if (
     isLegacyWebRoute(req.nextUrl.pathname) ||
+    isRemovedCanonicalBookingsServicesRoute(req.nextUrl.pathname) ||
+    hasRemovedCanonicalBookingsLegacyQuery(req) ||
     isRemovedCanonicalOrgWebRoute(req.nextUrl.pathname) ||
     isLegacyOrgShorthandRoute(req.nextUrl.pathname) ||
     removedFinanceAnalyticsLegacyQuery

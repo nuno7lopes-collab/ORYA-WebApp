@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 import { useMemo } from "react";
 import Link from "next/link";
@@ -19,7 +20,10 @@ type ProfessionalItem = {
 export default function ProfissionalDisponibilidadePage() {
   const params = useParams();
   const idRaw = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
   const professionalId = Number(idRaw);
+  const organizationId = Number(orgIdRaw);
+  const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
   const { data } = useSWR<{ ok: boolean; items: ProfessionalItem[] }>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/profissionais"),
     fetcher,
@@ -44,7 +48,7 @@ export default function ProfissionalDisponibilidadePage() {
           </h1>
           <p className={DASHBOARD_MUTED}>Configura horários e exceções.</p>
         </div>
-        <Link href="/org/bookings/profissionais" className={CTA_SECONDARY}>
+        <Link href={appendOrganizationIdToHref("/org/bookings/professionals", canonicalOrganizationId)} className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -55,7 +59,7 @@ export default function ProfissionalDisponibilidadePage() {
           A disponibilidade do profissional é gerida no calendário principal, usando o filtro de profissionais.
         </p>
         <Link
-          href={`/org/bookings?tab=availability&professionalId=${professionalId}`}
+          href={appendOrganizationIdToHref(`/org/bookings/availability?professionalId=${professionalId}`, canonicalOrganizationId)}
           className={CTA_SECONDARY}
         >
           Abrir agenda

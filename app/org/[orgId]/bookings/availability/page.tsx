@@ -1,10 +1,1 @@
-import { redirect } from "next/navigation";
-
-export default async function Page({
-  params,
-}: {
-  params: Promise<{ orgId: string }>;
-}) {
-  const { orgId } = await params;
-  redirect(`/org/${orgId}/bookings?tab=availability&bookings=availability`);
-}
+export { default } from "@/app/org/_internal/core/(dashboard)/reservas/page";

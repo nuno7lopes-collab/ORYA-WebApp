@@ -48,6 +48,7 @@ describe("resolveOrganizationTool", () => {
     expect(resolveOrganizationTool("/org/50/overview")).toBe("dashboard");
     expect(resolveOrganizationTool("/org/50/events")).toBe("events");
     expect(resolveOrganizationTool("/org/50/bookings")).toBe("bookings");
+    expect(resolveOrganizationTool("/org/50/calendar/day")).toBe("calendar");
     expect(resolveOrganizationTool("/org/50/check-in/scanner")).toBe("check-in");
     expect(resolveOrganizationTool("/org/50/finance/ledger")).toBe("finance");
     expect(resolveOrganizationTool("/org/50/analytics/occupancy")).toBe("analytics");

@@ -6392,7 +6392,7 @@ export default function PadelHubClient({
                 Agenda avançada
               </Link>
               <Link
-                href={organizationId ? buildOrgHref(organizationId, "/bookings/services") : buildOrgHubHref("/organizations")}
+                href={organizationId ? buildOrgHref(organizationId, "/bookings") : buildOrgHubHref("/organizations")}
                 className="rounded-full border border-white/15 px-4 py-2 text-[12px] font-semibold text-white/70 hover:border-white/30"
               >
                 Catálogo completo

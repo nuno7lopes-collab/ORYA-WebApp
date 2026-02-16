@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 import { useMemo } from "react";
 import Link from "next/link";
@@ -18,7 +19,10 @@ type ResourceItem = {
 export default function RecursoDisponibilidadePage() {
   const params = useParams();
   const idRaw = Array.isArray(params?.id) ? params?.id[0] : params?.id;
+  const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
   const resourceId = Number(idRaw);
+  const organizationId = Number(orgIdRaw);
+  const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
   const { data } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"),
     fetcher,
@@ -43,7 +47,7 @@ export default function RecursoDisponibilidadePage() {
           </h1>
           <p className={DASHBOARD_MUTED}>Configura horários e exceções.</p>
         </div>
-        <Link href="/org/bookings/recursos" className={CTA_SECONDARY}>
+        <Link href={appendOrganizationIdToHref("/org/bookings/resources", canonicalOrganizationId)} className={CTA_SECONDARY}>
           Voltar
         </Link>
       </div>
@@ -54,7 +58,7 @@ export default function RecursoDisponibilidadePage() {
           A disponibilidade do recurso é gerida no calendário principal, usando o filtro de recursos.
         </p>
         <Link
-          href={`/org/bookings?tab=availability&resourceId=${resourceId}`}
+          href={appendOrganizationIdToHref(`/org/bookings/availability?resourceId=${resourceId}`, canonicalOrganizationId)}
           className={CTA_SECONDARY}
         >
           Abrir agenda

@@ -17,6 +17,7 @@ import { normalizeOrganizationPathname, resolveOrganizationTool, type OrgToolKey
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
 import BookingsSubnav from "@/app/org/_components/subnav/BookingsSubnav";
+import CalendarSubnav from "@/app/org/_components/subnav/CalendarSubnav";
 import CheckInSubnav from "@/app/org/_components/subnav/CheckInSubnav";
 import FinanceSubnav from "@/app/org/_components/subnav/FinanceSubnav";
 import AnalyticsSubnav from "@/app/org/_components/subnav/AnalyticsSubnav";
@@ -91,6 +92,7 @@ const TOOL_META: Record<OrgToolKey, { label: string; moduleKey: string | null }>
   dashboard: { label: "Painel", moduleKey: null },
   events: { label: "Eventos", moduleKey: "EVENTOS" },
   bookings: { label: "Reservas", moduleKey: "RESERVAS" },
+  calendar: { label: "Calendário", moduleKey: "RESERVAS" },
   "check-in": { label: "Check-in", moduleKey: "CHECKIN" },
   finance: { label: "Finanças", moduleKey: "FINANCEIRO" },
   analytics: { label: "Análises", moduleKey: "ANALYTICS" },
@@ -166,6 +168,7 @@ export default function OrganizationTopBar({
     if (!orgId || activeTool === "dashboard") return null;
     if (activeTool === "events") return <EventsSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "bookings") return <BookingsSubnav orgId={orgId} className="w-full max-w-full" />;
+    if (activeTool === "calendar") return <CalendarSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "check-in") return <CheckInSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "finance") return <FinanceSubnav orgId={orgId} className="w-full max-w-full" />;
     if (activeTool === "analytics") return <AnalyticsSubnav orgId={orgId} className="w-full max-w-full" />;

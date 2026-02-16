@@ -3565,7 +3565,8 @@ Regra de subnav (FECHADO):
 Matriz canónica final (web):
 - Dashboard: `/org/:orgId/overview` (sem subnav obrigatória)
 - Events: `/org/:orgId/events` (`list`, `new`, `live` contextual)
-- Bookings: `/org/:orgId/bookings` (`overview`, `availability`, `prices`, `professionals`, `resources`, `policies`, `integrations`)
+- Bookings: `/org/:orgId/bookings` (`services`, `availability`, `prices`, `professionals`, `resources`, `policies`, `integrations`, `customers`)
+- Calendar: `/org/:orgId/calendar` (`week`, `day`) como superfície read-first de ocupação operacional
 - Check-in: `/org/:orgId/check-in` (`scanner`, `list`, `sessions`, `logs`, `devices`)
 - Finance: `/org/:orgId/finance` (`overview`, `ledger`, `dimensions`, `payouts`, `refunds_disputes`, `subscriptions`)
 - Analytics: `/org/:orgId/analytics` (`overview`, `occupancy`, `conversion`, `no_show`, `cohorts`)
@@ -3591,6 +3592,7 @@ Matriz canónica final (web):
   - preferência de UI é por organização;
   - persistência canónica em `GET/PATCH /api/org/:orgId/dashboard/tools/visibility`;
   - alteração permitida apenas a `OWNER`, `CO_OWNER` e `ADMIN`.
+  - `calendar` é estrutural e não ocultável.
 - Danger zone em settings:
   - `suspend` é ação exclusiva de `OWNER`;
   - execução/reversão exigem step-up obrigatório;
@@ -3609,6 +3611,10 @@ Matriz canónica final (web):
 Hard-cut de slugs legacy em `/org/:orgId/*`:
 - Slugs PT/legacy (ex.: `financas`, `loja`, `checkin`, `eventos`, `reservas`, `treinadores`, `crm/clientes`, `manage`, `promote`, `tournaments`, `padel/clube`, `padel/torneios`) respondem com **`410 LEGACY_ROUTE_REMOVED`**.
 - Sem redirects internos para slugs legacy (política single-route-only).
+- Hard-cut de bookings legacy:
+  - `/org/:orgId/bookings/services` responde com **`410 LEGACY_ROUTE_REMOVED`**.
+  - `/org/:orgId/bookings?tab=availability` responde com **`410 LEGACY_ROUTE_REMOVED`**.
+  - `/org/:orgId/bookings?bookings=availability|prices|integrations` responde com **`410 LEGACY_ROUTE_REMOVED`**.
 
 10.1 Multi-Organizações & Group Governance (FECHADO v1)
 - O contrato normativo deste domínio está integralmente neste SSOT.

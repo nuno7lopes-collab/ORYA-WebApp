@@ -1,6 +1,7 @@
 const DASHBOARD_TOOL_IDS = [
   "eventos",
   "reservas",
+  "calendar",
   "padel-club",
   "padel-tournaments",
   "checkin",
@@ -23,6 +24,7 @@ export const NON_HIDEABLE_DASHBOARD_TOOL_IDS = new Set<string>([
   "settings",
   "financeiro",
   "staff",
+  "calendar",
 ]);
 
 export function sanitizeDashboardHiddenToolIds(input: unknown): string[] {

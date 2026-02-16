@@ -1,10 +1,12 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   CTA_PRIMARY,
@@ -36,6 +38,11 @@ function formatWindow(minutes: number | null) {
 }
 
 export default function PoliticasReservaPage() {
+  const params = useParams();
+  const orgIdRaw = Array.isArray(params?.orgId) ? params?.orgId[0] : params?.orgId;
+  const organizationId = Number(orgIdRaw);
+  const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
+
   const { data, mutate } = useSWR<{ ok: boolean; items: PolicyItem[] }>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"),
     fetcher,
@@ -241,7 +248,7 @@ export default function PoliticasReservaPage() {
           </p>
         </div>
 
-        <Link href="/org/bookings" className={CTA_SECONDARY}>
+        <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
           Voltar a Reservas
         </Link>
       </section>

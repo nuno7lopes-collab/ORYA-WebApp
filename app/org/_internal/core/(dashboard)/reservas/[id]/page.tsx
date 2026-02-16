@@ -1834,7 +1834,7 @@ export default function ServicoDetalhePage() {
           type="button"
           className={CTA_SECONDARY}
           onClick={() =>
-            router.push(appendOrganizationIdToHref("/org/bookings?tab=availability", organizationId))
+            router.push(appendOrganizationIdToHref("/org/bookings/availability", organizationId))
           }
         >
           Abrir agenda
