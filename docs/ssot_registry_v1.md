@@ -165,10 +165,10 @@ Atualizado: 2026-02-17
   - `padel_clubs`
   - `services`
 
-#### 00.9.3 Bloqueios Explícitos (não alterados)
-- `app_v3.padel_tournament_roles`
-- `app_v3.refund_policy_versions`
-- Política desta ronda: manter bloqueio por instrução do owner (sem create/drop/refactor nestas duas peças).
+#### 00.9.3 Fecho de Tabelas Críticas (resolvido)
+- `app_v3.padel_tournament_roles`: materializada e alinhada ao contrato Prisma.
+- `app_v3.refund_policy_versions`: materializada e alinhada ao contrato Prisma.
+- Resultado: eliminação do drift runtime `P2021` nestes dois delegates.
 
 #### 00.9.4 Exceções Intencionais de Modelação
 - `app_v3.cron_job_locks` permanece fora do Prisma por desenho (uso SQL raw em lock de cron).

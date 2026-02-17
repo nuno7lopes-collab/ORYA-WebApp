@@ -1,5 +1,18 @@
 {
-  "/api/public/profile/route": "app/api/public/profile/route.js",
-  "/login/page": "app/login/page.js",
-  "/admin/(protected)/page": "app/admin/(protected)/page.js"
+  "/api/auth/me/route": "app/api/auth/me/route.js",
+  "/api/me/reservas/route": "app/api/me/reservas/route.js",
+  "/api/org/[orgId]/dashboard/tools/visibility/route": "app/api/org/[orgId]/dashboard/tools/visibility/route.js",
+  "/api/org/[orgId]/me/route": "app/api/org/[orgId]/me/route.js",
+  "/api/explorar/list/route": "app/api/explorar/list/route.js",
+  "/api/social/organization-follow-status/route": "app/api/social/organization-follow-status/route.js",
+  "/descobrir/page": "app/descobrir/page.js",
+  "/[username]/page": "app/[username]/page.js",
+  "/me/reservas/page": "app/me/reservas/page.js",
+  "/me/compras/loja/page": "app/me/compras/loja/page.js",
+  "/me/settings/page": "app/me/settings/page.js",
+  "/org/[orgId]/overview/page": "app/org/[orgId]/overview/page.js",
+  "/org/[orgId]/analytics/page": "app/org/[orgId]/analytics/page.js",
+  "/org/[orgId]/bookings/page": "app/org/[orgId]/bookings/page.js",
+  "/org/[orgId]/calendar/page": "app/org/[orgId]/calendar/page.js",
+  "/org/[orgId]/finance/page": "app/org/[orgId]/finance/page.js"
 }

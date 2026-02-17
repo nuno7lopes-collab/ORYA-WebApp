@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   OrganizationModule,
   OrganizationStatus,
@@ -50,6 +51,8 @@ const requestedUsername = (process.env.STORE_TOP_PADEL_USERNAME ?? "top_padel").
 const candidateUsernames = Array.from(new Set([requestedUsername, "top_padel", "top-padel", "toppadel"]));
 const supportEmail = (process.env.STORE_TOP_PADEL_SUPPORT_EMAIL ?? "loja@top-padel.test").trim().toLowerCase();
 const fakeStripeAccount = (process.env.STORE_TOP_PADEL_STRIPE_ACCOUNT ?? "acct_top_padel_test").trim();
+const fallbackOwnerUsername = (process.env.STORE_TOP_PADEL_OWNER_USERNAME ?? "seed-top-padel-owner").trim().toLowerCase();
+const fallbackOwnerEmail = (process.env.STORE_TOP_PADEL_OWNER_EMAIL ?? `${fallbackOwnerUsername}@orya.local`).trim().toLowerCase();
 
 type SeedProduct = {
   key: "raquete" | "bola" | "casaco";
@@ -150,12 +153,42 @@ async function ensureOrganization() {
     });
   }
 
-  const fallbackOwner = await prisma.profile.findFirst({
+  let fallbackOwner = await prisma.profile.findFirst({
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
   if (!fallbackOwner) {
-    throw new Error("Nao existe profile para owner do group.");
+    const generatedUserId = randomUUID();
+    await prisma.$transaction(async (tx) => {
+      await tx.users.upsert({
+        where: { id: generatedUserId },
+        update: { email: fallbackOwnerEmail },
+        create: { id: generatedUserId, email: fallbackOwnerEmail },
+      });
+      await tx.profile.upsert({
+        where: { id: generatedUserId },
+        update: {
+          username: fallbackOwnerUsername,
+          fullName: "Top Padel Seed Owner",
+          onboardingDone: true,
+          roles: ["user", "organization"],
+          status: "ACTIVE",
+          isDeleted: false,
+          visibility: "PUBLIC",
+        },
+        create: {
+          id: generatedUserId,
+          username: fallbackOwnerUsername,
+          fullName: "Top Padel Seed Owner",
+          onboardingDone: true,
+          roles: ["user", "organization"],
+          status: "ACTIVE",
+          isDeleted: false,
+          visibility: "PUBLIC",
+        },
+      });
+    });
+    fallbackOwner = { id: generatedUserId };
   }
 
   const group = await prisma.organizationGroup.create({

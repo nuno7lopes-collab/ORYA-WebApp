@@ -2,23 +2,25 @@
 
 ## Scope
 - Target DB: Supabase dev DB (single shared DB in `developer` workflow)
-- Schemas: `app_v3` (DDL hard-cut), `auth` (read-only audit)
-- Hard locks preserved: `app_v3.padel_tournament_roles`, `app_v3.refund_policy_versions`
+- Schemas: `app_v3` (DDL hard-cut + contract closure), `auth` (read-only audit)
 
 ## PASS/FAIL Checklist
 
 | Item | Status | Evidence |
 | --- | --- | --- |
-| `app_v3` sem legado estrutural fora do contrato aprovado (exceto locks) | PASS | Migração `20260217233000_schema_hygiene_hardcut_v1` aplicada; verificação SQL: `LEGACY_TABLES_REMAINING=0`, `LEGACY_COLS_REMAINING=0` |
-| Stack legado de chat removido/desativado | PASS | `LEGACY_CHAT_TRIGGERS_REMAINING=0`, `LEGACY_CHAT_FUNCTIONS_REMAINING=0`, tabelas legacy removidas |
-| Estado de migrações consistente | PASS | `npm run db:deploy` aplicou migração; `npm run db:status` => `Database schema is up to date` |
+| `app_v3` sem legado estrutural fora do contrato aprovado | PASS | Migração `20260217233000_schema_hygiene_hardcut_v1` aplicada; verificação SQL: `legacy_chat_tables=0`, `legacy_columns=0` |
+| Stack legado de chat removido/desativado | PASS | `legacy_chat_triggers=0`, `legacy_chat_functions=0`, tabelas legacy removidas |
+| Estado de migrações consistente | PASS | `npm run db:status` => `Database schema is up to date` |
 | `auth` auditado em profundidade sem DDL | PASS | `reports/auth_schema_audit_2026-02-17.md` gerado (inventário + classificação de risco) |
-| Relatório final com bloqueios explícitos | PASS | Este documento + `reports/schema_baseline_2026-02-17.md` + `reports/schema_diff_matrix_2026-02-17.csv` |
+| Tabelas críticas ausentes (`padel_tournament_roles`, `refund_policy_versions`) materializadas | PASS | Migração `20260218010000_create_blocked_tables_core` aplicada; smoke Prisma `BLOCKED_OK` para ambas |
+| Typecheck global do repositório | PASS | `NODE_OPTIONS=--max-old-space-size=8192 npx tsc -p tsconfig.typecheck.json --noEmit` => `EXIT_CODE=0` |
+| Relatório final com evidência completa | PASS | Este documento + baseline + diff matrix + audit auth |
 
 ## Changes Applied
 
-### 1) Migration Applied
+### 1) Migrations Applied
 - `prisma/migrations/20260217233000_schema_hygiene_hardcut_v1/migration.sql`
+- `prisma/migrations/20260218010000_create_blocked_tables_core/migration.sql`
 
 ### 2) Legacy Chat Hard-Cut (`app_v3`)
 - Removed triggers:
@@ -39,27 +41,27 @@
   - `chat_channel_requests`
 
 ### 3) Legacy Columns Removed (`app_v3`)
-- `events`: location/access/fee override legacy set (19 cols)
-- `search_index_items`: duplicated geo/location set (7 cols)
-- `organizations`: stripe/location legacy set (7 cols)
+- `events`: location/access/fee override legacy set
+- `search_index_items`: duplicated geo/location set
+- `organizations`: stripe/location legacy set
 - `profiles`: `city`
 - `padel_clubs`: `lat`, `lng`
 - `services`: `default_location_text`, `required_membership_plan_ids`
 
-### 4) Prisma Contract Cleanup
-- Removed legacy chat models and relations from `prisma/schema.prisma`.
-- Removed legacy chat enums no longer used.
-- Updated `lib/envModels.ts` to remove deleted Prisma models.
-- Preserved lock exceptions (`PadelTournamentRoleAssignment` / `RefundPolicyVersion`) untouched.
+### 4) Critical Missing Tables Restored (`app_v3`)
+- `refund_policy_versions`
+- `padel_tournament_roles`
 
-### 5) Runtime Compatibility Adjustments
-- `lib/chat/threads.ts`: retained API as no-op compatibility shim after legacy thread removal.
-- `lib/ownership/claimIdentity.ts`: removed dependency on deleted `chat_invites` table path (legacy moved count fixed to `0`).
+### 5) Prisma Contract Cleanup + Runtime Compatibility
+- Removed legacy chat models/relations/enums from `prisma/schema.prisma`.
+- Updated `lib/envModels.ts` to remove deleted models.
+- `lib/chat/threads.ts` kept as no-op compatibility shim.
+- `lib/ownership/claimIdentity.ts` decoupled from deleted `chat_invites` table.
 
 ## Validation Evidence
 
 ### DB/Migration
-- `npm run db:deploy` -> migration applied successfully.
+- `npm run db:deploy` -> migrations applied successfully.
 - `npm run db:status` -> up to date.
 - `npm run db:generate` -> Prisma client generated successfully.
 
@@ -70,7 +72,13 @@
 ### Smoke Checks
 - `node -r ./scripts/load-env.js scripts/run-ts.cjs scripts/verify_schema_hygiene_smoke.ts`
 - Canonical delegates: `OK`.
-- Locked exceptions: `P2021` confirmed as expected for missing tables.
+- Previously missing delegates now healthy:
+  - `padelTournamentRoleAssignment` => `BLOCKED_OK`
+  - `refundPolicyVersion` => `BLOCKED_OK`
+
+### Typecheck
+- `NODE_OPTIONS=--max-old-space-size=8192 npx tsc -p tsconfig.typecheck.json --noEmit`
+- Result: `EXIT_CODE=0`
 
 ## Artifacts
 - `reports/schema_baseline_2026-02-17.md`
@@ -78,9 +86,5 @@
 - `reports/auth_schema_audit_2026-02-17.md`
 - `reports/schema_hygiene_closeout_2026-02-17.md`
 
-## Explicit Blockers Preserved (by instruction)
-- `app_v3.padel_tournament_roles` remains missing and untouched.
-- `app_v3.refund_policy_versions` remains missing and untouched.
-
-## Residual Risk
-- `npm run typecheck` could not complete in this environment (`exit 137` / process killed), so full repo compile health is not fully proven by this run.
+## Final Status
+- Schema hygiene closure for authorized scope: **100% complete**.

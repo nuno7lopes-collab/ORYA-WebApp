@@ -1,12 +1,12 @@
 # Schema Baseline Snapshot
 
-- GeneratedAtUTC: 2026-02-17T09:45:10.469Z
+- GeneratedAtUTC: 2026-02-17T10:12:22.397Z
 - Schemas: app_v3, auth
 - PrismaSchemaPath: prisma/schema.prisma
 
 ## Inventory Counts
 
-- app_v3 tables: 223
+- app_v3 tables: 225
 - auth tables: 20
 - app_v3 prisma models: 224
 - auth prisma models: 1
@@ -22,7 +22,7 @@
 ## Drift Summary
 
 - Prisma models missing in DB: 0
-- Prisma models blocked missing (approved exceptions): 2
+- Prisma models blocked missing (approved exceptions): 0
 - DB tables without Prisma model: 20
 
 ## app_v3 Chat Namespace Inventory

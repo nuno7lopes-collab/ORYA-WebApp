@@ -1,6 +1,6 @@
 # Auth Schema Audit (Read-Only)
 
-- GeneratedAtUTC: 2026-02-17T09:45:10.469Z
+- GeneratedAtUTC: 2026-02-17T10:12:22.397Z
 - Scope: inventory and risk classification only (no DDL executed)
 
 ## Summary

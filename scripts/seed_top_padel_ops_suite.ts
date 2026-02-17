@@ -110,6 +110,57 @@ function daysFromNow(days: number, hour = 12) {
   return d;
 }
 
+async function ensureMinimumProfiles(minimum: number) {
+  const existingCount = await prisma.profile.count({ where: { isDeleted: false } });
+  if (existingCount >= minimum) return;
+
+  for (let index = existingCount; index < minimum; index += 1) {
+    const slot = index + 1;
+    const username = `${seedTag}-ops-${String(slot).padStart(2, "0")}`;
+    const fullName = `Top Padel Seed ${slot}`;
+
+    const existingByUsername = await prisma.profile.findFirst({
+      where: { username: { equals: username, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existingByUsername) {
+      continue;
+    }
+
+    const userId = randomUUID();
+    const email = `${username}@orya.local`;
+    await prisma.$transaction(async (tx) => {
+      await tx.users.upsert({
+        where: { id: userId },
+        update: { email },
+        create: { id: userId, email },
+      });
+      await tx.profile.upsert({
+        where: { id: userId },
+        update: {
+          username,
+          fullName,
+          onboardingDone: true,
+          roles: ["user"],
+          status: "ACTIVE",
+          isDeleted: false,
+          visibility: "PUBLIC",
+        },
+        create: {
+          id: userId,
+          username,
+          fullName,
+          onboardingDone: true,
+          roles: ["user"],
+          status: "ACTIVE",
+          isDeleted: false,
+          visibility: "PUBLIC",
+        },
+      });
+    });
+  }
+}
+
 async function ensureOrganization() {
   const whereOr = candidateUsernames.map((username) => ({
     username: { equals: username, mode: "insensitive" as const },
@@ -199,6 +250,8 @@ async function ensureOrganizationAddress(organizationId: number, currentAddressI
 }
 
 async function resolveProfiles(groupId: number) {
+  await ensureMinimumProfiles(12);
+
   const group = await prisma.organizationGroup.findUnique({
     where: { id: groupId },
     select: { ownerUserId: true },
