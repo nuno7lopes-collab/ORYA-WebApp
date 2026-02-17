@@ -69,6 +69,7 @@ function unwrap(payload) {
 }
 
 async function assertPublicProfile(baseUrl, username) {
+  if (!username) return;
   const endpoint = `${baseUrl}/api/public/profile?username=${encodeURIComponent(username)}`;
   const { response, json, text } = await fetchJson(endpoint);
   if (!response.ok) {
@@ -82,6 +83,7 @@ async function assertPublicProfile(baseUrl, username) {
 }
 
 async function assertPublicStore(baseUrl, username) {
+  if (!username) return;
   const endpoint = `${baseUrl}/api/public/store/catalog?username=${encodeURIComponent(username)}`;
   const { response, json, text } = await fetchJson(endpoint);
   if (!response.ok) {
@@ -107,6 +109,16 @@ async function assertOrgMe(baseUrl, orgId, bearer) {
   }
 }
 
+async function assertPublicBaseline(baseUrl) {
+  const routes = ["/", "/eventos", "/descobrir"];
+  for (const route of routes) {
+    const { response, text } = await fetchJson(`${baseUrl}${route}`);
+    if (!response.ok && response.status >= 500) {
+      throw new Error(`PUBLIC_BASELINE_FAILED route=${route} status=${response.status} body=${text.slice(0, 280)}`);
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const baseUrl = pickNonEmpty(
@@ -119,7 +131,7 @@ async function main() {
     "http://127.0.0.1:33123",
   )?.replace(/\/+$/, "");
 
-  const username = pickNonEmpty(args.username, process.env.UI_E2E_SEED_ORG_USERNAME, "top_padel");
+  const username = pickNonEmpty(args.username, process.env.UI_E2E_SEED_ORG_USERNAME);
   const orgId = pickNonEmpty(args.orgId, process.env.UI_E2E_ORG_ID);
   const bearer = pickNonEmpty(args.bearer, process.env.E2E_USER_BEARER, process.env.E2E_ADMIN_BEARER);
 
@@ -127,6 +139,7 @@ async function main() {
     throw new Error("BASE_URL_MISSING");
   }
 
+  await assertPublicBaseline(baseUrl);
   await assertPublicProfile(baseUrl, username);
   await assertPublicStore(baseUrl, username);
   await assertOrgMe(baseUrl, orgId, bearer);

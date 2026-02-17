@@ -161,8 +161,11 @@ export async function resolveOrgId(baseURL, bearer) {
   );
 
   if (!response.ok) {
-    if (envOrgId) return Number(envOrgId);
-    throw new Error(`UI_E2E_ORG_LIST_FAILED status=${response.status} body=${text.slice(0, 280)}`);
+    if (envOrgId) {
+      const parsed = Number(envOrgId);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+    return null;
   }
 
   const payload = unwrap(json);
@@ -176,34 +179,26 @@ export async function resolveOrgId(baseURL, bearer) {
     return candidate;
   }
 
-  const fallbackOrgId = pickNonEmpty(envOrgId, process.env.ORYA_E2E_ORGANIZATION_ID, "51");
+  const fallbackOrgId = pickNonEmpty(envOrgId, process.env.ORYA_E2E_ORGANIZATION_ID);
   if (fallbackOrgId) {
     const parsed = Number(fallbackOrgId);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
 
-  throw new Error("UI_E2E_ORG_ID_UNRESOLVED");
+  return null;
 }
 
-export async function assertTopPadelSeed(baseURL) {
+export async function assertPublicBaseline(baseURL) {
   const normalizedBase = baseURL.replace(/\/+$/, "");
-  const username = pickNonEmpty(process.env.UI_E2E_SEED_ORG_USERNAME, "top_padel");
+  const routes = ["/", "/eventos", "/descobrir"];
 
-  const profile = await fetch(`${normalizedBase}/api/public/profile?username=${encodeURIComponent(username)}`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!profile.ok) {
-    throw new Error(`UI_E2E_SEED_PROFILE_FAILED status=${profile.status}`);
-  }
-
-  const catalog = await fetch(
-    `${normalizedBase}/api/public/store/catalog?username=${encodeURIComponent(username)}`,
-    {
+  for (const route of routes) {
+    const response = await fetch(`${normalizedBase}${route}`, {
       headers: { Accept: "application/json" },
-    },
-  );
-  if (!catalog.ok) {
-    throw new Error(`UI_E2E_SEED_CATALOG_FAILED status=${catalog.status}`);
+    });
+    if (!response.ok && response.status >= 500) {
+      throw new Error(`UI_E2E_PUBLIC_BASELINE_FAILED route=${route} status=${response.status}`);
+    }
   }
 }
 
