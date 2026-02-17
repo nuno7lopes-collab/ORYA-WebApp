@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
@@ -408,12 +409,9 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
                     <p className="text-[11px] text-white/65">
                       As fees canónicas são editáveis no painel de admin de configurações e aplicadas globalmente.
                     </p>
-                    <a
-                      href="/admin/settings"
-                      className="admin-button-secondary px-3 py-1 text-[11px]"
-                    >
+                    <Link href="/admin/settings" className="admin-button-secondary px-3 py-1 text-[11px]">
                       Configurar fees
-                    </a>
+                    </Link>
                   </div>
                 </div>
               )}

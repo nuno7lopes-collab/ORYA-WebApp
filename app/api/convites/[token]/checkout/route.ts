@@ -96,7 +96,7 @@ async function _POST(
         false,
       );
     }
-    const paymentMethod: "card" = "card";
+    const paymentMethod = "card" as const;
 
     const invite = await prisma.bookingInvite.findUnique({
       where: { token },

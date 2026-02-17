@@ -315,7 +315,7 @@ async function _POST(req: NextRequest) {
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
     // Validar tipos de bilhete
     let ticketPriceError: string | null = null;
-    let ticketTypesData = ticketTypesInput
+    const ticketTypesData = ticketTypesInput
       .map((t) => {
         const name = t.name?.trim();
         if (!name) return null;

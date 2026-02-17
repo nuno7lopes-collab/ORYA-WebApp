@@ -318,7 +318,7 @@ async function _POST(req: NextRequest) {
     requestedCourtIds,
     requestedCourtPriorityOrder,
   });
-  let courts = courtSelection.courts;
+  const courts = courtSelection.courts;
 
   if (courts.length === 0) {
     return jsonWrap({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });

@@ -796,10 +796,10 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               Penalizacao de cancelamento e fixa em `0%` nesta versao.
             </li>
             <li className={GUARDRAIL_ITEM}>
-              Janelas são sempre validadas em minutos e normalizadas para inteiro não negativo.
+              Janelas são sempre validadas em minutos e normalizadas para inteiro n&atilde;o negativo.
             </li>
             <li className={GUARDRAIL_ITEM}>
-              Textos legais publicos sao gerados por template fechado e URL interna '/username/legal'.
+              Textos legais publicos sao gerados por template fechado e URL interna &apos;/username/legal&apos;.
             </li>
             <li className={GUARDRAIL_ITEM}>
               No-show fee esta fora de customizacao nesta versao (lockado em 0 na politica publica).
