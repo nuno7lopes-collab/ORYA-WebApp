@@ -1,0 +1,230 @@
+[
+  {
+    "id": "org-topbar",
+    "surface": "org",
+    "file": "app/org/_internal/core/OrganizationTopBar.tsx",
+    "checks": ["a11y", "canonicalNav"]
+  },
+  {
+    "id": "org-subnav-shell",
+    "surface": "org",
+    "file": "app/org/_components/subnav/ToolSubnavShell.tsx",
+    "checks": ["a11y", "singleActive"]
+  },
+  {
+    "id": "org-analytics",
+    "surface": "org",
+    "file": "app/org/[orgId]/analytics/AnalyticsToolClient.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "org-finance",
+    "surface": "org",
+    "file": "app/org/[orgId]/finance/FinanceToolClient.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "org-policies",
+    "surface": "org",
+    "file": "app/org/[orgId]/policies/PoliciesToolClient.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "org-calendar-select",
+    "surface": "org",
+    "file": "app/org/[orgId]/calendar/_components/day/SearchableEntitySelect.tsx",
+    "checks": ["a11y", "focus"]
+  },
+  {
+    "id": "org-calendar-week-read",
+    "surface": "org",
+    "file": "app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx",
+    "checks": ["loading", "error", "empty", "focus", "canonicalNav"]
+  },
+  {
+    "id": "org-calendar-day-read",
+    "surface": "org",
+    "file": "app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx",
+    "checks": ["loading", "error", "empty", "canonicalNav"]
+  },
+  {
+    "id": "org-checkin-operations",
+    "surface": "org",
+    "file": "app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx",
+    "checks": ["loading", "error", "empty", "focus", "a11y", "canonicalNav"]
+  },
+  {
+    "id": "org-store-tool",
+    "surface": "org",
+    "file": "app/org/[orgId]/store/OrgStoreToolClient.tsx",
+    "checks": ["loading", "error", "empty", "a11y", "canonicalNav", "singleActive"]
+  },
+  {
+    "id": "user-settings-web",
+    "surface": "user",
+    "file": "app/me/settings/page.tsx",
+    "checks": ["loading", "error", "focus", "a11y"]
+  },
+  {
+    "id": "user-bookings-web",
+    "surface": "user",
+    "file": "app/me/reservas/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "user-store-orders-web",
+    "surface": "user",
+    "file": "app/me/compras/loja/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "user-home-web",
+    "surface": "user",
+    "file": "app/me/page.tsx",
+    "checks": ["loading", "error", "empty", "focus", "canonicalNav"]
+  },
+  {
+    "id": "user-wallet-web",
+    "surface": "user",
+    "file": "app/me/carteira/WalletHubClient.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "public-discover",
+    "surface": "public",
+    "file": "app/descobrir/_explorar/ExplorarContent.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "public-profile-page",
+    "surface": "public",
+    "file": "app/[username]/page.tsx",
+    "checks": ["error", "empty", "a11y"]
+  },
+  {
+    "id": "public-profile-bookings",
+    "surface": "public",
+    "file": "app/[username]/_components/ReservasBookingClient.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "admin-organizations",
+    "surface": "admin",
+    "file": "app/admin/(protected)/organizacoes/page.tsx",
+    "checks": ["loading", "error"]
+  },
+  {
+    "id": "admin-tickets",
+    "surface": "admin",
+    "file": "app/admin/(protected)/tickets/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "admin-support",
+    "surface": "admin",
+    "file": "app/admin/(protected)/suporte/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "admin-finance",
+    "surface": "admin",
+    "file": "app/admin/(protected)/finance/page.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "admin-audit",
+    "surface": "admin",
+    "file": "app/admin/(protected)/audit/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "admin-settings",
+    "surface": "admin",
+    "file": "app/admin/(protected)/settings/page.tsx",
+    "checks": ["loading", "error", "focus"]
+  },
+  {
+    "id": "admin-events",
+    "surface": "admin",
+    "file": "app/admin/(protected)/eventos/page.tsx",
+    "checks": ["loading", "error", "empty", "focus"]
+  },
+  {
+    "id": "admin-platform-email",
+    "surface": "admin",
+    "file": "app/admin/(protected)/config/platform-email/page.tsx",
+    "checks": ["loading", "error", "empty"]
+  },
+  {
+    "id": "mobile-profile",
+    "surface": "mobile",
+    "file": "apps/mobile/app/(tabs)/profile.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-bookings",
+    "surface": "mobile",
+    "file": "apps/mobile/app/reservas/index.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-thread",
+    "surface": "mobile",
+    "file": "apps/mobile/app/messages/[threadId].tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-registration",
+    "surface": "mobile",
+    "file": "apps/mobile/app/inscricoes/[id].tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-notifications",
+    "surface": "mobile",
+    "file": "apps/mobile/app/notifications/index.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-settings",
+    "surface": "mobile",
+    "file": "apps/mobile/app/settings/index.tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-discover",
+    "surface": "mobile",
+    "file": "apps/mobile/app/(tabs)/index.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-event-detail",
+    "surface": "mobile",
+    "file": "apps/mobile/app/event/[slug].tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-message-requests",
+    "surface": "mobile",
+    "file": "apps/mobile/app/messages/requests.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-padel-hub",
+    "surface": "mobile",
+    "file": "apps/mobile/app/padel/index.tsx",
+    "checks": ["loading", "error", "empty", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-service-detail",
+    "surface": "mobile",
+    "file": "apps/mobile/app/service/[id].tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  },
+  {
+    "id": "mobile-wallet-ticket",
+    "surface": "mobile",
+    "file": "apps/mobile/app/wallet/[entitlementId].tsx",
+    "checks": ["loading", "error", "a11yMobile", "touchTarget"]
+  }
+]

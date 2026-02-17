@@ -29,24 +29,21 @@ describe("organization canonical href helpers", () => {
     expect(parseOrgIdFromPathnameStrict("/org-hub/organizations")).toBeNull();
   });
 
-  it("appendOrganizationIdToHref preserva apenas hrefs já canónicos", () => {
+  it("appendOrganizationIdToHref preserva hrefs não canónicos sem normalização legacy", () => {
     expect(appendOrganizationIdToHref("/organizacao/manage", 7)).toBe("/organizacao/manage");
     expect(appendOrganizationIdToHref("/organizacao/become", null)).toBe("/organizacao/become");
     expect(appendOrganizationIdToHref("/organizacao", null)).toBe("/organizacao");
+    expect(appendOrganizationIdToHref("/org/become?organizationId=7", 7)).toBe("/org/become?organizationId=7");
+    expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/staff");
+    expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/analyze?section=ops");
     expect(appendOrganizationIdToHref("/org/7/overview?organizationId=7", 7)).toBe("/org/7/overview");
   });
 
-  it("appendOrganizationIdToHref canoniza shorthands /org/* para rotas canónicas", () => {
+  it("appendOrganizationIdToHref só canoniza o shorthand dashboard /org", () => {
+    expect(appendOrganizationIdToHref("/org?organizationId=7", 7)).toBe("/org/7/overview");
     expect(appendOrganizationIdToHref("/org/overview?section=ferramentas&organizationId=7", 7)).toBe(
       "/org/7/overview?section=ferramentas",
     );
-    expect(appendOrganizationIdToHref("/org/become", 7)).toBe("/org-hub/create");
-    expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/7/team");
-    expect(appendOrganizationIdToHref("/org/treinadores", 7)).toBe("/org/7/team/trainers");
-    expect(appendOrganizationIdToHref("/org/eventos/novo", 7)).toBe("/org/7/events/new");
-    expect(appendOrganizationIdToHref("/org/reservas?tab=availability", 7)).toBe("/org/7/bookings/availability");
-    expect(appendOrganizationIdToHref("/org/reservas/politicas", 7)).toBe("/org/7/policies?view=booking");
-    expect(appendOrganizationIdToHref("/org/analyze?section=financas", 7)).toBe("/org/7/finance");
-    expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/7/analytics?tab=ops");
+    expect(appendOrganizationIdToHref("/org/overview?organizationId=7&org=7", 7)).toBe("/org/7/overview");
   });
 });

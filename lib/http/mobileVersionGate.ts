@@ -91,18 +91,7 @@ export function enforceMobileVersionGate(req: NextRequest): Response | null {
   const runtimePlatform = resolveMobileRuntimePlatform(req);
   const minVersion = resolveMinSupportedMobileVersion(runtimePlatform);
   if (!minVersion || !parseSemver(minVersion)) {
-    return jsonWrap(
-      {
-        ok: false,
-        errorCode: "SERVER_ERROR",
-        message: "Configuração de versão mínima mobile inválida.",
-        reason:
-          !minVersion
-            ? "MIN_SUPPORTED_MOBILE_VERSION_NOT_CONFIGURED"
-            : "MIN_SUPPORTED_MOBILE_VERSION_INVALID",
-      },
-      { status: 503 },
-    );
+    return null;
   }
   const appVersion = req.headers.get("x-app-version") || req.headers.get("x-client-version");
   if (!appVersion) {

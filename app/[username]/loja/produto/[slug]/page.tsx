@@ -9,6 +9,7 @@ import StorefrontProductClient from "@/components/storefront/StorefrontProductCl
 import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
+import { resolveStorePolicy } from "@/lib/store/policySettings";
 
 export const dynamic = "force-dynamic";
 
@@ -65,12 +66,22 @@ export default async function StoreProductPage({ params }: PageProps) {
       checkoutEnabled: true,
       currency: true,
       freeShippingThresholdCents: true,
+    },
+  });
+
+  const organizationSettings = await prisma.organizationSettings.findUnique({
+    where: { organizationId: organization.id },
+    select: {
       supportEmail: true,
       supportPhone: true,
-      returnPolicy: true,
-      privacyPolicy: true,
-      termsUrl: true,
+      storeReturnPolicyMode: true,
+      storeReturnWindowDays: true,
     },
+  });
+  const storePolicy = resolveStorePolicy({
+    settings: organizationSettings,
+    fallbackSupportEmail: organization.officialEmail ?? null,
+    organizationUsername: organization.username ?? null,
   });
 
   const storeEnabled = isStoreFeatureEnabled();
@@ -202,11 +213,12 @@ export default async function StoreProductPage({ params }: PageProps) {
         <StorefrontFooter
           storeName={displayName}
           storePolicies={{
-            supportEmail: store.supportEmail ?? null,
-            supportPhone: store.supportPhone ?? null,
-            returnPolicy: store.returnPolicy ?? null,
-            privacyPolicy: store.privacyPolicy ?? null,
-            termsUrl: store.termsUrl ?? null,
+            supportEmail: storePolicy.supportEmail,
+            supportPhone: storePolicy.supportPhone,
+            legalUrl: storePolicy.legalUrl,
+            returnPolicy: storePolicy.returnPolicy,
+            privacyPolicy: storePolicy.privacyPolicy,
+            termsUrl: storePolicy.termsUrl,
           }}
         />
       </div>

@@ -205,8 +205,9 @@ async function fulfillSplitParticipantIntent(intent: Stripe.PaymentIntent): Prom
       });
     }
 
+    const splitCollectableStatus = ["OPEN", "SETTLING", "CHARGE_FAILED"].includes(participant.split.status);
     const splitClosedForCollection =
-      participant.split.status !== "OPEN" ||
+      !splitCollectableStatus ||
       participant.split.railState === "DEBT" ||
       Boolean(participant.split.settledAt) ||
       Boolean(participant.split.settlementSnapshot);

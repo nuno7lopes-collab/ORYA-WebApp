@@ -108,6 +108,7 @@ function resolveLabel(
   if (/^\/org\/\d+\/policies(?:\/|$)/.test(pathname)) {
     if (view === "booking") return "Políticas · Reservas";
     if (view === "terms") return "Políticas · Termos";
+    if (view === "store") return "Políticas · Loja";
     if (view === "guardrails") return "Políticas · Guardrails";
     return "Políticas";
   }

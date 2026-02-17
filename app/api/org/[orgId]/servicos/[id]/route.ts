@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -112,6 +113,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         id: true,
         policyId: true,
         kind: true,
+        assignmentMode: true,
         instructorId: true,
         title: true,
         description: true,
@@ -227,6 +229,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       updates.unitPriceCents = price;
     }
     if (typeof payload?.currency === "string") updates.currency = payload.currency.trim().toUpperCase();
+    if (typeof payload?.assignmentMode === "string") {
+      const assignmentModeRaw = payload.assignmentMode.trim().toUpperCase();
+      if (!["PROFESSIONAL_ONLY", "RESOURCE_ONLY", "PROFESSIONAL_AND_RESOURCE"].includes(assignmentModeRaw)) {
+        return fail(400, "assignmentMode inválido. Usa PROFESSIONAL_ONLY, RESOURCE_ONLY ou PROFESSIONAL_AND_RESOURCE.");
+      }
+      updates.assignmentMode = normalizeReservationAssignmentMode(assignmentModeRaw);
+    }
     if (typeof payload?.isActive === "boolean") updates.isActive = payload.isActive;
     if (typeof payload?.categoryTag === "string") {
       const tag = payload.categoryTag.trim();
@@ -357,6 +366,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           id: true,
           policyId: true,
           kind: true,
+          assignmentMode: true,
           instructorId: true,
           title: true,
           description: true,

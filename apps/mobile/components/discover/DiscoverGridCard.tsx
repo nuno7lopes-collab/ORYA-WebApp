@@ -1,14 +1,15 @@
 import { Link } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens, type PublicEventCard, useTranslation } from "@orya/shared";
 import { DiscoverOfferCard, DiscoverServiceCard } from "../../features/discover/types";
 import { getFallbackTint } from "../../lib/imageTint";
 import { GlassSkeleton } from "../glass/GlassSkeleton";
-import { formatCurrency } from "../../lib/formatters";
+import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
+import { resolveMediaUri } from "../../lib/media";
 
 type DiscoverGridCardProps = {
   offer: DiscoverOfferCard;
@@ -71,6 +72,37 @@ const resolveFallbackIcon = (event: PublicEventCard | null, service: DiscoverSer
   return "calendar";
 };
 
+const formatEventMeta = (event: PublicEventCard | null) => {
+  if (!event?.startsAt) return event?.location?.city ?? null;
+  try {
+    const startsAt = new Date(event.startsAt);
+    if (Number.isNaN(startsAt.getTime())) return event.location?.city ?? null;
+    const date = formatDate(startsAt, { day: "2-digit", month: "short" });
+    const time = formatTime(startsAt, { hour: "2-digit", minute: "2-digit" });
+    const city = event.location?.city ?? null;
+    return city ? `${date} · ${time} · ${city}` : `${date} · ${time}`;
+  } catch {
+    return event.location?.city ?? null;
+  }
+};
+
+const formatServiceMeta = (service: DiscoverServiceCard | null) => {
+  if (!service?.nextAvailability) {
+    return service?.organization?.publicName ?? service?.organization?.businessName ?? null;
+  }
+  try {
+    const next = new Date(service.nextAvailability);
+    if (Number.isNaN(next.getTime())) {
+      return service.organization?.publicName ?? service.organization?.businessName ?? null;
+    }
+    const date = formatDate(next, { day: "2-digit", month: "short" });
+    const time = formatTime(next, { hour: "2-digit", minute: "2-digit" });
+    return `${date} · ${time}`;
+  } catch {
+    return service.organization?.publicName ?? service.organization?.businessName ?? null;
+  }
+};
+
 function Badge({ label, variant = "default" }: BadgeProps) {
   return (
     <View style={[styles.badge, variant === "price" ? styles.badgePrice : null]}>
@@ -104,11 +136,19 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
     return null;
   }, [event, service, t]);
 
-  const coverImage =
+  const coverImageRaw =
     event?.coverImageUrl ??
+    service?.organization?.brandingCoverUrl ??
     service?.organization?.brandingAvatarUrl ??
     service?.instructor?.avatarUrl ??
     null;
+  const coverImage = useMemo(() => resolveMediaUri(coverImageRaw), [coverImageRaw]);
+  const [coverFailed, setCoverFailed] = useState(false);
+  const hasCover = Boolean(coverImage) && !coverFailed;
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverImage]);
 
   const fallbackSeed = useMemo(
     () => String(event?.slug ?? service?.id ?? offer.key ?? "orya"),
@@ -118,6 +158,10 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
   const fallbackTitle = useMemo(
     () => (service ? service.title : event?.title ?? t("events:labels.event")),
     [event?.title, service?.title, service, t],
+  );
+  const metaLabel = useMemo(
+    () => (service ? formatServiceMeta(service) : formatEventMeta(event)),
+    [event, service],
   );
 
   const eventPreviewParams = useMemo(() => {
@@ -131,7 +175,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
       slug: event.slug ?? "",
       source,
       eventTitle: event.title ?? "",
-      coverImageUrl: event.coverImageUrl ?? "",
+      coverImageUrl: coverImage ?? "",
       shortDescription: event.shortDescription ?? "",
       startsAt: event.startsAt ?? "",
       endsAt: event.endsAt ?? "",
@@ -141,7 +185,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
       hostName: event.hostName ?? event.hostUsername ?? "ORYA",
       imageTag: event.slug ? `event-${event.slug}` : undefined,
     };
-  }, [event, priceLabel, source, typeLabel]);
+  }, [event, priceLabel, source, typeLabel, coverImage]);
 
   const servicePreviewParams = useMemo(() => {
     if (!service) return undefined;
@@ -195,13 +239,14 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           pressed ? styles.cardPressed : null,
         ]}
       >
-        {coverImage ? (
+        {hasCover ? (
           <Image
-            source={{ uri: coverImage }}
+            source={{ uri: coverImage as string }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={180}
             cachePolicy="memory-disk"
+            onError={() => setCoverFailed(true)}
           />
         ) : (
           <LinearGradient
@@ -212,22 +257,19 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           />
         )}
         <LinearGradient
-          colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.55)"]}
+          colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.72)"]}
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        {!coverImage ? (
+        {!hasCover ? (
           <View style={styles.fallbackContent} pointerEvents="none">
             <Ionicons
               name={resolveFallbackIcon(event, service)}
               size={22}
               color="rgba(240,246,255,0.85)"
             />
-            <Text style={styles.fallbackTitle} numberOfLines={1}>
-              {fallbackTitle}
-            </Text>
           </View>
         ) : null}
         <View style={styles.badgeTop} pointerEvents="none">
@@ -238,6 +280,16 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
             <Badge label={priceLabel} variant="price" />
           </View>
         ) : null}
+        <View style={styles.bottomContent} pointerEvents="none">
+          <Text style={styles.title} numberOfLines={2}>
+            {fallbackTitle}
+          </Text>
+          {metaLabel ? (
+            <Text style={styles.meta} numberOfLines={1}>
+              {metaLabel}
+            </Text>
+          ) : null}
+        </View>
       </Pressable>
     </Link>
   );
@@ -294,8 +346,31 @@ const styles = StyleSheet.create({
   },
   badgeBottom: {
     position: "absolute",
-    bottom: 6,
+    top: 6,
+    right: 6,
+  },
+  bottomContent: {
+    position: "absolute",
     left: 6,
+    right: 8,
+    bottom: 8,
+    gap: 2,
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "700",
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  meta: {
+    color: "rgba(230, 242, 255, 0.75)",
+    fontSize: 9,
+    fontWeight: "500",
+    textShadowColor: "rgba(0,0,0,0.4)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   fallbackContent: {
     flex: 1,
@@ -303,11 +378,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     paddingHorizontal: 10,
-  },
-  fallbackTitle: {
-    color: "rgba(240,246,255,0.85)",
-    fontSize: 10,
-    fontWeight: "700",
-    textAlign: "center",
   },
 });

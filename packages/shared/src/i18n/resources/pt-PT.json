@@ -241,11 +241,18 @@
     "subtitle": "Conversas dos eventos e mensagens diretas.",
     "requests": "Pedidos",
     "requestsWithCount": "Pedidos ({count})",
+    "requestsHint": "Sem pedidos pendentes.",
+    "inboxStatus": {
+      "newMessages": "{count} novas mensagens",
+      "noNewMessages": "Sem novas mensagens"
+    },
     "unreadCount": "{count} novas",
     "lastMessageEmpty": "Sem mensagens por enquanto.",
     "empty": {
       "title": "Ainda não tens mensagens ativas.",
-      "ctaExplore": "Explorar eventos"
+      "ctaExplore": "Explorar eventos",
+      "noConversations": "Ainda não tens conversas.",
+      "newMessagesHint": "Quando receberes novas mensagens, elas aparecem aqui."
     },
     "signin": {
       "title": "Inicia sessão",
@@ -256,10 +263,36 @@
     "requestsScreen": {
       "signinTitle": "Inicia sessão",
       "signinBody": "Entra para veres os pedidos de mensagem.",
+      "subtitle": "Pedidos pendentes para iniciar conversa.",
       "error": "Não foi possível carregar os pedidos.",
       "empty": "Sem pedidos pendentes.",
+      "emptyHint": "Quando alguém te pedir para conversar, aparece aqui.",
       "requestLabel": "Pedido de mensagem",
       "userFallback": "Utilizador"
+    },
+    "composer": {
+      "open": "Nova mensagem",
+      "title": "Nova mensagem",
+      "tabs": {
+        "users": "Pessoas",
+        "orgs": "Organizações"
+      },
+      "searchUsersPlaceholder": "Pesquisar pessoa por nome ou @username",
+      "searchOrgsPlaceholder": "Pesquisar organização por nome ou @username",
+      "searchInput": "Pesquisar destinatário",
+      "suggestionsTitle": "Sugestões para iniciar conversa",
+      "loadError": "Não foi possível carregar resultados.",
+      "emptyUsers": "Sem pessoas para mostrar.",
+      "emptyOrgs": "Sem organizações para mostrar.",
+      "searchOrgsHint": "Escreve pelo menos 2 caracteres para pesquisar organizações.",
+      "userNoHandle": "Utilizador",
+      "orgFallback": "Organização",
+      "orgNoHandle": "Organização",
+      "startMessage": "Mensagem",
+      "requestSentTitle": "Pedido enviado",
+      "requestSentBody": "Enviámos o pedido de mensagem.",
+      "errorTitle": "Nova mensagem",
+      "errorBody": "Não foi possível iniciar a conversa."
     },
     "errors": {
       "load": "Não foi possível carregar os chats."
@@ -451,11 +484,23 @@
   "onboarding": {
     "title": "Vamos começar",
     "welcomeTitle": "Bem-vindo à ORYA",
+    "stepCounter": "Passo {current} de {total}",
     "steps": {
       "basic": "Perfil",
       "interests": "Interesses",
       "padel": "Padel",
       "location": "Localização"
+    },
+    "stepHints": {
+      "basic": "Começa com o essencial para ativares o teu perfil.",
+      "interests": "Escolhas rápidas para personalizar recomendações desde já.",
+      "padel": "Ajuda-nos a mostrar jogos, equipas e convites mais certos para ti.",
+      "location": "Partilhar localização melhora a descoberta perto de ti."
+    },
+    "exit": {
+      "title": "Sair do onboarding?",
+      "body": "Se saíres agora, tens de iniciar sessão novamente para continuar.",
+      "confirm": "Sair"
     },
     "basic": {
       "title": "Cria o teu perfil",
@@ -470,6 +515,7 @@
       "title": "O que te interessa?",
       "subtitle": "Escolhe até 6 interesses.",
       "selectedCount": "{count}/{total} selecionados",
+      "limitReached": "Limite atingido. Remove um interesse para escolher outro.",
       "continue": "Continuar"
     },
     "padel": {
@@ -494,6 +540,8 @@
     "location": {
       "title": "Onde estás?",
       "subtitle": "Usamos isto para recomendar eventos perto de ti.",
+      "detecting": "A detetar localização aproximada...",
+      "approxLocation": "Área aproximada: {location}",
       "allow": "Permitir localização",
       "allowShort": "Permitir",
       "skip": "Ignorar por agora",

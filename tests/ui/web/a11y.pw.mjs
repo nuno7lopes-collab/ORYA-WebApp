@@ -1,0 +1,107 @@
+import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import { authHeaders } from "./auth.mjs";
+
+const axeSource = fs.readFileSync(new URL("../../../node_modules/axe-core/axe.min.js", import.meta.url), "utf8");
+
+async function runAxe(page) {
+  await page.addScriptTag({ content: axeSource });
+  return page.evaluate(async () => {
+    const axe = window.axe;
+    return axe.run(document, {
+      runOnly: {
+        type: "tag",
+        values: ["wcag2a", "wcag2aa"],
+      },
+    });
+  });
+}
+
+function summarizeCritical(violations) {
+  return violations
+    .filter((violation) => violation.impact === "critical")
+    .map((violation) => ({
+      id: violation.id,
+      help: violation.help,
+      nodes: violation.nodes.slice(0, 3).map((node) => node.target.join(" ")),
+    }));
+}
+
+async function gotoRoute(page, route) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await page.goto(route, { waitUntil: "domcontentloaded" });
+    } catch (error) {
+      lastError = error;
+      if (attempt === 1) throw error;
+      await page.waitForTimeout(250);
+    }
+  }
+  throw lastError ?? new Error(`failed to navigate route=${route}`);
+}
+
+test("@a11y public critical routes have no critical axe violations", async ({ page }) => {
+  const routes = ["/eventos", "/descobrir"];
+
+  for (const route of routes) {
+    const response = await gotoRoute(page, route);
+    if (response) {
+      expect(response.status()).toBeLessThan(500);
+    }
+    await expect(page.locator("body")).toBeVisible();
+
+    const results = await runAxe(page);
+    const critical = summarizeCritical(results.violations);
+    expect(critical, `critical axe violations on ${route}`).toEqual([]);
+  }
+});
+
+test("@a11y authenticated user/org/admin routes have no critical axe violations", async ({ browser }) => {
+  const userBearer = process.env.UI_E2E_USER_BEARER_RESOLVED;
+  const adminBearer = process.env.UI_E2E_ADMIN_BEARER_RESOLVED;
+  const orgId = process.env.UI_E2E_ORG_ID_RESOLVED;
+
+  expect(userBearer).toBeTruthy();
+  expect(adminBearer).toBeTruthy();
+  expect(orgId).toBeTruthy();
+
+  const userContext = await browser.newContext({
+    extraHTTPHeaders: authHeaders(userBearer),
+  });
+  const userPage = await userContext.newPage();
+
+  for (const route of [`/me/settings`, `/me/reservas`, `/org/${orgId}/overview`, `/org/${orgId}/bookings`]) {
+    const response = await gotoRoute(userPage, route);
+    if (response) {
+      expect(response.status()).toBeLessThan(500);
+    }
+    await expect(userPage.locator("body")).toBeVisible();
+    const results = await runAxe(userPage);
+    const critical = summarizeCritical(results.violations);
+    expect(critical, `critical axe violations on ${route}`).toEqual([]);
+  }
+
+  await userContext.close();
+
+  const adminContext = await browser.newContext({
+    extraHTTPHeaders: authHeaders(adminBearer),
+  });
+  const adminPage = await adminContext.newPage();
+
+  for (const route of ["/admin/organizacoes", "/admin/tickets"]) {
+    const adminResponse = await gotoRoute(adminPage, route);
+    if (adminResponse) {
+      expect(adminResponse.status()).toBeLessThan(500);
+    }
+    await expect(adminPage.locator("body")).toBeVisible();
+    await expect(adminPage).not.toHaveURL(/\/login(\?|$)/);
+    await expect(adminPage).not.toHaveURL(/\/admin\/forbidden(\?|$)/);
+
+    const adminResults = await runAxe(adminPage);
+    const adminCritical = summarizeCritical(adminResults.violations);
+    expect(adminCritical, `critical axe violations on ${route}`).toEqual([]);
+  }
+
+  await adminContext.close();
+});

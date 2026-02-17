@@ -1,7 +1,7 @@
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { PropsWithChildren } from "react";
-import { Platform, StyleSheet, View, type ViewStyle } from "react-native";
+import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { tokens } from "@orya/shared";
 
 type GlassSurfaceVariant = "card" | "surface" | "auth";
@@ -12,8 +12,8 @@ export type GlassSurfaceProps = PropsWithChildren<{
   intensity?: number;
   padding?: number;
   tint?: "dark" | "light";
-  style?: ViewStyle;
-  contentStyle?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
   withGradient?: boolean;
   blurEnabled?: boolean;
 }>;

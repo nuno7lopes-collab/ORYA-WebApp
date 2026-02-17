@@ -490,7 +490,7 @@ async function processBookingSplitOffsessionCharge(op: OperationRecord) {
     return;
   }
 
-  if (split.status !== "OPEN" || split.railState !== "OFFSESSION_PI") {
+  if (!["OPEN", "SETTLING", "CHARGE_FAILED"].includes(split.status) || split.railState !== "OFFSESSION_PI") {
     await upsertBookingSplitOffsessionAttempt({
       splitId: split.id,
       participantId: participant.id,

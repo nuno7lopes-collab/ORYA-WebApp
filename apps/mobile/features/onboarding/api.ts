@@ -4,8 +4,11 @@ import { InterestId } from "./types";
 
 export type IpLocationResponse = {
   country?: string | null;
+  countryCode?: string | null;
   region?: string | null;
   city?: string | null;
+  approxLat?: number | null;
+  approxLon?: number | null;
   approxLatLon?: { lat: number; lon: number } | null;
   accuracyMeters?: number | null;
   source?: string | null;
@@ -39,7 +42,29 @@ export const fetchIpLocation = async (accessToken?: string | null): Promise<IpLo
     return cached.data;
   }
   const response = await api.requestWithAccessToken<unknown>("/api/location/ip", accessToken);
-  const data = unwrapApiResponse<IpLocationResponse>(response);
+  const raw = unwrapApiResponse<IpLocationResponse>(response);
+  const approxLat =
+    typeof raw?.approxLat === "number"
+      ? raw.approxLat
+      : typeof raw?.approxLatLon?.lat === "number"
+        ? raw.approxLatLon.lat
+        : null;
+  const approxLon =
+    typeof raw?.approxLon === "number"
+      ? raw.approxLon
+      : typeof raw?.approxLatLon?.lon === "number"
+        ? raw.approxLatLon.lon
+        : null;
+  const data: IpLocationResponse = {
+    ...raw,
+    countryCode: raw?.countryCode ?? raw?.country ?? null,
+    approxLat,
+    approxLon,
+    approxLatLon:
+      typeof approxLat === "number" && typeof approxLon === "number"
+        ? { lat: approxLat, lon: approxLon }
+        : null,
+  };
   writeIpCache(data).catch(() => undefined);
   return data;
 };
@@ -77,7 +102,12 @@ export const checkUsernameAvailability = async (
   });
   const payload = unwrapApiResponse<{ available?: boolean; reason?: string }>(response);
   const available = Boolean(payload?.available);
-  const reason = !available && payload?.reason === "reserved" ? "reserved" : undefined;
+  const reason =
+    !available && (payload?.reason === "reserved" || payload?.reason === "taken")
+      ? payload.reason
+      : !available
+        ? "taken"
+        : undefined;
   return { available, reason };
 };
 

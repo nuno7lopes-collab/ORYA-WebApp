@@ -13,6 +13,7 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import { EventFeedbackSheet } from "./EventFeedbackSheet";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
+import { resolveMediaUri } from "../../lib/media";
 
 const USE_GLASS_BLUR = Platform.OS === "ios";
 const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
@@ -147,7 +148,9 @@ export const EventCardSquare = memo(function EventCardSquare({
     if (rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL") return rawCategory;
     return t("events:labels.event");
   }, [rawCategory, t]).toUpperCase();
-  const cover = event.coverImageUrl ?? null;
+  const cover = useMemo(() => resolveMediaUri(event.coverImageUrl ?? null), [event.coverImageUrl]);
+  const [coverFailed, setCoverFailed] = useState(false);
+  const hasCover = Boolean(cover) && !coverFailed;
   const tintSeed = useMemo(
     () => cover ?? event.slug ?? event.title ?? "orya",
     [cover, event.slug, event.title],
@@ -185,7 +188,7 @@ export const EventCardSquare = memo(function EventCardSquare({
         slug: event.slug ?? "",
         source: source ?? "discover",
         eventTitle: event.title,
-        coverImageUrl: event.coverImageUrl ?? "",
+        coverImageUrl: cover ?? "",
         shortDescription: event.shortDescription ?? "",
         startsAt: event.startsAt ?? "",
         endsAt: event.endsAt ?? "",
@@ -196,7 +199,7 @@ export const EventCardSquare = memo(function EventCardSquare({
         imageTag: event.slug ? `event-${event.slug}` : undefined,
       },
     }),
-    [category, event, location, priceState?.label, source],
+    [category, cover, event, location, priceState?.label, source],
   );
 
   useEffect(() => {
@@ -237,9 +240,13 @@ export const EventCardSquare = memo(function EventCardSquare({
   }, [isNow, nowPulse]);
 
   useEffect(() => {
+    setCoverFailed(false);
+  }, [cover]);
+
+  useEffect(() => {
     let active = true;
     setTint(fallbackTint);
-    if (!cover) return () => {
+    if (!hasCover || !cover) return () => {
       active = false;
     };
     const task = InteractionManager.runAfterInteractions(() => {
@@ -260,7 +267,7 @@ export const EventCardSquare = memo(function EventCardSquare({
       active = false;
       task?.cancel?.();
     };
-  }, [cover, fallbackTint, tintSeed]);
+  }, [cover, fallbackTint, tintSeed, hasCover, event.slug]);
 
   return (
     <>
@@ -291,13 +298,14 @@ export const EventCardSquare = memo(function EventCardSquare({
           >
             <View style={styles.card}>
               <View style={styles.media}>
-                {cover ? (
+                {hasCover ? (
                   <Image
                     source={{ uri: cover }}
                     style={StyleSheet.absoluteFill}
                     contentFit="cover"
                     transition={CARD_IMAGE_TRANSITION_MS}
                     cachePolicy="memory-disk"
+                    onError={() => setCoverFailed(true)}
                   />
                 ) : (
                   <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(255,255,255,0.06)" }]} />

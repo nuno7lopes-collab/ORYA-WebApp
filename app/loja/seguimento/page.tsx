@@ -45,6 +45,7 @@ type OrderLookup = {
     username: string | null;
     supportEmail: string | null;
     supportPhone: string | null;
+    legalUrl?: string | null;
     returnPolicy?: string | null;
     privacyPolicy?: string | null;
     termsUrl?: string | null;
@@ -429,6 +430,7 @@ export default function StoreOrderTrackingPage() {
             storePolicies={{
               supportEmail: order.store.supportEmail ?? null,
               supportPhone: order.store.supportPhone ?? null,
+              legalUrl: order.store.legalUrl ?? null,
               returnPolicy: order.store.returnPolicy ?? null,
               privacyPolicy: order.store.privacyPolicy ?? null,
               termsUrl: order.store.termsUrl ?? null,

@@ -205,6 +205,7 @@ async function _GET(req: NextRequest) {
       pendingOfficialEmailRequest,
       memberPermissions,
       organizationSuspension,
+      organizationSettings,
     ] =
       await Promise.all([
         getPlatformFees(),
@@ -248,6 +249,15 @@ async function _GET(req: NextRequest) {
               organizationId: organization.id,
               status: organization.status,
               updatedAt: organization.updatedAt ?? null,
+            })
+          : Promise.resolve(null),
+        organization
+          ? prisma.organizationSettings.findUnique({
+              where: { organizationId: organization.id },
+              select: {
+                supportEmail: true,
+                supportPhone: true,
+              },
             })
           : Promise.resolve(null),
       ]);
@@ -315,7 +325,10 @@ async function _GET(req: NextRequest) {
             (organization as { primaryModule?: string | null }).primaryModule ??
             DEFAULT_PRIMARY_MODULE,
           reservationAssignmentMode:
-            (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? "PROFESSIONAL",
+            (organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ??
+            "PROFESSIONAL_ONLY",
+          orgRescheduleWindowMinutes:
+            (organization as { orgRescheduleWindowMinutes?: number | null }).orgRescheduleWindowMinutes ?? 240,
           modules: organizationModules.map((module) => module.moduleKey),
           publicName: organization.publicName,
           addressId: (organization as { addressId?: string | null }).addressId ?? null,
@@ -332,6 +345,8 @@ async function _GET(req: NextRequest) {
           infoRequirements: (organization as { infoRequirements?: string | null }).infoRequirements ?? null,
           infoPolicies: (organization as { infoPolicies?: string | null }).infoPolicies ?? null,
           infoLocationNotes: (organization as { infoLocationNotes?: string | null }).infoLocationNotes ?? null,
+          supportEmail: organizationSettings?.supportEmail ?? null,
+          supportPhone: organizationSettings?.supportPhone ?? null,
           padelDefaults: {
             shortName: (organization as any).padelDefaultShortName ?? null,
             courts: (organization as any).padelDefaultCourts ?? 0,
@@ -450,6 +465,8 @@ async function _PATCH(req: NextRequest) {
       infoRequirements,
       infoPolicies,
       infoLocationNotes,
+      supportEmail,
+      supportPhone,
       addressId,
       showAddressPublicly,
       padelDefaultShortName,
@@ -457,6 +474,7 @@ async function _PATCH(req: NextRequest) {
       padelDefaultHours,
       padelDefaultRuleSetId,
       padelFavoriteCategories,
+      orgRescheduleWindowMinutes,
     } = body as Record<string, unknown>;
     const primaryModuleRaw = (body as Record<string, unknown>).primaryModule;
     const reservationAssignmentModeRaw = (body as Record<string, unknown>).reservationAssignmentMode;
@@ -465,6 +483,7 @@ async function _PATCH(req: NextRequest) {
     const primaryModuleProvided = Object.prototype.hasOwnProperty.call(body, "primaryModule");
     const reservationAssignmentModeProvided = Object.prototype.hasOwnProperty.call(body, "reservationAssignmentMode");
     const modulesProvided = Object.prototype.hasOwnProperty.call(body, "modules");
+    const orgRescheduleWindowMinutesProvided = Object.prototype.hasOwnProperty.call(body, "orgRescheduleWindowMinutes");
     const alertsSalesProvided = Object.prototype.hasOwnProperty.call(body, "alertsSalesEnabled");
     const brandingAvatarProvided = Object.prototype.hasOwnProperty.call(body, "brandingAvatarUrl");
     const brandingCoverProvided = Object.prototype.hasOwnProperty.call(body, "brandingCoverUrl");
@@ -484,14 +503,22 @@ async function _PATCH(req: NextRequest) {
     if (
       reservationAssignmentModeProvided &&
       reservationAssignmentMode &&
-      !["PROFESSIONAL", "RESOURCE"].includes(reservationAssignmentMode)
+      !["PROFESSIONAL_ONLY", "RESOURCE_ONLY", "PROFESSIONAL_AND_RESOURCE"].includes(
+        reservationAssignmentMode,
+      )
     ) {
-      return fail(400, "reservationAssignmentMode inválido. Usa PROFESSIONAL ou RESOURCE.");
+      return fail(
+        400,
+        "reservationAssignmentMode inválido. Usa PROFESSIONAL_ONLY, RESOURCE_ONLY ou PROFESSIONAL_AND_RESOURCE.",
+      );
     }
 
     const parsedModules = modulesProvided ? parseOrganizationModules(modulesRaw) : null;
     if (modulesProvided && parsedModules === null) {
       return fail(400, "modules inválido. Usa uma lista de módulos válidos.");
+    }
+    if (orgRescheduleWindowMinutesProvided && !Number.isFinite(Number(orgRescheduleWindowMinutes))) {
+      return fail(400, "orgRescheduleWindowMinutes inválido.");
     }
 
     // Validação de telefone (opcional, mas consistente com checkout)
@@ -564,8 +591,11 @@ async function _PATCH(req: NextRequest) {
         "infoRequirements",
         "infoPolicies",
         "infoLocationNotes",
+        "supportEmail",
+        "supportPhone",
         "timezone",
         "reservationAssignmentMode",
+        "orgRescheduleWindowMinutes",
       ]);
       const disallowed = Object.keys(body).filter((key) => !adminAllowed.has(key));
       if (disallowed.length > 0) {
@@ -575,6 +605,7 @@ async function _PATCH(req: NextRequest) {
 
     const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
     const profileUpdates: Record<string, unknown> = {};
+    const organizationSettingsUpdates: Record<string, unknown> = {};
     if (typeof fullName === "string") profileUpdates.fullName = fullName.trim() || null;
     if (typeof contactPhone === "string") {
       profileUpdates.contactPhone = normalizePhone(contactPhone.trim(), phoneOptions) || null;
@@ -584,6 +615,18 @@ async function _PATCH(req: NextRequest) {
       const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
       if (!emailRegex.test(email)) {
         return fail(400, "Email de alertas inválido.");
+      }
+    }
+    if (typeof supportEmail === "string" && supportEmail.trim()) {
+      const email = supportEmail.trim();
+      const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+      if (!emailRegex.test(email)) {
+        return fail(400, "Email de suporte inválido.");
+      }
+    }
+    if (typeof supportPhone === "string" && supportPhone.trim()) {
+      if (!isValidPhone(supportPhone.trim())) {
+        return fail(400, "Telefone de suporte inválido.");
       }
     }
 
@@ -679,6 +722,16 @@ async function _PATCH(req: NextRequest) {
     if (typeof infoLocationNotes === "string") {
       organizationUpdates.infoLocationNotes = infoLocationNotes.trim() || null;
     }
+    if (supportEmail === null) {
+      organizationSettingsUpdates.supportEmail = null;
+    } else if (typeof supportEmail === "string") {
+      organizationSettingsUpdates.supportEmail = supportEmail.trim() || null;
+    }
+    if (supportPhone === null) {
+      organizationSettingsUpdates.supportPhone = null;
+    } else if (typeof supportPhone === "string") {
+      organizationSettingsUpdates.supportPhone = normalizePhone(supportPhone.trim(), phoneOptions) || null;
+    }
     if (typeof entityType === "string") organizationUpdates.entityType = entityType.trim() || null;
     if (typeof payoutIban === "string") organizationUpdates.payoutIban = payoutIban.trim() || null;
     if (typeof language === "string") {
@@ -721,6 +774,12 @@ async function _PATCH(req: NextRequest) {
     }
     if (reservationAssignmentModeProvided && reservationAssignmentMode) {
       organizationUpdates.reservationAssignmentMode = reservationAssignmentMode;
+    }
+    if (orgRescheduleWindowMinutesProvided) {
+      organizationUpdates.orgRescheduleWindowMinutes = Math.max(
+        0,
+        Math.round(Number(orgRescheduleWindowMinutes)),
+      );
     }
     if (typeof organizationKind === "string") {
       const kind = organizationKind.toUpperCase();
@@ -771,6 +830,17 @@ async function _PATCH(req: NextRequest) {
       await prisma.organization.update({
         where: { id: organization.id },
         data: organizationUpdates,
+      });
+    }
+
+    if (Object.keys(organizationSettingsUpdates).length > 0) {
+      await prisma.organizationSettings.upsert({
+        where: { organizationId: organization.id },
+        update: organizationSettingsUpdates,
+        create: {
+          organizationId: organization.id,
+          ...organizationSettingsUpdates,
+        },
       });
     }
 

@@ -763,6 +763,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const showFormsSection = hasInscricoes;
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
+    const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
     const storePreviewLimit = 8;
     const storePreviewItems = storeProducts.slice(0, storePreviewLimit);
     const storeHasMore = storeProductsCount > storePreviewLimit;
@@ -883,7 +884,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                         timezone: organizationProfile.timezone ?? "Europe/Lisbon",
                         address: organizationAddress,
                         reservationAssignmentMode:
-                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL",
+                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL_ONLY",
                       }}
                       services={services.map((service) => ({
                         ...service,
@@ -1052,6 +1053,26 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             ),
           }
         : null,
+      {
+        id: "legal",
+        content: (
+          <section className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Legal</p>
+            <h3 className="text-lg font-semibold text-white">Políticas e termos</h3>
+            <p className="mt-2 text-sm text-white/70">
+              Consulta os termos, privacidade, reservas e políticas de loja desta organização numa página única.
+            </p>
+            <div className="mt-4">
+              <Link
+                href={legalBaseHref}
+                className="inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/85 hover:border-white/40"
+              >
+                Abrir página legal
+              </Link>
+            </div>
+          </section>
+        ),
+      },
     ].filter(Boolean) as Array<{ id: string; content: ReactNode }>;
 
     return (

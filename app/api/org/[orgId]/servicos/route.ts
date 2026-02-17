@@ -8,6 +8,7 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -171,6 +172,17 @@ async function _POST(req: NextRequest) {
     const locationModeRaw = typeof payload?.locationMode === "string" ? payload.locationMode.trim().toUpperCase() : "FIXED";
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const coverImageUrl = typeof payload?.coverImageUrl === "string" ? payload.coverImageUrl.trim() : "";
+    const assignmentModeRaw = typeof payload?.assignmentMode === "string" ? payload.assignmentMode.trim().toUpperCase() : "";
+    if (
+      assignmentModeRaw &&
+      !["PROFESSIONAL_ONLY", "RESOURCE_ONLY", "PROFESSIONAL_AND_RESOURCE"].includes(assignmentModeRaw)
+    ) {
+      return fail(400, "assignmentMode inválido. Usa PROFESSIONAL_ONLY, RESOURCE_ONLY ou PROFESSIONAL_AND_RESOURCE.");
+    }
+    const assignmentMode = normalizeReservationAssignmentMode(
+      assignmentModeRaw,
+      normalizeReservationAssignmentMode((organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? null),
+    );
 
     const allowedDurations = new Set([30, 60, 90, 120]);
     if (!title || !Number.isFinite(durationMinutes) || !allowedDurations.has(durationMinutes)) {
@@ -227,6 +239,7 @@ async function _POST(req: NextRequest) {
         durationMinutes,
         unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
+        assignmentMode,
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
@@ -245,6 +258,7 @@ async function _POST(req: NextRequest) {
         durationMinutes,
         unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
+        assignmentMode,
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw,

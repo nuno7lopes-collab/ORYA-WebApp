@@ -18,6 +18,7 @@ import { EventFeedbackSheet } from "../../components/events/EventFeedbackSheet";
 import { sendEventSignal } from "../events/signals";
 import { formatCurrency, formatDate, formatRelativeDay, formatRelativeHours, formatTime } from "../../lib/formatters";
 import { formatDistanceKm } from "../../lib/geo";
+import { resolveMediaUri } from "../../lib/media";
 
 const USE_GLASS_BLUR = Platform.OS === "ios";
 const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
@@ -274,8 +275,17 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
     ? t("common:units.minutesShort", { count: service.durationMinutes })
     : null;
   const instructorLabel = service?.instructor?.fullName || service?.instructor?.username || null;
-  const serviceCover = service?.organization?.brandingAvatarUrl || service?.instructor?.avatarUrl || null;
-  const coverImage = isService ? serviceCover : event?.coverImageUrl ?? null;
+  const serviceCover =
+    service?.organization?.brandingCoverUrl ||
+    service?.organization?.brandingAvatarUrl ||
+    service?.instructor?.avatarUrl ||
+    null;
+  const coverImage = useMemo(
+    () => resolveMediaUri(isService ? serviceCover : event?.coverImageUrl ?? null),
+    [event?.coverImageUrl, isService, serviceCover],
+  );
+  const [coverFailed, setCoverFailed] = useState(false);
+  const hasCover = Boolean(coverImage) && !coverFailed;
   const tintSeed = useMemo(
     () => String(coverImage ?? event?.slug ?? service?.id ?? title ?? "orya"),
     [coverImage, event?.slug, service?.id, title],
@@ -348,7 +358,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             slug: event.slug ?? "",
             source: source ?? "discover",
             eventTitle: title,
-            coverImageUrl: event.coverImageUrl ?? "",
+            coverImageUrl: coverImage ?? "",
             shortDescription: event.shortDescription ?? "",
             startsAt: event.startsAt ?? "",
             endsAt: event.endsAt ?? "",
@@ -359,7 +369,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             ...(transitionTag ? { imageTag: transitionTag } : {}),
           }
         : undefined,
-    [event, title, location, cardPrice, category, host, source, transitionTag],
+    [event, title, location, cardPrice, category, host, source, transitionTag, coverImage],
   );
 
   const servicePreviewParams = useMemo(
@@ -375,11 +385,11 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             serviceOrg: host,
             serviceAddress: serviceAddress ?? "",
             serviceInstructor: instructorLabel ?? "",
-            serviceCoverUrl: serviceCover ?? "",
+            serviceCoverUrl: coverImage ?? "",
             ...(transitionTag ? { imageTag: transitionTag } : {}),
           }
         : undefined,
-    [service, title, cardPrice, durationLabel, host, instructorLabel, serviceCover, serviceAddress, source, transitionTag],
+    [service, title, cardPrice, durationLabel, host, instructorLabel, coverImage, serviceAddress, source, transitionTag],
   );
 
   const linkHref = useMemo(
@@ -414,9 +424,13 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   }, [index, isFeatured, revealOpacity, revealTranslate]);
 
   useEffect(() => {
+    setCoverFailed(false);
+  }, [coverImage]);
+
+  useEffect(() => {
     let active = true;
     setTint(fallbackTint);
-    if (!coverImage) {
+    if (!hasCover || !coverImage) {
       return () => {
         active = false;
       };
@@ -432,7 +446,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
       active = false;
       task?.cancel?.();
     };
-  }, [coverImage, fallbackTint, tintSeed]);
+  }, [coverImage, fallbackTint, tintSeed, hasCover]);
 
   const onPressIn = useCallback(() => {
     Animated.spring(scale, {
@@ -503,15 +517,16 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
           >
             <View className="gap-3">
               <View className="overflow-hidden rounded-2xl border border-white/10">
-                {coverImage ? (
+                {hasCover ? (
                   <View style={[styles.mediaContainer, { height: cardHeight }]}>
                     <Image
-                      source={{ uri: coverImage }}
+                      source={{ uri: coverImage as string }}
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
                       transition={CARD_IMAGE_TRANSITION_MS}
                       cachePolicy="memory-disk"
                       priority={isFeatured ? "high" : "normal"}
+                      onError={() => setCoverFailed(true)}
                     />
                     {USE_GLASS_BLUR ? (
                       <MaskedView

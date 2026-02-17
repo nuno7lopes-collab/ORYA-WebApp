@@ -104,7 +104,7 @@ export function AddressPicker({ value, onSelect, onClear, placeholder, label }: 
           placeholder={placeholder ?? "Procurar morada"}
           placeholderTextColor="rgba(255,255,255,0.45)"
           className="text-white text-sm"
-          style={{ minHeight: tokens.layout.touchTarget - 12 }}
+          style={{ minHeight: tokens.layout.touchTarget }}
           autoCorrect={false}
           autoCapitalize="none"
         />

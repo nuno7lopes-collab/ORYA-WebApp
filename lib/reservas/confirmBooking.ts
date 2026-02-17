@@ -10,7 +10,7 @@ import {
   type BookingConfirmationPaymentMeta,
 } from "@/lib/reservas/confirmationSnapshot";
 
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 type ConfirmBookingResult =
   | { ok: true; bookingId: number; alreadyConfirmed: boolean; professionalId: number | null; resourceId: number | null }
@@ -125,6 +125,7 @@ export async function confirmPendingBooking({
           id: true,
           policyId: true,
           kind: true,
+          assignmentMode: true,
           isActive: true,
           unitPriceCents: true,
           currency: true,
@@ -195,9 +196,11 @@ export async function confirmPendingBooking({
 
   const assignmentConfig = resolveServiceAssignmentMode({
     organizationMode: booking.service.organization?.reservationAssignmentMode ?? null,
+    serviceMode: booking.service.assignmentMode ?? null,
     serviceKind: booking.service.kind ?? null,
   });
   const assignmentMode = assignmentConfig.mode;
+  const bookingAssignmentMode = assignmentConfig.assignmentMode;
   const allowedProfessionalIds = booking.service.professionalLinks.length
     ? booking.service.professionalLinks
         .filter((link) => link.professional?.isActive)
@@ -462,7 +465,7 @@ export async function confirmPendingBooking({
     data: {
       status: "CONFIRMED",
       pendingExpiresAt: null,
-      assignmentMode,
+      assignmentMode: bookingAssignmentMode,
       professionalId: assignedProfessionalId,
       resourceId: assignedResourceId,
       courtId: assignmentMode === "RESOURCE" ? assignedCourtId : booking.courtId ?? null,

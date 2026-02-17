@@ -12,6 +12,7 @@ describe("policies subnav canonical", () => {
     expect(file).toContain('buildOrgHref(orgId, "/policies", { view: "overview" })');
     expect(file).toContain('buildOrgHref(orgId, "/policies", { view: "booking" })');
     expect(file).toContain('buildOrgHref(orgId, "/policies", { view: "terms" })');
+    expect(file).toContain('buildOrgHref(orgId, "/policies", { view: "store" })');
     expect(file).toContain('buildOrgHref(orgId, "/policies", { view: "guardrails" })');
     expect(file).not.toMatch(/tab=|section=|analytics=|finance=/);
   });

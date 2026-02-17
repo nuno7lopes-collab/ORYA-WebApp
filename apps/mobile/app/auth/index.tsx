@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
@@ -14,6 +15,8 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthBackground } from "../../components/liquid/AuthBackground";
 import { AuthButton } from "../../components/auth/AuthButton";
 import { GlassCard } from "../../components/auth/GlassCard";
@@ -25,7 +28,7 @@ import { supabase } from "../../lib/supabase";
 import { AuthMethod, setLastAuthMethod } from "../../lib/authMethod";
 import { trackEvent } from "../../lib/analytics";
 import { getMobileEnv } from "../../lib/env";
-import { useTranslation } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -64,6 +67,8 @@ const isCancelError = (err: any) => err?.code === "ERR_CANCELED" || err?.code ==
 export default function AuthGatewayScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{ next?: string }>();
   const { loading, session } = useAuth();
   const [appleAvailable, setAppleAvailable] = useState(false);
@@ -75,6 +80,8 @@ export default function AuthGatewayScreen() {
   const env = getMobileEnv();
   const showDevHints = __DEV__ || env.appEnv !== "prod";
   const baseUrl = env.apiBaseUrl.replace(/\/+$/, "");
+  const compactLayout = screenWidth < 370;
+  const tallScreen = screenHeight >= 820;
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
   const nextRoute = useMemo(() => {
@@ -286,12 +293,28 @@ export default function AuthGatewayScreen() {
 
   return (
     <AuthBackground>
+      <View style={styles.readabilityLayer} pointerEvents="none">
+        <LinearGradient
+          colors={["rgba(2,6,12,0.55)", "rgba(4,10,18,0.2)", "rgba(2,6,12,0.6)"]}
+          locations={[0, 0.42, 1]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
       <ScrollView
-        contentContainerStyle={styles.container}
+        contentContainerStyle={[
+          styles.container,
+          compactLayout ? styles.containerCompact : null,
+          {
+            paddingTop: insets.top + (tallScreen ? 44 : 28),
+            paddingBottom: Math.max(insets.bottom + 28, 40),
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, compactLayout ? styles.headerCompact : null]}>
           <View style={styles.brandRow}>
             <Image source={ORYA_LOGO} style={styles.brandSymbol} contentFit="contain" />
             <Text style={styles.brandWordmark}>ORYA</Text>
@@ -300,7 +323,7 @@ export default function AuthGatewayScreen() {
           <Text style={styles.subtitle}>{t("auth:heroSubtitle")}</Text>
         </View>
 
-        <GlassCard style={styles.card}>
+        <GlassCard style={compactLayout ? styles.cardCompact : styles.card} intensity={82}>
           <View style={styles.buttonStack}>
             {appleAvailable ? (
               <AuthButton
@@ -350,7 +373,6 @@ export default function AuthGatewayScreen() {
             <Text style={styles.helpText}>{t("auth:help")}</Text>
           </Pressable>
         </GlassCard>
-
       </ScrollView>
 
       <HelpSheet visible={helpVisible} onClose={() => setHelpVisible(false)} />
@@ -364,19 +386,30 @@ export default function AuthGatewayScreen() {
 }
 
 const styles = StyleSheet.create({
+  readabilityLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
   container: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: 48,
+    width: "100%",
+    paddingHorizontal: 24,
     paddingBottom: 40,
     alignItems: "center",
     justifyContent: "center",
     gap: 28,
   },
+  containerCompact: {
+    paddingHorizontal: 16,
+    gap: 20,
+  },
   header: {
     alignItems: "center",
+    gap: 12,
+    maxWidth: 360,
+    width: "100%",
+  },
+  headerCompact: {
     gap: 10,
-    maxWidth: 320,
   },
   brandRow: {
     flexDirection: "row",
@@ -389,23 +422,35 @@ const styles = StyleSheet.create({
   },
   brandWordmark: {
     fontSize: 22,
-    fontWeight: "700",
+    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
     letterSpacing: 3,
     color: "#ffffff",
+    textShadowColor: "rgba(0,0,0,0.36)",
+    textShadowRadius: 8,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
+    fontSize: 30,
+    lineHeight: 36,
+    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
+    letterSpacing: tokens.typography.letterSpacing?.tight ?? -0.2,
     color: "#ffffff",
     textAlign: "center",
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowRadius: 10,
   },
   subtitle: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.65)",
+    fontSize: 15,
+    color: "rgba(235,241,251,0.86)",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
+    maxWidth: 340,
   },
   card: {
+    width: "100%",
+    maxWidth: 400,
+  },
+  cardCompact: {
     width: "100%",
     maxWidth: 380,
   },
@@ -420,28 +465,33 @@ const styles = StyleSheet.create({
   divider: {
     flex: 1,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(226,236,255,0.26)",
   },
   dividerText: {
     fontSize: 12,
     letterSpacing: 1.2,
-    color: "rgba(255,255,255,0.5)",
+    color: "rgba(226,236,255,0.74)",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   legal: {
-    marginTop: 6,
+    marginTop: 8,
   },
   helpLink: {
-    marginTop: 4,
+    marginTop: 8,
     alignSelf: "center",
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     minHeight: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(125, 198, 255, 0.34)",
+    backgroundColor: "rgba(88, 162, 255, 0.11)",
     justifyContent: "center",
   },
   helpText: {
-    fontSize: 12,
-    color: "rgba(148, 214, 255, 0.9)",
-    fontWeight: "600",
+    fontSize: 13,
+    color: "rgba(187, 225, 255, 0.98)",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   loadingScreen: {
     flex: 1,

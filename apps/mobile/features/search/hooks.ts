@@ -1,17 +1,28 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { searchOffers, searchOrganizations, searchUsers } from "./api";
+import { DiscoverKind } from "../discover/types";
 
 const MIN_QUERY_LENGTH = 2;
 
-export const useGlobalSearch = (query: string) => {
+type UseGlobalSearchOptions = {
+  offersKind?: DiscoverKind;
+  includeOffers?: boolean;
+};
+
+export const useGlobalSearch = (
+  query: string,
+  options: UseGlobalSearchOptions = {},
+) => {
   const normalized = query.trim();
   const enabled = normalized.length >= MIN_QUERY_LENGTH;
+  const includeOffers = options.includeOffers ?? true;
+  const offersKind = options.offersKind ?? "all";
 
   const offersQuery = useQuery({
-    queryKey: ["search", "offers", normalized],
-    queryFn: () => searchOffers(normalized),
-    enabled,
+    queryKey: ["search", "offers", normalized, offersKind],
+    queryFn: () => searchOffers(normalized, { kind: offersKind, limit: 8 }),
+    enabled: enabled && includeOffers,
     staleTime: 45_000,
     gcTime: 5 * 60_000,
     retry: 1,

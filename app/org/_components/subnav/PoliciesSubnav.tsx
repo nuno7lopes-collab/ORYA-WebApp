@@ -8,7 +8,7 @@ export default function PoliciesSubnav({ orgId, className }: { orgId: number | n
 
   const resolveView = (searchParams: URLSearchParams) => {
     const view = searchParams.get("view");
-    if (view === "overview" || view === "booking" || view === "terms" || view === "guardrails") {
+    if (view === "overview" || view === "booking" || view === "terms" || view === "store" || view === "guardrails") {
       return view;
     }
     return "overview";
@@ -35,6 +35,12 @@ export default function PoliciesSubnav({ orgId, className }: { orgId: number | n
           label: "Termos",
           href: buildOrgHref(orgId, "/policies", { view: "terms" }),
           isActive: ({ searchParams }) => resolveView(searchParams) === "terms",
+        },
+        {
+          id: "store",
+          label: "Loja",
+          href: buildOrgHref(orgId, "/policies", { view: "store" }),
+          isActive: ({ searchParams }) => resolveView(searchParams) === "store",
         },
         {
           id: "guardrails",

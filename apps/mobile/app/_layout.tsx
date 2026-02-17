@@ -23,6 +23,37 @@ import { Sora_600SemiBold, Sora_700Bold } from "@expo-google-fonts/sora";
 
 WebBrowser.maybeCompleteAuthSession();
 
+const SAFE_AREA_DEPRECATION_PATTERNS = [
+  "SafeAreaView has been deprecated",
+  "SafeAreaView is deprecated",
+  "Please use 'react-native-safe-area-context' instead",
+];
+
+const shouldIgnoreDevWarn = (value: unknown) => {
+  if (typeof value !== "string") return false;
+  return SAFE_AREA_DEPRECATION_PATTERNS.some((pattern) =>
+    value.includes(pattern),
+  );
+};
+
+const installWarnFilter = () => {
+  if (!__DEV__) return;
+  const globalRef = globalThis as typeof globalThis & {
+    __ORYA_WARN_FILTER_INSTALLED__?: boolean;
+  };
+  if (globalRef.__ORYA_WARN_FILTER_INSTALLED__) return;
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    if (args.some((entry) => shouldIgnoreDevWarn(entry))) {
+      return;
+    }
+    originalWarn(...(args as Parameters<typeof console.warn>));
+  };
+  globalRef.__ORYA_WARN_FILTER_INSTALLED__ = true;
+};
+
+installWarnFilter();
+
 LogBox.ignoreLogs([
   "SafeAreaView has been deprecated",
   "SafeAreaView has been deprecated and will be removed in a future release",
@@ -81,7 +112,14 @@ export default function RootLayout() {
   }, [env.apiBaseUrl, env.appEnv]);
 
   const loadingFallback = (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
+    <View
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#0b1014",
+      }}
+    >
       <ActivityIndicator />
     </View>
   );

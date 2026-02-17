@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { tokens } from "@orya/shared";
 import { Ionicons } from "../icons/Ionicons";
 
 export type AuthButtonVariant = "apple" | "google" | "email";
@@ -69,6 +70,7 @@ export function AuthButton({
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
       style={({ pressed }) => [
         styles.base,
         stylesForVariant.container,
@@ -110,7 +112,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 16,
-    fontWeight: "600",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
+    letterSpacing: 0.1,
   },
   pressed: {
     transform: [{ scale: 0.99 }],
@@ -120,18 +123,23 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   appleContainer: {
-    backgroundColor: "#000000",
-    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(7, 10, 18, 0.96)",
+    borderColor: "rgba(242,247,255,0.26)",
+    shadowColor: "rgba(0,0,0,0.52)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 2,
   },
   appleText: {
     color: "#ffffff",
   },
   googleContainer: {
     backgroundColor: "#FFFFFF",
-    borderColor: "rgba(15, 23, 42, 0.18)",
-    shadowColor: "rgba(0,0,0,0.28)",
+    borderColor: "rgba(15, 23, 42, 0.24)",
+    shadowColor: "rgba(0,0,0,0.3)",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 3,
   },
@@ -139,10 +147,10 @@ const styles = StyleSheet.create({
     color: "#0b0f17",
   },
   emailContainer: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(235,242,255,0.12)",
+    borderColor: "rgba(214,228,255,0.34)",
   },
   emailText: {
-    color: "#e6ebf5",
+    color: "rgba(244,248,255,0.98)",
   },
 });

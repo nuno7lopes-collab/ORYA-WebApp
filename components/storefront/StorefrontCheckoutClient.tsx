@@ -144,6 +144,7 @@ export default function StorefrontCheckoutClient({
   storePolicies?: {
     supportEmail?: string | null;
     supportPhone?: string | null;
+    legalUrl?: string | null;
     returnPolicy?: string | null;
     privacyPolicy?: string | null;
     termsUrl?: string | null;
@@ -182,26 +183,30 @@ export default function StorefrontCheckoutClient({
   const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<number | null>(null);
 
   const hasPolicies = Boolean(
-    storePolicies?.supportEmail ||
+      storePolicies?.supportEmail ||
       storePolicies?.supportPhone ||
+      storePolicies?.legalUrl ||
       storePolicies?.returnPolicy ||
       storePolicies?.privacyPolicy ||
       storePolicies?.termsUrl,
   );
 
   const policyLinks = useMemo(() => {
-    const links: Array<{ label: string; href: string; external?: boolean }> = [];
+    const links: Array<{ label: string; href: string }> = [];
+    const legalUrl =
+      storePolicies?.legalUrl ??
+      (storePolicies?.termsUrl ? storePolicies.termsUrl.replace(/#.*$/, "") : null);
     if (storePolicies?.termsUrl) {
-      links.push({ label: "Termos e condicoes", href: storePolicies.termsUrl, external: true });
+      links.push({ label: "Termos e condicoes", href: storePolicies.termsUrl });
     }
-    if (storePolicies?.returnPolicy) {
-      links.push({ label: "Politica de devolucoes", href: `${storeBaseHref}#politica-devolucoes` });
+    if (storePolicies?.returnPolicy && legalUrl) {
+      links.push({ label: "Politica de devolucoes", href: `${legalUrl}#loja-devolucoes` });
     }
-    if (storePolicies?.privacyPolicy) {
-      links.push({ label: "Politica de privacidade", href: `${storeBaseHref}#politica-privacidade` });
+    if (storePolicies?.privacyPolicy && legalUrl) {
+      links.push({ label: "Politica de privacidade", href: `${legalUrl}#privacidade` });
     }
     return links;
-  }, [storePolicies?.termsUrl, storePolicies?.returnPolicy, storePolicies?.privacyPolicy, storeBaseHref]);
+  }, [storePolicies?.legalUrl, storePolicies?.termsUrl, storePolicies?.returnPolicy, storePolicies?.privacyPolicy]);
 
   const stripePromise = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
@@ -765,8 +770,6 @@ export default function StorefrontCheckoutClient({
                       <a
                         key={link.label}
                         href={link.href}
-                        target={link.external ? "_blank" : undefined}
-                        rel={link.external ? "noreferrer" : undefined}
                         className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
                       >
                         {link.label}

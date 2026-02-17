@@ -1,10 +1,11 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFavoritesStore } from "./store";
 import { fetchFavorites } from "./api";
 
 export const useFavoritesSync = (enabled: boolean) => {
   const setAll = useFavoritesStore((state) => state.setAll);
-  return useQuery({
+  const query = useQuery({
     queryKey: ["favorites"],
     queryFn: fetchFavorites,
     enabled,
@@ -14,8 +15,13 @@ export const useFavoritesSync = (enabled: boolean) => {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    onSuccess: (items) => {
-      setAll(items);
-    },
   });
+
+  useEffect(() => {
+    if (query.data) {
+      setAll(query.data);
+    }
+  }, [query.data, setAll]);
+
+  return query;
 };

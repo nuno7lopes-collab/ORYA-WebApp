@@ -839,7 +839,7 @@ async function seedBookings(params: {
         organizationId,
         serviceId: service.id,
         userId: customer.id,
-        assignmentMode: ReservationAssignmentMode.PROFESSIONAL,
+        assignmentMode: ReservationAssignmentMode.PROFESSIONAL_ONLY,
         professionalId: professional?.id ?? null,
         resourceId: resource?.id ?? null,
         courtId: court?.id ?? null,

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
-import { useStripe } from "@stripe/stripe-react-native";
+import { initStripe, useStripe } from "@stripe/stripe-react-native";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../../components/liquid/GlassCard";
@@ -22,7 +22,8 @@ import {
   useStoreTotals,
 } from "../../../features/store/hooks";
 import { getStoreErrorMessage } from "../../../features/store/errors";
-import { buildReturnUrl } from "../../../lib/deeplink";
+import { buildReturnUrl, resolveAppScheme } from "../../../lib/deeplink";
+import { getMobileEnv } from "../../../lib/env";
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
@@ -56,6 +57,12 @@ export default function StoreCheckoutScreen() {
   const topPadding = useTopHeaderPadding(12);
   const topBar = useTopBarScroll({ hideOnScroll: false });
   const returnUrl = useMemo(() => buildReturnUrl("store"), []);
+  const mobileEnv = useMemo(() => getMobileEnv(), []);
+  const appScheme = useMemo(() => resolveAppScheme(), []);
+  const fallbackStripeKey = useMemo(
+    () => (mobileEnv.stripePublishableKey ?? "").trim(),
+    [mobileEnv.stripePublishableKey],
+  );
 
   const cart = useStoreCart(Number.isFinite(storeId) && storeId > 0 ? storeId : null, Boolean(storeId));
   const totals = useStoreTotals(Number.isFinite(storeId) && storeId > 0 ? storeId : null, Boolean(storeId));
@@ -209,6 +216,16 @@ export default function StoreCheckoutScreen() {
         });
         return;
       }
+
+      const runtimeStripeKey = (result.stripePublishableKey ?? "").trim() || fallbackStripeKey;
+      if (!runtimeStripeKey) {
+        throw new Error("Configuracao de pagamentos indisponivel.");
+      }
+      await initStripe({
+        publishableKey: runtimeStripeKey,
+        ...(mobileEnv.appleMerchantId ? { merchantIdentifier: mobileEnv.appleMerchantId } : {}),
+        urlScheme: appScheme,
+      });
 
       const init = await initPaymentSheet({
         merchantDisplayName: "ORYA",

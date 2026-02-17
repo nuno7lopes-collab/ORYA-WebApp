@@ -44,6 +44,14 @@ const SENSITIVE_PATH_PREFIXES = [
   "/api/auth",
 ];
 
+function isStageOrProdEnv() {
+  const appEnv = (process.env.APP_ENV ?? "").trim().toLowerCase();
+  const vercelEnv = (process.env.VERCEL_ENV ?? "").trim().toLowerCase();
+  if (vercelEnv === "production" || vercelEnv === "preview") return true;
+  if (appEnv === "prod" || appEnv === "production" || appEnv === "stage" || appEnv === "staging") return true;
+  return process.env.NODE_ENV === "production";
+}
+
 function getHostname(req: NextRequest) {
   const raw =
     req.headers.get("x-forwarded-host") ??
@@ -513,18 +521,21 @@ export async function proxy(req: NextRequest) {
   const orgIdFromPath =
     parsePositiveOrgId(req.nextUrl.pathname.match(/^\/org\/(\d+)(?:\/|$)/i)?.[1]) ??
     parsePositiveOrgId(req.nextUrl.pathname.match(/^\/api\/org\/(\d+)(?:\/|$)/i)?.[1]);
+  const secureCookieRequired = isStageOrProdEnv();
+  const secureByProtocol = forwardedProto === "https" || req.nextUrl.protocol === "https:";
+  const shouldSetSecureCookie = secureCookieRequired || secureByProtocol;
   if (orgIdFromPath) {
     res.cookies.set("orya_organization", String(orgIdFromPath), {
       httpOnly: false,
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30,
+      ...(shouldSetSecureCookie ? { secure: true } : {}),
     });
   }
 
   const envCookieDomain = process.env.NEXT_PUBLIC_SUPABASE_COOKIE_DOMAIN?.trim() || "";
   const cookieDomain = envCookieDomain || resolveCookieDomainFromHost(hostname);
-  const isSecure = forwardedProto === "https" || req.nextUrl.protocol === "https:";
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: cookieDomain
@@ -532,7 +543,7 @@ export async function proxy(req: NextRequest) {
           domain: cookieDomain,
           path: "/",
           sameSite: "lax",
-          ...(isSecure ? { secure: true } : {}),
+          ...(shouldSetSecureCookie ? { secure: true } : {}),
         }
       : undefined,
     cookies: {
@@ -541,7 +552,7 @@ export async function proxy(req: NextRequest) {
       },
       setAll(cookiesToSet) {
         for (const { name, value, options } of cookiesToSet) {
-          res.cookies.set({ name, value, ...options });
+          res.cookies.set({ name, value, ...options, ...(shouldSetSecureCookie ? { secure: true } : {}) });
         }
       },
     },

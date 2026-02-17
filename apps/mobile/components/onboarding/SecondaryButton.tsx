@@ -20,10 +20,12 @@ export function SecondaryButton({
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
       style={({ pressed }) => [
         styles.shell,
         {
-          opacity: disabled ? 0.5 : pressed ? 0.9 : 1,
+          opacity: disabled ? 0.5 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.985 : 1 }],
           backgroundColor: pressed ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.02)",
         },
       ]}
@@ -46,6 +48,6 @@ const styles = StyleSheet.create({
   label: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 14,
-    fontWeight: "600",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
 });

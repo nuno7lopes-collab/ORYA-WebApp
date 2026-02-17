@@ -18,6 +18,11 @@ import {
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
+type ReservationAssignmentMode =
+  | "PROFESSIONAL_ONLY"
+  | "RESOURCE_ONLY"
+  | "PROFESSIONAL_AND_RESOURCE";
+
 type Service = {
   id: number;
   title: string;
@@ -27,6 +32,7 @@ type Service = {
   currency: string;
   isActive: boolean;
   kind?: string | null;
+  assignmentMode?: ReservationAssignmentMode | null;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
@@ -112,7 +118,7 @@ type ReservasBookingClientProps = {
     timezone: string | null;
     addressId?: string | null;
     addressRef?: { formattedAddress?: string | null } | null;
-    reservationAssignmentMode: "PROFESSIONAL" | "RESOURCE";
+    reservationAssignmentMode: ReservationAssignmentMode;
   };
   services: Service[];
   professionals: Professional[];
@@ -375,11 +381,15 @@ export default function ReservasBookingClient({
     () =>
       resolveServiceAssignmentMode({
         organizationMode: organization.reservationAssignmentMode,
+        serviceMode: selectedService?.assignmentMode ?? null,
         serviceKind: selectedService?.kind ?? null,
       }),
-    [organization.reservationAssignmentMode, selectedService?.kind],
+    [organization.reservationAssignmentMode, selectedService?.assignmentMode, selectedService?.kind],
   );
   const assignmentMode = assignmentConfig.mode;
+  const requiresProfessional = assignmentConfig.requiresProfessional;
+  const requiresResource = assignmentConfig.requiresResource;
+  const isHybridAssignment = assignmentConfig.isHybrid;
   const timezone = organization.timezone || "Europe/Lisbon";
   const selectedProfessional =
     selectedProfessionalId != null
@@ -482,7 +492,7 @@ export default function ReservasBookingClient({
   const totalPriceLabel = selectedService ? formatMoney(totalEstimateCents, priceCurrency) : null;
   const cardFeeLabel = cardFeeBps ? `+${(cardFeeBps / 100).toFixed(0)}%` : "";
   const canAccessStep2 = Boolean(selectedService);
-  const canAccessStep3 = assignmentMode === "RESOURCE" ? Boolean(selectedPartySize) : Boolean(selectedService);
+  const canAccessStep3 = Boolean(selectedService) && (!requiresResource || Boolean(selectedPartySize));
   const canAccessStep4 = Boolean(
     bookingPending ||
       checkout ||
@@ -577,7 +587,7 @@ export default function ReservasBookingClient({
   }, [selectedServiceId, allowServiceSelection]);
 
   useEffect(() => {
-    if (assignmentMode !== "PROFESSIONAL") return;
+    if (!requiresProfessional) return;
     if (!selectedService) return;
     if (
       selectedProfessionalId &&
@@ -585,12 +595,12 @@ export default function ReservasBookingClient({
     ) {
       setSelectedProfessionalId(null);
     }
-  }, [assignmentMode, availableProfessionals, selectedProfessionalId, selectedService?.id]);
+  }, [requiresProfessional, availableProfessionals, selectedProfessionalId, selectedService?.id]);
 
   const autoAdvanceRef = useRef(false);
 
   useEffect(() => {
-    if (assignmentMode !== "PROFESSIONAL") return;
+    if (!requiresProfessional) return;
     if (!fixedProfessionalId) return;
     const isAvailable = availableProfessionals.some((professional) => professional.id === fixedProfessionalId);
     if (!isAvailable) {
@@ -607,7 +617,7 @@ export default function ReservasBookingClient({
       setActiveStep(3);
     }
   }, [
-    assignmentMode,
+    requiresProfessional,
     availableProfessionals,
     fixedProfessionalId,
     selectedProfessionalId,
@@ -634,10 +644,10 @@ export default function ReservasBookingClient({
   }, [assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam]);
 
   useEffect(() => {
-    if (assignmentMode === "RESOURCE" && !selectedPartySize && activeStep > 2) {
+    if (requiresResource && !selectedPartySize && activeStep > 2) {
       setActiveStep(2);
     }
-  }, [assignmentMode, selectedPartySize, activeStep]);
+  }, [requiresResource, selectedPartySize, activeStep]);
 
   useEffect(() => {
     if (activeStep === 4 && !canAccessStep4) {
@@ -647,7 +657,7 @@ export default function ReservasBookingClient({
 
   useEffect(() => {
     if (!selectedServiceId) return;
-    if (assignmentMode === "RESOURCE" && !selectedPartySize) {
+    if (requiresResource && !selectedPartySize) {
       setAvailabilityDays([]);
       return;
     }
@@ -657,10 +667,10 @@ export default function ReservasBookingClient({
     setCalendarError(null);
 
     const params = new URLSearchParams({ month: calendarMonthParam });
-    if (assignmentMode === "PROFESSIONAL" && selectedProfessionalId) {
+    if (requiresProfessional && selectedProfessionalId) {
       params.set("professionalId", String(selectedProfessionalId));
     }
-    if (assignmentMode === "RESOURCE" && selectedPartySize) {
+    if (requiresResource && selectedPartySize) {
       params.set("partySize", String(selectedPartySize));
     }
     if (selectedPackageId) {
@@ -688,7 +698,16 @@ export default function ReservasBookingClient({
       .finally(() => setCalendarLoading(false));
 
     return () => controller.abort();
-  }, [selectedServiceId, assignmentMode, selectedProfessionalId, selectedPartySize, calendarMonthParam, addonsParam, selectedPackageId]);
+  }, [
+    selectedServiceId,
+    requiresProfessional,
+    requiresResource,
+    selectedProfessionalId,
+    selectedPartySize,
+    calendarMonthParam,
+    addonsParam,
+    selectedPackageId,
+  ]);
 
   const availabilityMap = useMemo(() => {
     const map = new Map<string, AvailabilityDay>();
@@ -698,7 +717,7 @@ export default function ReservasBookingClient({
 
   const loadDaySlots = (iso: string) => {
     if (!selectedServiceId) return;
-    if (assignmentMode === "RESOURCE" && !selectedPartySize) return;
+    if (requiresResource && !selectedPartySize) return;
 
     setSelectedDay(iso);
     if (!bookingPending) {
@@ -709,10 +728,10 @@ export default function ReservasBookingClient({
     setDaySlots([]);
 
     const params = new URLSearchParams({ day: iso });
-    if (assignmentMode === "PROFESSIONAL" && selectedProfessionalId) {
+    if (requiresProfessional && selectedProfessionalId) {
       params.set("professionalId", String(selectedProfessionalId));
     }
-    if (assignmentMode === "RESOURCE" && selectedPartySize) {
+    if (requiresResource && selectedPartySize) {
       params.set("partySize", String(selectedPartySize));
     }
     if (selectedPackageId) {
@@ -891,8 +910,8 @@ export default function ReservasBookingClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           startsAt: slot.startsAt,
-          professionalId: assignmentMode === "PROFESSIONAL" ? selectedProfessionalId : null,
-          partySize: assignmentMode === "RESOURCE" ? selectedPartySize : null,
+          professionalId: requiresProfessional ? selectedProfessionalId : null,
+          partySize: requiresResource ? selectedPartySize : null,
           addressId: resolvedAddressId,
           selectedAddons: selectedAddonsPayload,
           packageId: selectedPackageId,
@@ -966,7 +985,11 @@ export default function ReservasBookingClient({
         { id: 1, title: "Serviço", index: 1 },
         {
           id: 2,
-          title: assignmentMode === "RESOURCE" ? "Capacidade" : "Profissional",
+          title: isHybridAssignment
+            ? "Profissional + capacidade"
+            : requiresResource
+              ? "Capacidade"
+              : "Profissional",
           index: 2,
         },
         { id: 3, title: "Data & hora", index: 3 },
@@ -975,7 +998,11 @@ export default function ReservasBookingClient({
     : ([
         {
           id: 2,
-          title: assignmentMode === "RESOURCE" ? "Capacidade" : "Profissional",
+          title: isHybridAssignment
+            ? "Profissional + capacidade"
+            : requiresResource
+              ? "Capacidade"
+              : "Profissional",
           index: 1,
         },
         { id: 3, title: "Data & hora", index: 2 },
@@ -994,7 +1021,7 @@ export default function ReservasBookingClient({
       : null;
   const locationLabel = resolvedAddressLabel ?? "Local por definir";
   const professionalLabel =
-    assignmentMode === "RESOURCE"
+    requiresResource
       ? selectedCapacityLabel
         ? `${selectedCapacityLabel} pessoas`
         : "Capacidade por definir"
@@ -1307,7 +1334,7 @@ export default function ReservasBookingClient({
               {!allowServiceSelection && activeStep === 2 && packagesPanel}
               {!allowServiceSelection && activeStep === 2 && addonsPanel}
 
-              {activeStep === 2 && assignmentMode === "PROFESSIONAL" && (
+              {activeStep === 2 && requiresProfessional && (
                 <div className={panelClass}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1373,14 +1400,19 @@ export default function ReservasBookingClient({
                       Sair
                     </button>
                   )}
-                  <button type="button" className={primaryButtonClass} onClick={() => goToStep(3)}>
+                  <button
+                    type="button"
+                    className={primaryButtonClass}
+                    onClick={() => goToStep(3)}
+                    disabled={!canAccessStep3}
+                  >
                     Continuar
                   </button>
                 </div>
               </div>
             )}
 
-              {activeStep === 2 && assignmentMode === "RESOURCE" && (
+              {activeStep === 2 && requiresResource && (
                 <div className={panelClass}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>

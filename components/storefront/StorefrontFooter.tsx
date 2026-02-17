@@ -3,6 +3,7 @@ type StorefrontFooterProps = {
   storePolicies?: {
     supportEmail?: string | null;
     supportPhone?: string | null;
+    legalUrl?: string | null;
     returnPolicy?: string | null;
     privacyPolicy?: string | null;
     termsUrl?: string | null;
@@ -14,10 +15,15 @@ export default function StorefrontFooter({ storeName, storePolicies, className }
   const hasContent = Boolean(
     storePolicies?.supportEmail ||
       storePolicies?.supportPhone ||
+      storePolicies?.legalUrl ||
       storePolicies?.returnPolicy ||
       storePolicies?.privacyPolicy ||
       storePolicies?.termsUrl,
   );
+
+  const legalUrl =
+    storePolicies?.legalUrl ??
+    (storePolicies?.termsUrl ? storePolicies.termsUrl.replace(/#.*$/, "") : null);
 
   if (!hasContent) return null;
 
@@ -40,24 +46,22 @@ export default function StorefrontFooter({ storeName, storePolicies, className }
             {storePolicies?.termsUrl ? (
               <a
                 href={storePolicies.termsUrl}
-                target="_blank"
-                rel="noreferrer"
                 className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
               >
                 Termos e condicoes
               </a>
             ) : null}
-            {storePolicies?.returnPolicy ? (
+            {storePolicies?.returnPolicy && legalUrl ? (
               <a
-                href="#politica-devolucoes"
+                href={`${legalUrl}#loja-devolucoes`}
                 className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
               >
                 Politica de devolucoes
               </a>
             ) : null}
-            {storePolicies?.privacyPolicy ? (
+            {storePolicies?.privacyPolicy && legalUrl ? (
               <a
-                href="#politica-privacidade"
+                href={`${legalUrl}#privacidade`}
                 className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] text-white/80 hover:border-white/40"
               >
                 Politica de privacidade

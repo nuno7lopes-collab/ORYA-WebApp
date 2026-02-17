@@ -3,10 +3,11 @@ import * as Localization from "expo-localization";
 import { useEffect, useState } from "react";
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type Locale, i18n, initI18n } from "@orya/shared";
 
-const globalIntl = (globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl ?? {};
-if (!(globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl) {
-  (globalThis as typeof globalThis & { Intl?: Record<string, unknown> }).Intl = globalIntl;
+const intlHost = globalThis as typeof globalThis & { Intl?: typeof Intl };
+if (!intlHost.Intl) {
+  intlHost.Intl = {} as unknown as typeof Intl;
 }
+const globalIntl = intlHost.Intl as unknown as Record<string, unknown>;
 
 try {
   if (typeof (globalIntl as { getCanonicalLocales?: unknown }).getCanonicalLocales === "undefined") {

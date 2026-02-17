@@ -6,6 +6,7 @@ import { computeBundleTotals } from "@/lib/store/bundles";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
+import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function parseUsername(req: NextRequest) {
@@ -59,17 +60,28 @@ async function _GET(req: NextRequest) {
         checkoutEnabled: true,
         currency: true,
         freeShippingThresholdCents: true,
-        supportEmail: true,
-        supportPhone: true,
-        returnPolicy: true,
-        privacyPolicy: true,
-        termsUrl: true,
       },
     });
 
     if (!store) {
       return jsonWrap({ ok: false, error: "Loja nao encontrada." }, { status: 404 });
     }
+
+    const organizationSettings = await prisma.organizationSettings.findUnique({
+      where: { organizationId: organization.id },
+      select: {
+        supportEmail: true,
+        supportPhone: true,
+        storeReturnPolicyMode: true,
+        storeReturnWindowDays: true,
+      },
+    });
+
+    const storePolicy = resolveStorePolicy({
+      settings: organizationSettings,
+      fallbackSupportEmail: organization.officialEmail ?? null,
+      organizationUsername: organization.username ?? null,
+    });
 
     const paymentsGate = getPublicStorePaymentsGate({
       orgType: organization.orgType,
@@ -222,11 +234,14 @@ async function _GET(req: NextRequest) {
         checkoutAvailable: resolvedState === "ACTIVE",
         currency: store.currency,
         freeShippingThresholdCents: store.freeShippingThresholdCents,
-        supportEmail: store.supportEmail,
-        supportPhone: store.supportPhone,
-        returnPolicy: store.returnPolicy,
-        privacyPolicy: store.privacyPolicy,
-        termsUrl: store.termsUrl,
+        supportEmail: storePolicy.supportEmail,
+        supportPhone: storePolicy.supportPhone,
+        returnPolicy: storePolicy.returnPolicy,
+        privacyPolicy: storePolicy.privacyPolicy,
+        termsUrl: storePolicy.termsUrl,
+        legalUrl: storePolicy.legalUrl,
+        returnPolicyMode: storePolicy.returnPolicyMode,
+        returnWindowDays: storePolicy.returnWindowDays,
       },
       categories,
       products,

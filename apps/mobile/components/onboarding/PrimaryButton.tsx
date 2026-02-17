@@ -23,10 +23,12 @@ export function PrimaryButton({
       disabled={disabled || loading}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       style={({ pressed }) => [
         styles.shell,
         {
-          opacity: disabled ? 0.5 : pressed ? 0.9 : 1,
+          opacity: disabled ? 0.5 : 1,
+          transform: [{ scale: pressed && !disabled ? 0.985 : 1 }],
         },
       ]}
     >
@@ -69,6 +71,6 @@ const styles = StyleSheet.create({
   label: {
     color: "#0b0f1a",
     fontSize: 16,
-    fontWeight: "700",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
 });

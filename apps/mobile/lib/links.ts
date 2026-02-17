@@ -2,7 +2,7 @@ import {
   resolveMobileLink as resolveMobileLinkShared,
   type ResolvedMobileLink,
   type ResolveMobileLinkOptions,
-} from "@/lib/mobile/links";
+} from "../../../lib/mobile/links";
 
 import { getMobileEnv } from "./env";
 

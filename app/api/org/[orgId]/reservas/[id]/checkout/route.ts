@@ -126,7 +126,7 @@ async function _POST(
     if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
       return fail("RESERVA_INATIVA", "Reserva inativa.", 409);
     }
-    if (booking.splitPayment?.status === "OPEN") {
+    if (booking.splitPayment && !["CANCELLED", "SETTLED"].includes(booking.splitPayment.status)) {
       return fail("SPLIT_ACTIVE", "Pagamento dividido ativo.", 409);
     }
 

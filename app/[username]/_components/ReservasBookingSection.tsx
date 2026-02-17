@@ -6,6 +6,11 @@ import { getEventCoverUrl } from "@/lib/eventCover";
 import ReservasBookingClient from "@/app/[username]/_components/ReservasBookingClient";
 import { cn } from "@/lib/utils";
 
+type ReservationAssignmentMode =
+  | "PROFESSIONAL_ONLY"
+  | "RESOURCE_ONLY"
+  | "PROFESSIONAL_AND_RESOURCE";
+
 type Service = {
   id: number;
   title: string;
@@ -15,6 +20,7 @@ type Service = {
   currency: string;
   isActive: boolean;
   kind?: string | null;
+  assignmentMode?: ReservationAssignmentMode | null;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
@@ -68,7 +74,7 @@ type ReservasBookingSectionProps = {
     timezone: string | null;
     addressId?: string | null;
     addressRef?: { formattedAddress?: string | null } | null;
-    reservationAssignmentMode: "PROFESSIONAL" | "RESOURCE";
+    reservationAssignmentMode: ReservationAssignmentMode;
   };
   services: Service[];
   professionals: Professional[];

@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   secondaryButton: {
-    minHeight: 40,
+    minHeight: 44,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",

@@ -10,7 +10,7 @@ import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 function parseMonthParam(value: string | null) {
   if (!value) return null;
@@ -88,6 +88,7 @@ async function _GET(
       select: {
         id: true,
         kind: true,
+        assignmentMode: true,
         durationMinutes: true,
         organizationId: true,
         unitPriceCents: true,
@@ -118,7 +119,8 @@ async function _GET(
 
     const assignmentConfig = resolveServiceAssignmentMode({
       organizationMode: service.organization?.reservationAssignmentMode ?? null,
-      serviceKind: service.kind,
+      serviceMode: service.assignmentMode ?? null,
+      serviceKind: service.kind ?? null,
     });
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";

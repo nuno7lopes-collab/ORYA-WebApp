@@ -1,5 +1,5 @@
 import { PropsWithChildren } from "react";
-import { StyleSheet, ViewStyle } from "react-native";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { tokens } from "@orya/shared";
 import { GlassSurface } from "../ui/GlassSurface";
 
@@ -8,8 +8,8 @@ type GlassCardProps = PropsWithChildren<{
   intensity?: number;
   padding?: number;
   highlight?: boolean;
-  style?: ViewStyle;
-  contentStyle?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
 }>;
 
 export function GlassCard({

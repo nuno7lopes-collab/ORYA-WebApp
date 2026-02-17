@@ -541,20 +541,22 @@ export default function NotificationsScreen() {
         "Ações",
         undefined,
         [
-          ...actions.map((item) => ({
-            text: item.label,
-            onPress: item.onPress,
-            style: item.destructive ? "destructive" : "default",
-          })),
-          { text: "Cancelar", style: "cancel" },
+          ...actions.map((item) => {
+            const style: "default" | "destructive" = item.destructive ? "destructive" : "default";
+            return {
+              text: item.label,
+              onPress: item.onPress,
+              style,
+            };
+          }),
+          { text: "Cancelar", style: "cancel" as const },
         ],
       );
     },
     [buildMenuActions],
   );
 
-  const handleAction = useCallback(
-    async (item: AggregatedNotificationItem, action: NotificationAction) => {
+  async function handleAction(item: AggregatedNotificationItem, action: NotificationAction) {
       if (action.type === "status" || action.style === "status") {
         return;
       }
@@ -712,19 +714,7 @@ export default function NotificationsScreen() {
       } finally {
         setPendingActionKey(null);
       }
-    },
-    [
-      followOverrides,
-      markItemReadOptimistic,
-      pathname,
-      pendingActionKey,
-      queryClient,
-      router,
-      setFollowOverride,
-      setNotificationStatusLabel,
-      session?.access_token,
-    ],
-  );
+    }
 
   useFocusEffect(
     useCallback(() => {
@@ -1111,7 +1101,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     overflow: "hidden",
-    minHeight: 40,
+    minHeight: tokens.layout.touchTarget,
     justifyContent: "center",
   },
   actionPrimary: {

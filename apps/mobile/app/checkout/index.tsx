@@ -1,29 +1,51 @@
 import { Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { useStripe, isPlatformPaySupported } from "@stripe/stripe-react-native";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
-import { useCheckoutStore, buildCheckoutIdempotencyKey } from "../../features/checkout/store";
-import { createCheckoutIntent, createPairingCheckoutIntent, fetchCheckoutStatus } from "../../features/checkout/api";
-import { CheckoutMethod, CheckoutStatusResponse } from "../../features/checkout/types";
+import {
+  useCheckoutStore,
+  buildCheckoutIdempotencyKey,
+} from "../../features/checkout/store";
+import {
+  createCheckoutIntent,
+  createPairingCheckoutIntent,
+  fetchCheckoutStatus,
+} from "../../features/checkout/api";
+import {
+  CheckoutMethod,
+  CheckoutStatusResponse,
+} from "../../features/checkout/types";
 import { useAuth } from "../../lib/auth";
 import { getMobileEnv } from "../../lib/env";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { buildReturnUrl } from "../../lib/deeplink";
 
-const formatMoney = (cents: number | null | undefined, currency?: string | null): string | null => {
+const formatMoney = (
+  cents: number | null | undefined,
+  currency?: string | null,
+): string | null => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return null;
   if (cents <= 0) return "Grátis";
-  const amount = cents / 100;
-  return `${amount.toFixed(0)} ${currency?.toUpperCase() || "EUR"}`;
+  return new Intl.NumberFormat("pt-PT", {
+    style: "currency",
+    currency: currency?.toUpperCase() || "EUR",
+    maximumFractionDigits: 2,
+  }).format(cents / 100);
 };
 
 const resolveMethodLabel = (method: CheckoutMethod) => {
@@ -37,23 +59,36 @@ const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
   return "card";
 };
 
-const CHECKOUT_CONFIG_ERROR = "CONFIG_STRIPE_KEY_MISSING: Stripe publishable key em falta para pagamentos.";
+const CHECKOUT_CONFIG_ERROR =
+  "Pagamentos indisponíveis neste momento. A chave Stripe da app não está configurada.";
 const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
 const BOOKING_POLL_INTERVAL_MS = 1200;
 const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS = 1500;
 const CHECKOUT_POLL_INTERVAL_PENDING_MS = 4000;
 const CHECKOUT_SETTLEMENT_POLL_MS = 1200;
 
-const isPaymentSettled = (status?: string | null) => status === "PAID" || status === "SUCCEEDED";
+const isPaymentSettled = (status?: string | null) =>
+  status === "PAID" || status === "SUCCEEDED";
 
 const isCheckoutFinal = (status?: string | null) =>
   Boolean(
     status &&
-      ["PAID", "SUCCEEDED", "FAILED", "REFUNDED", "DISPUTED", "CANCELED", "CANCELLED", "EXPIRED"].includes(status),
+    [
+      "PAID",
+      "SUCCEEDED",
+      "FAILED",
+      "REFUNDED",
+      "DISPUTED",
+      "CANCELED",
+      "CANCELLED",
+      "EXPIRED",
+    ].includes(status),
   );
 
 const isCheckoutPollingState = (status?: string | null) =>
-  Boolean(status && ["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status));
+  Boolean(
+    status && ["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status),
+  );
 
 type StatusMeta = {
   tone: "success" | "danger" | "warning" | "info";
@@ -77,14 +112,17 @@ export default function CheckoutScreen() {
   const [applePaySupported, setApplePaySupported] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkoutStatus, setCheckoutStatus] = useState<CheckoutStatusResponse | null>(null);
+  const [checkoutStatus, setCheckoutStatus] =
+    useState<CheckoutStatusResponse | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [bookingStatus, setBookingStatus] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingChecking, setBookingChecking] = useState(false);
   const [bookingTimedOut, setBookingTimedOut] = useState(false);
   const [requiresActionTimedOut, setRequiresActionTimedOut] = useState(false);
-  const [checkoutPollingStartedAt, setCheckoutPollingStartedAt] = useState<number | null>(null);
+  const [checkoutPollingStartedAt, setCheckoutPollingStartedAt] = useState<
+    number | null
+  >(null);
   const [checkoutPollingTimedOut, setCheckoutPollingTimedOut] = useState(false);
   const recoveredTrackedRef = useRef(false);
   const returnUrl = useMemo(() => buildReturnUrl("checkout/success"), []);
@@ -102,7 +140,8 @@ export default function CheckoutScreen() {
     let mounted = true;
     isPlatformPaySupported()
       .then((supported) => {
-        if (mounted) setApplePaySupported(Platform.OS === "ios" && Boolean(supported));
+        if (mounted)
+          setApplePaySupported(Platform.OS === "ios" && Boolean(supported));
       })
       .catch(() => {
         if (mounted) setApplePaySupported(false);
@@ -136,21 +175,25 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
-  const selectedMethod = draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
-  const resolvedMethod = !allowApplePay && selectedMethod === "apple_pay" ? "card" : selectedMethod;
+  const selectedMethod =
+    draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
+  const resolvedMethod =
+    !allowApplePay && selectedMethod === "apple_pay" ? "card" : selectedMethod;
 
   const totalLabel = formatMoney(draft?.totalCents ?? null, draft?.currency);
   const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
   const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
   const isServiceBooking = draft?.sourceType === "SERVICE_BOOKING";
   const itemLabel = isServiceBooking
-    ? draft?.ticketName ?? "Reserva"
+    ? (draft?.ticketName ?? "Reserva")
     : isPadelRegistration
-      ? draft?.ticketName ?? "Inscrição"
-      : draft?.ticketName ?? "Bilhete";
+      ? (draft?.ticketName ?? "Inscrição")
+      : (draft?.ticketName ?? "Bilhete");
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
   const missingStripeConfig = Boolean(draft && !isFreeCheckout && !stripeKey);
-  const canPay = Boolean(draft && session?.user?.id && (stripeKey || isFreeCheckout));
+  const canPay = Boolean(
+    draft && session?.user?.id && (stripeKey || isFreeCheckout),
+  );
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
@@ -172,13 +215,22 @@ export default function CheckoutScreen() {
 
   const statusPill = useMemo(() => {
     if (!draft) return null;
-    const pendingExpiry = draft.pendingExpiresAt ?? draft.bookingExpiresAt ?? null;
-    const bookingExpiry = pendingExpiry ? new Date(pendingExpiry).getTime() : null;
-    if (bookingExpiry && Number.isFinite(bookingExpiry) && Date.now() > bookingExpiry) {
+    const pendingExpiry =
+      draft.pendingExpiresAt ?? draft.bookingExpiresAt ?? null;
+    const bookingExpiry = pendingExpiry
+      ? new Date(pendingExpiry).getTime()
+      : null;
+    if (
+      bookingExpiry &&
+      Number.isFinite(bookingExpiry) &&
+      Date.now() > bookingExpiry
+    ) {
       return { label: "Reserva expirou", variant: "muted" as const };
     }
-    if (isExpired()) return { label: "Sessão expirou", variant: "muted" as const };
-    if (draft.clientSecret) return { label: "Sessão ativa", variant: "accent" as const };
+    if (isExpired())
+      return { label: "Sessão expirou", variant: "muted" as const };
+    if (draft.clientSecret)
+      return { label: "Sessão ativa", variant: "accent" as const };
     return null;
   }, [draft, isExpired]);
 
@@ -220,18 +272,27 @@ export default function CheckoutScreen() {
   }, []);
 
   const runStatusCheck = useCallback(
-    async (params?: { purchaseId?: string | null; paymentIntentId?: string | null }) => {
+    async (params?: {
+      purchaseId?: string | null;
+      paymentIntentId?: string | null;
+    }) => {
       if (!draft) return null;
       const purchaseId = params?.purchaseId ?? draft.purchaseId ?? null;
-      const paymentIntentId = params?.paymentIntentId ?? draft.paymentIntentId ?? null;
+      const paymentIntentId =
+        params?.paymentIntentId ?? draft.paymentIntentId ?? null;
       if (!purchaseId && !paymentIntentId) return null;
       setCheckingStatus(true);
       try {
-        const status = await fetchCheckoutStatus({ purchaseId, paymentIntentId });
+        const status = await fetchCheckoutStatus({
+          purchaseId,
+          paymentIntentId,
+        });
         applyCheckoutStatus(status);
         return status;
       } catch (err: any) {
-        setError(getUserFacingError(err, "Não foi possível verificar o pagamento."));
+        setError(
+          getUserFacingError(err, "Não foi possível verificar o pagamento."),
+        );
         return null;
       } finally {
         setCheckingStatus(false);
@@ -253,14 +314,20 @@ export default function CheckoutScreen() {
       }>(endpoint, { cache: "no-store" });
       const json = result.data;
       if (!result.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Não foi possível verificar a reserva.");
+        throw new Error(
+          json?.message ||
+            json?.error ||
+            "Não foi possível verificar a reserva.",
+        );
       }
       const status = json.booking?.status as string | undefined;
       setBookingStatus(status ?? null);
       setBookingError(null);
       return status ?? null;
     } catch (err) {
-      setBookingError(getUserFacingError(err, "Não foi possível verificar a reserva."));
+      setBookingError(
+        getUserFacingError(err, "Não foi possível verificar a reserva."),
+      );
       return null;
     } finally {
       setBookingChecking(false);
@@ -273,8 +340,16 @@ export default function CheckoutScreen() {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const status = await fetchBookingStatus();
       if (status === "CONFIRMED") return;
-      if (status && ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(status)) return;
-      await new Promise((resolve) => setTimeout(resolve, BOOKING_POLL_INTERVAL_MS));
+      if (
+        status &&
+        ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
+          status,
+        )
+      )
+        return;
+      await new Promise((resolve) =>
+        setTimeout(resolve, BOOKING_POLL_INTERVAL_MS),
+      );
     }
     setBookingTimedOut(true);
     trackEvent("booking_confirm_timeout", {
@@ -289,7 +364,13 @@ export default function CheckoutScreen() {
     if (!draft) return;
     if (!draft.purchaseId && !draft.paymentIntentId) return;
     runStatusCheck();
-  }, [draft?.paymentIntentId, draft?.purchaseId, isFocused, processing, runStatusCheck]);
+  }, [
+    draft?.paymentIntentId,
+    draft?.purchaseId,
+    isFocused,
+    processing,
+    runStatusCheck,
+  ]);
 
   useEffect(() => {
     if (!isServiceBooking) return;
@@ -304,7 +385,11 @@ export default function CheckoutScreen() {
       setBookingTimedOut(false);
       trackEvent("booking_confirmed", { bookingId: draft?.bookingId ?? null });
     }
-    if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(bookingStatus)) {
+    if (
+      ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
+        bookingStatus,
+      )
+    ) {
       setBookingTimedOut(false);
       trackEvent("booking_cancelled", { bookingId: draft?.bookingId ?? null });
     }
@@ -316,7 +401,11 @@ export default function CheckoutScreen() {
     if (!draft) return;
     if (processing || checkingStatus) return;
     if (!isCheckoutPollingState(checkoutStatus.status)) return;
-    if (checkoutPollingTimedOut || (checkoutStatus.status === "REQUIRES_ACTION" && requiresActionTimedOut)) return;
+    if (
+      checkoutPollingTimedOut ||
+      (checkoutStatus.status === "REQUIRES_ACTION" && requiresActionTimedOut)
+    )
+      return;
     const now = Date.now();
     const startedAt = checkoutPollingStartedAt ?? now;
     if (!checkoutPollingStartedAt) {
@@ -370,7 +459,13 @@ export default function CheckoutScreen() {
     setCheckoutPollingTimedOut(false);
     setRequiresActionTimedOut(false);
     setCheckoutPollingStartedAt(null);
-  }, [checkoutPollingTimedOut, checkoutStatus, draft?.sourceType, requiresActionTimedOut, resolvedMethod]);
+  }, [
+    checkoutPollingTimedOut,
+    checkoutStatus,
+    draft?.sourceType,
+    requiresActionTimedOut,
+    resolvedMethod,
+  ]);
 
   const handlePay = async () => {
     if (!draft) return;
@@ -404,7 +499,8 @@ export default function CheckoutScreen() {
       let paymentIntentId = draft.paymentIntentId ?? null;
 
       if (needsNewIntent) {
-        const idempotencyKey = draft.idempotencyKey ?? buildCheckoutIdempotencyKey();
+        const idempotencyKey =
+          draft.idempotencyKey ?? buildCheckoutIdempotencyKey();
         if (isServiceBooking) {
           if (!draft.serviceId || !draft.bookingId) {
             throw new Error("Reserva inválida.");
@@ -423,7 +519,10 @@ export default function CheckoutScreen() {
             error?: string;
           }>(`/api/servicos/${draft.serviceId}/checkout`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": idempotencyKey,
+            },
             body: JSON.stringify({
               bookingId: draft.bookingId,
               paymentMethod: toApiPaymentMethod(resolvedMethod),
@@ -432,7 +531,9 @@ export default function CheckoutScreen() {
           });
           const json = result.data;
           if (!result.ok || !json?.ok) {
-            throw new Error(json?.message || json?.error || "Erro ao iniciar pagamento.");
+            throw new Error(
+              json?.message || json?.error || "Erro ao iniciar pagamento.",
+            );
           }
           clientSecret = json.clientSecret ?? null;
           paymentIntentId = json.paymentIntentId ?? null;
@@ -442,7 +543,8 @@ export default function CheckoutScreen() {
             purchaseId: json.purchaseId ?? null,
             breakdown: null,
             freeCheckout: Boolean(json.freeCheckout),
-            amountCents: typeof json.amountCents === "number" ? json.amountCents : null,
+            amountCents:
+              typeof json.amountCents === "number" ? json.amountCents : null,
             currency: typeof json.currency === "string" ? json.currency : null,
           });
           if (json.status) {
@@ -455,7 +557,10 @@ export default function CheckoutScreen() {
           }
           if (json.freeCheckout || (json.amountCents ?? 0) <= 0) {
             if (json.purchaseId || paymentIntentId) {
-              await runStatusCheck({ purchaseId: json.purchaseId ?? undefined, paymentIntentId });
+              await runStatusCheck({
+                purchaseId: json.purchaseId ?? undefined,
+                paymentIntentId,
+              });
             }
             await pollBookingStatus();
             setProcessing(false);
@@ -464,23 +569,25 @@ export default function CheckoutScreen() {
         } else {
           const response = isPadelRegistration
             ? await (async () => {
-              if (!draft.pairingId || !draft.ticketTypeId) {
-                throw new Error("Dupla inválida.");
-              }
-              return createPairingCheckoutIntent({
-                pairingId: draft.pairingId,
-                ticketTypeId: draft.ticketTypeId!,
-                inviteToken: draft.inviteToken ?? undefined,
-                idempotencyKey,
-              });
-            })()
+                if (!draft.pairingId || !draft.ticketTypeId) {
+                  throw new Error("Dupla inválida.");
+                }
+                return createPairingCheckoutIntent({
+                  pairingId: draft.pairingId,
+                  ticketTypeId: draft.ticketTypeId!,
+                  inviteToken: draft.inviteToken ?? undefined,
+                  idempotencyKey,
+                });
+              })()
             : await createCheckoutIntent({
                 slug: draft.slug ?? "",
                 ticketTypeId: draft.ticketTypeId ?? 0,
                 quantity: draft.quantity,
                 paymentMethod: resolvedMethod,
                 purchaseId: draft.purchaseId ?? undefined,
-                paymentScenario: draft.paymentScenario ?? (draft.totalCents <= 0 ? "FREE_CHECKOUT" : "SINGLE"),
+                paymentScenario:
+                  draft.paymentScenario ??
+                  (draft.totalCents <= 0 ? "FREE_CHECKOUT" : "SINGLE"),
                 idempotencyKey,
                 inviteToken: draft.inviteToken ?? undefined,
               });
@@ -492,10 +599,15 @@ export default function CheckoutScreen() {
             paymentIntentId,
             purchaseId,
             breakdown: response.breakdown ?? null,
-            freeCheckout: response.freeCheckout ?? response.isGratisCheckout ?? false,
+            freeCheckout:
+              response.freeCheckout ?? response.isGratisCheckout ?? false,
           });
 
-          if (response.freeCheckout || response.isGratisCheckout || (response.amount ?? 0) <= 0) {
+          if (
+            response.freeCheckout ||
+            response.isGratisCheckout ||
+            (response.amount ?? 0) <= 0
+          ) {
             await runStatusCheck({ purchaseId, paymentIntentId });
             setProcessing(false);
             return;
@@ -556,7 +668,9 @@ export default function CheckoutScreen() {
         isCheckoutPollingState(latestStatus.status) &&
         Date.now() - pollStartedAt < CHECKOUT_AUTOPOLL_TIMEOUT_MS
       ) {
-        await new Promise((resolve) => setTimeout(resolve, CHECKOUT_SETTLEMENT_POLL_MS));
+        await new Promise((resolve) =>
+          setTimeout(resolve, CHECKOUT_SETTLEMENT_POLL_MS),
+        );
         latestStatus = await runStatusCheck({
           purchaseId,
           paymentIntentId,
@@ -580,10 +694,18 @@ export default function CheckoutScreen() {
         });
       }
     } catch (err: any) {
-      setError(getUserFacingError(err, "Não foi possível concluir o pagamento."));
+      setError(
+        getUserFacingError(err, "Não foi possível concluir o pagamento."),
+      );
       trackEvent("checkout_payment_failed", {
         sourceType: draft.sourceType ?? null,
         method: resolvedMethod,
+        code:
+          err instanceof ApiError
+            ? (err.code ?? null)
+            : typeof err?.code === "string"
+              ? err.code
+              : null,
       });
     } finally {
       setProcessing(false);
@@ -597,7 +719,8 @@ export default function CheckoutScreen() {
         return {
           tone: "warning" as const,
           title: "Sessão expirada",
-          message: "A sessão de checkout expirou. Recomeça para gerar um novo pagamento.",
+          message:
+            "A sessão de checkout expirou. Recomeça para gerar um novo pagamento.",
           actionLabel: "Recomeçar checkout",
           action: () => {
             resetIntent();
@@ -615,7 +738,8 @@ export default function CheckoutScreen() {
       return {
         tone: "success" as const,
         title: "Reserva confirmada",
-        message: "A tua reserva foi confirmada. Encontras os detalhes em Reservas.",
+        message:
+          "A tua reserva foi confirmada. Encontras os detalhes em Reservas.",
         actionLabel: "Ver reservas",
         action: () => {
           clearDraft();
@@ -623,7 +747,13 @@ export default function CheckoutScreen() {
         },
       };
     }
-    if (isServiceBooking && bookingStatus && ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(bookingStatus)) {
+    if (
+      isServiceBooking &&
+      bookingStatus &&
+      ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
+        bookingStatus,
+      )
+    ) {
       return {
         tone: "danger" as const,
         title: "Reserva cancelada",
@@ -654,13 +784,20 @@ export default function CheckoutScreen() {
         showSpinner: isServiceBooking,
       };
     }
-    if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED" || status === "EXPIRED") {
+    if (
+      status === "FAILED" ||
+      status === "CANCELED" ||
+      status === "CANCELLED" ||
+      status === "EXPIRED"
+    ) {
       return {
         tone: "danger" as const,
         title: status === "EXPIRED" ? "Sessão expirada" : "Pagamento falhou",
         message: getUserFacingError(
           checkoutStatus.errorMessage,
-          status === "EXPIRED" ? "A sessão de checkout expirou. Tenta novamente." : "Não foi possível concluir o pagamento.",
+          status === "EXPIRED"
+            ? "A sessão de checkout expirou. Tenta novamente."
+            : "Não foi possível concluir o pagamento.",
         ),
         actionLabel: "Tentar novamente",
         action: () => {
@@ -689,7 +826,8 @@ export default function CheckoutScreen() {
       return {
         tone: "warning" as const,
         title: "Confirmação pendente",
-        message: "A confirmação está a demorar mais do que o esperado. Podes atualizar o estado ou tentar novamente.",
+        message:
+          "A confirmação está a demorar mais do que o esperado. Podes atualizar o estado ou tentar novamente.",
         actionLabel: "Atualizar estado",
         action: () => runStatusCheck(),
         secondaryActionLabel: "Tentar novamente",
@@ -700,7 +838,8 @@ export default function CheckoutScreen() {
       return {
         tone: "warning" as const,
         title: "Pagamento confirmado",
-        message: "Ainda estamos a sincronizar a reserva. Atualiza o estado para confirmar o agendamento.",
+        message:
+          "Ainda estamos a sincronizar a reserva. Atualiza o estado para confirmar o agendamento.",
         actionLabel: "Atualizar reserva",
         action: () => fetchBookingStatus(),
         secondaryActionLabel: "Verificar novamente",
@@ -712,15 +851,23 @@ export default function CheckoutScreen() {
         tone: "warning" as const,
         title: "Pagamento reembolsado",
         message: "O valor foi devolvido. Se quiseres, inicia um novo checkout.",
-        actionLabel: isServiceBooking ? "Voltar ao serviço" : "Voltar ao evento",
+        actionLabel: isServiceBooking
+          ? "Voltar ao serviço"
+          : "Voltar ao evento",
         action: () => {
           clearDraft();
           if (isServiceBooking && draft.serviceId) {
-            router.replace({ pathname: "/service/[id]", params: { id: String(draft.serviceId) } });
+            router.replace({
+              pathname: "/service/[id]",
+              params: { id: String(draft.serviceId) },
+            });
             return;
           }
           if (draft.slug) {
-            router.replace({ pathname: "/event/[slug]", params: { slug: draft.slug } });
+            router.replace({
+              pathname: "/event/[slug]",
+              params: { slug: draft.slug },
+            });
           } else {
             router.replace("/(tabs)/index");
           }
@@ -731,14 +878,19 @@ export default function CheckoutScreen() {
       return {
         tone: "warning" as const,
         title: "Pagamento em disputa",
-        message: "O pagamento está em disputa. Contacta o suporte se precisares de ajuda.",
+        message:
+          "O pagamento está em disputa. Contacta o suporte se precisares de ajuda.",
       };
     }
 
     return {
       tone: "info" as const,
-      title: status === "PROCESSING" ? "Pagamento em processamento" : "Pagamento pendente",
-      message: "Estamos a confirmar o pagamento. Isto pode demorar alguns segundos.",
+      title:
+        status === "PROCESSING"
+          ? "Pagamento em processamento"
+          : "Pagamento pendente",
+      message:
+        "Estamos a confirmar o pagamento. Isto pode demorar alguns segundos.",
       actionLabel: "Verificar estado",
       action: () => runStatusCheck(),
       showSpinner: true,
@@ -777,14 +929,20 @@ export default function CheckoutScreen() {
               justifyContent: "center",
             }}
           >
-            <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={tokens.colors.text}
+            />
           </Pressable>
         </View>
 
         <View className="px-5 gap-4">
           {!draft ? (
             <GlassCard intensity={52}>
-              <Text className="text-white/70 text-sm mb-3">Sem checkout ativo no momento.</Text>
+              <Text className="text-white/70 text-sm mb-3">
+                Sem checkout ativo no momento.
+              </Text>
               <Pressable
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
@@ -792,7 +950,9 @@ export default function CheckoutScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Voltar ao Descobrir"
               >
-                  <Text className="text-white text-sm font-semibold text-center">Voltar ao Descobrir</Text>
+                <Text className="text-white text-sm font-semibold text-center">
+                  Voltar ao Descobrir
+                </Text>
               </Pressable>
             </GlassCard>
           ) : (
@@ -800,10 +960,20 @@ export default function CheckoutScreen() {
               <GlassCard intensity={60} highlight>
                 <View className="gap-3">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-white text-sm font-semibold">Checkout</Text>
-                    {statusPill ? <GlassPill label={statusPill.label} variant={statusPill.variant} /> : null}
+                    <Text className="text-white text-sm font-semibold">
+                      Checkout
+                    </Text>
+                    {statusPill ? (
+                      <GlassPill
+                        label={statusPill.label}
+                        variant={statusPill.variant}
+                      />
+                    ) : null}
                   </View>
-                  <Text className="text-white text-lg font-semibold" numberOfLines={2}>
+                  <Text
+                    className="text-white text-lg font-semibold"
+                    numberOfLines={2}
+                  >
                     {draft.eventTitle ?? draft.serviceTitle ?? "Checkout"}
                   </Text>
                   <View className="flex-row items-center justify-between">
@@ -813,11 +983,15 @@ export default function CheckoutScreen() {
                   <View className="flex-row items-center justify-between">
                     <Text className="text-white/60 text-sm">Total</Text>
                     {totalLabel ? (
-                      <Text className="text-white text-xl font-semibold">{totalLabel}</Text>
+                      <Text className="text-white text-xl font-semibold">
+                        {totalLabel}
+                      </Text>
                     ) : null}
                   </View>
                   {isFreeCheckout ? (
-                    <Text className="text-white/55 text-xs">Limite por pessoa: 1</Text>
+                    <Text className="text-white/55 text-xs">
+                      Limite por pessoa: 1
+                    </Text>
                   ) : null}
                 </View>
               </GlassCard>
@@ -825,26 +999,44 @@ export default function CheckoutScreen() {
               {showPaymentMethods ? (
                 <GlassCard intensity={52}>
                   <View className="gap-3">
-                    <Text className="text-white text-sm font-semibold">Método de pagamento</Text>
+                    <Text className="text-white text-sm font-semibold">
+                      Método de pagamento
+                    </Text>
                     <View className="flex-row flex-wrap gap-2">
-                      {([
-                        { key: "apple_pay", label: "Apple Pay", enabled: allowApplePay },
-                        { key: "card", label: "Cartão", enabled: true },
-                        { key: "mbway", label: "MBWay", enabled: true },
-                      ] as const).map((option) => {
+                      {(
+                        [
+                          {
+                            key: "apple_pay",
+                            label: "Apple Pay",
+                            enabled: allowApplePay,
+                          },
+                          { key: "card", label: "Cartão", enabled: true },
+                          { key: "mbway", label: "MBWay", enabled: true },
+                        ] as const
+                      ).map((option) => {
                         if (!option.enabled) return null;
                         const active = selectedMethod === option.key;
                         return (
                           <Pressable
                             key={option.key}
                             onPress={() => setPaymentMethod(option.key)}
-                            className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
+                            className={
+                              active
+                                ? "rounded-full bg-white/20 px-4 py-2"
+                                : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                            }
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
                             accessibilityLabel={`Selecionar ${option.label}`}
                             accessibilityState={{ selected: active }}
                           >
-                            <Text className={active ? "text-white text-sm font-semibold" : "text-white/70 text-sm"}>
+                            <Text
+                              className={
+                                active
+                                  ? "text-white text-sm font-semibold"
+                                  : "text-white/70 text-sm"
+                              }
+                            >
                               {option.label}
                             </Text>
                           </Pressable>
@@ -852,7 +1044,8 @@ export default function CheckoutScreen() {
                       })}
                     </View>
                     <Text className="text-white/55 text-xs">
-                      {resolveMethodLabel(resolvedMethod)} em checkout nativo, sem sair da app.
+                      {resolveMethodLabel(resolvedMethod)} em checkout nativo,
+                      sem sair da app.
                     </Text>
                   </View>
                 </GlassCard>
@@ -860,16 +1053,20 @@ export default function CheckoutScreen() {
 
               {!session?.user?.id ? (
                 <GlassCard intensity={48}>
-                  <Text className="text-white/70 text-sm mb-3">Inicia sessão para concluir a compra.</Text>
-                <Pressable
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={openAuth}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Entrar ou criar conta"
-                >
-                  <Text className="text-white text-sm font-semibold text-center">Entrar / Criar conta</Text>
-                </Pressable>
+                  <Text className="text-white/70 text-sm mb-3">
+                    Inicia sessão para concluir a compra.
+                  </Text>
+                  <Pressable
+                    className="rounded-xl bg-white/10 px-4 py-3"
+                    onPress={openAuth}
+                    style={{ minHeight: tokens.layout.touchTarget }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Entrar ou criar conta"
+                  >
+                    <Text className="text-white text-sm font-semibold text-center">
+                      Entrar / Criar conta
+                    </Text>
+                  </Pressable>
                 </GlassCard>
               ) : null}
 
@@ -890,11 +1087,15 @@ export default function CheckoutScreen() {
                       >
                         {statusMeta.title}
                       </Text>
-                      {statusMeta.showSpinner || checkingStatus || bookingChecking ? (
+                      {statusMeta.showSpinner ||
+                      checkingStatus ||
+                      bookingChecking ? (
                         <ActivityIndicator color="white" />
                       ) : null}
                     </View>
-                    <Text className="text-white/70 text-sm">{statusMeta.message}</Text>
+                    <Text className="text-white/70 text-sm">
+                      {statusMeta.message}
+                    </Text>
                     {statusMeta.action ? (
                       <Pressable
                         onPress={statusMeta.action}
@@ -937,7 +1138,9 @@ export default function CheckoutScreen() {
 
               {missingStripeConfig ? (
                 <GlassCard intensity={50}>
-                  <Text className="text-amber-200 text-sm">{CHECKOUT_CONFIG_ERROR}</Text>
+                  <Text className="text-amber-200 text-sm">
+                    {CHECKOUT_CONFIG_ERROR}
+                  </Text>
                 </GlassCard>
               ) : null}
 
@@ -950,20 +1153,40 @@ export default function CheckoutScreen() {
               <Pressable
                 disabled={!canPay || processing}
                 onPress={handlePay}
-                className={canPay ? "rounded-2xl bg-white/15 px-4 py-4" : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"}
-                style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
+                className={
+                  canPay
+                    ? "rounded-2xl bg-white/15 px-4 py-4"
+                    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
+                }
+                style={{
+                  minHeight: tokens.layout.touchTarget,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
                 accessibilityRole="button"
-                accessibilityLabel={draft.totalCents <= 0 ? "Confirmar inscrição" : "Pagar agora"}
+                accessibilityLabel={
+                  draft.totalCents <= 0 ? "Confirmar inscrição" : "Pagar agora"
+                }
                 accessibilityState={{ disabled: !canPay || processing }}
               >
                 {processing ? (
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator color="white" />
-                    <Text className="text-white text-sm font-semibold">A processar...</Text>
+                    <Text className="text-white text-sm font-semibold">
+                      A processar...
+                    </Text>
                   </View>
                 ) : (
-                  <Text className={canPay ? "text-center text-white text-sm font-semibold" : "text-center text-white/50 text-sm font-semibold"}>
-                    {draft.totalCents <= 0 ? "Confirmar inscrição" : "Pagar agora"}
+                  <Text
+                    className={
+                      canPay
+                        ? "text-center text-white text-sm font-semibold"
+                        : "text-center text-white/50 text-sm font-semibold"
+                    }
+                  >
+                    {draft.totalCents <= 0
+                      ? "Confirmar inscrição"
+                      : "Pagar agora"}
                   </Text>
                 )}
               </Pressable>

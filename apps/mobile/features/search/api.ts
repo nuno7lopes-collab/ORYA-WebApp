@@ -1,10 +1,15 @@
 import { api, unwrapApiResponse } from "../../lib/api";
 import { fetchDiscoverPage } from "../discover/api";
-import { DiscoverOfferCard } from "../discover/types";
+import { DiscoverKind, DiscoverOfferCard } from "../discover/types";
 import { SearchOrganization, SearchUser } from "./types";
 
 type OfferSearchResult = {
   items: DiscoverOfferCard[];
+};
+
+type SearchOffersOptions = {
+  kind?: DiscoverKind;
+  limit?: number;
 };
 
 const normalizeSearchTerm = (query: string) =>
@@ -46,15 +51,18 @@ const parseResults = <T>(payload: unknown): T[] => {
   return [];
 };
 
-export const searchOffers = async (query: string): Promise<OfferSearchResult> => {
+export const searchOffers = async (
+  query: string,
+  options: SearchOffersOptions = {},
+): Promise<OfferSearchResult> => {
   const q = normalizeSearchTerm(query);
   if (!q) return { items: [] };
 
   const page = await fetchDiscoverPage({
     q,
-    kind: "all",
+    kind: options.kind ?? "all",
     type: "all",
-    limit: 8,
+    limit: options.limit ?? 8,
     cursor: null,
   });
 

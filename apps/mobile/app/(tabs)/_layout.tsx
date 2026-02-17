@@ -192,13 +192,14 @@ export default function TabsLayout() {
   return (
     <View style={{ flex: 1, backgroundColor: "#0b1014" }}>
       <ExpoTopTabs
+        id="main-tabs"
         tabBarPosition="bottom"
-        swipeEnabled={!isBlocked}
-        animationEnabled={Platform.OS === "ios"}
         backBehavior="history"
         initialRouteName="agora"
         tabBar={renderTabBar}
         screenOptions={{
+          swipeEnabled: !isBlocked,
+          animationEnabled: Platform.OS === "ios",
           tabBarShowLabel: false,
           tabBarShowIcon: false,
           tabBarIndicatorStyle: { height: 0 },

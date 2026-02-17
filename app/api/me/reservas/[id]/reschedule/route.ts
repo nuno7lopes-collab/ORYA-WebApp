@@ -11,7 +11,7 @@ import {
   type ScopedOverride,
   type ScopedTemplate,
 } from "@/lib/reservas/scopedAvailability";
-import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { normalizeReservationAssignmentMode, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { updateBooking } from "@/domain/bookings/commands";
@@ -26,7 +26,7 @@ import {
 } from "@/lib/reservas/confirmationSnapshot";
 import { normalizeEmail } from "@/lib/utils/email";
 
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -123,6 +123,7 @@ async function _POST(
           select: {
             id: true,
             kind: true,
+            assignmentMode: true,
             organizationId: true,
             professionalLinks: { select: { professionalId: true, professional: { select: { isActive: true } } } },
             resourceLinks: { select: { resourceId: true, resource: { select: { isActive: true, courtId: true } } } },
@@ -174,14 +175,21 @@ async function _POST(
     const timezone = booking.service?.organization?.timezone || booking.snapshotTimezone || "Europe/Lisbon";
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return fail(400, "INVALID_TIME_GRID", "Horário fora da grelha de 15 minutos.");
+      return fail(400, "INVALID_TIME_GRID", "Horário fora da grelha de 5 minutos.");
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
       organizationMode: booking.service?.organization?.reservationAssignmentMode ?? null,
-      serviceKind: booking.service?.kind ?? "GENERAL",
+      serviceMode: booking.service?.assignmentMode ?? null,
+      serviceKind: booking.service?.kind ?? null,
     });
-    const assignmentMode = booking.assignmentMode ?? assignmentConfig.mode;
+    const bookingAssignmentMode = normalizeReservationAssignmentMode(
+      booking.assignmentMode ?? assignmentConfig.assignmentMode,
+    );
+    const assignmentMode =
+      bookingAssignmentMode === "RESOURCE_ONLY" || bookingAssignmentMode === "PROFESSIONAL_AND_RESOURCE"
+        ? "RESOURCE"
+        : "PROFESSIONAL";
 
     const allowedProfessionalIds = booking.service?.professionalLinks?.length
       ? booking.service.professionalLinks

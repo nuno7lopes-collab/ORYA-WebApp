@@ -158,8 +158,11 @@ export default function ProfileScreen() {
   const normalizedUsername = usernameValidation.valid ? usernameValidation.normalized : sanitizeUsername(username);
   const fullNameError =
     editMode && fullName.trim().length > 0 && fullName.trim().length < 2 ? "Nome demasiado curto." : null;
-  const usernameError =
-    editMode && username.length > 0 && !usernameValidation.valid ? usernameValidation.error : null;
+  const usernameError = useMemo(() => {
+    if (!editMode || username.length === 0) return null;
+    if (usernameValidation.valid) return null;
+    return "error" in usernameValidation ? usernameValidation.error : null;
+  }, [editMode, username.length, usernameValidation]);
   const usernameStatusLabel = useMemo(() => {
     if (!editMode || !username || !usernameValidation.valid) return null;
     if (normalizedUsername === (profile?.username ?? "")) return "Atual";

@@ -1192,7 +1192,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
               <div className="text-[10px] uppercase tracking-[0.3em] text-white/45">
                 Mundos
               </div>
-              <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/4 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <div className="flex flex-wrap items-center gap-1.5 rounded-full border border-white/12 bg-white/4 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
               {WORLD_OPTIONS.map((opt) => {
                 const isActive = world === opt.value;
                 const WorldIcon = WORLD_META[opt.value].icon;

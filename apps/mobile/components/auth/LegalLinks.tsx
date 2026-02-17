@@ -1,5 +1,6 @@
 import { Linking, StyleSheet, Text } from "react-native";
 import { Trans, useTranslation } from "react-i18next";
+import { tokens } from "@orya/shared";
 
 type LegalLinksProps = {
   termsUrl: string;
@@ -37,13 +38,16 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
 
 const styles = StyleSheet.create({
   text: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.65)",
+    fontSize: 13,
+    color: "rgba(231,238,252,0.84)",
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: 21,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   link: {
-    color: "rgba(148, 214, 255, 0.95)",
-    fontWeight: "600",
+    color: "rgba(148, 218, 255, 0.98)",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
+    textDecorationLine: "underline",
+    textDecorationColor: "rgba(148, 218, 255, 0.55)",
   },
 });

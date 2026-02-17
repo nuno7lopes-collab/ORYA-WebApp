@@ -1,4 +1,4 @@
-import { api, ApiError, unwrapApiResponse } from "../../lib/api";
+import { api, ApiError, ApiRawResult, unwrapApiResponse } from "../../lib/api";
 import type {
   StoreBundlesResponse,
   StoreCatalogResponse,
@@ -21,12 +21,50 @@ function toPositiveInt(value: number | null | undefined, field: string) {
   return Number(value);
 }
 
-export async function fetchStoreCatalog(username: string): Promise<StoreCatalogResponse> {
+const isEnvelopeLike = (value: unknown): value is { ok?: unknown } =>
+  typeof value === "object" && value !== null && "ok" in value;
+
+const readPayloadMessage = (value: unknown) => {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as Record<string, unknown>;
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  if (typeof payload.error === "string" && payload.error.trim()) {
+    return payload.error.trim();
+  }
+  return null;
+};
+
+const readPayloadCode = (value: unknown) => {
+  if (!value || typeof value !== "object") return null;
+  const payload = value as Record<string, unknown>;
+  if (typeof payload.errorCode === "string" && payload.errorCode.trim()) {
+    return payload.errorCode.trim().toUpperCase();
+  }
+  return null;
+};
+
+const unwrapRawResponse = <T>(result: ApiRawResult<unknown>): T => {
+  const payload = result.data;
+  if (!result.ok && !isEnvelopeLike(payload)) {
+    const message =
+      readPayloadMessage(payload) || result.errorText || "Erro ao carregar.";
+    throw new ApiError(result.status, message, readPayloadCode(payload));
+  }
+  return unwrapApiResponse<T>(payload, result.status);
+};
+
+export async function fetchStoreCatalog(
+  username: string,
+): Promise<StoreCatalogResponse> {
   if (!username?.trim()) {
     throw new ApiError(400, "Username inválido.");
   }
   const params = new URLSearchParams({ username: username.trim() });
-  const response = await api.request<unknown>(`/api/public/store/catalog?${params.toString()}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/catalog?${params.toString()}`,
+  );
   const payload = unwrapApiResponse<StoreCatalogResponse>(response);
   if (!payload?.store?.id) return payload;
 
@@ -39,18 +77,30 @@ export async function fetchStoreCatalog(username: string): Promise<StoreCatalogR
   }
 }
 
-export async function fetchStoreProduct(username: string, slug: string): Promise<StoreProductResponse> {
+export async function fetchStoreProduct(
+  username: string,
+  slug: string,
+): Promise<StoreProductResponse> {
   if (!username?.trim() || !slug?.trim()) {
     throw new ApiError(400, "Produto inválido.");
   }
-  const params = new URLSearchParams({ username: username.trim(), slug: slug.trim() });
-  const response = await api.request<unknown>(`/api/public/store/product?${params.toString()}`);
+  const params = new URLSearchParams({
+    username: username.trim(),
+    slug: slug.trim(),
+  });
+  const response = await api.request<unknown>(
+    `/api/public/store/product?${params.toString()}`,
+  );
   return unwrapApiResponse<StoreProductResponse>(response);
 }
 
-export async function fetchStoreCart(storeId: number): Promise<StoreCartResponse> {
+export async function fetchStoreCart(
+  storeId: number,
+): Promise<StoreCartResponse> {
   const safeStoreId = toPositiveInt(storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/cart?storeId=${safeStoreId}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/cart?storeId=${safeStoreId}`,
+  );
   return unwrapApiResponse<StoreCartResponse>(response);
 }
 
@@ -62,15 +112,18 @@ export async function addStoreCartItem(input: {
   personalization?: unknown;
 }) {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/cart/items?storeId=${safeStoreId}`, {
-    method: "POST",
-    body: JSON.stringify({
-      productId: toPositiveInt(input.productId, "Produto"),
-      variantId: input.variantId ?? undefined,
-      quantity: input.quantity ?? 1,
-      personalization: input.personalization ?? {},
-    }),
-  });
+  const response = await api.request<unknown>(
+    `/api/public/store/cart/items?storeId=${safeStoreId}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        productId: toPositiveInt(input.productId, "Produto"),
+        variantId: input.variantId ?? undefined,
+        quantity: input.quantity ?? 1,
+        personalization: input.personalization ?? {},
+      }),
+    },
+  );
   return unwrapApiResponse<{ item: { id: number } }>(response);
 }
 
@@ -87,15 +140,22 @@ export async function updateStoreCartItem(input: {
     {
       method: "PATCH",
       body: JSON.stringify({
-        ...(typeof input.quantity === "number" ? { quantity: input.quantity } : {}),
-        ...(input.personalization !== undefined ? { personalization: input.personalization } : {}),
+        ...(typeof input.quantity === "number"
+          ? { quantity: input.quantity }
+          : {}),
+        ...(input.personalization !== undefined
+          ? { personalization: input.personalization }
+          : {}),
       }),
     },
   );
   return unwrapApiResponse<{ item: { id: number } }>(response);
 }
 
-export async function removeStoreCartItem(input: { storeId: number; itemId: number }) {
+export async function removeStoreCartItem(input: {
+  storeId: number;
+  itemId: number;
+}) {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
   const safeItemId = toPositiveInt(input.itemId, "Item");
   const response = await api.request<unknown>(
@@ -105,32 +165,48 @@ export async function removeStoreCartItem(input: { storeId: number; itemId: numb
   return unwrapApiResponse<{ ok: true }>(response);
 }
 
-export async function addStoreBundle(input: { storeId: number; bundleId: number; quantity?: number }) {
+export async function addStoreBundle(input: {
+  storeId: number;
+  bundleId: number;
+  quantity?: number;
+}) {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/cart/bundles?storeId=${safeStoreId}`, {
-    method: "POST",
-    body: JSON.stringify({
-      bundleId: toPositiveInt(input.bundleId, "Bundle"),
-      quantity: input.quantity ?? 1,
-    }),
-  });
+  const response = await api.request<unknown>(
+    `/api/public/store/cart/bundles?storeId=${safeStoreId}`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        bundleId: toPositiveInt(input.bundleId, "Bundle"),
+        quantity: input.quantity ?? 1,
+      }),
+    },
+  );
   return unwrapApiResponse<{ bundleKey: string }>(response);
 }
 
-export async function updateStoreBundle(input: { storeId: number; bundleKey: string; quantity: number }) {
+export async function updateStoreBundle(input: {
+  storeId: number;
+  bundleKey: string;
+  quantity: number;
+}) {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
   if (!input.bundleKey?.trim()) throw new ApiError(400, "Bundle inválido.");
   const response = await api.request<unknown>(
     `/api/public/store/cart/bundles/${encodeURIComponent(input.bundleKey)}?storeId=${safeStoreId}`,
     {
       method: "PATCH",
-      body: JSON.stringify({ quantity: toPositiveInt(input.quantity, "Quantidade") }),
+      body: JSON.stringify({
+        quantity: toPositiveInt(input.quantity, "Quantidade"),
+      }),
     },
   );
   return unwrapApiResponse<{ ok: true }>(response);
 }
 
-export async function removeStoreBundle(input: { storeId: number; bundleKey: string }) {
+export async function removeStoreBundle(input: {
+  storeId: number;
+  bundleKey: string;
+}) {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
   if (!input.bundleKey?.trim()) throw new ApiError(400, "Bundle inválido.");
   const response = await api.request<unknown>(
@@ -153,7 +229,9 @@ export async function fetchStoreShippingMethods(input: {
     country,
     subtotalCents: String(Math.max(0, Math.floor(input.subtotalCents))),
   });
-  const response = await api.request<unknown>(`/api/public/store/shipping/methods?${params.toString()}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/shipping/methods?${params.toString()}`,
+  );
   return unwrapApiResponse<StoreShippingMethodsResponse>(response);
 }
 
@@ -171,22 +249,36 @@ export async function fetchStoreShippingQuote(input: {
     country,
     subtotalCents: String(Math.max(0, Math.floor(input.subtotalCents))),
   });
-  if (typeof input.methodId === "number" && Number.isFinite(input.methodId) && input.methodId > 0) {
+  if (
+    typeof input.methodId === "number" &&
+    Number.isFinite(input.methodId) &&
+    input.methodId > 0
+  ) {
     params.set("methodId", String(Math.floor(input.methodId)));
   }
-  const response = await api.request<unknown>(`/api/public/store/shipping/quote?${params.toString()}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/shipping/quote?${params.toString()}`,
+  );
   return unwrapApiResponse<StoreShippingQuoteResponse>(response);
 }
 
-export async function fetchStoreBundles(storeId: number): Promise<StoreBundlesResponse> {
+export async function fetchStoreBundles(
+  storeId: number,
+): Promise<StoreBundlesResponse> {
   const safeStoreId = toPositiveInt(storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/bundles?storeId=${safeStoreId}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/bundles?storeId=${safeStoreId}`,
+  );
   return unwrapApiResponse<StoreBundlesResponse>(response);
 }
 
-export async function fetchStoreCheckoutPrefill(storeId: number): Promise<StoreCheckoutPrefill> {
+export async function fetchStoreCheckoutPrefill(
+  storeId: number,
+): Promise<StoreCheckoutPrefill> {
   const safeStoreId = toPositiveInt(storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/checkout/prefill?storeId=${safeStoreId}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/checkout/prefill?storeId=${safeStoreId}`,
+  );
   return unwrapApiResponse<StoreCheckoutPrefill>(response);
 }
 
@@ -195,23 +287,30 @@ export async function createStoreCheckout(input: {
   payload: StoreCheckoutPayload;
 }): Promise<StoreCheckoutResponse> {
   const safeStoreId = toPositiveInt(input.storeId, "Store");
-  const response = await api.request<unknown>(`/api/public/store/checkout?storeId=${safeStoreId}`, {
-    method: "POST",
-    body: JSON.stringify(input.payload),
-  });
-  return unwrapApiResponse<StoreCheckoutResponse>(response);
+  const response = await api.requestRaw<unknown>(
+    `/api/public/store/checkout?storeId=${safeStoreId}`,
+    {
+      method: "POST",
+      body: JSON.stringify(input.payload),
+    },
+  );
+  return unwrapRawResponse<StoreCheckoutResponse>(response);
 }
 
-export async function fetchStorePurchases(input: {
-  cursor?: string | null;
-  limit?: number;
-  status?: string | null;
-} = {}): Promise<StorePurchasesResponse> {
+export async function fetchStorePurchases(
+  input: {
+    cursor?: string | null;
+    limit?: number;
+    status?: string | null;
+  } = {},
+): Promise<StorePurchasesResponse> {
   const params = new URLSearchParams();
   params.set("limit", String(Math.max(1, Math.min(60, input.limit ?? 20))));
   if (input.cursor) params.set("cursor", input.cursor);
   if (input.status) params.set("status", input.status);
-  const result = await api.requestRaw<unknown>(`/api/me/purchases/store?${params.toString()}`);
+  const result = await api.requestRaw<unknown>(
+    `/api/me/purchases/store?${params.toString()}`,
+  );
 
   if (result.ok) {
     return unwrapApiResponse<StorePurchasesResponse>(result.data);
@@ -222,8 +321,15 @@ export async function fetchStorePurchases(input: {
     message?: string;
     error?: string;
   };
-  const message = payload.message || payload.error || result.errorText || "Erro ao carregar compras.";
-  if (result.status === 403 && (payload.errorCode === "FORBIDDEN" || message.includes("Loja desativada"))) {
+  const message =
+    payload.message ||
+    payload.error ||
+    result.errorText ||
+    "Erro ao carregar compras.";
+  if (
+    result.status === 403 &&
+    (payload.errorCode === "FORBIDDEN" || message.includes("Loja desativada"))
+  ) {
     return {
       items: [],
       nextCursor: null,
@@ -233,39 +339,62 @@ export async function fetchStorePurchases(input: {
   throw new ApiError(result.status, message);
 }
 
-export async function fetchStorePurchase(orderId: number): Promise<StorePurchaseDetail> {
+export async function fetchStorePurchase(
+  orderId: number,
+): Promise<StorePurchaseDetail> {
   const safeOrderId = toPositiveInt(orderId, "Encomenda");
-  const response = await api.request<unknown>(`/api/me/purchases/store/${safeOrderId}`);
+  const response = await api.request<unknown>(
+    `/api/me/purchases/store/${safeOrderId}`,
+  );
   const payload = unwrapApiResponse<{ order: StorePurchaseDetail }>(response);
   return payload.order;
 }
 
-export async function fetchStorePurchaseReceiptUrl(orderId: number): Promise<string> {
+export async function fetchStorePurchaseReceiptUrl(
+  orderId: number,
+): Promise<string> {
   const safeOrderId = toPositiveInt(orderId, "Encomenda");
-  const response = await api.request<unknown>(`/api/me/purchases/store/${safeOrderId}/receipt`);
+  const response = await api.request<unknown>(
+    `/api/me/purchases/store/${safeOrderId}/receipt`,
+  );
   const payload = unwrapApiResponse<{ url: string }>(response);
   if (!payload?.url) throw new ApiError(404, "Recibo indisponível.");
   return payload.url;
 }
 
-export async function fetchStoreDigitalGrants(storeId?: number | null): Promise<StoreDigitalGrant[]> {
+export async function fetchStoreDigitalGrants(
+  storeId?: number | null,
+): Promise<StoreDigitalGrant[]> {
   const params = new URLSearchParams();
   if (typeof storeId === "number" && Number.isFinite(storeId) && storeId > 0) {
     params.set("storeId", String(storeId));
   }
   const suffix = params.toString();
-  const response = await api.request<unknown>(`/api/public/store/digital/grants${suffix ? `?${suffix}` : ""}`);
+  const response = await api.request<unknown>(
+    `/api/public/store/digital/grants${suffix ? `?${suffix}` : ""}`,
+  );
   const payload = unwrapApiResponse<{ grants: StoreDigitalGrant[] }>(response);
   return payload?.grants ?? [];
 }
 
-export async function createStoreDigitalDownload(input: { grantId: number; assetId: number }) {
-  const response = await api.request<unknown>(`/api/public/store/digital/download`, {
-    method: "POST",
-    body: JSON.stringify({
-      grantId: toPositiveInt(input.grantId, "Grant"),
-      assetId: toPositiveInt(input.assetId, "Ficheiro"),
-    }),
-  });
-  return unwrapApiResponse<{ url: string; filename: string; mimeType: string; sizeBytes: number }>(response);
+export async function createStoreDigitalDownload(input: {
+  grantId: number;
+  assetId: number;
+}) {
+  const response = await api.request<unknown>(
+    `/api/public/store/digital/download`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        grantId: toPositiveInt(input.grantId, "Grant"),
+        assetId: toPositiveInt(input.assetId, "Ficheiro"),
+      }),
+    },
+  );
+  return unwrapApiResponse<{
+    url: string;
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>(response);
 }

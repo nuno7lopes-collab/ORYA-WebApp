@@ -604,7 +604,7 @@ export default function WalletDetailScreen() {
                           onPress={handleAcceptInvite}
                           disabled={pairingAction !== null}
                           className="rounded-full bg-white/15 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Aceitar convite"
                           accessibilityState={{ disabled: pairingAction !== null }}
@@ -619,7 +619,7 @@ export default function WalletDetailScreen() {
                           onPress={handleDeclineInvite}
                           disabled={pairingAction !== null}
                           className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Recusar convite"
                           accessibilityState={{ disabled: pairingAction !== null }}
@@ -634,7 +634,7 @@ export default function WalletDetailScreen() {
                           onPress={handlePayPairing}
                           disabled={pairingAction !== null}
                           className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Pagar inscrição"
                           accessibilityState={{ disabled: pairingAction !== null }}
@@ -665,7 +665,7 @@ export default function WalletDetailScreen() {
                           onPress={handleListResale}
                           disabled={resaleAction !== null}
                           className="rounded-full border border-emerald-300/35 bg-emerald-400/15 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Listar para revenda"
                           accessibilityState={{ disabled: resaleAction !== null }}
@@ -680,7 +680,7 @@ export default function WalletDetailScreen() {
                           onPress={handleCancelResale}
                           disabled={resaleAction !== null || !activeResaleId}
                           className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Cancelar revenda"
                           accessibilityState={{ disabled: resaleAction !== null || !activeResaleId }}

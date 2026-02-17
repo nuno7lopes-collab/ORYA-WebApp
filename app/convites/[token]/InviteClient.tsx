@@ -41,7 +41,7 @@ type InvitePayload = {
   } | null;
   split: {
     id: number;
-    status: "OPEN" | "COMPLETED" | "EXPIRED" | "CANCELLED";
+    status: "OPEN" | "SETTLING" | "SETTLED" | "CHARGE_FAILED" | "DEBT_OPEN" | "CANCELLED";
     pricingMode: "FIXED" | "DYNAMIC";
     currency: string;
     totalCents: number;
@@ -250,7 +250,10 @@ export default function InviteClient({ token }: { token: string }) {
 
   const status = payload?.invite?.status ?? null;
   const bookingStatus = payload?.booking?.status ?? null;
-  const splitOpen = payload?.split?.status === "OPEN";
+  const splitOpen =
+    payload?.split?.status === "OPEN" ||
+    payload?.split?.status === "SETTLING" ||
+    payload?.split?.status === "CHARGE_FAILED";
   const canRespond = status === "PENDING" && (bookingStatus === "CONFIRMED" || splitOpen);
   const statusLabel = status ? formatInviteStatus(status, locale) : null;
   const orgName =

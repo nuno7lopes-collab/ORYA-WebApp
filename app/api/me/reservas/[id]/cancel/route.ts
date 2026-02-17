@@ -11,7 +11,6 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import {
   computeCancellationRefundFromSnapshot,
   getSnapshotCancellationWindowMinutes,
-  getSnapshotCancellationPenaltyBps,
   getSnapshotAllowCancellation,
   parseBookingConfirmationSnapshot,
 } from "@/lib/reservas/confirmationSnapshot";
@@ -44,8 +43,6 @@ async function _POST(
         splitRefunds: Array<{
           participantId: number;
           paymentIntentId: string;
-          baseShareCents: number;
-          platformFeeCents: number;
         }>;
         cancellationPenaltyBps: number;
         snapshotTimezone: string;
@@ -69,18 +66,11 @@ async function _POST(
 
   const computeSplitRefundAmount = (params: {
     amountCents: number | null;
-    baseShareCents: number;
-    platformFeeCents: number;
     stripeFeeCents: number;
-    penaltyBps: number;
   }) => {
     if (!Number.isFinite(params.amountCents)) return null;
-    const penaltyCents = Math.max(
-      0,
-      Math.round((Math.max(0, params.baseShareCents) * Math.max(0, params.penaltyBps)) / 10_000),
-    );
-    const feesRetained = Math.max(0, params.platformFeeCents + params.stripeFeeCents);
-    return Math.max(0, Math.round((params.amountCents ?? 0) - feesRetained - penaltyCents));
+    const feesRetained = Math.max(0, params.stripeFeeCents);
+    return Math.max(0, Math.round((params.amountCents ?? 0) - feesRetained));
   };
 
   if (!bookingId) {
@@ -119,8 +109,6 @@ async function _POST(
                   id: true,
                   status: true,
                   paymentIntentId: true,
-                  baseShareCents: true,
-                  platformFeeCents: true,
                 },
               },
             },
@@ -209,8 +197,6 @@ async function _POST(
             .map((participant) => ({
               participantId: participant.id,
               paymentIntentId: participant.paymentIntentId as string,
-              baseShareCents: participant.baseShareCents ?? 0,
-              platformFeeCents: participant.platformFeeCents ?? 0,
             }))
         : [];
 
@@ -250,7 +236,7 @@ async function _POST(
           })
         : null;
       const refundAmountCents = refundComputation?.refundCents ?? null;
-      const cancellationPenaltyBps = snapshot ? getSnapshotCancellationPenaltyBps(snapshot) : 0;
+      const cancellationPenaltyBps = 0;
 
       await recordOrganizationAudit(tx, {
         organizationId: booking.organizationId,
@@ -343,10 +329,7 @@ async function _POST(
         const stripeFeeCents = payment?.processorFeesActual ?? 0;
         const refundAmountCents = computeSplitRefundAmount({
           amountCents,
-          baseShareCents: refund.baseShareCents,
-          platformFeeCents: refund.platformFeeCents ?? 0,
           stripeFeeCents,
-          penaltyBps: result.cancellationPenaltyBps ?? 0,
         });
 
         try {

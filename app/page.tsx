@@ -2,7 +2,6 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import MobileTopBar from "@/app/components/mobile/MobileTopBar";
 import HomeHeroMedia from "@/app/components/home/HomeHeroMedia";
-import HomeCityPicker from "@/app/components/home/HomeCityPicker";
 import HomePopularCarousel from "@/app/components/home/HomePopularCarousel";
 import HomeFooter from "@/app/components/home/HomeFooter";
 import { fetchDiscoverFeed } from "@/app/descobrir/_lib/discoverFeed";
@@ -91,6 +90,7 @@ export default async function HomePage() {
 
   const feed = await fetchDiscoverFeed({
     worlds: ["events"],
+    date: "upcoming",
     city: city ?? undefined,
     eventLimit: 36,
   });
@@ -107,6 +107,7 @@ export default async function HomePage() {
   if (city && basePopular.length < 6) {
     const fallbackFeed = await fetchDiscoverFeed({
       worlds: ["events"],
+      date: "upcoming",
       eventLimit: 36,
     });
     const fallbackPopular = buildPopularEvents(fallbackFeed.events);
@@ -144,10 +145,8 @@ export default async function HomePage() {
     };
   });
 
-  const locationLabel = isCityScoped && city ? city : "perto de ti";
-  const discoverHref =
-    isCityScoped && city ? `/descobrir?city=${encodeURIComponent(city)}` : "/descobrir";
-  const showCityPicker = !isCityScoped;
+  const locationLabel = city ?? "perto de ti";
+  const discoverHref = city ? `/descobrir?city=${encodeURIComponent(city)}` : "/descobrir";
   const primaryCtaClass =
     "inline-flex items-center justify-center rounded-full border border-white/60 bg-white px-6 py-3 text-[13px] font-semibold !text-black shadow-[0_18px_40px_rgba(0,0,0,0.45)] transition hover:-translate-y-[1px] hover:shadow-[0_22px_50px_rgba(0,0,0,0.5)]";
   const ghostCtaClass =
@@ -191,7 +190,6 @@ export default async function HomePage() {
               <p className="text-[16px] font-semibold text-white">
                 Eventos populares {locationLabel}
               </p>
-              {showCityPicker ? <HomeCityPicker baseHref="/descobrir" /> : null}
             </div>
             <p className="text-[11px] text-white/60">
               Curadoria com base na tua localização aproximada.

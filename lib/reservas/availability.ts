@@ -149,7 +149,7 @@ export function resolveIntervalsForDate(params: {
   return intervals;
 }
 
-const DEFAULT_SLOT_STEP_MINUTES = 15;
+const DEFAULT_SLOT_STEP_MINUTES = 5;
 
 export function buildSlotsForRange(params: {
   rangeStart: Date;

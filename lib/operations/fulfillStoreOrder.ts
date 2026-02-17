@@ -9,6 +9,7 @@ import { applyPromoRedemptionOperation } from "@/lib/operations/applyPromoRedemp
 import { logError, logWarn } from "@/lib/observability/logger";
 import { normalizeEmail } from "@/lib/utils/email";
 import { ensureEmailIdentity, resolveIdentityForUser } from "@/lib/ownership/identity";
+import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
 
 function parseId(value: unknown) {
   const parsed = Number(value);
@@ -280,12 +281,26 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           totalCents: true,
           currency: true,
           customerEmail: true,
+          storePolicySnapshotJson: true,
           store: {
             select: {
               id: true,
-              supportEmail: true,
-              supportPhone: true,
-              organization: { select: { username: true, publicName: true, businessName: true } },
+              organization: {
+                select: {
+                  username: true,
+                  publicName: true,
+                  businessName: true,
+                  officialEmail: true,
+                  settings: {
+                    select: {
+                      supportEmail: true,
+                      supportPhone: true,
+                      storeReturnPolicyMode: true,
+                      storeReturnWindowDays: true,
+                    },
+                  },
+                },
+              },
             },
           },
           lines: {
@@ -299,6 +314,12 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
 
       if (orderDetail?.customerEmail) {
         const org = orderDetail.store.organization;
+        const storePolicy = resolveStorePolicyWithSnapshot({
+          snapshot: orderDetail.storePolicySnapshotJson,
+          settings: org?.settings ?? null,
+          fallbackSupportEmail: org?.officialEmail ?? null,
+          organizationUsername: org?.username ?? null,
+        });
         const storeName =
           org?.publicName ||
           org?.businessName ||
@@ -325,9 +346,9 @@ export async function fulfillStoreOrderIntent(intent: Stripe.PaymentIntent): Pro
           })),
           trackingUrl,
           orderUrl,
-          supportEmail: orderDetail.store.supportEmail,
-          supportPhone: orderDetail.store.supportPhone,
-          replyTo: orderDetail.store.supportEmail,
+          supportEmail: storePolicy.supportEmail,
+          supportPhone: storePolicy.supportPhone,
+          replyTo: storePolicy.supportEmail,
         });
       }
     } catch (err) {

@@ -19,7 +19,12 @@ const resolveStatusCopy = (status?: string | null) => {
       message: "O bilhete é teu e já está disponível na carteira.",
     };
   }
-  if (status === "FAILED" || status === "CANCELED" || status === "CANCELLED" || status === "EXPIRED") {
+  if (
+    status === "FAILED" ||
+    status === "CANCELED" ||
+    status === "CANCELLED" ||
+    status === "EXPIRED"
+  ) {
     return {
       title: "Não foi possível concluir",
       message: "Houve um problema ao confirmar a inscrição.",
@@ -28,7 +33,8 @@ const resolveStatusCopy = (status?: string | null) => {
   if (status === "REQUIRES_ACTION") {
     return {
       title: "Ação necessária",
-      message: "Falta concluir a autenticação de pagamento para confirmar a inscrição.",
+      message:
+        "Falta concluir a autenticação de pagamento para confirmar a inscrição.",
     };
   }
   return {
@@ -47,17 +53,24 @@ export default function CheckoutSuccessScreen() {
     slug?: string | string[];
   }>();
   const purchaseId = useMemo(() => {
-    const raw = Array.isArray(params.purchaseId) ? params.purchaseId[0] : params.purchaseId;
+    const raw = Array.isArray(params.purchaseId)
+      ? params.purchaseId[0]
+      : params.purchaseId;
     const normalized = typeof raw === "string" ? raw.trim() : "";
     return normalized || null;
   }, [params.purchaseId]);
   const paymentIntentId = useMemo(() => {
-    const raw = Array.isArray(params.paymentIntentId) ? params.paymentIntentId[0] : params.paymentIntentId;
+    const raw = Array.isArray(params.paymentIntentId)
+      ? params.paymentIntentId[0]
+      : params.paymentIntentId;
     const normalized = typeof raw === "string" ? raw.trim() : "";
     return normalized || null;
   }, [params.paymentIntentId]);
   const eventTitle = useMemo(
-    () => (Array.isArray(params.eventTitle) ? params.eventTitle[0] : params.eventTitle) ?? "Evento",
+    () =>
+      (Array.isArray(params.eventTitle)
+        ? params.eventTitle[0]
+        : params.eventTitle) ?? "Evento",
     [params.eventTitle],
   );
   const slug = useMemo(
@@ -81,7 +94,9 @@ export default function CheckoutSuccessScreen() {
       setError(null);
       return next;
     } catch (err) {
-      setError(getUserFacingError(err, "Não foi possível confirmar a inscrição."));
+      setError(
+        getUserFacingError(err, "Não foi possível confirmar a inscrição."),
+      );
       return null;
     } finally {
       setChecking(false);
@@ -98,10 +113,14 @@ export default function CheckoutSuccessScreen() {
 
   useEffect(() => {
     if (!status) return;
-    if (!["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status.status)) return;
-    const timer = setTimeout(() => {
-      runStatusCheck();
-    }, status.status === "REQUIRES_ACTION" ? 2000 : 4000);
+    if (!["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status.status))
+      return;
+    const timer = setTimeout(
+      () => {
+        runStatusCheck();
+      },
+      status.status === "REQUIRES_ACTION" ? 2000 : 4000,
+    );
     return () => clearTimeout(timer);
   }, [runStatusCheck, status]);
 
@@ -112,7 +131,9 @@ export default function CheckoutSuccessScreen() {
         purchaseId: status.purchaseId ?? null,
         paymentIntentId: status.paymentIntentId ?? null,
       });
-    } else if (["FAILED", "CANCELED", "CANCELLED", "EXPIRED"].includes(status.status)) {
+    } else if (
+      ["FAILED", "CANCELED", "CANCELLED", "EXPIRED"].includes(status.status)
+    ) {
       trackEvent("checkout_payment_failed", {
         purchaseId: status.purchaseId ?? null,
         paymentIntentId: status.paymentIntentId ?? null,
@@ -122,6 +143,25 @@ export default function CheckoutSuccessScreen() {
 
   const copy = resolveStatusCopy(status?.status ?? null);
   const isPaid = status?.status === "PAID" || status?.status === "SUCCEEDED";
+  const isPending =
+    !status ||
+    ["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status.status);
+  const primaryActionLabel = isPaid
+    ? "Ver bilhetes"
+    : slug
+      ? "Voltar ao evento"
+      : "Voltar";
+  const handlePrimaryAction = () => {
+    if (isPaid) {
+      router.replace("/tickets");
+      return;
+    }
+    if (slug) {
+      router.replace({ pathname: "/event/[slug]", params: { slug } });
+      return;
+    }
+    safeBack(router, navigation, "/(tabs)/index");
+  };
 
   return (
     <>
@@ -131,7 +171,10 @@ export default function CheckoutSuccessScreen() {
           <Pressable
             onPress={() =>
               slug
-                ? router.replace({ pathname: "/event/[slug]", params: { slug } })
+                ? router.replace({
+                    pathname: "/event/[slug]",
+                    params: { slug },
+                  })
                 : safeBack(router, navigation, "/tickets")
             }
             accessibilityRole="button"
@@ -143,20 +186,30 @@ export default function CheckoutSuccessScreen() {
               justifyContent: "center",
             }}
           >
-            <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={tokens.colors.text}
+            />
           </Pressable>
         </View>
 
         <View className="px-5 gap-4">
           <GlassCard intensity={60} highlight>
             <View className="gap-3">
-              <Text className="text-white text-sm font-semibold">{eventTitle}</Text>
-              <Text className="text-white text-2xl font-semibold">{copy.title}</Text>
+              <Text className="text-white text-sm font-semibold">
+                {eventTitle}
+              </Text>
+              <Text className="text-white text-2xl font-semibold">
+                {copy.title}
+              </Text>
               <Text className="text-white/70 text-sm">{copy.message}</Text>
-              {!isPaid ? (
+              {isPending ? (
                 <View className="flex-row items-center gap-2">
                   <ActivityIndicator color="white" />
-                  <Text className="text-white/70 text-sm">A verificar estado…</Text>
+                  <Text className="text-white/70 text-sm">
+                    A verificar estado…
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -169,15 +222,21 @@ export default function CheckoutSuccessScreen() {
           ) : null}
 
           <Pressable
-            onPress={() => router.replace("/tickets")}
+            onPress={handlePrimaryAction}
             className="rounded-2xl bg-white/15 px-4 py-4"
-            style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
-            disabled={checking}
+            style={{
+              minHeight: tokens.layout.touchTarget,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            disabled={checking && isPending}
             accessibilityRole="button"
-            accessibilityLabel="Ver bilhetes"
-            accessibilityState={{ disabled: checking }}
+            accessibilityLabel={primaryActionLabel}
+            accessibilityState={{ disabled: checking && isPending }}
           >
-            <Text className="text-center text-white text-sm font-semibold">Ver bilhetes</Text>
+            <Text className="text-center text-white text-sm font-semibold">
+              {primaryActionLabel}
+            </Text>
           </Pressable>
         </View>
       </LiquidBackground>

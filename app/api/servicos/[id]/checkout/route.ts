@@ -2,7 +2,10 @@ export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { retrievePaymentIntent, cancelPaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import {
+  retrievePaymentIntent,
+  cancelPaymentIntent,
+} from "@/domain/finance/gateway/stripeGateway";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -19,14 +22,21 @@ import {
   ProcessorFeesStatus,
   SourceType,
 } from "@prisma/client";
-import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
+import {
+  formatPaidSalesGateMessage,
+  getPaidSalesGate,
+} from "@/lib/organizationPayments";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
-import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
+import {
+  isValidPhone,
+  normalizePhone,
+  resolvePhoneNormalizationOptions,
+} from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
 
@@ -35,13 +45,31 @@ const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
 
+function normalizeCheckoutPaymentMethod(raw: unknown): "mbway" | "card" | null {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!value) return "card";
+  if (value === "card") return "card";
+  if (value === "mbway" || value === "mb_way") return "mbway";
+  return null;
+}
+
 async function _POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const ctx = getRequestContext(req);
-  const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
-    respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
+  const fail = (
+    errorCode: string,
+    message: string,
+    status: number,
+    retryable = false,
+    details?: Record<string, unknown>,
+  ) =>
+    respondError(
+      ctx,
+      { errorCode, message, retryable, ...(details ? { details } : {}) },
+      { status },
+    );
   const resolved = await params;
   const serviceId = Number(resolved.id);
   if (!Number.isFinite(serviceId)) {
@@ -53,24 +81,40 @@ async function _POST(
     const { data: userData } = await supabase.auth.getUser();
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
-    const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });
+    const phoneOptions = resolvePhoneNormalizationOptions({
+      headers: req.headers,
+    });
     const guestInput = payload?.guest ?? null;
-    const guestEmailRaw = typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
-    const guestNameRaw = typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
-    const guestPhoneRaw = typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
+    const guestEmailRaw =
+      typeof guestInput?.email === "string" ? guestInput.email.trim() : "";
+    const guestNameRaw =
+      typeof guestInput?.name === "string" ? guestInput.name.trim() : "";
+    const guestPhoneRaw =
+      typeof guestInput?.phone === "string" ? guestInput.phone.trim() : "";
     const guestConsent = guestInput?.consent === true;
     const guestEmailNormalized = normalizeEmail(guestEmailRaw);
-    const guestEmail = guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
-    const guestPhone = guestPhoneRaw ? normalizePhone(guestPhoneRaw, phoneOptions) : "";
+    const guestEmail =
+      guestEmailRaw && EMAIL_REGEX.test(guestEmailRaw) ? guestEmailRaw : "";
+    const guestPhone = guestPhoneRaw
+      ? normalizePhone(guestPhoneRaw, phoneOptions)
+      : "";
     const bookingId = Number(payload?.bookingId);
-    const paymentMethodRaw =
-      typeof payload?.paymentMethod === "string" ? payload.paymentMethod.trim().toLowerCase() : null;
-    const paymentMethod: "mbway" | "card" =
-      paymentMethodRaw === "card" ? "card" : "mbway";
+    const paymentMethod = normalizeCheckoutPaymentMethod(
+      payload?.paymentMethod,
+    );
+    if (!paymentMethod) {
+      return fail(
+        "INVALID_PAYMENT_METHOD",
+        "Método de pagamento inválido.",
+        400,
+      );
+    }
     const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
     const idempotencyKey =
-      (typeof payload?.idempotencyKey === "string" ? payload.idempotencyKey : idempotencyKeyHeader || "").trim() ||
-      null;
+      (typeof payload?.idempotencyKey === "string"
+        ? payload.idempotencyKey
+        : idempotencyKeyHeader || ""
+      ).trim() || null;
     if (!Number.isFinite(bookingId)) {
       return fail("RESERVA_INVALIDA", "Reserva inválida.", 400);
     }
@@ -81,11 +125,19 @@ async function _POST(
         select: { contactPhone: true },
       });
       if (!profile?.contactPhone) {
-        return fail("PHONE_REQUIRED", "Telemóvel obrigatório para reservar.", 400);
+        return fail(
+          "PHONE_REQUIRED",
+          "Telemóvel obrigatório para reservar.",
+          400,
+        );
       }
     } else {
       if (!guestEmail || !guestNameRaw) {
-        return fail("GUEST_REQUIRED", "Nome e email obrigatórios para convidado.", 400);
+        return fail(
+          "GUEST_REQUIRED",
+          "Nome e email obrigatórios para convidado.",
+          400,
+        );
       }
       if (!guestConsent) {
         return fail(
@@ -98,7 +150,11 @@ async function _POST(
         return fail("INVALID_GUEST_EMAIL", "Email inválido.", 400);
       }
       if (!guestPhone || !isValidPhone(guestPhone)) {
-        return fail("PHONE_REQUIRED", "Telemóvel obrigatório para reservar.", 400);
+        return fail(
+          "PHONE_REQUIRED",
+          "Telemóvel obrigatório para reservar.",
+          400,
+        );
       }
     }
 
@@ -144,7 +200,11 @@ async function _POST(
         return fail("FORBIDDEN", "Sem permissões.", 403);
       }
     } else {
-      if (!booking.guestEmail || !guestEmailNormalized || booking.guestEmail !== guestEmailNormalized) {
+      if (
+        !booking.guestEmail ||
+        !guestEmailNormalized ||
+        booking.guestEmail !== guestEmailNormalized
+      ) {
         return fail("FORBIDDEN", "Sem permissões.", 403);
       }
     }
@@ -158,12 +218,16 @@ async function _POST(
     if (!["PENDING_CONFIRMATION", "PENDING"].includes(booking.status)) {
       return fail("RESERVA_INATIVA", "Reserva inativa.", 409);
     }
-    if (booking.splitPayment?.status === "OPEN") {
+    if (
+      booking.splitPayment &&
+      !["CANCELLED", "SETTLED"].includes(booking.splitPayment.status)
+    ) {
       return fail("SPLIT_ACTIVE", "Pagamento dividido ativo.", 409);
     }
 
     const pendingExpiry =
-      booking.pendingExpiresAt ?? new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
+      booking.pendingExpiresAt ??
+      new Date(booking.createdAt.getTime() + HOLD_MINUTES * 60 * 1000);
     if (pendingExpiry < new Date()) {
       await cancelBooking({
         bookingId: booking.id,
@@ -221,7 +285,8 @@ async function _POST(
       }
     }
 
-    const allowedPaymentMethods = paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
+    const allowedPaymentMethods =
+      paymentMethod === "card" ? (["card"] as const) : (["mb_way"] as const);
     if (booking.paymentIntentId) {
       const intent = await retrievePaymentIntent(booking.paymentIntentId);
       if (intent.status === "succeeded") {
@@ -229,13 +294,20 @@ async function _POST(
       }
       if (intent.status !== "canceled") {
         await cancelPaymentIntent(intent.id).catch((err) => {
-          console.warn("[reservas/checkout] falha ao cancelar intent antigo", err);
+          console.warn(
+            "[reservas/checkout] falha ao cancelar intent antigo",
+            err,
+          );
         });
       }
     }
 
     const amountCents = booking.price ?? booking.service.unitPriceCents;
-    const currency = (booking.currency || booking.service.currency || "EUR").toUpperCase();
+    const currency = (
+      booking.currency ||
+      booking.service.currency ||
+      "EUR"
+    ).toUpperCase();
     if (currency !== "EUR") {
       return fail("CURRENCY_NOT_SUPPORTED", "Moeda não suportada.", 400);
     }
@@ -244,28 +316,40 @@ async function _POST(
     if (amountCents > 0) {
       const gate = getPaidSalesGate({
         officialEmail: booking.service.organization.officialEmail ?? null,
-        officialEmailVerifiedAt: booking.service.organization.officialEmailVerifiedAt ?? null,
+        officialEmailVerifiedAt:
+          booking.service.organization.officialEmailVerifiedAt ?? null,
         stripeAccountId: booking.service.organization.stripeAccountId ?? null,
-        stripeChargesEnabled: booking.service.organization.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: booking.service.organization.stripePayoutsEnabled ?? false,
+        stripeChargesEnabled:
+          booking.service.organization.stripeChargesEnabled ?? false,
+        stripePayoutsEnabled:
+          booking.service.organization.stripePayoutsEnabled ?? false,
         requireStripe: !isPlatformOrg,
       });
       if (!gate.ok) {
         return fail(
           "PAYMENTS_NOT_READY",
-          formatPaidSalesGateMessage(gate, "Pagamentos indisponíveis. Para ativar,"),
+          formatPaidSalesGateMessage(
+            gate,
+            "Pagamentos indisponíveis. Para ativar,",
+          ),
           409,
           false,
-          { missingEmail: gate.missingEmail, missingStripe: gate.missingStripe },
+          {
+            missingEmail: gate.missingEmail,
+            missingStripe: gate.missingStripe,
+          },
         );
       }
     }
 
-    const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } = await getPlatformFees();
+    const { feeBps: defaultFeeBps, feeFixedCents: defaultFeeFixed } =
+      await getPlatformFees();
     const pricing = computePricing(amountCents, 0, {
       platformDefaultFeeMode: "INCLUDED",
-      organizationPlatformFeeBps: booking.service.organization.platformFeeBps ?? undefined,
-      organizationPlatformFeeFixedCents: booking.service.organization.platformFeeFixedCents ?? undefined,
+      organizationPlatformFeeBps:
+        booking.service.organization.platformFeeBps ?? undefined,
+      organizationPlatformFeeFixedCents:
+        booking.service.organization.platformFeeFixedCents ?? undefined,
       platformDefaultFeeBps: defaultFeeBps,
       platformDefaultFeeFixedCents: defaultFeeFixed,
       isPlatformOrg,
@@ -284,22 +368,33 @@ async function _POST(
         ? Math.max(0, Math.round((amountCents * ORYA_CARD_FEE_BPS) / 10_000))
         : 0;
     const totalCents = combinedFees.totalCents + cardPlatformFeeCents;
-    const platformFeeCents = Math.min(pricing.platformFeeCents + cardPlatformFeeCents, totalCents);
+    const platformFeeCents = Math.min(
+      pricing.platformFeeCents + cardPlatformFeeCents,
+      totalCents,
+    );
     const payoutAmountCents = Math.max(0, totalCents - platformFeeCents);
     const sourceId = String(booking.id);
     const pendingPayment = await prisma.payment.findFirst({
       where: {
         sourceType: SourceType.BOOKING,
         sourceId,
-        status: { in: [PaymentStatus.CREATED, PaymentStatus.REQUIRES_ACTION, PaymentStatus.PROCESSING] },
+        status: {
+          in: [
+            PaymentStatus.CREATED,
+            PaymentStatus.REQUIRES_ACTION,
+            PaymentStatus.PROCESSING,
+          ],
+        },
       },
       select: { id: true },
     });
     const purchaseId = pendingPayment
       ? pendingPayment.id
-      : `booking_${booking.id}_v${(await prisma.payment.count({
-          where: { sourceType: SourceType.BOOKING, sourceId },
-        })) + 1}`;
+      : `booking_${booking.id}_v${
+          (await prisma.payment.count({
+            where: { sourceType: SourceType.BOOKING, sourceId },
+          })) + 1
+        }`;
     const feePolicyVersion = computeFeePolicyVersion({
       feeMode: pricing.feeMode,
       feeBps: pricing.feeBpsApplied,
@@ -385,14 +480,19 @@ async function _POST(
           guestEmail: booking.guestEmail ?? guestEmailNormalized ?? "",
           guestName: booking.guestName ?? guestNameRaw ?? "",
           guestPhone: booking.guestPhone ?? guestPhone ?? "",
-          policyId: booking.service.policyId ? String(booking.service.policyId) : "",
+          policyId: booking.service.policyId
+            ? String(booking.service.policyId)
+            : "",
           platformFeeCents: String(platformFeeCents),
           cardPlatformFeeCents: String(cardPlatformFeeCents),
-          cardPlatformFeeBps: paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
+          cardPlatformFeeBps:
+            paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
           feeMode: pricing.feeMode,
           grossAmountCents: String(totalCents),
           payoutAmountCents: String(payoutAmountCents),
-          recipientConnectAccountId: isPlatformOrg ? "" : booking.service.organization.stripeAccountId ?? "",
+          recipientConnectAccountId: isPlatformOrg
+            ? ""
+            : (booking.service.organization.stripeAccountId ?? ""),
           sourceType: SourceType.BOOKING,
           sourceId,
           currency,
@@ -400,8 +500,10 @@ async function _POST(
         },
         orgContext: {
           stripeAccountId: booking.service.organization.stripeAccountId ?? null,
-          stripeChargesEnabled: booking.service.organization.stripeChargesEnabled ?? false,
-          stripePayoutsEnabled: booking.service.organization.stripePayoutsEnabled ?? false,
+          stripeChargesEnabled:
+            booking.service.organization.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled:
+            booking.service.organization.stripePayoutsEnabled ?? false,
           orgType: booking.service.organization.orgType ?? null,
         },
         requireStripe: !isPlatformOrg,
@@ -416,10 +518,13 @@ async function _POST(
       });
       intent = ensured.paymentIntent;
     } catch (err) {
-      if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+      if (
+        err instanceof Error &&
+        err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"
+      ) {
         return fail(
           "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
-          "Chave de idempotência reutilizada com um carrinho diferente.",
+          "Chave de idempotência reutilizada com uma reserva diferente.",
           409,
         );
       }
@@ -431,7 +536,10 @@ async function _POST(
           true,
         );
       }
-      if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+      if (
+        err instanceof Error &&
+        err.message === "PAYMENT_INTENT_RETRIEVE_FAILED"
+      ) {
         return fail(
           "PAYMENT_INTENT_RETRIEVE_FAILED",
           "Não foi possível retomar o pagamento. Tenta novamente.",

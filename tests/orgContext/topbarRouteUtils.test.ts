@@ -57,16 +57,16 @@ describe("resolveOrganizationTool", () => {
     expect(resolveOrganizationTool("/org/50/store")).toBe("store");
     expect(resolveOrganizationTool("/org/50/forms/responses")).toBe("forms");
     expect(resolveOrganizationTool("/org/50/chat/preview")).toBe("chat");
-    expect(resolveOrganizationTool("/org/50/treinadores")).toBe("team");
     expect(resolveOrganizationTool("/org/50/padel/clubs/players")).toBe("padel-club");
     expect(resolveOrganizationTool("/org/50/padel/tournaments/create")).toBe("padel-tournaments");
     expect(resolveOrganizationTool("/org/50/marketing/promos")).toBe("marketing");
-    expect(resolveOrganizationTool("/org/50/profile/followers")).toBe("settings");
     expect(resolveOrganizationTool("/org/50/settings/verify")).toBe("settings");
   });
 
   it("falls back to dashboard for unknown canonical subpaths", () => {
     expect(resolveOrganizationTool("/org/50/unknown-route")).toBe("dashboard");
+    expect(resolveOrganizationTool("/org/50/treinadores")).toBe("dashboard");
+    expect(resolveOrganizationTool("/org/50/profile/followers")).toBe("dashboard");
   });
 
   it("returns null outside /org/:orgId", () => {

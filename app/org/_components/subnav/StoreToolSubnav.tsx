@@ -15,7 +15,6 @@ export default function StoreToolSubnav({ orgId, className }: { orgId: number | 
         { id: "orders", label: "Encomendas", href: buildOrgHref(orgId, "/store?view=orders") },
         { id: "shipping", label: "Envios", href: buildOrgHref(orgId, "/store?view=shipping") },
         { id: "marketing", label: "Marketing", href: buildOrgHref(orgId, "/store?view=marketing") },
-        { id: "settings", label: "Definições", href: buildOrgHref(orgId, "/store?view=settings") },
       ]}
     />
   );

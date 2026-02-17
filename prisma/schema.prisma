@@ -210,7 +210,8 @@ model Organization {
   brandingSecondaryColor                                                   String?                                       @map("branding_secondary_color")
   organizationKind                                                         OrganizationKind                              @default(PESSOA_SINGULAR) @map("organization_kind")
   primaryModule                                                            OrganizationModule                            @default(EVENTOS) @map("primary_module")
-  reservationAssignmentMode                                                ReservationAssignmentMode                     @default(PROFESSIONAL) @map("reservation_assignment_mode")
+  reservationAssignmentMode                                                ReservationAssignmentMode                     @default(PROFESSIONAL_ONLY) @map("reservation_assignment_mode")
+  orgRescheduleWindowMinutes                                               Int                                           @default(240) @map("org_reschedule_window_minutes")
   padelDefaultShortName                                                    String?                                       @map("padel_default_short_name")
   padelDefaultCourts                                                       Int                                           @default(0) @map("padel_default_courts")
   padelDefaultHours                                                        String?                                       @map("padel_default_hours")
@@ -338,6 +339,10 @@ model Organization {
 model OrganizationSettings {
   env                               String         @default("prod")
   organizationId                    Int            @id @map("organization_id")
+  supportEmail                      String?        @map("support_email")
+  supportPhone                      String?        @map("support_phone")
+  storeReturnPolicyMode             String?        @map("store_return_policy_mode")
+  storeReturnWindowDays             Int?           @map("store_return_window_days")
   invoicingMode                     InvoicingMode? @map("invoicing_mode")
   invoicingSoftwareName             String?        @map("invoicing_software_name")
   invoicingNotes                    String?        @map("invoicing_notes")
@@ -439,11 +444,6 @@ model Store {
   catalogLocked              Boolean     @default(true) @map("catalog_locked")
   checkoutEnabled            Boolean     @default(false) @map("checkout_enabled")
   currency                   String      @default("EUR")
-  supportEmail               String?     @map("support_email")
-  supportPhone               String?     @map("support_phone")
-  returnPolicy               String?     @map("return_policy")
-  privacyPolicy              String?     @map("privacy_policy")
-  termsUrl                   String?     @map("terms_url")
   freeShippingThresholdCents Int?        @map("free_shipping_threshold_cents")
   createdAt                  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                  DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -749,6 +749,9 @@ model StoreOrder {
   customerName     String?              @map("customer_name")
   customerPhone    String?              @map("customer_phone")
   notes            String?
+  storePolicySnapshotJson Json?         @map("store_policy_snapshot_json")
+  storePolicyVersion      String?       @map("store_policy_version")
+  storePolicyCapturedAt   DateTime?     @map("store_policy_captured_at") @db.Timestamptz(6)
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   store            Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -4740,6 +4743,7 @@ model Service {
   durationMinutes   Int                       @map("duration_minutes")
   unitPriceCents    Int                       @map("price")
   currency          String                    @default("EUR")
+  assignmentMode    ReservationAssignmentMode @default(PROFESSIONAL_ONLY) @map("assignment_mode")
   isActive          Boolean                   @default(true) @map("is_active")
   categoryTag       String?                   @map("category_tag")
   coverImageUrl     String?                   @map("cover_image_url")
@@ -5016,7 +5020,7 @@ model Booking {
   guestPhone                    String?                          @map("guest_phone")
   availabilityId                Int?                             @map("availability_id")
   courtId                       Int?                             @map("court_id")
-  assignmentMode                ReservationAssignmentMode        @default(PROFESSIONAL) @map("assignment_mode")
+  assignmentMode                ReservationAssignmentMode        @default(PROFESSIONAL_ONLY) @map("assignment_mode")
   professionalId                Int?                             @map("professional_id")
   resourceId                    Int?                             @map("resource_id")
   partySize                     Int?                             @map("party_size")
@@ -7581,8 +7585,10 @@ enum BookingParticipantStatus {
 
 enum BookingSplitStatus {
   OPEN
-  COMPLETED
-  EXPIRED
+  SETTLING
+  SETTLED
+  CHARGE_FAILED
+  DEBT_OPEN
   CANCELLED
 
   @@schema("app_v3")
@@ -7703,8 +7709,9 @@ enum OrganizationStepUpAction {
 }
 
 enum ReservationAssignmentMode {
-  PROFESSIONAL
-  RESOURCE
+  PROFESSIONAL_ONLY
+  RESOURCE_ONLY
+  PROFESSIONAL_AND_RESOURCE
 
   @@schema("app_v3")
 }

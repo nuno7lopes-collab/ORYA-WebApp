@@ -258,10 +258,11 @@ export default function AdminTicketsPage() {
           >
             <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
+                <label htmlFor="tickets-query" className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
                   Pesquisa
                 </label>
                 <input
+                  id="tickets-query"
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -270,8 +271,11 @@ export default function AdminTicketsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Pagamento</label>
+                <label htmlFor="tickets-intent" className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
+                  Pagamento
+                </label>
                 <input
+                  id="tickets-intent"
                   type="text"
                   value={intentFilter}
                   onChange={(e) => setIntentFilter(e.target.value)}
@@ -280,8 +284,11 @@ export default function AdminTicketsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Slug do evento</label>
+                <label htmlFor="tickets-slug" className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
+                  Slug do evento
+                </label>
                 <input
+                  id="tickets-slug"
                   type="text"
                   value={slugFilter}
                   onChange={(e) => setSlugFilter(e.target.value)}
@@ -290,8 +297,11 @@ export default function AdminTicketsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Utilizador</label>
+                <label htmlFor="tickets-user" className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
+                  Utilizador
+                </label>
                 <input
+                  id="tickets-user"
                   type="text"
                   value={userFilter}
                   onChange={(e) => setUserFilter(e.target.value)}
@@ -300,8 +310,12 @@ export default function AdminTicketsPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Estado</label>
+                <label htmlFor="tickets-status" className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">
+                  Estado
+                </label>
                 <select
+                  id="tickets-status"
+                  aria-label="Estado do bilhete"
                   value={statusFilter}
                   onChange={(e) => {
                     const value = e.target.value;

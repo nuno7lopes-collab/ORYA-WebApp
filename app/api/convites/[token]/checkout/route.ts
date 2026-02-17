@@ -169,7 +169,7 @@ async function _POST(
       return fail(ctx, 409, "BOOKING_INACTIVE", "Reserva inativa.");
     }
     const split = booking.splitPayment;
-    if (!split || split.status !== "OPEN") {
+    if (!split || !["OPEN", "SETTLING", "CHARGE_FAILED"].includes(split.status)) {
       return fail(ctx, 409, "SPLIT_INACTIVE", "Pagamento dividido indisponível.");
     }
     if (split.splitMode !== BOOKING_SPLIT_CANONICAL_MODE) {

@@ -1,10 +1,10 @@
 import { PropsWithChildren } from "react";
-import { ViewStyle } from "react-native";
+import { type StyleProp, type ViewStyle } from "react-native";
 import { GlassSurface } from "../ui/GlassSurface";
 
 type GlassCardProps = PropsWithChildren<{
-  style?: ViewStyle;
-  contentStyle?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
   intensity?: number;
 }>;
 

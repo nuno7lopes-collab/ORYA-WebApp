@@ -14,7 +14,6 @@ type PoliciesToolClientProps = {
 
 type OrganizationPolicyType = "FLEXIBLE" | "MODERATE" | "RIGID" | "CUSTOM";
 type WindowPreset = "none" | "0" | "60" | "180" | "720" | "1440" | "2880" | "10080" | "custom";
-type PenaltyPreset = "0" | "1000" | "2500" | "5000" | "10000" | "custom";
 
 type PolicyItem = {
   id: number;
@@ -46,8 +45,6 @@ type PolicyDraft = {
   allowCancellation: boolean;
   cancellationWindowPreset: WindowPreset;
   cancellationWindowCustom: string;
-  cancellationPenaltyPreset: PenaltyPreset;
-  cancellationPenaltyCustom: string;
   allowReschedule: boolean;
   rescheduleWindowPreset: WindowPreset;
   rescheduleWindowCustom: string;
@@ -58,6 +55,30 @@ type TermsDraft = {
   infoRules: string;
   infoRequirements: string;
   infoLocationNotes: string;
+};
+
+type StorePolicyMode = "NO_RETURNS" | "WINDOW_DAYS";
+
+type StorePolicyResponse = {
+  storeFeatureEnabled: boolean;
+  hasStore: boolean;
+  storeStatus: string | null;
+  appliesToCheckout: boolean;
+  policy: {
+    supportEmail: string | null;
+    supportPhone: string | null;
+    legalUrl: string | null;
+    termsUrl: string | null;
+    privacyPolicy: string | null;
+    returnPolicy: string | null;
+    returnPolicyMode: StorePolicyMode | null;
+    returnWindowDays: number | null;
+  };
+};
+
+type StorePolicyDraft = {
+  returnPolicyMode: StorePolicyMode;
+  returnWindowDays: string;
 };
 
 const swrOptions = {
@@ -105,10 +126,6 @@ function parseView(raw: string | null | undefined, fallback: PoliciesAllowedView
   return fallback;
 }
 
-function toPenaltyPctLabel(bps: number | null | undefined) {
-  return `${(((bps ?? 0) / 100) as number).toFixed(2)}%`;
-}
-
 function prettyWindow(minutes: number | null) {
   if (minutes === null) return "Sem cancelamento";
   if (minutes === 0) return "Até à hora";
@@ -129,15 +146,6 @@ function windowPresetFromValue(value: number | null): WindowPreset {
   return "custom";
 }
 
-function penaltyPresetFromValue(value: number): PenaltyPreset {
-  if (value === 0) return "0";
-  if (value === 1000) return "1000";
-  if (value === 2500) return "2500";
-  if (value === 5000) return "5000";
-  if (value === 10000) return "10000";
-  return "custom";
-}
-
 function resolveWindowFromDraft(preset: WindowPreset, customValue: string) {
   if (preset === "none") return null;
   if (preset === "custom") {
@@ -148,15 +156,6 @@ function resolveWindowFromDraft(preset: WindowPreset, customValue: string) {
   return Math.max(0, Math.round(Number(preset)));
 }
 
-function resolvePenaltyFromDraft(preset: PenaltyPreset, customValue: string) {
-  if (preset === "custom") {
-    const parsed = Number(customValue);
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.max(0, Math.min(10000, Math.round(parsed)));
-  }
-  return Math.max(0, Math.min(10000, Math.round(Number(preset))));
-}
-
 function createInitialDraft(): PolicyDraft {
   return {
     name: "",
@@ -164,12 +163,30 @@ function createInitialDraft(): PolicyDraft {
     allowCancellation: true,
     cancellationWindowPreset: "1440",
     cancellationWindowCustom: "",
-    cancellationPenaltyPreset: "0",
-    cancellationPenaltyCustom: "",
     allowReschedule: true,
     rescheduleWindowPreset: "1440",
     rescheduleWindowCustom: "",
   };
+}
+
+function createInitialStorePolicyDraft(): StorePolicyDraft {
+  return {
+    returnPolicyMode: "WINDOW_DAYS",
+    returnWindowDays: "14",
+  };
+}
+
+function buildStoreReturnPolicyPreview(draft: StorePolicyDraft) {
+  if (draft.returnPolicyMode === "NO_RETURNS") {
+    return "Sem devolucoes. Em caso de defeito, contactar o suporte.";
+  }
+  const parsedDays = Number(draft.returnWindowDays);
+  const days = Number.isFinite(parsedDays) ? Math.min(730, Math.max(0, Math.round(parsedDays))) : 14;
+  return (
+    days === 0
+      ? "Devolucoes permitidas no proprio dia da compra, para produtos sem sinais de uso."
+      : `Devolucoes permitidas durante ${days} dia(s) apos a compra, para produtos sem sinais de uso.`
+  );
 }
 
 export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolClientProps) {
@@ -198,6 +215,12 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     useSWR<PoliciesResponse>(`${orgApiBase}/policies`, apiFetcher, swrOptions);
   const { data: meData, error: meError, mutate: mutateMe, isLoading: meLoading } =
     useSWR<MeResponse>(`${orgApiBase}/me`, apiFetcher, swrOptions);
+  const {
+    data: storePolicyData,
+    error: storePolicyError,
+    mutate: mutateStorePolicy,
+    isLoading: storePolicyLoading,
+  } = useSWR<StorePolicyResponse>(`${orgApiBase}/policies/store`, apiFetcher, swrOptions);
 
   const policies = policiesData?.items ?? [];
   const [createDraft, setCreateDraft] = useState<PolicyDraft>(createInitialDraft);
@@ -218,6 +241,11 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
   const [termsError, setTermsError] = useState<string | null>(null);
   const [termsSuccess, setTermsSuccess] = useState<string | null>(null);
   const [refundTemplate, setRefundTemplate] = useState<"CUSTOM" | "FLEXIVEL" | "MODERADA" | "RIGIDA">("CUSTOM");
+  const [storePolicyDraft, setStorePolicyDraft] = useState<StorePolicyDraft>(createInitialStorePolicyDraft);
+  const [storePolicyLoaded, setStorePolicyLoaded] = useState(false);
+  const [storePolicySaving, setStorePolicySaving] = useState(false);
+  const [storePolicyErrorMessage, setStorePolicyErrorMessage] = useState<string | null>(null);
+  const [storePolicySuccessMessage, setStorePolicySuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!meData?.organization || termsLoaded) return;
@@ -230,6 +258,25 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     setTermsLoaded(true);
   }, [meData?.organization, termsLoaded]);
 
+  useEffect(() => {
+    if (!storePolicyData?.policy || storePolicyLoaded) return;
+    setStorePolicyDraft({
+      returnPolicyMode: storePolicyData.policy.returnPolicyMode ?? "WINDOW_DAYS",
+      returnWindowDays:
+        storePolicyData.policy.returnPolicyMode === "NO_RETURNS"
+          ? ""
+          : String(storePolicyData.policy.returnWindowDays ?? 14),
+    });
+    setStorePolicyLoaded(true);
+  }, [storePolicyData, storePolicyLoaded]);
+
+  useEffect(() => {
+    setStorePolicyLoaded(false);
+    setStorePolicyDraft(createInitialStorePolicyDraft());
+    setStorePolicyErrorMessage(null);
+    setStorePolicySuccessMessage(null);
+  }, [orgId]);
+
   const defaultModeratePolicy = useMemo(
     () => policies.find((policy) => policy.policyType === "MODERATE") ?? policies[0] ?? null,
     [policies],
@@ -238,11 +285,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     () => policies.filter((policy) => policy.policyType === "CUSTOM").length,
     [policies],
   );
-  const averagePenaltyBps = useMemo(() => {
-    if (!policies.length) return 0;
-    const total = policies.reduce((sum, policy) => sum + (policy.cancellationPenaltyBps ?? 0), 0);
-    return Math.round(total / policies.length);
-  }, [policies]);
   const strictestWindowMinutes = useMemo(() => {
     const windows = policies
       .filter((policy) => policy.allowCancellation && policy.cancellationWindowMinutes !== null)
@@ -260,8 +302,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         allowCancellation: true,
         cancellationWindowPreset: "2880",
         cancellationWindowCustom: "",
-        cancellationPenaltyPreset: "0",
-        cancellationPenaltyCustom: "",
         allowReschedule: true,
         rescheduleWindowPreset: "2880",
         rescheduleWindowCustom: "",
@@ -276,8 +316,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         allowCancellation: true,
         cancellationWindowPreset: "1440",
         cancellationWindowCustom: "",
-        cancellationPenaltyPreset: "2500",
-        cancellationPenaltyCustom: "",
         allowReschedule: true,
         rescheduleWindowPreset: "1440",
         rescheduleWindowCustom: "",
@@ -291,8 +329,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
       allowCancellation: true,
       cancellationWindowPreset: "180",
       cancellationWindowCustom: "",
-      cancellationPenaltyPreset: "10000",
-      cancellationPenaltyCustom: "",
       allowReschedule: false,
       rescheduleWindowPreset: "none",
       rescheduleWindowCustom: "",
@@ -315,10 +351,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         cancellationWindowMinutes: createDraft.allowCancellation
           ? resolveWindowFromDraft(createDraft.cancellationWindowPreset, createDraft.cancellationWindowCustom)
           : null,
-        cancellationPenaltyBps: resolvePenaltyFromDraft(
-          createDraft.cancellationPenaltyPreset,
-          createDraft.cancellationPenaltyCustom,
-        ),
+        cancellationPenaltyBps: 0,
         allowReschedule: createDraft.allowReschedule,
         rescheduleWindowMinutes: createDraft.allowReschedule
           ? resolveWindowFromDraft(createDraft.rescheduleWindowPreset, createDraft.rescheduleWindowCustom)
@@ -354,11 +387,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         windowPresetFromValue(policy.cancellationWindowMinutes) === "custom"
           ? String(policy.cancellationWindowMinutes ?? "")
           : "",
-      cancellationPenaltyPreset: penaltyPresetFromValue(policy.cancellationPenaltyBps ?? 0),
-      cancellationPenaltyCustom:
-        penaltyPresetFromValue(policy.cancellationPenaltyBps ?? 0) === "custom"
-          ? String(policy.cancellationPenaltyBps ?? 0)
-          : "",
       allowReschedule: policy.allowReschedule,
       rescheduleWindowPreset: windowPresetFromValue(policy.rescheduleWindowMinutes),
       rescheduleWindowCustom:
@@ -384,10 +412,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         cancellationWindowMinutes: editDraft.allowCancellation
           ? resolveWindowFromDraft(editDraft.cancellationWindowPreset, editDraft.cancellationWindowCustom)
           : null,
-        cancellationPenaltyBps: resolvePenaltyFromDraft(
-          editDraft.cancellationPenaltyPreset,
-          editDraft.cancellationPenaltyCustom,
-        ),
+        cancellationPenaltyBps: 0,
         allowReschedule: editDraft.allowReschedule,
         rescheduleWindowMinutes: editDraft.allowReschedule
           ? resolveWindowFromDraft(editDraft.rescheduleWindowPreset, editDraft.rescheduleWindowCustom)
@@ -460,6 +485,43 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     }
   }, [mutateMe, orgApiBase, termsDraft, termsSaving]);
 
+  const saveStorePolicy = useCallback(async () => {
+    if (storePolicySaving) return;
+    setStorePolicySaving(true);
+    setStorePolicyErrorMessage(null);
+    setStorePolicySuccessMessage(null);
+
+    const parsedWindowDays = Number(storePolicyDraft.returnWindowDays);
+    const returnWindowDays =
+      storePolicyDraft.returnPolicyMode === "NO_RETURNS"
+        ? null
+        : Number.isFinite(parsedWindowDays)
+          ? Math.min(730, Math.max(0, Math.round(parsedWindowDays)))
+          : 14;
+
+    try {
+      const response = await fetch(`${orgApiBase}/policies/store`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          returnPolicyMode: storePolicyDraft.returnPolicyMode,
+          returnWindowDays,
+        }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || json?.ok === false) {
+        throw new Error((json && (json.error || json.message)) || "Erro ao guardar política da loja.");
+      }
+      setStorePolicySuccessMessage("Política da loja guardada.");
+      setStorePolicyLoaded(false);
+      await mutateStorePolicy();
+    } catch (error) {
+      setStorePolicyErrorMessage(error instanceof Error ? error.message : "Erro ao guardar política da loja.");
+    } finally {
+      setStorePolicySaving(false);
+    }
+  }, [mutateStorePolicy, orgApiBase, storePolicyDraft, storePolicySaving]);
+
   const applyRefundTemplate = useCallback((value: "CUSTOM" | "FLEXIVEL" | "MODERADA" | "RIGIDA") => {
     setRefundTemplate(value);
     if (value === "CUSTOM") return;
@@ -470,6 +532,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     overview: "Políticas da organização",
     booking: "Políticas de reservas",
     terms: "Termos e textos legais",
+    store: "Políticas da loja",
     guardrails: "Guardrails e limites",
   };
 
@@ -482,7 +545,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
           <div>
             <h1 className="text-2xl font-semibold">{headerByView[view]}</h1>
             <p className="text-sm text-white/70">
-              Ferramenta para personalizar políticas, termos e regras com defaults, dropdowns e texto livre.
+              Ferramenta para personalizar politicas e regras com guardrails e templates fechados.
             </p>
           </div>
           <div className="rounded-xl border border-cyan-300/45 bg-cyan-300/12 px-3 py-2 text-xs text-cyan-100">
@@ -491,10 +554,11 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         </div>
       </div>
 
-      {(policiesError || meError) && (
+      {(policiesError || meError || storePolicyError) && (
         <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
           {(policiesError instanceof Error ? policiesError.message : null) ??
-            (meError instanceof Error ? meError.message : "Erro ao carregar dados.")}
+            (meError instanceof Error ? meError.message : null) ??
+            (storePolicyError instanceof Error ? storePolicyError.message : "Erro ao carregar dados.")}
         </div>
       )}
 
@@ -507,7 +571,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               label="Janela mais restritiva"
               value={strictestWindowMinutes === null ? "Sem limite" : prettyWindow(strictestWindowMinutes)}
             />
-            <MetricCard label="Penalização média" value={toPenaltyPctLabel(averagePenaltyBps)} />
+            <MetricCard label="Penalizacao cancelamento" value="0%" />
           </div>
           <div className="grid gap-3 xl:grid-cols-2">
             <Panel title="Default operacional" subtitle="Referência atual para novas configurações">
@@ -521,7 +585,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
                       : "Desativado"}
                   </p>
                   <p className="text-white/70">
-                    Penalização: {toPenaltyPctLabel(defaultModeratePolicy.cancellationPenaltyBps)} · Reagendamento:{" "}
+                    Penalizacao: 0% · Reagendamento:{" "}
                     {defaultModeratePolicy.allowReschedule
                       ? prettyWindow(defaultModeratePolicy.rescheduleWindowMinutes)
                       : "Desativado"}
@@ -546,6 +610,9 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
             </button>
             <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "terms" })}>
               Editar termos e textos
+            </button>
+            <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "store" })}>
+              Configurar política da loja
             </button>
             <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "guardrails" })}>
               Ver guardrails
@@ -623,7 +690,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
                         <p className="text-sm font-semibold text-white">{policy.name}</p>
                         <p className="text-[12px] text-white/70">
                           {policy.policyType} · Cancelamento {policy.allowCancellation ? "ativo" : "desativado"} ·
-                          Penalização {toPenaltyPctLabel(policy.cancellationPenaltyBps)}
+                          Penalizacao 0%
                         </p>
                         <p className="text-[12px] text-white/60">
                           Janela cancelamento: {prettyWindow(policy.cancellationWindowMinutes)} · Janela reagendamento:{" "}
@@ -726,6 +793,131 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         </Panel>
       )}
 
+      {view === "store" && (
+        <Panel
+          title="Política de checkout da loja"
+          subtitle="Template único para devoluções, privacidade e termos com guardrails operacionais"
+        >
+          {storePolicyLoading && !storePolicyData ? (
+            <EmptyState label="A carregar política da loja..." />
+          ) : (
+            <div className="space-y-3">
+              {!storePolicyData?.storeFeatureEnabled ? (
+                <div className="rounded-xl border border-amber-300/45 bg-amber-500/12 px-3 py-2 text-sm text-amber-100">
+                  O módulo de loja está desativado nesta instalação.
+                </div>
+              ) : null}
+
+              {storePolicyData?.storeFeatureEnabled && !storePolicyData?.hasStore ? (
+                <div className="rounded-xl border border-amber-300/45 bg-amber-500/12 px-3 py-2 text-sm text-amber-100">
+                  A organização ainda não tem loja ativa. A política fica pronta aqui e passa a aplicar quando a loja
+                  ficar disponível.
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Modo de devoluções">
+                  <select
+                    className={INPUT}
+                    value={storePolicyDraft.returnPolicyMode}
+                    onChange={(event) =>
+                      setStorePolicyDraft((prev) => ({
+                        ...prev,
+                        returnPolicyMode: event.target.value as StorePolicyMode,
+                      }))
+                    }
+                  >
+                    <option value="WINDOW_DAYS">Com devoluções</option>
+                    <option value="NO_RETURNS">Sem devoluções</option>
+                  </select>
+                </Field>
+                <Field label="URL legal canónica">
+                  <input
+                    className={cn(INPUT, "opacity-80")}
+                    value={storePolicyData?.policy.legalUrl ?? ""}
+                    readOnly
+                    placeholder="/{username}/legal"
+                  />
+                </Field>
+              </div>
+
+              {storePolicyDraft.returnPolicyMode === "WINDOW_DAYS" ? (
+                <Field label="Janela de devolução (dias)">
+                  <input
+                    className={INPUT}
+                    value={storePolicyDraft.returnWindowDays}
+                    onChange={(event) =>
+                      setStorePolicyDraft((prev) => ({
+                        ...prev,
+                        returnWindowDays: event.target.value.replace(/[^\d]/g, ""),
+                      }))
+                    }
+                    inputMode="numeric"
+                    placeholder="0 a 730"
+                  />
+                </Field>
+              ) : null}
+
+              <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Preview devoluções</p>
+                <p className="mt-1">{buildStoreReturnPolicyPreview(storePolicyDraft)}</p>
+              </div>
+
+              <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Privacidade (template ORYA)</p>
+                <p className="mt-1">{storePolicyData?.policy.privacyPolicy ?? "A carregar..."}</p>
+              </div>
+
+              {(storePolicyData?.policy.supportEmail || storePolicyData?.policy.supportPhone) ? (
+                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Suporte atual</p>
+                  <p className="mt-1">
+                    {storePolicyData?.policy.supportEmail ?? ""}
+                    {storePolicyData?.policy.supportEmail && storePolicyData?.policy.supportPhone ? " · " : ""}
+                    {storePolicyData?.policy.supportPhone ?? ""}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
+                Contactos de suporte (email/telefone) são geridos em
+                {" "}
+                <a className="underline" href={buildOrgHref(orgId, "/settings")}>
+                  Definições
+                </a>
+                {" "}
+                e reutilizados automaticamente no checkout.
+              </div>
+
+              {storePolicyErrorMessage ? (
+                <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
+                  {storePolicyErrorMessage}
+                </div>
+              ) : null}
+              {storePolicySuccessMessage ? (
+                <div className="rounded-xl border border-emerald-300/45 bg-emerald-500/12 px-3 py-2 text-sm text-emerald-100">
+                  {storePolicySuccessMessage}
+                </div>
+              ) : null}
+
+              <div>
+                <button
+                  type="button"
+                  className={CTA_PRIMARY}
+                  onClick={() => void saveStorePolicy()}
+                  disabled={
+                    storePolicySaving ||
+                    !storePolicyData?.storeFeatureEnabled
+                  }
+                >
+                  {storePolicySaving ? "A guardar..." : "Guardar política da loja"}
+                </button>
+              </div>
+            </div>
+          )}
+        </Panel>
+      )}
+
       {view === "guardrails" && (
         <Panel title="Guardrails operacionais" subtitle="Limites de segurança para personalização">
           <ul className="space-y-2 text-sm text-white/80">
@@ -734,13 +926,19 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               podem ser removidas.
             </li>
             <li className={GUARDRAIL_ITEM}>
-              Penalização de cancelamento é validada entre `0` e `10000` bps (`0%` a `100%`).
+              Penalizacao de cancelamento e fixa em `0%` nesta versao.
             </li>
             <li className={GUARDRAIL_ITEM}>
               Janelas são sempre validadas em minutos e normalizadas para inteiro não negativo.
             </li>
             <li className={GUARDRAIL_ITEM}>
-              Alterações de texto legal são guardadas com defaults editáveis, sem quebrar o contrato público.
+              Textos legais publicos sao gerados por template fechado e URL interna `/{username}/legal`.
+            </li>
+            <li className={GUARDRAIL_ITEM}>
+              Política da loja usa template fechado: devoluções `sem devoluções` ou `0..730 dias`, com clamp automático.
+            </li>
+            <li className={GUARDRAIL_ITEM}>
+              Email/telefone de suporte da loja vivem em `Definições` e não podem ser editados dentro da ferramenta Loja.
             </li>
           </ul>
         </Panel>
@@ -892,33 +1090,6 @@ function PolicyControls({
               }
               placeholder="Minutos"
               disabled={!draft.allowCancellation}
-            />
-          ) : null}
-        </Field>
-
-        <Field label="Penalização cancelamento">
-          <select
-            className={INPUT}
-            value={draft.cancellationPenaltyPreset}
-            onChange={(event) =>
-              assign((prev) => ({ ...prev, cancellationPenaltyPreset: event.target.value as PenaltyPreset }))
-            }
-          >
-            <option value="0">0% (0 bps)</option>
-            <option value="1000">10% (1000 bps)</option>
-            <option value="2500">25% (2500 bps)</option>
-            <option value="5000">50% (5000 bps)</option>
-            <option value="10000">100% (10000 bps)</option>
-            <option value="custom">Personalizado</option>
-          </select>
-          {draft.cancellationPenaltyPreset === "custom" ? (
-            <input
-              className={cn(INPUT, "mt-2")}
-              value={draft.cancellationPenaltyCustom}
-              onChange={(event) =>
-                assign((prev) => ({ ...prev, cancellationPenaltyCustom: event.target.value.replace(/[^\d]/g, "") }))
-              }
-              placeholder="bps (0-10000)"
             />
           ) : null}
         </Field>

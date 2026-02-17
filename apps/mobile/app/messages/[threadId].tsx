@@ -201,7 +201,7 @@ export default function ChatThreadScreen() {
       setCursor(response.nextCursor ?? null);
       const lastMessage = response.items?.[response.items.length - 1];
       if (lastMessage?.id) {
-        await markConversationRead(threadId, lastMessage.id, accessToken).catch(() => null);
+        void markConversationRead(threadId, lastMessage.id, accessToken).catch(() => null);
       }
     } catch (err) {
       setError(resolveChatError(err, t("messages:thread.errors.load"), t));
@@ -391,7 +391,11 @@ export default function ChatThreadScreen() {
     setSending(true);
     try {
       const response = await sendConversationMessage(threadId, body, undefined, accessToken);
-      setMessages((prev) => [...prev, toUnified(response.item)]);
+      const sentItem = toUnified(response.item);
+      setMessages((prev) => {
+        if (prev.some((item) => item.id === sentItem.id)) return prev;
+        return [...prev, sentItem];
+      });
       setInput("");
       setAutoScroll(true);
     } catch (err) {

@@ -637,9 +637,22 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
             data: { lastMessageAt: created.createdAt, lastMessageId: created.id },
           });
 
-          await tx.chatConversationMember.update({
+          await tx.chatConversationMember.upsert({
             where: { conversationId_userId: { conversationId, userId: user.id } },
-            data: { lastReadMessageId: created.id, lastReadAt: created.createdAt },
+            update: {
+              lastReadMessageId: created.id,
+              lastReadAt: created.createdAt,
+              leftAt: null,
+              accessRevokedAt: null,
+            },
+            create: {
+              conversationId,
+              userId: user.id,
+              role: "MEMBER",
+              organizationId: conversation.organizationId ?? null,
+              lastReadMessageId: created.id,
+              lastReadAt: created.createdAt,
+            },
           });
 
           return created;

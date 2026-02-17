@@ -300,6 +300,10 @@ function resolveMobileMinVersion(platform) {
   return process.env.MIN_SUPPORTED_MOBILE_VERSION?.trim() || null;
 }
 
+function shouldFailClosedForMobileVersionConfig() {
+  return process.env.NODE_ENV === "production";
+}
+
 function isPlatformKillSwitchEnabled(platform, appVersion) {
   if (process.env.MOBILE_KILL_SWITCH_ALL?.trim() === "1") return true;
   if (!platform || platform === "unknown") return false;
@@ -795,40 +799,44 @@ wss.on("connection", (ws, req) => {
               return;
             }
             const minSupportedVersion = resolveMobileMinVersion(runtimePlatform);
-            if (!minSupportedVersion || !isValidSemver(minSupportedVersion)) {
-              rejectHandshake({
-                reason: "UPGRADE_REQUIRED",
-                code: 4003,
-                detail: !minSupportedVersion
-                  ? "MIN_SUPPORTED_MOBILE_VERSION_NOT_CONFIGURED"
-                  : "MIN_SUPPORTED_MOBILE_VERSION_INVALID",
-                userId: user.id,
-                platform: clientPlatform || null,
-                runtimePlatform,
-              });
-              return;
-            }
-            if (isPlatformKillSwitchEnabled(runtimePlatform, appVersion)) {
-              rejectHandshake({
-                reason: "UPGRADE_REQUIRED",
-                code: 4003,
-                detail: "PLATFORM_KILL_SWITCH",
-                userId: user.id,
-                platform: clientPlatform || null,
-                runtimePlatform,
-              });
-              return;
-            }
-            if ((compareSemver(appVersion, minSupportedVersion) ?? -1) < 0) {
-              rejectHandshake({
-                reason: "UPGRADE_REQUIRED",
-                code: 4003,
-                detail: "APP_VERSION_UNSUPPORTED",
-                userId: user.id,
-                platform: clientPlatform || null,
-                runtimePlatform,
-              });
-              return;
+            const hasValidMinVersion = Boolean(minSupportedVersion && isValidSemver(minSupportedVersion));
+            if (!hasValidMinVersion) {
+              if (shouldFailClosedForMobileVersionConfig()) {
+                rejectHandshake({
+                  reason: "UPGRADE_REQUIRED",
+                  code: 4003,
+                  detail: !minSupportedVersion
+                    ? "MIN_SUPPORTED_MOBILE_VERSION_NOT_CONFIGURED"
+                    : "MIN_SUPPORTED_MOBILE_VERSION_INVALID",
+                  userId: user.id,
+                  platform: clientPlatform || null,
+                  runtimePlatform,
+                });
+                return;
+              }
+            } else {
+              if (isPlatformKillSwitchEnabled(runtimePlatform, appVersion)) {
+                rejectHandshake({
+                  reason: "UPGRADE_REQUIRED",
+                  code: 4003,
+                  detail: "PLATFORM_KILL_SWITCH",
+                  userId: user.id,
+                  platform: clientPlatform || null,
+                  runtimePlatform,
+                });
+                return;
+              }
+              if ((compareSemver(appVersion, minSupportedVersion) ?? -1) < 0) {
+                rejectHandshake({
+                  reason: "UPGRADE_REQUIRED",
+                  code: 4003,
+                  detail: "APP_VERSION_UNSUPPORTED",
+                  userId: user.id,
+                  platform: clientPlatform || null,
+                  runtimePlatform,
+                });
+                return;
+              }
             }
             scope = "b2c";
           } else {

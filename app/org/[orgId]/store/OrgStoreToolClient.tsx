@@ -21,7 +21,6 @@ import StoreShippingMethodsPanel from "@/components/store/StoreShippingMethodsPa
 import StoreShippingTiersPanel from "@/components/store/StoreShippingTiersPanel";
 import StoreBundlesPanel from "@/components/store/StoreBundlesPanel";
 import StoreBundleItemsPanel from "@/components/store/StoreBundleItemsPanel";
-import StoreSettingsPanel from "@/components/store/StoreSettingsPanel";
 
 type StoreSnapshot = {
   id: number;
@@ -38,7 +37,7 @@ type OrgStoreToolClientProps = {
   orgId: number;
 };
 
-const STORE_VIEWS = ["overview", "catalog", "orders", "shipping", "marketing", "settings"] as const;
+const STORE_VIEWS = ["overview", "catalog", "orders", "shipping", "marketing"] as const;
 type StoreView = (typeof STORE_VIEWS)[number];
 
 const VIEW_SUBNAV = {
@@ -63,7 +62,6 @@ const VIEW_SUBNAV = {
     { id: "bundles", label: "Bundles" },
     { id: "bundle-items", label: "Itens bundle" },
   ] as const,
-  settings: [{ id: "preferences", label: "Preferências" }] as const,
 } as const;
 
 const DEFAULT_SUB_BY_VIEW: Record<StoreView, string | undefined> = {
@@ -72,7 +70,6 @@ const DEFAULT_SUB_BY_VIEW: Record<StoreView, string | undefined> = {
   orders: "orders",
   shipping: "settings",
   marketing: "bundles",
-  settings: "preferences",
 };
 
 function parseStoreView(raw: string | null): StoreView {
@@ -105,7 +102,6 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
       categories: `${base}/categories`,
       products: `${base}/products`,
       orders: `${base}/orders`,
-      settings: `${base}/settings`,
       shippingSettings: `${base}/shipping/settings`,
       shippingZones: `${base}/shipping/zones`,
       bundles: `${base}/bundles`,
@@ -262,8 +258,7 @@ export default function OrgStoreToolClient({ orgId }: OrgStoreToolClientProps) {
         />
       );
     }
-
-    return <StoreSettingsPanel endpoint={endpoints.settings} storeEnabled={storeEnabled} />;
+    return null;
   };
 
   return (

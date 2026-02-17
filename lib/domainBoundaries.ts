@@ -22,6 +22,7 @@ export const POLICIES_ALLOWED_VIEWS = [
   "overview",
   "booking",
   "terms",
+  "store",
   "guardrails",
 ] as const;
 

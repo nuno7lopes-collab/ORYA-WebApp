@@ -25,8 +25,7 @@ type TicketsScreenProps = {
 type WalletListItem =
   | { kind: "skeleton"; key: string }
   | { kind: "entitlement"; entitlement: WalletEntitlement }
-  | { kind: "store-order"; order: StorePurchaseListItem }
-  | { kind: "section"; key: string; label: string };
+  | { kind: "store-order"; order: StorePurchaseListItem };
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";

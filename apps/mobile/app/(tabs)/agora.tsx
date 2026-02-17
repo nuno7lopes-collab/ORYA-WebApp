@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Animated,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { tokens, useTranslation } from "@orya/shared";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { useAgoraFeed } from "../../features/agora/hooks";
 import { useIpLocation } from "../../features/onboarding/hooks";
-import { EventCardSquare, EventCardSquareSkeleton } from "../../components/events/EventCardSquare";
+import {
+  EventCardSquare,
+  EventCardSquareSkeleton,
+} from "../../components/events/EventCardSquare";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
@@ -41,7 +52,6 @@ export default function AgoraScreen() {
     isFetchingNextPage,
     hasNextPage,
     fetchNextPage,
-    feedError,
     refetch,
   } = useAgoraFeed(dataReady);
   const { data: ipLocation } = useIpLocation(dataReady);
@@ -49,7 +59,7 @@ export default function AgoraScreen() {
   const userLon = ipLocation?.approxLatLon?.lon ?? null;
   const tabBarPadding = useTabBarPadding();
   const topPadding = useTopHeaderPadding(16);
-  const topBar = useTopBarScroll({ hideOffset: 16, showOffset: 50});
+  const topBar = useTopBarScroll({ hideOffset: 16, showOffset: 50 });
   const insets = useSafeAreaInsets();
   const floatingMapBottom = TAB_BAR_HEIGHT + Math.max(insets.bottom, 8) + 32;
   const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
@@ -89,14 +99,19 @@ export default function AgoraScreen() {
   const listData = useMemo(
     () =>
       showSkeleton
-        ? Array.from({ length: 5 }, (_, index) => ({ kind: "skeleton" as const, key: `agora-skeleton-${index}` }))
+        ? Array.from({ length: 5 }, (_, index) => ({
+            kind: "skeleton" as const,
+            key: `agora-skeleton-${index}`,
+          }))
         : filteredItems.map((event) => ({ kind: "event" as const, event })),
     [filteredItems, showSkeleton],
   );
 
   const keyExtractor = useCallback(
     (item: (typeof listData)[number]) =>
-      item.kind === "skeleton" ? item.key : `agora-${item.event.id}-${item.event.slug ?? "event"}`,
+      item.kind === "skeleton"
+        ? item.key
+        : `agora-${item.event.id}-${item.event.slug ?? "event"}`,
     [],
   );
 
@@ -113,10 +128,14 @@ export default function AgoraScreen() {
           showCountdown
           onHide={(payload) => {
             setHiddenEventIds((prev) =>
-              prev.includes(payload.eventId) ? prev : [...prev, payload.eventId],
+              prev.includes(payload.eventId)
+                ? prev
+                : [...prev, payload.eventId],
             );
             if (payload.scope === "category" && payload.tag) {
-              setHiddenTags((prev) => (prev.includes(payload.tag!) ? prev : [...prev, payload.tag!]));
+              setHiddenTags((prev) =>
+                prev.includes(payload.tag!) ? prev : [...prev, payload.tag!],
+              );
             }
           }}
         />
@@ -124,7 +143,6 @@ export default function AgoraScreen() {
     },
     [userLat, userLon],
   );
-
 
   useEffect(() => {
     setDataReady(isFocused);
@@ -145,17 +163,6 @@ export default function AgoraScreen() {
     }
   }, [isFetching, isFocused, refetch]);
 
-  useEffect(() => {
-    if (!isError) return;
-    const formatError = (err: unknown) =>
-      err instanceof Error
-        ? { name: err.name, message: err.message, stack: err.stack }
-        : { message: String(err ?? "") };
-    console.warn("[agora] feed_error", {
-      feed: feedError ? formatError(feedError) : null,
-    });
-  }, [feedError, isError]);
-
   return (
     <View collapsable={false} style={{ flex: 1 }}>
       <LiquidBackground variant="solid">
@@ -174,7 +181,11 @@ export default function AgoraScreen() {
           renderItem={renderItem}
           onRefresh={handleRefresh}
           refreshing={manualRefreshing}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: tabBarPadding, paddingTop: topPadding }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingBottom: tabBarPadding,
+            paddingTop: topPadding,
+          }}
           onScroll={topBar.onScroll}
           onScrollEndDrag={topBar.onScrollEndDrag}
           onMomentumScrollEnd={topBar.onMomentumScrollEnd}
@@ -188,7 +199,9 @@ export default function AgoraScreen() {
             <View>
               {isError ? (
                 <GlassCard className="mb-5" intensity={52}>
-                  <Text className="text-red-300 text-sm mb-3">{t("agora:error")}</Text>
+                  <Text className="text-red-300 text-sm mb-3">
+                    {t("agora:error")}
+                  </Text>
                   <Pressable
                     className="rounded-xl bg-white/10 px-4 py-3"
                     onPress={() => refetch()}
@@ -208,7 +221,9 @@ export default function AgoraScreen() {
           ListEmptyComponent={
             !showSkeleton && !isError ? (
               <GlassCard intensity={50}>
-                <Text className="text-white/70 text-sm">{t("agora:empty")}</Text>
+                <Text className="text-white/70 text-sm">
+                  {t("agora:empty")}
+                </Text>
                 <Pressable
                   onPress={() => navigation.navigate("index" as never)}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
@@ -238,62 +253,74 @@ export default function AgoraScreen() {
           onEndReachedThreshold={0.4}
           estimatedItemSize={300}
         />
-          <Animated.View
-            pointerEvents={topBar.isHidden ? "none" : "box-none"}
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: floatingMapBottom,
-              alignItems: "center",
-              opacity: topBar.translateY.interpolate({
-                inputRange: [-topBar.height, 0],
-                outputRange: [0, 1],
-                extrapolate: "clamp",
-              }),
-              transform: [
-                {
-                  translateY: topBar.translateY.interpolate({
-                    inputRange: [-topBar.height, 0],
-                    outputRange: [24, 0],
-                    extrapolate: "clamp",
-                  }),
-                },
-              ],
-            }}
+        <Animated.View
+          pointerEvents={topBar.isHidden ? "none" : "box-none"}
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: floatingMapBottom,
+            alignItems: "center",
+            opacity: topBar.translateY.interpolate({
+              inputRange: [-topBar.height, 0],
+              outputRange: [0, 1],
+              extrapolate: "clamp",
+            }),
+            transform: [
+              {
+                translateY: topBar.translateY.interpolate({
+                  inputRange: [-topBar.height, 0],
+                  outputRange: [24, 0],
+                  extrapolate: "clamp",
+                }),
+              },
+            ],
+          }}
+        >
+          <Pressable
+            onPress={() => router.push("/map")}
+            accessibilityRole="button"
+            accessibilityLabel={t("agora:openMap")}
+            style={({ pressed }) => [
+              styles.mapPill,
+              pressed && styles.mapPressed,
+            ]}
           >
-            <Pressable
-              onPress={() => router.push("/map")}
-              accessibilityRole="button"
-              accessibilityLabel={t("agora:openMap")}
-              style={({ pressed }) => [styles.mapPill, pressed && styles.mapPressed]}
-            >
-              <View style={styles.mapCircle}>
-                <View pointerEvents="none" style={styles.mapFillWrap}>
-                  {USE_GLASS_BLUR ? (
-                    <BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
-                  ) : (
-                    <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(10, 15, 24, 0.88)" }]} />
-                  )}
-                  <LinearGradient
-                    colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+            <View style={styles.mapCircle}>
+              <View pointerEvents="none" style={styles.mapFillWrap}>
+                {USE_GLASS_BLUR ? (
+                  <BlurView
+                    tint="dark"
+                    intensity={50}
                     style={StyleSheet.absoluteFill}
                   />
-                </View>
-                <View pointerEvents="none" style={styles.mapBorder} />
-                <View style={styles.mapIconBox}>
-                  <Ionicons
-                    name="map-outline"
-                    size={MAP_ICON_SIZE}
-                    color="rgba(220,230,245,0.68)"
-                    style={styles.mapIcon}
+                ) : (
+                  <View
+                    style={[
+                      StyleSheet.absoluteFill,
+                      { backgroundColor: "rgba(10, 15, 24, 0.88)" },
+                    ]}
                   />
-                </View>
+                )}
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.02)", "rgba(0,0,0,0.08)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
               </View>
-            </Pressable>
-          </Animated.View>
+              <View pointerEvents="none" style={styles.mapBorder} />
+              <View style={styles.mapIconBox}>
+                <Ionicons
+                  name="map-outline"
+                  size={MAP_ICON_SIZE}
+                  color="rgba(220,230,245,0.68)"
+                  style={styles.mapIcon}
+                />
+              </View>
+            </View>
+          </Pressable>
+        </Animated.View>
       </LiquidBackground>
     </View>
   );

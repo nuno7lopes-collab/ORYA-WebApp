@@ -14,7 +14,11 @@ import {
 } from "@/lib/reservas/scopedAvailability";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  getResourceModeBlockedPayload,
+  normalizeReservationAssignmentMode,
+  resolveServiceAssignmentMode,
+} from "@/lib/reservas/serviceAssignment";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
@@ -32,7 +36,7 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.STAFF,
 ];
 
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 function fail(
   ctx: { requestId: string; correlationId: string },
@@ -160,6 +164,7 @@ async function _POST(
             id: true,
             organizationId: true,
             kind: true,
+            assignmentMode: true,
             durationMinutes: true,
             unitPriceCents: true,
             currency: true,
@@ -167,7 +172,9 @@ async function _POST(
             resourceLinks: {
               select: { resourceId: true, resource: { select: { isActive: true, capacity: true, courtId: true } } },
             },
-            organization: { select: { timezone: true, reservationAssignmentMode: true } },
+            organization: {
+              select: { timezone: true, reservationAssignmentMode: true, orgRescheduleWindowMinutes: true },
+            },
           },
         },
       },
@@ -220,23 +227,34 @@ async function _POST(
     const timezone = booking.service.organization?.timezone || "Europe/Lisbon";
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 15 minutos.");
+      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 5 minutos.");
     }
 
     if (startsAt <= new Date()) {
       return fail(ctx, 400, "TIME_PASSED", "Este horário já passou.");
     }
     const now = new Date();
-    const hoursUntilBooking = (booking.startsAt.getTime() - now.getTime()) / (60 * 60 * 1000);
-    if (hoursUntilBooking < 4) {
+    const orgRescheduleWindowMinutes = Math.max(
+      0,
+      booking.service.organization?.orgRescheduleWindowMinutes ?? 240,
+    );
+    const msUntilBooking = booking.startsAt.getTime() - now.getTime();
+    if (msUntilBooking < orgRescheduleWindowMinutes * 60 * 1000) {
       return fail(ctx, 400, "RESCHEDULE_WINDOW_EXPIRED", "Prazo de reagendamento expirado.");
     }
 
     const assignmentConfig = resolveServiceAssignmentMode({
       organizationMode: booking.service.organization?.reservationAssignmentMode ?? null,
+      serviceMode: booking.service.assignmentMode ?? null,
       serviceKind: booking.service.kind ?? null,
     });
-    const assignmentMode = booking.assignmentMode ?? assignmentConfig.mode;
+    const bookingAssignmentMode = normalizeReservationAssignmentMode(
+      booking.assignmentMode ?? assignmentConfig.assignmentMode,
+    );
+    const assignmentMode =
+      bookingAssignmentMode === "RESOURCE_ONLY" || bookingAssignmentMode === "PROFESSIONAL_AND_RESOURCE"
+        ? "RESOURCE"
+        : "PROFESSIONAL";
     if (!assignmentConfig.isCourtService && assignmentMode === "RESOURCE") {
       const blocked = getResourceModeBlockedPayload();
       return fail(

@@ -290,6 +290,139 @@ export async function POST(req: NextRequest, context: { params: { grantId: strin
       return jsonWrap({ ok: false, error: "GRANT_NOT_FOUND" }, { status: 404 });
     }
 
+    if (grant.status === "ACCEPTED") {
+      if (grant.kind === "EVENT_INVITE") {
+        if (grant.targetUserId && grant.targetUserId !== user.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        if (!(await canAccessEventGrant({
+          userId: user.id,
+          email: user.email ?? null,
+          entitlementId: grant.entitlementId,
+          eventId: grant.eventId,
+        }))) {
+          return jsonWrap({ ok: false, error: "CHECKIN_REQUIRED" }, { status: 403 });
+        }
+        if (!grant.eventId) {
+          return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });
+        }
+
+        const conversationId = await ensureEventConversation(grant.eventId, grant.conversationId ?? null);
+        if (!conversationId) {
+          return jsonWrap({ ok: false, error: "CONVERSATION_NOT_FOUND" }, { status: 404 });
+        }
+        const conversation = await prisma.chatConversation.findUnique({
+          where: { id: conversationId },
+          select: { organizationId: true },
+        });
+        await prisma.chatConversationMember.upsert({
+          where: { conversationId_userId: { conversationId, userId: user.id } },
+          update: {
+            leftAt: null,
+            accessRevokedAt: null,
+          },
+          create: {
+            conversationId,
+            userId: user.id,
+            role: "MEMBER",
+            organizationId: conversation?.organizationId ?? null,
+          },
+        });
+        if (grant.conversationId !== conversationId || grant.targetUserId !== user.id) {
+          await prisma.chatAccessGrant.update({
+            where: { id: grant.id },
+            data: {
+              targetUserId: user.id,
+              conversationId,
+              updatedAt: new Date(),
+            },
+          });
+        }
+
+        return jsonWrap({
+          ok: true,
+          invite: {
+            id: grant.id,
+            threadId: grant.threadId ?? conversationId,
+            conversationId,
+            status: "ACCEPTED",
+            expiresAt: grant.expiresAt ? grant.expiresAt.toISOString() : null,
+          },
+          threadId: grant.threadId ?? conversationId,
+          conversationId,
+        });
+      }
+
+      if (grant.kind === "USER_DM_REQUEST") {
+        if (grant.targetUserId && grant.targetUserId !== user.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        if (!grant.requesterId) {
+          return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });
+        }
+        const conversationId =
+          grant.conversationId ?? (await ensureDmConversation(grant.requesterId, user.id, grant.requesterId));
+        if (!grant.conversationId || grant.targetUserId !== user.id) {
+          await prisma.chatAccessGrant.update({
+            where: { id: grant.id },
+            data: {
+              targetUserId: user.id,
+              conversationId,
+              updatedAt: new Date(),
+            },
+          });
+        }
+        return jsonWrap({ ok: true, conversationId });
+      }
+
+      if (grant.kind === "ORG_CONTACT_REQUEST" || grant.kind === "SERVICE_REQUEST") {
+        if (!orgContext?.organization?.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        const orgId = grant.targetOrganizationId ?? grant.organizationId;
+        if (!orgId || orgId !== orgContext.organization.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        if (!grant.requesterId) {
+          return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });
+        }
+        const contextType = grant.kind === "SERVICE_REQUEST" ? "SERVICE" : "ORG_CONTACT";
+        const conversationId =
+          grant.conversationId ??
+          (await ensureOrgOrServiceConversation({
+            organizationId: orgId,
+            requesterId: grant.requesterId,
+            contextType,
+            contextId: grant.contextId,
+            actorUserId: user.id,
+          }));
+        if (!grant.conversationId) {
+          await prisma.chatAccessGrant.update({
+            where: { id: grant.id },
+            data: {
+              conversationId,
+              resolvedByUserId: user.id,
+              updatedAt: new Date(),
+            },
+          });
+        }
+        return jsonWrap({ ok: true, conversationId });
+      }
+
+      if (grant.kind === "CHANNEL_CREATE_REQUEST") {
+        if (!orgContext?.organization?.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        const orgId = grant.targetOrganizationId ?? grant.organizationId;
+        if (!orgId || orgId !== orgContext.organization.id) {
+          return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+        }
+        if (grant.conversationId) {
+          return jsonWrap({ ok: true, conversationId: grant.conversationId });
+        }
+      }
+    }
+
     if (grant.status !== "PENDING") {
       return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 409 });
     }

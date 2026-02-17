@@ -102,7 +102,7 @@ type SplitState = {
   loading: boolean;
   saving: boolean;
   error: string | null;
-  status: "NONE" | "OPEN" | "COMPLETED" | "CANCELLED";
+  status: "NONE" | "OPEN" | "SETTLING" | "SETTLED" | "CHARGE_FAILED" | "DEBT_OPEN" | "CANCELLED";
   pricingMode: "FIXED" | "DYNAMIC";
   dynamicMode: "AMOUNT" | "PERCENT";
   fixedShare: string;
@@ -133,6 +133,24 @@ function formatInviteStatus(status: string) {
   if (status === "ACCEPTED") return "Aceite";
   if (status === "DECLINED") return "Recusado";
   return "Pendente";
+}
+
+function bookingUsesProfessional(mode: string | null | undefined) {
+  const normalized = typeof mode === "string" ? mode.trim().toUpperCase() : "";
+  return (
+    normalized === "PROFESSIONAL" ||
+    normalized === "PROFESSIONAL_ONLY" ||
+    normalized === "PROFESSIONAL_AND_RESOURCE"
+  );
+}
+
+function bookingUsesResource(mode: string | null | undefined) {
+  const normalized = typeof mode === "string" ? mode.trim().toUpperCase() : "";
+  return (
+    normalized === "RESOURCE" ||
+    normalized === "RESOURCE_ONLY" ||
+    normalized === "PROFESSIONAL_AND_RESOURCE"
+  );
 }
 
 function formatHoldDeadline(pendingExpiresAt: string | null, createdAt: string) {
@@ -380,10 +398,10 @@ export default function MinhasReservasPage() {
     });
     try {
       const qs = new URLSearchParams({ day });
-      if (booking.assignmentMode === "PROFESSIONAL" && booking.professional?.id) {
+      if (bookingUsesProfessional(booking.assignmentMode) && booking.professional?.id) {
         qs.set("professionalId", String(booking.professional.id));
       }
-      if (booking.assignmentMode === "RESOURCE" && booking.partySize) {
+      if (bookingUsesResource(booking.assignmentMode) && booking.partySize) {
         qs.set("partySize", String(booking.partySize));
       }
       if (booking.durationMinutes) {
@@ -458,10 +476,10 @@ export default function MinhasReservasPage() {
     );
     try {
       const qs = new URLSearchParams({ day });
-      if (booking.assignmentMode === "PROFESSIONAL" && booking.professional?.id) {
+      if (bookingUsesProfessional(booking.assignmentMode) && booking.professional?.id) {
         qs.set("professionalId", String(booking.professional.id));
       }
-      if (booking.assignmentMode === "RESOURCE" && booking.partySize) {
+      if (bookingUsesResource(booking.assignmentMode) && booking.partySize) {
         qs.set("partySize", String(booking.partySize));
       }
       if (booking.durationMinutes) {
@@ -877,7 +895,7 @@ export default function MinhasReservasPage() {
 
   const saveSplit = async () => {
     if (!splitState || splitState.saving || splitState.loading) return;
-    if (splitState.paidCents > 0 || splitState.status === "COMPLETED") return;
+    if (splitState.paidCents > 0 || splitState.status === "SETTLED") return;
     if (!splitSummary?.valid) {
       setSplitState((prev) => (prev ? { ...prev, error: "Revê os valores do split." } : prev));
       return;
@@ -1584,8 +1602,14 @@ export default function MinhasReservasPage() {
                               <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/70">
                                 {splitState.status === "OPEN"
                                   ? "Ativo"
-                                  : splitState.status === "COMPLETED"
+                                  : splitState.status === "SETTLING"
+                                    ? "Em acerto"
+                                  : splitState.status === "SETTLED"
                                     ? "Concluído"
+                                    : splitState.status === "CHARGE_FAILED"
+                                      ? "Falha de cobrança"
+                                      : splitState.status === "DEBT_OPEN"
+                                        ? "Dívida aberta"
                                     : "Cancelado"}
                               </span>
                             )}
@@ -1631,7 +1655,7 @@ export default function MinhasReservasPage() {
                                             prev ? { ...prev, pricingMode: e.target.value as SplitState["pricingMode"] } : prev,
                                           )
                                         }
-                                        disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED"}
+                                        disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                       >
                                         <option value="FIXED">Preço igual por pessoa</option>
                                         <option value="DYNAMIC">Preço dinâmico</option>
@@ -1648,7 +1672,7 @@ export default function MinhasReservasPage() {
                                               prev ? { ...prev, dynamicMode: e.target.value as SplitState["dynamicMode"] } : prev,
                                             )
                                           }
-                                          disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED"}
+                                          disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                         >
                                           <option value="AMOUNT">Valor</option>
                                           <option value="PERCENT">Percentagem</option>
@@ -1668,7 +1692,7 @@ export default function MinhasReservasPage() {
                                         onChange={(e) =>
                                           setSplitState((prev) => (prev ? { ...prev, fixedShare: e.target.value } : prev))
                                         }
-                                        disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED"}
+                                        disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                       />
                                     </label>
                                   )}
@@ -1679,7 +1703,7 @@ export default function MinhasReservasPage() {
                                       type="button"
                                       className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-white/70 hover:border-white/40"
                                       onClick={applyEqualSplit}
-                                      disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED"}
+                                      disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                     >
                                       Repartir automaticamente
                                     </button>
@@ -1688,7 +1712,7 @@ export default function MinhasReservasPage() {
                                   <div className="space-y-2">
                                     {splitState.participants.map((participant) => {
                                       const isLocked =
-                                        splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED";
+                                        splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED";
                                       const showAmount =
                                         splitState.pricingMode === "DYNAMIC" && splitState.dynamicMode === "AMOUNT";
                                       const showPercent =
@@ -1754,7 +1778,7 @@ export default function MinhasReservasPage() {
                                       onChange={(e) =>
                                         setSplitState((prev) => (prev ? { ...prev, deadlineAt: e.target.value } : prev))
                                       }
-                                      disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "COMPLETED"}
+                                      disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                     />
                                   </label>
 
@@ -1775,7 +1799,7 @@ export default function MinhasReservasPage() {
                                     disabled={
                                       splitState.saving ||
                                       splitState.paidCents > 0 ||
-                                      splitState.status === "COMPLETED" ||
+                                      splitState.status === "SETTLED" ||
                                       !splitSummary?.valid
                                     }
                                   >

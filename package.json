@@ -24,6 +24,11 @@
     "typecheck": "cross-env NODE_OPTIONS=--max-old-space-size=4096 tsc -p tsconfig.typecheck.json --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:ui:web": "node scripts/run-playwright-ui.mjs",
+    "test:ui:a11y": "node scripts/run-playwright-ui.mjs --grep @a11y",
+    "test:ui:responsive": "node scripts/run-playwright-ui.mjs --grep @responsive",
+    "test:ui:mobile": "npm --prefix apps/mobile test -- --runInBand",
+    "gate:ui-ux": "node scripts/uiux_gate.mjs",
     "worker": "node scripts/operations-loop.js",
     "finance:seed-real-cycles": "node scripts/finance_seed_real_cycles.mjs",
     "finance:prove-cycles": "npm run finance:seed-real-cycles && npm run gate:finance-ops",
@@ -119,6 +124,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/nodemailer": "^7.0.9",
@@ -127,6 +133,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.0.18",
+    "axe-core": "^4.11.1",
     "baseline-browser-mapping": "^2.9.0",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",

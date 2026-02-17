@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
@@ -25,23 +26,44 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
 import { useAuth } from "../../lib/auth";
-import { useCheckoutStore, buildCheckoutIdempotencyKey } from "../../features/checkout/store";
-import { createCheckoutIntent, createPairingCheckoutIntent } from "../../features/checkout/api";
-import { createPairing, joinOpenPairing, acceptInvite, declineInvite } from "../../features/tournaments/api";
-import { useMyPairings, useOpenPairings, usePadelMatches, usePadelStandings } from "../../features/tournaments/hooks";
+import {
+  useCheckoutStore,
+  buildCheckoutIdempotencyKey,
+} from "../../features/checkout/store";
+import {
+  createCheckoutIntent,
+  createPairingCheckoutIntent,
+} from "../../features/checkout/api";
+import {
+  createPairing,
+  joinOpenPairing,
+  acceptInvite,
+  declineInvite,
+} from "../../features/tournaments/api";
+import {
+  useMyPairings,
+  useOpenPairings,
+  usePadelMatches,
+  usePadelStandings,
+} from "../../features/tournaments/hooks";
 import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyCTA } from "../../components/events/StickyCTA";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
+import { resolveMediaUri } from "../../lib/media";
 import { trackEvent } from "../../lib/analytics";
 import { acceptMessageInvite } from "../../features/messages/api";
-import { useMessageInvites, useMessagesInbox } from "../../features/messages/hooks";
+import {
+  useMessageInvites,
+  useMessagesInbox,
+} from "../../features/messages/hooks";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
+import * as Haptics from "expo-haptics";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -49,7 +71,11 @@ const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
     const start = new Date(startsAt);
     const end = endsAt ? new Date(endsAt) : null;
 
-    const date = formatDate(start, { weekday: "short", day: "2-digit", month: "short" });
+    const date = formatDate(start, {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+    });
     const startTime = formatTime(start);
 
     if (!end || Number.isNaN(end.getTime())) return `${date} · ${startTime}`;
@@ -95,24 +121,34 @@ const resolveTicketStatusLabel = (
 ): string => {
   if (status === "CLOSED") return t("events:tickets.closed");
   if (status === "UPCOMING") return t("events:tickets.upcoming");
-  if (status === "SOLD_OUT" || remaining === 0) return t("events:tickets.soldOut");
+  if (status === "SOLD_OUT" || remaining === 0)
+    return t("events:tickets.soldOut");
   return t("events:tickets.available");
 };
 
-const resolveAccessBadge = (mode: string | null | undefined, t: (key: string) => string) => {
+const resolveAccessBadge = (
+  mode: string | null | undefined,
+  t: (key: string) => string,
+) => {
   const normalized = mode?.toUpperCase();
-  if (normalized === "PUBLIC") return { label: t("events:access.public"), variant: "accent" as const };
-  if (normalized === "INVITE_ONLY") return { label: t("events:access.invite"), variant: "muted" as const };
+  if (normalized === "PUBLIC")
+    return { label: t("events:access.public"), variant: "accent" as const };
+  if (normalized === "INVITE_ONLY")
+    return { label: t("events:access.invite"), variant: "muted" as const };
   return { label: t("events:access.unlisted"), variant: "muted" as const };
 };
 
-const resolvePadelRegistrationLabel = (status: string | null | undefined, t: (key: string) => string) => {
+const resolvePadelRegistrationLabel = (
+  status: string | null | undefined,
+  t: (key: string) => string,
+) => {
   const normalized = status?.toUpperCase();
   if (normalized === "OPEN") return t("events:padel.registration.open");
   if (normalized === "NOT_OPEN") return t("events:padel.registration.notOpen");
   if (normalized === "CLOSED") return t("events:padel.registration.closed");
   if (normalized === "STARTED") return t("events:padel.registration.started");
-  if (normalized === "UNPUBLISHED") return t("events:padel.registration.unpublished");
+  if (normalized === "UNPUBLISHED")
+    return t("events:padel.registration.unpublished");
   return t("events:padel.registration.unavailable");
 };
 
@@ -126,8 +162,12 @@ const resolvePadelPaymentModeLabel = (
   return mode ?? null;
 };
 
-const resolvePairingLabel = (pairing: any, t: (key: string, options?: Record<string, unknown>) => string) => {
-  const explicitLabel = typeof pairing?.label === "string" ? pairing.label.trim() : "";
+const resolvePairingLabel = (
+  pairing: any,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => {
+  const explicitLabel =
+    typeof pairing?.label === "string" ? pairing.label.trim() : "";
   if (explicitLabel) return explicitLabel;
   if (Array.isArray(pairing?.players)) {
     const names = pairing.players
@@ -141,7 +181,10 @@ const resolvePairingLabel = (pairing: any, t: (key: string, options?: Record<str
       : t("events:padel.pairing.default");
   }
   const names = pairing.slots
-    .map((slot: any) => slot?.playerProfile?.fullName || slot?.playerProfile?.username)
+    .map(
+      (slot: any) =>
+        slot?.playerProfile?.fullName || slot?.playerProfile?.username,
+    )
     .filter(Boolean) as string[];
   if (names.length === 0) {
     return pairing?.id
@@ -151,11 +194,15 @@ const resolvePairingLabel = (pairing: any, t: (key: string, options?: Record<str
   return names.join(" / ");
 };
 
-const normalizeEmailValue = (value?: string | null) => value?.trim().toLowerCase() ?? "";
+const normalizeEmailValue = (value?: string | null) =>
+  value?.trim().toLowerCase() ?? "";
 const normalizeUsernameValue = (value?: string | null) =>
   value?.trim().replace(/^@+/, "").toLowerCase() ?? "";
 
-const mapInviteTokenReason = (reason: string | null | undefined, t: (key: string) => string) => {
+const mapInviteTokenReason = (
+  reason: string | null | undefined,
+  t: (key: string) => string,
+) => {
   switch ((reason ?? "").toUpperCase()) {
     case "INVITE_TOKEN_NOT_ALLOWED":
       return t("events:invite.tokenNotAllowed");
@@ -192,7 +239,8 @@ export default function EventDetail() {
   const router = useRouter();
   const navigation = useNavigation();
   const source = useMemo(
-    () => (Array.isArray(params.source) ? params.source[0] : params.source) ?? null,
+    () =>
+      (Array.isArray(params.source) ? params.source[0] : params.source) ?? null,
     [params.source],
   );
   const slugValue = useMemo(
@@ -200,13 +248,16 @@ export default function EventDetail() {
     [params.slug],
   );
   const eventTitleValue = useMemo(
-    () => (Array.isArray(params.eventTitle) ? params.eventTitle[0] : params.eventTitle) ?? null,
+    () =>
+      (Array.isArray(params.eventTitle)
+        ? params.eventTitle[0]
+        : params.eventTitle) ?? null,
     [params.eventTitle],
   );
   const previewCoverValue = useMemo(() => {
     const value = params.coverImageUrl;
-    if (Array.isArray(value)) return value[0];
-    return value ?? null;
+    const raw = Array.isArray(value) ? value[0] : value ?? null;
+    return resolveMediaUri(raw);
   }, [params.coverImageUrl]);
   const previewDescription = useMemo(() => {
     const value = params.shortDescription;
@@ -254,7 +305,8 @@ export default function EventDetail() {
 
   const nextRoute = useMemo(() => {
     if (!slugValue) return fallbackRoute;
-    if (source) return `/event/${slugValue}?source=${encodeURIComponent(source)}`;
+    if (source)
+      return `/event/${slugValue}?source=${encodeURIComponent(source)}`;
     return `/event/${slugValue}`;
   }, [fallbackRoute, slugValue, source]);
 
@@ -277,7 +329,9 @@ export default function EventDetail() {
     return value ?? null;
   }, [params.hostName]);
   const previewImageTag = useMemo(() => {
-    const raw = Array.isArray(params.imageTag) ? params.imageTag[0] : params.imageTag;
+    const raw = Array.isArray(params.imageTag)
+      ? params.imageTag[0]
+      : params.imageTag;
     const normalized = typeof raw === "string" ? raw.trim() : "";
     return normalized ? normalized : null;
   }, [params.imageTag]);
@@ -291,18 +345,33 @@ export default function EventDetail() {
     if (Array.isArray(raw)) return raw[0] ?? null;
     return raw ?? null;
   }, [params.pairingId]);
-  const { data, isLoading, isError, error, refetch } = useEventDetail(slugValue ?? "");
+  const { data, isLoading, isError, error, refetch } = useEventDetail(
+    slugValue ?? "",
+  );
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const profileSummaryQuery = useProfileSummary(Boolean(accessToken), accessToken, session?.user?.id ?? null);
+  const profileSummaryQuery = useProfileSummary(
+    Boolean(accessToken),
+    accessToken,
+    session?.user?.id ?? null,
+  );
   const profileSummary = profileSummaryQuery.data ?? null;
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
+  const heroHeight = useMemo(
+    () => Math.max(236, Math.min(320, Math.round(screenWidth * 0.72))),
+    [screenWidth],
+  );
   const env = getMobileEnv();
   const transitionSource = params.source === "discover" ? "discover" : "direct";
-  const fade = useRef(new Animated.Value(transitionSource === "discover" ? 0 : 0.2)).current;
-  const translate = useRef(new Animated.Value(transitionSource === "discover" ? 20 : 10)).current;
+  const fade = useRef(
+    new Animated.Value(transitionSource === "discover" ? 0 : 0.2),
+  ).current;
+  const translate = useRef(
+    new Animated.Value(transitionSource === "discover" ? 20 : 10),
+  ).current;
   const scrollY = useRef(new Animated.Value(0)).current;
   const viewSentRef = useRef(false);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
@@ -322,13 +391,23 @@ export default function EventDetail() {
     normalized?: string | null;
     type?: "email" | "username" | null;
   }>({ status: "idle" });
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+    null,
+  );
   const [paymentMode, setPaymentMode] = useState<"FULL" | "SPLIT">("FULL");
-  const [joinMode, setJoinMode] = useState<"INVITE_PARTNER" | "LOOKING_FOR_PARTNER">("INVITE_PARTNER");
+  const [joinMode, setJoinMode] = useState<
+    "INVITE_PARTNER" | "LOOKING_FOR_PARTNER"
+  >("INVITE_PARTNER");
   const [inviteContact, setInviteContact] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
   const [pairingActionBusy, setPairingActionBusy] = useState(false);
   const [inviteAccepting, setInviteAccepting] = useState(false);
+
+  const triggerLightHaptic = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
+      () => undefined,
+    );
+  }, []);
 
   useEffect(() => {
     const eventId = data?.id;
@@ -350,6 +429,7 @@ export default function EventDetail() {
   }, [data?.id]);
 
   const handleBack = () => {
+    triggerLightHaptic();
     safeBack(router, navigation, fallbackRoute);
   };
   const accessMode = data?.accessPolicy?.mode ?? null;
@@ -384,28 +464,43 @@ export default function EventDetail() {
     (!session?.user?.id || identifierMatchesAccount);
   const canAccessInvite = !isInviteOnly || inviteValid || inviteIdentifierValid;
   const gateLocked = isInviteOnly && !inviteValid && !inviteIdentifierValid;
-  const inviteIdentifierNeedsLogin = inviteIdentifierState.status === "invited" && !session?.user?.id;
+  const inviteIdentifierNeedsLogin =
+    inviteIdentifierState.status === "invited" && !session?.user?.id;
   const inviteIdentifierCheckingAccount =
-    inviteIdentifierState.status === "invited" && Boolean(session?.user?.id) && profileSummaryQuery.isLoading;
+    inviteIdentifierState.status === "invited" &&
+    Boolean(session?.user?.id) &&
+    profileSummaryQuery.isLoading;
   const inviteIdentifierMismatch =
     inviteIdentifierState.status === "invited" &&
     Boolean(session?.user?.id) &&
     !identifierMatchesAccount &&
     !profileSummaryQuery.isLoading;
   const isPadelEvent =
-    typeof data?.templateType === "string" ? data.templateType.toUpperCase() === "PADEL" : Boolean(data?.padel);
+    typeof data?.templateType === "string"
+      ? data.templateType.toUpperCase() === "PADEL"
+      : Boolean(data?.padel);
   const padelMeta = data?.padel ?? null;
-  const padelCategories = Array.isArray(padelMeta?.categories) ? padelMeta?.categories : [];
-  const visiblePadelCategories = padelCategories.filter((category) => !category.isHidden);
+  const padelCategories = Array.isArray(padelMeta?.categories)
+    ? padelMeta?.categories
+    : [];
+  const visiblePadelCategories = padelCategories.filter(
+    (category) => !category.isHidden,
+  );
   const registrationStatus = padelMeta?.registrationStatus ?? null;
   const registrationMessage =
-    padelMeta?.registrationMessage ?? resolvePadelRegistrationLabel(registrationStatus, t);
+    padelMeta?.registrationMessage ??
+    resolvePadelRegistrationLabel(registrationStatus, t);
   const registrationOpen = registrationStatus === "OPEN";
   const padelSnapshot = padelMeta?.snapshot ?? null;
-  const padelActionsDisabled = gateLocked || !registrationOpen || !padelMeta?.v2Enabled;
+  const padelActionsDisabled =
+    gateLocked || !registrationOpen || !padelMeta?.v2Enabled;
   const selectedPadelCategory =
-    visiblePadelCategories.find((category) => category.id === selectedCategoryId) ??
-    visiblePadelCategories.find((category) => category.id === padelMeta?.defaultCategoryId) ??
+    visiblePadelCategories.find(
+      (category) => category.id === selectedCategoryId,
+    ) ??
+    visiblePadelCategories.find(
+      (category) => category.id === padelMeta?.defaultCategoryId,
+    ) ??
     visiblePadelCategories[0] ??
     null;
   const activeCategoryId = selectedPadelCategory?.id ?? null;
@@ -414,12 +509,18 @@ export default function EventDetail() {
     Animated.parallel([
       Animated.timing(fade, {
         toValue: 1,
-        duration: transitionSource === "discover" ? tokens.motion.normal + 120 : tokens.motion.normal,
+        duration:
+          transitionSource === "discover"
+            ? tokens.motion.normal + 120
+            : tokens.motion.normal,
         useNativeDriver: true,
       }),
       Animated.timing(translate, {
         toValue: 0,
-        duration: transitionSource === "discover" ? tokens.motion.normal + 120 : tokens.motion.normal,
+        duration:
+          transitionSource === "discover"
+            ? tokens.motion.normal + 120
+            : tokens.motion.normal,
         useNativeDriver: true,
       }),
     ]).start();
@@ -429,15 +530,21 @@ export default function EventDetail() {
     async (token: string) => {
       const trimmed = token.trim();
       if (!trimmed || !slugValue) {
-        setInviteState({ status: "invalid", message: t("events:invite.tokenInvalid") });
+        setInviteState({
+          status: "invalid",
+          message: t("events:invite.tokenInvalid"),
+        });
         return;
       }
       setInviteState({ status: "checking" });
       try {
-        const response = await api.request<unknown>(`/api/eventos/${encodeURIComponent(slugValue)}/invite-token`, {
-          method: "POST",
-          body: JSON.stringify({ token: trimmed }),
-        });
+        const response = await api.request<unknown>(
+          `/api/eventos/${encodeURIComponent(slugValue)}/invite-token`,
+          {
+            method: "POST",
+            body: JSON.stringify({ token: trimmed }),
+          },
+        );
         const result = unwrapApiResponse<{
           allow?: boolean;
           reason?: string;
@@ -450,7 +557,9 @@ export default function EventDetail() {
             message:
               reasonMessage ??
               (result.reason
-                ? t("events:invite.invalidWithReason", { reason: result.reason })
+                ? t("events:invite.invalidWithReason", {
+                    reason: result.reason,
+                  })
                 : t("events:invite.invalid")),
           });
           return;
@@ -459,7 +568,8 @@ export default function EventDetail() {
           status: "valid",
           token: trimmed,
           ticketTypeId:
-            typeof result.ticketTypeId === "number" && Number.isFinite(result.ticketTypeId)
+            typeof result.ticketTypeId === "number" &&
+            Number.isFinite(result.ticketTypeId)
               ? result.ticketTypeId
               : null,
         });
@@ -481,15 +591,21 @@ export default function EventDetail() {
     async (identifier: string) => {
       const trimmed = identifier.trim();
       if (!trimmed || !slugValue) {
-        setInviteIdentifierState({ status: "invalid", message: t("events:invite.identifierInvalid") });
+        setInviteIdentifierState({
+          status: "invalid",
+          message: t("events:invite.identifierInvalid"),
+        });
         return;
       }
       setInviteIdentifierState({ status: "checking" });
       try {
-        const response = await api.request<unknown>(`/api/eventos/${encodeURIComponent(slugValue)}/invites/check`, {
-          method: "POST",
-          body: JSON.stringify({ identifier: trimmed }),
-        });
+        const response = await api.request<unknown>(
+          `/api/eventos/${encodeURIComponent(slugValue)}/invites/check`,
+          {
+            method: "POST",
+            body: JSON.stringify({ identifier: trimmed }),
+          },
+        );
         const result = unwrapApiResponse<{
           invited?: boolean;
           type?: "email" | "username";
@@ -511,13 +627,16 @@ export default function EventDetail() {
             message:
               message ??
               (result.reason
-                ? t("events:invite.notFoundWithReason", { reason: result.reason })
+                ? t("events:invite.notFoundWithReason", {
+                    reason: result.reason,
+                  })
                 : t("events:invite.notFound")),
           });
           return;
         }
         const resolvedType =
-          result.type ?? (trimmed.includes("@") ? ("email" as const) : ("username" as const));
+          result.type ??
+          (trimmed.includes("@") ? ("email" as const) : ("username" as const));
         const normalizedRaw = result.normalized ?? trimmed;
         const normalized =
           resolvedType === "email"
@@ -545,11 +664,21 @@ export default function EventDetail() {
   useEffect(() => {
     if (!isInviteOnly) return;
     if (!inviteTokenParam) return;
-    if (inviteState.status === "valid" && inviteState.token === inviteTokenParam) return;
+    if (
+      inviteState.status === "valid" &&
+      inviteState.token === inviteTokenParam
+    )
+      return;
     if (inviteState.status === "checking") return;
     setInviteTokenInput(inviteTokenParam);
     validateInviteToken(inviteTokenParam);
-  }, [inviteTokenParam, inviteState.status, inviteState.token, isInviteOnly, validateInviteToken]);
+  }, [
+    inviteTokenParam,
+    inviteState.status,
+    inviteState.token,
+    isInviteOnly,
+    validateInviteToken,
+  ]);
 
   const ticketTypes = useMemo(() => {
     const list = data?.ticketTypes ?? [];
@@ -557,15 +686,20 @@ export default function EventDetail() {
       typeof inviteTicketTypeId === "number"
         ? list.filter((ticket) => ticket.id === inviteTicketTypeId)
         : list;
-    return [...filtered].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    return [...filtered].sort(
+      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+    );
   }, [data?.ticketTypes, inviteTicketTypeId]);
 
   const purchasableTickets = useMemo(() => {
     return ticketTypes.filter((ticket) => {
       const remaining =
-        ticket.totalQuantity != null ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0) : null;
+        ticket.totalQuantity != null
+          ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
+          : null;
       const status = ticket.status ?? null;
-      if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING") return false;
+      if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING")
+        return false;
       if (remaining === 0) return false;
       return true;
     });
@@ -585,11 +719,18 @@ export default function EventDetail() {
     if (selectedCategoryId !== null) return;
     const fallbackId =
       padelMeta?.defaultCategoryId ??
-      visiblePadelCategories.find((category) => category.isEnabled && !category.isHidden)?.id ??
+      visiblePadelCategories.find(
+        (category) => category.isEnabled && !category.isHidden,
+      )?.id ??
       visiblePadelCategories[0]?.id ??
       null;
     if (fallbackId) setSelectedCategoryId(fallbackId);
-  }, [isPadelEvent, padelMeta?.defaultCategoryId, selectedCategoryId, visiblePadelCategories]);
+  }, [
+    isPadelEvent,
+    padelMeta?.defaultCategoryId,
+    selectedCategoryId,
+    visiblePadelCategories,
+  ]);
 
   const selectedTicket = useMemo(
     () => ticketTypes.find((ticket) => ticket.id === selectedTicketId) ?? null,
@@ -599,17 +740,26 @@ export default function EventDetail() {
   const ticketRemaining = useMemo(() => {
     if (!selectedTicket) return null;
     if (selectedTicket.totalQuantity == null) return null;
-    return Math.max(selectedTicket.totalQuantity - (selectedTicket.soldQuantity ?? 0), 0);
+    return Math.max(
+      selectedTicket.totalQuantity - (selectedTicket.soldQuantity ?? 0),
+      0,
+    );
   }, [selectedTicket]);
 
   const ticketStatusLabel = useMemo(
-    () => resolveTicketStatusLabel(selectedTicket?.status ?? null, ticketRemaining, t),
+    () =>
+      resolveTicketStatusLabel(
+        selectedTicket?.status ?? null,
+        ticketRemaining,
+        t,
+      ),
     [selectedTicket?.status, t, ticketRemaining],
   );
   const ticketIsAvailable = useMemo(() => {
     if (!selectedTicket) return false;
     const status = selectedTicket.status ?? null;
-    if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING") return false;
+    if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING")
+      return false;
     if (ticketRemaining === 0) return false;
     return true;
   }, [selectedTicket, ticketRemaining]);
@@ -637,6 +787,28 @@ export default function EventDetail() {
   }, [isFreeTicket, ticketQuantity]);
 
   const totalCents = selectedTicket ? selectedTicket.price * ticketQuantity : 0;
+  const ticketInventory = useMemo(() => {
+    const totals = ticketTypes
+      .filter((ticket) => typeof ticket.totalQuantity === "number")
+      .map((ticket) => ({
+        total: ticket.totalQuantity ?? 0,
+        sold: ticket.soldQuantity ?? 0,
+      }));
+    if (totals.length === 0) return null;
+    const total = totals.reduce((sum, item) => sum + item.total, 0);
+    const sold = totals.reduce((sum, item) => sum + item.sold, 0);
+    const remaining = Math.max(total - sold, 0);
+    return { total, sold, remaining };
+  }, [ticketTypes]);
+  const ticketInventoryLabel = useMemo(() => {
+    if (!ticketInventory) return null;
+    if (ticketInventory.remaining === 0) return t("events:tickets.soldOut");
+    if (ticketInventory.remaining <= 8)
+      return t("events:tickets.lastSeats", {
+        count: ticketInventory.remaining,
+      });
+    return t("events:tickets.remaining", { count: ticketInventory.remaining });
+  }, [t, ticketInventory]);
   const canInitiateCheckout =
     Boolean(selectedTicket) &&
     hasPurchasableTickets &&
@@ -645,37 +817,64 @@ export default function EventDetail() {
     !isError &&
     canAccessInvite &&
     eventIsActive;
-  const ctaLabel = isFreeTicket ? t("events:detail.ctaJoin") : t("events:detail.ctaBuy");
+  const ctaLabel = isFreeTicket
+    ? t("events:detail.ctaJoin")
+    : t("events:detail.ctaBuy");
 
-  const cover = data?.coverImageUrl ?? null;
+  const cover = resolveMediaUri(data?.coverImageUrl ?? null);
   const category = data?.categories?.[0] ?? null;
   const date = formatDateRange(data?.startsAt, data?.endsAt);
-  const location = data?.location?.formattedAddress || data?.location?.city || null;
+  const location =
+    data?.location?.formattedAddress || data?.location?.city || null;
   const price =
     typeof data?.priceFrom === "number"
       ? data.priceFrom <= 0
         ? t("common:price.free")
-        : t("common:price.from", { price: formatCurrency(data.priceFrom, "EUR") })
+        : t("common:price.from", {
+            price: formatCurrency(data.priceFrom, "EUR"),
+          })
       : null;
   const description = data?.description ?? data?.shortDescription ?? null;
-  const showPreview = isLoading && !data && (eventTitleValue || previewCoverValue || previewDescription);
-  const previewDate = previewStartsAt ? formatDateRange(previewStartsAt, previewEndsAt ?? undefined) : date;
+  const showPreview =
+    isLoading &&
+    !data &&
+    (eventTitleValue || previewCoverValue || previewDescription);
+  const previewDate = previewStartsAt
+    ? formatDateRange(previewStartsAt, previewEndsAt ?? undefined)
+    : date;
   const displayTitle = data?.title ?? eventTitleValue ?? null;
   const displayCategory = data?.categories?.[0] ?? previewCategory ?? category;
-  const displayCover = data?.coverImageUrl ?? previewCoverValue ?? cover;
-  const displayDescription = data?.shortDescription ?? data?.description ?? previewDescription ?? description;
-  const displayLocation = data?.location?.formattedAddress || data?.location?.city || previewLocation || location || null;
-  const displayPrice = data ? price : previewPrice ?? price;
-  const displayHost = data?.hostName ?? previewHost ?? data?.hostUsername ?? null;
+  const displayCover = cover ?? previewCoverValue ?? null;
+  const displayDescription =
+    data?.shortDescription ??
+    data?.description ??
+    previewDescription ??
+    description;
+  const displayLocation =
+    data?.location?.formattedAddress ||
+    data?.location?.city ||
+    previewLocation ||
+    location ||
+    null;
+  const displayPrice = data ? price : (previewPrice ?? price);
+  const displayHost =
+    data?.hostName ?? previewHost ?? data?.hostUsername ?? null;
   const hostUsername = data?.hostUsername ?? null;
+  const statusLabel = data ? resolveStatusLabel(data.status, t) : null;
   const handleHostPress = () => {
     if (hostUsername) {
       router.push(`/${hostUsername}`);
     }
   };
-  const displayImageTag = previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
+  const displayImageTag =
+    previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
   const showStickyCTA =
-    Boolean(data) && !isLoading && !isError && !isPadelEvent && canAccessInvite && eventIsActive;
+    Boolean(data) &&
+    !isLoading &&
+    !isError &&
+    !isPadelEvent &&
+    canAccessInvite &&
+    eventIsActive;
   const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
   const scrollBottomPadding = showStickyCTA
     ? showFavoriteCTA
@@ -683,7 +882,9 @@ export default function EventDetail() {
       : insets.bottom + 180
     : 36;
   const shareUrl =
-    data?.slug && env.apiBaseUrl ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}` : null;
+    data?.slug && env.apiBaseUrl
+      ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}`
+      : null;
   const mapUrl = useMemo(() => {
     if (!data) return null;
     const lat = data.location?.lat ?? null;
@@ -711,18 +912,38 @@ export default function EventDetail() {
     if (!eventId) return null;
     return (
       inboxQuery.data?.items?.find(
-        (item) => item.kind === "EVENT" && item.event?.id === eventId && item.conversationId,
+        (item) =>
+          item.kind === "EVENT" &&
+          item.event?.id === eventId &&
+          item.conversationId,
       ) ?? null
     );
   }, [data?.id, inboxQuery.data?.items]);
 
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
-  const openPairingsQuery = useOpenPairings(padelEventId, activeCategoryId, padelEnabled);
-  const myPairingsQuery = useMyPairings(padelEventId, padelEnabled && Boolean(session?.user?.id));
+  const openPairingsQuery = useOpenPairings(
+    padelEventId,
+    activeCategoryId,
+    padelEnabled,
+  );
+  const myPairingsQuery = useMyPairings(
+    padelEventId,
+    padelEnabled && Boolean(session?.user?.id),
+  );
   const liveEnabled = padelEnabled && padelMeta?.competitionState === "PUBLIC";
-  const standingsQuery = usePadelStandings(padelEventId, activeCategoryId, liveEnabled, liveEnabled);
-  const matchesQuery = usePadelMatches(padelEventId, activeCategoryId, liveEnabled, liveEnabled);
+  const standingsQuery = usePadelStandings(
+    padelEventId,
+    activeCategoryId,
+    liveEnabled,
+    liveEnabled,
+  );
+  const matchesQuery = usePadelMatches(
+    padelEventId,
+    activeCategoryId,
+    liveEnabled,
+    liveEnabled,
+  );
 
   const chatStatusLabel = useMemo(() => {
     const status = eventChatThread?.status;
@@ -736,12 +957,14 @@ export default function EventDetail() {
   const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
 
   const handleAcceptChatInvite = async () => {
+    triggerLightHaptic();
     if (!pendingInvite || inviteAccepting) return;
     setInviteAccepting(true);
     try {
       const result = await acceptMessageInvite(pendingInvite.id, accessToken);
       await Promise.all([inboxQuery.refetch(), inviteQuery.refetch()]);
-      const conversationId = result?.conversationId ?? pendingInvite.conversationId ?? null;
+      const conversationId =
+        result?.conversationId ?? pendingInvite.conversationId ?? null;
       if (conversationId && data?.id) {
         router.push({
           pathname: "/messages/[threadId]",
@@ -749,7 +972,7 @@ export default function EventDetail() {
             threadId: conversationId,
             eventId: String(data.id),
             title: data.title ?? "",
-            coverImageUrl: data.coverImageUrl ?? "",
+            coverImageUrl: cover ?? "",
             startsAt: data.startsAt ?? "",
             endsAt: data.endsAt ?? "",
             slug: data.slug ?? "",
@@ -767,6 +990,7 @@ export default function EventDetail() {
   };
 
   const handleShare = async () => {
+    triggerLightHaptic();
     if (!data) return;
     try {
       const message = shareUrl
@@ -778,6 +1002,7 @@ export default function EventDetail() {
     }
   };
   const handleOpenMap = async () => {
+    triggerLightHaptic();
     if (!mapUrl) return;
     try {
       await Linking.openURL(mapUrl);
@@ -787,13 +1012,17 @@ export default function EventDetail() {
   };
 
   const handleCreatePairing = async () => {
+    triggerLightHaptic();
     if (!data || !padelMeta) return;
     if (!session?.user?.id) {
       openAuth();
       return;
     }
     if (!activeCategoryId) {
-      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.categoryRequired"));
+      Alert.alert(
+        t("events:padel.registrationTitle"),
+        t("events:padel.categoryRequired"),
+      );
       return;
     }
     if (!registrationOpen) {
@@ -801,7 +1030,10 @@ export default function EventDetail() {
       return;
     }
     if (joinMode === "INVITE_PARTNER" && !inviteContact.trim()) {
-      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.partnerRequired"));
+      Alert.alert(
+        t("events:padel.registrationTitle"),
+        t("events:padel.partnerRequired"),
+      );
       return;
     }
     if (pairingBusy) return;
@@ -812,18 +1044,33 @@ export default function EventDetail() {
         categoryId: activeCategoryId,
         paymentMode,
         pairingJoinMode: joinMode,
-        invitedContact: joinMode === "INVITE_PARTNER" && inviteContact.trim() ? inviteContact.trim() : null,
+        invitedContact:
+          joinMode === "INVITE_PARTNER" && inviteContact.trim()
+            ? inviteContact.trim()
+            : null,
         isPublicOpen: joinMode === "LOOKING_FOR_PARTNER",
       });
       if (result.waitlist) {
-        Alert.alert(t("events:padel.waitlistTitle"), t("events:padel.waitlistBody"));
+        Alert.alert(
+          t("events:padel.waitlistTitle"),
+          t("events:padel.waitlistBody"),
+        );
       } else {
-        Alert.alert(t("events:padel.pairingCreatedTitle"), t("events:padel.pairingCreatedBody"));
+        Alert.alert(
+          t("events:padel.pairingCreatedTitle"),
+          t("events:padel.pairingCreatedBody"),
+        );
       }
-      await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
+      await Promise.all([
+        myPairingsQuery.refetch(),
+        openPairingsQuery.refetch(),
+      ]);
     } catch (err: any) {
       if (err?.message?.includes("PADEL_ONBOARDING_REQUIRED")) {
-        Alert.alert(t("events:padel.onboardingRequiredTitle"), t("events:padel.onboardingRequiredBody"));
+        Alert.alert(
+          t("events:padel.onboardingRequiredTitle"),
+          t("events:padel.onboardingRequiredBody"),
+        );
         router.push("/onboarding");
         return;
       }
@@ -837,6 +1084,7 @@ export default function EventDetail() {
   };
 
   const handleJoinOpenPairing = async (pairingId: number) => {
+    triggerLightHaptic();
     if (!session?.user?.id) {
       openAuth();
       return;
@@ -845,8 +1093,14 @@ export default function EventDetail() {
     setPairingBusy(true);
     try {
       await joinOpenPairing(pairingId);
-      Alert.alert(t("events:padel.pairingTitle"), t("events:padel.joinSuccess"));
-      await Promise.all([myPairingsQuery.refetch(), openPairingsQuery.refetch()]);
+      Alert.alert(
+        t("events:padel.pairingTitle"),
+        t("events:padel.joinSuccess"),
+      );
+      await Promise.all([
+        myPairingsQuery.refetch(),
+        openPairingsQuery.refetch(),
+      ]);
     } catch (err: any) {
       Alert.alert(
         t("events:padel.pairingTitle"),
@@ -858,6 +1112,7 @@ export default function EventDetail() {
   };
 
   const handleAcceptPairingInvite = async (pairingId: number) => {
+    triggerLightHaptic();
     if (pairingActionBusy) return;
     setPairingActionBusy(true);
     try {
@@ -874,6 +1129,7 @@ export default function EventDetail() {
   };
 
   const handleDeclinePairingInvite = async (pairingId: number) => {
+    triggerLightHaptic();
     if (pairingActionBusy) return;
     setPairingActionBusy(true);
     try {
@@ -890,6 +1146,7 @@ export default function EventDetail() {
   };
 
   const handleSharePairingInvite = async (token: string) => {
+    triggerLightHaptic();
     if (!token || !data?.slug || !env.apiBaseUrl) return;
     const baseUrl = env.apiBaseUrl.replace(/\/$/, "");
     const url = `${baseUrl}/eventos/${data.slug}?inviteToken=${encodeURIComponent(token)}`;
@@ -900,16 +1157,25 @@ export default function EventDetail() {
     }
   };
 
-  const handlePayPairing = async (pairing: { id: number; categoryId?: number | null }) => {
+  const handlePayPairing = async (pairing: {
+    id: number;
+    categoryId?: number | null;
+  }) => {
+    triggerLightHaptic();
     if (!data) return;
     if (!session?.user?.id) {
       openAuth();
       return;
     }
     const categoryLink =
-      padelCategories.find((category) => category.id === (pairing.categoryId ?? activeCategoryId)) ?? null;
+      padelCategories.find(
+        (category) => category.id === (pairing.categoryId ?? activeCategoryId),
+      ) ?? null;
     if (!categoryLink?.linkId) {
-      Alert.alert(t("events:padel.registrationTitle"), t("events:padel.invalidCategoryPayment"));
+      Alert.alert(
+        t("events:padel.registrationTitle"),
+        t("events:padel.invalidCategoryPayment"),
+      );
       return;
     }
     const idempotencyKey = buildCheckoutIdempotencyKey();
@@ -927,7 +1193,8 @@ export default function EventDetail() {
       });
       const unitPrice = categoryLink.pricePerPlayerCents ?? 0;
       const total = response.breakdown?.totalCents ?? unitPrice;
-      const currency = response.breakdown?.currency ?? categoryLink.currency ?? "EUR";
+      const currency =
+        response.breakdown?.currency ?? categoryLink.currency ?? "EUR";
       const isFree =
         response.freeCheckout ||
         response.isGratisCheckout ||
@@ -950,7 +1217,8 @@ export default function EventDetail() {
         eventId: data.id,
         eventTitle: data.title,
         ticketTypeId: categoryLink.linkId,
-        ticketName: categoryLink.label ?? t("events:padel.registrationTicketName"),
+        ticketName:
+          categoryLink.label ?? t("events:padel.registrationTicketName"),
         quantity: 1,
         unitPriceCents: unitPrice,
         totalCents: total,
@@ -966,7 +1234,8 @@ export default function EventDetail() {
         paymentIntentId: response.paymentIntentId ?? null,
         purchaseId: response.purchaseId ?? null,
         breakdown: response.breakdown ?? null,
-        freeCheckout: response.freeCheckout ?? response.isGratisCheckout ?? false,
+        freeCheckout:
+          response.freeCheckout ?? response.isGratisCheckout ?? false,
       });
       router.push("/checkout");
     } catch (err: any) {
@@ -996,14 +1265,16 @@ export default function EventDetail() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen
+        options={{ headerShown: false, animation: "slide_from_right" }}
+      />
       <LiquidBackground variant="solid">
         <Animated.View
           pointerEvents="box-none"
           style={{
             position: "absolute",
             zIndex: 50,
-            top: 40,
+            top: insets.top + 8,
             left: 20,
             right: 20,
             opacity: compactHeaderOpacity,
@@ -1011,10 +1282,20 @@ export default function EventDetail() {
         >
           <GlassCard intensity={52} padding={10}>
             <View className="flex-row items-center justify-between">
-              <Text className="text-white text-sm font-semibold" numberOfLines={1} style={{ flex: 1 }}>
-                {data?.title ?? eventTitleValue ?? t("events:detail.fallbackTitle")}
+              <Text
+                className="text-white text-sm font-semibold"
+                numberOfLines={1}
+                style={{ flex: 1 }}
+              >
+                {data?.title ??
+                  eventTitleValue ??
+                  t("events:detail.fallbackTitle")}
               </Text>
-              <Ionicons name="sparkles-outline" size={16} color="rgba(255,255,255,0.7)" />
+              <Ionicons
+                name="sparkles-outline"
+                size={16}
+                color="rgba(255,255,255,0.7)"
+              />
             </View>
           </GlassCard>
         </Animated.View>
@@ -1027,28 +1308,75 @@ export default function EventDetail() {
           )}
           scrollEventThrottle={16}
         >
-          <View className="px-5 pt-12 pb-4">
-            <Pressable
-              onPress={handleBack}
-              accessibilityRole="button"
-              accessibilityLabel={t("common:actions.back")}
-              style={{
-                width: tokens.layout.touchTarget,
-                height: tokens.layout.touchTarget,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Ionicons name="chevron-back" size={22} color={tokens.colors.text} />
-            </Pressable>
+          <View className="px-5 pb-4" style={{ paddingTop: insets.top + 8 }}>
+            <View className="flex-row items-center justify-between">
+              <Pressable
+                onPress={handleBack}
+                accessibilityRole="button"
+                accessibilityLabel={t("common:actions.back")}
+                style={({ pressed }) => [
+                  {
+                    width: tokens.layout.touchTarget,
+                    height: tokens.layout.touchTarget,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  },
+                  pressed
+                    ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
+                    : null,
+                ]}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={22}
+                  color={tokens.colors.text}
+                />
+              </Pressable>
+              <View className="flex-row items-center gap-2">
+                {data?.id ? (
+                  <FavoriteToggle
+                    eventId={data.id}
+                    size={18}
+                    style={{ width: 40, height: 40, borderRadius: 20 }}
+                  />
+                ) : null}
+                <Pressable
+                  onPress={handleShare}
+                  disabled={!data}
+                  className="h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10"
+                  style={({ pressed }) => [
+                    !data ? { opacity: 0.5 } : null,
+                    pressed && data
+                      ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
+                      : null,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t("common:actions.share")}
+                  accessibilityState={{ disabled: !data }}
+                >
+                  <Ionicons
+                    name="share-outline"
+                    size={16}
+                    color="rgba(255,255,255,0.88)"
+                  />
+                </Pressable>
+              </View>
+            </View>
           </View>
 
           {showPreview ? (
-            <Animated.View style={{ opacity: fade, transform: [{ translateY: translate }] }}>
+            <Animated.View
+              style={{ opacity: fade, transform: [{ translateY: translate }] }}
+            >
               <View className="px-5">
                 <View className="overflow-hidden rounded-[28px] border border-white/10">
                   {displayCover ? (
-                    <View style={{ height: 260, justifyContent: "space-between" }}>
+                    <View
+                      style={{
+                        height: heroHeight,
+                        justifyContent: "space-between",
+                      }}
+                    >
                       <Image
                         source={{ uri: displayCover }}
                         style={StyleSheet.absoluteFill}
@@ -1065,33 +1393,47 @@ export default function EventDetail() {
                       />
                       <View className="flex-row items-center justify-between px-4 pt-4">
                         <View className="flex-row items-center gap-2">
-                          {displayCategory ? <GlassPill label={displayCategory} /> : null}
-                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
+                          {displayCategory ? (
+                            <GlassPill label={displayCategory} />
+                          ) : null}
+                          <GlassPill
+                            label={accessBadge.label}
+                            variant={accessBadge.variant}
+                          />
                         </View>
                       </View>
                       <View className="px-4 pb-4 gap-2">
                         {displayTitle ? (
-                          <Text className="text-white text-2xl font-semibold">{displayTitle}</Text>
+                          <Text className="text-white text-2xl font-semibold">
+                            {displayTitle}
+                          </Text>
                         ) : null}
                         {displayDescription ? (
-                          <Text className="text-white/75 text-sm">{displayDescription}</Text>
+                          <Text className="text-white/75 text-sm">
+                            {displayDescription}
+                          </Text>
                         ) : null}
                       </View>
                     </View>
                   ) : (
                     <View
                       style={{
-                        height: 260,
+                        height: heroHeight,
                         backgroundColor: "rgba(255,255,255,0.08)",
                         justifyContent: "space-between",
                         paddingHorizontal: tokens.spacing.lg,
                         paddingVertical: tokens.spacing.lg,
                       }}
                     >
-                        <View className="flex-row items-center gap-2 self-start">
-                          {displayCategory ? <GlassPill label={displayCategory} /> : null}
-                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
-                        </View>
+                      <View className="flex-row items-center gap-2 self-start">
+                        {displayCategory ? (
+                          <GlassPill label={displayCategory} />
+                        ) : null}
+                        <GlassPill
+                          label={accessBadge.label}
+                          variant={accessBadge.variant}
+                        />
+                      </View>
                     </View>
                   )}
                 </View>
@@ -1105,21 +1447,64 @@ export default function EventDetail() {
                       <View className="flex-row flex-wrap gap-2">
                         {previewDate ? (
                           <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
-                            <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.8)" />
-                            <Text className="text-white/80 text-xs font-semibold">{previewDate}</Text>
+                            <Ionicons
+                              name="calendar-outline"
+                              size={14}
+                              color="rgba(255,255,255,0.8)"
+                            />
+                            <Text className="text-white/80 text-xs font-semibold">
+                              {previewDate}
+                            </Text>
                           </View>
                         ) : null}
                         {displayPrice ? (
                           <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                            <Ionicons name="pricetag-outline" size={14} color="rgba(255,255,255,0.85)" />
-                            <Text className="text-white text-xs font-semibold">{displayPrice}</Text>
+                            <Ionicons
+                              name="pricetag-outline"
+                              size={14}
+                              color="rgba(255,255,255,0.85)"
+                            />
+                            <Text className="text-white text-xs font-semibold">
+                              {displayPrice}
+                            </Text>
                           </View>
                         ) : null}
                         {displayLocation ? (
                           <View className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                            <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.7)" />
-                            <Text className="text-white/70 text-xs" numberOfLines={1}>
+                            <Ionicons
+                              name="location-outline"
+                              size={14}
+                              color="rgba(255,255,255,0.7)"
+                            />
+                            <Text
+                              className="text-white/70 text-xs"
+                              numberOfLines={1}
+                            >
                               {displayLocation}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {statusLabel ? (
+                          <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
+                            <Ionicons
+                              name="sparkles-outline"
+                              size={14}
+                              color="rgba(255,255,255,0.86)"
+                            />
+                            <Text className="text-white text-xs font-semibold">
+                              {statusLabel}
+                            </Text>
+                          </View>
+                        ) : null}
+                        {ticketInventoryLabel ? (
+                          <View className="flex-row items-center gap-2 rounded-full border border-white/12 bg-white/6 px-3 py-2">
+                            <Ionicons
+                              name="ticket-outline"
+                              size={14}
+                              color="rgba(255,255,255,0.72)"
+                            />
+                            <Text className="text-white/75 text-xs">
+                              {ticketInventoryLabel}
                             </Text>
                           </View>
                         ) : null}
@@ -1129,35 +1514,96 @@ export default function EventDetail() {
                           onPress={handleHostPress}
                           disabled={!hostUsername}
                           className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={({ pressed }) => [
+                            { minHeight: tokens.layout.touchTarget },
+                            pressed && hostUsername
+                              ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
+                              : null,
+                          ]}
                           accessibilityRole="button"
-                          accessibilityLabel={t("events:detail.openOrganizer", { name: displayHost })}
+                          accessibilityLabel={t("events:detail.openOrganizer", {
+                            name: displayHost,
+                          })}
                           accessibilityState={{ disabled: !hostUsername }}
                         >
                           <View className="flex-row items-center gap-2">
-                            <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.7)" />
+                            <Ionicons
+                              name="person-outline"
+                              size={16}
+                              color="rgba(255,255,255,0.7)"
+                            />
                             <Text className="text-white/80 text-sm">
-                              {t("events:detail.organizer", { name: displayHost })}
+                              {t("events:detail.organizer", {
+                                name: displayHost,
+                              })}
                             </Text>
                           </View>
-                          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+                          <Ionicons
+                            name="chevron-forward"
+                            size={16}
+                            color="rgba(255,255,255,0.5)"
+                          />
                         </Pressable>
                       ) : null}
-                      {mapUrl ? (
-                        <Pressable
-                          onPress={handleOpenMap}
-                          className="self-start rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("common:actions.openMap")}
-                        >
-                          <View className="flex-row items-center gap-2">
-                            <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
-                            <Text className="text-white/80 text-xs font-semibold">
-                              {t("common:actions.openMap")}
-                            </Text>
-                          </View>
-                        </Pressable>
+                      {mapUrl || data ? (
+                        <View className="flex-row flex-wrap gap-2">
+                          {mapUrl ? (
+                            <Pressable
+                              onPress={handleOpenMap}
+                              className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                              style={({ pressed }) => [
+                                { minHeight: tokens.layout.touchTarget },
+                                pressed
+                                  ? {
+                                      opacity: 0.9,
+                                      transform: [{ scale: 0.985 }],
+                                    }
+                                  : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityLabel={t("common:actions.openMap")}
+                            >
+                              <View className="flex-row items-center gap-2">
+                                <Ionicons
+                                  name="map-outline"
+                                  size={14}
+                                  color="rgba(255,255,255,0.85)"
+                                />
+                                <Text className="text-white/80 text-xs font-semibold">
+                                  {t("common:actions.openMap")}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          ) : null}
+                          {data ? (
+                            <Pressable
+                              onPress={handleShare}
+                              className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                              style={({ pressed }) => [
+                                { minHeight: tokens.layout.touchTarget },
+                                pressed
+                                  ? {
+                                      opacity: 0.9,
+                                      transform: [{ scale: 0.985 }],
+                                    }
+                                  : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityLabel={t("common:actions.share")}
+                            >
+                              <View className="flex-row items-center gap-2">
+                                <Ionicons
+                                  name="share-outline"
+                                  size={14}
+                                  color="rgba(255,255,255,0.85)"
+                                />
+                                <Text className="text-white/80 text-xs font-semibold">
+                                  {t("common:actions.share")}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          ) : null}
+                        </View>
                       ) : null}
                     </View>
                   </GlassCard>
@@ -1192,16 +1638,26 @@ export default function EventDetail() {
               </GlassSurface>
             </View>
           ) : (
-            <Animated.View style={{ opacity: fade, transform: [{ translateY: translate }] }}>
+            <Animated.View
+              style={{ opacity: fade, transform: [{ translateY: translate }] }}
+            >
               <View className="px-5">
                 <Animated.View
                   style={{
-                    transform: [{ translateY: heroTranslate }, { scale: heroScale }],
+                    transform: [
+                      { translateY: heroTranslate },
+                      { scale: heroScale },
+                    ],
                   }}
                 >
                   <View className="overflow-hidden rounded-[28px] border border-white/10">
                     {cover ? (
-                      <View style={{ height: 260, justifyContent: "space-between" }}>
+                      <View
+                        style={{
+                          height: heroHeight,
+                          justifyContent: "space-between",
+                        }}
+                      >
                         <Image
                           source={{ uri: cover }}
                           style={StyleSheet.absoluteFill}
@@ -1217,26 +1673,39 @@ export default function EventDetail() {
                           style={StyleSheet.absoluteFill}
                         />
                         <View className="flex-row items-center justify-between px-4 pt-4">
-                        <View className="flex-row items-center gap-2">
-                          {category ? <GlassPill label={category} /> : null}
-                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
-                          {data.isHighlighted ? (
-                            <GlassPill label={t("events:badges.featured")} variant="accent" />
-                          ) : null}
-                        </View>
-                          <GlassPill label={resolveStatusLabel(data.status, t)} variant="muted" />
+                          <View className="flex-row items-center gap-2">
+                            {category ? <GlassPill label={category} /> : null}
+                            <GlassPill
+                              label={accessBadge.label}
+                              variant={accessBadge.variant}
+                            />
+                            {data.isHighlighted ? (
+                              <GlassPill
+                                label={t("events:badges.featured")}
+                                variant="accent"
+                              />
+                            ) : null}
+                          </View>
+                          <GlassPill
+                            label={resolveStatusLabel(data.status, t)}
+                            variant="muted"
+                          />
                         </View>
                         <View className="px-4 pb-4 gap-2">
-                          <Text className="text-white text-2xl font-semibold">{data.title}</Text>
+                          <Text className="text-white text-2xl font-semibold">
+                            {data.title}
+                          </Text>
                           {data.shortDescription ? (
-                            <Text className="text-white/75 text-sm">{data.shortDescription}</Text>
+                            <Text className="text-white/75 text-sm">
+                              {data.shortDescription}
+                            </Text>
                           ) : null}
                         </View>
                       </View>
                     ) : (
                       <View
                         style={{
-                          height: 260,
+                          height: heroHeight,
                           backgroundColor: "rgba(255,255,255,0.08)",
                           justifyContent: "space-between",
                           paddingHorizontal: tokens.spacing.lg,
@@ -1245,15 +1714,25 @@ export default function EventDetail() {
                       >
                         <View className="flex-row items-center gap-2 self-start">
                           {category ? <GlassPill label={category} /> : null}
-                          <GlassPill label={accessBadge.label} variant={accessBadge.variant} />
+                          <GlassPill
+                            label={accessBadge.label}
+                            variant={accessBadge.variant}
+                          />
                           {data.isHighlighted ? (
-                            <GlassPill label={t("events:badges.featured")} variant="accent" />
+                            <GlassPill
+                              label={t("events:badges.featured")}
+                              variant="accent"
+                            />
                           ) : null}
                         </View>
                         <View className="gap-2">
-                          <Text className="text-white text-2xl font-semibold">{data.title}</Text>
+                          <Text className="text-white text-2xl font-semibold">
+                            {data.title}
+                          </Text>
                           {data.shortDescription ? (
-                            <Text className="text-white/75 text-sm">{data.shortDescription}</Text>
+                            <Text className="text-white/75 text-sm">
+                              {data.shortDescription}
+                            </Text>
                           ) : null}
                         </View>
                       </View>
@@ -1271,21 +1750,64 @@ export default function EventDetail() {
                     <View className="flex-row flex-wrap gap-2">
                       {date ? (
                         <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
-                          <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.8)" />
-                          <Text className="text-white/80 text-xs font-semibold">{date}</Text>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={14}
+                            color="rgba(255,255,255,0.8)"
+                          />
+                          <Text className="text-white/80 text-xs font-semibold">
+                            {date}
+                          </Text>
                         </View>
                       ) : null}
                       {price ? (
                         <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                          <Ionicons name="pricetag-outline" size={14} color="rgba(255,255,255,0.85)" />
-                          <Text className="text-white text-xs font-semibold">{price}</Text>
+                          <Ionicons
+                            name="pricetag-outline"
+                            size={14}
+                            color="rgba(255,255,255,0.85)"
+                          />
+                          <Text className="text-white text-xs font-semibold">
+                            {price}
+                          </Text>
                         </View>
                       ) : null}
                       {location ? (
                         <View className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                          <Ionicons name="location-outline" size={14} color="rgba(255,255,255,0.7)" />
-                          <Text className="text-white/70 text-xs" numberOfLines={1}>
+                          <Ionicons
+                            name="location-outline"
+                            size={14}
+                            color="rgba(255,255,255,0.7)"
+                          />
+                          <Text
+                            className="text-white/70 text-xs"
+                            numberOfLines={1}
+                          >
                             {location}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {statusLabel ? (
+                        <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
+                          <Ionicons
+                            name="sparkles-outline"
+                            size={14}
+                            color="rgba(255,255,255,0.85)"
+                          />
+                          <Text className="text-white text-xs font-semibold">
+                            {statusLabel}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {ticketInventoryLabel ? (
+                        <View className="flex-row items-center gap-2 rounded-full border border-white/12 bg-white/6 px-3 py-2">
+                          <Ionicons
+                            name="ticket-outline"
+                            size={14}
+                            color="rgba(255,255,255,0.74)"
+                          />
+                          <Text className="text-white/75 text-xs">
+                            {ticketInventoryLabel}
                           </Text>
                         </View>
                       ) : null}
@@ -1295,35 +1817,96 @@ export default function EventDetail() {
                         onPress={handleHostPress}
                         disabled={!hostUsername}
                         className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                        style={({ pressed }) => [
+                          { minHeight: tokens.layout.touchTarget },
+                          pressed && hostUsername
+                            ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
+                            : null,
+                        ]}
                         accessibilityRole="button"
-                        accessibilityLabel={t("events:detail.openOrganizer", { name: displayHost })}
+                        accessibilityLabel={t("events:detail.openOrganizer", {
+                          name: displayHost,
+                        })}
                         accessibilityState={{ disabled: !hostUsername }}
                       >
                         <View className="flex-row items-center gap-2">
-                          <Ionicons name="person-outline" size={16} color="rgba(255,255,255,0.7)" />
+                          <Ionicons
+                            name="person-outline"
+                            size={16}
+                            color="rgba(255,255,255,0.7)"
+                          />
                           <Text className="text-white/80 text-sm">
-                            {t("events:detail.organizer", { name: displayHost })}
+                            {t("events:detail.organizer", {
+                              name: displayHost,
+                            })}
                           </Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="rgba(255,255,255,0.5)"
+                        />
                       </Pressable>
                     ) : null}
-                    {mapUrl ? (
-                      <Pressable
-                        onPress={handleOpenMap}
-                        className="self-start rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t("common:actions.openMap")}
-                      >
-                        <View className="flex-row items-center gap-2">
-                          <Ionicons name="map-outline" size={14} color="rgba(255,255,255,0.85)" />
-                          <Text className="text-white/80 text-xs font-semibold">
-                            {t("common:actions.openMap")}
-                          </Text>
-                        </View>
-                      </Pressable>
+                    {mapUrl || data ? (
+                      <View className="flex-row flex-wrap gap-2">
+                        {mapUrl ? (
+                          <Pressable
+                            onPress={handleOpenMap}
+                            className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                            style={({ pressed }) => [
+                              { minHeight: tokens.layout.touchTarget },
+                              pressed
+                                ? {
+                                    opacity: 0.9,
+                                    transform: [{ scale: 0.985 }],
+                                  }
+                                : null,
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("common:actions.openMap")}
+                          >
+                            <View className="flex-row items-center gap-2">
+                              <Ionicons
+                                name="map-outline"
+                                size={14}
+                                color="rgba(255,255,255,0.85)"
+                              />
+                              <Text className="text-white/80 text-xs font-semibold">
+                                {t("common:actions.openMap")}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        ) : null}
+                        {data ? (
+                          <Pressable
+                            onPress={handleShare}
+                            className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
+                            style={({ pressed }) => [
+                              { minHeight: tokens.layout.touchTarget },
+                              pressed
+                                ? {
+                                    opacity: 0.9,
+                                    transform: [{ scale: 0.985 }],
+                                  }
+                                : null,
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("common:actions.share")}
+                          >
+                            <View className="flex-row items-center gap-2">
+                              <Ionicons
+                                name="share-outline"
+                                size={14}
+                                color="rgba(255,255,255,0.85)"
+                              />
+                              <Text className="text-white/80 text-xs font-semibold">
+                                {t("common:actions.share")}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        ) : null}
+                      </View>
                     ) : null}
                   </View>
                 </GlassCard>
@@ -1334,7 +1917,9 @@ export default function EventDetail() {
                       <Text className="text-white text-sm font-semibold">
                         {t("events:detail.about")}
                       </Text>
-                      <Text className="text-white/75 text-sm">{description}</Text>
+                      <Text className="text-white/75 text-sm">
+                        {description}
+                      </Text>
                     </View>
                   </GlassCard>
                 ) : null}
@@ -1345,7 +1930,9 @@ export default function EventDetail() {
                       <Text className="text-white text-sm font-semibold">
                         {t("events:detail.chatTitle")}
                       </Text>
-                      <Text className="text-white/60 text-xs">{chatStatusLabel}</Text>
+                      <Text className="text-white/60 text-xs">
+                        {chatStatusLabel}
+                      </Text>
                     </View>
                     {!session?.user?.id ? (
                       <View className="gap-2">
@@ -1355,7 +1942,7 @@ export default function EventDetail() {
                         <Pressable
                           onPress={openAuth}
                           className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                          style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel={t("common:actions.signIn")}
                         >
@@ -1365,7 +1952,9 @@ export default function EventDetail() {
                         </Pressable>
                       </View>
                     ) : inboxQuery.isLoading || inviteQuery.isLoading ? (
-                      <Text className="text-white/60 text-sm">{t("events:detail.chatLoading")}</Text>
+                      <Text className="text-white/60 text-sm">
+                        {t("events:detail.chatLoading")}
+                      </Text>
                     ) : eventChatThread ? (
                       <Pressable
                         onPress={() =>
@@ -1375,7 +1964,7 @@ export default function EventDetail() {
                               threadId: eventChatThread.conversationId ?? "",
                               eventId: String(data?.id ?? ""),
                               title: data?.title ?? "",
-                              coverImageUrl: data?.coverImageUrl ?? "",
+                              coverImageUrl: cover ?? "",
                               startsAt: data?.startsAt ?? "",
                               endsAt: data?.endsAt ?? "",
                               slug: data?.slug ?? "",
@@ -1387,7 +1976,10 @@ export default function EventDetail() {
                         accessibilityRole="button"
                         accessibilityLabel={t("events:detail.chatOpen")}
                       >
-                        <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                        <Text
+                          className="text-center text-sm font-semibold"
+                          style={{ color: "#0b101a" }}
+                        >
                           {t("events:detail.chatOpen")}
                         </Text>
                       </Pressable>
@@ -1404,11 +1996,16 @@ export default function EventDetail() {
                           accessibilityRole="button"
                           accessibilityLabel={t("events:invite.accept")}
                         >
-                          <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
-                            {inviteAccepting ? t("events:invite.accepting") : t("events:invite.accept")}
+                          <Text
+                            className="text-center text-sm font-semibold"
+                            style={{ color: "#0b101a" }}
+                          >
+                            {inviteAccepting
+                              ? t("events:invite.accepting")
+                              : t("events:invite.accept")}
                           </Text>
-                          </Pressable>
-                        </View>
+                        </Pressable>
+                      </View>
                     ) : inboxQuery.isError || !eventChatThread ? (
                       <Text className="text-white/60 text-sm">
                         {t("messages:thread.errors.participantsOnly")}
@@ -1442,7 +2039,9 @@ export default function EventDetail() {
                         style={{ minHeight: tokens.layout.touchTarget }}
                         accessibilityRole="button"
                         accessibilityLabel={t("events:invite.validateToken")}
-                        accessibilityState={{ disabled: inviteState.status === "checking" }}
+                        accessibilityState={{
+                          disabled: inviteState.status === "checking",
+                        }}
                       >
                         <Text className="text-white text-sm font-semibold text-center">
                           {inviteState.status === "checking"
@@ -1451,7 +2050,10 @@ export default function EventDetail() {
                         </Text>
                       </Pressable>
                       {inviteState.status === "valid" ? (
-                        <GlassPill label={t("events:invite.confirmed")} variant="accent" />
+                        <GlassPill
+                          label={t("events:invite.confirmed")}
+                          variant="accent"
+                        />
                       ) : inviteState.status === "invalid" ? (
                         <Text className="text-amber-200 text-xs">
                           {inviteState.message ?? t("events:invite.invalid")}
@@ -1465,7 +2067,9 @@ export default function EventDetail() {
                         placeholderTextColor="rgba(255,255,255,0.4)"
                         autoCapitalize="none"
                         className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                        accessibilityLabel={t("events:invite.identifierPlaceholder")}
+                        accessibilityLabel={t(
+                          "events:invite.identifierPlaceholder",
+                        )}
                       />
                       <Pressable
                         onPress={handleInviteIdentifierCheck}
@@ -1473,8 +2077,12 @@ export default function EventDetail() {
                         className="rounded-2xl bg-white/15 px-4 py-3"
                         style={{ minHeight: tokens.layout.touchTarget }}
                         accessibilityRole="button"
-                        accessibilityLabel={t("events:invite.validateIdentifier")}
-                        accessibilityState={{ disabled: inviteIdentifierState.status === "checking" }}
+                        accessibilityLabel={t(
+                          "events:invite.validateIdentifier",
+                        )}
+                        accessibilityState={{
+                          disabled: inviteIdentifierState.status === "checking",
+                        }}
                       >
                         <Text className="text-white text-sm font-semibold text-center">
                           {inviteIdentifierState.status === "checking"
@@ -1483,7 +2091,10 @@ export default function EventDetail() {
                         </Text>
                       </Pressable>
                       {inviteIdentifierValid ? (
-                        <GlassPill label={t("events:invite.confirmed")} variant="accent" />
+                        <GlassPill
+                          label={t("events:invite.confirmed")}
+                          variant="accent"
+                        />
                       ) : null}
                       {inviteIdentifierNeedsLogin ? (
                         <View className="gap-2">
@@ -1493,7 +2104,7 @@ export default function EventDetail() {
                           <Pressable
                             onPress={openAuth}
                             className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                            style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                            style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
                             accessibilityLabel={t("common:actions.signIn")}
                           >
@@ -1504,16 +2115,22 @@ export default function EventDetail() {
                         </View>
                       ) : null}
                       {inviteIdentifierCheckingAccount ? (
-                        <Text className="text-white/60 text-xs">{t("events:invite.checking")}</Text>
+                        <Text className="text-white/60 text-xs">
+                          {t("events:invite.checking")}
+                        </Text>
                       ) : inviteIdentifierMismatch ? (
-                        <Text className="text-amber-200 text-xs">{t("events:invite.mismatch")}</Text>
+                        <Text className="text-amber-200 text-xs">
+                          {t("events:invite.mismatch")}
+                        </Text>
                       ) : inviteIdentifierState.status === "not_invited" ? (
                         <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ?? t("events:invite.notFound")}
+                          {inviteIdentifierState.message ??
+                            t("events:invite.notFound")}
                         </Text>
                       ) : inviteIdentifierState.status === "invalid" ? (
                         <Text className="text-amber-200 text-xs">
-                          {inviteIdentifierState.message ?? t("events:invite.identifierInvalid")}
+                          {inviteIdentifierState.message ??
+                            t("events:invite.identifierInvalid")}
                         </Text>
                       ) : null}
                     </View>
@@ -1540,21 +2157,35 @@ export default function EventDetail() {
                         <Text className="text-white text-sm font-semibold">
                           {t("events:padel.summaryTitle")}
                         </Text>
-                        <Text className="text-white/70 text-sm">{registrationMessage}</Text>
+                        <Text className="text-white/70 text-sm">
+                          {registrationMessage}
+                        </Text>
                         {padelMeta?.competitionState ? (
                           <View className="flex-row items-center gap-2">
-                            <Ionicons name="trophy-outline" size={16} color="rgba(255,255,255,0.7)" />
+                            <Ionicons
+                              name="trophy-outline"
+                              size={16}
+                              color="rgba(255,255,255,0.7)"
+                            />
                             <Text className="text-white/70 text-sm">
-                              {t("events:padel.statusLabel", { status: padelMeta.competitionState })}
+                              {t("events:padel.statusLabel", {
+                                status: padelMeta.competitionState,
+                              })}
                             </Text>
                           </View>
                         ) : null}
                         {padelSnapshot?.clubName ? (
                           <View className="flex-row items-center gap-2">
-                            <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.6)" />
+                            <Ionicons
+                              name="location-outline"
+                              size={16}
+                              color="rgba(255,255,255,0.6)"
+                            />
                             <Text className="text-white/65 text-sm">
                               {padelSnapshot.clubName}
-                              {padelSnapshot.clubCity ? ` · ${padelSnapshot.clubCity}` : ""}
+                              {padelSnapshot.clubCity
+                                ? ` · ${padelSnapshot.clubCity}`
+                                : ""}
                             </Text>
                           </View>
                         ) : null}
@@ -1568,8 +2199,13 @@ export default function EventDetail() {
                             {t("events:padel.timelineTitle")}
                           </Text>
                           {padelSnapshot.timeline.map((item) => (
-                            <View key={item.key} className="flex-row items-center justify-between">
-                              <Text className="text-white/80 text-sm">{item.label}</Text>
+                            <View
+                              key={item.key}
+                              className="flex-row items-center justify-between"
+                            >
+                              <Text className="text-white/80 text-sm">
+                                {item.label}
+                              </Text>
                               {item.date && formatDateRange(item.date) ? (
                                 <Text className="text-white/55 text-xs">
                                   {formatDateRange(item.date)}
@@ -1591,15 +2227,21 @@ export default function EventDetail() {
                             const isSelected = category.id === activeCategoryId;
                             const disabled = !category.isEnabled;
                             const categoryA11yLabel = category.label
-                              ? t("events:padel.categoryLabel", { label: category.label })
+                              ? t("events:padel.categoryLabel", {
+                                  label: category.label,
+                                })
                               : t("events:padel.categorySelect");
                             const capacityLabel = category.capacityTeams
-                              ? t("events:padel.capacityTeams", { count: category.capacityTeams })
+                              ? t("events:padel.capacityTeams", {
+                                  count: category.capacityTeams,
+                                })
                               : t("events:padel.capacityUnlimited");
                             return (
                               <Pressable
                                 key={`padel-category-${category.linkId ?? category.id}`}
-                                onPress={() => setSelectedCategoryId(category.id)}
+                                onPress={() =>
+                                  setSelectedCategoryId(category.id)
+                                }
                                 disabled={disabled}
                                 className={
                                   isSelected
@@ -1609,7 +2251,10 @@ export default function EventDetail() {
                                 style={{ minHeight: tokens.layout.touchTarget }}
                                 accessibilityRole="button"
                                 accessibilityLabel={categoryA11yLabel}
-                                accessibilityState={{ selected: isSelected, disabled }}
+                                accessibilityState={{
+                                  selected: isSelected,
+                                  disabled,
+                                }}
                               >
                                 <View className="flex-row items-center justify-between">
                                   <View className="flex-1 pr-4">
@@ -1619,7 +2264,9 @@ export default function EventDetail() {
                                       </Text>
                                     ) : null}
                                     {category.format ? (
-                                      <Text className="text-white/60 text-xs mt-1">{category.format}</Text>
+                                      <Text className="text-white/60 text-xs mt-1">
+                                        {category.format}
+                                      </Text>
                                     ) : null}
                                   </View>
                                   <GlassPill
@@ -1636,7 +2283,12 @@ export default function EventDetail() {
                                     {capacityLabel}
                                   </Text>
                                   {disabled ? (
-                                    <GlassPill label={t("events:padel.categoryUnavailable")} variant="muted" />
+                                    <GlassPill
+                                      label={t(
+                                        "events:padel.categoryUnavailable",
+                                      )}
+                                      variant="muted"
+                                    />
                                   ) : null}
                                 </View>
                               </Pressable>
@@ -1658,13 +2310,26 @@ export default function EventDetail() {
                               <Pressable
                                 key={`mode-${mode}`}
                                 onPress={() => setPaymentMode(mode)}
-                                className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
-                                style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                className={
+                                  active
+                                    ? "rounded-full bg-white/20 px-4 py-2"
+                                    : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                                }
+                                style={{ minHeight: tokens.layout.touchTarget }}
                                 accessibilityRole="button"
-                                accessibilityLabel={resolvePadelPaymentModeLabel(mode, t) ?? undefined}
+                                accessibilityLabel={
+                                  resolvePadelPaymentModeLabel(mode, t) ??
+                                  undefined
+                                }
                                 accessibilityState={{ selected: active }}
                               >
-                                <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                                <Text
+                                  className={
+                                    active
+                                      ? "text-white text-xs font-semibold"
+                                      : "text-white/70 text-xs"
+                                  }
+                                >
                                   {resolvePadelPaymentModeLabel(mode, t)}
                                 </Text>
                               </Pressable>
@@ -1672,10 +2337,12 @@ export default function EventDetail() {
                           })}
                         </View>
                         <View className="flex-row flex-wrap gap-2">
-                          {([
-                            { key: "INVITE_PARTNER" },
-                            { key: "LOOKING_FOR_PARTNER" },
-                          ] as const).map((option) => {
+                          {(
+                            [
+                              { key: "INVITE_PARTNER" },
+                              { key: "LOOKING_FOR_PARTNER" },
+                            ] as const
+                          ).map((option) => {
                             const active = joinMode === option.key;
                             const label =
                               option.key === "INVITE_PARTNER"
@@ -1685,13 +2352,23 @@ export default function EventDetail() {
                               <Pressable
                                 key={option.key}
                                 onPress={() => setJoinMode(option.key)}
-                                className={active ? "rounded-full bg-white/20 px-4 py-2" : "rounded-full border border-white/10 bg-white/5 px-4 py-2"}
-                                style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                className={
+                                  active
+                                    ? "rounded-full bg-white/20 px-4 py-2"
+                                    : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                                }
+                                style={{ minHeight: tokens.layout.touchTarget }}
                                 accessibilityRole="button"
                                 accessibilityLabel={label}
                                 accessibilityState={{ selected: active }}
                               >
-                                <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                                <Text
+                                  className={
+                                    active
+                                      ? "text-white text-xs font-semibold"
+                                      : "text-white/70 text-xs"
+                                  }
+                                >
                                   {label}
                                 </Text>
                               </Pressable>
@@ -1706,7 +2383,9 @@ export default function EventDetail() {
                             placeholderTextColor="rgba(255,255,255,0.4)"
                             autoCapitalize="none"
                             className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
-                            accessibilityLabel={t("events:padel.invitePlaceholder")}
+                            accessibilityLabel={t(
+                              "events:padel.invitePlaceholder",
+                            )}
                           />
                         ) : null}
                         {!session?.user?.id ? (
@@ -1715,7 +2394,9 @@ export default function EventDetail() {
                             className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
-                            accessibilityLabel={t("events:padel.signInToRegister")}
+                            accessibilityLabel={t(
+                              "events:padel.signInToRegister",
+                            )}
                           >
                             <Text className="text-white text-sm font-semibold text-center">
                               {t("events:padel.signInToRegister")}
@@ -1733,20 +2414,30 @@ export default function EventDetail() {
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
                             accessibilityLabel={t("events:padel.createPairing")}
-                            accessibilityState={{ disabled: padelActionsDisabled || pairingBusy }}
+                            accessibilityState={{
+                              disabled: padelActionsDisabled || pairingBusy,
+                            }}
                           >
                             <Text
                               className={`text-center text-sm font-semibold ${
                                 padelActionsDisabled ? "text-white/50" : ""
                               }`}
-                              style={padelActionsDisabled ? undefined : { color: "#0b101a" }}
+                              style={
+                                padelActionsDisabled
+                                  ? undefined
+                                  : { color: "#0b101a" }
+                              }
                             >
-                              {pairingBusy ? t("events:padel.creatingPairing") : t("events:padel.createPairing")}
+                              {pairingBusy
+                                ? t("events:padel.creatingPairing")
+                                : t("events:padel.createPairing")}
                             </Text>
                           </Pressable>
                         )}
                         {!registrationOpen ? (
-                          <Text className="text-white/60 text-xs">{registrationMessage}</Text>
+                          <Text className="text-white/60 text-xs">
+                            {registrationMessage}
+                          </Text>
                         ) : null}
                       </View>
                     </GlassCard>
@@ -1766,7 +2457,10 @@ export default function EventDetail() {
                           </Text>
                         ) : (
                           (openPairingsQuery.data ?? []).map((pairing) => (
-                            <View key={`open-${pairing.id}`} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                            <View
+                              key={`open-${pairing.id}`}
+                              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                            >
                               <View className="flex-row items-center justify-between">
                                 {pairing.category?.label ? (
                                   <Text className="text-white text-sm font-semibold">
@@ -1774,23 +2468,35 @@ export default function EventDetail() {
                                   </Text>
                                 ) : null}
                                 <Text className="text-white/60 text-xs">
-                                  {t("events:padel.openSlots", { count: pairing.openSlots ?? 0 })}
+                                  {t("events:padel.openSlots", {
+                                    count: pairing.openSlots ?? 0,
+                                  })}
                                 </Text>
                               </View>
                               <View className="flex-row items-center justify-between pt-2">
-                                {pairing.deadlineAt && formatDateRange(pairing.deadlineAt) ? (
+                                {pairing.deadlineAt &&
+                                formatDateRange(pairing.deadlineAt) ? (
                                   <Text className="text-white/55 text-xs">
-                                    {t("events:padel.deadline", { date: formatDateRange(pairing.deadlineAt) })}
+                                    {t("events:padel.deadline", {
+                                      date: formatDateRange(pairing.deadlineAt),
+                                    })}
                                   </Text>
                                 ) : null}
                                 <Pressable
-                                  onPress={() => handleJoinOpenPairing(pairing.id)}
+                                  onPress={() =>
+                                    handleJoinOpenPairing(pairing.id)
+                                  }
                                   disabled={padelActionsDisabled || pairingBusy}
                                   className="rounded-full border border-white/15 bg-white/10 px-3 py-2"
-                                  style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                  style={{
+                                    minHeight: tokens.layout.touchTarget,
+                                  }}
                                   accessibilityRole="button"
                                   accessibilityLabel={t("common:actions.join")}
-                                  accessibilityState={{ disabled: padelActionsDisabled || pairingBusy }}
+                                  accessibilityState={{
+                                    disabled:
+                                      padelActionsDisabled || pairingBusy,
+                                  }}
                                 >
                                   <Text className="text-white text-xs font-semibold">
                                     {t("common:actions.join")}
@@ -1822,19 +2528,33 @@ export default function EventDetail() {
                           </Text>
                         ) : (
                           (() => {
-                            const pairingIdValue = pairingIdParam ? Number(pairingIdParam) : null;
+                            const pairingIdValue = pairingIdParam
+                              ? Number(pairingIdParam)
+                              : null;
                             const pairing =
                               (Number.isFinite(pairingIdValue)
-                                ? (myPairingsQuery.data ?? []).find((p) => p.id === pairingIdValue)
+                                ? (myPairingsQuery.data ?? []).find(
+                                    (p) => p.id === pairingIdValue,
+                                  )
                                 : null) ?? (myPairingsQuery.data ?? [])[0];
-                            const unpaidSlot = pairing.slots?.find((slot) => slot.paymentStatus !== "PAID");
+                            const unpaidSlot = pairing.slots?.find(
+                              (slot) => slot.paymentStatus !== "PAID",
+                            );
                             const canPay = Boolean(unpaidSlot);
-                            const invitePending = Boolean(pairing.inviteEligibility && !pairing.inviteEligibility.ok);
+                            const invitePending = Boolean(
+                              pairing.inviteEligibility &&
+                              !pairing.inviteEligibility.ok,
+                            );
                             return (
                               <View className="gap-3">
                                 <Text className="text-white/70 text-sm">
-                                  {pairing.category?.label ?? t("events:detail.categoryFallback")} ·{" "}
-                                  {resolvePadelPaymentModeLabel(pairing.paymentMode, t)}
+                                  {pairing.category?.label ??
+                                    t("events:detail.categoryFallback")}{" "}
+                                  ·{" "}
+                                  {resolvePadelPaymentModeLabel(
+                                    pairing.paymentMode,
+                                    t,
+                                  )}
                                 </Text>
                                 {invitePending ? (
                                   <Text className="text-amber-200 text-xs">
@@ -1845,26 +2565,42 @@ export default function EventDetail() {
                                   {pairing.inviteEligibility ? (
                                     <>
                                       <Pressable
-                                        onPress={() => handleAcceptPairingInvite(pairing.id)}
+                                        onPress={() =>
+                                          handleAcceptPairingInvite(pairing.id)
+                                        }
                                         disabled={pairingActionBusy}
                                         className="rounded-full bg-white/15 px-4 py-2"
-                                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                        style={{
+                                          minHeight: tokens.layout.touchTarget,
+                                        }}
                                         accessibilityRole="button"
-                                        accessibilityLabel={t("events:padel.acceptInvite")}
-                                        accessibilityState={{ disabled: pairingActionBusy }}
+                                        accessibilityLabel={t(
+                                          "events:padel.acceptInvite",
+                                        )}
+                                        accessibilityState={{
+                                          disabled: pairingActionBusy,
+                                        }}
                                       >
                                         <Text className="text-white text-xs font-semibold">
                                           {t("events:padel.acceptInvite")}
                                         </Text>
                                       </Pressable>
                                       <Pressable
-                                        onPress={() => handleDeclinePairingInvite(pairing.id)}
+                                        onPress={() =>
+                                          handleDeclinePairingInvite(pairing.id)
+                                        }
                                         disabled={pairingActionBusy}
                                         className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                                        style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                        style={{
+                                          minHeight: tokens.layout.touchTarget,
+                                        }}
                                         accessibilityRole="button"
-                                        accessibilityLabel={t("events:padel.declineInvite")}
-                                        accessibilityState={{ disabled: pairingActionBusy }}
+                                        accessibilityLabel={t(
+                                          "events:padel.declineInvite",
+                                        )}
+                                        accessibilityState={{
+                                          disabled: pairingActionBusy,
+                                        }}
                                       >
                                         <Text className="text-white/80 text-xs font-semibold">
                                           {t("events:padel.declineInvite")}
@@ -1874,11 +2610,19 @@ export default function EventDetail() {
                                   ) : null}
                                   {pairing.inviteToken ? (
                                     <Pressable
-                                      onPress={() => handleSharePairingInvite(pairing.inviteToken ?? "")}
+                                      onPress={() =>
+                                        handleSharePairingInvite(
+                                          pairing.inviteToken ?? "",
+                                        )
+                                      }
                                       className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                                      style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                      style={{
+                                        minHeight: tokens.layout.touchTarget,
+                                      }}
                                       accessibilityRole="button"
-                                      accessibilityLabel={t("events:padel.shareInvite")}
+                                      accessibilityLabel={t(
+                                        "events:padel.shareInvite",
+                                      )}
                                     >
                                       <Text className="text-white/80 text-xs font-semibold">
                                         {t("events:padel.shareInvite")}
@@ -1887,13 +2631,30 @@ export default function EventDetail() {
                                   ) : null}
                                   {canPay ? (
                                     <Pressable
-                                      onPress={() => handlePayPairing({ id: pairing.id, categoryId: pairing.categoryId ?? null })}
-                                      disabled={pairingActionBusy || padelActionsDisabled}
+                                      onPress={() =>
+                                        handlePayPairing({
+                                          id: pairing.id,
+                                          categoryId:
+                                            pairing.categoryId ?? null,
+                                        })
+                                      }
+                                      disabled={
+                                        pairingActionBusy ||
+                                        padelActionsDisabled
+                                      }
                                       className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
-                                      style={{ minHeight: tokens.layout.touchTarget - 8 }}
+                                      style={{
+                                        minHeight: tokens.layout.touchTarget,
+                                      }}
                                       accessibilityRole="button"
-                                      accessibilityLabel={t("events:padel.payRegistration")}
-                                      accessibilityState={{ disabled: pairingActionBusy || padelActionsDisabled }}
+                                      accessibilityLabel={t(
+                                        "events:padel.payRegistration",
+                                      )}
+                                      accessibilityState={{
+                                        disabled:
+                                          pairingActionBusy ||
+                                          padelActionsDisabled,
+                                      }}
                                     >
                                       <Text className="text-white text-xs font-semibold">
                                         {t("events:padel.payRegistration")}
@@ -1918,43 +2679,65 @@ export default function EventDetail() {
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.standingsLoading")}
                             </Text>
-                          ) : Object.keys(standingsQuery.data?.groups ?? {}).length === 0 ? (
+                          ) : Object.keys(standingsQuery.data?.groups ?? {})
+                              .length === 0 ? (
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.standingsEmpty")}
                             </Text>
                           ) : (
-                            Object.entries(standingsQuery.data?.groups ?? {}).map(([groupLabel, rows]) => {
-                              const rowList = Array.isArray(rows) ? (rows as Array<any>) : [];
+                            Object.entries(
+                              standingsQuery.data?.groups ?? {},
+                            ).map(([groupLabel, rows]) => {
+                              const rowList = Array.isArray(rows)
+                                ? (rows as Array<any>)
+                                : [];
                               return (
-                                <View key={`standings-${groupLabel}`} className="gap-2">
-                                <Text className="text-white/70 text-xs uppercase tracking-[0.12em]">
-                                  {t("events:padel.groupLabel", { group: groupLabel })}
-                                </Text>
-                                {rowList.map((row, idx) => {
-                                  const label =
-                                    row.label ||
-                                    (row.players || [])
-                                      .map((player) => player?.name || player?.username)
-                                      .filter(Boolean)
-                                      .join(" / ") ||
-                                    (standingsQuery.data?.entityType !== "PLAYER" && typeof row.pairingId === "number"
-                                      ? t("events:padel.pairing.withId", { id: row.pairingId })
-                                      : `Jogador #${row.entityId}`);
-                                  return (
-                                    <View
-                                      key={`row-${groupLabel}-${row.entityId}`}
-                                      className="flex-row items-center justify-between"
-                                    >
-                                      <Text className="text-white/80 text-sm">#{idx + 1} · {label}</Text>
-                                      <Text className="text-white/60 text-xs">
-                                        {row.points} {t("events:padel.pointsShort")} · {row.wins}
-                                        {t("events:padel.winsShort")}-{row.losses}
-                                        {t("events:padel.lossesShort")}
-                                      </Text>
-                                    </View>
-                                  );
-                                })}
-                              </View>
+                                <View
+                                  key={`standings-${groupLabel}`}
+                                  className="gap-2"
+                                >
+                                  <Text className="text-white/70 text-xs uppercase tracking-[0.12em]">
+                                    {t("events:padel.groupLabel", {
+                                      group: groupLabel,
+                                    })}
+                                  </Text>
+                                  {rowList.map((row, idx) => {
+                                    const label =
+                                      row.label ||
+                                      (row.players || [])
+                                        .map(
+                                          (player) =>
+                                            player?.name || player?.username,
+                                        )
+                                        .filter(Boolean)
+                                        .join(" / ") ||
+                                      (standingsQuery.data?.entityType !==
+                                        "PLAYER" &&
+                                      typeof row.pairingId === "number"
+                                        ? t("events:padel.pairing.withId", {
+                                            id: row.pairingId,
+                                          })
+                                        : `Jogador #${row.entityId}`);
+                                    return (
+                                      <View
+                                        key={`row-${groupLabel}-${row.entityId}`}
+                                        className="flex-row items-center justify-between"
+                                      >
+                                        <Text className="text-white/80 text-sm">
+                                          #{idx + 1} · {label}
+                                        </Text>
+                                        <Text className="text-white/60 text-xs">
+                                          {row.points}{" "}
+                                          {t("events:padel.pointsShort")} ·{" "}
+                                          {row.wins}
+                                          {t("events:padel.winsShort")}-
+                                          {row.losses}
+                                          {t("events:padel.lossesShort")}
+                                        </Text>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
                               );
                             })
                           )}
@@ -1968,19 +2751,27 @@ export default function EventDetail() {
                               {t("events:padel.matchesEmpty")}
                             </Text>
                           ) : (
-                            (matchesQuery.data ?? []).slice(0, 6).map((match: any) => (
-                              <View key={`match-${match.id}`} className="gap-1">
-                                <Text className="text-white/70 text-xs">
-                                  {match.groupLabel
-                                    ? t("events:padel.groupLabel", { group: match.groupLabel })
-                                    : t("events:padel.matchLabel")}
-                                </Text>
-                                <Text className="text-white/80 text-sm">
-                                  {resolvePairingLabel(match.pairingA, t)} {t("events:detail.vs")}{" "}
-                                  {resolvePairingLabel(match.pairingB, t)}
-                                </Text>
-                              </View>
-                            ))
+                            (matchesQuery.data ?? [])
+                              .slice(0, 6)
+                              .map((match: any) => (
+                                <View
+                                  key={`match-${match.id}`}
+                                  className="gap-1"
+                                >
+                                  <Text className="text-white/70 text-xs">
+                                    {match.groupLabel
+                                      ? t("events:padel.groupLabel", {
+                                          group: match.groupLabel,
+                                        })
+                                      : t("events:padel.matchLabel")}
+                                  </Text>
+                                  <Text className="text-white/80 text-sm">
+                                    {resolvePairingLabel(match.pairingA, t)}{" "}
+                                    {t("events:detail.vs")}{" "}
+                                    {resolvePairingLabel(match.pairingB, t)}
+                                  </Text>
+                                </View>
+                              ))
                           )}
                         </View>
                       </GlassCard>
@@ -2015,7 +2806,11 @@ export default function EventDetail() {
                             ticketTypes.map((ticket) => {
                               const remaining =
                                 ticket.totalQuantity != null
-                                  ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
+                                  ? Math.max(
+                                      ticket.totalQuantity -
+                                        (ticket.soldQuantity ?? 0),
+                                      0,
+                                    )
                                   : null;
                               const status = ticket.status ?? null;
                               const statusLabel = resolveTicketStatusLabel(
@@ -2033,8 +2828,12 @@ export default function EventDetail() {
                               const availability =
                                 remaining != null
                                   ? remaining <= 6
-                                    ? t("events:tickets.lastSeats", { count: remaining })
-                                    : t("events:tickets.remaining", { count: remaining })
+                                    ? t("events:tickets.lastSeats", {
+                                        count: remaining,
+                                      })
+                                    : t("events:tickets.remaining", {
+                                        count: remaining,
+                                      })
                                   : null;
 
                               return (
@@ -2042,31 +2841,57 @@ export default function EventDetail() {
                                   key={`ticket-${ticket.id}`}
                                   disabled={disabled}
                                   onPress={() => setSelectedTicketId(ticket.id)}
-                                  className={isSelected ? "opacity-100" : "opacity-90"}
+                                  className={
+                                    isSelected ? "opacity-100" : "opacity-90"
+                                  }
                                   accessibilityRole="button"
-                                  accessibilityLabel={t("events:tickets.selectTicket", { name: ticket.name })}
-                                  accessibilityState={{ selected: isSelected, disabled }}
+                                  accessibilityLabel={t(
+                                    "events:tickets.selectTicket",
+                                    { name: ticket.name },
+                                  )}
+                                  accessibilityState={{
+                                    selected: isSelected,
+                                    disabled,
+                                  }}
                                 >
-                                  <GlassCard intensity={isSelected ? 68 : 52} highlight={isSelected}>
+                                  <GlassCard
+                                    intensity={isSelected ? 68 : 52}
+                                    highlight={isSelected}
+                                  >
                                     <View className="gap-3">
                                       <View className="flex-row items-center justify-between">
                                         <View className="flex-1 pr-2">
-                                          <Text className="text-white text-base font-semibold" numberOfLines={1}>
+                                          <Text
+                                            className="text-white text-base font-semibold"
+                                            numberOfLines={1}
+                                          >
                                             {ticket.name}
                                           </Text>
                                           {ticket.description ? (
-                                            <Text className="text-white/65 text-xs mt-1" numberOfLines={2}>
+                                            <Text
+                                              className="text-white/65 text-xs mt-1"
+                                              numberOfLines={2}
+                                            >
                                               {ticket.description}
                                             </Text>
                                           ) : null}
                                         </View>
                                         <GlassPill
-                                          label={formatTicketPrice(ticket.price, ticket.currency, t)}
+                                          label={formatTicketPrice(
+                                            ticket.price,
+                                            ticket.currency,
+                                            t,
+                                          )}
                                           variant="muted"
                                         />
                                       </View>
                                       <View className="flex-row items-center gap-2">
-                                        <GlassPill label={statusLabel} variant={disabled ? "muted" : "accent"} />
+                                        <GlassPill
+                                          label={statusLabel}
+                                          variant={
+                                            disabled ? "muted" : "accent"
+                                          }
+                                        />
                                         {availability ? (
                                           <Text className="text-[11px] uppercase tracking-[0.12em] text-white/45">
                                             {availability}
@@ -2092,7 +2917,11 @@ export default function EventDetail() {
                                   {selectedTicket.name}
                                 </Text>
                                 <Text className="text-white text-sm font-semibold">
-                                  {formatTicketPrice(selectedTicket.price, selectedTicket.currency, t)}
+                                  {formatTicketPrice(
+                                    selectedTicket.price,
+                                    selectedTicket.currency,
+                                    t,
+                                  )}
                                 </Text>
                               </View>
                               <View className="flex-row items-center justify-between">
@@ -2101,33 +2930,67 @@ export default function EventDetail() {
                                 </Text>
                                 <View className="flex-row items-center gap-3">
                                   <Pressable
-                                    onPress={() => setTicketQuantity((prev) => Math.max(1, prev - 1))}
+                                    onPress={() =>
+                                      setTicketQuantity((prev) =>
+                                        Math.max(1, prev - 1),
+                                      )
+                                    }
                                     disabled={maxQuantity <= 1}
                                     className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                                    style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
+                                    style={{
+                                      minHeight: tokens.layout.touchTarget,
+                                      opacity: maxQuantity <= 1 ? 0.4 : 1,
+                                    }}
                                     accessibilityRole="button"
-                                    accessibilityLabel={t("events:checkout.decreaseQuantity")}
-                                    accessibilityState={{ disabled: maxQuantity <= 1 }}
+                                    accessibilityLabel={t(
+                                      "events:checkout.decreaseQuantity",
+                                    )}
+                                    accessibilityState={{
+                                      disabled: maxQuantity <= 1,
+                                    }}
                                   >
-                                    <Ionicons name="remove" size={16} color="rgba(255,255,255,0.75)" />
+                                    <Ionicons
+                                      name="remove"
+                                      size={16}
+                                      color="rgba(255,255,255,0.75)"
+                                    />
                                   </Pressable>
-                                  <Text className="text-white text-base font-semibold">{ticketQuantity}</Text>
+                                  <Text className="text-white text-base font-semibold">
+                                    {ticketQuantity}
+                                  </Text>
                                   <Pressable
-                                    onPress={() => setTicketQuantity((prev) => Math.min(maxQuantity, prev + 1))}
+                                    onPress={() =>
+                                      setTicketQuantity((prev) =>
+                                        Math.min(maxQuantity, prev + 1),
+                                      )
+                                    }
                                     disabled={maxQuantity <= 1}
                                     className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                                    style={{ minHeight: tokens.layout.touchTarget - 8, opacity: maxQuantity <= 1 ? 0.4 : 1 }}
+                                    style={{
+                                      minHeight: tokens.layout.touchTarget,
+                                      opacity: maxQuantity <= 1 ? 0.4 : 1,
+                                    }}
                                     accessibilityRole="button"
-                                    accessibilityLabel={t("events:checkout.increaseQuantity")}
-                                    accessibilityState={{ disabled: maxQuantity <= 1 }}
+                                    accessibilityLabel={t(
+                                      "events:checkout.increaseQuantity",
+                                    )}
+                                    accessibilityState={{
+                                      disabled: maxQuantity <= 1,
+                                    }}
                                   >
-                                    <Ionicons name="add" size={16} color="rgba(255,255,255,0.85)" />
+                                    <Ionicons
+                                      name="add"
+                                      size={16}
+                                      color="rgba(255,255,255,0.85)"
+                                    />
                                   </Pressable>
                                 </View>
                               </View>
                               {isFreeTicket ? (
                                 <Text className="text-white/55 text-xs">
-                                  {t("events:checkout.limitPerPerson", { count: 1 })}
+                                  {t("events:checkout.limitPerPerson", {
+                                    count: 1,
+                                  })}
                                 </Text>
                               ) : null}
                               <View className="flex-row items-center justify-between">
@@ -2135,7 +2998,11 @@ export default function EventDetail() {
                                   {t("events:checkout.total")}
                                 </Text>
                                 <Text className="text-white text-lg font-semibold">
-                                  {formatTicketPrice(totalCents, selectedTicket.currency, t)}
+                                  {formatTicketPrice(
+                                    totalCents,
+                                    selectedTicket.currency,
+                                    t,
+                                  )}
                                 </Text>
                               </View>
                               {!session ? (
@@ -2150,7 +3017,6 @@ export default function EventDetail() {
                     )}
                   </>
                 )}
-
               </View>
             </Animated.View>
           )}
@@ -2168,19 +3034,36 @@ export default function EventDetail() {
                 <Pressable
                   onPress={handleShare}
                   className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
-                  style={{ minHeight: tokens.layout.touchTarget }}
+                  style={({ pressed }) => [
+                    { minHeight: tokens.layout.touchTarget },
+                    pressed
+                      ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
+                      : null,
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel={t("common:actions.share")}
                 >
-                  <Ionicons name="share-outline" size={18} color="rgba(255,255,255,0.9)" />
-                  <Text className="text-white text-sm font-semibold">{t("common:actions.share")}</Text>
+                  <Ionicons
+                    name="share-outline"
+                    size={18}
+                    color="rgba(255,255,255,0.9)"
+                  />
+                  <Text className="text-white text-sm font-semibold">
+                    {t("common:actions.share")}
+                  </Text>
                 </Pressable>
               </View>
             ) : (
               <Pressable
                 disabled={!canInitiateCheckout || initiatingCheckout}
                 onPress={async () => {
-                  if (!selectedTicket || !canInitiateCheckout || initiatingCheckout) return;
+                  triggerLightHaptic();
+                  if (
+                    !selectedTicket ||
+                    !canInitiateCheckout ||
+                    initiatingCheckout
+                  )
+                    return;
                   if (!session?.user?.id) {
                     openAuth();
                     return;
@@ -2229,8 +3112,10 @@ export default function EventDetail() {
                         ticketName: selectedTicket.name,
                         quantity: ticketQuantity,
                         unitPriceCents: selectedTicket.price,
-                        totalCents: response.breakdown?.totalCents ?? totalCents,
-                        currency: response.currency ?? selectedTicket.currency ?? "EUR",
+                        totalCents:
+                          response.breakdown?.totalCents ?? totalCents,
+                        currency:
+                          response.currency ?? selectedTicket.currency ?? "EUR",
                         paymentMethod: "card",
                         paymentScenario: "FREE_CHECKOUT",
                         inviteToken: inviteToken ?? null,
@@ -2241,13 +3126,19 @@ export default function EventDetail() {
                         paymentIntentId: response.paymentIntentId ?? null,
                         purchaseId: response.purchaseId ?? null,
                         breakdown: response.breakdown ?? null,
-                        freeCheckout: response.freeCheckout ?? response.isGratisCheckout ?? false,
+                        freeCheckout:
+                          response.freeCheckout ??
+                          response.isGratisCheckout ??
+                          false,
                       });
                       router.push("/checkout");
                     } catch (err) {
                       Alert.alert(
                         t("common:labels.error"),
-                        getUserFacingError(err, t("events:checkout.completeFailed")),
+                        getUserFacingError(
+                          err,
+                          t("events:checkout.completeFailed"),
+                        ),
                       );
                     } finally {
                       setInitiatingCheckout(false);
@@ -2283,22 +3174,38 @@ export default function EventDetail() {
                     ? "rounded-2xl bg-white/90 px-4 py-4"
                     : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
                 }
-                style={{ minHeight: tokens.layout.touchTarget, alignItems: "center", justifyContent: "center" }}
+                style={({ pressed }) => [
+                  {
+                    minHeight: tokens.layout.touchTarget,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  },
+                  pressed && canInitiateCheckout
+                    ? { opacity: 0.92, transform: [{ scale: 0.985 }] }
+                    : null,
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel={ctaLabel}
-                accessibilityState={{ disabled: !canInitiateCheckout || initiatingCheckout }}
+                accessibilityState={{
+                  disabled: !canInitiateCheckout || initiatingCheckout,
+                }}
               >
                 {initiatingCheckout ? (
                   <View className="flex-row items-center gap-2">
                     <ActivityIndicator color="#0b101a" />
-                    <Text className="text-center text-sm font-semibold" style={{ color: "#0b101a" }}>
+                    <Text
+                      className="text-center text-sm font-semibold"
+                      style={{ color: "#0b101a" }}
+                    >
                       {t("events:checkout.confirming")}
                     </Text>
                   </View>
                 ) : (
                   <Text
                     className={`text-center text-sm font-semibold ${canInitiateCheckout ? "" : "text-white/50"}`}
-                    style={canInitiateCheckout ? { color: "#0b101a" } : undefined}
+                    style={
+                      canInitiateCheckout ? { color: "#0b101a" } : undefined
+                    }
                   >
                     {ctaLabel}
                   </Text>

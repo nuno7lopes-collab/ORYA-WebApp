@@ -123,7 +123,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         const targetHref = buildOrgHref(organizationId, "/overview");
         // força cookie no browser e navegação direta com org na query
         try {
-          document.cookie = `orya_organization=${organizationId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax`;
+          const secureSuffix = window.location.protocol === "https:" ? "; Secure" : "";
+          document.cookie = `orya_organization=${organizationId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax${secureSuffix}`;
         } catch (err) {
           console.warn("[org switch] não foi possível escrever cookie no browser", err);
         }

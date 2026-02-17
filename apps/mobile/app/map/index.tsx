@@ -44,6 +44,7 @@ import { useDebouncedValue, useDiscoverMapEvents } from "../../features/discover
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { resolveCityToAddress } from "../../features/discover/location";
 import { formatDistanceKm, getDistanceKm } from "../../lib/geo";
+import { resolveMediaUri } from "../../lib/media";
 import { safeBack } from "../../lib/navigation";
 import type { PublicEventCard } from "@orya/shared";
 import { MapFiltersBar, type MapTemplateFilter } from "../../components/discover/MapFiltersBar";
@@ -101,6 +102,44 @@ const clampWorklet = (value: number, min: number, max: number) => {
 type MapListItem =
   | { type: "skeleton"; key: string }
   | { type: "event"; event: PublicEventCard };
+
+type MapEventThumbProps = {
+  coverUri: string | null;
+  isPadel: boolean;
+};
+
+function MapEventThumb({ coverUri, isPadel }: MapEventThumbProps) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  const hasCover = Boolean(coverUri) && !coverFailed;
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverUri]);
+
+  return (
+    <View style={styles.eventThumb}>
+      {hasCover ? (
+        <Image
+          source={{ uri: coverUri as string }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={160}
+          cachePolicy="memory-disk"
+          onError={() => setCoverFailed(true)}
+        />
+      ) : (
+        <View style={styles.eventThumbFallback}>
+          <Ionicons name="calendar-outline" size={20} color="rgba(255,255,255,0.55)" />
+        </View>
+      )}
+      {isPadel ? (
+        <View style={styles.eventThumbTag}>
+          <Text style={styles.eventThumbTagText}>TORNEIO</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 export default function MapScreen() {
   const router = useRouter();
@@ -476,6 +515,16 @@ export default function MapScreen() {
   const gestureStart = useSharedValue(sheetMinHeight);
   const scrollY = useSharedValue(0);
   const startedInHandle = useSharedValue(false);
+  const setLastSnap = useCallback(
+    (index: number) => {
+      lastSnapRef.current = index;
+      setIsSheetCollapsed(index === 0);
+      if (index === 0) {
+        scrollY.value = 0;
+      }
+    },
+    [scrollY],
+  );
 
   useEffect(() => {
     minHeight.value = sheetMinHeight;
@@ -531,17 +580,6 @@ export default function MapScreen() {
           : Haptics.ImpactFeedbackStyle.Heavy;
     Haptics.impactAsync(feedback).catch(() => undefined);
   }, []);
-
-  const setLastSnap = useCallback(
-    (index: number) => {
-      lastSnapRef.current = index;
-      setIsSheetCollapsed(index === 0);
-      if (index === 0) {
-        scrollY.value = 0;
-      }
-    },
-    [scrollY],
-  );
 
   const snapToIndex = useCallback(
     (index: number) => {
@@ -814,7 +852,7 @@ export default function MapScreen() {
           slug: event.slug,
           source: "map",
           eventTitle: event.title,
-          coverImageUrl: event.coverImageUrl ?? "",
+          coverImageUrl: resolveMediaUri(event.coverImageUrl ?? null) ?? "",
           shortDescription: event.shortDescription ?? event.description ?? "",
           startsAt: event.startsAt ?? "",
           endsAt: event.endsAt ?? "",
@@ -843,6 +881,8 @@ export default function MapScreen() {
       const dateLabel = formatEventDate(event.startsAt ?? null, event.endsAt ?? null);
       const locationLabel = event.location?.formattedAddress || event.location?.city || null;
       const priceLabel = formatPrice(event);
+      const coverUri = resolveMediaUri(event.coverImageUrl ?? null);
+      const isPadel = Boolean(event.tournament) || (event.categories ?? []).includes("PADEL");
       return (
         <Pressable
           onPress={() => handleOpenEvent(event)}
@@ -855,23 +895,7 @@ export default function MapScreen() {
         >
           <GlassCard intensity={isSelected ? 64 : 54} highlight={isSelected} padding={12}>
             <View style={{ flexDirection: "row", gap: 12 }}>
-              <View
-                style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: 16,
-                  overflow: "hidden",
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                }}
-              >
-                {event.coverImageUrl ? (
-                  <Image source={{ uri: event.coverImageUrl }} style={{ width: "100%", height: "100%" }} />
-                ) : (
-                  <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name="calendar-outline" size={20} color="rgba(255,255,255,0.55)" />
-                  </View>
-                )}
-              </View>
+              <MapEventThumb coverUri={coverUri} isPadel={isPadel} />
               <View style={{ flex: 1, gap: 6 }}>
                 <Text className="text-white text-sm font-semibold" numberOfLines={2}>
                   {event.title}
@@ -1223,9 +1247,9 @@ export default function MapScreen() {
 
 const styles = {
   backButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: tokens.layout.touchTarget,
+    height: tokens.layout.touchTarget,
+    borderRadius: tokens.layout.touchTarget / 2,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
@@ -1233,9 +1257,9 @@ const styles = {
     backgroundColor: "rgba(10,14,24,0.72)",
   },
   iconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: tokens.layout.touchTarget,
+    height: tokens.layout.touchTarget,
+    borderRadius: tokens.layout.touchTarget / 2,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
@@ -1253,7 +1277,8 @@ const styles = {
     gap: 8,
     alignSelf: "flex-start" as const,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minHeight: tokens.layout.touchTarget,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
@@ -1374,11 +1399,14 @@ const styles = {
   },
   resetButton: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    minHeight: tokens.layout.touchTarget,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   resetLabel: {
     color: "rgba(255,255,255,0.8)",
@@ -1392,12 +1420,16 @@ const styles = {
     zIndex: 12,
   },
   fabButton: {
+    width: tokens.layout.touchTarget,
+    height: tokens.layout.touchTarget,
     borderRadius: 999,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   fabSurface: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: tokens.layout.touchTarget,
+    height: tokens.layout.touchTarget,
+    borderRadius: tokens.layout.touchTarget / 2,
   },
   fabContent: {
     alignItems: "center" as const,
@@ -1407,5 +1439,33 @@ const styles = {
   fabIcon: {
     marginLeft: 0.5,
     marginTop: 0.5,
+  },
+  eventThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: 16,
+    overflow: "hidden" as const,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  eventThumbFallback: {
+    flex: 1,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  eventThumbTag: {
+    position: "absolute" as const,
+    top: 6,
+    left: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(10,14,24,0.62)",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  eventThumbTagText: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 9,
+    fontWeight: "700" as const,
   },
 };

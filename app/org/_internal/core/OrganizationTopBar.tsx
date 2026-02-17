@@ -409,7 +409,8 @@ export default function OrganizationTopBar({
         return;
       }
       try {
-        document.cookie = `orya_organization=${orgId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax`;
+        const secureSuffix = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `orya_organization=${orgId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax${secureSuffix}`;
       } catch {
         /* ignore */
       }
@@ -425,7 +426,8 @@ export default function OrganizationTopBar({
 
   const goUserMode = () => {
     try {
-      document.cookie = "orya_organization=; path=/; Max-Age=0; SameSite=Lax";
+      const secureSuffix = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `orya_organization=; path=/; Max-Age=0; SameSite=Lax${secureSuffix}`;
     } catch {
       /* ignore */
     }
@@ -441,7 +443,8 @@ export default function OrganizationTopBar({
       console.error("Erro no signOut", err);
     } finally {
       try {
-        document.cookie = "orya_organization=; path=/; Max-Age=0; SameSite=Lax";
+        const secureSuffix = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `orya_organization=; path=/; Max-Age=0; SameSite=Lax${secureSuffix}`;
       } catch {
         /* ignore */
       }

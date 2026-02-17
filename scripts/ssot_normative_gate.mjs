@@ -111,6 +111,7 @@ if (entitlementSummary) {
 }
 
 const gapStateSection = text.match(/## 102\)[\s\S]*?(?=\n## \d{3}\)|\s*$)/)?.[0] ?? "";
+const IS_GAPS_CLOSED = /Estado desta ronda:\s*`SEM_GAPS_NORMATIVOS`/.test(gapStateSection);
 if (gapStateSection) {
   const hasExpectedState =
     /Estado desta ronda:\s*`EM_VERIFICACAO_EXECUCAO`/.test(gapStateSection) ||
@@ -125,7 +126,7 @@ if (gapStateSection) {
 for (const doc of AUXILIARY_TRACEABILITY_DOCS) {
   const full = path.join(ROOT, doc);
   if (!fs.existsSync(full)) {
-    if (IS_DOMAIN_TRANSITION && DOMAIN_AUTHORITY_DOCS.has(doc)) {
+    if (IS_DOMAIN_TRANSITION && DOMAIN_AUTHORITY_DOCS.has(doc) && !IS_GAPS_CLOSED) {
       violations.push(`Missing required domain authority doc during DOMAIN_TRANSITION: ${doc}`);
     }
     continue;

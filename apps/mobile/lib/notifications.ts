@@ -1,7 +1,7 @@
 import {
   resolveNotificationLink,
   type ResolvedNotificationLink,
-} from "@/lib/mobile/notifications";
+} from "../../../lib/mobile/notifications";
 
 type RouterLike = { push: (href: string) => void };
 
@@ -20,3 +20,6 @@ export const openNotificationLink = async (router: RouterLike, input?: string | 
     }
   }
 };
+
+export { resolveNotificationLink };
+export type { ResolvedNotificationLink };

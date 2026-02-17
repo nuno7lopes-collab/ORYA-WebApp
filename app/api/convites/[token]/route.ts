@@ -215,7 +215,7 @@ async function _POST(
     }
     if (!isBookingConfirmed(invite.booking)) {
       const split = invite.booking.splitPayment;
-      if (!split || split.status !== "OPEN") {
+      if (!split || !["OPEN", "SETTLING", "CHARGE_FAILED"].includes(split.status)) {
         return fail(409, "Esta reserva já não está confirmada.");
       }
       if (split.deadlineAt && split.deadlineAt < new Date()) {

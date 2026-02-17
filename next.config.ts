@@ -3,6 +3,7 @@ import path from "path";
 
 const IS_PROD = process.env.NODE_ENV === "production";
 const ENABLE_CSP_REPORT_ONLY = process.env.CSP_REPORT_ONLY === "1";
+const NEXT_DIST_DIR = process.env.NEXT_DIST_DIR?.trim();
 const SCRIPT_SRC = ["'self'", "'unsafe-inline'", "https:"];
 if (!IS_PROD) SCRIPT_SRC.push("'unsafe-eval'");
 
@@ -24,6 +25,7 @@ const CSP_POLICY = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  ...(NEXT_DIST_DIR ? { distDir: NEXT_DIST_DIR } : {}),
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],
@@ -36,6 +38,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "images.unsplash.com",
+      },
+      {
+        protocol: "https",
+        hostname: "picsum.photos",
       },
     ],
   },

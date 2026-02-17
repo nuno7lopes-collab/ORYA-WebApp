@@ -26,7 +26,7 @@ import { useNetworkActions, useOrganizationFollowActions } from "../../features/
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
-import { DiscoverOfferCard } from "../../features/discover/types";
+import { DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,10 +52,11 @@ type SearchSection = {
   isError: boolean;
 };
 
-type SearchTabKey = "all" | "events" | "services" | "people" | "orgs";
+type SearchTabKey = "all" | "padel" | "events" | "services" | "people" | "orgs";
 
 const SEARCH_TABS: Array<{ key: SearchTabKey; label: string }> = [
   { key: "all", label: "Tudo" },
+  { key: "padel", label: "Padel" },
   { key: "events", label: "Eventos" },
   { key: "services", label: "Serviços" },
   { key: "people", label: "Pessoas" },
@@ -80,6 +81,15 @@ export default function SearchScreen() {
   const [serviceKindFilter, setServiceKindFilter] = useState<string | null>(null);
   const previousResultCountRef = useRef(0);
   const debounced = useDebouncedValue(query, 280);
+  const offersKind: DiscoverKind =
+    activeTab === "events"
+      ? "events"
+      : activeTab === "services"
+        ? "services"
+        : activeTab === "padel"
+          ? "padel"
+          : "all";
+  const includeOffers = activeTab !== "people" && activeTab !== "orgs";
   const handleBack = useCallback(() => {
     safeBack(router, navigation, "/(tabs)/index");
   }, [navigation, router]);
@@ -93,7 +103,7 @@ export default function SearchScreen() {
     offersQuery,
     usersQuery,
     orgsQuery,
-  } = useGlobalSearch(debounced);
+  } = useGlobalSearch(debounced, { offersKind, includeOffers });
   const userActions = useNetworkActions();
   const organizationActions = useOrganizationFollowActions();
   const { data: ipLocation } = useIpLocation(isFocused);
@@ -103,12 +113,17 @@ export default function SearchScreen() {
   const tabBarPadding = useTabBarPadding();
   const bottomPadding = Math.max(tabBarPadding, insets.bottom + 24);
   const queryLength = debounced.trim().length;
-  const showOffers = activeTab === "all" || activeTab === "events" || activeTab === "services";
+  const showOffers = activeTab === "all" || activeTab === "padel" || activeTab === "events" || activeTab === "services";
   const showUsers = activeTab === "all" || activeTab === "people";
   const showOrgs = activeTab === "all" || activeTab === "orgs";
 
   const filteredOffers = useMemo(() => {
     return offers.filter((offer) => {
+      if (activeTab === "padel") {
+        if (offer.type === "service") return offer.service.kind === "COURT";
+        const event = offer.event;
+        return event.templateType === "PADEL" || Boolean(event.tournament) || (event.categories ?? []).includes("PADEL");
+      }
       if (activeTab === "events") return offer.type === "event";
       if (activeTab === "services") {
         if (offer.type !== "service") return false;
@@ -172,12 +187,16 @@ export default function SearchScreen() {
 
   const sections = useMemo<SearchSection[]>(() => {
     if (!enabled) return [];
+    const offersSubtitle =
+      activeTab === "padel"
+        ? "Torneios e campos de padel"
+        : "Eventos, serviços e experiências";
 
     const built: SearchSection[] = [
       {
         key: "offers",
         title: "Ofertas",
-        subtitle: "Eventos, serviços e experiências",
+        subtitle: offersSubtitle,
         data: showOffers
           ? offersLoading
             ? buildSkeletons("offers", 2)
@@ -223,6 +242,7 @@ export default function SearchScreen() {
     users,
     usersLoading,
     usersQuery.isError,
+    activeTab,
   ]);
 
   const renderItem = useCallback(
@@ -366,7 +386,14 @@ export default function SearchScreen() {
                   onPress={() => setQuery("")}
                   accessibilityRole="button"
                   accessibilityLabel="Limpar pesquisa"
-                  className="rounded-full bg-white/10 px-2 py-1"
+                  className="rounded-full bg-white/10"
+                  style={{
+                    width: tokens.layout.touchTarget,
+                    height: tokens.layout.touchTarget,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  hitSlop={8}
                 >
                   <Ionicons name="close" size={14} color={tokens.colors.textMuted} />
                 </Pressable>

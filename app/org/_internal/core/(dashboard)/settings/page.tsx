@@ -67,6 +67,8 @@ type OrganizationMeResponse = {
     infoRequirements?: string | null;
     infoPolicies?: string | null;
     infoLocationNotes?: string | null;
+    supportEmail?: string | null;
+    supportPhone?: string | null;
   } | null;
   profile: {
     fullName: string | null;
@@ -111,7 +113,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [addressId, setAddressId] = useState<string | null>(null);
   const [showAddressPublicly, setShowAddressPublicly] = useState(false);
   const [contactPhone, setContactPhone] = useState("");
+  const [supportEmail, setSupportEmail] = useState("");
+  const [supportPhone, setSupportPhone] = useState("");
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [supportPhoneError, setSupportPhoneError] = useState<string | null>(null);
   const [orgMessage, setOrgMessage] = useState<string | null>(null);
   const [savingOrg, setSavingOrg] = useState(false);
   const [officialEmail, setOfficialEmail] = useState("");
@@ -159,6 +164,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
     );
     setOfficialEmail(pendingEmail ?? "");
     setContactPhone(profile?.contactPhone ?? "");
+    setSupportEmail(organization.supportEmail ?? "");
+    setSupportPhone(organization.supportPhone ?? "");
     setPublicNameInput(organization.publicName ?? "");
     setPublicUsernameInput(organization.username ?? "");
     setPublicDescriptionInput(organization.publicDescription ?? "");
@@ -272,6 +279,18 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setOrgMessage("Seleciona uma morada Apple válida antes de guardar.");
       return;
     }
+    if (supportEmail.trim()) {
+      const emailRegex = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+      if (!emailRegex.test(supportEmail.trim())) {
+        setOrgMessage("Email de suporte inválido.");
+        return;
+      }
+    }
+    if (supportPhone && !isValidPhone(supportPhone)) {
+      setSupportPhoneError("Telefone de suporte inválido.");
+      return;
+    }
+    setSupportPhoneError(null);
     setSavingOrg(true);
     setOrgMessage(null);
     try {
@@ -286,6 +305,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           addressId: addressId ?? "",
           showAddressPublicly,
           contactPhone,
+          supportEmail: supportEmail.trim() || null,
+          supportPhone: supportPhone.trim() || null,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -858,6 +879,45 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           </div>
         )}
         <div className="h-px w-full bg-gradient-to-r from-white/15 via-white/5 to-transparent" />
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Email de suporte da loja (opcional)</label>
+            <input
+              value={supportEmail}
+              onChange={(e) => setSupportEmail(e.target.value)}
+              type="email"
+              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+              placeholder="suporte@organizacao.pt"
+              disabled={!canEditOperational}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[12px] text-white/70">Telefone de suporte da loja (opcional)</label>
+            <input
+              value={supportPhone}
+              onChange={(e) => {
+                const sanitized = sanitizePhone(e.target.value);
+                setSupportPhone(sanitized);
+                if (sanitized && !isValidPhone(sanitized)) {
+                  setSupportPhoneError("Telefone de suporte inválido.");
+                } else {
+                  setSupportPhoneError(null);
+                }
+              }}
+              inputMode="tel"
+              pattern="\\+?\\d{6,15}"
+              maxLength={18}
+              className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
+                supportPhoneError
+                  ? "border-red-400/60 focus:border-red-300/80 focus:ring-1 focus:ring-red-300/40"
+                  : "border-white/15 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+              }`}
+              placeholder="+351912345678"
+              disabled={!canEditOperational}
+            />
+            {supportPhoneError && <p className="text-[11px] text-red-300">{supportPhoneError}</p>}
+          </div>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
             <label className="text-[12px] text-white/70">Telefone (opcional)</label>

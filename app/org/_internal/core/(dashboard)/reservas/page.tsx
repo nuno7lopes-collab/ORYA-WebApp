@@ -18,7 +18,12 @@ import { cn } from "@/lib/utils";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
-import { resolveServiceAssignmentMode, type ReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  normalizeReservationAssignmentMode,
+  requiresProfessionalForAssignmentMode,
+  requiresResourceForAssignmentMode,
+  resolveServiceAssignmentMode,
+} from "@/lib/reservas/serviceAssignment";
 import { appendOrganizationIdToHref, buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
 import BookingChargesPanel from "@/app/org/_internal/core/(dashboard)/reservas/_components/BookingChargesPanel";
@@ -47,6 +52,7 @@ const CHIP_BASE =
 const CHIP_ACTIVE =
   "border-white/35 bg-white/18 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]";
 const SERVICE_DURATION_OPTIONS = [30, 60, 90, 120];
+type ReservationFilterMode = "PROFESSIONAL" | "RESOURCE";
 
 const formatRangeDate = (date: Date, timezone: string) =>
   new Intl.DateTimeFormat("pt-PT", {
@@ -271,6 +277,7 @@ type ServiceItem = {
   title: string;
   description: string | null;
   kind?: string | null;
+  assignmentMode?: string | null;
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
@@ -319,12 +326,12 @@ type BookingItem = {
   } | null;
 };
 
-const getBookingMode = (booking: BookingItem): ReservationAssignmentMode => {
+const getBookingMode = (booking: BookingItem): ReservationFilterMode => {
   const serviceKind =
     typeof booking.service?.kind === "string" ? booking.service.kind.trim().toUpperCase() : "";
-  if (serviceKind && serviceKind !== "COURT") return "PROFESSIONAL";
+  if (serviceKind && serviceKind !== "COURT" && !booking.resource) return "PROFESSIONAL";
   const normalized = typeof booking.assignmentMode === "string" ? booking.assignmentMode.toUpperCase() : "";
-  if (normalized === "RESOURCE") return "RESOURCE";
+  if (["RESOURCE", "RESOURCE_ONLY", "PROFESSIONAL_AND_RESOURCE"].includes(normalized)) return "RESOURCE";
   if (booking.resource) return "RESOURCE";
   return "PROFESSIONAL";
 };
@@ -411,7 +418,7 @@ type SplitState = {
   loading: boolean;
   saving: boolean;
   error: string | null;
-  status: "NONE" | "OPEN" | "COMPLETED" | "CANCELLED";
+  status: "NONE" | "OPEN" | "SETTLING" | "SETTLED" | "CHARGE_FAILED" | "DEBT_OPEN" | "CANCELLED";
   pricingMode: "FIXED" | "DYNAMIC";
   dynamicMode: "AMOUNT" | "PERCENT";
   fixedShare: string;
@@ -679,20 +686,27 @@ export default function ReservasDashboardPage() {
   const hasCourtServices = services.some((service) => service.kind === "COURT");
   const hasNonCourtServices = services.some((service) => service.kind !== "COURT");
 
-  const assignmentMode = orgData?.organization?.reservationAssignmentMode ?? "PROFESSIONAL";
-  const canFilterByResource = assignmentMode === "RESOURCE" && hasCourtServices;
-  const canFilterByProfessional = assignmentMode === "PROFESSIONAL" || hasNonCourtServices;
+  const organizationAssignmentMode = normalizeReservationAssignmentMode(
+    orgData?.organization?.reservationAssignmentMode ?? null,
+  );
+  const assignmentMode: ReservationFilterMode = requiresResourceForAssignmentMode(organizationAssignmentMode)
+    ? "RESOURCE"
+    : "PROFESSIONAL";
+  const canFilterByResource = requiresResourceForAssignmentMode(organizationAssignmentMode) && hasCourtServices;
+  const canFilterByProfessional =
+    requiresProfessionalForAssignmentMode(organizationAssignmentMode) || hasNonCourtServices;
   const hasHybridFilters = canFilterByResource && canFilterByProfessional;
-  const [filterMode, setFilterMode] = useState<ReservationAssignmentMode>(() =>
+  const [filterMode, setFilterMode] = useState<ReservationFilterMode>(() =>
     canFilterByResource && assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL",
   );
   const createAssignmentConfig = useMemo(
     () =>
       resolveServiceAssignmentMode({
-        organizationMode: assignmentMode,
+        organizationMode: organizationAssignmentMode,
+        serviceMode: selectedCreateService?.assignmentMode ?? null,
         serviceKind: selectedCreateService?.kind ?? null,
       }),
-    [assignmentMode, selectedCreateService?.kind],
+    [organizationAssignmentMode, selectedCreateService?.assignmentMode, selectedCreateService?.kind],
   );
   const createAssignmentMode = createAssignmentConfig.mode;
   const timezone = orgData?.organization?.timezone ?? "Europe/Lisbon";
@@ -1392,7 +1406,7 @@ export default function ReservasDashboardPage() {
     };
   }, [splitState]);
   const splitLocked =
-    drawerBookingClosed || (splitState ? splitState.paidCents > 0 || splitState.status === "COMPLETED" : false);
+    drawerBookingClosed || (splitState ? splitState.paidCents > 0 || splitState.status === "SETTLED" : false);
 
   const handleShiftRange = (direction: -1 | 1) => {
     const delta = calendarView === "week" ? 7 : 1;
@@ -1401,8 +1415,8 @@ export default function ReservasDashboardPage() {
     setFocusDate(buildZonedDate(nextParts, timezone, 12, 0));
   };
 
-  const handleModeChange = async (mode: "PROFESSIONAL" | "RESOURCE") => {
-    if (modeSaving || assignmentMode === mode) return;
+  const handleModeChange = async (mode: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY") => {
+    if (modeSaving || organizationAssignmentMode === mode) return;
     setModeSaving(mode);
     try {
       if (!organizationId || Number.isNaN(organizationId)) {
@@ -1801,7 +1815,8 @@ export default function ReservasDashboardPage() {
         ? activeServices.find((service) => service.id === initialServiceId)?.kind ?? null
         : null;
     const initialAssignmentMode = resolveServiceAssignmentMode({
-      organizationMode: assignmentMode,
+      organizationMode: organizationAssignmentMode,
+      serviceMode: selectedCreateService?.assignmentMode ?? null,
       serviceKind: initialServiceKind,
     }).mode;
     setDrawerBooking(null);
@@ -2049,6 +2064,9 @@ export default function ReservasDashboardPage() {
           {isStaffMember ? (
             <div className="text-[12px] text-white/60">
               Modo: {assignmentMode === "RESOURCE" ? "Recurso" : "Profissional"}
+              {organizationAssignmentMode === "PROFESSIONAL_AND_RESOURCE" && (
+                <span className="text-white/40"> | Híbrido</span>
+              )}
               {hasHybridFilters && (
                 <span className="text-white/40"> | Vista: {filterMode === "RESOURCE" ? "Recursos" : "Profissionais"}</span>
               )}
@@ -2058,20 +2076,20 @@ export default function ReservasDashboardPage() {
               <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Modo</span>
               <button
                 type="button"
-                onClick={() => handleModeChange("PROFESSIONAL")}
+                onClick={() => handleModeChange("PROFESSIONAL_ONLY")}
                 className={cn(
                   CHIP_BASE,
-                  assignmentMode === "PROFESSIONAL" && CHIP_ACTIVE,
+                  organizationAssignmentMode === "PROFESSIONAL_ONLY" && CHIP_ACTIVE,
                 )}
               >
                 Profissional
               </button>
               <button
                 type="button"
-                onClick={() => handleModeChange("RESOURCE")}
+                onClick={() => handleModeChange("RESOURCE_ONLY")}
                 className={cn(
                   CHIP_BASE,
-                  assignmentMode === "RESOURCE" && CHIP_ACTIVE,
+                  organizationAssignmentMode === "RESOURCE_ONLY" && CHIP_ACTIVE,
                 )}
               >
                 Recurso
@@ -2956,8 +2974,14 @@ export default function ReservasDashboardPage() {
                     <span className="rounded-full border border-white/20 bg-white/10 px-2 py-1 text-[11px] text-white/70">
                       {splitState.status === "OPEN"
                         ? "Ativo"
-                        : splitState.status === "COMPLETED"
+                        : splitState.status === "SETTLING"
+                          ? "Em acerto"
+                        : splitState.status === "SETTLED"
                           ? "Concluído"
+                          : splitState.status === "CHARGE_FAILED"
+                            ? "Falha de cobrança"
+                            : splitState.status === "DEBT_OPEN"
+                              ? "Dívida aberta"
                           : "Cancelado"}
                     </span>
                   )}

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -8,6 +8,7 @@ import { buildStoreOrderTimeline } from "@/lib/store/orderTimeline";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
+import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const lookupSchema = z.object({
@@ -17,14 +18,29 @@ const lookupSchema = z.object({
 
 function buildStoreLabel(store: {
   id: number;
-  supportEmail: string | null;
-  supportPhone: string | null;
-  returnPolicy: string | null;
-  privacyPolicy: string | null;
-  termsUrl: string | null;
-  organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
+  policySnapshotJson: unknown;
+  organization:
+    | {
+        username: string | null;
+        publicName: string | null;
+        businessName: string | null;
+        officialEmail: string | null;
+        settings: {
+          supportEmail: string | null;
+          supportPhone: string | null;
+          storeReturnPolicyMode: string | null;
+          storeReturnWindowDays: number | null;
+        } | null;
+      }
+    | null;
 }) {
   const org = store.organization;
+  const policy = resolveStorePolicyWithSnapshot({
+    snapshot: store.policySnapshotJson,
+    settings: org?.settings ?? null,
+    fallbackSupportEmail: org?.officialEmail ?? null,
+    organizationUsername: org?.username ?? null,
+  });
   const displayName =
     org?.publicName ||
     org?.businessName ||
@@ -35,11 +51,12 @@ function buildStoreLabel(store: {
     id: store.id,
     displayName,
     username,
-    supportEmail: store.supportEmail ?? null,
-    supportPhone: store.supportPhone ?? null,
-    returnPolicy: store.returnPolicy ?? null,
-    privacyPolicy: store.privacyPolicy ?? null,
-    termsUrl: store.termsUrl ?? null,
+    supportEmail: policy.supportEmail,
+    supportPhone: policy.supportPhone,
+    returnPolicy: policy.returnPolicy,
+    privacyPolicy: policy.privacyPolicy,
+    termsUrl: policy.termsUrl,
+    legalUrl: policy.legalUrl,
   };
 }
 
@@ -90,15 +107,26 @@ async function _POST(req: NextRequest) {
         customerName: true,
         createdAt: true,
         updatedAt: true,
+        storePolicySnapshotJson: true,
         store: {
           select: {
             id: true,
-            supportEmail: true,
-            supportPhone: true,
-            returnPolicy: true,
-            privacyPolicy: true,
-            termsUrl: true,
-            organization: { select: { username: true, publicName: true, businessName: true } },
+            organization: {
+              select: {
+                username: true,
+                publicName: true,
+                businessName: true,
+                officialEmail: true,
+                settings: {
+                  select: {
+                    supportEmail: true,
+                    supportPhone: true,
+                    storeReturnPolicyMode: true,
+                    storeReturnWindowDays: true,
+                  },
+                },
+              },
+            },
           },
         },
         shippingZone: { select: { name: true } },
@@ -248,7 +276,7 @@ async function _POST(req: NextRequest) {
         currency: order.currency,
         customerName: order.customerName,
         createdAt: order.createdAt.toISOString(),
-        store: buildStoreLabel(order.store),
+        store: buildStoreLabel({ ...order.store, policySnapshotJson: order.storePolicySnapshotJson }),
         shipping: {
           zoneName: order.shippingZone?.name ?? null,
           methodName: order.shippingMethod?.name ?? null,

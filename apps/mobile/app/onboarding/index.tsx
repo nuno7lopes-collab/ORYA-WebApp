@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   Keyboard,
   KeyboardAvoidingView,
@@ -11,6 +12,7 @@ import {
   Text,
   TextInput,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
@@ -54,7 +56,9 @@ import {
   saveLocationConsent,
   savePadelOnboarding,
 } from "../../features/onboarding/api";
+import { useIpLocation } from "../../features/onboarding/hooks";
 import type { ProfileSummary } from "../../features/profile/types";
+import { setProfileCache } from "../../lib/profileCache";
 
 const INTEREST_ICONS: Record<InterestId, string> = {
   padel: "tennisball",
@@ -68,6 +72,12 @@ const INTEREST_ICONS: Record<InterestId, string> = {
 };
 
 const MAX_INTERESTS = 6;
+const STEP_ICONS: Record<OnboardingStep, string> = {
+  basic: "person-circle",
+  interests: "sparkles",
+  padel: "tennisball",
+  location: "location",
+};
 
 const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
   if (!draft) return "basic";
@@ -110,6 +120,7 @@ export default function OnboardingScreen() {
   const queryClient = useQueryClient();
   const { session, loading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
   const [step, setStep] = useState<OnboardingStep>("basic");
   const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
@@ -139,6 +150,7 @@ export default function OnboardingScreen() {
   } | null>(null);
   const locationRequestIdRef = useRef(0);
   const didApplyStartRef = useRef(false);
+  const stepTransition = useRef(new Animated.Value(1)).current;
 
   const USERNAME_MIN_LEN = 3;
 
@@ -206,6 +218,9 @@ export default function OnboardingScreen() {
     [padelSelected],
   );
   const stepIndex = Math.max(0, steps.indexOf(step));
+  const stepHint = t(`onboarding:stepHints.${step}`);
+  const compactLayout = screenWidth < 370;
+  const wideLayout = screenWidth >= 430;
 
   const allowReservedForEmail = session?.user?.email ?? null;
   const usernameValidation = useMemo(
@@ -219,6 +234,16 @@ export default function OnboardingScreen() {
   const saveBasicMutation = useMutation({ mutationFn: saveBasicProfile, retry: 1 });
   const savePadelMutation = useMutation({ mutationFn: savePadelOnboarding, retry: 1 });
   const saveConsentMutation = useMutation({ mutationFn: saveLocationConsent, retry: 1 });
+  const ipLocationQuery = useIpLocation(step === "location");
+  const locationPreview = useMemo(() => {
+    const data = ipLocationQuery.data;
+    if (!data) return null;
+    const segments = [data.city, data.region, data.country].filter(
+      (part): part is string => typeof part === "string" && part.trim().length > 0,
+    );
+    if (segments.length === 0) return null;
+    return segments.join(", ");
+  }, [ipLocationQuery.data]);
 
   useEffect(() => {
     if (padelSelected) return;
@@ -233,6 +258,15 @@ export default function OnboardingScreen() {
       cancelUsernameCheck();
     }
   }, [step]);
+
+  useEffect(() => {
+    stepTransition.setValue(0);
+    Animated.timing(stepTransition, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [step, stepTransition]);
 
   useEffect(() => {
     let mounted = true;
@@ -459,6 +493,15 @@ export default function OnboardingScreen() {
       onboardingDone: true,
     }));
     queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
+    if (session?.user?.id) {
+      setProfileCache({
+        userId: session.user.id,
+        fullName: payload.fullName,
+        username: payload.username,
+        onboardingDone: true,
+        updatedAt: new Date().toISOString(),
+      }).catch(() => undefined);
+    }
   };
 
   const finalizeOnboarding = async (location?: { consent?: "GRANTED" | "DENIED" }) => {
@@ -641,19 +684,35 @@ export default function OnboardingScreen() {
   };
 
   const handlePadelSkip = async () => {
-    setPadelGender(null);
-    setPadelSide(null);
-    setPadelLevel(null);
-    await persistDraft({
-      step: 3,
-      padel: {
-        gender: null,
-        preferredSide: null,
-        level: null,
-        skipped: true,
-      },
-    });
-    setStep("location");
+    if (savingStep) return;
+    setSavingStep("padel");
+    try {
+      setPadelGender(null);
+      setPadelSide(null);
+      setPadelLevel(null);
+      await persistDraft({
+        step: 3,
+        padel: {
+          gender: null,
+          preferredSide: null,
+          level: null,
+          skipped: true,
+        },
+      });
+      setStep("location");
+    } catch (err: any) {
+      const rawMessage = String(err?.message ?? "");
+      if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
+        await handleAuthError();
+        return;
+      }
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("onboarding:errors.padelSaveFailed")),
+      );
+    } finally {
+      setSavingStep(null);
+    }
   };
 
   const handleLocationFlow = async (intent: "allow" | "skip") => {
@@ -707,6 +766,7 @@ export default function OnboardingScreen() {
   };
 
   const handleBack = () => {
+    if (savingStep) return;
     const prev = steps[stepIndex - 1];
     if (prev) {
       if (step === "location") {
@@ -716,7 +776,21 @@ export default function OnboardingScreen() {
       setStep(prev);
       return;
     }
-    handleExitOnboarding();
+    Alert.alert(
+      t("onboarding:exit.title"),
+      t("onboarding:exit.body"),
+      [
+        { text: t("common:actions.cancel"), style: "cancel" },
+        {
+          text: t("onboarding:exit.confirm"),
+          style: Platform.OS === "ios" ? "destructive" : "default",
+          onPress: () => {
+            handleExitOnboarding().catch(() => undefined);
+          },
+        },
+      ],
+      { cancelable: true },
+    );
   };
 
   const renderUsernameStatus = () => {
@@ -775,41 +849,58 @@ export default function OnboardingScreen() {
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>{t("onboarding:basic.nameLabel")}</Text>
-        <TextInput
-          ref={nameInputRef}
-          value={fullName}
-          onChangeText={setFullName}
-          placeholder={t("onboarding:basic.namePlaceholder")}
-          placeholderTextColor={tokens.colors.textMuted}
-          autoCapitalize="words"
-          textContentType="name"
-          returnKeyType="next"
-          blurOnSubmit={false}
-          onSubmitEditing={() => usernameInputRef.current?.focus()}
-          style={styles.input}
-          accessibilityLabel={t("onboarding:basic.nameLabel")}
-        />
+        <View style={styles.inputShell}>
+          <TextInput
+            ref={nameInputRef}
+            value={fullName}
+            onChangeText={setFullName}
+            placeholder={t("onboarding:basic.namePlaceholder")}
+            placeholderTextColor={tokens.colors.textMuted}
+            autoCapitalize="words"
+            textContentType="name"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => usernameInputRef.current?.focus()}
+            style={styles.input}
+            accessibilityLabel={t("onboarding:basic.nameLabel")}
+          />
+        </View>
       </View>
 
       <View style={styles.field}>
         <Text style={styles.fieldLabel}>{t("onboarding:basic.usernameLabel")}</Text>
-        <TextInput
-          ref={usernameInputRef}
-          value={username}
-          onChangeText={(value) => {
-            const next = sanitizeUsername(value);
-            setUsername(next);
-          }}
-          placeholder={t("onboarding:basic.usernamePlaceholder")}
-          placeholderTextColor={tokens.colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="username"
-          autoComplete="username"
-          returnKeyType="done"
-          style={styles.input}
-          accessibilityLabel={t("onboarding:basic.usernameLabel")}
-        />
+        <View
+          style={[
+            styles.inputShell,
+            usernameStatus === "available"
+              ? styles.inputShellSuccess
+              : usernameStatus === "taken" ||
+                  usernameStatus === "reserved" ||
+                  usernameStatus === "invalid" ||
+                  usernameStatus === "error"
+                ? styles.inputShellError
+                : null,
+          ]}
+        >
+          <Text style={styles.usernamePrefix}>@</Text>
+          <TextInput
+            ref={usernameInputRef}
+            value={username}
+            onChangeText={(value) => {
+              const next = sanitizeUsername(value);
+              setUsername(next);
+            }}
+            placeholder={t("onboarding:basic.usernamePlaceholder").replace(/^@+/, "")}
+            placeholderTextColor={tokens.colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="username"
+            autoComplete="username"
+            returnKeyType="done"
+            style={styles.usernameInput}
+            accessibilityLabel={t("onboarding:basic.usernameLabel")}
+          />
+        </View>
         {renderUsernameStatus()}
       </View>
     </GlassCard>
@@ -823,22 +914,32 @@ export default function OnboardingScreen() {
       <View style={styles.interestGrid}>
         {INTEREST_OPTIONS.map((interest, idx) => {
           const active = interests.includes(interest.id);
+          const disabled = !active && interests.length >= MAX_INTERESTS;
           const isPadel = interest.id === "padel";
           const interestLabel = t(`common:interests.${interest.id}`);
           return (
             <Pressable
               key={interest.id}
-              onPress={() => toggleInterest(interest.id)}
+              onPress={() => {
+                if (disabled) return;
+                toggleInterest(interest.id);
+              }}
               style={({ pressed }) => [
                 styles.interestChip,
+                compactLayout
+                  ? styles.interestChipCompact
+                  : wideLayout
+                    ? styles.interestChipWide
+                    : styles.interestChipRegular,
                 active ? styles.interestChipActive : styles.interestChipIdle,
                 isPadel ? styles.interestChipPadel : null,
+                disabled ? styles.interestChipDisabled : null,
                 pressed ? styles.interestChipPressed : null,
                 idx === 0 ? styles.interestChipFirst : null,
               ]}
               accessibilityRole="button"
               accessibilityLabel={interestLabel}
-              accessibilityState={{ selected: active }}
+              accessibilityState={{ selected: active, disabled }}
             >
               {active ? (
                 <View style={styles.interestCheck}>
@@ -862,6 +963,9 @@ export default function OnboardingScreen() {
       <Text style={styles.helperMeta}>
         {t("onboarding:interests.selectedCount", { count: interests.length, total: MAX_INTERESTS })}
       </Text>
+      {interests.length >= MAX_INTERESTS ? (
+        <Text style={styles.helperHint}>{t("onboarding:interests.limitReached")}</Text>
+      ) : null}
     </GlassCard>
   );
 
@@ -925,7 +1029,7 @@ export default function OnboardingScreen() {
                 onPress={() => setPadelSide(side.id)}
                 style={({ pressed }) => [
                   styles.optionChip,
-                  styles.optionChipThird,
+                  compactLayout ? styles.optionChipHalf : styles.optionChipThird,
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
@@ -958,7 +1062,7 @@ export default function OnboardingScreen() {
                 onPress={() => setPadelLevel(active ? null : level)}
                 style={({ pressed }) => [
                   styles.optionChip,
-                  styles.levelChip,
+                  compactLayout ? styles.levelChipCompact : styles.levelChip,
                   active ? styles.optionChipActive : styles.optionChipIdle,
                   pressed ? styles.optionChipPressed : null,
                 ]}
@@ -984,6 +1088,19 @@ export default function OnboardingScreen() {
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
       <Text style={styles.cardTitle}>{t("onboarding:location.title")}</Text>
       <Text style={styles.cardSubtitle}>{t("onboarding:location.subtitle")}</Text>
+      {locationPreview ? (
+        <View style={styles.locationPreviewRow}>
+          <Ionicons name="navigate-circle" size={16} color="rgba(145, 198, 255, 0.92)" />
+          <Text style={styles.locationPreviewText}>
+            {t("onboarding:location.approxLocation", { location: locationPreview })}
+          </Text>
+        </View>
+      ) : ipLocationQuery.isLoading ? (
+        <View style={styles.locationPreviewRow}>
+          <ActivityIndicator size="small" color="rgba(200,210,230,0.85)" />
+          <Text style={styles.locationPreviewText}>{t("onboarding:location.detecting")}</Text>
+        </View>
+      ) : null}
 
       {locationError ? (
         <Text style={styles.errorText}>{t("onboarding:errors.locationFailed")}</Text>
@@ -1046,10 +1163,18 @@ export default function OnboardingScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
           <ScrollView
-            contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
+            contentContainerStyle={[
+              styles.container,
+              compactLayout ? styles.containerCompact : null,
+              {
+                paddingTop: insets.top + 16,
+                paddingBottom: Math.max(insets.bottom + 20, 40),
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
@@ -1057,58 +1182,90 @@ export default function OnboardingScreen() {
             <View style={styles.topBar}>
               <Pressable
                 onPress={handleBack}
-                style={styles.backButton}
+                style={[styles.backButton, savingStep ? styles.backButtonDisabled : null]}
+                disabled={Boolean(savingStep)}
                 accessibilityRole="button"
                 accessibilityLabel={t("common:actions.back")}
+                accessibilityState={{ disabled: Boolean(savingStep) }}
               >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
               </Pressable>
             </View>
 
             <View style={styles.header}>
-              <Text style={styles.title}>{t("onboarding:welcomeTitle")}</Text>
-            </View>
-
-            <StepProgress total={steps.length} current={stepIndex} />
-
-            {step === "basic"
-              ? renderBasicStep()
-              : step === "interests"
-                ? renderInterestsStep()
-                : step === "padel"
-                  ? renderPadelStep()
-                  : renderLocationStep()}
-
-            <View style={styles.actions}>
-              {step === "basic" ? (
-                <PrimaryButton
-                  label={savingStep === "basic" ? t("common:actions.saving") : t("common:actions.continue")}
-                  onPress={handleBasicContinue}
-                  disabled={!canContinueBasic || savingStep === "basic"}
-                  loading={savingStep === "basic"}
-                />
-              ) : null}
-              {step === "interests" ? (
-                <PrimaryButton
-                  label={
-                    savingStep === "interests" ? t("common:actions.saving") : t("common:actions.continue")
-                  }
-                  onPress={handleInterestsContinue}
-                  disabled={!canContinueInterests || savingStep === "interests"}
-                  loading={savingStep === "interests"}
-                />
-              ) : null}
-              {step === "padel" ? (
-                <View style={styles.padelActions}>
-                  <PrimaryButton
-                    label={savingStep === "padel" ? t("common:actions.saving") : t("common:actions.continue")}
-                    onPress={handlePadelContinue}
-                    disabled={!canContinuePadel || savingStep === "padel"}
-                    loading={savingStep === "padel"}
-                  />
+              <View style={styles.stepMetaRow}>
+                <View style={styles.stepMetaBadge}>
+                  <Ionicons name={STEP_ICONS[step]} size={14} color="rgba(210,226,255,0.95)" />
                 </View>
-              ) : null}
+                <Text style={styles.stepMetaText}>
+                  {t("onboarding:stepCounter", { current: stepIndex + 1, total: steps.length })}
+                </Text>
+              </View>
+              <Text style={styles.title}>{t("onboarding:welcomeTitle")}</Text>
+              <Text style={styles.subtitle}>{stepHint}</Text>
             </View>
+
+            <StepProgress
+              total={steps.length}
+              current={stepIndex}
+              accessibilityLabel={t("onboarding:stepCounter", { current: stepIndex + 1, total: steps.length })}
+            />
+
+            <Animated.View
+              style={[
+                styles.stepContentWrap,
+                {
+                  opacity: stepTransition,
+                  transform: [
+                    {
+                      translateY: stepTransition.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [10, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {step === "basic"
+                ? renderBasicStep()
+                : step === "interests"
+                  ? renderInterestsStep()
+                  : step === "padel"
+                    ? renderPadelStep()
+                    : renderLocationStep()}
+
+              <View style={styles.actions}>
+                {step === "basic" ? (
+                  <PrimaryButton
+                    label={savingStep === "basic" ? t("common:actions.saving") : t("common:actions.continue")}
+                    onPress={handleBasicContinue}
+                    disabled={!canContinueBasic || savingStep === "basic"}
+                    loading={savingStep === "basic"}
+                  />
+                ) : null}
+                {step === "interests" ? (
+                  <PrimaryButton
+                    label={
+                      savingStep === "interests" ? t("common:actions.saving") : t("common:actions.continue")
+                    }
+                    onPress={handleInterestsContinue}
+                    disabled={!canContinueInterests || savingStep === "interests"}
+                    loading={savingStep === "interests"}
+                  />
+                ) : null}
+                {step === "padel" ? (
+                  <View style={styles.padelActions}>
+                    <PrimaryButton
+                      label={savingStep === "padel" ? t("common:actions.saving") : t("common:actions.continue")}
+                      onPress={handlePadelContinue}
+                      disabled={!canContinuePadel || savingStep === "padel"}
+                      loading={savingStep === "padel"}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            </Animated.View>
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -1119,10 +1276,14 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    padding: 24,
+    padding: 22,
     paddingBottom: 40,
     gap: 18,
     alignItems: "center",
+  },
+  containerCompact: {
+    paddingHorizontal: 16,
+    gap: 14,
   },
   topBar: {
     width: "100%",
@@ -1131,12 +1292,17 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   backButton: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
     minHeight: tokens.layout.touchTarget,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    minWidth: tokens.layout.touchTarget,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  backButtonDisabled: {
+    opacity: 0.45,
   },
   backLabel: {
     color: "rgba(255,255,255,0.85)",
@@ -1144,34 +1310,75 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   header: {
-    gap: 8,
+    gap: 10,
     alignItems: "center",
     maxWidth: 440,
     width: "100%",
   },
+  stepMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(164, 200, 255, 0.1)",
+    borderColor: "rgba(170, 210, 255, 0.3)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  stepMetaBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepMetaText: {
+    color: "rgba(220,232,255,0.92)",
+    fontSize: 12,
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
+  },
   title: {
     color: "#ffffff",
-    fontSize: 28,
-    fontWeight: "700",
+    fontSize: 30,
+    lineHeight: 36,
+    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
+    letterSpacing: tokens.typography.letterSpacing?.tight ?? -0.2,
     textAlign: "center",
+  },
+  subtitle: {
+    color: "rgba(220, 228, 244, 0.78)",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
+    maxWidth: 360,
+  },
+  stepContentWrap: {
+    width: "100%",
+    alignItems: "center",
+    gap: 14,
   },
   card: {
     width: "100%",
     maxWidth: 440,
   },
   cardContent: {
-    gap: 16,
+    gap: 18,
     padding: 22,
   },
   cardTitle: {
     color: "#ffffff",
     fontSize: 18,
-    fontWeight: "700",
+    lineHeight: 24,
+    fontFamily: tokens.typography.fontFamily?.heading ?? "System",
   },
   cardSubtitle: {
-    color: "rgba(255,255,255,0.65)",
+    color: "rgba(255,255,255,0.7)",
     fontSize: 13,
     lineHeight: 19,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   field: {
     gap: 8,
@@ -1182,24 +1389,56 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.6,
     textTransform: "uppercase",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
+  },
+  inputShell: {
+    minHeight: tokens.layout.touchTarget + 2,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  inputShellSuccess: {
+    borderColor: "rgba(110, 231, 183, 0.55)",
+    backgroundColor: "rgba(80, 200, 140, 0.08)",
+  },
+  inputShellError: {
+    borderColor: "rgba(252, 165, 165, 0.56)",
+    backgroundColor: "rgba(250, 120, 120, 0.08)",
   },
   input: {
     minHeight: tokens.layout.touchTarget,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    paddingHorizontal: 14,
+    flex: 1,
     color: "#ffffff",
     fontSize: 15,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
+  },
+  usernamePrefix: {
+    color: "rgba(255,255,255,0.62)",
+    fontSize: 16,
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
+    marginTop: Platform.OS === "ios" ? 1 : 0,
+  },
+  usernameInput: {
+    minHeight: tokens.layout.touchTarget,
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 15,
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   helperText: {
     color: "rgba(255,255,255,0.55)",
     fontSize: 11,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   helperHint: {
     color: "rgba(255,255,255,0.45)",
     fontSize: 11,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   helperRow: {
     flexDirection: "row",
@@ -1225,6 +1464,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 10,
     alignSelf: "center",
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   interestGrid: {
     flexDirection: "row",
@@ -1243,10 +1483,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     minHeight: tokens.layout.touchTarget,
-    width: "23%",
-    minWidth: 70,
     aspectRatio: 1,
     position: "relative",
+  },
+  interestChipRegular: {
+    width: "31%",
+    minWidth: 86,
+  },
+  interestChipWide: {
+    width: "23%",
+    minWidth: 86,
+  },
+  interestChipCompact: {
+    width: "47%",
+    minWidth: 118,
+    aspectRatio: 1.18,
   },
   interestChipIdle: {
     borderColor: "rgba(255,255,255,0.12)",
@@ -1259,6 +1510,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
+  },
+  interestChipDisabled: {
+    opacity: 0.42,
   },
   interestChipPadel: {
     borderColor: "rgba(200, 225, 255, 0.7)",
@@ -1291,7 +1545,7 @@ const styles = StyleSheet.create({
   interestLabel: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 11,
-    fontWeight: "600",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
     flexShrink: 1,
     textAlign: "center",
     width: "100%",
@@ -1318,13 +1572,13 @@ const styles = StyleSheet.create({
   skipLink: {
     paddingVertical: 6,
     paddingHorizontal: 8,
-    minHeight: 30,
+    minHeight: tokens.layout.touchTarget,
     justifyContent: "center",
   },
   skipText: {
     color: "rgba(200, 220, 255, 0.9)",
     fontSize: 12,
-    fontWeight: "600",
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   optionRow: {
     flexDirection: "row",
@@ -1369,8 +1623,8 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     color: "rgba(255,255,255,0.85)",
-    fontWeight: "600",
     fontSize: 13,
+    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   optionLabelActive: {
     color: "#0b0f17",
@@ -1389,17 +1643,39 @@ const styles = StyleSheet.create({
   levelChip: {
     width: "30%",
   },
+  levelChipCompact: {
+    width: "47%",
+  },
   locationActions: {
     gap: 12,
+  },
+  locationPreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(140, 190, 255, 0.25)",
+    backgroundColor: "rgba(120, 175, 255, 0.1)",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  locationPreviewText: {
+    color: "rgba(219,234,255,0.92)",
+    fontSize: 12,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
+    flexShrink: 1,
   },
   errorText: {
     color: "rgba(255,180,180,0.9)",
     fontSize: 12,
+    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   actions: {
     gap: 12,
     width: "100%",
     maxWidth: 440,
+    marginTop: 2,
   },
   padelActions: {
     gap: 10,

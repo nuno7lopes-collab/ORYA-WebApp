@@ -34,7 +34,7 @@ const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const PENDING_HOLD_MINUTES = 10;
 const MAX_PENDING_PER_USER = 1;
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
@@ -125,6 +125,7 @@ async function _POST(
       select: {
         id: true,
         kind: true,
+        assignmentMode: true,
         organizationId: true,
         durationMinutes: true,
         unitPriceCents: true,
@@ -245,7 +246,8 @@ async function _POST(
 
     const assignmentConfig = resolveServiceAssignmentMode({
       organizationMode: service.organization?.reservationAssignmentMode ?? null,
-      serviceKind: service.kind,
+      serviceMode: service.assignmentMode ?? null,
+      serviceKind: service.kind ?? null,
     });
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
@@ -318,7 +320,7 @@ async function _POST(
     }
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return jsonWrap({ ok: false, error: "Horário fora da grelha de 15 minutos." }, { status: 400 });
+      return jsonWrap({ ok: false, error: "Horário fora da grelha de 5 minutos." }, { status: 400 });
     }
 
     const now = new Date();
@@ -342,6 +344,7 @@ async function _POST(
     }
 
     const assignmentMode = assignmentConfig.mode;
+    const bookingAssignmentMode = assignmentConfig.assignmentMode;
     const allowedProfessionalIds = service.professionalLinks.length
       ? service.professionalLinks
           .filter((link) => link.professional?.isActive)
@@ -580,7 +583,7 @@ async function _POST(
           price: effectivePriceCents,
           currency: service.currency,
           status: "PENDING_CONFIRMATION",
-          assignmentMode,
+          assignmentMode: bookingAssignmentMode,
           professionalId,
           partySize,
           pendingExpiresAt,

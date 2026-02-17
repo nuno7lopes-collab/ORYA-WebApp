@@ -306,7 +306,7 @@ const styles = {
     paddingVertical: 9,
     borderRadius: 999,
     borderWidth: 1,
-    minHeight: 36,
+    minHeight: tokens.layout.touchTarget,
     justifyContent: "center" as const,
   },
   actionPrimary: {

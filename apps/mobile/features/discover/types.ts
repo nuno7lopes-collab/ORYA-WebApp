@@ -23,6 +23,7 @@ export type DiscoverServiceCard = {
     businessName?: string | null;
     username?: string | null;
     brandingAvatarUrl?: string | null;
+    brandingCoverUrl?: string | null;
     addressId?: string | null;
     addressRef?: { formattedAddress?: string | null; canonical?: Record<string, unknown> | null } | null;
   };

@@ -619,7 +619,7 @@ export async function settleBookingSplitRuntime(params: {
     await tx.bookingSplit.update({
       where: { id: split.id },
       data: {
-        status: BookingSplitStatus.COMPLETED,
+        status: BookingSplitStatus.SETTLED,
         settledAt: now,
       },
     });
@@ -640,13 +640,28 @@ export async function settleBookingSplitRuntime(params: {
     };
   }
 
-  if (split.status !== BookingSplitStatus.OPEN) {
+  const runtimeCollectableStatuses = new Set<BookingSplitStatus>([
+    BookingSplitStatus.OPEN,
+    BookingSplitStatus.SETTLING,
+    BookingSplitStatus.CHARGE_FAILED,
+  ]);
+  if (!runtimeCollectableStatuses.has(split.status)) {
     return { state: "NOT_DUE", splitId: split.id, outstandingCents };
   }
 
   const deadlineAt = split.deadlineAt;
   if (!allowBeforeDeadline && deadlineAt && now.getTime() < deadlineAt.getTime()) {
     return { state: "NOT_DUE", splitId: split.id, outstandingCents };
+  }
+  if (
+    split.status === BookingSplitStatus.OPEN &&
+    deadlineAt &&
+    now.getTime() >= deadlineAt.getTime()
+  ) {
+    await tx.bookingSplit.update({
+      where: { id: split.id },
+      data: { status: BookingSplitStatus.SETTLING },
+    });
   }
 
   if (split.railState === BookingSplitRailState.HOLD_CAPTURE) {
@@ -695,6 +710,7 @@ export async function settleBookingSplitRuntime(params: {
     await tx.bookingSplit.update({
       where: { id: split.id },
       data: {
+        status: BookingSplitStatus.CHARGE_FAILED,
         railState: BookingSplitRailState.OFFSESSION_PI,
         captureBeforeAt: captureBefore,
         captureBeforeSource:
@@ -734,7 +750,7 @@ export async function settleBookingSplitRuntime(params: {
       where: { id: split.id },
       data: {
         railState: BookingSplitRailState.DEBT,
-        status: BookingSplitStatus.EXPIRED,
+        status: BookingSplitStatus.DEBT_OPEN,
         debtOpenedAt: now,
       },
     });

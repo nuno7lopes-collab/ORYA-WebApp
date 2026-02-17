@@ -26,7 +26,6 @@ const DEFAULT_SUB_BY_VIEW: Record<string, string> = {
   orders: "orders",
   shipping: "settings",
   marketing: "bundles",
-  settings: "preferences",
 };
 
 type NavConfig = {
@@ -52,7 +51,6 @@ const NAV_ITEMS: NavConfig[] = [
   { id: "orders", label: "Encomendas", view: "orders", sub: "orders" },
   { id: "shipping", label: "Envios", view: "shipping", sub: "settings" },
   { id: "marketing", label: "Marketing", view: "marketing", sub: "bundles" },
-  { id: "settings", label: "Definicoes", view: "settings", sub: "preferences" },
 ];
 
 function resolveHref(baseHref: string | undefined, view: string, sub?: string) {

@@ -228,7 +228,7 @@ function buildPolicySnapshot(policy: BookingPolicyRow): BookingPolicySnapshot {
     policyType: policy.policyType,
     allowCancellation: Boolean(policy.allowCancellation),
     cancellationWindowMinutes,
-    cancellationPenaltyBps: Math.max(0, Math.min(10000, toInt(policy.cancellationPenaltyBps) ?? 0)),
+    cancellationPenaltyBps: 0,
     allowReschedule: Boolean(policy.allowReschedule),
     rescheduleWindowMinutes,
     guestBookingAllowed: Boolean(policy.guestBookingAllowed),
@@ -401,7 +401,6 @@ function parsePolicySnapshot(raw: unknown): BookingPolicySnapshot | null {
       : clampNonNegative(raw.cancellationWindowMinutes, -1);
 
   const allowCancellation = raw.allowCancellation == null ? true : Boolean(raw.allowCancellation);
-  const cancellationPenaltyBps = clampNonNegative(raw.cancellationPenaltyBps);
   const allowReschedule = raw.allowReschedule == null ? true : Boolean(raw.allowReschedule);
   const rescheduleWindowMinutes =
     raw.rescheduleWindowMinutes === null || raw.rescheduleWindowMinutes == null
@@ -416,7 +415,7 @@ function parsePolicySnapshot(raw: unknown): BookingPolicySnapshot | null {
       typeof cancellationWindowMinutes === "number" && cancellationWindowMinutes >= 0
         ? cancellationWindowMinutes
         : null,
-    cancellationPenaltyBps: Math.max(0, Math.min(10000, cancellationPenaltyBps)),
+    cancellationPenaltyBps: 0,
     allowReschedule,
     rescheduleWindowMinutes:
       typeof rescheduleWindowMinutes === "number" && rescheduleWindowMinutes >= 0
@@ -545,7 +544,7 @@ export function getSnapshotRescheduleWindowMinutes(raw: unknown): number | null 
 }
 
 export function getSnapshotCancellationPenaltyBps(raw: unknown): number {
-  return getPolicySnapshot(raw)?.cancellationPenaltyBps ?? 0;
+  return 0;
 }
 
 export function getSnapshotAllowCancellation(raw: unknown): boolean {
@@ -596,18 +595,13 @@ export function computeCancellationRefundFromSnapshot(
     };
   }
 
-  const baseCents = snapshot.pricingSnapshot.baseCents;
-  const cardPlatformFeeCents = snapshot.pricingSnapshot.cardPlatformFeeCents;
-  const oryaFeeCents = Math.max(0, snapshot.pricingSnapshot.combinedFeeCents - cardPlatformFeeCents);
   const stripeFeeCents = Math.max(
     0,
     params?.stripeFeeCentsActual ?? snapshot.pricingSnapshot.processorFeesActualCents ?? 0,
   );
-  const feesRetainedCents = Math.max(0, oryaFeeCents + stripeFeeCents + cardPlatformFeeCents);
-  const penaltyBps = Math.max(0, Math.min(10_000, snapshot.policySnapshot.cancellationPenaltyBps ?? 0));
-  const penaltyCents = Math.max(0, Math.round((Math.max(0, baseCents) * penaltyBps) / 10_000));
-
-  const refundCents = Math.max(0, totalCents - feesRetainedCents - penaltyCents);
+  const feesRetainedCents = stripeFeeCents;
+  const penaltyCents = 0;
+  const refundCents = Math.max(0, totalCents - feesRetainedCents);
 
   return {
     currency: snapshot.currency,

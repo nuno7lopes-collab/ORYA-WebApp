@@ -33,7 +33,9 @@ const DEFAULT_CREATED_EVENT = "PADEL_MATCH_GENERATED";
 const DEFAULT_DELETED_EVENT = "PADEL_MATCH_DELETED";
 const DEFAULT_RESULT_CARD_UPDATED_EVENT = "PADEL_MATCH_RESULT_CARD_UPDATED";
 const DEFAULT_RESULT_CARD_CONFLICT_EVENT = "PADEL_MATCH_RESULT_CARD_CONFLICT";
+const RATING_REBUILD_EVENT = "PADEL_RATING_REBUILD_REQUESTED";
 const RESULT_MUTATION_KEYS = new Set(["score", "scoreSets", "winnerSide", "winnerPairingId", "winnerParticipantId"]);
+const COUNTED_RATING_STATUSES = new Set(["OFFICIAL", "WALKOVER", "RETIRED"]);
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -55,6 +57,9 @@ const hashPayload = (payload: Record<string, unknown>) =>
 
 const buildMatchDedupeKey = (eventType: string, payload: Record<string, unknown>) =>
   `padel_match:${eventType}:${payload.matchId ?? "unknown"}:${hashPayload(payload)}`;
+
+const buildRatingRebuildDedupeKey = (payload: Record<string, unknown>) =>
+  `padel_rating_rebuild:${payload.eventId ?? "unknown"}:${payload.matchId ?? "unknown"}:${hashPayload(payload)}`;
 
 async function withTx<T>(
   tx: Prisma.TransactionClient | undefined,
@@ -116,6 +121,37 @@ const isResultMutationData = (
     return isPadelOfficialStatus((status as { set?: unknown }).set as string | null | undefined);
   }
   return false;
+};
+
+const resolveStatusFromUpdateData = (
+  data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput,
+) => {
+  const payload = data as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(payload, "status")) return null;
+  const status = payload.status;
+  if (typeof status === "string") return status;
+  if (status && typeof status === "object" && "set" in status) {
+    const setStatus = (status as { set?: unknown }).set;
+    return typeof setStatus === "string" ? setStatus : null;
+  }
+  return null;
+};
+
+const isCountedRatingStatus = (status: string | null | undefined) =>
+  typeof status === "string" && COUNTED_RATING_STATUSES.has(status);
+
+const resolveRatingRebuildReason = (params: {
+  data: Prisma.EventMatchSlotUpdateInput | Prisma.EventMatchSlotUncheckedUpdateInput;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+}) => {
+  const { data, beforeStatus, afterStatus } = params;
+  const touchesResultData = Object.keys(data as Record<string, unknown>).some((key) => RESULT_MUTATION_KEYS.has(key));
+  const beforeIsCounted = isCountedRatingStatus(beforeStatus);
+  const afterIsCounted = isCountedRatingStatus(afterStatus);
+  if (beforeIsCounted !== afterIsCounted) return "COUNTED_STATUS_TRANSITION";
+  if (touchesResultData && (beforeIsCounted || afterIsCounted)) return "COUNTED_RESULT_CORRECTION";
+  return null;
 };
 
 async function resolveConfirmedResultCardForWrite(params: {
@@ -195,6 +231,14 @@ export async function updatePadelMatch(
 
   return withTx(input.tx, async (tx) => {
     const isResultMutation = isResultMutationData(input.data);
+    let resolvedBeforeStatus = input.beforeStatus ?? null;
+    if (!resolvedBeforeStatus && isResultMutation) {
+      const current = await tx.eventMatchSlot.findUnique({
+        where: { id: input.matchId },
+        select: { status: true },
+      });
+      resolvedBeforeStatus = current?.status ?? null;
+    }
     const resultCard = await resolveConfirmedResultCardForWrite({
       tx,
       matchId: input.matchId,
@@ -216,6 +260,38 @@ export async function updatePadelMatch(
       });
     }
 
+    if (isResultMutation) {
+      const requestedAt = new Date().toISOString();
+      const resolvedAfterStatus =
+        resolveStatusFromUpdateData(input.data) ??
+        ((updated as { status?: string | null }).status ?? null) ??
+        resolvedBeforeStatus;
+      const reasonCode = resolveRatingRebuildReason({
+        data: input.data,
+        beforeStatus: resolvedBeforeStatus,
+        afterStatus: resolvedAfterStatus,
+      });
+      if (reasonCode) {
+        const ratingPayload = {
+          eventId: input.eventId,
+          organizationId: input.organizationId,
+          matchId: input.matchId,
+          actorUserId: input.actorUserId,
+          beforeStatus: resolvedBeforeStatus,
+          reasonCode,
+          requestedAt,
+        } satisfies Record<string, unknown>;
+        await recordOutboxEvent(
+          {
+            eventType: RATING_REBUILD_EVENT,
+            dedupeKey: buildRatingRebuildDedupeKey(ratingPayload),
+            payload: ratingPayload as Prisma.InputJsonValue,
+          },
+          tx,
+        );
+      }
+    }
+
     const outboxEventId = await recordMatchEvent({
       tx,
       eventType,
@@ -228,7 +304,7 @@ export async function updatePadelMatch(
         eventId: input.eventId,
         organizationId: input.organizationId,
         actorUserId: input.actorUserId,
-        beforeStatus: input.beforeStatus ?? null,
+        beforeStatus: resolvedBeforeStatus,
       },
     });
 

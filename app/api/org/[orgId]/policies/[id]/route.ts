@@ -97,14 +97,17 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     } else if (Number.isFinite(Number(payload?.cancellationWindowMinutes))) {
       updates.cancellationWindowMinutes = Math.max(0, Math.round(Number(payload.cancellationWindowMinutes)));
     }
-    if (Number.isFinite(Number(payload?.cancellationPenaltyBps))) {
-      updates.cancellationPenaltyBps = Math.max(0, Math.min(10000, Math.round(Number(payload.cancellationPenaltyBps))));
-    }
     if (typeof payload?.allowReschedule === "boolean") updates.allowReschedule = payload.allowReschedule;
     if (payload?.rescheduleWindowMinutes === null) {
       updates.rescheduleWindowMinutes = null;
     } else if (Number.isFinite(Number(payload?.rescheduleWindowMinutes))) {
       updates.rescheduleWindowMinutes = Math.max(0, Math.round(Number(payload.rescheduleWindowMinutes)));
+    }
+    if (typeof payload?.guestBookingAllowed === "boolean") {
+      updates.guestBookingAllowed = payload.guestBookingAllowed;
+    }
+    if (Number.isFinite(Number(payload?.noShowFeeCents))) {
+      updates.noShowFeeCents = Math.max(0, Math.round(Number(payload.noShowFeeCents)));
     }
     if (typeof payload?.policyType === "string") {
       const raw = payload.policyType.trim().toUpperCase();
@@ -116,6 +119,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (Object.keys(updates).length === 0) {
       return fail(400, "Sem alterações.");
     }
+    updates.cancellationPenaltyBps = 0;
 
     const policy = await prisma.organizationPolicy.update({
       where: { id: policyId },
@@ -129,8 +133,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         cancellationPenaltyBps: true,
         allowReschedule: true,
         rescheduleWindowMinutes: true,
+        guestBookingAllowed: true,
+        noShowFeeCents: true,
       },
     });
+    policy.cancellationPenaltyBps = 0;
 
     const { ip, userAgent } = getRequestMeta(req);
     await recordOrganizationAudit(prisma, {

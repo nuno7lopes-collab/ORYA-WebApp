@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const prisma = vi.hoisted(() => ({
   organization: { findFirst: vi.fn() },
   store: { findFirst: vi.fn() },
+  organizationSettings: { findUnique: vi.fn() },
 }));
 
 vi.mock("@/lib/prisma", () => ({ prisma }));
@@ -23,6 +24,8 @@ beforeEach(async () => {
   vi.resetModules();
   prisma.organization.findFirst.mockReset();
   prisma.store.findFirst.mockReset();
+  prisma.organizationSettings.findUnique.mockReset();
+  prisma.organizationSettings.findUnique.mockResolvedValue(null);
   GET = (await import("@/app/api/public/store/catalog/route")).GET;
 });
 

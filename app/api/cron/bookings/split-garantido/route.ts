@@ -55,7 +55,11 @@ async function enqueueDueOffsessionCharges(params: {
     },
   });
 
-  if (!split || split.status !== "OPEN" || split.railState !== "OFFSESSION_PI") {
+  if (
+    !split ||
+    !["OPEN", "SETTLING", "CHARGE_FAILED"].includes(split.status) ||
+    split.railState !== "OFFSESSION_PI"
+  ) {
     return { enqueued: 0, skippedNoPaymentMethod: 0 };
   }
 
@@ -139,7 +143,7 @@ async function _POST(req: NextRequest) {
     const splits = await prisma.bookingSplit.findMany({
       where: {
         splitMode: "SPLIT_GARANTIDO",
-        status: { in: ["OPEN", "EXPIRED"] },
+        status: { in: ["OPEN", "SETTLING", "CHARGE_FAILED"] },
         deadlineAt: { not: null },
       },
       orderBy: [{ deadlineAt: "asc" }, { id: "asc" }],

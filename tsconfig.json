@@ -27,9 +27,15 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@orya/shared": ["./packages/shared/src/index.ts"],
-      "@orya/shared/*": ["./packages/shared/src/*"]
+      "@/*": [
+        "./*"
+      ],
+      "@orya/shared": [
+        "./packages/shared/src/index.ts"
+      ],
+      "@orya/shared/*": [
+        "./packages/shared/src/*"
+      ]
     }
   },
   "include": [
@@ -37,7 +43,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-e2e/types/**/*.ts",
+    ".next-e2e/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

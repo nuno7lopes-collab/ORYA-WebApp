@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: 14,
     paddingVertical: 8,
-    minHeight: tokens.layout.touchTarget - 8,
+    minHeight: tokens.layout.touchTarget,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "#ffffff",
     fontSize: 14,
-    minHeight: tokens.layout.touchTarget - 10,
+    minHeight: tokens.layout.touchTarget,
   },
   clear: {
     width: 24,

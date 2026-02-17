@@ -23,6 +23,9 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { finalizeFreeStoreCheckout } from "@/domain/finance/freeStoreCheckout";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
+import { getStripeEnv } from "@/lib/stripeKeys";
+import { resolveStorePolicy } from "@/lib/store/policySettings";
+import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
 
 const CART_SESSION_COOKIE = "orya_store_cart";
 
@@ -54,6 +57,34 @@ function parseStoreId(req: NextRequest) {
     return { ok: false as const, error: "Store invalida." };
   }
   return { ok: true as const, storeId };
+}
+
+function normalizeStripePublishableKey(value: string | null | undefined) {
+  if (!value) return "";
+  return value.trim();
+}
+
+function resolveCheckoutStripePublishableKey() {
+  const env = getStripeEnv();
+  const live = normalizeStripePublishableKey(
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ||
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+      process.env.STRIPE_PUBLISHABLE_KEY_LIVE ||
+      process.env.STRIPE_PUBLISHABLE_KEY,
+  );
+  const test = normalizeStripePublishableKey(
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ||
+      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+      process.env.STRIPE_PUBLISHABLE_KEY_TEST ||
+      process.env.STRIPE_PUBLISHABLE_KEY,
+  );
+  const resolved = env === "test" ? test : live;
+  if (!resolved) return null;
+  if (env === "test" && resolved.startsWith("pk_live")) return null;
+  if (env === "prod" && resolved.startsWith("pk_test")) return null;
+  return resolved;
 }
 
 async function resolveCart(storeId: number, userId: string | null, sessionId: string | null) {
@@ -126,6 +157,7 @@ async function resolveCheckoutAddress(
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
+  const stripePublishableKey = resolveCheckoutStripePublishableKey();
   const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
     respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
   try {
@@ -151,6 +183,7 @@ async function _POST(req: NextRequest) {
         organization: {
           select: {
             id: true,
+            username: true,
             orgType: true,
             stripeAccountId: true,
             stripeChargesEnabled: true,
@@ -160,6 +193,14 @@ async function _POST(req: NextRequest) {
             feeMode: true,
             platformFeeBps: true,
             platformFeeFixedCents: true,
+            settings: {
+              select: {
+                supportEmail: true,
+                supportPhone: true,
+                storeReturnPolicyMode: true,
+                storeReturnWindowDays: true,
+              },
+            },
           },
         },
       },
@@ -643,6 +684,13 @@ async function _POST(req: NextRequest) {
       throw new Error("STORE_ORG_NOT_FOUND");
     }
     const organizationId = organization.id;
+    const resolvedStorePolicy = resolveStorePolicy({
+      settings: organization.settings ?? null,
+      fallbackSupportEmail: organization.officialEmail ?? null,
+      organizationUsername: organization.username ?? null,
+    });
+    const storePolicySnapshot = buildStorePolicySnapshot(resolvedStorePolicy);
+    const storePolicyCapturedAt = new Date();
 
     const isPlatformOrg = organization.orgType === "PLATFORM";
 
@@ -711,6 +759,9 @@ async function _POST(req: NextRequest) {
           customerPhone,
           notes: payload.notes ?? null,
           purchaseId: providedPurchaseId ?? null,
+          storePolicySnapshotJson: storePolicySnapshot,
+          storePolicyVersion: STORE_POLICY_SNAPSHOT_VERSION,
+          storePolicyCapturedAt,
           addresses: {
             create: (() => {
               const items: Prisma.StoreOrderAddressCreateWithoutOrderInput[] = [];
@@ -862,6 +913,7 @@ async function _POST(req: NextRequest) {
         freeCheckout: true,
         status: "PAID",
         final: true,
+        ...(stripePublishableKey ? { stripePublishableKey } : {}),
       });
     }
 
@@ -968,6 +1020,7 @@ async function _POST(req: NextRequest) {
       freeCheckout: false,
       status: "REQUIRES_ACTION",
       final: false,
+      ...(stripePublishableKey ? { stripePublishableKey } : {}),
     });
   } catch (err) {
     console.error("POST /api/public/store/checkout error:", err);

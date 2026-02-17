@@ -35,7 +35,7 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
 ];
 
 const PENDING_HOLD_MINUTES = 10;
-const SLOT_STEP_MINUTES = 15;
+const SLOT_STEP_MINUTES = 5;
 
 type CalendarPaymentStatus = "PAID" | "PARTIAL" | "PROCESSING" | "PENDING" | "UNKNOWN";
 type CalendarChannel = "ONLINE" | "PRESENTIAL" | "BACKOFFICE" | "UNKNOWN";
@@ -563,6 +563,7 @@ async function _POST(req: NextRequest) {
         organizationId: true,
         title: true,
         kind: true,
+        assignmentMode: true,
         durationMinutes: true,
         unitPriceCents: true,
         currency: true,
@@ -594,7 +595,7 @@ async function _POST(req: NextRequest) {
     const timezone = service.organization?.timezone || "Europe/Lisbon";
     const minutesOfDay = getMinutesOfDay(startsAt, timezone);
     if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 15 minutos.");
+      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 5 minutos.");
     }
 
     const now = new Date();
@@ -604,9 +605,11 @@ async function _POST(req: NextRequest) {
 
     const assignmentConfig = resolveServiceAssignmentMode({
       organizationMode: service.organization?.reservationAssignmentMode ?? null,
+      serviceMode: service.assignmentMode ?? null,
       serviceKind: service.kind ?? null,
     });
     const assignmentMode = assignmentConfig.mode;
+    const bookingAssignmentMode = assignmentConfig.assignmentMode;
     const allowedProfessionalIds = service.professionalLinks.length
       ? service.professionalLinks
           .filter((link) => link.professional?.isActive)
@@ -989,7 +992,7 @@ async function _POST(req: NextRequest) {
         price: service.unitPriceCents,
         currency: service.currency,
         status: "PENDING_CONFIRMATION",
-        assignmentMode,
+        assignmentMode: bookingAssignmentMode,
         professionalId,
         resourceId,
         courtId: bookingCourtId,

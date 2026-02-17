@@ -10,6 +10,22 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 const COOKIE_NAME = "orya_organization";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
 
+function shouldUseSecureCookies(req: NextRequest) {
+  const appEnv = (process.env.APP_ENV ?? "").trim().toLowerCase();
+  const vercelEnv = (process.env.VERCEL_ENV ?? "").trim().toLowerCase();
+  const stageOrProd =
+    process.env.NODE_ENV === "production" ||
+    vercelEnv === "production" ||
+    vercelEnv === "preview" ||
+    appEnv === "prod" ||
+    appEnv === "production" ||
+    appEnv === "stage" ||
+    appEnv === "staging";
+  if (stageOrProd) return true;
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() ?? "";
+  return forwardedProto === "https" || req.nextUrl.protocol === "https:";
+}
+
 async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
@@ -62,11 +78,13 @@ async function _POST(req: NextRequest) {
       organizationId: resolvedId,
       role: result.membership.role,
     }) as NextResponse;
+    const secure = shouldUseSecureCookies(req);
     res.cookies.set(COOKIE_NAME, String(resolvedId), {
       httpOnly: false,
       sameSite: "lax",
       path: "/",
       maxAge: COOKIE_MAX_AGE,
+      ...(secure ? { secure: true } : {}),
     });
     return res;
   } catch (err: unknown) {

@@ -32,6 +32,18 @@ async function _POST(req: NextRequest) {
     }
 
     const res = jsonWrap({ ok: true, warning: error ? "LOGOUT_REMOTE_FAILED" : undefined }) as NextResponse;
+    const appEnv = (process.env.APP_ENV ?? "").trim().toLowerCase();
+    const vercelEnv = (process.env.VERCEL_ENV ?? "").trim().toLowerCase();
+    const secureCookie =
+      process.env.NODE_ENV === "production" ||
+      vercelEnv === "production" ||
+      vercelEnv === "preview" ||
+      appEnv === "prod" ||
+      appEnv === "production" ||
+      appEnv === "stage" ||
+      appEnv === "staging" ||
+      (req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() ?? "") === "https" ||
+      req.nextUrl.protocol === "https:";
 
     // Garantir limpeza de todos os cookies sb-*
     try {
@@ -46,6 +58,7 @@ async function _POST(req: NextRequest) {
             name: c.name,
             value: "",
             maxAge: 0,
+            ...(secureCookie ? { secure: true } : {}),
             ...(cookieDomain ? { domain: cookieDomain } : {}),
           });
         });
@@ -56,6 +69,7 @@ async function _POST(req: NextRequest) {
         value: "",
         path: "/",
         maxAge: 0,
+        ...(secureCookie ? { secure: true } : {}),
         ...(cookieDomain ? { domain: cookieDomain } : {}),
       });
 
@@ -65,6 +79,7 @@ async function _POST(req: NextRequest) {
         value: "",
         path: "/",
         maxAge: 0,
+        ...(secureCookie ? { secure: true } : {}),
         ...(cookieDomain ? { domain: cookieDomain } : {}),
       });
     } catch {

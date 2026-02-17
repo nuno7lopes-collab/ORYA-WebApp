@@ -73,6 +73,30 @@ describe("messages b2c mobile gate", () => {
   });
 });
 
+describe("messages b2c mobile gate config", () => {
+  const previousMinVersion = process.env.MIN_SUPPORTED_MOBILE_VERSION;
+
+  afterAll(() => {
+    if (previousMinVersion == null) delete process.env.MIN_SUPPORTED_MOBILE_VERSION;
+    else process.env.MIN_SUPPORTED_MOBILE_VERSION = previousMinVersion;
+  });
+
+  it("keeps fail-open behavior when min version is missing", () => {
+    delete process.env.MIN_SUPPORTED_MOBILE_VERSION;
+
+    const req = new NextRequest("http://localhost/api/messages/messages?scope=b2c", {
+      method: "POST",
+      headers: {
+        "x-client-platform": "mobile",
+        "x-app-version": "1.0.0",
+      },
+    });
+
+    const result = enforceB2CMobileOnly(req);
+    expect(result).toBeNull();
+  });
+});
+
 describe("messages attachments contract", () => {
   it("enforces mobile gate for b2c attachments presign", async () => {
     const req = new NextRequest("http://localhost/api/messages/attachments/presign?scope=b2c", {

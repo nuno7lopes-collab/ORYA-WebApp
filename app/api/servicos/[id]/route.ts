@@ -27,6 +27,7 @@ async function _GET(
         id: true,
         policyId: true,
         kind: true,
+        assignmentMode: true,
         instructorId: true,
         title: true,
         description: true,

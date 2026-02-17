@@ -241,11 +241,18 @@
     "subtitle": "Event chats and direct messages.",
     "requests": "Requests",
     "requestsWithCount": "Requests ({count})",
+    "requestsHint": "No pending requests.",
+    "inboxStatus": {
+      "newMessages": "{count} new messages",
+      "noNewMessages": "No new messages"
+    },
     "unreadCount": "{count} new",
     "lastMessageEmpty": "No messages yet.",
     "empty": {
       "title": "You don't have any active messages yet.",
-      "ctaExplore": "Explore events"
+      "ctaExplore": "Explore events",
+      "noConversations": "You don't have any conversations yet.",
+      "newMessagesHint": "When you receive a new message, it appears here."
     },
     "signin": {
       "title": "Sign in",
@@ -256,10 +263,36 @@
     "requestsScreen": {
       "signinTitle": "Sign in",
       "signinBody": "Sign in to view message requests.",
+      "subtitle": "Pending requests to start a conversation.",
       "error": "Couldn't load requests.",
       "empty": "No pending requests.",
+      "emptyHint": "When someone requests to chat, it will appear here.",
       "requestLabel": "Message request",
       "userFallback": "User"
+    },
+    "composer": {
+      "open": "New message",
+      "title": "New message",
+      "tabs": {
+        "users": "People",
+        "orgs": "Organizations"
+      },
+      "searchUsersPlaceholder": "Search people by name or @username",
+      "searchOrgsPlaceholder": "Search organizations by name or @username",
+      "searchInput": "Search recipient",
+      "suggestionsTitle": "Suggestions to start a conversation",
+      "loadError": "Couldn't load results.",
+      "emptyUsers": "No people to show.",
+      "emptyOrgs": "No organizations to show.",
+      "searchOrgsHint": "Type at least 2 characters to search organizations.",
+      "userNoHandle": "User",
+      "orgFallback": "Organization",
+      "orgNoHandle": "Organization",
+      "startMessage": "Message",
+      "requestSentTitle": "Request sent",
+      "requestSentBody": "Your message request was sent.",
+      "errorTitle": "New message",
+      "errorBody": "Couldn't start the conversation."
     },
     "errors": {
       "load": "Couldn't load chats."
@@ -451,11 +484,23 @@
   "onboarding": {
     "title": "Let's get started",
     "welcomeTitle": "Welcome to ORYA",
+    "stepCounter": "Step {current} of {total}",
     "steps": {
       "basic": "Profile",
       "interests": "Interests",
       "padel": "Padel",
       "location": "Location"
+    },
+    "stepHints": {
+      "basic": "Start with the essentials to activate your profile.",
+      "interests": "Quick picks to personalize recommendations right away.",
+      "padel": "This helps us match games, teams and invites more accurately.",
+      "location": "Sharing location improves nearby discovery."
+    },
+    "exit": {
+      "title": "Leave onboarding?",
+      "body": "If you leave now, you'll need to sign in again to continue.",
+      "confirm": "Leave"
     },
     "basic": {
       "title": "Create your profile",
@@ -470,6 +515,7 @@
       "title": "What are you into?",
       "subtitle": "Pick up to 6 interests.",
       "selectedCount": "{count}/{total} selected",
+      "limitReached": "Selection limit reached. Remove one interest to add another.",
       "continue": "Continue"
     },
     "padel": {
@@ -494,6 +540,8 @@
     "location": {
       "title": "Where are you?",
       "subtitle": "We use this to recommend nearby events.",
+      "detecting": "Detecting approximate location...",
+      "approxLocation": "Approximate area: {location}",
       "allow": "Allow location",
       "allowShort": "Allow",
       "skip": "Skip for now",

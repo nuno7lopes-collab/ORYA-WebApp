@@ -3,7 +3,7 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -27,6 +27,16 @@ type PolicyItem = {
   cancellationPenaltyBps: number;
   allowReschedule: boolean;
   rescheduleWindowMinutes: number | null;
+  guestBookingAllowed: boolean;
+  noShowFeeCents: number;
+};
+
+type PoliciesPayload = {
+  ok: boolean;
+  items: PolicyItem[];
+  organizationPolicy?: {
+    orgRescheduleWindowMinutes?: number | null;
+  } | null;
 };
 
 function formatWindow(minutes: number | null) {
@@ -43,28 +53,42 @@ export default function PoliticasReservaPage() {
   const organizationId = Number(orgIdRaw);
   const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
 
-  const { data, mutate } = useSWR<{ ok: boolean; items: PolicyItem[] }>(
+  const { data, mutate } = useSWR<PoliciesPayload>(
     resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"),
     fetcher,
   );
   const [name, setName] = useState("");
   const [minutes, setMinutes] = useState("2880");
-  const [penaltyBps, setPenaltyBps] = useState("0");
+  const [guestBookingAllowed, setGuestBookingAllowed] = useState(false);
+  const [noShowFeeCents, setNoShowFeeCents] = useState("0");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [globalPolicySaving, setGlobalPolicySaving] = useState(false);
+  const [globalPolicyError, setGlobalPolicyError] = useState<string | null>(null);
+  const [orgRescheduleWindowMinutes, setOrgRescheduleWindowMinutes] = useState("240");
   const [editing, setEditing] = useState<PolicyItem | null>(null);
   const [editDraft, setEditDraft] = useState<{
     name: string;
     allowCancellation: boolean;
     cancellationWindowMinutes: string;
-    cancellationPenaltyBps: string;
     allowReschedule: boolean;
     rescheduleWindowMinutes: string;
+    guestBookingAllowed: boolean;
+    noShowFeeCents: string;
     saving: boolean;
     error: string | null;
   } | null>(null);
 
   const items = data?.items ?? [];
+
+  const resolvedOrgRescheduleWindowMinutes =
+    typeof data?.organizationPolicy?.orgRescheduleWindowMinutes === "number"
+      ? data.organizationPolicy.orgRescheduleWindowMinutes
+      : 240;
+
+  useEffect(() => {
+    setOrgRescheduleWindowMinutes(String(resolvedOrgRescheduleWindowMinutes));
+  }, [resolvedOrgRescheduleWindowMinutes]);
 
   const handleCreate = async () => {
     if (!name.trim() || saving) return;
@@ -75,10 +99,12 @@ export default function PoliticasReservaPage() {
         name: name.trim(),
         policyType: "CUSTOM",
         cancellationWindowMinutes: minutes.trim() ? Number(minutes) : null,
-        cancellationPenaltyBps: penaltyBps.trim() ? Number(penaltyBps) : 0,
+        cancellationPenaltyBps: 0,
         allowCancellation: true,
         allowReschedule: true,
         rescheduleWindowMinutes: minutes.trim() ? Number(minutes) : null,
+        guestBookingAllowed,
+        noShowFeeCents: noShowFeeCents.trim() ? Number(noShowFeeCents) : 0,
       };
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"), {
         method: "POST",
@@ -91,7 +117,8 @@ export default function PoliticasReservaPage() {
       }
       setName("");
       setMinutes("2880");
-      setPenaltyBps("0");
+      setGuestBookingAllowed(false);
+      setNoShowFeeCents("0");
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar política.");
@@ -106,9 +133,10 @@ export default function PoliticasReservaPage() {
       name: policy.name,
       allowCancellation: policy.allowCancellation,
       cancellationWindowMinutes: policy.cancellationWindowMinutes === null ? "" : String(policy.cancellationWindowMinutes),
-      cancellationPenaltyBps: String(policy.cancellationPenaltyBps ?? 0),
       allowReschedule: policy.allowReschedule,
       rescheduleWindowMinutes: policy.rescheduleWindowMinutes === null ? "" : String(policy.rescheduleWindowMinutes),
+      guestBookingAllowed: Boolean(policy.guestBookingAllowed),
+      noShowFeeCents: String(policy.noShowFeeCents ?? 0),
       saving: false,
       error: null,
     });
@@ -132,13 +160,13 @@ export default function PoliticasReservaPage() {
           cancellationWindowMinutes: editDraft.cancellationWindowMinutes.trim()
             ? Number(editDraft.cancellationWindowMinutes)
             : null,
-          cancellationPenaltyBps: editDraft.cancellationPenaltyBps.trim()
-            ? Number(editDraft.cancellationPenaltyBps)
-            : 0,
+          cancellationPenaltyBps: 0,
           allowReschedule: editDraft.allowReschedule,
           rescheduleWindowMinutes: editDraft.rescheduleWindowMinutes.trim()
             ? Number(editDraft.rescheduleWindowMinutes)
             : null,
+          guestBookingAllowed: editDraft.guestBookingAllowed,
+          noShowFeeCents: editDraft.noShowFeeCents.trim() ? Number(editDraft.noShowFeeCents) : 0,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -150,6 +178,32 @@ export default function PoliticasReservaPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao atualizar política.";
       setEditDraft((prev) => (prev ? { ...prev, saving: false, error: message } : prev));
+    }
+  };
+
+  const saveGlobalPolicy = async () => {
+    if (globalPolicySaving) return;
+    setGlobalPolicySaving(true);
+    setGlobalPolicyError(null);
+    try {
+      const parsed = Number(orgRescheduleWindowMinutes);
+      if (!Number.isFinite(parsed)) {
+        throw new Error("Janela global de reagendamento inválida.");
+      }
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orgRescheduleWindowMinutes: Math.max(0, Math.round(parsed)) }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.message || json?.error || "Erro ao atualizar política global.");
+      }
+      mutate();
+    } catch (err) {
+      setGlobalPolicyError(err instanceof Error ? err.message : "Erro ao atualizar política global.");
+    } finally {
+      setGlobalPolicySaving(false);
     }
   };
 
@@ -181,7 +235,7 @@ export default function PoliticasReservaPage() {
           <h2 className="text-base font-semibold text-white">Politica configuravel</h2>
           <p className={DASHBOARD_MUTED}>Aplica-se por servico ou como default da organização.</p>
         </div>
-        <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_auto]">
+        <div className="grid gap-3 md:grid-cols-[1.6fr_1fr_auto]">
           <input
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
             placeholder="Nome da política"
@@ -194,16 +248,44 @@ export default function PoliticasReservaPage() {
             value={minutes}
             onChange={(event) => setMinutes(event.target.value)}
           />
-          <input
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            placeholder="Penalização % (0-10000 bps; ex: 500 = 5%)"
-            value={penaltyBps}
-            onChange={(event) => setPenaltyBps(event.target.value)}
-          />
           <button type="button" className={CTA_PRIMARY} onClick={handleCreate} disabled={saving}>
             {saving ? "A criar..." : "Criar"}
           </button>
         </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+            <span>Permitir reservas de convidado</span>
+            <input
+              type="checkbox"
+              checked={guestBookingAllowed}
+              onChange={(event) => setGuestBookingAllowed(event.target.checked)}
+              disabled={saving}
+            />
+          </label>
+          <input
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+            placeholder="No-show fee (cêntimos)"
+            value={noShowFeeCents}
+            onChange={(event) => setNoShowFeeCents(event.target.value)}
+          />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[1.6fr_auto]">
+          <input
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+            placeholder="Janela global de reagendamento da organização (min)"
+            value={orgRescheduleWindowMinutes}
+            onChange={(event) => setOrgRescheduleWindowMinutes(event.target.value)}
+          />
+          <button type="button" className={CTA_SECONDARY} onClick={saveGlobalPolicy} disabled={globalPolicySaving}>
+            {globalPolicySaving ? "A guardar..." : "Guardar política global"}
+          </button>
+        </div>
+        {globalPolicyError && (
+          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            {globalPolicyError}
+          </div>
+        )}
 
         {error && (
           <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
@@ -224,7 +306,11 @@ export default function PoliticasReservaPage() {
                       {policy.policyType} ·{" "}
                       {policy.allowCancellation ? formatWindow(policy.cancellationWindowMinutes) : "Cancelamento desativado"}
                       {" · "}
-                      Penalização {((policy.cancellationPenaltyBps ?? 0) / 100).toFixed(2)}%
+                      Penalizacao 0%
+                      {" · "}
+                      {policy.guestBookingAllowed ? "Convidados permitidos" : "Convidados bloqueados"}
+                      {" · "}
+                      No-show {policy.noShowFeeCents ?? 0} cêntimos
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -242,9 +328,9 @@ export default function PoliticasReservaPage() {
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
-          <p>A política define cancelamento e reagendamento (janelas) e penalização.</p>
+          <p>A politica define cancelamento e reagendamento (janelas) com penalizacao fixa de 0%.</p>
           <p className="mt-2">
-            No cancelamento do cliente, as fees (ORYA + Stripe) não são devolvidas e pode haver penalização.
+            No cancelamento do cliente, retem-se apenas a fee real de processamento do pagamento.
           </p>
         </div>
 
@@ -284,16 +370,21 @@ export default function PoliticasReservaPage() {
                 />
               </label>
               <label className="text-[12px] text-white/70">
-                Penalização (bps)
+                Penalizacao
+                <input
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/70 outline-none"
+                  value="0% (fixo)"
+                  disabled
+                />
+              </label>
+              <label className="text-[12px] text-white/70">
+                No-show fee (cêntimos)
                 <input
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={editDraft.cancellationPenaltyBps}
-                  onChange={(e) => setEditDraft({ ...editDraft, cancellationPenaltyBps: e.target.value })}
+                  value={editDraft.noShowFeeCents}
+                  onChange={(e) => setEditDraft({ ...editDraft, noShowFeeCents: e.target.value })}
                   disabled={editDraft.saving}
                 />
-                <p className="mt-1 text-[11px] text-white/50">
-                  Ex.: 500 = 5%. Aplica-se ao preço base do serviço (sem fees).
-                </p>
               </label>
             </div>
 
@@ -315,6 +406,17 @@ export default function PoliticasReservaPage() {
                   value={editDraft.cancellationWindowMinutes}
                   onChange={(e) => setEditDraft({ ...editDraft, cancellationWindowMinutes: e.target.value })}
                   disabled={editDraft.saving || !editDraft.allowCancellation}
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                <span>Permitir reservas de convidado</span>
+                <input
+                  type="checkbox"
+                  checked={editDraft.guestBookingAllowed}
+                  onChange={(e) => setEditDraft({ ...editDraft, guestBookingAllowed: e.target.checked })}
+                  disabled={editDraft.saving}
                 />
               </label>
             </div>
@@ -360,7 +462,13 @@ export default function PoliticasReservaPage() {
                   : "desativado"}
               </p>
               <p className="mt-1">
-                Penalização: {((Number(editDraft.cancellationPenaltyBps || "0") || 0) / 100).toFixed(2)}%
+                Penalizacao: 0%
+              </p>
+              <p className="mt-1">
+                No-show fee: {Number(editDraft.noShowFeeCents || "0") || 0} cêntimos
+              </p>
+              <p className="mt-1">
+                Convidados: {editDraft.guestBookingAllowed ? "permitidos" : "bloqueados"}
               </p>
             </div>
 

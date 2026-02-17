@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { StoreAddressType, StoreOrderStatus } from "@prisma/client";
+import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type StoreLabel = {
@@ -17,11 +18,29 @@ type StoreLabel = {
 
 function buildStoreLabel(store: {
   id: number;
-  supportEmail: string | null;
-  supportPhone: string | null;
-  organization: { username: string | null; publicName: string | null; businessName: string | null } | null;
+  policySnapshotJson: unknown;
+  organization:
+    | {
+        username: string | null;
+        publicName: string | null;
+        businessName: string | null;
+        officialEmail: string | null;
+        settings: {
+          supportEmail: string | null;
+          supportPhone: string | null;
+          storeReturnPolicyMode: string | null;
+          storeReturnWindowDays: number | null;
+        } | null;
+      }
+    | null;
 }): StoreLabel {
   const org = store.organization;
+  const policy = resolveStorePolicyWithSnapshot({
+    snapshot: store.policySnapshotJson,
+    settings: org?.settings ?? null,
+    fallbackSupportEmail: org?.officialEmail ?? null,
+    organizationUsername: org?.username ?? null,
+  });
   const displayName =
     org?.publicName ||
     org?.businessName ||
@@ -32,8 +51,8 @@ function buildStoreLabel(store: {
     id: store.id,
     displayName,
     username,
-    supportEmail: store.supportEmail ?? null,
-    supportPhone: store.supportPhone ?? null,
+    supportEmail: policy.supportEmail,
+    supportPhone: policy.supportPhone,
   };
 }
 
@@ -78,12 +97,26 @@ async function _GET(req: NextRequest) {
         totalCents: true,
         currency: true,
         createdAt: true,
+        storePolicySnapshotJson: true,
         store: {
           select: {
             id: true,
-            supportEmail: true,
-            supportPhone: true,
-            organization: { select: { username: true, publicName: true, businessName: true } },
+            organization: {
+              select: {
+                username: true,
+                publicName: true,
+                businessName: true,
+                officialEmail: true,
+                settings: {
+                  select: {
+                    supportEmail: true,
+                    supportPhone: true,
+                    storeReturnPolicyMode: true,
+                    storeReturnWindowDays: true,
+                  },
+                },
+              },
+            },
           },
         },
         shippingZone: { select: { name: true } },
@@ -145,7 +178,7 @@ async function _GET(req: NextRequest) {
         totalCents: order.totalCents,
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
-        store: buildStoreLabel(order.store),
+        store: buildStoreLabel({ ...order.store, policySnapshotJson: order.storePolicySnapshotJson }),
         shipping: {
           zoneName: order.shippingZone?.name ?? null,
           methodName: order.shippingMethod?.name ?? null,

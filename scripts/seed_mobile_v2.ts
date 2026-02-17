@@ -194,7 +194,7 @@ const AVATARS = [
 const COVERS = [
   "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1600&q=80",
   "https://images.unsplash.com/photo-1507874457470-272b3c8d8ee2?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1515165562835-c4c1b9d1cb2f?auto=format&fit=crop&w=1600&q=80",
+  "https://picsum.photos/seed/mobile-cover-v2/1600/900",
   "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80",
   "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1600&q=80",
   "https://images.unsplash.com/photo-1514996937319-344454492b37?auto=format&fit=crop&w=1600&q=80",

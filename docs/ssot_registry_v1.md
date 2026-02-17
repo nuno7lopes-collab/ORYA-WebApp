@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-15
+Atualizado: 2026-02-17
 
 ## 00 Authority
 
@@ -3264,6 +3264,82 @@ D18.13) Live unificado (FECHADO)
 	•	Superfícies live (interna e pública) devem ler do mesmo modelo canónico de estado.
 	•	Ramificações de modelo que geram resultados divergentes não são aceitáveis.
 	•	Para Padel, o estado live de jogo vem de `EventMatchSlot` e o estado de participação vem de entitlement/`PadelRegistration`.
+	•	Write-path de live só pode ocorrer por comandos canónicos de domínio; bypass direto é proibido.
+	•	Read-path de live deve sair de projeções canónicas; query operacional ad-hoc em produção é proibida.
+	•	Read-models canónicos obrigatórios:
+		- `live_now_by_court`
+		- `upcoming_matches_by_player`
+		- `latest_results_feed`
+		- `standings_with_tiebreak_explain`
+	•	Estados oficiais de resultado live:
+		- `IN_PROGRESS`
+		- `RESULT_SUBMITTED`
+		- `PENDING_CONFIRMATION`
+		- `PENDING_REVIEW_EXPIRED`
+		- `OFFICIAL`
+		- `DISPUTED`
+		- `CANCELLED`
+		- `WALKOVER`
+		- `RETIRED`
+	•	Modos canónicos de validação de resultado:
+		- `IMMEDIATE_OFFICIAL`
+		- `IMMEDIATE_PENDING_THEN_OFFICIAL`
+	•	Matriz canónica de permissões:
+		- `IMMEDIATE_OFFICIAL`: submissão por `DIRETOR_PROVA|REFEREE|SCOREKEEPER|OWNER|CO_OWNER|ADMIN`.
+		- `IMMEDIATE_PENDING_THEN_OFFICIAL`: submissão por staff; submissão por jogador só com `playerResultSubmissionEnabled=true`.
+		- Jogador nunca oficializa resultado diretamente.
+	•	Expiração de pendente:
+		- `PENDING_CONFIRMATION` expirado transita para `PENDING_REVIEW_EXPIRED`.
+		- Auto-oficialização após expiração é proibida.
+		- Progressão dependente de standings permanece bloqueada até resolução humana.
+		- Alerta operacional `HIGH` deve surgir no dashboard em até `30s`; primeira ação humana esperada em até `5 min`.
+	•	Contrato de `reset_pending_result`:
+		- permitido apenas em `PENDING_REVIEW_EXPIRED`;
+		- perfis: `DIRETOR_PROVA|REFEREE|OWNER|CO_OWNER|ADMIN`;
+		- exige `reasonCode`, `reasonText` e `targetState` (`IN_PROGRESS|RESULT_SUBMITTED`);
+		- encerra pendente expirado com trilho auditável e reabre submissão.
+	•	Contrato de `override_result`:
+		- permitido apenas em `DISPUTED` ou `PENDING_REVIEW_EXPIRED`;
+		- exige `reasonCode`, `reasonText`, `evidenceAttachments[]` (mínimo 1);
+		- finaliza em `OFFICIAL` com `resolutionType=OVERRIDE` e auditoria obrigatória.
+	•	Idempotência obrigatória por comando:
+		- comandos: `submit_result|confirm_result|reject_result|dispute_result|walkover|retired|cancel_match`;
+		- scope canónico da chave: `tournamentId + matchId + action + actorId + clientRequestId`;
+		- chave repetida no mesmo scope devolve o mesmo resultado lógico.
+	•	Idempotência de domínio por transição:
+		- `confirm_result` em `OFFICIAL` = `NOOP` auditado;
+		- transição inválida nunca pode produzir duplo efeito competitivo;
+		- concorrência `confirm` vs `reject` exige lock transacional + versionamento de estado.
+	•	Gating de progressão por `affectsStandings`:
+		- `affectsStandings` é obrigatório no snapshot do match;
+		- progressão de fase é bloqueada com `PENDING_CONFIRMATION|PENDING_REVIEW_EXPIRED|DISPUTED` quando `affectsStandings=true`;
+		- `BEST_SECOND` só fecha quando todos os jogos relevantes estiverem concluídos/oficiais.
+	•	Contrato de standings para exceções:
+		- `CANCELLED`: `VOID` competitivo (`playedForStandings=false`, sem `head_to_head`, sem mínimo para `BEST_SECOND`);
+		- `WALKOVER`: exige `technicalWinScore` no `MatchScoringProfile` ativo; sem isso, write falha fechado;
+		- `RETIRED`: exige `retirementScoreRule` no `MatchScoringProfile` ativo; sem isso, write falha fechado.
+	•	Regras de desempate:
+		- cada fase define `tiebreakOrder[1..n]` versionado no snapshot;
+		- `tiebreakExplanation` é obrigatório por linha no read-model de standings;
+		- ordem aplicada no cálculo deve ser a mesma exibida em UI pública/interna.
+	•	UX/live obrigatório:
+		- página pública inclui hero + KPIs + `Agora por campo` + tabs (`Calendario`, `Grupos`, `Quadro`, `Resultados`, `Participantes`);
+		- `TV_MODE` é superfície obrigatória;
+		- visual de monitor deve privilegiar score/tempo/estado com alto contraste.
+	•	Visibilidade e dados públicos:
+		- web público pode consultar live sem login;
+		- app móvel exige login;
+		- público sem login só pode expor nome próprio + inicial, dupla/equipa, categoria/fase, score, estado, horário e campo;
+		- é proibido expor email, telefone, morada, identificadores civis, notas internas e metadados de disputa.
+	•	Notificações live:
+		- canal canónico: app móvel autenticada (sem push web/público);
+		- dedupe obrigatório: `userId + matchId + eventType + scheduledAt`;
+		- rate-limit: `CRITICAL` máx 3 por match/utilizador em 30 min (cancelamento não é suprimido); `NON_CRITICAL` máx 5 em 90 min;
+		- `quietHours` opcional adia apenas notificações não críticas.
+	•	Exceção controlada ao princípio `projection-only`:
+		- `dev/staging`: endpoint raw técnico permitido;
+		- `prod`: apenas endpoint admin protegido com step-up + auditoria;
+		- endpoint raw nunca pode ser consumido por UI pública/app.
 
 
 #### G08.018 (origem: D18.14)
@@ -3713,7 +3789,7 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
   - Reservas (`OrganizationPolicy`):
     - `policyType`: `FLEXIBLE|MODERATE|RIGID|CUSTOM`.
     - defaults bootstrap: `FLEXIBLE=1440`, `MODERATE=2880`, `RIGID=4320` minutos.
-    - `cancellationPenaltyBps` clamp `[0..10000]`.
+    - `cancellationPenaltyBps` é operacionalmente fixo em `0` (não configurável).
     - `guestBookingAllowed` default `false`; `noShowFeeCents` default `0`.
   - CRM (`CrmOrganizationPolicy`):
     - `timezone` default `Europe/Lisbon`.
@@ -3727,6 +3803,7 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
     - em padel, `requiresEntitlementForEntry=true` é forçado.
   - Store:
     - defaults: `status=CLOSED`, `catalogLocked=true`, `checkoutEnabled=false`, `showOnProfile=false`, `currency=EUR`.
+    - surface legal pública canónica por organização: `/{username}/legal`.
   - Fee organizacional:
     - campos: `feeMode`, `platformFeeBps`, `platformFeeFixedCents`.
     - `platformFeeBps` clamp `[0..5000]`, `platformFeeFixedCents` clamp `[0..5000]`.
@@ -5333,44 +5410,37 @@ node scripts/rebuild_ssot_registry_by_groups.mjs
 node scripts/verify_ssot_canonical_groups.mjs
 ```
 
-## 101) Aditamento Normativo Owner (2026-02-15)
-- Este aditamento propaga as decisões finais aprovadas pelo Owner (Nuno Lopes) e tem precedência normativa sobre texto histórico contraditório.
-- Hard-cut total de legacy em ambiente de desenvolvimento: sem redirects, sem convivência, sem re-exports finais de write-path.
-- Sem mecanismos runtime de ativação de funcionalidades nesta fase; controlo por branch/deploy.
-- Recuperação operacional desta fase de desenvolvimento: branches + histórico Git.
-- Testes automáticos são proteção obrigatória de regressão; merges críticos exigem CI com `unit + integration + e2e` verde.
-- `SPLIT_GARANTIDO` deve ser validado em Stripe sandbox (`test mode`), sem cobranças reais.
-- Regra de mapeamento por `orgType`:
-  - `EXTERNAL` usa Stripe Connect (tipo Standard nesta fase).
-  - `PLATFORM` usa conta Stripe da ORYA (nao-Connect / sem destination transfer).
-- `Arbitration Service` fica consolidado no bloco `G07.007` com prioridade explícita versionada e fail-closed para tipo fora da versão ativa.
-- Regras técnicas de split ficam consolidadas no bloco `G08.002` (`S01..S09` / `SPLIT_GARANTIDO`), substituindo norma histórica D12 (48/24).
-- Regras de hard-cut estão normativamente fechadas neste SSOT; `docs/legacy_cut_plan.md` é referência complementar.
-- Checklist de execução SSOT->CI->E2E->Observability->Runbook: `docs/implementation_checklist.md`.
-- Rastreabilidade documental desta propagação:
-  - `docs/arbitration_service_spec.md`
-  - `docs/identidade_auth_sessao_cookies_mobile_access.md`
-  - `docs/identity_merge_log_spec.md`
-  - `docs/ws_handshake_and_jwt_claims.md`
-  - `docs/legacy_cut_plan.md`
-  - `docs/split_v2_ssot.md`
-  - `docs/SPLIT_V2.md`
-  - `docs/organizacoes_multiorg.md`
-  - `docs/policies_organizacao_fechado.md`
-  - `docs/dashboard_org_decisions.md`
-  - `docs/fecho_unificado_normativo.md`
+## 101) Aditamento Normativo Owner (2026-02-17)
+- A autoridade normativa encontra-se consolidada no SSOT, sem dependência de documentos auxiliares.
+- A baseline técnica desta ronda fecha com:
+  - assignment canónico por serviço: `PROFESSIONAL_ONLY | RESOURCE_ONLY | PROFESSIONAL_AND_RESOURCE`;
+  - motor temporal canónico de reservas em múltiplos de 5 minutos;
+  - `orgRescheduleWindowMinutes` em `Organization` com enforcement em reagendamento;
+  - `calendar` incluído no conjunto non-hideable do dashboard;
+  - `BookingSplitStatus` canónico: `OPEN | SETTLING | SETTLED | CHARGE_FAILED | DEBT_OPEN | CANCELLED`;
+  - hardening de `orya_organization` com `Secure=true` obrigatório em stage/prod.
+- Modo final de fecho documental: `SSOT_ENFORCE_SINGLE_DOC=1`.
 
 ## 102) Índice de Gaps (documentação)
-- Estado desta ronda: `EM_VERIFICACAO_EXECUCAO`.
-- Histórico desta ronda: índice reaberto para `EM_VERIFICACAO_DOCUMENTAL` durante a validação linha-a-linha e re-fechado após propagação integral no SSOT.
-- Verificacao aplicada: hard-cut editorial do documento de identidade com historico movido para anexo revogado (`docs/identidade_auth_historico_pre_fecho.md`) e contrato final unico ativo em `docs/identidade_auth_sessao_cookies_mobile_access.md`.
-- Revalidacao adicional (AuthModal + `/api/auth/clear`): fluxo canónico com maximo 1 auto-heal silencioso, CTAs canónicos sem reset primário e limpeza por allowlist auth sem apagar cookies nao-auth.
-- Revalidacao adicional (delta DEV sem PROD): remoção de linguagem de ativação runtime por funcionalidades, conversão de `OUT` para fora de escopo/não deployado, e rotulagem de backup/go-live como `PROD_FUTURA` fora do ciclo DEV.
-- Revalidacao de split mapping: consistência explícita por `orgType` (`EXTERNAL`=Connect; `PLATFORM`=conta Stripe ORYA não-Connect) no SSOT e artefactos associados.
-- Revalidacao de C01/arbitragem: payload canónico com `resourceKey+authorityOrgId`, arbitragem cross-org com `priorityRuleVersion` e prioridade explícita alinhada a Reservas.
-- Revalidacao de policies/dashboard: `suspend` mantém owner-only com step-up obrigatório, auditoria before/after e reversão controlada na janela de 30 dias.
-- Revalidacao adicional (deltas F0 aplicados): enums fechados de `IdentityMergeLog`, matriz de cookies por ambiente, métricas WS específicas, SLI/SLA/métricas de arbitragem, campos/observabilidade/alertas de split e defaults/clamps de policies.
-- Regra transitória de autoridade (B1..B9): os documentos de domínio fechados (`dashboard_org_decisions`, `calendario_motor_unico`, `organizacoes_multiorg`, `padel`, `reservas`, além de `identidade_auth_sessao_cookies_mobile_access` e `SPLIT_V2`/`split_v2_ssot`) prevalecem por área até propagação completa no SSOT.
-- Cutover documental final (B10..B11): após implementação e validação verde, SSOT volta a autoridade única e os auxiliares são removidos.
-- Nota de escopo: checklists de execução permanecem fora do escopo normativo.
-- Critério de manutenção: qualquer nova contradição documental reabre este indice para `EM_VERIFICACAO_DOCUMENTAL`.
+- Estado desta ronda: `SEM_GAPS_NORMATIVOS`.
+- Regra transitória de autoridade por documento auxiliar está revogada.
+- Critério operacional de manutenção:
+  - qualquer nova contradição normativa reabre o estado para `EM_VERIFICACAO_EXECUCAO`;
+  - enquanto o estado se mantiver em `SEM_GAPS_NORMATIVOS`, o SSOT permanece como única autoridade ativa.
+
+## 103) Matriz Executável de Fecho (Documentos Decommissioned)
+| Documento de origem | Regra propagada no SSOT | Código canónico (backend/frontend) | Teste/Gate executado | Evidência |
+| --- | --- | --- | --- | --- |
+| `calendario_motor_unico.md` | Motor temporal canónico 5m | `lib/reservas/availability.ts`, `app/api/servicos/[id]/calendario/route.ts`, `app/api/servicos/[id]/reservar/route.ts`, `app/api/org/[orgId]/reservas/[id]/reschedule/route.ts` | `npm test`, `npm run gate:ui-ux` | Validação/cálculo de slots e write-paths em múltiplos de 5 |
+| `reservas.md` | Assignment por serviço e booking v1 alinhado | `lib/reservas/serviceAssignment.ts`, `app/api/org/[orgId]/servicos/route.ts`, `app/api/org/[orgId]/servicos/[id]/route.ts`, `app/[username]/_components/ReservasBookingClient.tsx` | `npm run typecheck`, `npm test` | Enum canónico aceite e propagado FE/BE |
+| `policies_organizacao_fechado.md` | DF-01/DF-02/DF-03 (`POST` gate email + campos + policy global) | `app/api/org/[orgId]/policies/route.ts`, `app/api/org/[orgId]/policies/[id]/route.ts`, `app/api/org/[orgId]/me/route.ts`, `app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx` | `npm test`, `npm run gate:ui-ux` | `guestBookingAllowed`, `noShowFeeCents` e `orgRescheduleWindowMinutes` em round-trip |
+| `dashboard_org_decisions.md` | Dashboard com `calendar` non-hideable e visibilidade UI-only | `lib/organizationDashboardTools.ts`, `app/api/org/[orgId]/dashboard/tools/visibility/route.ts` | `tests/org/dashboardToolIconsUnique.test.ts`, `npm test` | `NON_HIDEABLE_DASHBOARD_TOOL_IDS` inclui `calendar` |
+| `identidade_auth_historico_pre_fecho.md` | Histórico absorvido no contrato final de identidade/auth | `app/api/auth/logout/route.ts`, `app/api/org-hub/organizations/switch/route.ts`, `proxy.ts` | `npm test`, `SSOT_NORMATIVE_MODE=SSOT_ONLY SSOT_ENFORCE_SINGLE_DOC=1 npm run gate:ssot-normative` | Sem autoridade paralela remanescente fora do SSOT |
+| `identidade_auth_sessao_cookies_mobile_access.md` | Sessão/cookies/mobile access consolidados | `proxy.ts`, `app/api/auth/logout/route.ts`, `app/org/_internal/core/OrganizationTopBar.tsx`, `app/org/_internal/core/organizations/OrganizationsHubClient.tsx` | `npm test`, `npm run gate:ui-ux` | Escritas de `orya_organization` com política `Secure` por ambiente |
+| `organizacoes_multiorg.md` | Multi-org canónico no namespace `/org` e org context estável | `app/api/org-hub/organizations/switch/route.ts`, `lib/organizationIdUtils.ts`, `app/org/_internal/core/OrganizationTopBar.tsx` | `tests/orgContext/*.test.ts`, `tests/ops/orgCanonicalProxyAlias.test.ts` | Semântica de contexto org consistente FE/BE |
+| `SPLIT_V2.md` | Máquina técnica split v2 (`S01..S09`) | `domain/bookings/splitGarantido.ts`, `app/api/cron/bookings/split-garantido/route.ts`, `app/api/internal/worker/operations/route.ts` | `tests/bookings/splitGarantido.test.ts`, `tests/ops/splitGarantidoHardcutGuardrails.test.ts` | Transições runtime e rails monotónicos ativos |
+| `split_v2_ssot.md` | Estados canónicos split e mapeamento legado determinístico | `prisma/migrations/20260217140000_normative_assignment_split_v2_core/migration.sql`, `prisma/migrations/20260217202000_service_assignment_hybrid_promotion/migration.sql`, `prisma/schema.prisma` | `npm run db:deploy`, `npm test` | `COMPLETED/EXPIRED` migrados para `SETTLED/CHARGE_FAILED/DEBT_OPEN` |
+| `ws_handshake_and_jwt_claims.md` | Contrato WS/JWT consolidado no SSOT | `scripts/chat-ws-server.js`, `tests/ops/wsHandshakeRateLimitGuardrails.test.ts` | `npm test` | Guardrails WS/JWT mantidos sob contrato único |
+| `padel_live_implementacao.md` | Execução live padel alinhada à norma ativa | `app/api/padel/*`, `domain/padel/*` | `tests/padel/live*.test.ts`, `npm test` | Matriz live com cobertura de permissões, transições e notificações |
+| `padel_live_normativo.md` | Regras live padel consolidadas no SSOT | `domain/padel/*`, `app/api/padel/*` | `tests/padel/livePublicParity.test.ts`, `tests/padel/liveStateTransitionGuards.test.ts` | Paridade público/interno e guardas de estado validadas |
+| `padel.md` | Domínio padel/tournaments fechado em secções G08 | `app/org/[orgId]/padel/*`, `app/api/org/[orgId]/padel/*`, `domain/padel/*` | `tests/padel/*.test.ts`, `npm test` | Cobertura de torneios, ratings, resultados e integridade |

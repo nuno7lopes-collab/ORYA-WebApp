@@ -216,6 +216,7 @@ async function _GET(req: NextRequest) {
         unitPriceCents: true,
         currency: true,
         kind: true,
+        assignmentMode: true,
         categoryTag: true,
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
@@ -229,6 +230,7 @@ async function _GET(req: NextRequest) {
             businessName: true,
             username: true,
             brandingAvatarUrl: true,
+            brandingCoverUrl: true,
             timezone: true,
             reservationAssignmentMode: true,
             addressRef: { select: { formattedAddress: true, canonical: true } },
@@ -328,6 +330,7 @@ async function _GET(req: NextRequest) {
 
       const assignmentMode = resolveServiceAssignmentMode({
         organizationMode: service.organization.reservationAssignmentMode ?? null,
+        serviceMode: service.assignmentMode ?? null,
         serviceKind: service.kind ?? null,
       }).mode;
       let scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = [];

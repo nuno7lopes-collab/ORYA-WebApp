@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": [
+    "app/api/public/store/checkout/route.ts",
+    "app/api/public/store/orders/lookup/route.ts",
+    "app/api/public/store/orders/invoice/route.ts",
+    "app/api/me/purchases/store/route.ts",
+    "app/api/me/purchases/store/[orderId]/route.ts",
+    "app/api/me/purchases/store/[orderId]/invoice/route.ts",
+    "app/api/me/reservas/[id]/cancel/route.ts",
+    "app/api/org/[orgId]/policies/route.ts",
+    "app/api/org/[orgId]/policies/[id]/route.ts",
+    "app/org/[orgId]/policies/PoliciesToolClient.tsx",
+    "app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx",
+    "app/[username]/legal/page.tsx",
+    "app/[username]/page.tsx",
+    "app/[username]/loja/page.tsx",
+    "app/[username]/loja/produto/[slug]/page.tsx",
+    "app/[username]/loja/carrinho/page.tsx",
+    "app/[username]/loja/checkout/page.tsx",
+    "app/loja/seguimento/page.tsx",
+    "components/storefront/StorefrontCheckoutClient.tsx",
+    "components/storefront/StorefrontFooter.tsx",
+    "lib/store/policySnapshot.ts",
+    "lib/operations/fulfillStoreOrder.ts",
+    "lib/reservas/confirmationSnapshot.ts"
+  ]
+}

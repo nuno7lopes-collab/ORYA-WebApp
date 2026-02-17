@@ -10,5 +10,5 @@ type I18nProviderProps = PropsWithChildren<{
 export function I18nProvider({ children, fallback = null }: I18nProviderProps) {
   const { ready } = useI18n();
   if (!ready) return <>{fallback}</>;
-  return <I18nextProvider i18n={i18n}>{children}</I18nextProvider>;
+  return <I18nextProvider i18n={i18n as any}>{children}</I18nextProvider>;
 }

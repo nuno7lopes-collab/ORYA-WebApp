@@ -88,11 +88,26 @@ async function _GET(req: NextRequest) {
         cancellationPenaltyBps: true,
         allowReschedule: true,
         rescheduleWindowMinutes: true,
+        guestBookingAllowed: true,
+        noShowFeeCents: true,
         createdAt: true,
       },
     });
 
-    return respondOk(ctx, { items });
+    const orgSettings = await prisma.organization.findUnique({
+      where: { id: organization.id },
+      select: { orgRescheduleWindowMinutes: true },
+    });
+
+    return respondOk(ctx, {
+      items: items.map((item) => ({
+        ...item,
+        cancellationPenaltyBps: 0,
+      })),
+      organizationPolicy: {
+        orgRescheduleWindowMinutes: orgSettings?.orgRescheduleWindowMinutes ?? 240,
+      },
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -135,6 +150,19 @@ async function _POST(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
+    }
 
     const payload = await req.json().catch(() => ({}));
     const name = String(payload?.name ?? "").trim();
@@ -150,9 +178,7 @@ async function _POST(req: NextRequest) {
           : null;
     const allowCancellation =
       typeof payload?.allowCancellation === "boolean" ? payload.allowCancellation : true;
-    const cancellationPenaltyBps = Number.isFinite(Number(payload?.cancellationPenaltyBps))
-      ? Math.max(0, Math.min(10000, Math.round(Number(payload.cancellationPenaltyBps))))
-      : 0;
+    const cancellationPenaltyBps = 0;
     const allowReschedule =
       typeof payload?.allowReschedule === "boolean" ? payload.allowReschedule : true;
     const rescheduleWindowMinutes =
@@ -161,6 +187,11 @@ async function _POST(req: NextRequest) {
         : Number.isFinite(Number(payload?.rescheduleWindowMinutes))
           ? Math.max(0, Math.round(Number(payload.rescheduleWindowMinutes)))
           : cancellationWindowMinutes;
+    const guestBookingAllowed =
+      typeof payload?.guestBookingAllowed === "boolean" ? payload.guestBookingAllowed : false;
+    const noShowFeeCents = Number.isFinite(Number(payload?.noShowFeeCents))
+      ? Math.max(0, Math.round(Number(payload.noShowFeeCents)))
+      : 0;
 
     if (!name) {
       return fail(400, "Nome é obrigatório.");
@@ -176,6 +207,8 @@ async function _POST(req: NextRequest) {
         cancellationPenaltyBps,
         allowReschedule,
         rescheduleWindowMinutes: allowReschedule ? rescheduleWindowMinutes : null,
+        guestBookingAllowed,
+        noShowFeeCents,
       },
       select: {
         id: true,
@@ -186,6 +219,8 @@ async function _POST(req: NextRequest) {
         cancellationPenaltyBps: true,
         allowReschedule: true,
         rescheduleWindowMinutes: true,
+        guestBookingAllowed: true,
+        noShowFeeCents: true,
       },
     });
 
@@ -203,6 +238,8 @@ async function _POST(req: NextRequest) {
         cancellationPenaltyBps: policy.cancellationPenaltyBps,
         allowReschedule: policy.allowReschedule,
         rescheduleWindowMinutes: policy.rescheduleWindowMinutes,
+        guestBookingAllowed: policy.guestBookingAllowed,
+        noShowFeeCents: policy.noShowFeeCents,
       },
       ip,
       userAgent,
@@ -217,5 +254,95 @@ async function _POST(req: NextRequest) {
     return fail(500, "Erro ao criar política.");
   }
 }
+
+async function _PATCH(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = (
+    status: number,
+    message: string,
+    errorCode = errorCodeForStatus(status),
+    retryable = status >= 500,
+  ) => {
+    const resolvedMessage = typeof message === "string" ? message : String(message);
+    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
+    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
+  };
+
+  try {
+    const supabase = await createSupabaseServer();
+    const user = await ensureAuthenticated(supabase);
+
+    const profile = await prisma.profile.findUnique({
+      where: { id: user.id },
+    });
+    if (!profile) {
+      return fail(403, "Perfil não encontrado.");
+    }
+
+    const organizationId = resolveOrganizationIdFromRequest(req);
+    const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
+      organizationId: organizationId ?? undefined,
+      roles: [...ROLE_ALLOWLIST],
+    });
+
+    if (!organization || !membership) {
+      return fail(403, "Sem permissões.");
+    }
+    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
+    if (!emailGate.ok) {
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
+    }
+
+    const payload = await req.json().catch(() => ({}));
+    if (!Object.prototype.hasOwnProperty.call(payload, "orgRescheduleWindowMinutes")) {
+      return fail(400, "Sem alterações.");
+    }
+    const orgRescheduleWindowMinutesRaw = Number(payload?.orgRescheduleWindowMinutes);
+    if (!Number.isFinite(orgRescheduleWindowMinutesRaw)) {
+      return fail(400, "orgRescheduleWindowMinutes inválido.");
+    }
+    const orgRescheduleWindowMinutes = Math.max(0, Math.round(orgRescheduleWindowMinutesRaw));
+
+    const updated = await prisma.organization.update({
+      where: { id: organization.id },
+      data: { orgRescheduleWindowMinutes },
+      select: { id: true, orgRescheduleWindowMinutes: true },
+    });
+
+    const { ip, userAgent } = getRequestMeta(req);
+    await recordOrganizationAudit(prisma, {
+      organizationId: organization.id,
+      actorUserId: profile.id,
+      action: "ORG_RESCHEDULE_POLICY_UPDATED",
+      metadata: {
+        orgRescheduleWindowMinutes: updated.orgRescheduleWindowMinutes,
+      },
+      ip,
+      userAgent,
+    });
+
+    return respondOk(ctx, {
+      organizationPolicy: {
+        orgRescheduleWindowMinutes: updated.orgRescheduleWindowMinutes,
+      },
+    });
+  } catch (err) {
+    if (isUnauthenticatedError(err)) {
+      return fail(401, "Não autenticado.");
+    }
+    console.error("PATCH /api/org/[orgId]/policies error:", err);
+    return fail(500, "Erro ao atualizar política global.");
+  }
+}
 export const GET = withApiEnvelope(_GET);
 export const POST = withApiEnvelope(_POST);
+export const PATCH = withApiEnvelope(_PATCH);

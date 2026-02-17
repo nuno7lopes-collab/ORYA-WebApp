@@ -9,6 +9,7 @@ import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { Prisma, StoreOrderStatus, StoreProductOptionType } from "@prisma/client";
 import { buildStoreInvoicePdf, ensureStoreInvoiceRecord } from "@/lib/store/invoice";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
+import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function resolveOrderId(params: { orderId: string }) {
@@ -50,13 +51,27 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
       customerEmail: true,
       customerPhone: true,
       createdAt: true,
+      storePolicySnapshotJson: true,
       store: {
         select: {
           id: true,
           ownerOrganizationId: true,
-          supportEmail: true,
-          supportPhone: true,
-          organization: { select: { username: true, publicName: true, businessName: true } },
+          organization: {
+            select: {
+              username: true,
+              publicName: true,
+              businessName: true,
+              officialEmail: true,
+              settings: {
+                select: {
+                  supportEmail: true,
+                  supportPhone: true,
+                  storeReturnPolicyMode: true,
+                  storeReturnWindowDays: true,
+                },
+              },
+            },
+          },
         },
       },
       addresses: {
@@ -140,8 +155,20 @@ async function _GET(_req: NextRequest, { params }: { params: Promise<{ orderId: 
       valuesByOption.set(value.optionId, existing);
     });
 
+    const invoiceStorePolicy = resolveStorePolicyWithSnapshot({
+      snapshot: order.storePolicySnapshotJson,
+      settings: order.store.organization?.settings ?? null,
+      fallbackSupportEmail: order.store.organization?.officialEmail ?? null,
+      organizationUsername: order.store.organization?.username ?? null,
+    });
+
     const orderWithPersonalization = {
       ...order,
+      store: {
+        ...order.store,
+        supportEmail: invoiceStorePolicy.supportEmail,
+        supportPhone: invoiceStorePolicy.supportPhone,
+      },
       addresses: order.addresses.map((address) => ({
         addressType: address.addressType,
         fullName: address.fullName,
