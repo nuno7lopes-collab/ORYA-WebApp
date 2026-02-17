@@ -96,7 +96,29 @@ async function _GET(req: NextRequest) {
         payment_mode: true,
         deadlineAt: true,
         category: { select: { id: true, label: true } },
-        slots: { select: { id: true, slotStatus: true } },
+        slots: {
+          select: {
+            id: true,
+            slotStatus: true,
+            profileId: true,
+            profile: {
+              select: {
+                id: true,
+                fullName: true,
+                username: true,
+                avatarUrl: true,
+              },
+            },
+            playerProfile: {
+              select: {
+                id: true,
+                level: true,
+                preferredSide: true,
+                gender: true,
+              },
+            },
+          },
+        },
         event: {
           select: {
             id: true,
@@ -144,6 +166,21 @@ async function _GET(req: NextRequest) {
       {
         ok: true,
         items: filtered.map((pairing) => ({
+          seekingPlayers: pairing.slots
+            .filter((slot) => slot.slotStatus === "FILLED")
+            .map((slot) => ({
+              profileId: slot.profileId ?? slot.profile?.id ?? null,
+              playerProfileId: slot.playerProfile?.id ?? null,
+              displayName:
+                slot.profile?.fullName?.trim() ||
+                slot.profile?.username?.trim() ||
+                null,
+              username: slot.profile?.username ?? null,
+              avatarUrl: slot.profile?.avatarUrl ?? null,
+              level: slot.playerProfile?.level ?? null,
+              preferredSide: slot.playerProfile?.preferredSide ?? null,
+              gender: slot.playerProfile?.gender ?? null,
+            })),
           isExpired: pairing.deadlineAt ? pairing.deadlineAt.getTime() < now.getTime() : false,
           id: pairing.id,
           paymentMode: pairing.payment_mode,

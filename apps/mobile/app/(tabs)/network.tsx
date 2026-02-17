@@ -237,14 +237,31 @@ export default function NetworkScreen() {
           />
         )}
 
-        <SectionHeader title="Oportunidades" subtitle="Jogos e convites" />
+        <SectionHeader title="Próximos passos" subtitle="Aumenta a tua rede" />
         <GlassCard intensity={48} className="mb-2">
           <Text className="text-white/70 text-sm">
-            Em breve: jogos de padel com 3 vagas.
+            Encontra jogos, eventos e pessoas com interesses parecidos.
           </Text>
-          <Text className="text-white/50 text-xs mt-2">
-            Vamos ligar-te a pessoas do mesmo evento.
-          </Text>
+          <View className="mt-3 flex-row gap-2">
+            <Pressable
+              onPress={() => router.push("/padel")}
+              className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
+              style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Explorar Padel"
+            >
+              <Text className="text-white text-xs font-semibold text-center">Explorar Padel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push({ pathname: "/search", params: { tab: "people" } })}
+              className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
+              style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Encontrar pessoas"
+            >
+              <Text className="text-white text-xs font-semibold text-center">Encontrar pessoas</Text>
+            </Pressable>
+          </View>
         </GlassCard>
       </View>
     );

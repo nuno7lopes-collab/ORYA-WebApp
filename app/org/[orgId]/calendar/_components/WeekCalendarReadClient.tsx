@@ -1,21 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { SearchableEntitySelect, type SearchableEntityOption } from "./day/SearchableEntitySelect";
+import {
+  buildAggregateAgendaItems,
+  getAggregateKey,
+  type AggregateAgendaItem as WeekAggregateAgendaItem,
+  type ProjectedAgendaItem as WeekProjectedAgendaItem,
+} from "./week/aggregation";
 import {
   getDateParts,
   makeUtcDateFromLocal,
   normalizeIntervals,
   resolveIntervalsForDate,
 } from "@/lib/reservas/availability";
-
-type CalendarView = "week" | "day";
-type CalendarScopeMode = "exclusive" | "hybrid";
-const HYBRID_MATCH_STRATEGY: "OR" | "AND" = "OR";
 
 type AgendaItem = {
   kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
@@ -108,22 +111,37 @@ type PositionedAgendaItem = {
   item: AgendaItem;
   start: Date;
   end: Date;
-  top: number;
-  height: number;
-  lane: number;
-  laneCount: number;
 };
+
+type ProjectedAgendaItem = WeekProjectedAgendaItem<AgendaItem> & PositionedAgendaItem;
+type AggregateAgendaItem = WeekAggregateAgendaItem<AgendaItem>;
 
 const CHIP_BASE =
   "rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-[12px] text-white/70 transition hover:border-white/25 hover:bg-white/10 hover:text-white";
 const CHIP_ACTIVE =
   "border-white/40 bg-white/18 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]";
-const MIN_HOUR_HEIGHT = 40;
-const MAX_HOUR_HEIGHT = 84;
 const DEFAULT_HOUR_HEIGHT = 56;
 const VISIBLE_HOURS = 10;
 const HOUR_START = 0;
 const HOUR_END = 24;
+const DEFAULT_WEEKDAY_INTERVALS: Interval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
+const PROFESSIONAL_OPTION_PREFIX = "P:";
+const RESOURCE_OPTION_PREFIX = "R:";
+const COURT_OPTION_PREFIX = "C:";
+
+function encodeOptionId(prefix: string, id: number) {
+  return `${prefix}${id}`;
+}
+
+function decodePrefixedIds(values: string[], prefix: string) {
+  const deduped = new Set<number>();
+  values
+    .filter((value) => value.startsWith(prefix))
+    .map((value) => Number(value.slice(prefix.length)))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .forEach((value) => deduped.add(value));
+  return [...deduped].sort((a, b) => a - b);
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
@@ -156,10 +174,6 @@ function setIdListParam(params: URLSearchParams, key: string, ids: number[]) {
     return;
   }
   params.set(key, ids.join(","));
-}
-
-function parseScopeMode(raw: string | null): CalendarScopeMode {
-  return raw === "hybrid" ? "hybrid" : "exclusive";
 }
 
 function pad2(value: number) {
@@ -218,16 +232,7 @@ function getTimeParts(date: Date, timezone: string) {
   return { hour: Number(map.get("hour") || 0), minute: Number(map.get("minute") || 0) };
 }
 
-function formatRangeLabel(view: CalendarView, start: Date, timezone: string) {
-  if (view === "day") {
-    return new Intl.DateTimeFormat("pt-PT", {
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      timeZone: timezone,
-    }).format(start);
-  }
+function formatRangeLabel(start: Date, timezone: string) {
   const end = addDays(start, 6, timezone);
   const formatter = new Intl.DateTimeFormat("pt-PT", {
     day: "2-digit",
@@ -289,15 +294,37 @@ function normalizeAvailability(payload: AvailabilityResponse, timezone: string):
   };
 }
 
-function resolveIntervalsForDay(normalized: NormalizedAvailability, day: Date, timezone: string) {
+function resolveIntervalsForDay(normalized: NormalizedAvailability | undefined, day: Date, timezone: string) {
   const dayParts = getDateParts(day, timezone);
   const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
+  const defaultIntervals = dayOfWeek === 0 || dayOfWeek === 6 ? [] : DEFAULT_WEEKDAY_INTERVALS;
+  if (!normalized) return defaultIntervals;
   const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
-  return resolveIntervalsForDate({
+  const resolved = resolveIntervalsForDate({
     dayOfWeek,
     templatesByDay: normalized.templatesByDay,
     overrides,
   });
+  if (resolved.length > 0) return resolved;
+  if (normalized.templatesByDay.size === 0 && overrides.length === 0) return defaultIntervals;
+  return [];
+}
+
+function invertIntervals(intervals: Interval[]) {
+  if (intervals.length === 0) return [{ startMinute: 0, endMinute: 24 * 60 }];
+  const sorted = [...intervals].sort((a, b) => a.startMinute - b.startMinute);
+  const outside: Interval[] = [];
+  let cursor = 0;
+  sorted.forEach((interval) => {
+    if (interval.startMinute > cursor) {
+      outside.push({ startMinute: cursor, endMinute: interval.startMinute });
+    }
+    cursor = Math.max(cursor, interval.endMinute);
+  });
+  if (cursor < 24 * 60) {
+    outside.push({ startMinute: cursor, endMinute: 24 * 60 });
+  }
+  return outside;
 }
 
 function overlapsDay(item: AgendaItem, dayStart: Date, dayEndExclusive: Date) {
@@ -327,7 +354,6 @@ function buildAgendaPositions(params: {
   items: AgendaItem[];
   day: Date;
   timezone: string;
-  minuteHeight: number;
 }) {
   const dayStart = buildZonedDate(getDateParts(params.day, params.timezone), params.timezone, 0, 0);
   const dayEndExclusive = addDays(dayStart, 1, params.timezone);
@@ -346,50 +372,11 @@ function buildAgendaPositions(params: {
       if (endMinute <= startMinute) return null;
       return { item, start, end, startMinute, endMinute };
     })
-    .filter(Boolean) as Array<{
-    item: AgendaItem;
-    start: Date;
-    end: Date;
-    startMinute: number;
-    endMinute: number;
-  }>;
-
-  projected.sort((a, b) => {
+    .filter(Boolean) as ProjectedAgendaItem[];
+  return projected.sort((a, b) => {
     if (a.startMinute !== b.startMinute) return a.startMinute - b.startMinute;
     return a.endMinute - b.endMinute;
   });
-
-  const clusterLaneCount = new Map<number, number>();
-  let clusterId = -1;
-  let active: Array<{ endMinute: number; lane: number }> = [];
-  const placed: Array<PositionedAgendaItem & { clusterId: number }> = [];
-
-  projected.forEach((entry) => {
-    active = active.filter((item) => item.endMinute > entry.startMinute);
-    if (active.length === 0) clusterId += 1;
-    const usedLanes = new Set(active.map((item) => item.lane));
-    let lane = 0;
-    while (usedLanes.has(lane)) lane += 1;
-    active.push({ endMinute: entry.endMinute, lane });
-    const laneCount = Math.max(clusterLaneCount.get(clusterId) ?? 0, lane + 1);
-    clusterLaneCount.set(clusterId, laneCount);
-
-    placed.push({
-      clusterId,
-      item: entry.item,
-      start: entry.start,
-      end: entry.end,
-      lane,
-      laneCount: 1,
-      top: entry.startMinute * params.minuteHeight,
-      height: Math.max((entry.endMinute - entry.startMinute) * params.minuteHeight, 28),
-    });
-  });
-
-  return placed.map((entry) => ({
-    ...entry,
-    laneCount: clusterLaneCount.get(entry.clusterId) ?? 1,
-  }));
 }
 
 function resolveStatusLabel(status: string) {
@@ -425,7 +412,24 @@ function resolveCardTone(item: AgendaItem) {
   return "border-emerald-300/55 bg-[linear-gradient(135deg,rgba(16,185,129,0.3),rgba(16,185,129,0.12))]";
 }
 
-function formatDateTime(dateRaw: string) {
+function resolveAggregateTone(items: ProjectedAgendaItem[]) {
+  if (items.length === 0) {
+    return "border-white/25 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))]";
+  }
+  const cancelled = items.find((entry) => {
+    const status = entry.item.status.trim().toUpperCase();
+    return status.startsWith("CANCELLED") || status === "NO_SHOW";
+  });
+  if (cancelled) return resolveCardTone(cancelled.item);
+  const pending = items.find((entry) => {
+    const status = entry.item.status.trim().toUpperCase();
+    return status === "PENDING" || status === "PENDING_CONFIRMATION";
+  });
+  if (pending) return resolveCardTone(pending.item);
+  return resolveCardTone(items[0].item);
+}
+
+function formatDateTime(dateRaw: string, timezone: string) {
   const date = new Date(dateRaw);
   return date.toLocaleString("pt-PT", {
     day: "2-digit",
@@ -433,17 +437,30 @@ function formatDateTime(dateRaw: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: timezone,
   });
 }
 
-export default function CalendarReadClient({ view }: { view: CalendarView }) {
+function formatHourMinute(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat("pt-PT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  }).format(date);
+}
+
+export default function WeekCalendarReadClient() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const orgIdRaw = Array.isArray(params?.orgId) ? params.orgId[0] : params?.orgId;
   const organizationId = Number(orgIdRaw);
-  const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
+  const [selectedAggregateKey, setSelectedAggregateKey] = useState<string | null>(null);
+  const [hoveredAggregateKey, setHoveredAggregateKey] = useState<string | null>(null);
+  const hourHeight = DEFAULT_HOUR_HEIGHT;
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
 
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
   const selectedCourtIds = useMemo(() => parseIdList(searchParams.get("courts")), [searchParams]);
@@ -451,19 +468,16 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
     () => parseIdList(searchParams.get("professionals")),
     [searchParams],
   );
-  const scopeMode = parseScopeMode(searchParams.get("scopeMode"));
   const anchorDate = useMemo(
     () => parseDateParam(searchParams.get("date"), timezone) ?? new Date(),
     [searchParams, timezone],
   );
 
   const replaceState = (input: {
-    nextView?: CalendarView;
     nextDate?: Date;
     nextResources?: number[];
     nextCourts?: number[];
     nextProfessionals?: number[];
-    nextScopeMode?: CalendarScopeMode;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -471,76 +485,34 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
     nextParams.set("date", formatDateParam(input.nextDate ?? anchorDate, timezone));
-    nextParams.set("scopeMode", input.nextScopeMode ?? scopeMode);
-    const nextView = input.nextView ?? view;
-    const nextPath = buildOrgHref(organizationId, nextView === "day" ? "/calendar/day" : "/calendar");
+    nextParams.delete("scopeMode");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
     router.replace(search ? `${nextPath}?${search}` : nextPath, { scroll: false });
   };
 
   const shiftRange = (direction: -1 | 1) => {
-    const amount = view === "day" ? 1 : 7;
-    replaceState({ nextDate: addDays(anchorDate, direction * amount, timezone) });
+    replaceState({ nextDate: addDays(anchorDate, direction * 7, timezone) });
   };
 
   const setToday = () => {
     replaceState({ nextDate: new Date() });
   };
 
-  const toggleResource = (id: number) => {
-    const next = new Set(selectedResourceIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const nextResources = [...next].sort((a, b) => a - b);
-    if (scopeMode === "exclusive") {
-      replaceState({ nextResources, nextProfessionals: nextResources.length > 0 ? [] : selectedProfessionalIds });
-      return;
-    }
-    replaceState({ nextResources });
+  const setSelectedResourcesAndCourts = (optionIds: string[]) => {
+    replaceState({
+      nextResources: decodePrefixedIds(optionIds, RESOURCE_OPTION_PREFIX),
+      nextCourts: decodePrefixedIds(optionIds, COURT_OPTION_PREFIX),
+    });
   };
-
-  const toggleCourt = (id: number) => {
-    const next = new Set(selectedCourtIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const nextCourts = [...next].sort((a, b) => a - b);
-    if (scopeMode === "exclusive") {
-      replaceState({ nextCourts, nextProfessionals: nextCourts.length > 0 ? [] : selectedProfessionalIds });
-      return;
-    }
-    replaceState({ nextCourts });
-  };
-
-  const toggleProfessional = (id: number) => {
-    const next = new Set(selectedProfessionalIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    const nextProfessionals = [...next].sort((a, b) => a - b);
-    if (scopeMode === "exclusive") {
-      replaceState({
-        nextProfessionals,
-        nextResources: nextProfessionals.length > 0 ? [] : selectedResourceIds,
-        nextCourts: nextProfessionals.length > 0 ? [] : selectedCourtIds,
-      });
-      return;
-    }
-    replaceState({ nextProfessionals });
+  const setSelectedProfessionals = (optionIds: string[]) => {
+    replaceState({
+      nextProfessionals: decodePrefixedIds(optionIds, PROFESSIONAL_OPTION_PREFIX),
+    });
   };
 
   const range = useMemo(() => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return null;
-    if (view === "day") {
-      const from = buildZonedDate(getDateParts(anchorDate, timezone), timezone, 0, 0);
-      const to = buildZonedDate(getDateParts(anchorDate, timezone), timezone, 23, 59);
-      const days = [from];
-      return {
-        from,
-        to,
-        days,
-        label: formatRangeLabel(view, from, timezone),
-      };
-    }
-
     const from = getWeekStart(anchorDate, timezone);
     const days = Array.from({ length: 7 }, (_, idx) => addDays(from, idx, timezone));
     const to = buildZonedDate(getDateParts(days[6], timezone), timezone, 23, 59);
@@ -548,9 +520,9 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
       from,
       to,
       days,
-      label: formatRangeLabel(view, from, timezone),
+      label: formatRangeLabel(from, timezone),
     };
-  }, [anchorDate, organizationId, timezone, view]);
+  }, [anchorDate, organizationId, timezone]);
 
   const apiUrl = useMemo(() => {
     if (!range) return null;
@@ -595,6 +567,43 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
     () => new Map(activeProfessionals.map((professional) => [professional.id, professional])),
     [activeProfessionals],
   );
+  const professionalOptions = useMemo<SearchableEntityOption[]>(
+    () =>
+      activeProfessionals.map((professional) => ({
+        id: encodeOptionId(PROFESSIONAL_OPTION_PREFIX, professional.id),
+        label: professional.name,
+        subtitle: professional.roleTitle,
+      })),
+    [activeProfessionals],
+  );
+  const resourceOptions = useMemo<SearchableEntityOption[]>(
+    () => [
+      ...activeResources.map((resource) => ({
+        id: encodeOptionId(RESOURCE_OPTION_PREFIX, resource.id),
+        label: resource.label,
+        subtitle: `Recurso · capacidade ${resource.capacity}`,
+      })),
+      ...activeCourts.map((court) => ({
+        id: encodeOptionId(COURT_OPTION_PREFIX, court.id),
+        label: court.label,
+        subtitle: court.clubName ? `Campo · ${court.clubName}` : "Campo de padel",
+      })),
+    ],
+    [activeCourts, activeResources],
+  );
+  const selectedProfessionalOptionIds = useMemo(
+    () => selectedProfessionalIds.map((id) => encodeOptionId(PROFESSIONAL_OPTION_PREFIX, id)),
+    [selectedProfessionalIds],
+  );
+  const selectedResourceOptionIds = useMemo(
+    () => [
+      ...selectedResourceIds.map((id) => encodeOptionId(RESOURCE_OPTION_PREFIX, id)),
+      ...selectedCourtIds.map((id) => encodeOptionId(COURT_OPTION_PREFIX, id)),
+    ],
+    [selectedCourtIds, selectedResourceIds],
+  );
+  const hasActiveSelection =
+    selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
 
   const items = data?.items ?? [];
   const filteredItems = useMemo(() => {
@@ -604,41 +613,72 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
       const matchesProfessional = Boolean(
         item.professionalId && selectedProfessionalIds.includes(item.professionalId),
       );
-
-      if (scopeMode === "exclusive") {
-        if (selectedProfessionalIds.length > 0) return matchesProfessional;
-        if (selectedResourceIds.length > 0 || selectedCourtIds.length > 0) return matchesResource || matchesCourt;
-        return true;
-      }
-
-      const dimensionChecks: boolean[] = [];
-      if (selectedProfessionalIds.length > 0) dimensionChecks.push(matchesProfessional);
-      if (selectedResourceIds.length > 0 || selectedCourtIds.length > 0) dimensionChecks.push(matchesResource || matchesCourt);
-      if (dimensionChecks.length === 0) return true;
-      if (HYBRID_MATCH_STRATEGY === "AND") return dimensionChecks.every(Boolean);
-      return dimensionChecks.some(Boolean);
+      const hasAnySelection =
+        selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+      if (!hasAnySelection) return true;
+      return matchesProfessional || matchesResource || matchesCourt;
     });
-  }, [items, scopeMode, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
+  }, [items, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
 
   const minuteHeight = hourHeight / 60;
   const viewportHeight = hourHeight * VISIBLE_HOURS;
   const gridHeight = (HOUR_END - HOUR_START) * hourHeight;
   const days = range?.days ?? [];
-  const positionsByDay = useMemo(() => {
-    const map = new Map<string, PositionedAgendaItem[]>();
+  const aggregateByDay = useMemo(() => {
+    const map = new Map<string, AggregateAgendaItem[]>();
     days.forEach((day) => {
+      const dayKey = getDayKey(day, timezone);
+      const positions = buildAgendaPositions({
+        items: filteredItems,
+        day,
+        timezone,
+      });
       map.set(
-        getDayKey(day, timezone),
-        buildAgendaPositions({
-          items: filteredItems,
-          day,
-          timezone,
+        dayKey,
+        buildAggregateAgendaItems({
+          positions,
+          dayKey,
           minuteHeight,
         }),
       );
     });
     return map;
   }, [days, filteredItems, minuteHeight, timezone]);
+  const aggregatesByKey = useMemo(() => {
+    const map = new Map<string, AggregateAgendaItem>();
+    aggregateByDay.forEach((entries) => {
+      entries.forEach((aggregate) => {
+        map.set(getAggregateKey(aggregate.dayKey, aggregate.startMinute, aggregate.endMinute), aggregate);
+      });
+    });
+    return map;
+  }, [aggregateByDay]);
+  const selectedAggregate = selectedAggregateKey ? aggregatesByKey.get(selectedAggregateKey) ?? null : null;
+  const hoveredAggregate = hoveredAggregateKey ? aggregatesByKey.get(hoveredAggregateKey) ?? null : null;
+  const focusedAggregate = selectedAggregate ?? hoveredAggregate;
+
+  const organizationAvailabilityKey =
+    Number.isFinite(organizationId) && organizationId > 0 ? `org-availability:${organizationId}` : null;
+  const { data: organizationAvailability } = useSWR<NormalizedAvailability | undefined>(
+    organizationAvailabilityKey,
+    async () => {
+      const url = `/api/org/${organizationId}/reservas/disponibilidade?scopeType=ORGANIZATION`;
+      try {
+        const payload = await fetchJson<AvailabilityResponse>(url);
+        if (!payload?.ok) return undefined;
+        return normalizeAvailability(payload, timezone);
+      } catch {
+        return undefined;
+      }
+    },
+  );
+  const organizationAvailabilityByDay = useMemo(() => {
+    const map = new Map<string, Interval[]>();
+    days.forEach((day) => {
+      map.set(getDayKey(day, timezone), resolveIntervalsForDay(organizationAvailability, day, timezone));
+    });
+    return map;
+  }, [days, organizationAvailability, timezone]);
 
   const availabilityTargets = useMemo(() => {
     const targets: AvailabilityTarget[] = [];
@@ -728,7 +768,33 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
   const nowTop = (nowTimeParts.hour * 60 + nowTimeParts.minute) * minuteHeight;
   const dateInputValue = formatDateParam(anchorDate, timezone);
   const visibleCountLabel = `${filteredItems.length} ${filteredItems.length === 1 ? "item visível" : "itens visíveis"}`;
-  const selectedResourceOrCourtCount = selectedResourceIds.length + selectedCourtIds.length;
+
+  useEffect(() => {
+    setSelectedAggregateKey(null);
+    setHoveredAggregateKey(null);
+  }, [dateInputValue, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
+  useEffect(() => {
+    if (selectedAggregateKey && !aggregatesByKey.has(selectedAggregateKey)) {
+      setSelectedAggregateKey(null);
+    }
+    if (hoveredAggregateKey && !aggregatesByKey.has(hoveredAggregateKey)) {
+      setHoveredAggregateKey(null);
+    }
+  }, [aggregatesByKey, hoveredAggregateKey, selectedAggregateKey]);
+
+  useEffect(() => {
+    const node = gridScrollRef.current;
+    if (!node) return;
+    const nowLocal = new Date();
+    const targetMinute = isTodayInRange
+      ? (() => {
+          const parts = getTimeParts(nowLocal, timezone);
+          return parts.hour * 60 + parts.minute;
+        })()
+      : 8 * 60;
+    const top = Math.max(0, targetMinute * minuteHeight - hourHeight * 2);
+    node.scrollTo({ top, behavior: "auto" });
+  }, [dateInputValue, hourHeight, isTodayInRange, minuteHeight, timezone]);
 
   if (!range) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
@@ -745,7 +811,7 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
       </div>
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -783,132 +849,30 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
             <span className="text-[10px] uppercase tracking-[0.22em] text-white/45">Fuso: {timezone}</span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => replaceState({ nextView: "week" })}
-              className={cn(CHIP_BASE, view === "week" && CHIP_ACTIVE)}
-            >
-              Semana
-            </button>
-            <button
-              type="button"
-              onClick={() => replaceState({ nextView: "day" })}
-              className={cn(CHIP_BASE, view === "day" && CHIP_ACTIVE)}
-            >
-              Dia
-            </button>
-            <div className="flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.04] px-3 py-1">
-              <span className="text-[10px] uppercase tracking-[0.2em] text-white/50">Zoom</span>
-              <input
-                type="range"
-                min={MIN_HOUR_HEIGHT}
-                max={MAX_HOUR_HEIGHT}
-                step={2}
-                value={hourHeight}
-                onChange={(event) => setHourHeight(Number(event.target.value))}
-                className="h-1 w-24 cursor-pointer accent-white/70"
-                aria-label="Zoom do calendário"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => replaceState({ nextResources: [], nextCourts: [] })}
-              className={cn(CHIP_BASE, selectedResourceOrCourtCount === 0 && CHIP_ACTIVE)}
-            >
-              Todos recursos/campos
-            </button>
-            <button
-              type="button"
-              onClick={() => replaceState({ nextProfessionals: [] })}
-              className={cn(CHIP_BASE, selectedProfessionalIds.length === 0 && CHIP_ACTIVE)}
-            >
-              Todos profissionais
-            </button>
-            <div className="inline-flex items-center rounded-full border border-white/12 bg-white/[0.04] p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedProfessionalIds.length > 0 && selectedResourceOrCourtCount > 0) {
-                    replaceState({ nextScopeMode: "exclusive", nextResources: [], nextCourts: [] });
-                    return;
-                  }
-                  replaceState({ nextScopeMode: "exclusive" });
-                }}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[11px] transition",
-                  scopeMode === "exclusive" ? "bg-cyan-300/25 text-cyan-100" : "text-white/60 hover:text-white/90",
-                )}
-              >
-                Modo A
-              </button>
-              <button
-                type="button"
-                onClick={() => replaceState({ nextScopeMode: "hybrid" })}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[11px] transition",
-                  scopeMode === "hybrid" ? "bg-cyan-300/25 text-cyan-100" : "text-white/60 hover:text-white/90",
-                )}
-              >
-                Modo B
-              </button>
-            </div>
-          </div>
         </div>
 
-        <div className="mt-3 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Recursos</p>
-            <div className="mt-2 flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
-              {activeResources.length === 0 && <span className="text-xs text-white/40">Sem recursos ativos.</span>}
-              {activeResources.map((resource) => (
-                <button
-                  key={resource.id}
-                  type="button"
-                  onClick={() => toggleResource(resource.id)}
-                  className={cn(CHIP_BASE, selectedResourceIds.includes(resource.id) && CHIP_ACTIVE)}
-                  title={`Capacidade ${resource.capacity}`}
-                >
-                  {resource.label} · {resource.capacity}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Campos</p>
-            <div className="mt-2 flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
-              {activeCourts.length === 0 && <span className="text-xs text-white/40">Sem campos ativos.</span>}
-              {activeCourts.map((court) => (
-                <button
-                  key={`court-${court.id}`}
-                  type="button"
-                  onClick={() => toggleCourt(court.id)}
-                  className={cn(CHIP_BASE, selectedCourtIds.includes(court.id) && CHIP_ACTIVE)}
-                  title={court.clubName ?? undefined}
-                >
-                  {court.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-white/50">Profissionais</p>
-            <div className="mt-2 flex max-h-[140px] flex-wrap gap-2 overflow-y-auto pr-1">
-              {activeProfessionals.length === 0 && <span className="text-xs text-white/40">Sem profissionais ativos.</span>}
-              {activeProfessionals.map((professional) => (
-                <button
-                  key={professional.id}
-                  type="button"
-                  onClick={() => toggleProfessional(professional.id)}
-                  className={cn(CHIP_BASE, selectedProfessionalIds.includes(professional.id) && CHIP_ACTIVE)}
-                >
-                  {professional.name}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <SearchableEntitySelect
+            label="Equipa ou profissional"
+            placeholder="Equipa/profissional"
+            options={professionalOptions}
+            selectedIds={selectedProfessionalOptionIds}
+            onChange={setSelectedProfessionals}
+          />
+          <SearchableEntitySelect
+            label="Recurso"
+            placeholder="Recurso"
+            options={resourceOptions}
+            selectedIds={selectedResourceOptionIds}
+            onChange={setSelectedResourcesAndCourts}
+          />
+          <button
+            type="button"
+            onClick={() => replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] })}
+            className={cn(CHIP_BASE, !hasActiveSelection && CHIP_ACTIVE)}
+          >
+            Geral
+          </button>
         </div>
       </section>
 
@@ -929,13 +893,13 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(5,10,22,0.82)]">
             <div className="overflow-x-auto">
-              <div className={cn("min-w-[880px]", view === "day" && "min-w-[540px]")}> 
+              <div className="min-w-[880px]">
                 <div
                   className="grid gap-1 border-b border-white/10 bg-[rgba(5,10,22,0.9)]"
                   style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}
                 >
                   <div className="h-11 border-r border-white/10" />
-                  <div className={cn("grid gap-1", view === "week" ? "grid-cols-7" : "grid-cols-1")}>
+                  <div className="grid grid-cols-7 gap-1">
                     {days.map((day) => {
                       const isToday = isSameDay(day, now, timezone);
                       const label = new Intl.DateTimeFormat("pt-PT", {
@@ -960,7 +924,11 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
                   </div>
                 </div>
 
-                <div className="overflow-y-auto orya-scrollbar-hide" style={{ height: viewportHeight, maxHeight: "calc(100vh - 320px)" }}>
+                <div
+                  ref={gridScrollRef}
+                  className="overflow-y-auto orya-scrollbar-hide"
+                  style={{ height: viewportHeight, maxHeight: "calc(100vh - 320px)" }}
+                >
                   <div className="grid gap-1" style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}>
                     <div
                       className="relative border-r border-white/10 bg-[rgba(7,12,25,0.65)]"
@@ -989,10 +957,12 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
                       })}
                     </div>
 
-                    <div className={cn("grid gap-1", view === "week" ? "grid-cols-7" : "grid-cols-1")}>
+                    <div className="grid grid-cols-7 gap-1">
                       {days.map((day) => {
                         const key = getDayKey(day, timezone);
-                        const dayItems = positionsByDay.get(key) ?? [];
+                        const dayItems = aggregateByDay.get(key) ?? [];
+                        const dayAvailability = organizationAvailabilityByDay.get(key) ?? [];
+                        const outsideIntervals = invertIntervals(dayAvailability);
                         const isToday = isSameDay(day, now, timezone);
                         return (
                           <div
@@ -1008,6 +978,16 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
                               backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
                             }}
                           >
+                            {outsideIntervals.map((interval) => (
+                              <div
+                                key={`${key}-outside-${interval.startMinute}-${interval.endMinute}`}
+                                className="pointer-events-none absolute left-0 right-0 bg-black/35"
+                                style={{
+                                  top: interval.startMinute * minuteHeight,
+                                  height: (interval.endMinute - interval.startMinute) * minuteHeight,
+                                }}
+                              />
+                            ))}
                             {isToday && (
                               <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(107,255,255,0.08),rgba(106,123,255,0.03),rgba(106,123,255,0.01))]" />
                             )}
@@ -1017,48 +997,66 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
                                 <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] text-white">Agora</span>
                               </div>
                             )}
-                            {dayItems.map((position) => {
-                              const width = 100 / position.laneCount;
-                              const left = position.lane * width;
-                              const statusLabel = resolveStatusLabel(position.item.status);
-                              const kindLabel = resolveKindLabel(position.item.kind);
-                              const resourceLabel = position.item.resourceId
-                                ? resourcesById.get(position.item.resourceId)?.label ?? null
-                                : null;
-                              const courtLabel = position.item.courtId
-                                ? courtsById.get(position.item.courtId)?.label ?? null
-                                : null;
-                              const professionalLabel = position.item.professionalId
-                                ? professionalsById.get(position.item.professionalId)?.name ?? null
-                                : null;
+                            {dayItems.map((aggregate) => {
+                              const summaryTitle = aggregate.items
+                                .map((entry) => `${formatHourMinute(entry.start, timezone)} ${entry.item.title}`)
+                                .join("\n");
+                              const aggregateKey = getAggregateKey(
+                                aggregate.dayKey,
+                                aggregate.startMinute,
+                                aggregate.endMinute,
+                              );
+                              const isSelected = selectedAggregateKey === aggregateKey;
                               return (
                                 <article
-                                  key={`${position.item.kind}-${position.item.title}-${position.start.toISOString()}-${position.end.toISOString()}-${left}`}
+                                  key={`${aggregate.dayKey}-${aggregate.startMinute}-${aggregate.endMinute}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  title={summaryTitle}
                                   className={cn(
-                                    "absolute rounded-xl border px-3 py-2 text-left text-[11px] text-white shadow-[0_20px_44px_rgba(0,0,0,0.52)] backdrop-blur-2xl",
-                                    resolveCardTone(position.item),
+                                    "absolute cursor-pointer rounded-xl border px-3 py-2 text-left text-[11px] text-white shadow-[0_20px_44px_rgba(0,0,0,0.52)] backdrop-blur-2xl",
+                                    resolveAggregateTone(aggregate.items),
+                                    isSelected && "ring-1 ring-cyan-200/80",
                                   )}
                                   style={{
-                                    top: position.top,
-                                    height: position.height,
-                                    left: `calc(${left}% + 4px)`,
-                                    width: `calc(${width}% - 8px)`,
+                                    top: aggregate.top,
+                                    height: aggregate.height,
+                                    left: 4,
+                                    width: "calc(100% - 8px)",
+                                  }}
+                                  onMouseEnter={() => setHoveredAggregateKey(aggregateKey)}
+                                  onMouseLeave={() =>
+                                    setHoveredAggregateKey((current) => (current === aggregateKey ? null : current))
+                                  }
+                                  onClick={() =>
+                                    setSelectedAggregateKey((current) => (current === aggregateKey ? null : aggregateKey))
+                                  }
+                                  onFocus={() => setHoveredAggregateKey(aggregateKey)}
+                                  onBlur={() =>
+                                    setHoveredAggregateKey((current) => (current === aggregateKey ? null : current))
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      setSelectedAggregateKey((current) => (current === aggregateKey ? null : aggregateKey));
+                                    }
                                   }}
                                 >
                                   <p className="truncate text-[11px] font-semibold leading-tight text-white">
-                                    {position.item.title}
+                                    {formatHourMinute(aggregate.start, timezone)} - {formatHourMinute(aggregate.end, timezone)} ·{" "}
+                                    {aggregate.items.length} {aggregate.items.length === 1 ? "ocupação" : "ocupações"}
                                   </p>
-                                  <p className="mt-1 text-[10px] text-white/80">
-                                    {formatDateTime(position.start.toISOString())} - {formatDateTime(position.end.toISOString())}
-                                  </p>
-                                  <p className="mt-1 truncate text-[10px] uppercase tracking-[0.08em] text-white/65">
-                                    {kindLabel} · {statusLabel}
-                                  </p>
-                                  {(resourceLabel || courtLabel || professionalLabel) && (
-                                    <p className="mt-1 truncate text-[10px] text-white/70">
-                                      {[resourceLabel, courtLabel, professionalLabel].filter(Boolean).join(" · ")}
+                                  {aggregate.items.slice(0, 3).map((entry) => (
+                                    <p
+                                      key={`${entry.item.kind}-${entry.item.title}-${entry.start.toISOString()}`}
+                                      className="mt-0.5 truncate text-[10px] text-white/80"
+                                    >
+                                      {formatHourMinute(entry.start, timezone)} {entry.item.title}
                                     </p>
-                                  )}
+                                  ))}
+                                  {aggregate.items.length > 3 ? (
+                                    <p className="mt-0.5 text-[10px] text-white/65">+{aggregate.items.length - 3} adicionais</p>
+                                  ) : null}
                                 </article>
                               );
                             })}
@@ -1079,10 +1077,75 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
         </section>
 
         <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
-          <h2 className="text-sm font-semibold text-white">Disponibilidade por seleção</h2>
+          <h2 className="text-sm font-semibold text-white">Detalhe da ocupação</h2>
           <p className="mt-1 text-xs text-white/60">
-            Seleciona múltiplos recursos/profissionais para comparar disponibilidade por dia.
+            Passa o rato para resumo rápido e clica no bloco para fixar detalhe.
+            {selectedAggregate ? " (fixo)" : hoveredAggregate ? " (prévia de hover)" : ""}
           </p>
+          <p className="mt-2 text-[11px] text-white/55">
+            Default quando não configurado: 2ª–6ª, 08:00-17:00 (sábado/domingo fechado). Personaliza em{" "}
+            <Link
+              href={buildOrgHref(organizationId, "/bookings/availability")}
+              className="text-cyan-100 underline decoration-cyan-300/60 underline-offset-2 hover:decoration-cyan-300"
+            >
+              Bookings
+            </Link>
+            .
+          </p>
+          {selectedAggregate ? (
+            <button
+              type="button"
+              onClick={() => setSelectedAggregateKey(null)}
+              className="mt-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+            >
+              Desfixar
+            </button>
+          ) : null}
+          {focusedAggregate ? (
+            <article className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs font-semibold text-white">
+                {formatDateTime(focusedAggregate.start.toISOString(), timezone)} -{" "}
+                {formatDateTime(focusedAggregate.end.toISOString(), timezone)}
+              </p>
+              <p className="mt-1 text-[11px] text-white/65">
+                {focusedAggregate.items.length} {focusedAggregate.items.length === 1 ? "ocupação" : "ocupações"}
+              </p>
+              <div className="mt-2 space-y-2">
+                {focusedAggregate.items.map((entry) => {
+                  const resourceLabel = entry.item.resourceId ? resourcesById.get(entry.item.resourceId)?.label ?? null : null;
+                  const courtLabel = entry.item.courtId ? courtsById.get(entry.item.courtId)?.label ?? null : null;
+                  const professionalLabel = entry.item.professionalId
+                    ? professionalsById.get(entry.item.professionalId)?.name ?? null
+                    : null;
+                  return (
+                    <div
+                      key={`${entry.item.kind}-${entry.item.title}-${entry.start.toISOString()}`}
+                      className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5"
+                    >
+                      <p className="truncate text-[11px] text-white/90">
+                        {formatHourMinute(entry.start, timezone)} {entry.item.title}
+                      </p>
+                      <p className="truncate text-[10px] uppercase tracking-[0.08em] text-white/65">
+                        {resolveKindLabel(entry.item.kind)} · {resolveStatusLabel(entry.item.status)}
+                      </p>
+                      {(resourceLabel || courtLabel || professionalLabel) && (
+                        <p className="truncate text-[10px] text-white/65">
+                          {[resourceLabel, courtLabel, professionalLabel].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          ) : (
+            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
+              Nenhuma ocupação selecionada.
+            </p>
+          )}
+
+          <h3 className="mt-4 text-sm font-semibold text-white">Disponibilidade por seleção</h3>
+          <p className="mt-1 text-xs text-white/60">Compara disponibilidade dos filtros ativos por dia.</p>
 
           {availabilityTargets.length === 0 && (
             <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
@@ -1122,7 +1185,7 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
                 {!entry.error && entry.normalized && (
                   <div className="space-y-2">
                     {days.map((day) => {
-                      const intervals = resolveIntervalsForDay(entry.normalized as NormalizedAvailability, day, timezone);
+                      const intervals = resolveIntervalsForDay(entry.normalized, day, timezone);
                       const occupancy = countTargetItemsForDay(filteredItems, entry.target, day, timezone);
                       const dayLabel = new Intl.DateTimeFormat("pt-PT", {
                         weekday: "short",

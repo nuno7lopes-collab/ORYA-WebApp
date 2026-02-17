@@ -9,5 +9,5 @@ export default function CalendarReadClient({ view }: { view: CalendarView }) {
   if (view === "day") {
     return <DayCalendarReadClient />;
   }
-  return <WeekCalendarReadClient view={view} />;
+  return <WeekCalendarReadClient />;
 }

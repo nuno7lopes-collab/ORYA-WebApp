@@ -24,8 +24,10 @@ import { GlassCard } from "../../components/auth/GlassCard";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
+import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import { trackEvent } from "../../lib/analytics";
 import { setLastAuthMethod } from "../../lib/authMethod";
+import { normalizeUsernameInput } from "../../lib/username";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { tokens, useTranslation } from "@orya/shared";
@@ -71,7 +73,7 @@ export default function AuthEmailScreen() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const params = useLocalSearchParams<{ next?: string }>();
   const { loading: authLoading, session } = useAuth();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -81,14 +83,22 @@ export default function AuthEmailScreen() {
   const [resetting, setResetting] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
 
-  const normalizedEmail = normalizeEmail(email);
+  const normalizedIdentifier = identifier.trim();
+  const normalizedEmail = normalizeEmail(identifier);
+  const normalizedUsername = normalizeUsernameInput(identifier);
   const emailValid = isValidEmail(normalizedEmail);
+  const signInIdentifierValid = emailValid || normalizedUsername.length >= 3;
+  const identifierValid = isSignUp ? emailValid : signInIdentifierValid;
   const passwordValid = isSignUp ? password.length >= 6 : password.length > 0;
-  const canSubmit = emailValid && passwordValid;
+  const canSubmit = identifierValid && passwordValid;
   const isSubmitDisabled = loading || !canSubmit;
   const compactLayout = screenWidth < 370;
   const tallScreen = screenHeight >= 820;
-  const emailInvalid = email.length > 0 && !emailValid;
+  const identifierInvalid = identifier.length > 0 && !identifierValid;
+  const identifierLabel = isSignUp ? t("common:labels.email") : t("auth:email.identifierLabel");
+  const identifierPlaceholder = isSignUp
+    ? t("auth:emailPlaceholder")
+    : t("auth:email.identifierPlaceholder");
   const nextRoute = useMemo(() => {
     const raw = params.next;
     const normalize = (value: string) => {
@@ -127,10 +137,15 @@ export default function AuthEmailScreen() {
     setFormError(null);
     setInfoMessage(null);
     try {
-      const normalizedEmail = normalizeEmail(email);
-      if (!isValidEmail(normalizedEmail)) {
+      const normalizedEmail = normalizeEmail(identifier);
+      if (isSignUp && !isValidEmail(normalizedEmail)) {
         setFormError(t("auth:email.errors.invalidEmail"));
         trackEvent("auth_fail_email", { reason: "invalid_email" });
+        return;
+      }
+      if (!isSignUp && !signInIdentifierValid) {
+        setFormError(t("auth:email.errors.invalidIdentifier"));
+        trackEvent("auth_fail_email", { reason: "invalid_identifier" });
         return;
       }
       if (!password) {
@@ -166,19 +181,44 @@ export default function AuthEmailScreen() {
         return;
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
-        password,
+      const loginRaw = await api.requestRaw("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          identifier: normalizedIdentifier.toLowerCase(),
+          password,
+        }),
       });
-      if (error) throw error;
-      if (!data?.session) throw new Error(t("auth:email.errors.sessionMissing"));
+      const loginData = unwrapApiResponse<{ session?: { access_token?: string; refresh_token?: string } }>(
+        loginRaw.data,
+        loginRaw.status,
+      );
+      const accessToken = loginData?.session?.access_token;
+      const refreshToken = loginData?.session?.refresh_token;
+      if (!accessToken || !refreshToken) throw new Error(t("auth:email.errors.sessionMissing"));
       await supabase.auth.setSession({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
+        access_token: accessToken,
+        refresh_token: refreshToken,
       });
       trackEvent("auth_success_email", { mode: "password" });
       router.replace(nextRoute ?? "/");
     } catch (err: any) {
+      if (err instanceof ApiError) {
+        if (err.code === "INVALID_CREDENTIALS") {
+          trackEvent("auth_fail_email", { reason: "invalid_credentials" });
+          setFormError(t("auth:email.errors.invalidCredentials"));
+          return;
+        }
+        if (err.code === "EMAIL_NOT_CONFIRMED") {
+          trackEvent("auth_fail_email", { reason: "email_not_confirmed" });
+          setFormError(t("auth:email.errors.emailNotConfirmed"));
+          return;
+        }
+        if (err.code === "RATE_LIMITED" || err.code === "THROTTLED") {
+          trackEvent("auth_fail_email", { reason: "rate_limited" });
+          setFormError(t("auth:email.errors.rateLimited"));
+          return;
+        }
+      }
       const parsed = parseAuthError(err, t);
       trackEvent("auth_fail_email", { reason: parsed.kind });
 
@@ -206,7 +246,7 @@ export default function AuthEmailScreen() {
 
   const handlePasswordReset = async () => {
     if (loading || resetting) return;
-    const normalized = normalizeEmail(email);
+    const normalized = normalizeEmail(identifier);
     if (!isValidEmail(normalized)) {
       setFormError(t("auth:email.errors.invalidEmail"));
       return;
@@ -283,25 +323,24 @@ export default function AuthEmailScreen() {
               <View style={[styles.header, compactLayout ? styles.headerCompact : null]}>
                 <Text style={styles.eyebrow}>ORYA</Text>
                 <Text style={styles.title}>{t("auth:email.title")}</Text>
-                <Text style={styles.subtitle}>{t("auth:email.subtitle")}</Text>
               </View>
 
               <GlassCard style={compactLayout ? styles.cardCompact : styles.card} intensity={84}>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>{t("common:labels.email")}</Text>
-                  <View style={[styles.inputShell, emailInvalid ? styles.inputShellError : null]}>
+                  <Text style={styles.label}>{identifierLabel}</Text>
+                  <View style={[styles.inputShell, identifierInvalid ? styles.inputShellError : null]}>
                     <TextInput
                       style={styles.input}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      keyboardType="email-address"
-                      textContentType="emailAddress"
-                      autoComplete="email"
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholder={t("auth:emailPlaceholder")}
+                      keyboardType={isSignUp ? "email-address" : "default"}
+                      textContentType={isSignUp ? "emailAddress" : "username"}
+                      autoComplete={isSignUp ? "email" : "username"}
+                      value={identifier}
+                      onChangeText={setIdentifier}
+                      placeholder={identifierPlaceholder}
                       placeholderTextColor="rgba(225,235,252,0.52)"
-                      accessibilityLabel={t("common:labels.email")}
+                      accessibilityLabel={identifierLabel}
                       returnKeyType="next"
                       onSubmitEditing={() => passwordInputRef.current?.focus()}
                     />
@@ -461,13 +500,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     textShadowColor: "rgba(0,0,0,0.45)",
     textShadowRadius: 10,
-  },
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "rgba(232,240,252,0.85)",
-    textAlign: "center",
-    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   card: {
     width: "100%",

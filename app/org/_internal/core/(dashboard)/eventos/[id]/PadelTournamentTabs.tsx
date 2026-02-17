@@ -7,6 +7,7 @@ import useSWR from "swr";
 import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 type Pairing = {
   id: number;
@@ -31,6 +32,8 @@ type Match = {
   groupLabel?: string | null;
   roundType?: string | null;
   roundLabel?: string | null;
+  plannedStartAt?: string | null;
+  startTime?: string | null;
 };
 
 type Standings = Record<
@@ -197,10 +200,12 @@ export default function PadelTournamentTabs({
   eventId,
   eventSlug,
   categoriesMeta,
+  organizationId,
 }: {
   eventId: number;
   eventSlug: string;
   categoriesMeta?: CategoryMeta[];
+  organizationId?: number | null;
 }) {
   const orgApi = (suffix: string, explicitOrgId?: number | null) =>
     resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, explicitOrgId ?? null);
@@ -394,6 +399,34 @@ export default function PadelTournamentTabs({
   const supportsKnockout = ["GRUPOS_ELIMINATORIAS", "QUADRO_ELIMINATORIO", "QUADRO_AB", "DUPLA_ELIMINACAO"].includes(
     generationFormat,
   );
+  const scheduledMatchesCount = matches.filter((match) => Boolean(match.plannedStartAt || match.startTime)).length;
+  const unscheduledMatchesCount = Math.max(0, matches.length - scheduledMatchesCount);
+  const autoScheduleBaseHref =
+    typeof organizationId === "number" && organizationId > 0
+      ? buildOrgHref(organizationId, "/padel/tournaments", {
+          section: "padel-tournaments",
+          padel: "calendar",
+          eventId,
+        })
+      : `/org/padel/tournaments?section=padel-tournaments&padel=calendar&eventId=${eventId}`;
+  const autoScheduleHref = `${autoScheduleBaseHref}#auto-schedule`;
+  const phaseSupportLabel = supportsGroups
+    ? "Fases: grupos + eliminatórias"
+    : supportsKnockout
+      ? "Fases: eliminatórias"
+      : "Fases: rondas/liga";
+  const scheduleCoverage = matches.length > 0 ? Math.round((scheduledMatchesCount / matches.length) * 100) : 0;
+  const formatExecutionHint = supportsGroups
+    ? "Fluxo recomendado: gerar grupos, gerar eliminatórias, depois auto-agendar no calendário."
+    : supportsKnockout
+      ? "Fluxo recomendado: gerar quadro eliminatório e depois auto-agendar no calendário."
+      : "Fluxo recomendado: gerar rondas e depois auto-agendar no calendário.";
+  const calendarReadinessHint =
+    matches.length === 0
+      ? "Sem jogos gerados."
+      : unscheduledMatchesCount === 0
+        ? `Calendário completo: ${scheduledMatchesCount}/${matches.length} com horário.`
+        : `Calendário pendente: ${unscheduledMatchesCount}/${matches.length} sem horário.`;
 
   useEffect(() => {
     setTvFooterText(tvMonitor.footerText ?? "");
@@ -2275,6 +2308,31 @@ export default function PadelTournamentTabs({
           )}
         </div>
       )}
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p>
+              Formato ativo: <span className="font-semibold">{formatLabel(generationFormat)}</span>
+            </p>
+            <p className="text-white/70">{formatExecutionHint}</p>
+            <p className={unscheduledMatchesCount === 0 ? "text-emerald-200" : "text-amber-200"}>{calendarReadinessHint}</p>
+            <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+              <span className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-white/80">
+                {phaseSupportLabel}
+              </span>
+              <span className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-white/80">
+                Calendário: {matches.length > 0 ? `${scheduleCoverage}%` : "sem jogos"}
+              </span>
+            </div>
+          </div>
+          <a
+            href={autoScheduleHref}
+            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+          >
+            Abrir calendário automático
+          </a>
+        </div>
+      </div>
 
       <div className="flex items-center gap-2 text-[12px]">
         {[

@@ -1,5 +1,3 @@
-
-
 // app/api/org/[orgId]/events/create/route.ts
 import { NextRequest } from "next/server";
 import crypto from "crypto";
@@ -9,10 +7,6 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { clampDeadlineHours } from "@/domain/padelDeadlines";
-import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
-import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
-import { isPadelFormat, parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -25,7 +19,6 @@ import { SourceType, EventPricingMode } from "@prisma/client";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { recordSearchIndexOutbox } from "@/domain/searchIndex/outbox";
 import { validateZeroPriceGuard } from "@/domain/events/pricingGuard";
-import { createTournamentForEvent } from "@/domain/tournaments/commands";
 import { createEventAccessPolicyVersion } from "@/lib/checkin/accessPolicy";
 import { resolveEventAccessPolicyInput } from "@/lib/events/accessPolicy";
 import { isEndsAtAfterStart } from "@/lib/events/schedule";
@@ -35,15 +28,11 @@ import { normalizeInterestIds } from "@/lib/ranking/interests";
 import {
   EventTemplateType,
   EventStatus,
-  PadelEligibilityType,
   PayoutMode,
   ResaleMode,
   Prisma,
   AddressSourceProvider,
-  padel_format,
-  PadelTournamentRole,
   OrganizationModule,
-  TournamentFormat,
 } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -54,7 +43,6 @@ type TicketTypeInput = {
   totalQuantity?: number | null;
   publicAccess?: boolean;
   participantAccess?: boolean;
-  padelCategoryId?: number | null;
 };
 
 type CreateOrganizationEventBody = {
@@ -64,7 +52,7 @@ type CreateOrganizationEventBody = {
   endsAt?: string;
   status?: string;
   timezone?: string;
-  templateType?: string; // PADEL | OTHER
+  templateType?: string;
   interestTags?: string[];
   ticketTypes?: TicketTypeInput[];
   addressId?: string | null;
@@ -76,54 +64,8 @@ type CreateOrganizationEventBody = {
   platformFeeBps?: number;
   platformFeeFixedCents?: number;
   accessPolicy?: Record<string, unknown> | null;
-  padel?: {
-    format?: string;
-    numberOfCourts?: number;
-    ruleSetId?: number | null;
-    defaultCategoryId?: number | null;
-    eligibilityType?: string | null;
-    categoryIds?: number[];
-    categoryConfigs?: Array<{
-      padelCategoryId?: number | null;
-      capacityTeams?: number | null;
-      format?: string | null;
-      pricePerPlayer?: number | null;
-      currency?: string | null;
-    }>;
-    splitDeadlineHours?: number | null;
-    padelV2Enabled?: boolean;
-    isInterclub?: boolean | null;
-    teamSize?: number | null;
-    padelClubId?: number | null;
-    courtIds?: number[];
-    staffIds?: number[];
-  } | null;
+  padel?: Record<string, unknown> | null;
 };
-
-type PadelConfigInput = {
-  padelClubId?: number | null;
-  partnerClubIds?: number[];
-  format?: string;
-  numberOfCourts?: number;
-  ruleSetId?: number | null;
-  defaultCategoryId?: number | null;
-  eligibilityType?: string | null;
-  categoryIds?: number[];
-  categoryConfigs?: Array<{
-    padelCategoryId?: number | null;
-    capacityTeams?: number | null;
-    format?: string | null;
-    pricePerPlayer?: number | null;
-    currency?: string | null;
-  }>;
-  splitDeadlineHours?: number | null;
-  advancedSettings?: unknown;
-  padelV2Enabled?: boolean;
-  isInterclub?: boolean | null;
-  teamSize?: number | null;
-  courtIds?: number[];
-  staffIds?: number[];
-} | null;
 
 function slugify(input: string): string {
   return input
@@ -366,10 +308,8 @@ async function _POST(req: NextRequest) {
         target: `/org/${organization.id}/padel/tournaments/create`,
       });
     }
-    const templateTypeFromBody =
+    const templateType: EventTemplateType =
       templateTypeRaw === "VOLUNTEERING" ? EventTemplateType.VOLUNTEERING : EventTemplateType.OTHER;
-
-    let templateType: EventTemplateType = templateTypeFromBody as EventTemplateType;
 
     const ticketTypesInput = body.ticketTypes ?? [];
     const coverImageUrl = body.coverImageUrl?.trim?.() || null;
@@ -398,10 +338,6 @@ async function _POST(req: NextRequest) {
           typeof t.totalQuantity === "number" && Number.isFinite(t.totalQuantity) && t.totalQuantity > 0
             ? Math.floor(t.totalQuantity)
             : null;
-        const padelCategoryId =
-          typeof t.padelCategoryId === "number" && Number.isFinite(t.padelCategoryId)
-            ? Math.floor(t.padelCategoryId)
-            : null;
 
         return {
           name,
@@ -409,10 +345,9 @@ async function _POST(req: NextRequest) {
           totalQuantity,
           publicAccess: t.publicAccess === true,
           participantAccess: t.participantAccess === true,
-          padelCategoryId,
         };
       })
-      .filter((t): t is { name: string; price: number; totalQuantity: number | null; publicAccess: boolean; participantAccess: boolean; padelCategoryId: number | null } =>
+      .filter((t): t is { name: string; price: number; totalQuantity: number | null; publicAccess: boolean; participantAccess: boolean } =>
         Boolean(t)
       );
 
@@ -475,303 +410,12 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    // Validar configuração de padel antes de criar o evento
-    let padelConfigInput: PadelConfigInput = null;
-    let padelClubId: number | null = null;
-    let partnerClubIds: number[] = [];
-    let advancedSettings: unknown = null;
-    let padelCategoryIds: number[] = [];
-    let padelDefaultCategoryId: number | null = null;
-    let padelEligibilityType: PadelEligibilityType = PadelEligibilityType.OPEN;
-    let splitDeadlineHours: number | null = null;
-    let isInterclub = false;
-    let teamSize: number | null = null;
-    let resolvedCourtIds: number[] = [];
-    let resolvedStaffIds: number[] = [];
-    let requestedPadelFormat: padel_format | null = null;
-    const categoryConfigMap = new Map<
-      number,
-      { capacityTeams: number | null; format: padel_format | null; pricePerPlayerCents: number | null; currency: string | null }
-    >();
-
-    if (padelRequested && organization) {
-      padelConfigInput = (body.padel ?? {}) as PadelConfigInput;
-      requestedPadelFormat = parsePadelFormat(padelConfigInput?.format);
-      if (!requestedPadelFormat) {
-        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
-      }
-      padelClubId =
-        typeof padelConfigInput?.padelClubId === "number" && Number.isFinite(padelConfigInput.padelClubId)
-          ? padelConfigInput.padelClubId
-          : null;
-      partnerClubIds = Array.isArray(padelConfigInput?.partnerClubIds)
-        ? padelConfigInput.partnerClubIds.filter((id) => typeof id === "number" && Number.isFinite(id))
-        : [];
-      advancedSettings = padelConfigInput?.advancedSettings ?? null;
-      const requestedCourtIds = Array.isArray(padelConfigInput?.courtIds)
-        ? Array.from(
-            new Set(padelConfigInput.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))),
-          )
-        : [];
-      const requestedStaffIds = Array.isArray(padelConfigInput?.staffIds)
-        ? Array.from(
-            new Set(padelConfigInput.staffIds.filter((id) => typeof id === "number" && Number.isFinite(id))),
-          )
-        : [];
-      const eligibilityRaw = typeof padelConfigInput?.eligibilityType === "string" ? padelConfigInput.eligibilityType : null;
-      if (eligibilityRaw && Object.values(PadelEligibilityType).includes(eligibilityRaw as PadelEligibilityType)) {
-        padelEligibilityType = eligibilityRaw as PadelEligibilityType;
-      }
-
-      isInterclub = padelConfigInput?.isInterclub === true;
-      const teamSizeRaw =
-        typeof padelConfigInput?.teamSize === "number"
-          ? padelConfigInput.teamSize
-          : typeof padelConfigInput?.teamSize === "string"
-            ? Number(padelConfigInput.teamSize)
-            : null;
-      teamSize =
-        isInterclub && Number.isFinite(teamSizeRaw as number) && (teamSizeRaw as number) >= 2
-          ? Math.floor(teamSizeRaw as number)
-          : null;
-      if (isInterclub && !teamSize) {
-        return fail(400, "Tamanho de equipa inválido.");
-      }
-      if (typeof padelConfigInput?.splitDeadlineHours === "number" && Number.isFinite(padelConfigInput.splitDeadlineHours)) {
-        splitDeadlineHours = clampDeadlineHours(padelConfigInput.splitDeadlineHours);
-      }
-
-      const categoryConfigsRaw = Array.isArray(padelConfigInput?.categoryConfigs)
-        ? padelConfigInput.categoryConfigs
-        : [];
-      categoryConfigsRaw.forEach((cfg) => {
-        const categoryId =
-          typeof cfg?.padelCategoryId === "number" && Number.isFinite(cfg.padelCategoryId) ? cfg.padelCategoryId : null;
-        if (!categoryId) return;
-        const capacityTeams =
-          typeof cfg?.capacityTeams === "number" && Number.isFinite(cfg.capacityTeams) && cfg.capacityTeams > 0
-            ? Math.floor(cfg.capacityTeams)
-            : null;
-        const format = isPadelFormat(cfg?.format) ? cfg.format : null;
-        const priceRaw = typeof cfg?.pricePerPlayer === "number" && Number.isFinite(cfg.pricePerPlayer)
-          ? cfg.pricePerPlayer
-          : typeof cfg?.pricePerPlayer === "string"
-            ? Number(cfg.pricePerPlayer)
-            : null;
-        const pricePerPlayerCents =
-          typeof priceRaw === "number" && Number.isFinite(priceRaw) ? Math.max(0, Math.round(priceRaw * 100)) : null;
-        const currencyRaw = typeof cfg?.currency === "string" ? cfg.currency.trim().toUpperCase() : null;
-        const currency = currencyRaw && /^[A-Z]{3}$/.test(currencyRaw) ? currencyRaw : null;
-        categoryConfigMap.set(categoryId, { capacityTeams, format, pricePerPlayerCents, currency });
-      });
-
-      const requestedCategoryIds = Array.isArray(padelConfigInput?.categoryIds)
-        ? padelConfigInput.categoryIds.filter((id) => typeof id === "number" && Number.isFinite(id))
-        : [];
-      const requestedDefaultCategoryId =
-        typeof padelConfigInput?.defaultCategoryId === "number" && Number.isFinite(padelConfigInput.defaultCategoryId)
-          ? padelConfigInput.defaultCategoryId
-          : null;
-      let allowedCategoryIds: Set<number> | null = null;
-
-      if (!padelClubId) {
-        return fail(400, "Seleciona um clube de padel.");
-      }
-
-      const club = await prisma.padelClub.findFirst({
-        where: { id: padelClubId, organizationId: organization.id, isActive: true, deletedAt: null },
-        select: { id: true, kind: true, sourceClubId: true },
-      });
-      if (!club) {
-        return fail(400, "Clube de padel arquivado ou inexistente.");
-      }
-
-      if (club.kind === "PARTNER") {
-        if (!club.sourceClubId) {
-          return fail(400, "Clube parceiro inválido: falta ligação ao clube de origem.");
-        }
-
-        const agreementDateClauses: Prisma.PadelPartnershipAgreementWhereInput[] = [];
-        if (endsAt) {
-          agreementDateClauses.push({
-            OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }],
-          });
-        }
-        if (startsAt) {
-          agreementDateClauses.push({
-            OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
-          });
-        }
-
-        const agreement = await prisma.padelPartnershipAgreement.findFirst({
-          where: {
-            ownerClubId: club.sourceClubId,
-            partnerOrganizationId: organization.id,
-            status: "APPROVED",
-            revokedAt: null,
-            AND: [
-              { OR: [{ partnerClubId: club.id }, { partnerClubId: null }] },
-              ...agreementDateClauses,
-            ],
-          },
-          select: { id: true },
-        });
-
-        if (!agreement) {
-          return fail(400, "Clube parceiro sem parceria aprovada para este período.");
-        }
-
-        const windowDateClauses: Prisma.PadelPartnershipWindowWhereInput[] = [];
-        if (endsAt) {
-          windowDateClauses.push({
-            OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }],
-          });
-        }
-        if (startsAt) {
-          windowDateClauses.push({
-            OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }],
-          });
-        }
-
-        const windowsCount = await prisma.padelPartnershipWindow.count({
-          where: {
-            agreementId: agreement.id,
-            isActive: true,
-            ...(windowDateClauses.length > 0 ? { AND: windowDateClauses } : {}),
-          },
-        });
-
-        if (windowsCount === 0) {
-          return fail(400, "Parceria sem janelas ativas para o período do torneio.");
-        }
-      }
-
-      const activeCourts = await prisma.padelClubCourt.findMany({
-        where: { padelClubId, isActive: true },
-        select: { id: true },
-      });
-      if (activeCourts.length === 0) {
-        return fail(400, "O clube selecionado não tem courts ativos.");
-      }
-      const activeCourtIds = new Set(activeCourts.map((court) => court.id));
-      if (requestedCourtIds.length > 0) {
-        resolvedCourtIds = requestedCourtIds.filter((id) => activeCourtIds.has(id));
-        if (resolvedCourtIds.length === 0) {
-          return fail(400, "Seleciona courts válidos para o clube.");
-        }
-      } else {
-        resolvedCourtIds = activeCourts.map((court) => court.id);
-      }
-
-      if (requestedStaffIds.length > 0) {
-        const activeStaff = await prisma.padelClubStaff.findMany({
-          where: { id: { in: requestedStaffIds }, padelClubId, isActive: true, deletedAt: null },
-          select: { id: true },
-        });
-        const activeStaffIds = new Set(activeStaff.map((member) => member.id));
-        resolvedStaffIds = requestedStaffIds.filter((id) => activeStaffIds.has(id));
-        if (resolvedStaffIds.length === 0) {
-          return fail(400, "Seleciona staff válido para o clube.");
-        }
-      } else {
-        resolvedStaffIds = [];
-      }
-
-      if (partnerClubIds.length > 0) {
-        const activePartners = await prisma.padelClub.findMany({
-          where: { id: { in: partnerClubIds }, organizationId: organization.id, isActive: true, deletedAt: null },
-          select: { id: true },
-        });
-        const permittedPartners = new Set(activePartners.map((c) => c.id));
-        partnerClubIds = partnerClubIds.filter((id) => permittedPartners.has(id));
-      }
-
-      const requestedCategoryIdsAll = Array.from(
-        new Set([
-          ...requestedCategoryIds,
-          ...Array.from(categoryConfigMap.keys()),
-          ...(requestedDefaultCategoryId ? [requestedDefaultCategoryId] : []),
-        ]),
-      );
-      if (requestedCategoryIdsAll.length > 0) {
-        const allowedCategories = await prisma.padelCategory.findMany({
-          where: { organizationId: organization.id, isActive: true },
-          select: { id: true },
-        });
-        allowedCategoryIds = new Set(allowedCategories.map((c) => c.id));
-      }
-
-      if (requestedCategoryIdsAll.length > 0 && allowedCategoryIds) {
-        const orderedRequested = [
-          ...requestedCategoryIds,
-          ...Array.from(categoryConfigMap.keys()).filter((id) => !requestedCategoryIds.includes(id)),
-        ];
-        padelCategoryIds = orderedRequested.filter((id) => allowedCategoryIds?.has(id));
-        categoryConfigMap.forEach((value, key) => {
-          if (!allowedCategoryIds?.has(key)) {
-            categoryConfigMap.delete(key);
-          }
-        });
-      }
-
-      if (requestedDefaultCategoryId && (!allowedCategoryIds || allowedCategoryIds.has(requestedDefaultCategoryId))) {
-        const isPermitted =
-          padelCategoryIds.length === 0 || padelCategoryIds.includes(requestedDefaultCategoryId);
-        padelDefaultCategoryId = isPermitted ? requestedDefaultCategoryId : null;
-      } else if (padelCategoryIds.length > 0) {
-        padelDefaultCategoryId = padelCategoryIds[0];
-      }
-    }
-
-    if (padelRequested && categoryConfigMap.size > 0 && !isAdmin) {
-      const hasPaidPadel = Array.from(categoryConfigMap.values()).some(
-        (cfg) => (cfg.pricePerPlayerCents ?? 0) > 0,
-      );
-      if (hasPaidPadel) {
-        const gate = getPaidSalesGate({
-          officialEmail: organizationInfo.officialEmail ?? null,
-          officialEmailVerifiedAt: organizationInfo.officialEmailVerifiedAt ?? null,
-          stripeAccountId: organizationInfo.stripeAccountId ?? null,
-          stripeChargesEnabled: organizationInfo.stripeChargesEnabled ?? false,
-          stripePayoutsEnabled: organizationInfo.stripePayoutsEnabled ?? false,
-          requireStripe: requiresOrganizationStripe(organizationInfo.orgType),
-        });
-        if (!gate.ok) {
-          return respondError(
-            ctx,
-            {
-              errorCode: "PAYMENTS_NOT_READY",
-              message: formatPaidSalesGateMessage(gate, "Para vender inscrições pagas,"),
-              retryable: false,
-              details: {
-                missingEmail: gate.missingEmail,
-                missingStripe: gate.missingStripe,
-              },
-            },
-            { status: 403 },
-          );
-        }
-      }
-    }
-
     const baseSlug = slugify(title) || "evento";
     const slug = await generateUniqueSlug(baseSlug);
     const resaleMode: ResaleMode =
       resaleModeRaw === "AFTER_SOLD_OUT" || resaleModeRaw === "DISABLED"
         ? (resaleModeRaw as ResaleMode)
         : ResaleMode.ALWAYS;
-
-    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
-      ticketTypesData = ticketTypesData.map((ticket) => ({
-        ...ticket,
-        padelCategoryId:
-          ticket.padelCategoryId && padelCategoryIds.includes(ticket.padelCategoryId)
-            ? ticket.padelCategoryId
-            : null,
-      }));
-    } else {
-      ticketTypesData = ticketTypesData.map((ticket) => ({ ...ticket, padelCategoryId: null }));
-    }
 
     // Criar o evento + EventLog/Outbox na mesma tx
     const event = await prisma.$transaction(async (tx) => {
@@ -854,197 +498,31 @@ async function _POST(req: NextRequest) {
       return created;
     });
 
-    if (templateType === "PADEL" && padelConfigInput && organization) {
-      const padelV2Enabled = padelConfigInput?.padelV2Enabled ?? true;
-      const courtIds = resolvedCourtIds;
-      const staffIds = resolvedStaffIds;
-      const lifecycleNow = new Date();
-      const lifecycleStatus = eventStatus === EventStatus.PUBLISHED ? "PUBLISHED" : "DRAFT";
-      const computedCourts = Math.max(1, courtIds.length || padelConfigInput.numberOfCourts || 1);
-      if (!requestedPadelFormat) {
-        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
-      }
-      const padelFormat = requestedPadelFormat;
-      const baseAdvanced = { ...((advancedSettings as Record<string, unknown>) ?? {}) };
-      if (!Object.prototype.hasOwnProperty.call(baseAdvanced, "competitionState")) {
-        baseAdvanced.competitionState = "DEVELOPMENT";
-      }
-      if (!Object.prototype.hasOwnProperty.call(baseAdvanced, "scoreRules")) {
-        baseAdvanced.scoreRules = DEFAULT_PADEL_SCORE_RULES;
-      }
-      const config = await prisma.padelTournamentConfig.upsert({
-        where: { eventId: event.id },
-        create: {
+    const autoTicketTypes =
+      ticketTypesData.length === 0
+        ? [
+            {
+              name: "Entrada gratuita",
+              price: 0,
+              totalQuantity: null,
+              publicAccess: true,
+              participantAccess: false,
+            },
+          ]
+        : ticketTypesData;
+
+    for (const ticket of autoTicketTypes) {
+      await prisma.ticketType.create({
+        data: {
           eventId: event.id,
-          organizationId: organization.id,
-          padelClubId,
-          partnerClubIds,
-          numberOfCourts: computedCourts,
-          format: padelFormat,
-          ruleSetId: padelConfigInput.ruleSetId || undefined,
-          defaultCategoryId: padelDefaultCategoryId || undefined,
-          eligibilityType: padelEligibilityType,
-          splitDeadlineHours: splitDeadlineHours ?? undefined,
-          isInterclub,
-          teamSize: isInterclub ? teamSize ?? undefined : null,
-          padelV2Enabled,
-          advancedSettings: { ...baseAdvanced, courtIds, staffIds },
-          lifecycleStatus,
-          ...(eventStatus === EventStatus.PUBLISHED ? { publishedAt: lifecycleNow } : {}),
-          lifecycleUpdatedAt: lifecycleNow,
+          name: ticket.name,
+          price: Math.round(ticket.price * 100),
+          totalQuantity: ticket.totalQuantity ?? null,
+          currency: "EUR",
+          padelEventCategoryLinkId: null,
         },
-        update: {
-          padelClubId,
-          partnerClubIds,
-          numberOfCourts: computedCourts,
-          format: padelFormat,
-          ruleSetId: padelConfigInput.ruleSetId || undefined,
-          defaultCategoryId: padelDefaultCategoryId || undefined,
-          eligibilityType: padelEligibilityType,
-          splitDeadlineHours: splitDeadlineHours ?? undefined,
-          isInterclub,
-          teamSize: isInterclub ? teamSize ?? undefined : null,
-          padelV2Enabled,
-          advancedSettings: { ...baseAdvanced, courtIds, staffIds },
-          ...(body?.status
-            ? {
-                lifecycleStatus,
-                ...(eventStatus === EventStatus.PUBLISHED ? { publishedAt: lifecycleNow } : {}),
-                lifecycleUpdatedAt: lifecycleNow,
-              }
-            : {}),
-        },
+        select: { id: true },
       });
-      await prisma.padelTournamentRoleAssignment.upsert({
-        where: {
-          eventId_role_userId: {
-            eventId: event.id,
-            role: PadelTournamentRole.DIRETOR_PROVA,
-            userId: profile.id,
-          },
-        },
-        create: {
-          eventId: event.id,
-          organizationId: organization.id,
-          userId: profile.id,
-          role: PadelTournamentRole.DIRETOR_PROVA,
-        },
-        update: {},
-      });
-      if (config.ruleSetId) {
-        await prisma.$transaction(async (tx) => {
-          const fresh = await tx.padelTournamentConfig.findUnique({
-            where: { id: config.id },
-            select: { id: true, ruleSetId: true, ruleSetVersionId: true },
-          });
-          if (!fresh?.ruleSetId) return;
-          if (!fresh.ruleSetVersionId) {
-            const version = await ensurePadelRuleSetVersion({
-              tx,
-              tournamentConfigId: fresh.id,
-              ruleSetId: fresh.ruleSetId,
-              actorUserId: user.id,
-            });
-            await tx.padelTournamentConfig.update({
-              where: { id: fresh.id },
-              data: { ruleSetVersionId: version.id },
-            });
-          }
-        });
-      }
-    }
-
-    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
-      const linkFormat = requestedPadelFormat ?? undefined;
-      const linkData = padelCategoryIds.map((categoryId) => {
-        const config = categoryConfigMap.get(categoryId);
-        const pricePerPlayerCents =
-          typeof config?.pricePerPlayerCents === "number" && Number.isFinite(config.pricePerPlayerCents)
-            ? Math.max(0, Math.floor(config.pricePerPlayerCents))
-            : 0;
-        const currency = config?.currency ?? "EUR";
-        return {
-          eventId: event.id,
-          padelCategoryId: categoryId,
-          format: config?.format ?? linkFormat,
-          capacityTeams: config?.capacityTeams ?? null,
-          pricePerPlayerCents,
-          currency,
-          isEnabled: true,
-        };
-      });
-      await prisma.padelEventCategoryLink.createMany({
-        data: linkData,
-        skipDuplicates: true,
-      });
-    }
-
-    let padelCategoryLinkMap = new Map<number, number>();
-    if (templateType === "PADEL" && padelCategoryIds.length > 0) {
-      const links = await prisma.padelEventCategoryLink.findMany({
-        where: { eventId: event.id },
-        select: { id: true, padelCategoryId: true },
-      });
-      padelCategoryLinkMap = new Map(links.map((link) => [link.padelCategoryId, link.id]));
-    }
-
-    if (templateType === "PADEL") {
-      const advanced =
-        advancedSettings && typeof advancedSettings === "object"
-          ? (advancedSettings as Record<string, unknown>)
-          : null;
-      const registrationEndsAtRaw =
-        advanced && typeof advanced.registrationEndsAt === "string" ? advanced.registrationEndsAt : null;
-      const registrationEndsAt =
-        registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
-          ? new Date(registrationEndsAtRaw)
-          : null;
-      const fallbackDeadline = startsAt
-        ? new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
-        : null;
-      const inscriptionDeadlineAt = registrationEndsAt ?? fallbackDeadline ?? null;
-      const padelFormat = requestedPadelFormat;
-      if (!padelFormat) {
-        return fail(400, "INVALID_FORMAT", "INVALID_FORMAT", false);
-      }
-      await createTournamentForEvent({
-        eventId: event.id,
-        format: TournamentFormat.MANUAL,
-        config: { padelFormat },
-        actorUserId: profile.id,
-        ...(inscriptionDeadlineAt ? { inscriptionDeadlineAt } : {}),
-      });
-    }
-
-    if (templateType !== "PADEL") {
-      const autoTicketTypes =
-        ticketTypesData.length === 0
-          ? [
-              {
-                name: "Entrada gratuita",
-                price: 0,
-                totalQuantity: null,
-                publicAccess: true,
-                participantAccess: false,
-                padelCategoryId: null,
-              },
-            ]
-          : ticketTypesData;
-
-      for (const ticket of autoTicketTypes) {
-        const padelEventCategoryLinkId = null;
-        await prisma.ticketType.create({
-          data: {
-            eventId: event.id,
-            name: ticket.name,
-            price: Math.round(ticket.price * 100),
-            totalQuantity: ticket.totalQuantity ?? null,
-            currency: "EUR",
-            padelEventCategoryLinkId,
-          },
-          select: { id: true },
-        });
-      }
     }
 
     return respondOk(

@@ -5,7 +5,6 @@ import {
   Pressable,
   ScrollView,
   Text,
-  TextInput,
   useWindowDimensions,
   UIManager,
   LayoutAnimation,
@@ -44,7 +43,6 @@ import { useGlobalSearchParams, useRouter } from "expo-router";
 import { useScopedTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
 import { useIsFocused } from "@react-navigation/native";
 import { resolveEventInterestTags } from "../../features/events/interestTags";
-import * as Haptics from "expo-haptics";
 
 if (
   Platform.OS === "android" &&
@@ -67,10 +65,18 @@ type WorldOption = {
   label: string;
   icon: keyof typeof Ionicons.glyphMap;
 };
+type WorldFilterKey = "all" | WorldOption["key"];
+type WorldFilterOption = {
+  key: WorldFilterKey;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+};
 
-const GRID_COLUMNS_COMPACT = 2;
-const GRID_COLUMNS_REGULAR = 3;
-const GRID_COMPACT_BREAKPOINT = 360;
+const GRID_COLUMNS_PHONE = 2;
+const GRID_COLUMNS_MEDIUM = 3;
+const GRID_COLUMNS_LARGE = 4;
+const GRID_BREAKPOINT_MEDIUM = 600;
+const GRID_BREAKPOINT_LARGE = 920;
 const GRID_GAP = 10;
 const GRID_PADDING = 20;
 const GRID_SKELETON_ROWS = 4;
@@ -78,13 +84,12 @@ const GRID_SKELETON_ROWS = 4;
 export default function DiscoverScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
-  const params = useGlobalSearchParams<{ search?: string; q?: string }>();
+  const params = useGlobalSearchParams<{ search?: string; q?: string; world?: string }>();
   const { t } = useTranslation();
   const priceFilter = useDiscoverStore((state) => state.priceFilter);
   const worlds = useDiscoverStore((state) => state.worlds);
   const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
-  const locationLabel = useDiscoverStore((state) => state.locationLabel);
   const locationAddressId = useDiscoverStore(
     (state) => state.locationAddressId,
   );
@@ -95,13 +100,10 @@ export default function DiscoverScreen() {
   const setWorlds = useDiscoverStore((state) => state.setWorlds);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setLocation = useDiscoverStore((state) => state.setLocation);
-  const clearLocation = useDiscoverStore((state) => state.clearLocation);
   const distanceKm = useDiscoverStore((state) => state.distanceKm);
   const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
   const resetFilters = useDiscoverStore((state) => state.resetFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
   const [dataReady, setDataReady] = useState(false);
   const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
   const hiddenEventSet = useMemo(
@@ -110,10 +112,8 @@ export default function DiscoverScreen() {
   );
   const [hiddenTags, setHiddenTags] = useState<string[]>([]);
   const hiddenTagSet = useMemo(() => new Set(hiddenTags), [hiddenTags]);
-  const searchInputRef = useRef<TextInput>(null);
   const searchParamsAppliedRef = useRef(false);
   const previousItemsLengthRef = useRef(0);
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, 280);
   const debouncedCity = useDebouncedValue(city, 320);
   const shouldFetchLocation = dataReady && locationSource === "NONE";
   const { data: ipLocation } = useIpLocation(shouldFetchLocation);
@@ -124,12 +124,30 @@ export default function DiscoverScreen() {
   const topBar = useTopBarScroll();
   const locationResolveRef = useRef(false);
   const { width: screenWidth } = useWindowDimensions();
-  const gridColumns = screenWidth < GRID_COMPACT_BREAKPOINT ? GRID_COLUMNS_COMPACT : GRID_COLUMNS_REGULAR;
-  const gridItemSize = useMemo(() => {
+  const gridColumns = useMemo(() => {
+    if (screenWidth >= GRID_BREAKPOINT_LARGE) return GRID_COLUMNS_LARGE;
+    if (screenWidth >= GRID_BREAKPOINT_MEDIUM) return GRID_COLUMNS_MEDIUM;
+    return GRID_COLUMNS_PHONE;
+  }, [screenWidth]);
+  const gridItemWidth = useMemo(() => {
     const available =
       screenWidth - GRID_PADDING * 2 - GRID_GAP * (gridColumns - 1);
-    return Math.max(92, Math.floor(available / gridColumns));
+    const minSize =
+      gridColumns === GRID_COLUMNS_PHONE
+        ? 140
+        : gridColumns === GRID_COLUMNS_MEDIUM
+          ? 116
+          : 102;
+    return Math.max(minSize, Math.floor(available / gridColumns));
   }, [gridColumns, screenWidth]);
+  const gridItemHeight = useMemo(
+    () =>
+      Math.round(
+        gridItemWidth *
+          (gridColumns === GRID_COLUMNS_PHONE ? 1.18 : 1.12),
+      ),
+    [gridColumns, gridItemWidth],
+  );
 
   const { block, unblock } = useScopedTabSwipeBlocker();
   const worldScrollBlockedRef = useRef(false);
@@ -155,6 +173,10 @@ export default function DiscoverScreen() {
       },
     ],
     [t],
+  );
+  const WORLD_FILTER_OPTIONS: WorldFilterOption[] = useMemo(
+    () => [{ key: "all", label: t("discover:priceFilters.all"), icon: "sparkles" }, ...WORLD_OPTIONS],
+    [WORLD_OPTIONS, t],
   );
 
   const DATE_FILTER_LABELS: Record<DiscoverDateFilter, string> = useMemo(
@@ -188,10 +210,7 @@ export default function DiscoverScreen() {
           : "events"
       : "all";
 
-  const isSearchActive = searchOpen;
-  const trimmedSearchQuery = debouncedSearchQuery.trim();
-  const feedEnabled =
-    dataReady && (!isSearchActive || trimmedSearchQuery.length > 0);
+  const feedEnabled = dataReady;
   const canShowMapCta = resolvedKind !== "services";
 
   const toggleWorld = useCallback(
@@ -203,6 +222,16 @@ export default function DiscoverScreen() {
       setWorlds(next.length === WORLD_OPTIONS.length ? [] : next);
     },
     [setWorlds, worlds],
+  );
+  const handleSelectWorld = useCallback(
+    (key: WorldFilterKey) => {
+      if (key === "all") {
+        setWorlds([]);
+        return;
+      }
+      toggleWorld(key);
+    },
+    [setWorlds, toggleWorld],
   );
 
   const {
@@ -217,7 +246,7 @@ export default function DiscoverScreen() {
     isFetchingNextPage,
   } = useDiscoverFeed(
     {
-      q: isSearchActive ? trimmedSearchQuery : "",
+      q: "",
       type: priceFilter,
       kind: resolvedKind,
       date: dateFilter,
@@ -281,27 +310,14 @@ export default function DiscoverScreen() {
     worlds,
   ]);
 
-  const showSearchIdle = isSearchActive && trimmedSearchQuery.length === 0;
-  const showSkeleton =
-    isLoading &&
-    items.length === 0 &&
-    (!isSearchActive || trimmedSearchQuery.length > 0);
+  const showSkeleton = isLoading && items.length === 0;
   const showEmpty =
     !isLoading &&
     !isError &&
-    feedItems.length === 0 &&
-    (!isSearchActive || trimmedSearchQuery.length > 0);
+    feedItems.length === 0;
   const activeFilters = useMemo(() => {
     const chips: Array<{ key: string; label: string; onPress: () => void }> =
       [];
-    const locationText = locationLabel || city;
-    if (locationSource === "APPLE_MAPS" && locationText) {
-      chips.push({
-        key: "location",
-        label: `Em ${locationText}`,
-        onPress: () => clearLocation(),
-      });
-    }
     if (dateFilter !== "all") {
       chips.push({
         key: `date-${dateFilter}`,
@@ -319,7 +335,7 @@ export default function DiscoverScreen() {
     if (distanceKm !== 5) {
       chips.push({
         key: `distance-${distanceKm}`,
-        label: `Até ${distanceKm} km`,
+        label: t("discover:filters.appliedDistance", { distance: distanceKm }),
         onPress: () => setDistanceKm(5),
       });
     }
@@ -335,51 +351,48 @@ export default function DiscoverScreen() {
     }
     return chips;
   }, [
-    city,
-    clearLocation,
     dateFilter,
     distanceKm,
     isAllWorlds,
-    locationLabel,
-    locationSource,
     priceFilter,
     setDateFilter,
     setDistanceKm,
     setPriceFilter,
+    t,
     toggleWorld,
     worlds,
   ]);
 
   const hasActiveFilters = activeFilters.length > 0;
-  const showEmptyActions = hasActiveFilters || (!searchOpen && canShowMapCta);
+  const activeFiltersCount = activeFilters.length;
+  const showEmptyActions = hasActiveFilters || canShowMapCta;
   const showEmptyClear = hasActiveFilters;
-  const showEmptyMap = !searchOpen && canShowMapCta;
+  const showEmptyMap = canShowMapCta;
 
   const listData = useMemo<DiscoverListItem[]>(
     () =>
-      showSearchIdle
-        ? []
-        : showSkeleton
-          ? Array.from({ length: gridColumns * GRID_SKELETON_ROWS }, (_, index) => ({
-              kind: "skeleton" as const,
-              key: `discover-skeleton-${index}`,
-            }))
-          : feedItems.map((offer) => ({ kind: "offer" as const, offer })),
-    [feedItems, gridColumns, showSearchIdle, showSkeleton],
+      showSkeleton
+        ? Array.from({ length: gridColumns * GRID_SKELETON_ROWS }, (_, index) => ({
+            kind: "skeleton" as const,
+            key: `discover-skeleton-${index}`,
+          }))
+        : feedItems.map((offer) => ({ kind: "offer" as const, offer })),
+    [feedItems, gridColumns, showSkeleton],
   );
 
   const activeKindMeta = useMemo(() => {
     const subtitleParts: string[] = [];
-    const locationText = locationLabel || city;
-    if (locationText) subtitleParts.push(`Em ${locationText}`);
-    if (dateFilter !== "all")
-      subtitleParts.push(DATE_FILTER_LABELS[dateFilter]);
+    if (dateFilter !== "all") subtitleParts.push(DATE_FILTER_LABELS[dateFilter]);
+    if (!isAllWorlds && worlds.length === 1) {
+      const singleWorld = WORLD_OPTIONS.find((option) => option.key === worlds[0]);
+      if (singleWorld?.label) subtitleParts.push(singleWorld.label);
+    }
     const subtitle =
       subtitleParts.length > 0
         ? subtitleParts.join(" · ")
         : t("discover:subtitle");
     return { subtitle };
-  }, [city, dateFilter, locationLabel]);
+  }, [DATE_FILTER_LABELS, WORLD_OPTIONS, dateFilter, isAllWorlds, t, worlds]);
 
   useEffect(() => {
     const previousLength = previousItemsLengthRef.current;
@@ -440,47 +453,42 @@ export default function DiscoverScreen() {
     if (searchParamsAppliedRef.current) return;
     const shouldOpen = params.search === "1" || params.search === "true";
     const query = typeof params.q === "string" ? params.q.trim() : "";
-    if (shouldOpen || query) {
+    const worldParamRaw = typeof params.world === "string" ? params.world.trim().toLowerCase() : "";
+    const worldParam =
+      worldParamRaw === "padel" || worldParamRaw === "events" || worldParamRaw === "services"
+        ? worldParamRaw
+        : null;
+    if (shouldOpen || query || worldParam) {
       searchParamsAppliedRef.current = true;
+      if (worldParam) {
+        setWorlds([worldParam]);
+      }
+      router.setParams({ search: undefined, q: undefined, world: undefined });
+      if (!shouldOpen && !query) return;
       const nextRoute = query
         ? ({ pathname: "/search", params: { q: query } } as const)
         : ({ pathname: "/search" } as const);
-      router.setParams({ search: undefined, q: undefined });
       router.push(nextRoute);
     }
-  }, [params.q, params.search, router]);
-
-  useEffect(() => {
-    if (!searchOpen) return;
-    const id = setTimeout(() => searchInputRef.current?.focus(), 120);
-    return () => clearTimeout(id);
-  }, [searchOpen]);
-
-  const handleCancelSearch = useCallback(() => {
-    animateLayout();
-    setSearchOpen(false);
-    setSearchQuery("");
-    searchInputRef.current?.blur();
-  }, []);
+  }, [params.q, params.search, params.world, router, setWorlds]);
 
   const handleOpenSearch = useCallback(() => {
-    const query = searchQuery.trim();
-    if (query.length > 0) {
-      router.push({ pathname: "/search", params: { q: query } });
-      return;
-    }
     router.push("/search");
-  }, [router, searchQuery]);
-
-  const handleClearSearch = useCallback(() => {
-    setSearchQuery("");
-    searchInputRef.current?.focus();
-  }, []);
-
-  const handlePadelHubPress = useCallback(() => {
-    void Haptics.selectionAsync().catch(() => undefined);
-    router.push("/padel");
   }, [router]);
+
+  const handleToggleDateQuick = useCallback(
+    (target: Extract<DiscoverDateFilter, "today" | "weekend">) => {
+      setDateFilter(dateFilter === target ? "all" : target);
+    },
+    [dateFilter, setDateFilter],
+  );
+
+  const handleTogglePriceQuick = useCallback(
+    (target: Extract<DiscoverPriceFilter, "free" | "paid">) => {
+      setPriceFilter(priceFilter === target ? "all" : target);
+    },
+    [priceFilter, setPriceFilter],
+  );
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -488,18 +496,11 @@ export default function DiscoverScreen() {
 
   const endReachedGuard = useRef(true);
   const handleEndReached = useCallback(() => {
-    if (!hasNextPage || isFetchingNextPage || isLoading || showSearchIdle)
-      return;
+    if (!hasNextPage || isFetchingNextPage || isLoading) return;
     if (!endReachedGuard.current) return;
     endReachedGuard.current = false;
     fetchNextPage();
-  }, [
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-    showSearchIdle,
-  ]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isLoading]);
 
   const handleScrollBeginDrag = useCallback(() => {
     endReachedGuard.current = true;
@@ -510,7 +511,8 @@ export default function DiscoverScreen() {
       if (item.kind === "skeleton") {
         return (
           <DiscoverGridCardSkeleton
-            size={gridItemSize}
+            size={gridItemWidth}
+            height={gridItemHeight}
             style={styles.gridItem}
           />
         );
@@ -518,13 +520,14 @@ export default function DiscoverScreen() {
       return (
         <DiscoverGridCard
           offer={item.offer}
-          size={gridItemSize}
+          size={gridItemWidth}
+          height={gridItemHeight}
           source="discover"
           style={styles.gridItem}
         />
       );
     },
-    [gridItemSize],
+    [gridItemHeight, gridItemWidth],
   );
 
   const keyExtractor = useCallback(
@@ -540,73 +543,25 @@ export default function DiscoverScreen() {
           scrollState={topBar}
           variant="custom"
           centerSlot={
-            <View style={styles.searchBar}>
+            <Pressable
+              onPress={handleOpenSearch}
+              accessibilityRole="button"
+              accessibilityLabel={t("common:actions.search")}
+              accessibilityHint={t("discover:cta.openSearch")}
+              style={({ pressed }) => [
+                styles.searchBar,
+                pressed ? styles.searchBarPressed : null,
+              ]}
+            >
               <Ionicons
                 name="search"
                 size={20}
                 color="rgba(240,246,255,0.92)"
               />
-              <View style={styles.searchInputWrap}>
-                <TextInput
-                  ref={searchInputRef}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder={t("discover:searchPlaceholder")}
-                  placeholderTextColor="rgba(235, 244, 255, 0.6)"
-                  accessibilityLabel={t("common:actions.search")}
-                  returnKeyType="search"
-                  autoCorrect={false}
-                  editable={searchOpen}
-                  onSubmitEditing={() => searchInputRef.current?.blur()}
-                  style={styles.searchInput}
-                />
-                {!searchOpen ? (
-                  <Pressable
-                    onPress={handleOpenSearch}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("common:actions.search")}
-                    accessibilityHint={t("discover:cta.openSearch")}
-                    style={styles.searchOverlay}
-                  />
-                ) : null}
-              </View>
-              {searchOpen && searchQuery ? (
-                <Pressable
-                  onPress={handleClearSearch}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common:actions.clearSearch")}
-                  hitSlop={10}
-                  style={({ pressed }) => [
-                    styles.searchClear,
-                    pressed ? { opacity: 0.8 } : null,
-                  ]}
-                >
-                  <Ionicons
-                    name="close"
-                    size={14}
-                    color="rgba(240,246,255,0.9)"
-                  />
-                </Pressable>
-              ) : null}
-            </View>
-          }
-          rightSlot={
-            searchOpen ? (
-              <Pressable
-                onPress={handleCancelSearch}
-                accessibilityRole="button"
-                accessibilityLabel={t("discover:cta.cancelSearch")}
-                hitSlop={10}
-                style={({ pressed }) => [
-                  styles.searchCancel,
-                  pressed ? { opacity: 0.85 } : null,
-                ]}
-              >
-                <Text style={styles.searchCancelText}>
-                  {t("common:actions.cancel")}
-                </Text>
-              </Pressable>
-            ) : undefined
+              <Text style={styles.searchPlaceholder}>
+                {t("discover:searchPlaceholder")}
+              </Text>
+            </Pressable>
           }
           showNotifications={false}
           showMessages={false}
@@ -623,12 +578,12 @@ export default function DiscoverScreen() {
           keyboardShouldPersistTaps="handled"
           numColumns={gridColumns}
           columnWrapperStyle={styles.gridRow}
-          estimatedItemSize={gridItemSize}
+          estimatedItemSize={gridItemHeight + GRID_GAP}
           refreshing={isRefetching}
           onRefresh={handleRefresh}
           removeClippedSubviews={Platform.OS === "android"}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
           updateCellsBatchingPeriod={40}
           windowSize={7}
           onEndReached={handleEndReached}
@@ -640,250 +595,244 @@ export default function DiscoverScreen() {
           scrollEventThrottle={16}
           ListHeaderComponentStyle={styles.listHeader}
           ListHeaderComponent={
-            searchOpen ? (
-              trimmedSearchQuery.length > 0 ? (
-                <View className="px-5 pb-4">
-                  <SectionHeader
-                    title={t("discover:sections.results")}
-                    subtitle={t("discover:sections.resultsFor", {
-                      query: trimmedSearchQuery,
-                    })}
-                  />
-                </View>
-              ) : (
-                <View style={{ height: 8 }} />
-              )
-            ) : (
-              <View style={{ width: "100%" }}>
-                <View className="px-5 pb-4 flex-row items-center gap-12">
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={{ gap: 10, paddingVertical: 2 }}
-                    onScrollBeginDrag={handleWorldScrollStart}
-                    onScrollEndDrag={handleWorldScrollEnd}
-                    onMomentumScrollEnd={handleWorldScrollEnd}
-                  >
-                    {WORLD_OPTIONS.map((world) => {
-                      const active = worlds.includes(world.key);
-                      return (
-                        <Pressable
-                          key={world.key}
-                          onPress={() => toggleWorld(world.key)}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("discover:cta.filterBy", {
-                            label: world.label,
-                          })}
-                          accessibilityState={{ selected: active }}
-                          style={({ pressed }) => [
-                            styles.worldChip,
-                            active ? styles.worldChipActive : null,
-                            pressed ? { opacity: 0.9 } : null,
+            <View style={{ width: "100%" }}>
+              <View style={styles.controlsRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.worldsRow}
+                  onScrollBeginDrag={handleWorldScrollStart}
+                  onScrollEndDrag={handleWorldScrollEnd}
+                  onMomentumScrollEnd={handleWorldScrollEnd}
+                >
+                  {WORLD_FILTER_OPTIONS.map((world) => {
+                    const active = world.key === "all" ? isAllWorlds : worlds.includes(world.key);
+                    return (
+                      <Pressable
+                        key={world.key}
+                        onPress={() => handleSelectWorld(world.key)}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("discover:cta.filterBy", {
+                          label: world.label,
+                        })}
+                        accessibilityState={{ selected: active }}
+                        style={({ pressed }) => [
+                          styles.worldPill,
+                          active ? styles.worldPillActive : null,
+                          pressed ? { opacity: 0.9 } : null,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.worldPillIconWrap,
+                            active ? styles.worldPillIconWrapActive : null,
                           ]}
                         >
                           <Ionicons
                             name={world.icon}
                             size={18}
                             color={
-                              active ? "#ffffff" : "rgba(220, 235, 255, 0.7)"
+                              active ? "#ffffff" : "rgba(205, 225, 255, 0.82)"
                             }
                           />
-                          <Text
-                            style={
-                              active
-                                ? styles.worldChipTextActive
-                                : styles.worldChipText
-                            }
-                          >
-                            {world.label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => setFiltersOpen(true)}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("discover:cta.openFilters")}
-                      style={({ pressed }) => [
-                        {
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 6,
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          borderColor: "rgba(255,255,255,0.12)",
-                          backgroundColor: "rgba(255,255,255,0.08)",
-                          minHeight: tokens.layout.touchTarget,
-                        },
-                        pressed ? { opacity: 0.85 } : null,
-                      ]}
-                    >
-                      <Ionicons
-                        name="options-outline"
-                        size={16}
-                        color="rgba(255,255,255,0.9)"
-                      />
-                      <Text
-                        style={{
-                          color: "rgba(255,255,255,0.85)",
-                          fontWeight: "600",
-                          fontSize: 12,
-                        }}
-                      >
-                        {t("common:labels.filters")}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View className="px-5 pb-4">
-                  <Pressable
-                    onPress={handlePadelHubPress}
-                    className="rounded-2xl border border-white/20 bg-white/10 px-4 py-4"
-                    style={({ pressed }) =>
-                      pressed
-                        ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
-                        : undefined
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel={t("events:padel.hub.openLabel")}
-                  >
-                    <View className="gap-3">
-                      <View className="flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3 flex-1 pr-2">
-                          <View className="h-9 w-9 items-center justify-center rounded-xl border border-white/20 bg-white/10">
-                            <Ionicons
-                              name="tennisball"
-                              size={16}
-                              color="rgba(255,255,255,0.92)"
-                            />
-                          </View>
-                          <Text
-                            style={{
-                              color: "rgba(255,255,255,0.95)",
-                              fontWeight: "700",
-                              fontSize: 13,
-                            }}
-                          >
-                            {t("events:padel.hub.title")}
-                          </Text>
                         </View>
-                        <Ionicons
-                          name="chevron-forward"
-                          size={14}
-                          color="rgba(255,255,255,0.55)"
-                        />
-                      </View>
-                      <View className="flex-row items-center justify-between">
                         <Text
-                          style={{
-                            color: "rgba(255,255,255,0.68)",
-                            fontSize: 12,
-                          }}
+                          style={
+                            active
+                              ? styles.worldPillTextActive
+                              : styles.worldPillText
+                          }
+                          numberOfLines={1}
+                          allowFontScaling={false}
                         >
-                          Torneios, classificações e jogos em direto.
+                          {world.label}
                         </Text>
-                        <Text
-                          style={{
-                            color: "rgba(255,255,255,0.78)",
-                            fontWeight: "600",
-                            fontSize: 12,
-                          }}
-                        >
-                          {t("common:actions.explore")}
-                        </Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                </View>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
 
-                {hasActiveFilters ? (
-                  <View className="px-5 pb-4">
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
-                      onScrollBeginDrag={handleWorldScrollStart}
-                      onScrollEndDrag={handleWorldScrollEnd}
-                      onMomentumScrollEnd={handleWorldScrollEnd}
-                    >
-                      {activeFilters.map((filter) => (
-                        <Pressable
-                          key={filter.key}
-                          onPress={filter.onPress}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("discover:cta.removeFilter", {
-                            label: filter.label,
-                          })}
-                          style={({ pressed }) => [
-                            styles.activeChip,
-                            pressed ? { opacity: 0.9 } : null,
-                          ]}
-                        >
-                          <Text style={styles.activeChipText}>
-                            {filter.label}
-                          </Text>
-                          <Ionicons
-                            name="close"
-                            size={12}
-                            color="rgba(240,246,255,0.7)"
-                          />
-                        </Pressable>
-                      ))}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.quickFiltersScroll}
+                  onScrollBeginDrag={handleWorldScrollStart}
+                  onScrollEndDrag={handleWorldScrollEnd}
+                  onMomentumScrollEnd={handleWorldScrollEnd}
+                >
+                  <Pressable
+                    onPress={() => handleToggleDateQuick("today")}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:filters.date")}
+                    style={({ pressed }) => [
+                      styles.quickFilterChip,
+                      dateFilter === "today" ? styles.quickFilterChipActive : null,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={14}
+                      color="rgba(240,246,255,0.9)"
+                    />
+                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
+                      {DATE_FILTER_LABELS.today}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleToggleDateQuick("weekend")}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:filters.date")}
+                    style={({ pressed }) => [
+                      styles.quickFilterChip,
+                      dateFilter === "weekend" ? styles.quickFilterChipActive : null,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="today-outline"
+                      size={14}
+                      color="rgba(240,246,255,0.9)"
+                    />
+                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
+                      {DATE_FILTER_LABELS.weekend}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleTogglePriceQuick("free")}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:filters.price")}
+                    style={({ pressed }) => [
+                      styles.quickFilterChip,
+                      priceFilter === "free" ? styles.quickFilterChipActive : null,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="pricetag-outline"
+                      size={14}
+                      color="rgba(240,246,255,0.9)"
+                    />
+                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
+                      {PRICE_FILTER_LABELS.free}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleTogglePriceQuick("paid")}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:filters.price")}
+                    style={({ pressed }) => [
+                      styles.quickFilterChip,
+                      priceFilter === "paid" ? styles.quickFilterChipActive : null,
+                      pressed ? { opacity: 0.9 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="card-outline"
+                      size={14}
+                      color="rgba(240,246,255,0.9)"
+                    />
+                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
+                      {PRICE_FILTER_LABELS.paid}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setFiltersOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:cta.openFilters")}
+                    style={({ pressed }) => [
+                      styles.filtersButton,
+                      hasActiveFilters ? styles.filtersButtonActive : null,
+                      pressed ? { opacity: 0.85 } : null,
+                    ]}
+                  >
+                    <Ionicons
+                      name="options-outline"
+                      size={16}
+                      color="rgba(255,255,255,0.9)"
+                    />
+                    <Text style={styles.filtersButtonText} allowFontScaling={false}>
+                      {t("common:labels.filters")}
+                    </Text>
+                    {activeFiltersCount > 0 ? (
+                      <View style={styles.filtersBadge}>
+                        <Text style={styles.filtersBadgeText} allowFontScaling={false}>
+                          {activeFiltersCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                </ScrollView>
+              </View>
+
+              {hasActiveFilters ? (
+                <View style={styles.activeFiltersWrap}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+                    onScrollBeginDrag={handleWorldScrollStart}
+                    onScrollEndDrag={handleWorldScrollEnd}
+                    onMomentumScrollEnd={handleWorldScrollEnd}
+                  >
+                    {activeFilters.map((filter) => (
                       <Pressable
-                        onPress={resetFilters}
+                        key={filter.key}
+                        onPress={filter.onPress}
                         accessibilityRole="button"
-                        accessibilityLabel={t("discover:cta.clearFilters")}
+                        accessibilityLabel={t("discover:cta.removeFilter", {
+                          label: filter.label,
+                        })}
                         style={({ pressed }) => [
-                          styles.clearChip,
+                          styles.activeChip,
                           pressed ? { opacity: 0.9 } : null,
                         ]}
                       >
+                        <Text style={styles.activeChipText} numberOfLines={1}>
+                          {filter.label}
+                        </Text>
                         <Ionicons
-                          name="refresh"
-                          size={14}
+                          name="close"
+                          size={12}
                           color="rgba(240,246,255,0.7)"
                         />
-                        <Text style={styles.activeChipText}>
-                          {t("common:actions.clearFilters")}
-                        </Text>
                       </Pressable>
-                    </ScrollView>
-                  </View>
-                ) : null}
-
-                <View className="px-5">
-                  <SectionHeader
-                    title={t("discover:sections.forYou")}
-                    subtitle={activeKindMeta.subtitle}
-                  />
+                    ))}
+                    <Pressable
+                      onPress={resetFilters}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("discover:cta.clearFilters")}
+                      style={({ pressed }) => [
+                        styles.clearChip,
+                        pressed ? { opacity: 0.9 } : null,
+                      ]}
+                    >
+                      <Ionicons
+                        name="refresh"
+                        size={14}
+                        color="rgba(240,246,255,0.7)"
+                      />
+                      <Text style={styles.activeChipText}>
+                        {t("common:actions.clearFilters")}
+                      </Text>
+                    </Pressable>
+                  </ScrollView>
                 </View>
+              ) : null}
+
+              <View style={styles.headerSectionWrap}>
+                <SectionHeader
+                  title={t("discover:sections.forYou")}
+                  subtitle={activeKindMeta.subtitle}
+                />
               </View>
-            )
+            </View>
           }
           renderItem={renderItem}
           ListFooterComponentStyle={styles.listFooter}
           ListFooterComponent={
             !showSkeleton ? (
               <View className="pt-2">
-                {showSearchIdle ? (
-                  <GlassSurface intensity={50}>
-                    <Text className="text-white/70 text-sm">
-                      {t("discover:empty.prompt")}
-                    </Text>
-                  </GlassSurface>
-                ) : null}
                 {isError ? (
                   <GlassSurface intensity={50}>
                     <Text className="text-red-300 text-sm mb-3">
@@ -917,18 +866,12 @@ export default function DiscoverScreen() {
                         />
                       </View>
                       <Text style={styles.emptyTitle}>
-                        {searchOpen
-                          ? t("discover:empty.noResults")
-                          : t("discover:empty.noContent")}
+                        {t("discover:empty.noContent")}
                       </Text>
                       <Text style={styles.emptySubtitle}>
-                        {searchOpen
-                          ? t("discover:empty.notFound", {
-                              query: trimmedSearchQuery,
-                            })
-                          : hasActiveFilters
-                            ? t("discover:empty.noResultsFilters")
-                            : t("discover:empty.noEventsNearby")}
+                        {hasActiveFilters
+                          ? t("discover:empty.noResultsFilters")
+                          : t("discover:empty.noEventsNearby")}
                       </Text>
                       {showEmptyActions ? (
                         <View style={styles.emptyActions}>
@@ -989,26 +932,26 @@ export default function DiscoverScreen() {
                           key={`empty-ghost-${index}`}
                           style={[
                             styles.emptyGhostTile,
-                            { width: gridItemSize, height: gridItemSize },
+                            { width: gridItemWidth, height: gridItemHeight },
                           ]}
                         />
                       ))}
                     </View>
                   </View>
                 ) : null}
-                {!showSearchIdle && isFetchingNextPage ? (
+                {isFetchingNextPage ? (
                   <View style={styles.gridFooterRow}>
                     {Array.from({ length: gridColumns }, (_, index) => (
                       <DiscoverGridCardSkeleton
                         key={`discover-loading-${index}`}
-                        size={gridItemSize}
+                        size={gridItemWidth}
+                        height={gridItemHeight}
                         style={styles.gridItem}
                       />
                     ))}
                   </View>
                 ) : null}
-                {!showSearchIdle &&
-                !showEmpty &&
+                {!showEmpty &&
                 !isError &&
                 hasNextPage &&
                 !isFetchingNextPage ? (
@@ -1024,8 +967,7 @@ export default function DiscoverScreen() {
                     </Text>
                   </Pressable>
                 ) : null}
-                {!showSearchIdle &&
-                !isLoading &&
+                {!isLoading &&
                 isFetching &&
                 !isFetchingNextPage ? (
                   <Text className="mt-3 text-white/50 text-center text-xs">
@@ -1054,6 +996,132 @@ export default function DiscoverScreen() {
 const styles = StyleSheet.create({
   listHeader: {
     width: "100%",
+  },
+  controlsRow: {
+    paddingBottom: 14,
+    gap: 12,
+  },
+  worldsRow: {
+    gap: 10,
+    paddingBottom: 4,
+    paddingRight: 2,
+  },
+  worldPill: {
+    minWidth: 108,
+    minHeight: 80,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  worldPillActive: {
+    borderColor: "rgba(170, 220, 255, 0.72)",
+    backgroundColor: "rgba(255,255,255,0.24)",
+    shadowColor: "rgba(110, 205, 255, 0.5)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  worldPillIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  worldPillIconWrapActive: {
+    borderColor: "rgba(195, 232, 255, 0.7)",
+    backgroundColor: "rgba(155, 215, 255, 0.22)",
+  },
+  worldPillText: {
+    color: "rgba(228, 241, 255, 0.8)",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  worldPillTextActive: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  quickFiltersScroll: {
+    paddingBottom: 2,
+    gap: 8,
+  },
+  quickFilterChip: {
+    minHeight: tokens.layout.touchTarget,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    minWidth: 132,
+  },
+  quickFilterChipActive: {
+    borderColor: "rgba(170, 220, 255, 0.55)",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  quickFilterText: {
+    color: "rgba(238, 246, 255, 0.9)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filtersButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.09)",
+    minHeight: tokens.layout.touchTarget,
+    justifyContent: "center",
+  },
+  filtersButtonActive: {
+    borderColor: "rgba(170, 220, 255, 0.55)",
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  filtersButtonText: {
+    color: "rgba(255,255,255,0.88)",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  filtersBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(142, 206, 255, 0.86)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filtersBadgeText: {
+    color: "#08111c",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  activeFiltersWrap: {
+    paddingBottom: 14,
+  },
+  headerSectionWrap: {
+    paddingBottom: 4,
   },
   listFooter: {
     width: "100%",
@@ -1146,6 +1214,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.04)",
   },
   searchBar: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -1156,102 +1225,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.2)",
     backgroundColor: "rgba(255,255,255,0.12)",
-    marginRight: 10,
   },
-  searchInputWrap: {
-    flex: 1,
-    position: "relative",
-  },
-  searchOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  searchInput: {
-    flex: 1,
-    color: "white",
-    fontSize: 14,
-    fontWeight: "600",
-    paddingVertical: 0,
-  },
-  searchClear: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  searchCancel: {
-    minHeight: tokens.layout.touchTarget,
-    paddingHorizontal: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  searchCancelText: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 14,
-    fontWeight: "600",
+  searchBarPressed: {
+    opacity: 0.9,
   },
   searchPlaceholder: {
+    flex: 1,
     color: "rgba(235, 244, 255, 0.72)",
     fontSize: 14,
-    fontWeight: "600",
-  },
-  worldChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    minHeight: tokens.layout.touchTarget + 2,
-  },
-  worldChipActive: {
-    borderColor: "rgba(170, 220, 255, 0.6)",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    shadowColor: "rgba(120, 210, 255, 0.4)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-  },
-  worldChipText: {
-    color: "rgba(235, 245, 255, 0.75)",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  worldChipTextActive: {
-    color: "#ffffff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  filterChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    minHeight: tokens.layout.touchTarget,
-  },
-  filterChipActive: {
-    borderColor: "rgba(170, 220, 255, 0.55)",
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  filterChipText: {
-    color: "rgba(255,255,255,0.75)",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  filterChipTextActive: {
-    color: "#ffffff",
-    fontSize: 12,
     fontWeight: "600",
   },
   activeChip: {

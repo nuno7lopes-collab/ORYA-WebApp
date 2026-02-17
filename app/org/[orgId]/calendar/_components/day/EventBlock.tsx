@@ -1,11 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { PositionedEvent } from "./types";
+import type { CalendarEvent, PositionedEvent } from "./types";
 
 type EventBlockProps = {
   positioned: PositionedEvent;
   timezone: string;
+  selected?: boolean;
+  onHoverEventChange?: (event: CalendarEvent | null) => void;
+  onSelectEvent?: (event: CalendarEvent) => void;
 };
 
 function formatTime(date: Date, timezone: string) {
@@ -45,7 +48,7 @@ function toneClass(status: string) {
   return "border-white/25 bg-[linear-gradient(135deg,rgba(255,255,255,0.16),rgba(255,255,255,0.06))]";
 }
 
-export function EventBlock({ positioned, timezone }: EventBlockProps) {
+export function EventBlock({ positioned, timezone, selected = false, onHoverEventChange, onSelectEvent }: EventBlockProps) {
   const width = 100 / positioned.laneCount;
   const left = positioned.lane * width;
   const start = new Date(positioned.event.startsAt);
@@ -55,9 +58,10 @@ export function EventBlock({ positioned, timezone }: EventBlockProps) {
   return (
     <article
       className={cn(
-        "absolute z-20 rounded-xl border px-2 py-1.5 text-left text-[11px] text-white shadow-[0_20px_40px_rgba(0,0,0,0.5)]",
+        "absolute z-20 cursor-pointer rounded-xl border px-2 py-1.5 text-left text-[11px] text-white shadow-[0_20px_40px_rgba(0,0,0,0.5)]",
         "backdrop-blur-[1px]",
         toneClass(positioned.event.status),
+        selected && "ring-1 ring-cyan-200/80",
       )}
       style={{
         top: positioned.top,
@@ -66,6 +70,17 @@ export function EventBlock({ positioned, timezone }: EventBlockProps) {
         width: `calc(${width}% - 6px)`,
       }}
       title={`${positioned.event.title} (${formatTime(start, timezone)}-${formatTime(end, timezone)})`}
+      onMouseEnter={() => onHoverEventChange?.(positioned.event)}
+      onMouseLeave={() => onHoverEventChange?.(null)}
+      onClick={() => onSelectEvent?.(positioned.event)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelectEvent?.(positioned.event);
+        }
+      }}
+      role="button"
+      tabIndex={0}
     >
       <p className="truncate font-semibold leading-tight">{positioned.event.title}</p>
       <p className="mt-0.5 truncate text-[10px] text-white/85">

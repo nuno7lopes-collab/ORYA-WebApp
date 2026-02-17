@@ -19,7 +19,7 @@ export const HOUR_START = 0;
 export const HOUR_END = 24;
 export const DEFAULT_HOUR_HEIGHT = 56;
 
-export const DEFAULT_WORKING_INTERVALS: TimeInterval[] = [{ startMinute: 9 * 60, endMinute: 19 * 60 }];
+const DEFAULT_WORKING_WEEKDAY_INTERVALS: TimeInterval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
 
 export type NormalizedAvailability = {
   templatesByDay: Map<number, TimeInterval[]>;
@@ -278,11 +278,18 @@ function getMinuteOfDay(date: Date, timezone: string) {
   return parts.hour * 60 + parts.minute;
 }
 
-export function buildPositionedEvents(params: {
+export type ProjectedDayEvent = {
+  event: CalendarEvent;
+  start: Date;
+  end: Date;
+  startMinute: number;
+  endMinute: number;
+};
+
+export function buildProjectedEvents(params: {
   events: CalendarEvent[];
   day: Date;
   timezone: string;
-  minuteHeight: number;
 }) {
   const dayStart = buildZonedDate(getDateParts(params.day, params.timezone), params.timezone, 0, 0);
   const dayEnd = addDays(dayStart, 1, params.timezone);
@@ -300,14 +307,29 @@ export function buildPositionedEvents(params: {
       const endMinute = clampMinute(getMinuteOfDay(clampedEnd, params.timezone));
       if (endMinute <= startMinute) return null;
 
-      return { event, startMinute, endMinute };
+      return {
+        event,
+        start: clampedStart,
+        end: clampedEnd,
+        startMinute,
+        endMinute,
+      };
     })
-    .filter(Boolean) as Array<{ event: CalendarEvent; startMinute: number; endMinute: number }>;
+    .filter(Boolean) as ProjectedDayEvent[];
 
-  projected.sort((left, right) => {
+  return projected.sort((left, right) => {
     if (left.startMinute !== right.startMinute) return left.startMinute - right.startMinute;
     return left.endMinute - right.endMinute;
   });
+}
+
+export function buildPositionedEvents(params: {
+  events: CalendarEvent[];
+  day: Date;
+  timezone: string;
+  minuteHeight: number;
+}) {
+  const projected = buildProjectedEvents(params);
 
   const clusterLaneCount = new Map<number, number>();
   let clusterId = -1;
@@ -377,16 +399,21 @@ export function resolveIntervalsForDay(
   day: Date,
   timezone: string,
 ): TimeInterval[] {
-  if (!normalized) return DEFAULT_WORKING_INTERVALS;
   const dayParts = getDateParts(day, timezone);
   const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
+  const defaultIntervals = dayOfWeek === 0 || dayOfWeek === 6 ? [] : DEFAULT_WORKING_WEEKDAY_INTERVALS;
+  if (!normalized) return defaultIntervals;
   const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
   const resolved = resolveIntervalsForDate({
     dayOfWeek,
     templatesByDay: normalized.templatesByDay,
     overrides,
   });
-  return resolved.length > 0 ? resolved : [];
+  if (resolved.length > 0) return resolved;
+  if (normalized.templatesByDay.size === 0 && overrides.length === 0) {
+    return defaultIntervals;
+  }
+  return [];
 }
 
 export function invertIntervals(intervals: TimeInterval[]) {

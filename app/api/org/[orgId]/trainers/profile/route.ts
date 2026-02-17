@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import {
   NotificationType,
   OrganizationMemberRole,
-  OrganizationRolePack,
   TrainerProfileReviewStatus,
 } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -104,6 +103,7 @@ async function _GET(req: NextRequest) {
         organization: { select: { id: true, username: true, publicName: true } },
       },
     });
+    const canEdit = !!profile;
 
     return respondOk(
       ctx,
@@ -113,6 +113,7 @@ async function _GET(req: NextRequest) {
         user: profile?.user ?? null,
         role: membership.role,
         rolePack: membership.rolePack ?? null,
+        canEdit,
       },
       { status: 200 },
     );
@@ -161,11 +162,13 @@ async function _PATCH(req: NextRequest) {
       );
     }
 
-    if (
-      membership.role !== OrganizationMemberRole.STAFF ||
-      membership.rolePack !== OrganizationRolePack.COACH
-    ) {
-      return fail(ctx, 403, "ONLY_COACH_CAN_EDIT");
+    const existingProfile = await prisma.trainerProfile.findUnique({
+      where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
+      select: { id: true },
+    });
+    const canEdit = !!existingProfile;
+    if (!canEdit) {
+      return fail(ctx, 403, "ONLY_TRAINER_CAN_EDIT");
     }
 
     const title = typeof body?.title === "string" ? body.title.trim() : "";

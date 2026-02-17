@@ -60,6 +60,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
+  }));
+}
+
 function parsePositiveInt(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
@@ -183,6 +192,7 @@ async function _GET(
             organizationId: service.organizationId,
             isActive: true,
             capacity: { gte: partySize },
+            ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
             ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -297,7 +307,7 @@ async function _GET(
         }
       }
 
-      const [templates, overrides, bookings] = await Promise.all([
+      const [templates, overrides, bookings, classSessions] = await Promise.all([
         prisma.weeklyAvailabilityTemplate.findMany({
           where: {
             organizationId: service.organizationId,
@@ -339,13 +349,25 @@ async function _GET(
           },
           select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
         }),
+        assignmentMode === "PROFESSIONAL"
+          ? prisma.classSession.findMany({
+              where: {
+                organizationId: service.organizationId,
+                status: "SCHEDULED",
+                startsAt: { lt: rangeEnd },
+                endsAt: { gt: rangeStart },
+                ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
+              },
+              select: { startsAt: true, endsAt: true, professionalId: true },
+            })
+          : Promise.resolve([]),
       ]);
 
       const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
       const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
       const templatesByScope = groupByScope(templates);
       const overridesByScope = groupByScope(overrides);
-      const blocks = buildBlocks(bookings);
+      const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
       const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
       const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly
         ? [{ scopeType: "ORGANIZATION", scopeId: 0 }]
@@ -434,6 +456,7 @@ async function _GET(
           organizationId: service.organizationId,
           isActive: true,
           capacity: { gte: partySize },
+          ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -579,7 +602,7 @@ async function _GET(
 
     const shouldUseOrgOnly = false;
     const now = new Date();
-    const [templates, overrides, bookings] = await Promise.all([
+    const [templates, overrides, bookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -624,13 +647,25 @@ async function _GET(
         },
         select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
+      assignmentMode === "PROFESSIONAL"
+        ? prisma.classSession.findMany({
+            where: {
+              organizationId: service.organizationId,
+              status: "SCHEDULED",
+              startsAt: { lt: end },
+              endsAt: { gt: new Date(start.getTime() - 24 * 60 * 60 * 1000) },
+              ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
+            },
+            select: { startsAt: true, endsAt: true, professionalId: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(bookings);
+    const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
 
     const slotMap = new Map<string, number>();
     const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = shouldUseOrgOnly

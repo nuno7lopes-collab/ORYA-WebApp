@@ -14,6 +14,9 @@ type DayGridProps = {
   columns: CalendarColumn[];
   events: CalendarEvent[];
   hourHeight: number;
+  selectedEventId?: string | null;
+  onHoverEventChange?: (event: CalendarEvent | null) => void;
+  onSelectEvent?: (event: CalendarEvent) => void;
 };
 
 const TIME_GUTTER_WIDTH = 72;
@@ -21,7 +24,16 @@ const DEFAULT_COLUMN_WIDTH = 240;
 const MIN_COLUMN_WIDTH = 220;
 const FIT_MIN_COLUMN_WIDTH = 160;
 
-export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGridProps) {
+export function DayGrid({
+  date,
+  timezone,
+  columns,
+  events,
+  hourHeight,
+  selectedEventId = null,
+  onHoverEventChange,
+  onSelectEvent,
+}: DayGridProps) {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [scrollLeft, setScrollLeft] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(0);
@@ -84,6 +96,19 @@ export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGrid
   useEffect(() => {
     setHoverSlot(null);
   }, [columns, date]);
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const nowLocal = new Date();
+    const targetMinute = isSameDay(date, nowLocal, timezone)
+      ? (() => {
+          const parts = getTimeParts(nowLocal, timezone);
+          return parts.hour * 60 + parts.minute;
+        })()
+      : 8 * 60;
+    const top = Math.max(0, targetMinute * minuteHeight - hourHeight * 2);
+    node.scrollTo({ top, behavior: "auto" });
+  }, [date, timezone, hourHeight, minuteHeight, columns.length]);
 
   const totalHeight = rowVirtualizer.getTotalSize();
   const totalColumnsWidth =
@@ -141,7 +166,7 @@ export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGrid
   if (columns.length === 0) {
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/60">
-        Sem colunas para apresentar. Seleciona um profissional ou recurso.
+        Sem colunas para apresentar. Usa o filtro Geral ou seleciona um profissional/recurso.
       </div>
     );
   }
@@ -149,7 +174,7 @@ export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGrid
   return (
     <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.88)] p-3 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
       <div className="mb-2 px-1">
-        <h2 className="text-sm font-semibold text-white">Day View</h2>
+        <h2 className="text-sm font-semibold text-white">Agenda diária</h2>
         <p className="text-xs text-white/55">Slots de 15 minutos, altura proporcional por duração real e colunas por entidade.</p>
       </div>
 
@@ -246,7 +271,9 @@ export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGrid
                     ? eventsByProfessional.get(column.entityId) ?? []
                     : column.entityKind === "COURT"
                       ? eventsByCourt.get(column.entityId) ?? []
-                      : eventsByResource.get(column.entityId) ?? [];
+                      : column.entityKind === "RESOURCE"
+                        ? eventsByResource.get(column.entityId) ?? []
+                        : events;
                 return (
                   <div
                     key={`column-body-${column.id}`}
@@ -269,6 +296,9 @@ export function DayGrid({ date, timezone, columns, events, hourHeight }: DayGrid
                         }
                         setHoverSlot({ columnId: column.id, minute: payload.minute });
                       }}
+                      onHoverEventChange={onHoverEventChange}
+                      onSelectEvent={onSelectEvent}
+                      selectedEventId={selectedEventId}
                     />
                   </div>
                 );

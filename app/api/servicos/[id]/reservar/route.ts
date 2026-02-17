@@ -70,6 +70,15 @@ function buildBlocks(bookings: Array<{ startsAt: Date; durationMinutes: number; 
   }));
 }
 
+function buildSessionBlocks(sessions: Array<{ startsAt: Date; endsAt: Date; professionalId: number | null }>) {
+  return sessions.map((session) => ({
+    start: session.startsAt,
+    end: session.endsAt,
+    professionalId: session.professionalId,
+    resourceId: null,
+  }));
+}
+
 function agendaConflictResponse(decision?: Parameters<typeof buildAgendaConflictPayload>[0]["decision"]) {
   return {
     ok: false,
@@ -379,6 +388,7 @@ async function _POST(
           organizationId: service.organizationId,
           isActive: true,
           capacity: { gte: partySize },
+          ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
           ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
         },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
@@ -429,7 +439,7 @@ async function _POST(
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
-    const [templates, overrides, blockingBookings] = await Promise.all([
+    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
           organizationId: service.organizationId,
@@ -471,13 +481,25 @@ async function _POST(
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
+      assignmentMode === "PROFESSIONAL"
+        ? prisma.classSession.findMany({
+            where: {
+              organizationId: service.organizationId,
+              status: "SCHEDULED",
+              startsAt: { lt: bookingEndsAt },
+              endsAt: { gt: startsAt },
+              ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
+            },
+            select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const templatesByScope = groupByScope(templates);
     const overridesByScope = groupByScope(overrides);
-    const blocks = buildBlocks(blockingBookings);
+    const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
     const scopesToCheck = shouldUseOrgOnly ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0 }] : scopeIds.map((id) => ({ scopeType, scopeId: id }));
@@ -529,6 +551,20 @@ async function _POST(
         endsAt: end,
       });
     });
+    if (assignmentMode === "PROFESSIONAL") {
+      classSessions.forEach((session) => {
+        const scopeId = session.professionalId;
+        if (!scopeId) return;
+        const bucket = existingByScope.get(scopeId);
+        if (!bucket) return;
+        bucket.push({
+          type: "BOOKING",
+          sourceId: `class:${session.id}`,
+          startsAt: session.startsAt,
+          endsAt: session.endsAt,
+        });
+      });
+    }
     let allowed = false;
     let lastDecision: Parameters<typeof buildAgendaConflictPayload>[0]["decision"] | null = null;
     for (const scopeId of scopeIds) {

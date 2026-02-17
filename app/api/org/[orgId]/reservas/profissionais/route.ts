@@ -102,7 +102,22 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    return respondOk(ctx, { items });
+    const linkedUserIds = items
+      .map((item) => item.user?.id)
+      .filter((userId): userId is string => typeof userId === "string" && userId.length > 0);
+    const trainerProfiles = linkedUserIds.length
+      ? await prisma.trainerProfile.findMany({
+          where: { organizationId: organization.id, userId: { in: linkedUserIds } },
+          select: { userId: true },
+        })
+      : [];
+    const trainerUserIds = new Set(trainerProfiles.map((entry) => entry.userId));
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      isTrainer: item.user?.id ? trainerUserIds.has(item.user.id) : false,
+    }));
+
+    return respondOk(ctx, { items: enrichedItems });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
@@ -140,47 +155,41 @@ async function _POST(req: NextRequest) {
     }
 
     const payload = await req.json().catch(() => ({}));
-    const nameRaw = typeof payload?.name === "string" ? payload.name.trim() : "";
     const roleTitleRaw = typeof payload?.roleTitle === "string" ? payload.roleTitle.trim() : "";
     const userIdRaw = typeof payload?.userId === "string" ? payload.userId.trim() : "";
     const isActive = typeof payload?.isActive === "boolean" ? payload.isActive : true;
     const priority = Number.isFinite(Number(payload?.priority)) ? Number(payload.priority) : 0;
 
-    let resolvedName = nameRaw;
-    if (!resolvedName && userIdRaw) {
-      const userProfile = await prisma.profile.findUnique({
-        where: { id: userIdRaw },
-        select: { fullName: true, username: true },
-      });
-      resolvedName = userProfile?.fullName?.trim() || userProfile?.username?.trim() || "";
+    if (!userIdRaw) {
+      return fail(ctx, 400, "TEAM_MEMBER_REQUIRED", "Seleciona um membro da equipa.");
     }
 
-    if (!resolvedName) {
-      return fail(ctx, 400, "NAME_REQUIRED", "Nome obrigatório.");
+    const member = await resolveGroupMemberForOrg({
+      organizationId: organization.id,
+      userId: userIdRaw,
+    });
+    if (!member) {
+      return fail(ctx, 400, "USER_NOT_IN_ORG", "Utilizador não pertence à organização.");
     }
 
-    if (userIdRaw) {
-      const member = await resolveGroupMemberForOrg({
-        organizationId: organization.id,
-        userId: userIdRaw,
-      });
-      if (!member) {
-        return fail(ctx, 400, "USER_NOT_IN_ORG", "Utilizador não pertence à organização.");
-      }
-
-      const existing = await prisma.reservationProfessional.findFirst({
-        where: { organizationId: organization.id, userId: userIdRaw },
-        select: { id: true },
-      });
-      if (existing) {
-        return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");
-      }
+    const existing = await prisma.reservationProfessional.findFirst({
+      where: { organizationId: organization.id, userId: userIdRaw },
+      select: { id: true },
+    });
+    if (existing) {
+      return fail(ctx, 409, "PROFESSIONAL_EXISTS", "Profissional já existe para este utilizador.");
     }
+
+    const userProfile = await prisma.profile.findUnique({
+      where: { id: userIdRaw },
+      select: { fullName: true, username: true },
+    });
+    const resolvedName = userProfile?.fullName?.trim() || userProfile?.username?.trim() || "Equipa";
 
     const professional = await prisma.reservationProfessional.create({
       data: {
         organizationId: organization.id,
-        userId: userIdRaw || null,
+        userId: userIdRaw,
         name: resolvedName,
         roleTitle: roleTitleRaw || null,
         isActive,

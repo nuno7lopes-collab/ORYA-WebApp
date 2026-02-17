@@ -26,6 +26,7 @@ import {
 } from "@/domain/finance/payoutModePolicy";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { syncTournamentOperationalRolesFromClubStaff } from "@/lib/padel/tournamentStaffRoleSync";
 import {
   AddressSourceProvider,
   EventPricingMode,
@@ -586,6 +587,15 @@ async function _POST(req: NextRequest) {
       }
     }
 
+    if (partnerClubIds.length > 0 && resolvedStaffIds.length === 0) {
+      return fail(
+        400,
+        "Seleciona pelo menos 1 elemento de equipa para clubes parceiros.",
+        "STAFF_REQUIRED_FOR_PARTNER_CLUBS",
+        false,
+      );
+    }
+
     const accessPolicyResolution = resolveEventAccessPolicyInput({
       accessPolicy: body.accessPolicy ?? null,
       templateType: EventTemplateType.PADEL,
@@ -734,6 +744,13 @@ async function _POST(req: NextRequest) {
           role: PadelTournamentRole.DIRETOR_PROVA,
         },
         update: {},
+      });
+      await syncTournamentOperationalRolesFromClubStaff({
+        tx,
+        organizationId: organization.id,
+        eventId: event.id,
+        staffIds: resolvedStaffIds,
+        padelClubId,
       });
 
       const tournament = await createTournamentForEventInTx(tx, {

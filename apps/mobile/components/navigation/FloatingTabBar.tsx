@@ -27,7 +27,11 @@ const LEFT_TABS: Array<{
   { key: "profile", active: "person-circle", inactive: "person-circle-outline" },
 ];
 
-const RIGHT_TAB = { key: "index", icon: "search" as keyof typeof Ionicons.glyphMap };
+const RIGHT_TAB = {
+  key: "index",
+  active: "compass" as keyof typeof Ionicons.glyphMap,
+  inactive: "compass-outline" as keyof typeof Ionicons.glyphMap,
+};
 const TAB_LABELS: Record<string, string> = {
   agora: "Agora",
   messages: "Mensagens",
@@ -536,7 +540,7 @@ export function FloatingTabBar({ activeKey, onSelect, pagerProgress }: FloatingT
             ) : null}
             <View style={styles.iconBox}>
               <Ionicons
-                name={RIGHT_TAB.icon}
+                name={rightActive ? RIGHT_TAB.active : RIGHT_TAB.inactive}
                 size={ICON_SIZE}
                 color={rightActive ? ACTIVE_ICON_COLOR : INACTIVE_ICON_COLOR}
                 style={styles.iconGlyph}

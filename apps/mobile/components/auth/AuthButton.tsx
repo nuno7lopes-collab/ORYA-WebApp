@@ -29,7 +29,7 @@ const getVariantStyles = (variant: AuthButtonVariant) => {
       return {
         container: styles.googleContainer,
         text: styles.googleText,
-        indicator: "#0b0f17",
+        indicator: "#ffffff",
       } as const;
     default:
       return {
@@ -135,16 +135,11 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   googleContainer: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "rgba(15, 23, 42, 0.24)",
-    shadowColor: "rgba(0,0,0,0.3)",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 3,
+    backgroundColor: "rgba(235,242,255,0.1)",
+    borderColor: "rgba(214,228,255,0.34)",
   },
   googleText: {
-    color: "#0b0f17",
+    color: "#ffffff",
   },
   emailContainer: {
     backgroundColor: "rgba(235,242,255,0.12)",

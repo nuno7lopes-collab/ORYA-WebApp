@@ -38,16 +38,16 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
 
 const styles = StyleSheet.create({
   text: {
-    fontSize: 13,
-    color: "rgba(231,238,252,0.84)",
+    fontSize: 12,
+    color: "rgba(231,238,252,0.76)",
     textAlign: "center",
-    lineHeight: 21,
+    lineHeight: 18,
     fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   link: {
-    color: "rgba(148, 218, 255, 0.98)",
+    color: "rgba(162, 225, 255, 0.96)",
     fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
     textDecorationLine: "underline",
-    textDecorationColor: "rgba(148, 218, 255, 0.55)",
+    textDecorationColor: "rgba(162, 225, 255, 0.5)",
   },
 });

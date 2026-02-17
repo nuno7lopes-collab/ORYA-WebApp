@@ -1,5 +1,7 @@
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { execSync } from "child_process";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 function assertNoMatches(command: string, label: string) {
   try {
@@ -44,5 +46,14 @@ describe("booking access guardrails", () => {
       ].join(" "),
       "Booking status usage",
     );
+  });
+
+  it("mantém criação interna de reservas ativa no endpoint canónico", () => {
+    const route = readFileSync(
+      join(process.cwd(), "app/api/org/[orgId]/reservas/route.ts"),
+      "utf8",
+    );
+    expect(route).toContain("export const POST = withApiEnvelope(_POST);");
+    expect(route).not.toContain("export const POST = withApiEnvelope(_POST_DISABLED);");
   });
 });

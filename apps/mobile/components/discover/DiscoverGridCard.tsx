@@ -14,6 +14,7 @@ import { resolveMediaUri } from "../../lib/media";
 type DiscoverGridCardProps = {
   offer: DiscoverOfferCard;
   size?: number;
+  height?: number;
   source?: string;
   style?: StyleProp<ViewStyle>;
 };
@@ -106,7 +107,7 @@ const formatServiceMeta = (service: DiscoverServiceCard | null) => {
 function Badge({ label, variant = "default" }: BadgeProps) {
   return (
     <View style={[styles.badge, variant === "price" ? styles.badgePrice : null]}>
-      <Text style={styles.badgeText} numberOfLines={1}>
+      <Text style={styles.badgeText} numberOfLines={1} allowFontScaling={false}>
         {label}
       </Text>
     </View>
@@ -116,6 +117,7 @@ function Badge({ label, variant = "default" }: BadgeProps) {
 export const DiscoverGridCard = memo(function DiscoverGridCard({
   offer,
   size = 110,
+  height,
   source = "discover",
   style,
 }: DiscoverGridCardProps) {
@@ -226,6 +228,12 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
   );
 
   const accessibilityLabel = event?.title ?? service?.title ?? t("discover:offer");
+  const cardHeight = Math.max(height ?? size, size);
+  const compact = size <= 136;
+  const cozy = size > 136 && size < 180;
+  const typeBadgeMaxWidth = compact ? "68%" : cozy ? "64%" : "60%";
+  const priceBadgeMaxWidth = compact ? "60%" : cozy ? "56%" : "52%";
+  const titleLines = compact ? 2 : 3;
 
   return (
     <Link href={linkHref} asChild push>
@@ -234,7 +242,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
         accessibilityLabel={accessibilityLabel}
         style={({ pressed }) => [
           styles.card,
-          { width: size, height: size },
+          { width: size, height: cardHeight },
           style,
           pressed ? styles.cardPressed : null,
         ]}
@@ -267,25 +275,43 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           <View style={styles.fallbackContent} pointerEvents="none">
             <Ionicons
               name={resolveFallbackIcon(event, service)}
-              size={22}
+              size={compact ? 20 : 24}
               color="rgba(240,246,255,0.85)"
             />
           </View>
         ) : null}
         <View style={styles.badgeTop} pointerEvents="none">
-          <Badge label={typeLabel} />
+          <View style={{ maxWidth: typeBadgeMaxWidth }}>
+            <Badge label={typeLabel} />
+          </View>
         </View>
         {priceLabel ? (
           <View style={styles.badgeBottom} pointerEvents="none">
-            <Badge label={priceLabel} variant="price" />
+            <View style={{ maxWidth: priceBadgeMaxWidth }}>
+              <Badge label={priceLabel} variant="price" />
+            </View>
           </View>
         ) : null}
-        <View style={styles.bottomContent} pointerEvents="none">
-          <Text style={styles.title} numberOfLines={2}>
+        <View
+          style={[
+            styles.bottomContent,
+            compact ? styles.bottomContentCompact : cozy ? styles.bottomContentCozy : null,
+          ]}
+          pointerEvents="none"
+        >
+          <Text
+            style={[styles.title, compact ? styles.titleCompact : cozy ? styles.titleCozy : styles.titleComfort]}
+            numberOfLines={titleLines}
+            allowFontScaling={false}
+          >
             {fallbackTitle}
           </Text>
           {metaLabel ? (
-            <Text style={styles.meta} numberOfLines={1}>
+            <Text
+              style={[styles.meta, compact ? styles.metaCompact : cozy ? styles.metaCozy : styles.metaComfort]}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
               {metaLabel}
             </Text>
           ) : null}
@@ -297,33 +323,40 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
 
 export const DiscoverGridCardSkeleton = memo(function DiscoverGridCardSkeleton({
   size = 110,
+  height,
   style,
 }: {
   size?: number;
+  height?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
     <View style={[{ width: size }, style]}>
-      <GlassSkeleton height={size} />
+      <GlassSkeleton height={height ?? size} />
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(8, 12, 20, 0.35)",
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(11, 16, 24, 0.55)",
+    shadowColor: "rgba(0, 0, 0, 0.4)",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 3,
   },
   cardPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.98 }],
   },
   badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
@@ -336,41 +369,72 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: "rgba(255,255,255,0.9)",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "700",
   },
   badgeTop: {
     position: "absolute",
-    top: 6,
-    left: 6,
+    top: 8,
+    left: 8,
   },
   badgeBottom: {
     position: "absolute",
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
+    alignItems: "flex-end",
   },
   bottomContent: {
     position: "absolute",
-    left: 6,
+    left: 10,
+    right: 10,
+    bottom: 10,
+    gap: 3,
+  },
+  bottomContentCompact: {
+    left: 8,
     right: 8,
     bottom: 8,
     gap: 2,
   },
+  bottomContentCozy: {
+    left: 9,
+    right: 9,
+    bottom: 9,
+    gap: 2,
+  },
   title: {
     color: "#ffffff",
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.45)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+  },
+  titleCompact: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  titleCozy: {
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  titleComfort: {
+    fontSize: 14,
+    lineHeight: 18,
   },
   meta: {
     color: "rgba(230, 242, 255, 0.75)",
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: "500",
-    textShadowColor: "rgba(0,0,0,0.4)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  },
+  metaCompact: {
+    fontSize: 10,
+    lineHeight: 14,
+  },
+  metaCozy: {
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  metaComfort: {
+    fontSize: 12,
+    lineHeight: 15,
   },
   fallbackContent: {
     flex: 1,

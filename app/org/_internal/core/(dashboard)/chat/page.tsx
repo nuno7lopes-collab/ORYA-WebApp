@@ -9,7 +9,6 @@ import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
 import { OrganizationMemberRole } from "@prisma/client";
-import ChatPreviewClient from "./preview/ChatPreviewClient";
 import ChatInternoClient from "./ChatInternoClient";
 import ChannelRequestsPanel from "./ChannelRequestsPanel";
 import { buildOrgHref, buildOrgHubHref, parseOrganizationId } from "@/lib/organizationIdUtils";
@@ -94,21 +93,14 @@ export default async function OrganizationChatPage({
     );
   }
 
-  const ui = typeof resolvedSearchParams?.ui === "string" ? resolvedSearchParams?.ui.trim().toLowerCase() : "";
-  const showInterno = ui !== "preview";
-
   return (
     <div className={cn("h-full min-h-0 w-full text-white")}>
-      {showInterno ? (
-        <div className="flex h-full min-h-0 flex-col gap-3">
-          <ChannelRequestsPanel />
-          <div className="min-h-0 flex-1">
-            <ChatInternoClient />
-          </div>
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <ChannelRequestsPanel />
+        <div className="min-h-0 flex-1">
+          <ChatInternoClient />
         </div>
-      ) : (
-        <ChatPreviewClient />
-      )}
+      </div>
     </div>
   );
 }

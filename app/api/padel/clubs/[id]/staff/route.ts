@@ -10,36 +10,54 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { PADEL_CLUB_STAFF_ROLES, normalizePadelClubStaffRole } from "@/lib/padel/clubStaffRole";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
-const PADEL_CLUB_STAFF_ROLES = ["ADMIN_CLUBE", "DIRETOR_PROVA", "STAFF"] as const;
-type PadelClubStaffRole = (typeof PADEL_CLUB_STAFF_ROLES)[number];
-const PADEL_CLUB_STAFF_ROLE_SET = new Set<PadelClubStaffRole>(PADEL_CLUB_STAFF_ROLES);
 
-const PADEL_CLUB_STAFF_ROLE_ALIASES: Record<string, PadelClubStaffRole> = {
-  ADMIN: "ADMIN_CLUBE",
-  ADMIN_CLUB: "ADMIN_CLUBE",
-  CLUB_ADMIN: "ADMIN_CLUBE",
-  DIRETOR: "DIRETOR_PROVA",
-  ARBITRO: "DIRETOR_PROVA",
-  ARBITRO_PROVA: "DIRETOR_PROVA",
-  REFEREE: "DIRETOR_PROVA",
-};
-
-function normalizePadelClubStaffRole(value: unknown): PadelClubStaffRole | null {
-  if (typeof value !== "string") return null;
-  const compact = value
-    .trim()
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  if (PADEL_CLUB_STAFF_ROLE_SET.has(compact as PadelClubStaffRole)) {
-    return compact as PadelClubStaffRole;
-  }
-  return PADEL_CLUB_STAFF_ROLE_ALIASES[compact] ?? null;
+function serializePadelClubStaff(item: {
+  id: number;
+  padelClubId: number;
+  userId: string;
+  role: string;
+  inheritToEvents: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  user: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+    users?: { email: string | null } | null;
+  } | null;
+}) {
+  const email = item.user?.users?.email ?? null;
+  const user =
+    item.user === null
+      ? null
+      : {
+          id: item.user.id,
+          username: item.user.username,
+          fullName: item.user.fullName,
+          avatarUrl: item.user.avatarUrl,
+          email,
+        };
+  return {
+    id: item.id,
+    padelClubId: item.padelClubId,
+    userId: item.userId,
+    role: normalizePadelClubStaffRole(item.role) ?? item.role,
+    inheritToEvents: item.inheritToEvents,
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    fullName: user?.fullName ?? null,
+    username: user?.username ?? null,
+    email,
+    avatarUrl: user?.avatarUrl ?? null,
+    user,
+  };
 }
 
 async function _GET(req: NextRequest) {
@@ -85,22 +103,12 @@ async function _GET(req: NextRequest) {
     orderBy: [{ createdAt: "desc" }],
     include: {
       user: {
-        select: { id: true, username: true, fullName: true, avatarUrl: true },
+        select: { id: true, username: true, fullName: true, avatarUrl: true, users: { select: { email: true } } },
       },
     },
   });
 
-  const normalized = staff.map((item) => ({
-    id: item.id,
-    padelClubId: item.padelClubId,
-    userId: item.userId,
-    role: normalizePadelClubStaffRole(item.role) ?? item.role,
-    inheritToEvents: item.inheritToEvents,
-    isActive: item.isActive,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    user: item.user,
-  }));
+  const normalized = staff.map(serializePadelClubStaff);
 
   return jsonWrap({ ok: true, items: normalized }, { status: 200 });
 }
@@ -210,16 +218,24 @@ async function _POST(req: NextRequest) {
       staff = await prisma.padelClubStaff.update({
         where: { id: targetId, padelClubId: club.id },
         data: { ...data, deletedAt: null, isActive: true },
-        include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true } } },
+        include: {
+          user: {
+            select: { id: true, username: true, fullName: true, avatarUrl: true, users: { select: { email: true } } },
+          },
+        },
       });
     } else {
       staff = await prisma.padelClubStaff.create({
         data,
-        include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true } } },
+        include: {
+          user: {
+            select: { id: true, username: true, fullName: true, avatarUrl: true, users: { select: { email: true } } },
+          },
+        },
       });
     }
 
-    return jsonWrap({ ok: true, staff }, { status: staffId ? 200 : 201 });
+    return jsonWrap({ ok: true, staff: serializePadelClubStaff(staff) }, { status: staffId ? 200 : 201 });
   } catch (err) {
     console.error("[padel/clubs/staff] error", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

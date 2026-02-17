@@ -59,11 +59,13 @@ type EventWithTickets = {
     padelCategoryId: number;
     capacityTeams?: number | null;
     capacityPlayers?: number | null;
+    format?: string | null;
     isEnabled?: boolean;
     category?: { label: string | null } | null;
   }>;
   padelTournamentConfig: {
     numberOfCourts: number;
+    format?: string | null;
     club?: {
       name: string;
       addressRef?: { formattedAddress: string | null; canonical?: Prisma.JsonValue | null } | null;
@@ -145,6 +147,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       })) as (EventWithTickets & {
         padelTournamentConfig: {
           numberOfCourts: number;
+          format?: string | null;
           club?: {
             name: string;
             addressRef?: { formattedAddress: string | null; canonical?: Record<string, unknown> | null } | null;
@@ -255,14 +258,24 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   padelPairingsByCategory.forEach((row) => {
     padelPairingsByCategoryMap.set(row.categoryId ?? null, row._count._all);
   });
-  const padelMatchesCount = isPadelEvent
-    ? await prisma.eventMatchSlot.count({
-        where: {
-          eventId: event.id,
-          status: { not: "CANCELLED" },
-        },
-      })
-    : 0;
+  const [padelMatchesCount, padelScheduledMatchesCount] = isPadelEvent
+    ? await Promise.all([
+        prisma.eventMatchSlot.count({
+          where: {
+            eventId: event.id,
+            status: { not: "CANCELLED" },
+          },
+        }),
+        prisma.eventMatchSlot.count({
+          where: {
+            eventId: event.id,
+            status: { not: "CANCELLED" },
+            OR: [{ plannedStartAt: { not: null } }, { startTime: { not: null } }],
+          },
+        }),
+      ])
+    : [0, 0];
+  const padelUnscheduledMatchesCount = Math.max(0, padelMatchesCount - padelScheduledMatchesCount);
 
   // 3) Métricas agregadas
   const totalWaves = event.ticketTypes.length;
@@ -311,6 +324,31 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
   const formatMoney = (cents: number) =>
     `${(cents / 100).toFixed(2)} €`.replace(".", ",");
+  const formatLabel = (value?: string | null) => {
+    if (!value) return "Formato não definido";
+    switch (value) {
+      case "TODOS_CONTRA_TODOS":
+        return "Todos contra todos";
+      case "GRUPOS_ELIMINATORIAS":
+        return "Grupos + eliminatórias";
+      case "QUADRO_ELIMINATORIO":
+        return "Quadro eliminatório";
+      case "CAMPEONATO_LIGA":
+        return "Campeonato/Liga";
+      case "QUADRO_AB":
+        return "Quadro A/B";
+      case "DUPLA_ELIMINACAO":
+        return "Dupla eliminação";
+      case "NON_STOP":
+        return "Non-stop";
+      case "AMERICANO":
+        return "Americano";
+      case "MEXICANO":
+        return "Mexicano";
+      default:
+        return value;
+    }
+  };
 
   const startDateFormatted = formatDateTime(event.startsAt);
   const endDateFormatted = formatDateTime(event.endsAt);
@@ -378,9 +416,10 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
       })
     : [];
   const backHref = eventRouteBase;
-  const operationsHref = `${eventRouteBase}/${event.id}`;
+  const operationsHref = isPadelEvent ? "#padel-torneio" : `${eventRouteBase}/${event.id}`;
   const hubBaseHref = isPadelEvent ? `/org/padel/tournaments?section=padel-tournaments` : null;
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
+  const hubCalendarAutoHref = hubCalendarHref ? `${hubCalendarHref}#auto-schedule` : null;
   const hubClubHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
   const hubCourtsHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=courts` : null;
   const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
@@ -449,6 +488,16 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
     padelStatusMissing.length === 0 ? "Pronto" : `${padelStatusComplete}/${padelStatusRequired.length} ok`;
 
   const activePadelCategoryIds = activePadelLinks.map((link) => link.padelCategoryId);
+  const activePadelFormats = Array.from(
+    new Set(
+      activePadelLinks
+        .map((link) => link.format ?? event.padelTournamentConfig?.format ?? null)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    ),
+  );
+  const hasGroupsFormat = activePadelFormats.includes("GRUPOS_ELIMINATORIAS");
+  const formatsSummaryLabel =
+    activePadelFormats.length > 0 ? activePadelFormats.map((value) => formatLabel(value)).join(" · ") : formatLabel(null);
   const categoriesWithPairings = activePadelCategoryIds.filter(
     (id) => (padelPairingsByCategoryMap.get(id) ?? 0) >= 2,
   );
@@ -457,9 +506,19 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   if (activePadelCategoryIds.length === 0) generateIssues.push("Sem categorias ativas");
   if (categoriesWithPairings.length === 0) generateIssues.push("Duplas insuficientes (mín. 2)");
 
-  const readyForOperations = padelMatchesCount > 0;
+  const readyForSchedule = padelMatchesCount > 0 && padelScheduledMatchesCount > 0 && padelUnscheduledMatchesCount === 0;
+  const scheduleIssues: string[] = [];
+  if (padelMatchesCount === 0) scheduleIssues.push("Sem jogos gerados");
+  if (padelMatchesCount > 0 && padelScheduledMatchesCount === 0) scheduleIssues.push("Sem jogos no calendário");
+  if (padelUnscheduledMatchesCount > 0) scheduleIssues.push(`${padelUnscheduledMatchesCount} jogo(s) sem horário`);
+
+  const readyForOperations = padelMatchesCount > 0 && padelScheduledMatchesCount > 0;
   const operationsIssues: string[] = [];
   if (padelMatchesCount === 0) operationsIssues.push("Sem jogos gerados");
+  if (padelMatchesCount > 0 && padelScheduledMatchesCount === 0) operationsIssues.push("Calendário por gerar");
+  if (padelUnscheduledMatchesCount > 0 && padelScheduledMatchesCount > 0) {
+    operationsIssues.push(`${padelUnscheduledMatchesCount} jogo(s) sem horário`);
+  }
 
   const generateMatchesHref = isPadelEvent ? "#padel-torneio" : null;
   const publicPageHref = `/eventos/${event.slug}`;
@@ -492,9 +551,21 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           external: true,
         },
         {
+          key: "schedule",
+          label: "Agenda automática",
+          description: readyForSchedule
+            ? `${padelScheduledMatchesCount}/${padelMatchesCount} jogo(s) agendados.`
+            : scheduleIssues.join(" · ") || "Distribuição automática por campos.",
+          href: hubCalendarAutoHref ?? hubCalendarHref ?? "#padel-torneio",
+          tone: readyForSchedule ? ("success" as const) : padelMatchesCount > 0 ? ("warning" as const) : ("neutral" as const),
+          external: false,
+        },
+        {
           key: "operations",
-          label: "Operação",
-          description: readyForOperations ? "Operação pronta." : operationsIssues.join(" · ") || "Configura o torneio.",
+          label: "Gestão competitiva",
+          description: readyForOperations
+            ? `Operação pronta · ${padelScheduledMatchesCount} jogo(s) em agenda.`
+            : operationsIssues.join(" · ") || "Configura o torneio.",
           href: operationsHref,
           tone: readyForOperations ? ("success" as const) : ("warning" as const),
         },
@@ -545,6 +616,41 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
           href: "#padel-governance",
           tone: "neutral" as const,
           external: false,
+        },
+      ]
+    : [];
+  const operationFlowSteps = isPadelEvent
+    ? [
+        {
+          key: "setup",
+          label: "Configuração base",
+          detail: padelStatusMissing.length === 0 ? "Concluída" : `${padelStatusMissing.length} pendente(s)`,
+          done: padelStatusMissing.length === 0,
+          href: "#padel-governance",
+        },
+        {
+          key: "generation",
+          label: hasGroupsFormat ? "Gerar grupos e KO" : "Gerar quadro",
+          detail: padelMatchesCount > 0 ? `${padelMatchesCount} jogo(s)` : "Sem jogos gerados",
+          done: padelMatchesCount > 0,
+          href: "#padel-torneio",
+        },
+        {
+          key: "schedule",
+          label: "Agendar calendário",
+          detail:
+            padelScheduledMatchesCount > 0
+              ? `${padelScheduledMatchesCount}/${padelMatchesCount} com horário`
+              : "Sem horários atribuídos",
+          done: readyForSchedule,
+          href: hubCalendarAutoHref ?? hubCalendarHref ?? "#padel-torneio",
+        },
+        {
+          key: "live",
+          label: "Operação live",
+          detail: readyForOperations ? "Pronta" : operationsIssues.join(" · "),
+          done: readyForOperations,
+          href: operationsHref,
         },
       ]
     : [];
@@ -631,11 +737,38 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
               </a>
             ))}
           </div>
-          {(generateIssues.length > 0 || operationsIssues.length > 0) && (
+          {operationFlowSteps.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-white/12 bg-black/30 p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Fluxo recomendado</p>
+              <p className="mt-1 text-[12px] text-white/70">Formato ativo: {formatsSummaryLabel}</p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {operationFlowSteps.map((step, index) => (
+                  <a
+                    key={step.key}
+                    href={step.href}
+                    className={`rounded-xl border px-3 py-2 text-[11px] ${
+                      step.done
+                        ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-50"
+                        : "border-amber-400/40 bg-amber-500/10 text-amber-100"
+                    }`}
+                  >
+                    <p className="font-semibold">{index + 1}. {step.label}</p>
+                    <p className="mt-1 text-white/80">{step.detail}</p>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {(generateIssues.length > 0 || scheduleIssues.length > 0 || operationsIssues.length > 0) && (
             <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
               {generateIssues.length > 0 && (
                 <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
                   Geração de jogos: {generateIssues.join(" · ")}
+                </span>
+              )}
+              {scheduleIssues.length > 0 && (
+                <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-3 py-1">
+                  Agenda: {scheduleIssues.join(" · ")}
                 </span>
               )}
               {operationsIssues.length > 0 && (
@@ -757,7 +890,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
                 </div>
               )}
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <div
                   className={`rounded-xl border px-3 py-2 ${
                     readyToGenerateMatches
@@ -787,13 +920,38 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
                 <div
                   className={`rounded-xl border px-3 py-2 ${
+                    readyForSchedule ? "border-emerald-400/50 bg-emerald-500/10" : "border-amber-400/50 bg-amber-500/10"
+                  }`}
+                >
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para calendário</p>
+                  <p className="mt-2 text-sm text-white/80">
+                    {readyForSchedule
+                      ? `OK · ${padelScheduledMatchesCount}/${padelMatchesCount} jogo(s) com horário`
+                      : scheduleIssues.join(" · ")}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    {hubCalendarAutoHref && (
+                      <a href={hubCalendarAutoHref} className={CTA_SECONDARY}>
+                        Auto-agendar
+                      </a>
+                    )}
+                    {hubCalendarHref && (
+                      <a href={hubCalendarHref} className={CTA_SECONDARY}>
+                        Calendário
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  className={`rounded-xl border px-3 py-2 ${
                     readyForOperations ? "border-emerald-400/50 bg-emerald-500/10" : "border-amber-400/50 bg-amber-500/10"
                   }`}
                 >
                   <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Pronto para operação</p>
                   <p className="mt-2 text-sm text-white/80">
                     {readyForOperations
-                      ? `OK · ${padelMatchesCount} jogo(s) prontos`
+                      ? `OK · ${padelScheduledMatchesCount} jogo(s) em agenda`
                       : operationsIssues.join(" · ")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
@@ -1191,7 +1349,12 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
 
       {event.templateType === "PADEL" && (
         <section id="padel-torneio" className="scroll-mt-24">
-          <PadelTournamentTabs eventId={event.id} eventSlug={event.slug} categoriesMeta={categoriesMeta} />
+          <PadelTournamentTabs
+            eventId={event.id}
+            eventSlug={event.slug}
+            categoriesMeta={categoriesMeta}
+            organizationId={event.organizationId}
+          />
         </section>
       )}
     </div>

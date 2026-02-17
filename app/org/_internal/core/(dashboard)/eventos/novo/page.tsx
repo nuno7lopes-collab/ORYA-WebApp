@@ -79,7 +79,14 @@ type PadelCourtSummary = {
   indoor?: boolean | null;
   surface?: string | null;
 };
-type PadelStaffSummary = { id: number; fullName?: string | null; email?: string | null; inheritToEvents?: boolean | null };
+type PadelStaffSummary = {
+  id: number;
+  fullName?: string | null;
+  username?: string | null;
+  email?: string | null;
+  role?: string | null;
+  inheritToEvents?: boolean | null;
+};
 type PadelCategorySummary = {
   id: number;
   label: string;
@@ -1389,7 +1396,7 @@ export function NewOrganizationEventPage({
                       }}
                       className="accent-white"
                     />
-                    <span>{member.fullName || member.email || "Equipa"}</span>
+                    <span>{member.fullName || member.email || member.username || "Equipa"}</span>
                     {member.inheritToEvents && <span className="text-[10px] text-emerald-300">auto</span>}
                   </label>
                 );
@@ -2195,7 +2202,8 @@ export function NewOrganizationEventPage({
     setIsSubmitting(true);
 
     try {
-      const templateToSend = selectedPreset === "padel" ? "PADEL" : "OTHER";
+      const isPadelFlow = selectedPreset === "padel";
+      const templateToSend = isPadelFlow ? "PADEL" : "OTHER";
       const resolvedPadelDefaultCategoryId =
         padelDefaultCategoryId && padelCategoryIds.includes(padelDefaultCategoryId)
           ? padelDefaultCategoryId
@@ -2248,72 +2256,104 @@ export function NewOrganizationEventPage({
               .map((member) => ({
                 clubName: selectedPadelClub?.name ?? null,
                 email: member.email ?? null,
-                role: member.fullName ?? null,
+                role: member.role ?? null,
               }))
           : [];
 
-      const payload = {
-        title: title.trim(),
-        description: description.trim() || null,
-        startsAt,
-        endsAt,
-        templateType: templateToSend,
-        interestTags,
-        addressId: resolvedAddressId,
-        ticketTypes: preparedTickets,
-        coverImageUrl: coverUrl,
-        accessPolicy,
-        payoutMode: isPlatformPayout ? "PLATFORM" : "ORGANIZATION",
-        padel:
-          selectedPreset === "padel"
-            ? {
-                padelClubId: selectedPadelClubId,
-                courtIds: selectedPadelCourtIds,
-                staffIds: selectedPadelStaffIds,
-                numberOfCourts: selectedPadelCourtIds.length || 1,
-                format: padelFormat,
-                ruleSetId: padelRuleSetId,
-                defaultCategoryId: resolvedPadelDefaultCategoryId,
-                eligibilityType: padelEligibility,
-                categoryIds: padelCategoryIds,
-                categoryConfigs: padelCategoryConfigsPayload,
-                splitDeadlineHours: padelSplitDeadlineHours ? Number(padelSplitDeadlineHours) : null,
-                padelV2Enabled: true,
-                advancedSettings: {
-                  courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
-                  staffFromClubs: staffFromClubs.length > 0 ? staffFromClubs : null,
-                  waitlistEnabled: padelWaitlistEnabled,
-                  registrationStartsAt: normalizeRegistrationValue(padelRegistrationStartsAt),
-                  registrationEndsAt: normalizeRegistrationValue(padelRegistrationEndsAt),
-                  allowSecondCategory: padelAllowSecondCategory,
-                  maxEntriesTotal:
-                    padelMaxEntriesTotal && Number(padelMaxEntriesTotal) > 0
-                      ? Math.floor(Number(padelMaxEntriesTotal))
-                      : null,
-                },
-              }
-            : undefined,
-    };
+      let res: Response;
+      if (isPadelFlow) {
+        const ticketPriceByCategory = new Map<number, number>();
+        preparedTickets.forEach((ticket) => {
+          if (typeof ticket.padelCategoryId !== "number") return;
+          const parsedPrice = Number(ticket.price);
+          ticketPriceByCategory.set(
+            ticket.padelCategoryId,
+            Number.isFinite(parsedPrice) && parsedPrice > 0 ? parsedPrice : 0,
+          );
+        });
+        const padelPayload = {
+          title: title.trim(),
+          description: description.trim() || null,
+          startsAt,
+          endsAt,
+          addressId: resolvedAddressId,
+          accessPolicy,
+          padel: {
+            padelClubId: selectedPadelClubId,
+            courtIds: selectedPadelCourtIds,
+            staffIds: selectedPadelStaffIds,
+            numberOfCourts: selectedPadelCourtIds.length || 1,
+            format: padelFormat,
+            ruleSetId: padelRuleSetId,
+            defaultCategoryId: resolvedPadelDefaultCategoryId,
+            eligibilityType: padelEligibility,
+            categoryIds: padelCategoryIds,
+            categoryConfigs: padelCategoryConfigsPayload.map((config) => ({
+              ...config,
+              pricePerPlayer: ticketPriceByCategory.get(config.padelCategoryId) ?? 0,
+              currency: "EUR",
+            })),
+            splitDeadlineHours: padelSplitDeadlineHours ? Number(padelSplitDeadlineHours) : null,
+            padelV2Enabled: true,
+            advancedSettings: {
+              courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
+              staffFromClubs: staffFromClubs.length > 0 ? staffFromClubs : null,
+              waitlistEnabled: padelWaitlistEnabled,
+              registrationStartsAt: normalizeRegistrationValue(padelRegistrationStartsAt),
+              registrationEndsAt: normalizeRegistrationValue(padelRegistrationEndsAt),
+              allowSecondCategory: padelAllowSecondCategory,
+              maxEntriesTotal:
+                padelMaxEntriesTotal && Number(padelMaxEntriesTotal) > 0
+                  ? Math.floor(Number(padelMaxEntriesTotal))
+                  : null,
+            },
+          },
+        };
+        res = await fetch(`/api/org/${activeOrganizationId}/tournaments/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(padelPayload),
+        });
+      } else {
+        const payload = {
+          title: title.trim(),
+          description: description.trim() || null,
+          startsAt,
+          endsAt,
+          templateType: templateToSend,
+          interestTags,
+          addressId: resolvedAddressId,
+          ticketTypes: preparedTickets,
+          coverImageUrl: coverUrl,
+          accessPolicy,
+          payoutMode: isPlatformPayout ? "PLATFORM" : "ORGANIZATION",
+        };
+        res = await fetch(`/api/org/${activeOrganizationId}/events/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+      }
 
-      const res = await fetch(`/api/org/${activeOrganizationId}/events/create`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (data?.errorCode === "PADEL_CREATE_MOVED" && typeof data?.details?.target === "string") {
+        router.push(data.details.target);
+        return;
+      }
 
       if (!res.ok || !data?.ok) {
         const friendly =
-          data?.error === "FORBIDDEN"
+          (data?.errorCode ?? data?.error) === "FORBIDDEN"
             ? `Sem permissões para criar ${primaryLabelPlural} nesta organização.`
-            : data?.error;
+            : data?.message ?? data?.error ?? data?.errorCode;
         throw new Error(friendly || `Erro ao criar ${primaryLabel}.`);
       }
 
-      const event = data.event;
+      const event = data?.data?.event ?? data?.event;
       if (event?.id || event?.slug) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(DRAFT_KEY);

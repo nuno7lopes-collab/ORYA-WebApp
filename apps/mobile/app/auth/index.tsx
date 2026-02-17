@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,14 +13,12 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AuthBackground } from "../../components/liquid/AuthBackground";
 import { AuthButton } from "../../components/auth/AuthButton";
 import { GlassCard } from "../../components/auth/GlassCard";
 import { LegalLinks } from "../../components/auth/LegalLinks";
-import { HelpSheet } from "../../components/auth/HelpSheet";
 import { AccountLinkModal } from "../../components/auth/AccountLinkModal";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
@@ -31,8 +28,6 @@ import { getMobileEnv } from "../../lib/env";
 import { tokens, useTranslation } from "@orya/shared";
 
 WebBrowser.maybeCompleteAuthSession();
-
-const ORYA_LOGO = require("../../assets/orya_logo.png");
 
 const parseAuthUrl = (url: string) => {
   const parsed = Linking.parse(url);
@@ -73,7 +68,6 @@ export default function AuthGatewayScreen() {
   const { loading, session } = useAuth();
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [busyMethod, setBusyMethod] = useState<AuthMethod | null>(null);
-  const [helpVisible, setHelpVisible] = useState(false);
   const [linkModalVisible, setLinkModalVisible] = useState(false);
   const mountedRef = useRef(true);
   const emailTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -315,10 +309,6 @@ export default function AuthGatewayScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.header, compactLayout ? styles.headerCompact : null]}>
-          <View style={styles.brandRow}>
-            <Image source={ORYA_LOGO} style={styles.brandSymbol} contentFit="contain" />
-            <Text style={styles.brandWordmark}>ORYA</Text>
-          </View>
           <Text style={styles.title}>{t("auth:heroTitle")}</Text>
           <Text style={styles.subtitle}>{t("auth:heroSubtitle")}</Text>
         </View>
@@ -363,19 +353,9 @@ export default function AuthGatewayScreen() {
           <View style={styles.legal}>
             <LegalLinks termsUrl={termsUrl} privacyUrl={privacyUrl} />
           </View>
-
-          <Pressable
-            onPress={() => setHelpVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel={t("auth:help")}
-            style={styles.helpLink}
-          >
-            <Text style={styles.helpText}>{t("auth:help")}</Text>
-          </Pressable>
         </GlassCard>
       </ScrollView>
 
-      <HelpSheet visible={helpVisible} onClose={() => setHelpVisible(false)} />
       <AccountLinkModal
         visible={linkModalVisible}
         onClose={() => setLinkModalVisible(false)}
@@ -410,23 +390,6 @@ const styles = StyleSheet.create({
   },
   headerCompact: {
     gap: 10,
-  },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  brandSymbol: {
-    width: 36,
-    height: 36,
-  },
-  brandWordmark: {
-    fontSize: 22,
-    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
-    letterSpacing: 3,
-    color: "#ffffff",
-    textShadowColor: "rgba(0,0,0,0.36)",
-    textShadowRadius: 8,
   },
   title: {
     fontSize: 30,
@@ -475,23 +438,6 @@ const styles = StyleSheet.create({
   },
   legal: {
     marginTop: 8,
-  },
-  helpLink: {
-    marginTop: 8,
-    alignSelf: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    minHeight: 44,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(125, 198, 255, 0.34)",
-    backgroundColor: "rgba(88, 162, 255, 0.11)",
-    justifyContent: "center",
-  },
-  helpText: {
-    fontSize: 13,
-    color: "rgba(187, 225, 255, 0.98)",
-    fontFamily: tokens.typography.fontFamily?.bodyStrong ?? "System",
   },
   loadingScreen: {
     flex: 1,

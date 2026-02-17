@@ -65,6 +65,7 @@ export function FiltersBottomSheet({
   const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
   const [locationDetailsLoading, setLocationDetailsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [locationExpanded, setLocationExpanded] = useState(false);
   const locationSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationSearchSeq = useRef(0);
   const locationDetailsSeq = useRef(0);
@@ -108,11 +109,13 @@ export function FiltersBottomSheet({
     if (!visible) return;
     setLocationQuery(locationLabel || city || "");
     setLocationSearchError(null);
+    setLocationExpanded(false);
+    setShowSuggestions(false);
   }, [visible, locationLabel, city]);
 
   useEffect(() => {
     const query = locationQuery.trim();
-    if (!showSuggestions) return;
+    if (!showSuggestions || !locationExpanded) return;
     if (query.length < 2) {
       setLocationSuggestions([]);
       setLocationSearchError(null);
@@ -130,12 +133,12 @@ export function FiltersBottomSheet({
         if (locationSearchSeq.current === seq) {
           setLocationSuggestions(items);
         }
-        } catch (err) {
-          if (locationSearchSeq.current === seq) {
-            setLocationSuggestions([]);
+      } catch (err) {
+        if (locationSearchSeq.current === seq) {
+          setLocationSuggestions([]);
           setLocationSearchError(err instanceof Error ? err.message : t("discover:filters.suggestionsError"));
-          }
-        } finally {
+        }
+      } finally {
         if (locationSearchSeq.current === seq) {
           setLocationSearchLoading(false);
         }
@@ -147,7 +150,7 @@ export function FiltersBottomSheet({
         clearTimeout(locationSearchTimeout.current);
       }
     };
-  }, [locationQuery, showSuggestions]);
+  }, [locationExpanded, locationQuery, showSuggestions, t]);
 
   const pickString = (...values: Array<unknown>) => {
     for (const value of values) {
@@ -230,7 +233,12 @@ export function FiltersBottomSheet({
   const showEventType = typeof eventType === "string" && typeof onEventTypeChange === "function";
 
   return (
-    <Modal transparent visible={visible} animationType="fade">
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
       <Pressable
         style={styles.overlay}
         onPress={onClose}
@@ -253,98 +261,6 @@ export function FiltersBottomSheet({
           >
             <Ionicons name="close" size={18} color="#ffffff" />
           </Pressable>
-        </View>
-
-        {showDistance ? (
-          <View style={styles.block}>
-            <Text style={styles.label}>{t("discover:filters.distance")}</Text>
-            <View style={styles.row}>
-              {DISTANCE_OPTIONS.map((value) =>
-                renderOption(
-                  `distance-${value}`,
-                  `${value}km`,
-                  distanceKm === value,
-                  () => onDistanceChange(value),
-                ),
-              )}
-            </View>
-            <Text style={styles.helper}>{t("discover:filters.nearbyDistance", { distance: distanceLabel })}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.block}>
-          <View style={styles.locationHeader}>
-            <Text style={styles.label}>{t("discover:filters.location")}</Text>
-            {locationSource !== "NONE" ? (
-              <Text style={styles.locationSource}>
-                {locationSource === "APPLE_MAPS" ? "Apple" : "IP"}
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.inputRow}>
-            <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.65)" />
-            <TextInput
-              value={locationQuery}
-              onChangeText={(value) => {
-                setLocationQuery(value);
-                setShowSuggestions(true);
-                setLocationSearchError(null);
-              }}
-              placeholder={t("discover:filters.locationPlaceholder")}
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              style={styles.input}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
-              accessibilityLabel={t("discover:filters.location")}
-            />
-            {locationQuery ? (
-              <Pressable
-                onPress={() => {
-                  setLocationQuery("");
-                  setLocationSuggestions([]);
-                  setLocationSearchError(null);
-                  clearLocation();
-                }}
-                style={styles.clear}
-                accessibilityRole="button"
-                accessibilityLabel={t("discover:filters.clearLocation")}
-              >
-                <Ionicons name="close" size={12} color="rgba(255,255,255,0.7)" />
-              </Pressable>
-            ) : null}
-          </View>
-          {locationDetailsLoading ? (
-            <Text style={styles.helper}>{t("discover:filters.validating")}</Text>
-          ) : locationLabel ? (
-            <Text style={styles.helper}>{locationLabel}</Text>
-          ) : city ? (
-            <Text style={styles.helper}>{t("discover:filters.locationCity", { city })}</Text>
-          ) : null}
-          {locationSearchError ? <Text style={styles.errorText}>{locationSearchError}</Text> : null}
-          {showSuggestions ? (
-            <View style={styles.suggestions}>
-              {locationSearchLoading ? (
-                <Text style={styles.suggestionMuted}>{t("discover:filters.searching")}</Text>
-              ) : locationSuggestions.length === 0 ? (
-                <Text style={styles.suggestionMuted}>{t("discover:filters.noResults")}</Text>
-              ) : (
-                locationSuggestions.map((item) => (
-                  <Pressable
-                    key={item.providerId}
-                    onPress={() => handleSelectSuggestion(item)}
-                    style={styles.suggestionItem}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("discover:filters.selectLocation", { label: item.label })}
-                  >
-                    <Text style={styles.suggestionTitle}>{item.label}</Text>
-                    {item.city ? (
-                      <Text style={styles.suggestionSubtitle}>{item.city}</Text>
-                    ) : null}
-                  </Pressable>
-                ))
-              )}
-            </View>
-          ) : null}
         </View>
 
         <View style={styles.block}>
@@ -379,6 +295,134 @@ export function FiltersBottomSheet({
               renderOption(`price-${option.key}`, option.label, price === option.key, () => onPriceChange(option.key)),
             )}
           </View>
+        </View>
+
+        {showDistance ? (
+          <View style={styles.block}>
+            <Text style={styles.label}>{t("discover:filters.distance")}</Text>
+            <View style={styles.row}>
+              {DISTANCE_OPTIONS.map((value) =>
+                renderOption(
+                  `distance-${value}`,
+                  `${value}km`,
+                  distanceKm === value,
+                  () => onDistanceChange(value),
+                ),
+              )}
+            </View>
+            <Text style={styles.helper}>{t("discover:filters.nearbyDistance", { distance: distanceLabel })}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.block}>
+          <Pressable
+            onPress={() => {
+              setLocationExpanded((previous) => {
+                if (previous) setShowSuggestions(false);
+                return !previous;
+              });
+            }}
+            style={({ pressed }) => [
+              styles.locationToggle,
+              pressed ? styles.locationTogglePressed : null,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={t("discover:filters.locationOptional")}
+            accessibilityState={{ expanded: locationExpanded }}
+          >
+            <View style={styles.locationToggleTextWrap}>
+              <Text style={styles.label}>{t("discover:filters.locationOptional")}</Text>
+              {locationSource !== "NONE" ? (
+                <Text style={styles.locationSource}>
+                  {locationSource === "APPLE_MAPS" ? "Apple" : "IP"}
+                </Text>
+              ) : null}
+            </View>
+            <Ionicons
+              name={locationExpanded ? "chevron-up" : "chevron-down"}
+              size={16}
+              color="rgba(255,255,255,0.75)"
+            />
+          </Pressable>
+
+          {locationExpanded ? (
+            <>
+              <View style={styles.inputRow}>
+                <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.65)" />
+                <TextInput
+                  value={locationQuery}
+                  onChangeText={(value) => {
+                    setLocationQuery(value);
+                    setShowSuggestions(true);
+                    setLocationSearchError(null);
+                  }}
+                  placeholder={t("discover:filters.locationPlaceholder")}
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  style={styles.input}
+                  onFocus={() => {
+                    setLocationExpanded(true);
+                    setShowSuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
+                  accessibilityLabel={t("discover:filters.location")}
+                />
+                {locationQuery ? (
+                  <Pressable
+                    onPress={() => {
+                      setLocationQuery("");
+                      setLocationSuggestions([]);
+                      setLocationSearchError(null);
+                      setShowSuggestions(false);
+                      clearLocation();
+                    }}
+                    style={styles.clear}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("discover:filters.clearLocation")}
+                  >
+                    <Ionicons name="close" size={12} color="rgba(255,255,255,0.7)" />
+                  </Pressable>
+                ) : null}
+              </View>
+              {locationDetailsLoading ? (
+                <Text style={styles.helper}>{t("discover:filters.validating")}</Text>
+              ) : locationLabel ? (
+                <Text style={styles.helper}>{locationLabel}</Text>
+              ) : city ? (
+                <Text style={styles.helper}>{t("discover:filters.locationCity", { city })}</Text>
+              ) : null}
+              {locationSearchError ? <Text style={styles.errorText}>{locationSearchError}</Text> : null}
+              {showSuggestions ? (
+                <View style={styles.suggestions}>
+                  {locationSearchLoading ? (
+                    <Text style={styles.suggestionMuted}>{t("discover:filters.searching")}</Text>
+                  ) : locationSuggestions.length === 0 ? (
+                    <Text style={styles.suggestionMuted}>{t("discover:filters.noResults")}</Text>
+                  ) : (
+                    locationSuggestions.map((item) => (
+                      <Pressable
+                        key={item.providerId}
+                        onPress={() => handleSelectSuggestion(item)}
+                        style={styles.suggestionItem}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("discover:filters.selectLocation", { label: item.label })}
+                      >
+                        <Text style={styles.suggestionTitle}>{item.label}</Text>
+                        {item.city ? (
+                          <Text style={styles.suggestionSubtitle}>{item.city}</Text>
+                        ) : null}
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
+            </>
+          ) : locationLabel ? (
+            <Text style={styles.helper}>{locationLabel}</Text>
+          ) : city ? (
+            <Text style={styles.helper}>{t("discover:filters.locationCity", { city })}</Text>
+          ) : (
+            <Text style={styles.helper}>{t("discover:filters.locationOptionalHint")}</Text>
+          )}
         </View>
       </Animated.View>
     </Modal>
@@ -444,10 +488,24 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     textTransform: "uppercase",
   },
-  locationHeader: {
+  locationToggle: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: tokens.layout.touchTarget,
+  },
+  locationTogglePressed: {
+    opacity: 0.9,
+  },
+  locationToggleTextWrap: {
+    flex: 1,
+    gap: 2,
   },
   locationSource: {
     color: "rgba(255,255,255,0.7)",

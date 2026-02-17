@@ -60,12 +60,14 @@ describe("padel format catalog guardrails (D18.11)", () => {
 
 describe("padel club staff role guardrails (D18.09)", () => {
   it("força roles canónicos no write-path do staff de clube", () => {
-    const content = readLocal("app/api/padel/clubs/[id]/staff/route.ts");
-    expect(content).toContain("PADEL_CLUB_STAFF_ROLES");
-    expect(content).toContain("normalizePadelClubStaffRole");
-    expect(content).toContain("ADMIN_CLUBE");
-    expect(content).toContain("DIRETOR_PROVA");
-    expect(content).toContain("STAFF");
+    const routeContent = readLocal("app/api/padel/clubs/[id]/staff/route.ts");
+    expect(routeContent).toContain("PADEL_CLUB_STAFF_ROLES");
+    expect(routeContent).toContain("normalizePadelClubStaffRole");
+
+    const roleUtil = readLocal("lib/padel/clubStaffRole.ts");
+    expect(roleUtil).toContain("ADMIN_CLUBE");
+    expect(roleUtil).toContain("DIRETOR_PROVA");
+    expect(roleUtil).toContain("STAFF");
   });
 
   it("fecha role em enum canónico no schema e na migração", () => {
@@ -133,12 +135,28 @@ describe("padel lifecycle governance guardrails (N5)", () => {
     const content = readLocal("app/api/padel/tournaments/lifecycle/route.ts");
     expect(content).toContain("PadelTournamentRole.DIRETOR_PROVA");
     expect(content).toContain("TOURNAMENT_DIRECTOR_REQUIRED");
+    expect(content).toContain("STAFF_MISSING_FOR_PARTNER_CLUBS");
   });
 
   it("auto-atribui DIRETOR_PROVA no create de evento padel", () => {
     const content = readLocal("app/api/org/[orgId]/tournaments/create/route.ts");
     expect(content).toContain("padelTournamentRoleAssignment.upsert");
     expect(content).toContain("PadelTournamentRole.DIRETOR_PROVA");
+  });
+
+  it("remove write-path legado de Padel no events/create genérico", () => {
+    const legacyCreate = readLocal("app/api/org/[orgId]/events/create/route.ts");
+    expect(legacyCreate).toContain("PADEL_CREATE_MOVED");
+    expect(legacyCreate).not.toContain("padelTournamentConfig.upsert");
+    expect(legacyCreate).not.toContain("padelTournamentRoleAssignment.upsert");
+    expect(legacyCreate).not.toContain("createTournamentForEvent(");
+  });
+
+  it("frontend de criação encaminha preset Padel para endpoint canónico", () => {
+    const createPage = readLocal("app/org/_internal/core/(dashboard)/eventos/novo/page.tsx");
+    expect(createPage).toContain("isPadelFlow");
+    expect(createPage).toContain("/api/org/${activeOrganizationId}/tournaments/create");
+    expect(createPage).toContain("/api/org/${activeOrganizationId}/events/create");
   });
 
   it("endurece incidentes com autoridade operacional e metadados obrigatórios", () => {
@@ -209,5 +227,30 @@ describe("padel ranking v2 guardrails (N6)", () => {
     expect(reject).toContain("status: \"REJECTED\"");
     expect(lifecycle).toContain("TIER_APPROVAL_REQUIRED");
     expect(lifecycle).toContain("GOVERNED_TIERS");
+  });
+});
+
+describe("padel lessons + trainers booking guardrails", () => {
+  it("associação de treinador mantém profissional operacional (ativo)", () => {
+    const trainersRoute = readLocal("app/api/org/[orgId]/trainers/route.ts");
+    expect(trainersRoute).toContain("reservationProfessional.update");
+    expect(trainersRoute).toContain("data: { isActive: true }");
+  });
+
+  it("serviços de aula exigem instrutor com profissional ativo", () => {
+    const createService = readLocal("app/api/org/[orgId]/servicos/route.ts");
+    const patchService = readLocal("app/api/org/[orgId]/servicos/[id]/route.ts");
+    expect(createService).toContain("CLASS_REQUIRES_PROFESSIONAL_MODE");
+    expect(createService).toContain("INSTRUCTOR_NOT_PROFESSIONAL");
+    expect(createService).toContain("INSTRUCTOR_PROFESSIONAL_INACTIVE");
+    expect(patchService).toContain("CLASS_REQUIRES_PROFESSIONAL_MODE");
+    expect(patchService).toContain("INSTRUCTOR_NOT_PROFESSIONAL");
+    expect(patchService).toContain("INSTRUCTOR_PROFESSIONAL_INACTIVE");
+  });
+
+  it("padel hub bloqueia criação de aula com treinador sem profissional ativo", () => {
+    const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
+    expect(hub).toContain("professionalIsActive === false");
+    expect(hub).toContain("Reativa em Reservas > Profissionais");
   });
 });

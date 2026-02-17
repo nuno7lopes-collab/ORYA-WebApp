@@ -31,7 +31,10 @@ export function SearchableEntitySelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const selectedPrimary = selectedIds.length > 0 ? options.find((option) => option.id === selectedIds[0]) ?? null : null;
+  const selectedOptions = useMemo(
+    () => selectedIds.map((id) => options.find((option) => option.id === id)).filter(Boolean) as SearchableEntityOption[],
+    [options, selectedIds],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -69,12 +72,6 @@ export function SearchableEntitySelect({
     });
   }, [options, query]);
 
-  const triggerLabel = selectedPrimary
-    ? selectedIds.length > 1
-      ? `${selectedPrimary.label} +${selectedIds.length - 1}`
-      : selectedPrimary.label
-    : placeholder;
-
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const toggleOption = (id: string) => {
@@ -99,12 +96,32 @@ export function SearchableEntitySelect({
           }
         }}
         className={cn(
-          "inline-flex h-10 min-w-[170px] items-center justify-between gap-2 rounded-full border border-white/15",
+          "inline-flex h-10 min-w-[170px] max-w-[280px] items-center justify-between gap-2 rounded-full border border-white/15",
           "bg-black/30 px-3 text-sm text-white/80 transition hover:border-white/35 hover:text-white",
           open && "border-cyan-300/60 text-white",
         )}
       >
-        <span className="truncate">{triggerLabel}</span>
+        <span className="min-w-0 flex-1">
+          {selectedOptions.length > 0 ? (
+            <span className="flex items-center gap-1 overflow-hidden">
+              {selectedOptions.slice(0, 2).map((option) => (
+                <span
+                  key={`trigger-${option.id}`}
+                  className="max-w-[108px] truncate rounded-full border border-cyan-200/45 bg-cyan-300/16 px-2 py-0.5 text-[10px] text-cyan-100"
+                >
+                  {option.label}
+                </span>
+              ))}
+              {selectedOptions.length > 2 ? (
+                <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/85">
+                  +{selectedOptions.length - 2}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="truncate">{placeholder}</span>
+          )}
+        </span>
         <span className="text-[10px] text-white/55">▼</span>
       </button>
 

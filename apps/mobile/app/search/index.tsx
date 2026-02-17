@@ -31,6 +31,7 @@ import { SearchOrganization, SearchUser } from "../../features/search/types";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -62,6 +63,16 @@ const SEARCH_TABS: Array<{ key: SearchTabKey; label: string }> = [
   { key: "people", label: "Pessoas" },
   { key: "orgs", label: "Organizações" },
 ];
+const SEARCH_RECENTS_STORAGE_KEY = "orya:search:recents";
+const SEARCH_RECENTS_LIMIT = 6;
+const QUICK_SEARCH_SUGGESTIONS = [
+  "Padel",
+  "Torneio",
+  "Aula",
+  "Treino",
+  "Serviços",
+  "Parceiro de jogo",
+] as const;
 
 const buildSkeletons = (variant: SearchSectionKey, count: number): SearchSectionItem[] =>
   Array.from({ length: count }, (_, index) => ({
@@ -79,7 +90,9 @@ export default function SearchScreen() {
   const [query, setQuery] = useState(initialQuery);
   const [activeTab, setActiveTab] = useState<SearchTabKey>("all");
   const [serviceKindFilter, setServiceKindFilter] = useState<string | null>(null);
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const previousResultCountRef = useRef(0);
+  const lastSavedQueryRef = useRef("");
   const debounced = useDebouncedValue(query, 280);
   const offersKind: DiscoverKind =
     activeTab === "events"
@@ -116,6 +129,54 @@ export default function SearchScreen() {
   const showOffers = activeTab === "all" || activeTab === "padel" || activeTab === "events" || activeTab === "services";
   const showUsers = activeTab === "all" || activeTab === "people";
   const showOrgs = activeTab === "all" || activeTab === "orgs";
+  const showRecentQueries = debounced.trim().length === 0 && recentQueries.length > 0;
+  const showQuickSuggestions = debounced.trim().length === 0;
+
+  const persistRecentQuery = useCallback((rawValue: string) => {
+    const normalized = rawValue.trim().replace(/\s+/g, " ");
+    if (normalized.length < 2) return;
+    setRecentQueries((previous) => {
+      const withoutCurrent = previous.filter(
+        (item) => item.toLowerCase() !== normalized.toLowerCase(),
+      );
+      const next = [normalized, ...withoutCurrent].slice(0, SEARCH_RECENTS_LIMIT);
+      AsyncStorage.setItem(SEARCH_RECENTS_STORAGE_KEY, JSON.stringify(next)).catch(() => undefined);
+      return next;
+    });
+  }, []);
+
+  const removeRecentQuery = useCallback((value: string) => {
+    setRecentQueries((previous) => {
+      const next = previous.filter((item) => item.toLowerCase() !== value.toLowerCase());
+      AsyncStorage.setItem(SEARCH_RECENTS_STORAGE_KEY, JSON.stringify(next)).catch(() => undefined);
+      return next;
+    });
+  }, []);
+
+  const clearRecentQueries = useCallback(() => {
+    setRecentQueries([]);
+    AsyncStorage.removeItem(SEARCH_RECENTS_STORAGE_KEY).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(SEARCH_RECENTS_STORAGE_KEY)
+      .then((raw) => {
+        if (!mounted || !raw) return;
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return;
+        const next = parsed
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter((item) => item.length >= 2)
+          .slice(0, SEARCH_RECENTS_LIMIT);
+        setRecentQueries(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredOffers = useMemo(() => {
     return offers.filter((offer) => {
@@ -174,8 +235,18 @@ export default function SearchScreen() {
     }
   }, [offers.length, users.length, organizations.length]);
 
+  useEffect(() => {
+    const normalized = debounced.trim().replace(/\s+/g, " ");
+    if (!enabled || normalized.length < minQueryLength) return;
+    if (normalized.toLowerCase() === lastSavedQueryRef.current.toLowerCase()) return;
+    lastSavedQueryRef.current = normalized;
+    persistRecentQuery(normalized);
+  }, [debounced, enabled, minQueryLength, persistRecentQuery]);
+
   const emptyMessage = useMemo(() => {
-    if (!debounced) return "Escreve algo para pesquisar ofertas, pessoas ou clubes.";
+    if (!debounced) {
+      return recentQueries.length > 0 ? null : "Escreve algo para pesquisar ofertas, pessoas ou clubes.";
+    }
     if (queryLength > 0 && queryLength < minQueryLength) {
       return `Escreve pelo menos ${minQueryLength} caracteres.`;
     }
@@ -183,7 +254,7 @@ export default function SearchScreen() {
       return "Sem resultados para esta pesquisa.";
     }
     return null;
-  }, [allVisibleErrored, debounced, enabled, hasVisibleLoading, hasVisibleResults, minQueryLength, queryLength]);
+  }, [allVisibleErrored, debounced, enabled, hasVisibleLoading, hasVisibleResults, minQueryLength, queryLength, recentQueries.length]);
 
   const sections = useMemo<SearchSection[]>(() => {
     if (!enabled) return [];
@@ -374,6 +445,7 @@ export default function SearchScreen() {
               <TextInput
                 value={query}
                 onChangeText={setQuery}
+                onSubmitEditing={() => persistRecentQuery(query)}
                 placeholder="Eventos, clubes, amigos..."
                 placeholderTextColor={tokens.colors.textMuted}
                 className="text-white text-base flex-1"
@@ -401,6 +473,82 @@ export default function SearchScreen() {
             </View>
           </GlassSurface>
         </View>
+
+        {showRecentQueries ? (
+          <View style={{ marginTop: tokens.spacing.md }}>
+            <View className="mb-2 flex-row items-center justify-between">
+              <Text className="text-white/65 text-xs font-semibold">Pesquisas recentes</Text>
+              <Pressable
+                onPress={clearRecentQueries}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar pesquisas recentes"
+                hitSlop={8}
+              >
+                <Text className="text-white/55 text-xs font-semibold">Limpar</Text>
+              </Pressable>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {recentQueries.map((item) => (
+                <View
+                  key={`recent-${item}`}
+                  className="flex-row items-center rounded-full border border-white/12 bg-white/8 pl-3 pr-1"
+                  style={{ minHeight: 34 }}
+                >
+                  <Pressable
+                    onPress={() => setQuery(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Pesquisar ${item}`}
+                    className="flex-row items-center"
+                    style={{ gap: 6, paddingVertical: 8, maxWidth: 180 }}
+                  >
+                    <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.55)" />
+                    <Text className="text-white/80 text-xs" numberOfLines={1}>
+                      {item}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => removeRecentQuery(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remover ${item}`}
+                    hitSlop={6}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="close" size={12} color="rgba(255,255,255,0.5)" />
+                  </Pressable>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {showQuickSuggestions ? (
+          <View style={{ marginTop: tokens.spacing.md }}>
+            <Text className="mb-2 text-white/65 text-xs font-semibold">Explorar por tema</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {QUICK_SEARCH_SUGGESTIONS.map((item) => (
+                <Pressable
+                  key={`quick-${item}`}
+                  onPress={() => {
+                    setQuery(item);
+                    persistRecentQuery(item);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pesquisar ${item}`}
+                  className="rounded-full border border-white/12 bg-white/8 px-3"
+                  style={{ minHeight: 34, justifyContent: "center" }}
+                >
+                  <Text className="text-white/80 text-xs font-semibold">{item}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {emptyMessage ? (
           <View className="pt-5">

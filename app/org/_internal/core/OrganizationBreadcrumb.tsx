@@ -88,17 +88,14 @@ function resolveLabel(
     }
     return "Eventos";
   }
-  if (pathname.startsWith("/org/calendar/day")) return "Calendário · Dia";
-  if (pathname.startsWith("/org/calendar")) return "Calendário";
-  if (pathname.startsWith("/org/bookings/new")) return "Reservas · Criar serviço";
-  if (pathname.startsWith("/org/bookings/customers")) return "Reservas · Clientes";
-  if (pathname.startsWith("/org/bookings/professionals")) return "Reservas · Profissionais";
-  if (pathname.startsWith("/org/bookings/resources")) return "Reservas · Recursos";
-  if (pathname.startsWith("/org/bookings/policies")) return "Reservas · Políticas";
-  if (pathname.startsWith("/org/bookings/prices")) return "Reservas · Preços";
-  if (pathname.startsWith("/org/bookings/integrations")) return "Reservas · Integrações";
-  if (pathname.startsWith("/org/bookings")) {
-    if (pathname.startsWith("/org/bookings/availability")) return "Reservas · Disponibilidade";
+  if (/^\/org\/(?:\d+\/)?calendar\/day(?:\/|$)/.test(pathname)) return "Calendário · Dia";
+  if (/^\/org\/(?:\d+\/)?calendar(?:\/|$)/.test(pathname)) return "Calendário";
+  if (/^\/org\/(?:\d+\/)?bookings\/new(?:\/|$)/.test(pathname)) return "Reservas · Criar serviço";
+  if (/^\/org\/(?:\d+\/)?bookings\/customers(?:\/|$)/.test(pathname)) return "Reservas · Clientes";
+  if (/^\/org\/(?:\d+\/)?bookings\/professionals(?:\/|$)/.test(pathname)) return "Reservas · Profissionais";
+  if (/^\/org\/(?:\d+\/)?bookings\/resources(?:\/|$)/.test(pathname)) return "Reservas · Recursos";
+  if (/^\/org\/(?:\d+\/)?bookings(?:\/|$)/.test(pathname)) {
+    if (/^\/org\/(?:\d+\/)?bookings\/availability(?:\/|$)/.test(pathname)) return "Reservas · Disponibilidade";
     const sectionLabel = section ? SECTION_LABELS[section] : null;
     if (sectionLabel && section !== "reservas") {
       return `Reservas · ${sectionLabel}`;

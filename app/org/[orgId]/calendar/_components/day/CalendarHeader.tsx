@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "@/lib/utils";
-import type { CalendarScopeMode } from "./types";
 import { DatePickerTwoMonths } from "./DatePickerTwoMonths";
 import { SearchableEntitySelect, type SearchableEntityOption } from "./SearchableEntitySelect";
 
@@ -18,8 +16,8 @@ type CalendarHeaderProps = {
   selectedResourceIds: string[];
   onSelectProfessional: (ids: string[]) => void;
   onSelectResource: (ids: string[]) => void;
-  scopeMode: CalendarScopeMode;
-  onScopeModeChange: (mode: CalendarScopeMode) => void;
+  onResetSelections: () => void;
+  hasActiveSelection: boolean;
   onOpenFilters: () => void;
   activeFilterCount: number;
 };
@@ -37,8 +35,8 @@ export function CalendarHeader({
   selectedResourceIds,
   onSelectProfessional,
   onSelectResource,
-  scopeMode,
-  onScopeModeChange,
+  onResetSelections,
+  hasActiveSelection,
   onOpenFilters,
   activeFilterCount,
 }: CalendarHeaderProps) {
@@ -79,6 +77,16 @@ export function CalendarHeader({
 
         <button
           type="button"
+          onClick={onResetSelections}
+          className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-4 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
+          aria-label="Mostrar calendário geral"
+        >
+          Geral
+          {!hasActiveSelection ? <span className="ml-2 text-[10px] text-cyan-100">ativo</span> : null}
+        </button>
+
+        <button
+          type="button"
           onClick={onOpenFilters}
           className="inline-flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
           aria-label="Abrir todos os filtros"
@@ -93,31 +101,6 @@ export function CalendarHeader({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center rounded-full border border-white/15 bg-white/5 p-1">
-          <button
-            type="button"
-            onClick={() => onScopeModeChange("exclusive")}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-xs transition",
-              scopeMode === "exclusive"
-                ? "bg-cyan-300/25 text-cyan-100"
-                : "text-white/60 hover:text-white/90",
-            )}
-          >
-            Modo A (Exclusivo)
-          </button>
-          <button
-            type="button"
-            onClick={() => onScopeModeChange("hybrid")}
-            className={cn(
-              "rounded-full px-3 py-1.5 text-xs transition",
-              scopeMode === "hybrid" ? "bg-cyan-300/25 text-cyan-100" : "text-white/60 hover:text-white/90",
-            )}
-          >
-            Modo B (Híbrido)
-          </button>
-        </div>
-
         <p className="text-xs text-white/50">
           Catálogo de serviços definido pela organização; profissionais associados a serviços existentes.
         </p>

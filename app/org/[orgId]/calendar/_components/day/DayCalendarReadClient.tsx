@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { getDateParts } from "@/lib/reservas/availability";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import {
@@ -30,17 +31,12 @@ import type {
   AvailabilityResponse,
   AgendaResponse,
   CalendarColumn,
-  CalendarScopeMode,
   CollectionResponse,
   ProfessionalItem,
   ResourceItem,
   ReservationListResponse,
   ServiceItem,
 } from "./types";
-
-const DEFAULT_FALLBACK_COLUMNS = 2;
-const HYBRID_MATCH_STRATEGY: "OR" | "AND" =
-  process.env.NEXT_PUBLIC_CALENDAR_HYBRID_MATCH_STRATEGY === "OR" ? "OR" : "AND";
 
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
@@ -60,28 +56,53 @@ function decodePrefixedIds(values: string[], prefix: string) {
   return [...deduped].sort((a, b) => a - b);
 }
 
+function formatDateTime(value: string, timezone: string) {
+  const date = new Date(value);
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  }).format(date);
+}
+
+function resolveStatusLabel(status: string) {
+  const normalized = status.trim().toUpperCase();
+  if (normalized === "CONFIRMED") return "Confirmado";
+  if (normalized === "COMPLETED") return "Concluído";
+  if (normalized === "PENDING" || normalized === "PENDING_CONFIRMATION") return "Pendente";
+  if (normalized === "NO_SHOW") return "No-show";
+  if (normalized === "DISPUTED") return "Disputa";
+  if (normalized.startsWith("CANCELLED")) return "Cancelado";
+  return status;
+}
+
+function resolveKindLabel(kind: "EVENT" | "TOURNAMENT" | "RESERVATION") {
+  if (kind === "RESERVATION") return "Reserva";
+  if (kind === "TOURNAMENT") return "Torneio";
+  return "Evento";
+}
+
 type ColumnSeed = {
   id: string;
-  entityKind: "PROFESSIONAL" | "RESOURCE" | "COURT";
+  entityKind: "PROFESSIONAL" | "RESOURCE" | "COURT" | "GENERAL";
   entityId: number;
   label: string;
   subtitle: string | null;
   avatarUrl: string | null;
 };
 
-function parseScopeMode(raw: string | null): CalendarScopeMode {
-  return raw === "hybrid" ? "hybrid" : "exclusive";
-}
-
 function buildColumnSeeds(params: {
   selectedProfessionalIds: number[];
   selectedResourceIds: number[];
   selectedCourtIds: number[];
-  scopeMode: CalendarScopeMode;
   professionals: ProfessionalItem[];
   resources: ResourceItem[];
   courts: ResourceItem[];
-}) {
+}): ColumnSeed[] {
   const professionalMap = new Map(params.professionals.map((item) => [item.id, item]));
   const resourceMap = new Map(params.resources.map((item) => [item.id, item]));
   const courtMap = new Map(params.courts.map((item) => [item.id, item]));
@@ -126,61 +147,21 @@ function buildColumnSeeds(params: {
     });
   };
 
-  if (params.scopeMode === "exclusive") {
-    if (params.selectedProfessionalIds.length > 0) {
-      params.selectedProfessionalIds.forEach(pushProfessional);
-      return seeds;
-    }
-    if (params.selectedResourceIds.length > 0) {
-      params.selectedResourceIds.forEach(pushResource);
-      return seeds;
-    }
-    if (params.selectedCourtIds.length > 0) {
-      params.selectedCourtIds.forEach(pushCourt);
-      return seeds;
-    }
-  } else {
-    params.selectedProfessionalIds.forEach(pushProfessional);
-    params.selectedResourceIds.forEach(pushResource);
-    params.selectedCourtIds.forEach(pushCourt);
-    if (seeds.length > 0) return seeds;
-  }
-
-  params.professionals.slice(0, DEFAULT_FALLBACK_COLUMNS).forEach((professional) => {
-    seeds.push({
-      id: `P-${professional.id}`,
-      entityKind: "PROFESSIONAL",
-      entityId: professional.id,
-      label: professional.name,
-      subtitle: professional.roleTitle ?? professional.user?.fullName ?? null,
-      avatarUrl: professional.user?.avatarUrl ?? null,
-    });
-  });
+  params.selectedProfessionalIds.forEach(pushProfessional);
+  params.selectedResourceIds.forEach(pushResource);
+  params.selectedCourtIds.forEach(pushCourt);
   if (seeds.length > 0) return seeds;
 
-  params.resources.slice(0, DEFAULT_FALLBACK_COLUMNS).forEach((resource) => {
-    seeds.push({
-      id: `R-${resource.id}`,
-      entityKind: "RESOURCE",
-      entityId: resource.id,
-      label: resource.label,
-      subtitle: `Capacidade ${resource.capacity}`,
+  return [
+    {
+      id: "GENERAL",
+      entityKind: "GENERAL" as const,
+      entityId: 0,
+      label: "Geral",
+      subtitle: "Calendário consolidado",
       avatarUrl: null,
-    });
-  });
-  if (seeds.length > 0) return seeds;
-
-  params.courts.slice(0, DEFAULT_FALLBACK_COLUMNS).forEach((court) => {
-    seeds.push({
-      id: `C-${court.id}`,
-      entityKind: "COURT",
-      entityId: court.id,
-      label: court.label,
-      subtitle: court.clubName ? `Campo · ${court.clubName}` : "Campo de padel",
-      avatarUrl: null,
-    });
-  });
-  return seeds;
+    },
+  ];
 }
 
 export default function DayCalendarReadClient() {
@@ -194,7 +175,6 @@ export default function DayCalendarReadClient() {
   const selectedProfessionalIds = useMemo(() => parseIdList(searchParams.get("professionals")), [searchParams]);
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
   const selectedCourtIds = useMemo(() => parseIdList(searchParams.get("courts")), [searchParams]);
-  const scopeMode = parseScopeMode(searchParams.get("scopeMode"));
   const selectedDate = useMemo(
     () => parseDateParam(searchParams.get("date"), timezone) ?? new Date(),
     [searchParams, timezone],
@@ -205,13 +185,14 @@ export default function DayCalendarReadClient() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState(() => emptyFilters());
   const [draftFilters, setDraftFilters] = useState(() => emptyFilters());
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
 
   const replaceState = (input: {
     nextDate?: Date;
     nextProfessionals?: number[];
     nextResources?: number[];
     nextCourts?: number[];
-    nextScopeMode?: CalendarScopeMode;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
@@ -219,7 +200,7 @@ export default function DayCalendarReadClient() {
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
     nextParams.set("date", formatDateParam(input.nextDate ?? selectedDate, timezone));
-    nextParams.set("scopeMode", input.nextScopeMode ?? scopeMode);
+    nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar/day");
     const search = nextParams.toString();
     router.replace(search ? `${nextPath}?${search}` : nextPath, { scroll: false });
@@ -288,12 +269,11 @@ export default function DayCalendarReadClient() {
         selectedProfessionalIds,
         selectedResourceIds,
         selectedCourtIds,
-        scopeMode,
         professionals: activeProfessionals,
         resources: activeResources,
         courts: activeCourts,
       }),
-    [activeCourts, activeProfessionals, activeResources, scopeMode, selectedCourtIds, selectedProfessionalIds, selectedResourceIds],
+    [activeCourts, activeProfessionals, activeResources, selectedCourtIds, selectedProfessionalIds, selectedResourceIds],
   );
 
   const availabilityKey =
@@ -308,7 +288,7 @@ export default function DayCalendarReadClient() {
     async () => {
       const entries = await Promise.all(
         columnSeeds.map(async (seed) => {
-          if (seed.entityKind === "COURT") {
+          if (seed.entityKind === "COURT" || seed.entityKind === "GENERAL") {
             return [seed.id, undefined] as const;
           }
           const query = new URLSearchParams({
@@ -347,7 +327,10 @@ export default function DayCalendarReadClient() {
   const columns = useMemo<CalendarColumn[]>(
     () =>
       columnSeeds.map((seed) => {
-        const normalized = seed.entityKind === "COURT" ? organizationAvailability : availabilityMap?.[seed.id];
+        const normalized =
+          seed.entityKind === "COURT" || seed.entityKind === "GENERAL"
+            ? organizationAvailability
+            : availabilityMap?.[seed.id];
         const intervals = resolveIntervalsForDay(normalized, selectedDate, timezone);
         return {
           id: seed.id,
@@ -372,30 +355,18 @@ export default function DayCalendarReadClient() {
       const matchesProfessional = Boolean(event.professionalId && selectedProfessionalIds.includes(event.professionalId));
       const matchesResource = Boolean(event.resourceId && selectedResourceIds.includes(event.resourceId));
       const matchesCourt = Boolean(event.courtId && selectedCourtIds.includes(event.courtId));
-
-      if (scopeMode === "exclusive") {
-        if (selectedProfessionalIds.length > 0) {
-          return matchesProfessional;
-        }
-        if (selectedResourceIds.length > 0 || selectedCourtIds.length > 0) {
-          return matchesResource || matchesCourt;
-        }
-        return true;
-      }
-
-      const dimensionChecks: boolean[] = [];
-      if (selectedProfessionalIds.length > 0) dimensionChecks.push(matchesProfessional);
-      if (selectedResourceIds.length > 0 || selectedCourtIds.length > 0) dimensionChecks.push(matchesResource || matchesCourt);
-      if (dimensionChecks.length === 0) return true;
-      if (HYBRID_MATCH_STRATEGY === "AND") return dimensionChecks.every(Boolean);
-      return dimensionChecks.some(Boolean);
+      const hasAnySelection =
+        selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+      if (!hasAnySelection) return true;
+      return matchesProfessional || matchesResource || matchesCourt;
     });
-  }, [enrichedEvents, scopeMode, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
+  }, [enrichedEvents, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
 
   const filteredEvents = useMemo(
     () => filterEvents(scopedEvents, appliedFilters, timezone),
     [appliedFilters, scopedEvents, timezone],
   );
+  const filteredEventsById = useMemo(() => new Map(filteredEvents.map((event) => [event.id, event])), [filteredEvents]);
 
   const professionalOptions = useMemo(
     () =>
@@ -444,6 +415,11 @@ export default function DayCalendarReadClient() {
     () => new Map(activeProfessionals.map((professional) => [professional.id, professional.name])),
     [activeProfessionals],
   );
+  const resourceLabels = useMemo(
+    () => new Map(activeResources.map((resource) => [resource.id, resource.label])),
+    [activeResources],
+  );
+  const courtLabels = useMemo(() => new Map(activeCourts.map((court) => [court.id, court.label])), [activeCourts]);
 
   const activeFilterChips = useMemo(
     () =>
@@ -454,6 +430,19 @@ export default function DayCalendarReadClient() {
       }),
     [appliedFilters, professionalLabels, serviceLabels],
   );
+  const hasActiveSelection =
+    selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+  const selectedEvent = selectedEventId ? filteredEventsById.get(selectedEventId) ?? null : null;
+  const hoveredEvent = hoveredEventId ? filteredEventsById.get(hoveredEventId) ?? null : null;
+  const focusedEvent = selectedEvent ?? hoveredEvent;
+  const isPreviewingByHover = Boolean(!selectedEvent && hoveredEvent);
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    if (!filteredEventsById.has(selectedEventId)) {
+      setSelectedEventId(null);
+    }
+  }, [filteredEventsById, selectedEventId]);
 
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
@@ -474,41 +463,15 @@ export default function DayCalendarReadClient() {
         selectedResourceIds={selectedResourceOptionIds}
         onSelectProfessional={(optionIds) => {
           const nextProfessionalIds = decodePrefixedIds(optionIds, PROFESSIONAL_OPTION_PREFIX);
-          if (scopeMode === "exclusive") {
-            replaceState({
-              nextProfessionals: nextProfessionalIds,
-              nextResources: nextProfessionalIds.length > 0 ? [] : selectedResourceIds,
-              nextCourts: nextProfessionalIds.length > 0 ? [] : selectedCourtIds,
-            });
-            return;
-          }
           replaceState({ nextProfessionals: nextProfessionalIds });
         }}
         onSelectResource={(optionIds) => {
           const nextResourceIds = decodePrefixedIds(optionIds, RESOURCE_OPTION_PREFIX);
           const nextCourtIds = decodePrefixedIds(optionIds, COURT_OPTION_PREFIX);
-          if (scopeMode === "exclusive") {
-            replaceState({
-              nextResources: nextResourceIds,
-              nextCourts: nextCourtIds,
-              nextProfessionals: nextResourceIds.length > 0 || nextCourtIds.length > 0 ? [] : selectedProfessionalIds,
-            });
-            return;
-          }
           replaceState({ nextResources: nextResourceIds, nextCourts: nextCourtIds });
         }}
-        scopeMode={scopeMode}
-        onScopeModeChange={(mode) => {
-          if (
-            mode === "exclusive" &&
-            selectedProfessionalIds.length > 0 &&
-            (selectedResourceIds.length > 0 || selectedCourtIds.length > 0)
-          ) {
-            replaceState({ nextScopeMode: mode, nextResources: [], nextCourts: [] });
-            return;
-          }
-          replaceState({ nextScopeMode: mode });
-        }}
+        onResetSelections={() => replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] })}
+        hasActiveSelection={hasActiveSelection}
         onOpenFilters={() => {
           setDraftFilters(cloneFilters(appliedFilters));
           setFiltersOpen(true);
@@ -529,19 +492,78 @@ export default function DayCalendarReadClient() {
         </div>
       ) : null}
 
-      <DayGrid
-        date={selectedDate}
-        timezone={timezone}
-        columns={columns}
-        events={filteredEvents}
-        hourHeight={hourHeight}
-      />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div>
+          <DayGrid
+            date={selectedDate}
+            timezone={timezone}
+            columns={columns}
+            events={filteredEvents}
+            hourHeight={hourHeight}
+            selectedEventId={selectedEvent?.id ?? null}
+            onHoverEventChange={(event) => setHoveredEventId(event?.id ?? null)}
+            onSelectEvent={(event) => {
+              setSelectedEventId((current) => (current === event.id ? null : event.id));
+            }}
+          />
 
-      {agendaLoading ? <p className="text-sm text-white/65">A carregar agenda...</p> : null}
-      {agendaError ? <p className="text-sm text-rose-200">Falha ao carregar agenda: {agendaError.message}</p> : null}
-      {!agendaLoading && !agendaError && filteredEvents.length === 0 ? (
-        <p className="text-sm text-white/55">Sem reservas para os filtros e data selecionados.</p>
-      ) : null}
+          {agendaLoading ? <p className="mt-3 text-sm text-white/65">A carregar agenda...</p> : null}
+          {agendaError ? <p className="mt-3 text-sm text-rose-200">Falha ao carregar agenda: {agendaError.message}</p> : null}
+          {!agendaLoading && !agendaError && filteredEvents.length === 0 ? (
+            <p className="mt-3 text-sm text-white/55">Sem reservas para os filtros e data selecionados.</p>
+          ) : null}
+        </div>
+
+        <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
+          <h2 className="text-sm font-semibold text-white">Detalhe da ocupação</h2>
+          <p className="mt-1 text-xs text-white/60">
+            Hover mostra pré-visualização. Click fixa o detalhe.
+            {isPreviewingByHover ? " (prévia ativa)" : ""}
+          </p>
+          {!hasActiveSelection ? (
+            <p className="mt-1 text-[11px] text-white/55">
+              Modo Geral: ocupações sobrepostas aparecem agregadas num único bloco com linhas internas.
+            </p>
+          ) : null}
+          <p className="mt-2 text-[11px] text-white/55">
+            Default quando não configurado: 2ª–6ª, 08:00-17:00 (sábado/domingo fechado). Personaliza em{" "}
+            <Link
+              href={buildOrgHref(organizationId, "/bookings/availability")}
+              className="text-cyan-100 underline decoration-cyan-300/60 underline-offset-2 hover:decoration-cyan-300"
+            >
+              Bookings
+            </Link>
+            .
+          </p>
+
+          {focusedEvent ? (
+            <article className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs font-semibold text-white">{focusedEvent.title}</p>
+              <p className="mt-1 text-[11px] text-white/75">
+                {formatDateTime(focusedEvent.startsAt, timezone)} - {formatDateTime(focusedEvent.endsAt, timezone)}
+              </p>
+              <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-white/65">
+                {resolveKindLabel(focusedEvent.kind)} · {resolveStatusLabel(focusedEvent.status)}
+              </p>
+
+              <div className="mt-2 space-y-1 text-[11px] text-white/70">
+                {focusedEvent.serviceTitle ? <p>Serviço: {focusedEvent.serviceTitle}</p> : null}
+                {focusedEvent.professionalId ? (
+                  <p>Profissional: {professionalLabels.get(focusedEvent.professionalId) ?? `#${focusedEvent.professionalId}`}</p>
+                ) : null}
+                {focusedEvent.resourceId ? (
+                  <p>Recurso: {resourceLabels.get(focusedEvent.resourceId) ?? `#${focusedEvent.resourceId}`}</p>
+                ) : null}
+                {focusedEvent.courtId ? <p>Campo: {courtLabels.get(focusedEvent.courtId) ?? `#${focusedEvent.courtId}`}</p> : null}
+              </div>
+            </article>
+          ) : (
+            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
+              Nenhuma ocupação selecionada.
+            </p>
+          )}
+        </aside>
+      </div>
 
       <FiltersDrawer
         open={filtersOpen}

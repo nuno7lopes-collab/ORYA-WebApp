@@ -2,7 +2,7 @@
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -25,7 +25,6 @@ import {
   resolveServiceAssignmentMode,
 } from "@/lib/reservas/serviceAssignment";
 import { appendOrganizationIdToHref, buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
-import AvailabilityEditor from "@/app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor";
 import BookingChargesPanel from "@/app/org/_internal/core/(dashboard)/reservas/_components/BookingChargesPanel";
 import {
   CTA_PRIMARY,
@@ -33,20 +32,10 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-  DASHBOARD_TITLE,
 } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-const CALENDAR_FULL_START_HOUR = 0;
-const CALENDAR_FULL_END_HOUR = 24;
-const DEFAULT_VIEW_START_HOUR = 9;
-const DEFAULT_VIEW_END_HOUR = 19;
-const DEFAULT_VIEW_HOURS = DEFAULT_VIEW_END_HOUR - DEFAULT_VIEW_START_HOUR;
-const MIN_HOUR_HEIGHT = 36;
-const MAX_HOUR_HEIGHT = 84;
-const DEFAULT_HOUR_HEIGHT = 56;
-const PLACEHOLDER_DAY = new Date(Date.UTC(2000, 0, 1));
 const CHIP_BASE =
   "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[12px] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/20 hover:bg-white/10 hover:text-white";
 const CHIP_ACTIVE =
@@ -225,19 +214,6 @@ const buildZonedDate = (
   hour = 0,
   minute = 0,
 ) => makeUtcDateFromLocal({ ...parts, hour, minute }, timezone);
-
-const getDayKey = (date: Date, timezone: string) => {
-  const parts = getDateParts(date, timezone);
-  const month = String(parts.month).padStart(2, "0");
-  const day = String(parts.day).padStart(2, "0");
-  return `${parts.year}-${month}-${day}`;
-};
-
-const isSameDay = (a: Date, b: Date, timezone: string) => {
-  const aParts = getDateParts(a, timezone);
-  const bParts = getDateParts(b, timezone);
-  return aParts.year === bParts.year && aParts.month === bParts.month && aParts.day === bParts.day;
-};
 
 const getTimeParts = (date: Date, timezone: string) => {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -429,95 +405,10 @@ type SplitState = {
   currency: string;
 };
 
-type CalendarView = "day" | "week";
-type CalendarTab = "agenda" | "availability";
-type BookingsFocus = "overview" | "availability" | "prices" | "integrations";
-
-type PositionedBooking = {
-  booking: BookingItem;
-  top: number;
-  height: number;
-  lane: number;
-  laneCount: number;
-};
-
-const buildBookingPositions = (
-  bookings: BookingItem[],
-  timezone: string,
-  dayStartHour: number,
-  dayEndHour: number,
-  minuteHeight: number,
-) => {
-  const sorted = [...bookings].sort(
-    (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-  );
-  const positioned: Array<Omit<PositionedBooking, "laneCount"> & { groupId: number }> = [];
-  const groupLaneCounts = new Map<number, number>();
-  let currentGroupId = 0;
-  let active: Array<{ end: Date; lane: number; groupId: number }> = [];
-
-  sorted.forEach((booking) => {
-    const start = new Date(booking.startsAt);
-    const timeParts = getTimeParts(start, timezone);
-    const startMinutes = timeParts.hour * 60 + timeParts.minute;
-    const endMinutes = startMinutes + booking.durationMinutes;
-    const dayStartMinutes = dayStartHour * 60;
-    const dayEndMinutes = dayEndHour * 60;
-    const clampedStart = Math.max(startMinutes, dayStartMinutes);
-    const clampedEnd = Math.min(endMinutes, dayEndMinutes);
-
-    if (clampedEnd <= clampedStart) return;
-
-    const end = new Date(start.getTime() + booking.durationMinutes * 60000);
-    active = active.filter((item) => item.end > start);
-    if (active.length === 0) {
-      currentGroupId += 1;
-    }
-    const usedLanes = new Set(active.map((item) => item.lane));
-    let lane = 0;
-    while (usedLanes.has(lane)) lane += 1;
-    active.push({ end, lane, groupId: currentGroupId });
-
-    const nextMax = Math.max(groupLaneCounts.get(currentGroupId) ?? 0, lane + 1);
-    groupLaneCounts.set(currentGroupId, nextMax);
-
-    positioned.push({
-      booking,
-      lane,
-      groupId: currentGroupId,
-      top: (clampedStart - dayStartMinutes) * minuteHeight,
-      height: Math.max(12, (clampedEnd - clampedStart) * minuteHeight),
-    });
-  });
-
-  return positioned.map((item) => ({
-    booking: item.booking,
-    lane: item.lane,
-    top: item.top,
-    height: item.height,
-    laneCount: groupLaneCounts.get(item.groupId) ?? 1,
-  }));
-};
-
-const normalizeHourHeight = (value: number) =>
-  Math.max(MIN_HOUR_HEIGHT, Math.min(MAX_HOUR_HEIGHT, Math.round(value / 4) * 4));
 
 export default function ReservasDashboardPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const bookingsFocusFromPath = useMemo<"availability" | "prices" | "integrations" | null>(() => {
-    if (!pathname) return null;
-    const match = pathname.match(/^\/org\/\d+\/bookings\/(availability|prices|integrations)(?:\/|$)/i);
-    if (!match) return null;
-    return match[1].toLowerCase() as "availability" | "prices" | "integrations";
-  }, [pathname]);
-  const bookingsFocusRaw = (bookingsFocusFromPath ?? "overview").trim().toLowerCase();
-  const bookingsFocus: BookingsFocus =
-    bookingsFocusRaw === "availability" ||
-    bookingsFocusRaw === "prices" ||
-    bookingsFocusRaw === "integrations"
-      ? bookingsFocusRaw
-      : "overview";
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
   const organizationIdFromPath = useMemo(() => {
     if (!pathname) return null;
@@ -530,16 +421,16 @@ export default function ReservasDashboardPage() {
   const organizationId = Number.isFinite(organizationIdFromQuery ?? Number.NaN)
     ? organizationIdFromQuery
     : organizationIdFromPath;
+  const operationalCalendarHref = organizationId
+    ? buildOrgHref(organizationId, "/calendar")
+    : buildOrgHubHref("/organizations");
   const orgMeUrl =
     organizationId && Number.isFinite(organizationId)
       ? `/api/org/${organizationId}/me`
       : null;
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtId, setSelectedPadelCourtId] = useState<number | null>(null);
-  const [calendarView, setCalendarView] = useState<CalendarView>("week");
-  const [calendarTab, setCalendarTab] = useState<CalendarTab>("agenda");
-  const [hourHeight, setHourHeight] = useState(() => normalizeHourHeight(DEFAULT_HOUR_HEIGHT));
-  const minuteHeight = hourHeight / 60;
+  const calendarTab = "agenda";
   const [focusDate, setFocusDate] = useState(() => new Date());
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
@@ -569,7 +460,6 @@ export default function ReservasDashboardPage() {
   const [modeSaving, setModeSaving] = useState<string | null>(null);
   const initializedRef = useRef(false);
   const serviceInitRef = useRef(false);
-  const bookingsFocusInitRef = useRef<BookingsFocus | null>(null);
   const [createSlot, setCreateSlot] = useState<Date | null>(null);
   const [createServiceId, setCreateServiceId] = useState<number | null>(null);
   const [createClient, setCreateClient] = useState<ClientItem | null>(null);
@@ -592,7 +482,6 @@ export default function ReservasDashboardPage() {
   const [delayNotifyWindow, setDelayNotifyWindow] = useState("24");
   const [delaySaving, setDelaySaving] = useState(false);
   const [delayError, setDelayError] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
   const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
   const [serviceTitle, setServiceTitle] = useState("");
   const [serviceDescription, setServiceDescription] = useState("");
@@ -600,9 +489,6 @@ export default function ReservasDashboardPage() {
   const [servicePrice, setServicePrice] = useState("20");
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceError, setServiceError] = useState<string | null>(null);
-  const calendarScrollRef = useRef<HTMLDivElement | null>(null);
-  const lastMinuteHeightRef = useRef(minuteHeight);
-  const scrollInitRef = useRef(false);
   const splitInitRef = useRef<number | null>(null);
   const splitDirtyRef = useRef(false);
   const [splitState, setSplitState] = useState<SplitState | null>(null);
@@ -885,10 +771,6 @@ export default function ReservasDashboardPage() {
   }, [checkout?.clientSecret]);
 
   useEffect(() => {
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
     if (assignmentMode === "RESOURCE" && canFilterByResource) {
       setFilterMode("RESOURCE");
       return;
@@ -934,42 +816,6 @@ export default function ReservasDashboardPage() {
   }, [assignmentMode, canFilterByProfessional, canFilterByResource, searchParams]);
 
   useEffect(() => {
-    const calendarTabFromPath = pathname?.match(/^\/org\/\d+\/bookings\/availability(?:\/|$)/i)
-      ? "availability"
-      : "agenda";
-    setCalendarTab(calendarTabFromPath);
-    const view = searchParams.get("view");
-    if (view === "day" || view === "week") {
-      setCalendarView(view);
-    }
-  }, [pathname, searchParams]);
-
-  useEffect(() => {
-    scrollInitRef.current = false;
-  }, [calendarTab, calendarView]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    const container = calendarScrollRef.current;
-    if (!container) return;
-    if (!scrollInitRef.current) {
-      container.scrollTop = DEFAULT_VIEW_START_HOUR * hourHeight;
-      scrollInitRef.current = true;
-    }
-  }, [calendarTab, calendarView, hourHeight, hydrated]);
-
-  useEffect(() => {
-    const container = calendarScrollRef.current;
-    if (!container) return;
-    const previous = lastMinuteHeightRef.current;
-    if (previous && previous !== minuteHeight) {
-      const minutes = container.scrollTop / previous;
-      container.scrollTop = minutes * minuteHeight;
-    }
-    lastMinuteHeightRef.current = minuteHeight;
-  }, [minuteHeight]);
-
-  useEffect(() => {
     const createParam = searchParams.get("create");
     if (createParam === "service") {
       if (serviceInitRef.current) return;
@@ -979,14 +825,6 @@ export default function ReservasDashboardPage() {
     }
     serviceInitRef.current = false;
   }, [searchParams]);
-
-  useEffect(() => {
-    if (bookingsFocusInitRef.current === bookingsFocus) return;
-    bookingsFocusInitRef.current = bookingsFocus;
-    if (bookingsFocus === "prices") {
-      showServiceDrawerRef.current();
-    }
-  }, [bookingsFocus]);
 
   useEffect(() => {
     if (!createSlot) return;
@@ -1050,30 +888,14 @@ export default function ReservasDashboardPage() {
     };
   }, [clientQuery, createSlot]);
 
-  const calendarStart = useMemo(() => {
-    return calendarView === "week" ? getWeekStart(focusDate, timezone) : buildZonedDate(getDateParts(focusDate, timezone), timezone, 0, 0);
-  }, [calendarView, focusDate, timezone]);
-
-  const calendarDays = useMemo(() => {
-    const count = calendarView === "week" ? 7 : 1;
-    const startParts = getDateParts(calendarStart, timezone);
-    return Array.from({ length: count }, (_, idx) =>
-      buildZonedDate(addDaysToParts(startParts, idx), timezone, 0, 0),
-    );
-  }, [calendarStart, calendarView, timezone]);
-  const placeholderDays = useMemo(
-    () =>
-      Array.from({ length: calendarView === "week" ? 7 : 1 }, () => PLACEHOLDER_DAY),
-    [calendarView],
-  );
-  const calendarDaysToRender = hydrated ? calendarDays : placeholderDays;
+  const calendarStart = useMemo(() => getWeekStart(focusDate, timezone), [focusDate, timezone]);
 
   const rangeStartIso = calendarStart.toISOString();
   const rangeEndIso = useMemo(() => {
     const startParts = getDateParts(calendarStart, timezone);
-    const endParts = addDaysToParts(startParts, calendarView === "week" ? 7 : 1);
+    const endParts = addDaysToParts(startParts, 7);
     return buildZonedDate(endParts, timezone, 0, 0).toISOString();
-  }, [calendarStart, calendarView, timezone]);
+  }, [calendarStart, timezone]);
 
   const requiresPadelClubSelection = hasPadelClubs && !selectedPadelClubId;
   const padelClubQuery = selectedPadelClubId ? `&padelClubId=${selectedPadelClubId}` : "";
@@ -1225,61 +1047,7 @@ export default function ReservasDashboardPage() {
     });
   }, [filterMode, bookings, selectedProfessionalId, selectedResourceId]);
 
-  const availabilityScope = useMemo(() => {
-    if (filterMode === "PROFESSIONAL") {
-      const resolvedProfessionalId =
-        selectedProfessionalId ?? (isStaffMember ? activeProfessionals[0]?.id ?? null : null);
-      if (resolvedProfessionalId) {
-        return {
-          scopeType: "PROFESSIONAL" as const,
-          scopeId: resolvedProfessionalId,
-          title: "Disponibilidade do profissional",
-          subtitle: "Ajusta os blocos do colaborador selecionado.",
-        };
-      }
-    }
-    if (filterMode === "RESOURCE" && selectedResourceId) {
-      return {
-        scopeType: "RESOURCE" as const,
-        scopeId: selectedResourceId,
-        title: "Disponibilidade do recurso",
-        subtitle: "Ajusta os blocos do recurso selecionado.",
-      };
-    }
-    return {
-      scopeType: "ORGANIZATION" as const,
-      scopeId: null,
-      title: "Disponibilidade semanal",
-      subtitle: "Define os blocos base da agenda.",
-    };
-  }, [filterMode, selectedProfessionalId, selectedResourceId, isStaffMember, activeProfessionals]);
-
-  const calendarStartHour = CALENDAR_FULL_START_HOUR;
-  const calendarEndHour = CALENDAR_FULL_END_HOUR;
-  const calendarViewportHeight = hourHeight * DEFAULT_VIEW_HOURS;
-
-  const bookingsByDay = useMemo(() => {
-    if (!hydrated) return new Map<string, PositionedBooking[]>();
-    const map = new Map<string, PositionedBooking[]>();
-    calendarDays.forEach((day) => {
-      const dayKey = getDayKey(day, timezone);
-      const dayBookings = filteredBookings.filter((booking) =>
-        isSameDay(new Date(booking.startsAt), day, timezone),
-      );
-      map.set(
-        dayKey,
-        buildBookingPositions(dayBookings, timezone, calendarStartHour, calendarEndHour, minuteHeight),
-      );
-    });
-    return map;
-  }, [calendarDays, filteredBookings, timezone, calendarStartHour, calendarEndHour, hydrated, minuteHeight]);
-
-  const now = hydrated ? new Date() : PLACEHOLDER_DAY;
-  const isTodayInView = hydrated && calendarDays.some((day) => isSameDay(day, now, timezone));
-  const nowTimeParts = hydrated ? getTimeParts(now, timezone) : { hour: 0, minute: 0 };
-  const todayTop = hydrated
-    ? (nowTimeParts.hour * 60 + nowTimeParts.minute - calendarStartHour * 60) * minuteHeight
-    : 0;
+  const now = new Date();
 
   const upcomingBookings = useMemo(() => {
     const items = (upcomingData?.items ?? []).filter((booking) => {
@@ -1308,14 +1076,10 @@ export default function ReservasDashboardPage() {
     ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status),
   ).length;
 
-  const rangeLabel = hydrated
-    ? calendarView === "day"
-      ? formatLongDate(calendarStart, timezone)
-      : `${formatRangeDate(calendarStart, timezone)} — ${formatRangeDate(
-          buildZonedDate(addDaysToParts(getDateParts(calendarStart, timezone), 6), timezone, 0, 0),
-          timezone,
-        )}`
-    : "—";
+  const rangeLabel = `${formatRangeDate(calendarStart, timezone)} — ${formatRangeDate(
+    buildZonedDate(addDaysToParts(getDateParts(calendarStart, timezone), 6), timezone, 0, 0),
+    timezone,
+  )}`;
 
   const drawerBookingClosed = drawerBooking
     ? ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
@@ -1409,9 +1173,8 @@ export default function ReservasDashboardPage() {
     drawerBookingClosed || (splitState ? splitState.paidCents > 0 || splitState.status === "SETTLED" : false);
 
   const handleShiftRange = (direction: -1 | 1) => {
-    const delta = calendarView === "week" ? 7 : 1;
     const baseParts = getDateParts(focusDate, timezone);
-    const nextParts = addDaysToParts(baseParts, delta * direction);
+    const nextParts = addDaysToParts(baseParts, 7 * direction);
     setFocusDate(buildZonedDate(nextParts, timezone, 12, 0));
   };
 
@@ -1840,22 +1603,25 @@ export default function ReservasDashboardPage() {
     setPaymentError(null);
   };
 
-  const handleEmptySlotClick = (event: MouseEvent<HTMLDivElement>, day: Date) => {
-    if (calendarTab !== "agenda") return;
-    const target = event.target as HTMLElement | null;
-    if (target?.closest("[data-booking]")) return;
+  const handleQuickCreateBooking = () => {
+    const nowDate = new Date();
+    const dayParts = getDateParts(nowDate, timezone);
+    const timeParts = getTimeParts(nowDate, timezone);
+    const nextBucketMinute = Math.ceil((timeParts.hour * 60 + timeParts.minute + 5) / 15) * 15;
+    const carryDay = nextBucketMinute >= 24 * 60;
+    const targetDay = carryDay ? addDaysToParts(dayParts, 1) : dayParts;
+    const minuteOfDay = carryDay ? nextBucketMinute - 24 * 60 : nextBucketMinute;
+    const startsAt = buildZonedDate(
+      targetDay,
+      timezone,
+      Math.floor(minuteOfDay / 60),
+      minuteOfDay % 60,
+    );
 
-    const rect = event.currentTarget.getBoundingClientRect();
-    const offsetY = event.clientY - rect.top;
-    const totalMinutes = (calendarEndHour - calendarStartHour) * 60;
-    let minutes = Math.floor(offsetY / minuteHeight);
-    minutes = Math.max(0, Math.min(totalMinutes - 15, minutes));
-    minutes = Math.floor(minutes / 15) * 15;
-    const hour = calendarStartHour + Math.floor(minutes / 60);
-    const minute = minutes % 60;
-    const dayParts = getDateParts(day, timezone);
-    const startsAt = makeUtcDateFromLocal({ ...dayParts, hour, minute }, timezone);
-    if (startsAt <= new Date()) return;
+    if (startsAt <= nowDate) {
+      openCreateDrawer(new Date(nowDate.getTime() + 15 * 60 * 1000));
+      return;
+    }
     openCreateDrawer(startsAt);
   };
 
@@ -1963,24 +1729,20 @@ export default function ReservasDashboardPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-calendar-tab={calendarTab}>
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className={DASHBOARD_LABEL}>Reservas</p>
-            <h1 className={DASHBOARD_TITLE}>Agenda</h1>
-            <p className={DASHBOARD_MUTED}>Gestão central de marcações, serviços e disponibilidade.</p>
-            {bookingsFocus !== "overview" && (
-              <p className="mt-1 text-[12px] text-white/65">
-                {bookingsFocus === "availability"
-                  ? "Subnavegação: Disponibilidade."
-                  : bookingsFocus === "prices"
-                    ? "Subnavegação: Preços e serviços."
-                    : "Subnavegação: Integrações."}
-              </p>
-            )}
+            <h1 className="text-xl font-semibold text-white">Operações de reservas</h1>
+            <p className={DASHBOARD_MUTED}>
+              Setup e ações transacionais. O calendário operacional foi consolidado na ferramenta Calendário.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link href={operationalCalendarHref} className={CTA_SECONDARY}>
+              Abrir calendário operacional
+            </Link>
             <button type="button" className={CTA_PRIMARY} onClick={showServiceDrawer}>
               Novo serviço
             </button>
@@ -2022,43 +1784,12 @@ export default function ReservasDashboardPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            {calendarTab === "agenda" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setCalendarView("day")}
-                  className={cn(
-                    CHIP_BASE,
-                    calendarView === "day" && CHIP_ACTIVE,
-                  )}
-                >
-                  Dia
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCalendarView("week")}
-                  className={cn(
-                    CHIP_BASE,
-                    calendarView === "week" && CHIP_ACTIVE,
-                  )}
-                >
-                  Semana
-                </button>
-              </>
-            )}
-            <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-              <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Zoom</span>
-              <input
-                type="range"
-                min={MIN_HOUR_HEIGHT}
-                max={MAX_HOUR_HEIGHT}
-                step={4}
-                value={hourHeight}
-                onChange={(event) => setHourHeight(normalizeHourHeight(Number(event.target.value)))}
-                className="h-1 w-24 cursor-pointer accent-white/70"
-                aria-label="Zoom do calendário"
-              />
-            </div>
+            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
+              Agenda operacional disponível em Calendário
+            </span>
+            <button type="button" onClick={handleQuickCreateBooking} className={CHIP_BASE}>
+              Nova reserva
+            </button>
           </div>
 
           {isStaffMember ? (
@@ -2234,229 +1965,35 @@ export default function ReservasDashboardPage() {
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className={cn(calendarTab === "availability" ? "" : DASHBOARD_CARD, calendarTab === "availability" ? "" : "p-4")}> 
-          {calendarTab === "availability" ? (
-            <AvailabilityEditor
-              scopeType={availabilityScope.scopeType}
-              scopeId={availabilityScope.scopeId ?? undefined}
-              title={availabilityScope.title}
-              subtitle={availabilityScope.subtitle}
-              hourHeight={hourHeight}
-            />
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                <h2 className="text-sm font-semibold text-white/90 tracking-[0.02em]">Calendário</h2>
-                  <p className={DASHBOARD_MUTED}>
-                    Arrasta para explorar a semana. Visível 09:00–19:00 (scroll para o resto do dia).
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-white/55">
-                    <span className="inline-flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                      Confirmada
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-amber-300" />
-                      Pendente
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-red-400" />
-                      Cancelada/Conflito
-                    </span>
-                  </div>
-                </div>
-                <div className="text-[12px] text-white/60">
-                  {bookingsLoading ? "A carregar..." : `${filteredBookings.length} reservas visíveis`}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-white/12 bg-[linear-gradient(165deg,rgba(255,255,255,0.08),rgba(255,255,255,0.01))] shadow-[0_30px_90px_rgba(3,8,20,0.55)] backdrop-blur-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <div className="min-w-[840px]">
-                    <div
-                      className="grid gap-1 sticky top-0 z-30 border-b border-white/10 bg-[rgba(6,10,20,0.86)] backdrop-blur-xl"
-                      style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}
-                    >
-                      <div className="sticky left-0 z-30 h-11 rounded-tl-2xl border-r border-white/10 bg-[rgba(6,10,20,0.86)] backdrop-blur-xl" />
-                      <div className={cn("grid gap-1", calendarView === "week" ? "grid-cols-7" : "grid-cols-1")}>
-                        {calendarDaysToRender.map((day, idx) => {
-                          const isToday = hydrated && isSameDay(day, now, timezone);
-                          const label = hydrated
-                            ? new Intl.DateTimeFormat("pt-PT", {
-                                weekday: "short",
-                                day: "2-digit",
-                                month: "short",
-                                timeZone: timezone,
-                              }).format(day)
-                            : "—";
-                          return (
-                            <div
-                              key={`header-${idx}`}
-                              className={cn(
-                                "flex h-11 items-center justify-center rounded-t-lg rounded-b-none border border-white/10 border-b-0 bg-white/[0.06] px-3 py-0 text-[11px] font-semibold text-white/70 shadow-[0_10px_26px_rgba(0,0,0,0.22)]",
-                                isToday
-                                  ? "border-[#6BFFFF]/30 bg-[linear-gradient(135deg,rgba(107,255,255,0.24),rgba(106,123,255,0.14))] text-white"
-                                  : "hover:border-white/15 hover:text-white/80",
-                              )}
-                            >
-                              {label}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div
-                      ref={calendarScrollRef}
-                      className="overflow-y-auto orya-scrollbar-hide"
-                      style={{ height: calendarViewportHeight, maxHeight: "calc(100vh - 320px)" }}
-                    >
-                      <div className="grid gap-1" style={{ gridTemplateColumns: "72px minmax(0,1fr)" }}>
-                        <div
-                          className="sticky left-0 z-20 relative border-r border-white/8 bg-[rgba(6,10,20,0.7)] backdrop-blur-xl"
-                          style={{
-                            height: (calendarEndHour - calendarStartHour) * hourHeight,
-                            backgroundImage:
-                              "linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)",
-                            backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
-                            backgroundPosition: "0 0, 0 0",
-                          }}
-                        >
-                          {Array.from({ length: calendarEndHour - calendarStartHour }, (_, idx) => {
-                            const hour = calendarStartHour + idx;
-                            const top = (hour - calendarStartHour) * hourHeight;
-                            const labelClass =
-                              hour === calendarStartHour
-                                ? "absolute right-2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40"
-                                : "absolute right-2 -translate-y-1/2 text-[10px] font-mono leading-none tracking-[0.12em] text-white/40";
-                            return (
-                              <div
-                                key={`time-${hour}`}
-                                className={labelClass}
-                                style={{ top }}
-                              >
-                                {String(hour).padStart(2, "0")}:00
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        <div className={cn("grid gap-1", calendarView === "week" ? "grid-cols-7" : "grid-cols-1")}>
-                          {calendarDaysToRender.map((day, idx) => {
-                            const dayKey = getDayKey(day, timezone);
-                            const positions = bookingsByDay.get(dayKey) ?? [];
-                            const isToday = hydrated && isSameDay(day, now, timezone);
-                            return (
-                              <div
-                                key={`day-${idx}`}
-                                className={cn(
-                                  "relative rounded-b-xl rounded-t-none border border-white/10 border-t-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]",
-                                  "cursor-pointer",
-                                  isToday && "ring-1 ring-inset ring-[#6BFFFF]/20",
-                                )}
-                                style={{
-                                  height: (calendarEndHour - calendarStartHour) * hourHeight,
-                                  backgroundImage:
-                                    "linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px)",
-                                  backgroundSize: `100% ${hourHeight / 4}px, 100% ${hourHeight}px`,
-                                  backgroundPosition: "0 0, 0 0",
-                                }}
-                                onClick={(event) => handleEmptySlotClick(event, day)}
-                              >
-                                {isToday && (
-                                  <div className="pointer-events-none absolute inset-0 rounded-xl bg-[linear-gradient(180deg,rgba(107,255,255,0.08),rgba(106,123,255,0.02),rgba(106,123,255,0.01))]" />
-                                )}
-                                {hydrated &&
-                                  isToday &&
-                                  isTodayInView &&
-                                  todayTop >= 0 &&
-                                  todayTop <= (calendarEndHour - calendarStartHour) * hourHeight && (
-                                    <div className="pointer-events-none absolute left-0 right-0 z-10 flex items-center gap-2" style={{ top: todayTop }}>
-                                      <span className="h-[1px] flex-1 bg-red-400/70" />
-                                      <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] text-white">
-                                        Agora
-                                      </span>
-                                    </div>
-                                  )}
-                                {positions.map((item) => {
-                                  const start = new Date(item.booking.startsAt);
-                                  const end = new Date(start.getTime() + item.booking.durationMinutes * 60000);
-                                  const estimatedStart = item.booking.estimatedStartsAt
-                                    ? new Date(item.booking.estimatedStartsAt)
-                                    : null;
-                                  const showEstimate =
-                                    estimatedStart && estimatedStart.getTime() !== start.getTime();
-                                  const assignedLabel =
-                                    item.booking.professional?.name || item.booking.resource?.label || null;
-                                  const width = 100 / item.laneCount;
-                                  const left = item.lane * width;
-                                  const isCancelled = ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
-                                    item.booking.status,
-                                  );
-                                  const statusTone =
-                                    item.booking.status === "CONFIRMED" || item.booking.status === "COMPLETED"
-                                      ? "border-emerald-300/50 bg-[linear-gradient(135deg,rgba(16,185,129,0.3),rgba(16,185,129,0.12))]"
-                                      : item.booking.status === "PENDING_CONFIRMATION" || item.booking.status === "PENDING"
-                                        ? "border-amber-200/60 bg-[linear-gradient(135deg,rgba(251,191,36,0.26),rgba(251,191,36,0.08))]"
-                                        : item.booking.status === "DISPUTED" || isCancelled
-                                          ? "border-rose-300/60 bg-[linear-gradient(135deg,rgba(244,63,94,0.24),rgba(244,63,94,0.06))]"
-                                          : "border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03))]";
-                                  return (
-                                    <button
-                                      key={item.booking.id}
-                                      type="button"
-                                      data-booking
-                                      className={cn(
-                                        "absolute rounded-xl border px-3 py-2 text-left text-[11px] text-white shadow-[0_18px_40px_rgba(0,0,0,0.5)] backdrop-blur-2xl",
-                                        statusTone,
-                                      )}
-                                      style={{
-                                        top: item.top,
-                                        height: item.height,
-                                        left: `calc(${left}% + 4px)`,
-                                        width: `calc(${width}% - 8px)`,
-                                      }}
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        closeCreateDrawer();
-                                        setDrawerBooking(item.booking);
-                                      }}
-                                    >
-                                      <div className="font-semibold">
-                                        {formatTimeLabel(start, timezone)} · {item.booking.service?.title || "Serviço"}
-                                      </div>
-                                      <div className="text-[10px] text-white/70">
-                                        {formatTimeLabel(start, timezone)}–{formatTimeLabel(end, timezone)}
-                                      </div>
-                                      {showEstimate && (
-                                        <div className="text-[10px] text-amber-100/80">
-                                          Estimado {formatTimeLabel(estimatedStart, timezone)}
-                                        </div>
-                                      )}
-                                      {assignedLabel && (
-                                        <div className="text-[10px] text-white/60">{assignedLabel}</div>
-                                      )}
-                                      <div className="text-[10px] text-white/70">
-                                        {item.booking.user?.fullName || item.booking.user?.username || "Cliente"}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                                {!bookingsLoading && positions.length === 0 && (
-                                  <p className="absolute left-2 top-2 text-[11px] text-white/35">Sem reservas</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        <section className={cn(DASHBOARD_CARD, "p-4")}>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-cyan-300/30 bg-[linear-gradient(140deg,rgba(34,211,238,0.16),rgba(59,130,246,0.1))] p-4">
+              <h2 className="text-sm font-semibold text-cyan-50">Calendário operacional centralizado</h2>
+              <p className="mt-1 text-sm text-cyan-100/90">
+                A grelha operacional foi removida desta página para evitar duplicação e inconsistência.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white/85">
+                  {bookingsLoading ? "A carregar..." : `${filteredBookings.length} reservas no intervalo`}
+                </span>
+                <Link href={operationalCalendarHref} className={CTA_PRIMARY}>
+                  Abrir calendário operacional
+                </Link>
+                <button type="button" onClick={handleQuickCreateBooking} className={CTA_SECONDARY}>
+                  Nova reserva
+                </button>
               </div>
             </div>
-          )}
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+              <h3 className="text-sm font-semibold text-white">O que fica em Reservas</h3>
+              <ul className="mt-2 space-y-1 text-[12px] text-white/70">
+                <li>Serviços, profissionais, recursos e clientes.</li>
+                <li>Ações transacionais: cancelar, reagendar, no-show, split, checkout.</li>
+                <li>Configuração de disponibilidade em /bookings/availability.</li>
+              </ul>
+            </div>
+          </div>
         </section>
 
         <aside className="space-y-4">
@@ -2557,8 +2094,8 @@ export default function ReservasDashboardPage() {
               </button>
             </div>
             <div className="grid gap-2 text-[12px]">
-              <Link href={appendOrganizationIdToHref("/org/bookings", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
-                Agenda principal
+              <Link href={appendOrganizationIdToHref("/org/calendar", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
+                Calendário operacional
               </Link>
               {canFilterByProfessional && (
                 <Link
@@ -2581,9 +2118,6 @@ export default function ReservasDashboardPage() {
                 className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
               >
                 Editar disponibilidade
-              </Link>
-              <Link href={appendOrganizationIdToHref("/org/bookings/policies", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
-                Politicas de cancelamento
               </Link>
             </div>
           </section>

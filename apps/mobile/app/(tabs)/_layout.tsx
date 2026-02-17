@@ -1,7 +1,7 @@
 import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 import { FloatingTabBar, TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
@@ -12,6 +12,10 @@ import { useFavoritesSync } from "../../features/favorites/hooks";
 import { CachedProfile, getProfileCache, setProfileCache } from "../../lib/profileCache";
 import { TAB_ORDER, type TabKey } from "../../components/navigation/tabOrder";
 import { useTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
+import { LocationPermissionModal } from "../../components/location/LocationPermissionModal";
+import { getLocationPermissionState, requestLocationConsent } from "../../lib/locationConsent";
+import { hasSeenLocationPrompt, markLocationPromptSeen } from "../../lib/locationPromptState";
+import { useTranslation } from "@orya/shared";
 import {
   createMaterialTopTabNavigator,
   type MaterialTopTabBarProps,
@@ -29,6 +33,7 @@ const ExpoTopTabs = withLayoutContext<
 >(MaterialTopTabs.Navigator);
 
 export default function TabsLayout() {
+  const { t } = useTranslation();
   const { loading, session } = useAuth();
   const profileQuery = useProfileSummary(
     Boolean(session),
@@ -38,6 +43,10 @@ export default function TabsLayout() {
   const [localOnboardingDone, setLocalOnboardingDone] = useState<boolean | null>(null);
   const [hasDraft, setHasDraft] = useState<boolean | null>(null);
   const [cachedProfile, setCachedProfileState] = useState<CachedProfile | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [locationModalBusy, setLocationModalBusy] = useState(false);
+  const [locationModalError, setLocationModalError] = useState<string | null>(null);
+  const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
 
   useEffect(() => {
     let mounted = true;
@@ -95,6 +104,70 @@ export default function TabsLayout() {
   });
 
   useFavoritesSync(Boolean(session?.user?.id) && gateStatus === "ready");
+
+  useEffect(() => {
+    let mounted = true;
+    const userId = session?.user?.id ?? null;
+    if (gateStatus !== "ready" || !userId) return () => undefined;
+    hasSeenLocationPrompt(userId)
+      .then(async (seen) => {
+        if (!mounted || seen) return;
+        const permissionState = await getLocationPermissionState();
+        if (!mounted) return;
+        if (permissionState.permissionStatus === "granted") return;
+        setLocationCanAskAgain(permissionState.canAskAgain);
+        setLocationModalError(null);
+        setLocationModalVisible(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [gateStatus, session?.user?.id]);
+
+  const handleLocationAllow = useCallback(async () => {
+    if (locationModalBusy) return;
+    markLocationPromptSeen(session?.user?.id ?? null).catch(() => undefined);
+    setLocationModalBusy(true);
+    setLocationModalError(null);
+    try {
+      const result = await requestLocationConsent({
+        intent: "allow",
+        accessToken: session?.access_token ?? null,
+      });
+      setLocationCanAskAgain(result.canAskAgain);
+      setLocationModalVisible(false);
+    } catch (error) {
+      console.warn("Location modal allow failed", error);
+      setLocationModalError(t("onboarding:errors.locationFailed"));
+    } finally {
+      setLocationModalBusy(false);
+    }
+  }, [locationModalBusy, session?.access_token, session?.user?.id, t]);
+
+  const handleLocationSkip = useCallback(async () => {
+    if (locationModalBusy) return;
+    markLocationPromptSeen(session?.user?.id ?? null).catch(() => undefined);
+    setLocationModalBusy(true);
+    setLocationModalError(null);
+    try {
+      await requestLocationConsent({
+        intent: "skip",
+        accessToken: session?.access_token ?? null,
+      });
+      setLocationModalVisible(false);
+    } catch {
+      setLocationModalVisible(false);
+    } finally {
+      setLocationModalBusy(false);
+    }
+  }, [locationModalBusy, session?.access_token, session?.user?.id]);
+
+  const handleLocationOpenSettings = useCallback(() => {
+    markLocationPromptSeen(session?.user?.id ?? null).catch(() => undefined);
+    setLocationModalVisible(false);
+    Linking.openSettings().catch(() => undefined);
+  }, [session?.user?.id]);
 
   const { isBlocked } = useTabSwipeBlocker();
   const renderLazyPlaceholder = useCallback(
@@ -216,6 +289,15 @@ export default function TabsLayout() {
         <ExpoTopTabs.Screen name="profile" options={{ title: "Perfil" }} />
         <ExpoTopTabs.Screen name="index" options={{ title: "Descobrir" }} />
       </ExpoTopTabs>
+      <LocationPermissionModal
+        visible={locationModalVisible}
+        busy={locationModalBusy}
+        errorMessage={locationModalError}
+        canAskAgain={locationCanAskAgain}
+        onAllow={handleLocationAllow}
+        onSkip={handleLocationSkip}
+        onOpenSettings={handleLocationOpenSettings}
+      />
     </View>
   );
 }

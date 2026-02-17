@@ -1,6 +1,4 @@
-export type CalendarScopeMode = "exclusive" | "hybrid";
-
-export type CalendarEntityKind = "PROFESSIONAL" | "RESOURCE" | "COURT";
+export type CalendarEntityKind = "PROFESSIONAL" | "RESOURCE" | "COURT" | "GENERAL";
 
 export type CalendarEventKind = "EVENT" | "TOURNAMENT" | "RESERVATION";
 

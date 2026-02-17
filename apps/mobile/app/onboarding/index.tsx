@@ -17,13 +17,11 @@ import {
 } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import * as Location from "expo-location";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { tokens, useTranslation } from "@orya/shared";
 import { AuthBackground } from "../../components/liquid/AuthBackground";
 import { GlassCard } from "../../components/auth/GlassCard";
 import { PrimaryButton } from "../../components/onboarding/PrimaryButton";
-import { SecondaryButton } from "../../components/onboarding/SecondaryButton";
 import { StepProgress } from "../../components/onboarding/StepProgress";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { useAuth } from "../../lib/auth";
@@ -53,10 +51,8 @@ import {
   checkUsernameAvailability,
   type UsernameAvailabilityResult,
   saveBasicProfile,
-  saveLocationConsent,
   savePadelOnboarding,
 } from "../../features/onboarding/api";
-import { useIpLocation } from "../../features/onboarding/hooks";
 import type { ProfileSummary } from "../../features/profile/types";
 import { setProfileCache } from "../../lib/profileCache";
 
@@ -76,7 +72,6 @@ const STEP_ICONS: Record<OnboardingStep, string> = {
   basic: "person-circle",
   interests: "sparkles",
   padel: "tennisball",
-  location: "location",
 };
 
 const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
@@ -87,17 +82,16 @@ const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
     case 1:
       return "interests";
     case 2:
-      return hasPadel ? "padel" : "location";
+      return hasPadel ? "padel" : "interests";
     case 3:
     case 4:
-      return "location";
+      return hasPadel ? "padel" : "interests";
     default:
       return "basic";
   }
 };
 
 const NETWORK_TIMEOUT_MS = 10_000;
-const LOCATION_TIMEOUT_MS = 8_000;
 
 const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout") => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -131,7 +125,6 @@ export default function OnboardingScreen() {
   const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
   const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
   const nameInputRef = useRef<TextInput>(null);
   const usernameInputRef = useRef<TextInput>(null);
   const [loadingDraft, setLoadingDraft] = useState(true);
@@ -148,7 +141,6 @@ export default function OnboardingScreen() {
     promise: Promise<UsernameAvailabilityResult>;
     requestId: number;
   } | null>(null);
-  const locationRequestIdRef = useRef(0);
   const didApplyStartRef = useRef(false);
   const stepTransition = useRef(new Animated.Value(1)).current;
 
@@ -214,7 +206,7 @@ export default function OnboardingScreen() {
 
   const padelSelected = interests.includes("padel");
   const steps = useMemo<OnboardingStep[]>(
-    () => (padelSelected ? ["basic", "interests", "padel", "location"] : ["basic", "interests", "location"]),
+    () => (padelSelected ? ["basic", "interests", "padel"] : ["basic", "interests"]),
     [padelSelected],
   );
   const stepIndex = Math.max(0, steps.indexOf(step));
@@ -233,21 +225,10 @@ export default function OnboardingScreen() {
 
   const saveBasicMutation = useMutation({ mutationFn: saveBasicProfile, retry: 1 });
   const savePadelMutation = useMutation({ mutationFn: savePadelOnboarding, retry: 1 });
-  const saveConsentMutation = useMutation({ mutationFn: saveLocationConsent, retry: 1 });
-  const ipLocationQuery = useIpLocation(step === "location");
-  const locationPreview = useMemo(() => {
-    const data = ipLocationQuery.data;
-    if (!data) return null;
-    const segments = [data.city, data.region, data.country].filter(
-      (part): part is string => typeof part === "string" && part.trim().length > 0,
-    );
-    if (segments.length === 0) return null;
-    return segments.join(", ");
-  }, [ipLocationQuery.data]);
 
   useEffect(() => {
     if (padelSelected) return;
-    if (step === "padel") setStep("location");
+    if (step === "padel") setStep("interests");
     setPadelGender(null);
     setPadelSide(null);
     setPadelLevel(null);
@@ -504,7 +485,7 @@ export default function OnboardingScreen() {
     }
   };
 
-  const finalizeOnboarding = async (location?: { consent?: "GRANTED" | "DENIED" }) => {
+  const finalizeOnboarding = async () => {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
@@ -536,21 +517,6 @@ export default function OnboardingScreen() {
           NETWORK_TIMEOUT_MS,
           "save_padel_timeout",
         );
-      }
-      if (location?.consent) {
-        try {
-          await withTimeout(
-            saveConsentMutation.mutateAsync({
-              consent: location.consent,
-              preferredGranularity: location.consent === "GRANTED" ? "COARSE" : undefined,
-              accessToken,
-            }),
-            NETWORK_TIMEOUT_MS,
-            "save_consent_timeout",
-          );
-        } catch (err) {
-          console.warn("Location consent save failed", err);
-        }
       }
       updateProfileCache({
         fullName: fullName.trim(),
@@ -635,7 +601,11 @@ export default function OnboardingScreen() {
     setSavingStep("interests");
     try {
       await persistDraft({ step: 2, interests });
-      setStep(padelSelected ? "padel" : "location");
+      if (padelSelected) {
+        setStep("padel");
+      } else {
+        await finalizeOnboarding();
+      }
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
@@ -667,7 +637,7 @@ export default function OnboardingScreen() {
           skipped: false,
         },
       });
-      setStep("location");
+      await finalizeOnboarding();
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
@@ -699,7 +669,7 @@ export default function OnboardingScreen() {
           skipped: true,
         },
       });
-      setStep("location");
+      await finalizeOnboarding();
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
@@ -715,48 +685,6 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleLocationFlow = async (intent: "allow" | "skip") => {
-    const requestId = ++locationRequestIdRef.current;
-    const isActive = () => requestId === locationRequestIdRef.current;
-    setLocationError(null);
-    setSavingStep("location");
-    try {
-      let consent: "GRANTED" | "DENIED" = "DENIED";
-      let source: "GPS" | "IP" = "IP";
-
-      if (intent === "allow") {
-        const permission = await withTimeout(
-          Location.requestForegroundPermissionsAsync(),
-          LOCATION_TIMEOUT_MS,
-          "permission_timeout",
-        );
-        if (!isActive()) return;
-        if (permission.status === Location.PermissionStatus.GRANTED) {
-          consent = "GRANTED";
-          source = "GPS";
-        }
-      }
-
-      await persistDraft({
-        step: 4,
-        location: { source, consent },
-      });
-      if (!isActive()) return;
-      await finalizeOnboarding({ consent });
-    } catch (err: any) {
-      if (!isActive()) return;
-      const rawMessage = err?.message ?? "location_error";
-      console.warn("Location flow error", rawMessage, err);
-      if (typeof rawMessage === "string" && (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED"))) {
-        await handleAuthError();
-        return;
-      }
-      setLocationError(t("onboarding:errors.locationFailed"));
-    } finally {
-      if (isActive()) setSavingStep(null);
-    }
-  };
-
   const toggleInterest = (interest: InterestId) => {
     setInterests((prev) => {
       if (prev.includes(interest)) return prev.filter((item) => item !== interest);
@@ -769,10 +697,6 @@ export default function OnboardingScreen() {
     if (savingStep) return;
     const prev = steps[stepIndex - 1];
     if (prev) {
-      if (step === "location") {
-        locationRequestIdRef.current += 1;
-        setSavingStep(null);
-      }
       setStep(prev);
       return;
     }
@@ -908,8 +832,12 @@ export default function OnboardingScreen() {
 
   const renderInterestsStep = () => (
     <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>{t("onboarding:interests.title")}</Text>
-      <Text style={styles.cardSubtitle}>{t("onboarding:interests.subtitle")}</Text>
+      <Text style={[styles.cardTitle, styles.interestsTitle]}>
+        {t("onboarding:interests.title")}
+      </Text>
+      <Text style={[styles.cardSubtitle, styles.interestsSubtitle]}>
+        {t("onboarding:interests.subtitle")}
+      </Text>
 
       <View style={styles.interestGrid}>
         {INTEREST_OPTIONS.map((interest, idx) => {
@@ -941,11 +869,6 @@ export default function OnboardingScreen() {
               accessibilityLabel={interestLabel}
               accessibilityState={{ selected: active, disabled }}
             >
-              {active ? (
-                <View style={styles.interestCheck}>
-                  <Ionicons name="checkmark" size={12} color="#0b0f17" />
-                </View>
-              ) : null}
               <View style={[styles.interestIcon, active ? styles.interestIconActive : null]}>
                 <Ionicons
                   name={INTEREST_ICONS[interest.id]}
@@ -1084,66 +1007,6 @@ export default function OnboardingScreen() {
     </GlassCard>
   );
 
-  const renderLocationStep = () => (
-    <GlassCard style={styles.card} contentStyle={styles.cardContent}>
-      <Text style={styles.cardTitle}>{t("onboarding:location.title")}</Text>
-      <Text style={styles.cardSubtitle}>{t("onboarding:location.subtitle")}</Text>
-      {locationPreview ? (
-        <View style={styles.locationPreviewRow}>
-          <Ionicons name="navigate-circle" size={16} color="rgba(145, 198, 255, 0.92)" />
-          <Text style={styles.locationPreviewText}>
-            {t("onboarding:location.approxLocation", { location: locationPreview })}
-          </Text>
-        </View>
-      ) : ipLocationQuery.isLoading ? (
-        <View style={styles.locationPreviewRow}>
-          <ActivityIndicator size="small" color="rgba(200,210,230,0.85)" />
-          <Text style={styles.locationPreviewText}>{t("onboarding:location.detecting")}</Text>
-        </View>
-      ) : null}
-
-      {locationError ? (
-        <Text style={styles.errorText}>{t("onboarding:errors.locationFailed")}</Text>
-      ) : null}
-
-      <View style={styles.locationActions}>
-        {locationError ? (
-          <>
-            <PrimaryButton
-              label={savingStep === "location" ? t("common:actions.saving") : t("common:actions.retry")}
-              onPress={() => handleLocationFlow("allow")}
-              disabled={savingStep === "location"}
-              loading={savingStep === "location"}
-              accessibilityLabel={t("common:actions.retry")}
-            />
-            <SecondaryButton
-              label={t("onboarding:location.skipWithout")}
-              onPress={() => handleLocationFlow("skip")}
-              disabled={savingStep === "location"}
-              accessibilityLabel={t("onboarding:location.skipWithout")}
-            />
-          </>
-        ) : (
-          <>
-            <PrimaryButton
-              label={savingStep === "location" ? t("common:actions.saving") : t("onboarding:location.allowShort")}
-              onPress={() => handleLocationFlow("allow")}
-              disabled={savingStep === "location"}
-              loading={savingStep === "location"}
-              accessibilityLabel={t("onboarding:location.allow")}
-            />
-            <SecondaryButton
-              label={t("onboarding:location.notNow")}
-              onPress={() => handleLocationFlow("skip")}
-              disabled={savingStep === "location"}
-              accessibilityLabel={t("onboarding:location.notNow")}
-            />
-          </>
-        )}
-      </View>
-    </GlassCard>
-  );
-
   if (authLoading || loadingDraft) {
     return (
       <AuthBackground>
@@ -1231,9 +1094,7 @@ export default function OnboardingScreen() {
                 ? renderBasicStep()
                 : step === "interests"
                   ? renderInterestsStep()
-                  : step === "padel"
-                    ? renderPadelStep()
-                    : renderLocationStep()}
+                  : renderPadelStep()}
 
               <View style={styles.actions}>
                 {step === "basic" ? (
@@ -1374,11 +1235,22 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontFamily: tokens.typography.fontFamily?.heading ?? "System",
   },
+  interestsTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontFamily: tokens.typography.fontFamily?.headingBold ?? "System",
+    letterSpacing: tokens.typography.letterSpacing?.tight ?? -0.2,
+  },
   cardSubtitle: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 13,
     lineHeight: 19,
     fontFamily: tokens.typography.fontFamily?.body ?? "System",
+  },
+  interestsSubtitle: {
+    color: "rgba(225,236,255,0.88)",
+    fontSize: 15,
+    lineHeight: 22,
   },
   field: {
     gap: 8,
@@ -1469,7 +1341,7 @@ const styles = StyleSheet.create({
   interestGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 14,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1477,12 +1349,12 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 10,
-    borderRadius: 18,
+    gap: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    borderRadius: 20,
     borderWidth: 1,
-    minHeight: tokens.layout.touchTarget,
+    minHeight: tokens.layout.touchTarget + 6,
     aspectRatio: 1,
     position: "relative",
   },
@@ -1504,12 +1376,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.08)",
   },
   interestChipActive: {
-    borderColor: "rgba(170, 220, 255, 0.55)",
-    backgroundColor: "rgba(255,255,255,0.18)",
-    shadowColor: "rgba(140, 200, 255, 0.25)",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    borderColor: "rgba(170, 220, 255, 0.78)",
+    backgroundColor: "rgba(147, 197, 253, 0.26)",
+    shadowColor: "rgba(130, 190, 255, 0.44)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 12,
   },
   interestChipDisabled: {
     opacity: 0.42,
@@ -1532,15 +1404,15 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
   },
   interestIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
   interestIconActive: {
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.24)",
   },
   interestLabel: {
     color: "rgba(255,255,255,0.85)",
@@ -1552,17 +1424,6 @@ const styles = StyleSheet.create({
   },
   interestLabelActive: {
     color: "#ffffff",
-  },
-  interestCheck: {
-    position: "absolute",
-    right: 10,
-    top: 10,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: "#ffffff",
-    alignItems: "center",
-    justifyContent: "center",
   },
   cardHeaderRow: {
     flexDirection: "row",
@@ -1645,31 +1506,6 @@ const styles = StyleSheet.create({
   },
   levelChipCompact: {
     width: "47%",
-  },
-  locationActions: {
-    gap: 12,
-  },
-  locationPreviewRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(140, 190, 255, 0.25)",
-    backgroundColor: "rgba(120, 175, 255, 0.1)",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  locationPreviewText: {
-    color: "rgba(219,234,255,0.92)",
-    fontSize: 12,
-    fontFamily: tokens.typography.fontFamily?.body ?? "System",
-    flexShrink: 1,
-  },
-  errorText: {
-    color: "rgba(255,180,180,0.9)",
-    fontSize: 12,
-    fontFamily: tokens.typography.fontFamily?.body ?? "System",
   },
   actions: {
     gap: 12,

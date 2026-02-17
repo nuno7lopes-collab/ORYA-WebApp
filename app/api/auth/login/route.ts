@@ -2,10 +2,11 @@ import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
-import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
 import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
@@ -20,13 +21,25 @@ function isUnconfirmedError(err: unknown) {
   );
 }
 
+function isMobileClientRequest(req: NextRequest) {
+  const platform =
+    req.headers.get("x-client-platform") ||
+    req.headers.get("x-app-platform") ||
+    req.headers.get("x-platform");
+  const normalized = platform?.trim().toLowerCase() ?? "";
+  return normalized === "mobile" || normalized === "ios" || normalized === "android";
+}
+
 async function _POST(req: NextRequest) {
-  if (!isSameOriginOrApp(req)) {
+  const isMobileClient = isMobileClientRequest(req);
+  if (!isAppRequest(req) && !isSameOrigin(req, { allowMissing: isMobileClient })) {
     return jsonWrap(
       { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
       { status: 403 }
     );
   }
+  const mobileGate = enforceMobileVersionGate(req);
+  if (mobileGate) return mobileGate;
 
   const ctx = getRequestContext(req);
   const body = (await req.json().catch(() => null)) as

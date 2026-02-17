@@ -27,8 +27,17 @@ import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { sanitizeUsername, validateUsername } from "../../lib/username";
-import { checkUsernameAvailability } from "../../features/onboarding/api";
-import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
+import { checkUsernameAvailability, savePadelOnboarding } from "../../features/onboarding/api";
+import {
+  INTEREST_OPTIONS,
+  InterestId,
+  PADEL_GENDERS,
+  PADEL_LEVELS,
+  PADEL_SIDES,
+  PadelGender,
+  PadelLevel,
+  PadelPreferredSide,
+} from "../../features/onboarding/types";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { useUserFollowers, useUserFollowing } from "../../features/network/followLists";
@@ -78,6 +87,11 @@ export default function ProfileScreen() {
   const [avatarRemoved, setAvatarRemoved] = useState(false);
   const [coverRemoved, setCoverRemoved] = useState(false);
   const [showPadel, setShowPadel] = useState(false);
+  const [padelEditorOpen, setPadelEditorOpen] = useState(false);
+  const [padelSaving, setPadelSaving] = useState(false);
+  const [padelGender, setPadelGender] = useState<PadelGender | null>(null);
+  const [padelSide, setPadelSide] = useState<PadelPreferredSide | null>(null);
+  const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
   const [interestsError, setInterestsError] = useState<string | null>(null);
@@ -90,6 +104,37 @@ export default function ProfileScreen() {
   const usernameCacheRef = useRef<Map<string, "available" | "taken" | "reserved">>(new Map());
   const followersList = useUserFollowers(userId, accessToken, Boolean(followersOpen && userId));
   const followingList = useUserFollowing(userId, accessToken, Boolean(followingOpen && userId));
+  const padelProfile = publicProfile.data?.profile ?? null;
+  const normalizedPadelGender =
+    padelProfile?.padelGender === "MALE" || padelProfile?.padelGender === "FEMALE"
+      ? (padelProfile.padelGender as PadelGender)
+      : null;
+  const normalizedPadelSide =
+    padelProfile?.padelPreferredSide === "ESQUERDA" ||
+    padelProfile?.padelPreferredSide === "DIREITA" ||
+    padelProfile?.padelPreferredSide === "QUALQUER"
+      ? (padelProfile.padelPreferredSide as PadelPreferredSide)
+      : null;
+  const normalizedPadelLevel =
+    typeof profile?.padelLevel === "string" &&
+    PADEL_LEVELS.includes(profile.padelLevel as PadelLevel)
+      ? (profile.padelLevel as PadelLevel)
+      : null;
+  const padelGenderLabels = useMemo(
+    () => ({
+      MALE: t("onboarding:padel.genders.male"),
+      FEMALE: t("onboarding:padel.genders.female"),
+    }),
+    [t],
+  );
+  const padelSideLabels = useMemo(
+    () => ({
+      ESQUERDA: t("onboarding:padel.sides.left"),
+      DIREITA: t("onboarding:padel.sides.right"),
+      QUALQUER: t("onboarding:padel.sides.any"),
+    }),
+    [t],
+  );
 
   useEffect(() => {
     if (!profile) return;
@@ -102,6 +147,12 @@ export default function ProfileScreen() {
     setAvatarRemoved(false);
     setCoverRemoved(false);
   }, [profile]);
+
+  useEffect(() => {
+    setPadelGender(normalizedPadelGender);
+    setPadelSide(normalizedPadelSide);
+    setPadelLevel(normalizedPadelLevel);
+  }, [normalizedPadelGender, normalizedPadelLevel, normalizedPadelSide]);
 
   useEffect(() => {
     if (isFocused) {
@@ -485,6 +536,33 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSavePadelProfile = async () => {
+    if (!accessToken) {
+      Alert.alert("Inicia sessão", "Precisas de sessão ativa para atualizar o perfil de padel.");
+      return;
+    }
+    if (!padelGender || !padelSide) {
+      Alert.alert("Perfil de padel", "Seleciona género competitivo e lado preferido.");
+      return;
+    }
+    setPadelSaving(true);
+    try {
+      await savePadelOnboarding({
+        gender: padelGender,
+        preferredSide: padelSide,
+        level: padelLevel,
+        accessToken,
+      });
+      await Promise.all([summary.refetch(), publicProfile.refetch()]);
+      setPadelEditorOpen(false);
+      Alert.alert("Perfil de padel", "Perfil atualizado com sucesso.");
+    } catch (error: any) {
+      Alert.alert("Perfil de padel", String(error?.message ?? "Não foi possível guardar agora."));
+    } finally {
+      setPadelSaving(false);
+    }
+  };
+
   const agendaStats = agenda.data?.stats ?? { upcoming: 0, past: 0, thisMonth: 0 };
   const totalTimelineItems = agendaStats.upcoming + agendaStats.past;
   const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalTimelineItems };
@@ -676,26 +754,127 @@ export default function ProfileScreen() {
                 ) : (
                   <Text className="text-white/60 text-sm">{t("events:padel.profile.levelMissing")}</Text>
                 )}
-                {!profile?.padelLevel ? (
-                  <Pressable
-                    onPress={() => router.push({ pathname: "/onboarding", params: { step: "padel" } })}
-                    className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                    accessibilityRole="button"
-                    accessibilityLabel={t("events:padel.profile.completeProfile")}
-                  >
-                    <Text className="text-white text-sm font-semibold text-center">
-                      {t("events:padel.profile.completeProfile")}
-                    </Text>
-                  </Pressable>
+                <Text className="text-white/65 text-xs mt-1">
+                  {normalizedPadelGender
+                    ? `Género competitivo: ${padelGenderLabels[normalizedPadelGender]}`
+                    : "Género competitivo por definir"}
+                </Text>
+                <Text className="text-white/65 text-xs">
+                  {normalizedPadelSide
+                    ? `Lado preferido: ${padelSideLabels[normalizedPadelSide]}`
+                    : "Lado preferido por definir"}
+                </Text>
+                <Pressable
+                  onPress={() => setPadelEditorOpen((prev) => !prev)}
+                  className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    padelEditorOpen ? "Fechar editor de perfil de padel" : t("events:padel.profile.completeProfile")
+                  }
+                >
+                  <Text className="text-white text-sm font-semibold text-center">
+                    {padelEditorOpen ? "Fechar edição" : t("events:padel.profile.completeProfile")}
+                  </Text>
+                </Pressable>
+                {padelEditorOpen ? (
+                  <View className="mt-3 gap-3">
+                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Género</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {PADEL_GENDERS.map((gender) => {
+                        const active = padelGender === gender.id;
+                        return (
+                          <Pressable
+                            key={gender.id}
+                            onPress={() => setPadelGender(gender.id)}
+                            className={
+                              active
+                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={padelGenderLabels[gender.id]}
+                            accessibilityState={{ selected: active }}
+                          >
+                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                              {padelGenderLabels[gender.id]}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Lado</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {PADEL_SIDES.map((side) => {
+                        const active = padelSide === side.id;
+                        return (
+                          <Pressable
+                            key={side.id}
+                            onPress={() => setPadelSide(side.id)}
+                            className={
+                              active
+                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={padelSideLabels[side.id]}
+                            accessibilityState={{ selected: active }}
+                          >
+                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                              {padelSideLabels[side.id]}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Nível</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {PADEL_LEVELS.map((level) => {
+                        const active = padelLevel === level;
+                        return (
+                          <Pressable
+                            key={level}
+                            onPress={() =>
+                              setPadelLevel((prev) => (prev === level ? null : level))
+                            }
+                            className={
+                              active
+                                ? "rounded-full border border-white/25 bg-white/20 px-3 py-2"
+                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={`Nível ${level}`}
+                            accessibilityState={{ selected: active }}
+                          >
+                            <Text className={active ? "text-white text-xs font-semibold" : "text-white/70 text-xs"}>
+                              {level}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Pressable
+                      onPress={handleSavePadelProfile}
+                      disabled={padelSaving}
+                      className="rounded-xl bg-white/90 px-4 py-3"
+                      style={padelSaving ? { opacity: 0.7 } : undefined}
+                      accessibilityRole="button"
+                      accessibilityLabel="Guardar perfil de padel"
+                      accessibilityState={{ disabled: padelSaving }}
+                    >
+                      <Text className="text-[#0b1014] text-sm font-semibold text-center">
+                        {padelSaving ? "A guardar..." : "Guardar perfil de padel"}
+                      </Text>
+                    </Pressable>
+                  </View>
                 ) : null}
                 <Pressable
                   onPress={() => router.push("/padel")}
                   className="mt-3 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                   accessibilityRole="button"
-                  accessibilityLabel={t("events:padel.profile.openHub")}
+                  accessibilityLabel={t("common:actions.explore")}
                 >
                   <Text className="text-white text-sm font-semibold text-center">
-                    {t("events:padel.profile.openHub")}
+                    {t("common:actions.explore")}
                   </Text>
                 </Pressable>
               </GlassCard>

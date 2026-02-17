@@ -18,6 +18,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 import { rebuildPadelRatingsForEvent } from "@/domain/padel/ratingEngine";
 import { rebuildPadelPlayerHistoryProjectionForEvent } from "@/domain/padel/playerHistoryProjection";
+import { syncTournamentOperationalRolesFromClubStaff } from "@/lib/padel/tournamentStaffRoleSync";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
@@ -196,13 +197,14 @@ async function _POST(req: NextRequest) {
   }
 
   if (nextStatus === PadelTournamentLifecycleStatus.PUBLISHED) {
-    const [config, categoryLinks, directorCount] = await Promise.all([
+    const [config, categoryLinks] = await Promise.all([
       prisma.padelTournamentConfig.findUnique({
         where: { eventId: event.id },
         select: {
           id: true,
           format: true,
           padelClubId: true,
+          partnerClubIds: true,
           numberOfCourts: true,
           advancedSettings: true,
           padelV2Enabled: true,
@@ -211,13 +213,6 @@ async function _POST(req: NextRequest) {
       prisma.padelEventCategoryLink.findMany({
         where: { eventId: event.id, isEnabled: true },
         select: { id: true, pricePerPlayerCents: true, currency: true },
-      }),
-      prisma.padelTournamentRoleAssignment.count({
-        where: {
-          eventId: event.id,
-          organizationId: event.organizationId,
-          role: PadelTournamentRole.DIRETOR_PROVA,
-        },
       }),
     ]);
     const missing: string[] = [];
@@ -233,7 +228,29 @@ async function _POST(req: NextRequest) {
     const advanced = (config?.advancedSettings || {}) as {
       registrationStartsAt?: string | null;
       registrationEndsAt?: string | null;
+      staffIds?: unknown[];
     };
+    const staffIds = Array.isArray(advanced.staffIds)
+      ? advanced.staffIds.filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+      : [];
+    if (config?.id && staffIds.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await syncTournamentOperationalRolesFromClubStaff({
+          tx,
+          organizationId: event.organizationId!,
+          eventId: event.id,
+          staffIds,
+          padelClubId: config.padelClubId,
+        });
+      });
+    }
+    const directorCount = await prisma.padelTournamentRoleAssignment.count({
+      where: {
+        eventId: event.id,
+        organizationId: event.organizationId,
+        role: PadelTournamentRole.DIRETOR_PROVA,
+      },
+    });
     const registrationStartsAt =
       advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
         ? new Date(advanced.registrationStartsAt)
@@ -250,6 +267,9 @@ async function _POST(req: NextRequest) {
     }
     if (directorCount < 1) {
       missing.push("TOURNAMENT_DIRECTOR_REQUIRED");
+    }
+    if ((config?.partnerClubIds?.length ?? 0) > 0 && staffIds.length < 1) {
+      missing.push("STAFF_MISSING_FOR_PARTNER_CLUBS");
     }
     if (missing.length > 0) {
       return jsonWrap({ ok: false, error: "TOURNAMENT_NOT_READY", missing }, { status: 409 });

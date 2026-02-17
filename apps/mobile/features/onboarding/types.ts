@@ -12,7 +12,7 @@ export const INTEREST_OPTIONS = [
 export type InterestOption = (typeof INTEREST_OPTIONS)[number];
 export type InterestId = InterestOption["id"];
 
-export type OnboardingStep = "basic" | "interests" | "padel" | "location";
+export type OnboardingStep = "basic" | "interests" | "padel";
 
 export type OnboardingPayload = {
   fullName: string;

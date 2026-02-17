@@ -14,6 +14,7 @@ const recordOutboxEvent = vi.hoisted(() => vi.fn());
 const recordSearchIndexOutbox = vi.hoisted(() => vi.fn());
 const createEventAccessPolicyVersion = vi.hoisted(() => vi.fn());
 const ensurePadelRuleSetVersion = vi.hoisted(() => vi.fn());
+const syncTournamentOperationalRolesFromClubStaff = vi.hoisted(() => vi.fn());
 
 const tx = vi.hoisted(() => ({
   event: { create: vi.fn() },
@@ -48,6 +49,7 @@ vi.mock("@/domain/outbox/producer", () => ({ recordOutboxEvent }));
 vi.mock("@/domain/searchIndex/outbox", () => ({ recordSearchIndexOutbox }));
 vi.mock("@/lib/checkin/accessPolicy", () => ({ createEventAccessPolicyVersion }));
 vi.mock("@/domain/padel/ruleSetSnapshot", () => ({ ensurePadelRuleSetVersion }));
+vi.mock("@/lib/padel/tournamentStaffRoleSync", () => ({ syncTournamentOperationalRolesFromClubStaff }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
 let POST: typeof import("@/app/api/org/[orgId]/tournaments/create/route").POST;
@@ -86,6 +88,7 @@ beforeEach(async () => {
   recordSearchIndexOutbox.mockReset();
   createEventAccessPolicyVersion.mockReset();
   ensurePadelRuleSetVersion.mockReset();
+  syncTournamentOperationalRolesFromClubStaff.mockReset();
 
   prisma.profile.findUnique.mockReset();
   prisma.organization.findUnique.mockReset();
@@ -164,6 +167,7 @@ beforeEach(async () => {
   recordOutboxEvent.mockResolvedValue({ id: "outbox-1" });
   recordSearchIndexOutbox.mockResolvedValue({ id: "outbox-search-1" });
   ensurePadelRuleSetVersion.mockResolvedValue({ id: 1 });
+  syncTournamentOperationalRolesFromClubStaff.mockResolvedValue({ attempted: 0, created: 0, mappedUsers: 0 });
 
   prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => unknown) => callback(tx));
 
@@ -266,6 +270,68 @@ describe("organization tournaments create route", () => {
 
     expect(res.status).toBe(400);
     expect(body.errorCode).toBe("CATEGORIES_INVALID");
+  });
+
+  it("fails with STAFF_REQUIRED_FOR_PARTNER_CLUBS when partner clubs are selected without staff", async () => {
+    const req = new NextRequest("http://localhost/api/org/12/tournaments/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        buildBaseBody({
+          padel: {
+            format: "TODOS_CONTRA_TODOS",
+            clubId: 7,
+            courtIds: [101],
+            staffIds: [],
+            partnerClubIds: [91],
+            categoryIds: [501],
+            defaultCategoryId: 501,
+            categoryConfigs: [{ padelCategoryId: 501, capacityTeams: 12, pricePerPlayer: 0 }],
+          },
+        }),
+      ),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.errorCode).toBe("STAFF_REQUIRED_FOR_PARTNER_CLUBS");
+  });
+
+  it("syncs operational roles from selected club staff on create", async () => {
+    const req = new NextRequest("http://localhost/api/org/12/tournaments/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        buildBaseBody({
+          padel: {
+            format: "TODOS_CONTRA_TODOS",
+            clubId: 7,
+            courtIds: [101],
+            staffIds: [300],
+            categoryIds: [501],
+            defaultCategoryId: 501,
+            categoryConfigs: [{ padelCategoryId: 501, capacityTeams: 12, pricePerPlayer: 0 }],
+          },
+        }),
+      ),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.ok).toBe(true);
+    expect(syncTournamentOperationalRolesFromClubStaff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tx,
+        organizationId: 12,
+        eventId: 999,
+        staffIds: [300],
+        padelClubId: 7,
+      }),
+    );
   });
 
   it("fails with FORBIDDEN when TORNEIOS edit access is missing", async () => {

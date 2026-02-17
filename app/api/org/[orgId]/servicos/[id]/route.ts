@@ -8,7 +8,8 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -198,7 +199,15 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
 
     const existing = await prisma.service.findFirst({
       where: { id: serviceId, organizationId: organization.id },
-      select: { id: true, unitPriceCents: true, isActive: true },
+      select: {
+        id: true,
+        unitPriceCents: true,
+        isActive: true,
+        instructorId: true,
+        kind: true,
+        assignmentMode: true,
+        professionalLinks: { select: { professionalId: true } },
+      },
     });
 
     if (!existing) {
@@ -235,6 +244,49 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         return fail(400, "assignmentMode inválido. Usa PROFESSIONAL_ONLY, RESOURCE_ONLY ou PROFESSIONAL_AND_RESOURCE.");
       }
       updates.assignmentMode = normalizeReservationAssignmentMode(assignmentModeRaw);
+    }
+    if (typeof payload?.kind === "string") {
+      const kind = payload.kind.trim().toUpperCase();
+      if (!["GENERAL", "COURT", "CLASS"].includes(kind)) {
+        return fail(400, "Tipo de serviço inválido.");
+      }
+      updates.kind = kind as ServiceKind;
+    }
+    const resolvedKind = (updates.kind as ServiceKind | undefined) ?? existing.kind;
+    const resolvedAssignmentMode = normalizeReservationAssignmentMode(
+      (updates.assignmentMode as string | undefined) ?? existing.assignmentMode ?? null,
+    );
+    if (resolvedKind === ServiceKind.CLASS && resolvedAssignmentMode === "RESOURCE_ONLY") {
+      return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
+    }
+    if (payload?.instructorId === null) {
+      updates.instructorId = null;
+    } else if (typeof payload?.instructorId === "string") {
+      const instructorId = payload.instructorId.trim();
+      if (!instructorId) {
+        updates.instructorId = null;
+      } else {
+        const member = await resolveGroupMemberForOrg({
+          organizationId: organization.id,
+          userId: instructorId,
+        });
+        if (!member) {
+          return fail(400, "Instrutor inválido.");
+        }
+        const trainerProfile = await prisma.trainerProfile.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId: organization.id,
+              userId: instructorId,
+            },
+          },
+          select: { id: true },
+        });
+        if (!trainerProfile) {
+          return fail(400, "INSTRUCTOR_NOT_TRAINER");
+        }
+        updates.instructorId = instructorId;
+      }
     }
     if (typeof payload?.isActive === "boolean") updates.isActive = payload.isActive;
     if (typeof payload?.categoryTag === "string") {
@@ -295,15 +347,38 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (professionalIdsError) {
       return fail(400, professionalIdsError);
     }
-    if (professionalIds !== null) {
-      if (professionalIds.length) {
-        const existing = await prisma.reservationProfessional.findMany({
-          where: { id: { in: professionalIds }, organizationId: organization.id },
-          select: { id: true },
-        });
-        if (existing.length !== professionalIds.length) {
-          return fail(400, "Profissionais inválidos.");
+    let nextProfessionalIds = professionalIds;
+    const resolvedInstructorId =
+      Object.prototype.hasOwnProperty.call(updates, "instructorId")
+        ? ((updates.instructorId as string | null) ?? null)
+        : (existing.instructorId ?? null);
+    if (resolvedInstructorId) {
+      const instructorProfessional = await prisma.reservationProfessional.findFirst({
+        where: { organizationId: organization.id, userId: resolvedInstructorId },
+        select: { id: true, isActive: true },
+      });
+      if (!instructorProfessional) {
+        return fail(400, "INSTRUCTOR_NOT_PROFESSIONAL");
+      }
+      if (!instructorProfessional.isActive) {
+        return fail(400, "INSTRUCTOR_PROFESSIONAL_INACTIVE");
+      }
+      if (nextProfessionalIds !== null) {
+        nextProfessionalIds = Array.from(new Set([...nextProfessionalIds, instructorProfessional.id]));
+      } else {
+        const existingProfessionalIds = existing.professionalLinks.map((link) => link.professionalId);
+        if (!existingProfessionalIds.includes(instructorProfessional.id)) {
+          nextProfessionalIds = Array.from(new Set([...existingProfessionalIds, instructorProfessional.id]));
         }
+      }
+    }
+    if (nextProfessionalIds !== null && nextProfessionalIds.length) {
+      const existingProfessionals = await prisma.reservationProfessional.findMany({
+        where: { id: { in: nextProfessionalIds }, organizationId: organization.id },
+        select: { id: true },
+      });
+      if (existingProfessionals.length !== nextProfessionalIds.length) {
+        return fail(400, "Profissionais inválidos.");
       }
     }
 
@@ -323,7 +398,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
     }
 
-    if (Object.keys(updates).length === 0 && professionalIds === null && resourceIds === null) {
+    if (Object.keys(updates).length === 0 && nextProfessionalIds === null && resourceIds === null) {
       return fail(400, "Sem alterações.");
     }
 
@@ -336,11 +411,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         });
       }
 
-      if (professionalIds !== null) {
+      if (nextProfessionalIds !== null) {
         await tx.serviceProfessionalLink.deleteMany({ where: { serviceId } });
-        if (professionalIds.length > 0) {
+        if (nextProfessionalIds.length > 0) {
           await tx.serviceProfessionalLink.createMany({
-            data: professionalIds.map((professionalId) => ({
+            data: nextProfessionalIds.map((professionalId) => ({
               serviceId,
               professionalId,
             })),
@@ -408,7 +483,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       metadata: {
         serviceId: service.id,
         updates,
-        professionalIds: professionalIds ?? undefined,
+        professionalIds: nextProfessionalIds ?? undefined,
         resourceIds: resourceIds ?? undefined,
       },
       ip,

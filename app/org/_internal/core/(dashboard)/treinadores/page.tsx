@@ -59,13 +59,15 @@ type ProfileResponse = {
   user: { id: string; fullName: string | null; username: string | null; avatarUrl: string | null } | null;
   role: string | null;
   rolePack?: OrganizationRolePack | null;
+  canEdit?: boolean;
   error?: string;
 };
 
 export default function TrainerProfilePage() {
   const { user } = useUser();
   const { openModal } = useAuthModal();
-  const loginRedirectHref = appendOrganizationIdToHref("/org/team/trainers", getOrganizationIdFromBrowser());
+  const browserOrgId = getOrganizationIdFromBrowser();
+  const loginRedirectHref = appendOrganizationIdToHref("/org/team/trainers", browserOrgId);
   const { data, isLoading, mutate } = useSWR<ProfileResponse>(
     user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/trainers/profile") : null,
     fetcher,
@@ -85,9 +87,8 @@ export default function TrainerProfilePage() {
   const profile = data?.profile ?? null;
   const organization = data?.organization ?? profile?.organization ?? null;
   const profileUser = profile?.user ?? data?.user ?? null;
-  const role = data?.role ?? null;
-  const rolePack = data?.rolePack ?? null;
-  const canEdit = role === "STAFF" && rolePack === "COACH";
+  const canEdit = data?.canEdit === true;
+  const manageTrainerRoleHref = appendOrganizationIdToHref("/org/padel?section=trainers", organization?.id ?? browserOrgId);
   const displayName = profileUser?.fullName || profileUser?.username || "Treinador";
   const reviewStatus = profile?.reviewStatus ?? "DRAFT";
   const statusLabel =
@@ -268,7 +269,12 @@ export default function TrainerProfilePage() {
 
         {!canEdit && !isLoading && (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            O perfil só pode ser editado por colaboradores com pack Coach.
+            <p>O perfil só pode ser editado por membros associados como treinador.</p>
+            <div className="mt-3">
+              <Link href={manageTrainerRoleHref} className={CTA_SECONDARY}>
+                Associar treinador na equipa
+              </Link>
+            </div>
           </div>
         )}
 

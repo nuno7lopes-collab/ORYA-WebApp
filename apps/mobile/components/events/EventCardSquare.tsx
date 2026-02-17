@@ -148,7 +148,15 @@ export const EventCardSquare = memo(function EventCardSquare({
     if (rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL") return rawCategory;
     return t("events:labels.event");
   }, [rawCategory, t]).toUpperCase();
-  const cover = useMemo(() => resolveMediaUri(event.coverImageUrl ?? null), [event.coverImageUrl]);
+  const fallbackCover = useMemo(
+    () =>
+      `https://picsum.photos/seed/orya-card-${encodeURIComponent(event.slug ?? String(event.id))}/1200/800`,
+    [event.id, event.slug],
+  );
+  const cover = useMemo(
+    () => resolveMediaUri(event.coverImageUrl ?? fallbackCover),
+    [event.coverImageUrl, fallbackCover],
+  );
   const [coverFailed, setCoverFailed] = useState(false);
   const hasCover = Boolean(cover) && !coverFailed;
   const tintSeed = useMemo(

@@ -9,7 +9,8 @@ import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
-import { AddressSourceProvider, OrganizationMemberRole } from "@prisma/client";
+import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -25,6 +26,23 @@ function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
+}
+
+function normalizeIdList(value: unknown, label: string) {
+  if (value === undefined) return { ids: null as number[] | null, error: null as string | null };
+  if (value === null) return { ids: [] as number[], error: null as string | null };
+  if (!Array.isArray(value)) {
+    return { ids: null as number[] | null, error: `${label} inválidos.` };
+  }
+  const parsed: number[] = [];
+  for (const item of value) {
+    const id = Number(item);
+    if (!Number.isFinite(id) || id <= 0) {
+      return { ids: null as number[] | null, error: `${label} inválidos.` };
+    }
+    parsed.push(Math.trunc(id));
+  }
+  return { ids: Array.from(new Set(parsed)), error: null as string | null };
 }
 
 function errorCodeForStatus(status: number) {
@@ -169,6 +187,8 @@ async function _POST(req: NextRequest) {
     const currency = String(payload?.currency ?? "EUR").trim().toUpperCase();
     const policyIdRaw = Number(payload?.policyId);
     const categoryTag = typeof payload?.categoryTag === "string" ? payload.categoryTag.trim() : "";
+    const kindRaw = typeof payload?.kind === "string" ? payload.kind.trim().toUpperCase() : "GENERAL";
+    const instructorIdRaw = typeof payload?.instructorId === "string" ? payload.instructorId.trim() : "";
     const locationModeRaw = typeof payload?.locationMode === "string" ? payload.locationMode.trim().toUpperCase() : "FIXED";
     const addressIdInput = typeof payload?.addressId === "string" ? payload.addressId.trim() : "";
     const coverImageUrl = typeof payload?.coverImageUrl === "string" ? payload.coverImageUrl.trim() : "";
@@ -183,6 +203,19 @@ async function _POST(req: NextRequest) {
       assignmentModeRaw,
       normalizeReservationAssignmentMode((organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? null),
     );
+    const { ids: professionalIds, error: professionalIdsError } = normalizeIdList(
+      payload?.professionalIds,
+      "Profissionais",
+    );
+    if (professionalIdsError) {
+      return fail(400, professionalIdsError);
+    }
+    const { ids: resourceIds, error: resourceIdsError } = normalizeIdList(payload?.resourceIds, "Recursos");
+    if (resourceIdsError) {
+      return fail(400, resourceIdsError);
+    }
+    let resolvedProfessionalIds = professionalIds ?? [];
+    const resolvedResourceIds = resourceIds ?? [];
 
     const allowedDurations = new Set([30, 60, 90, 120]);
     if (!title || !Number.isFinite(durationMinutes) || !allowedDurations.has(durationMinutes)) {
@@ -213,6 +246,68 @@ async function _POST(req: NextRequest) {
     if (!["FIXED", "CHOOSE_AT_BOOKING"].includes(locationModeRaw)) {
       return fail(400, "Localização inválida.");
     }
+    if (!["GENERAL", "COURT", "CLASS"].includes(kindRaw)) {
+      return fail(400, "Tipo de serviço inválido.");
+    }
+    if (kindRaw === "CLASS" && assignmentMode === "RESOURCE_ONLY") {
+      return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
+    }
+    let instructorId: string | null = null;
+    let instructorProfessionalId: number | null = null;
+    if (instructorIdRaw) {
+      const member = await resolveGroupMemberForOrg({
+        organizationId: organization.id,
+        userId: instructorIdRaw,
+      });
+      if (!member) {
+        return fail(400, "Instrutor inválido.");
+      }
+      const trainerProfile = await prisma.trainerProfile.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: organization.id,
+            userId: instructorIdRaw,
+          },
+        },
+        select: { id: true },
+      });
+      if (!trainerProfile) {
+        return fail(400, "INSTRUCTOR_NOT_TRAINER");
+      }
+      instructorId = instructorIdRaw;
+      const instructorProfessional = await prisma.reservationProfessional.findFirst({
+        where: { organizationId: organization.id, userId: instructorIdRaw },
+        select: { id: true, isActive: true },
+      });
+      if (!instructorProfessional) {
+        return fail(400, "INSTRUCTOR_NOT_PROFESSIONAL");
+      }
+      if (!instructorProfessional.isActive) {
+        return fail(400, "INSTRUCTOR_PROFESSIONAL_INACTIVE");
+      }
+      instructorProfessionalId = instructorProfessional.id;
+    }
+    if (instructorProfessionalId) {
+      resolvedProfessionalIds = Array.from(new Set([...resolvedProfessionalIds, instructorProfessionalId]));
+    }
+    if (resolvedProfessionalIds.length) {
+      const existingProfessionals = await prisma.reservationProfessional.findMany({
+        where: { id: { in: resolvedProfessionalIds }, organizationId: organization.id },
+        select: { id: true },
+      });
+      if (existingProfessionals.length !== resolvedProfessionalIds.length) {
+        return fail(400, "Profissionais inválidos.");
+      }
+    }
+    if (resolvedResourceIds.length) {
+      const existingResources = await prisma.reservationResource.findMany({
+        where: { id: { in: resolvedResourceIds }, organizationId: organization.id },
+        select: { id: true },
+      });
+      if (existingResources.length !== resolvedResourceIds.length) {
+        return fail(400, "Recursos inválidos.");
+      }
+    }
 
     const resolvedAddressId = addressIdInput || null;
     if (resolvedAddressId) {
@@ -228,23 +323,42 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const service = await prisma.service.create({
-      data: {
-        organizationId: organization.id,
-        policyId,
-        kind: "GENERAL",
-        instructorId: null,
-        title,
-        description: description || null,
-        durationMinutes,
-        unitPriceCents: Math.round(unitPriceCents),
-        currency: currency || "EUR",
-        assignmentMode,
-        categoryTag: categoryTag || null,
-        coverImageUrl: coverImageUrl || null,
-        locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
-        addressId: resolvedAddressId,
-      },
+    const service = await prisma.$transaction(async (tx) => {
+      const created = await tx.service.create({
+        data: {
+          organizationId: organization.id,
+          policyId,
+          kind: kindRaw as ServiceKind,
+          instructorId,
+          title,
+          description: description || null,
+          durationMinutes,
+          unitPriceCents: Math.round(unitPriceCents),
+          currency: currency || "EUR",
+          assignmentMode,
+          categoryTag: categoryTag || null,
+          coverImageUrl: coverImageUrl || null,
+          locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
+          addressId: resolvedAddressId,
+        },
+      });
+      if (resolvedProfessionalIds.length > 0) {
+        await tx.serviceProfessionalLink.createMany({
+          data: resolvedProfessionalIds.map((professionalId) => ({
+            serviceId: created.id,
+            professionalId,
+          })),
+        });
+      }
+      if (resolvedResourceIds.length > 0) {
+        await tx.serviceResourceLink.createMany({
+          data: resolvedResourceIds.map((resourceId) => ({
+            serviceId: created.id,
+            resourceId,
+          })),
+        });
+      }
+      return created;
     });
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -262,6 +376,8 @@ async function _POST(req: NextRequest) {
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw,
+        professionalIds: resolvedProfessionalIds,
+        resourceIds: resolvedResourceIds,
       },
       ip,
       userAgent,

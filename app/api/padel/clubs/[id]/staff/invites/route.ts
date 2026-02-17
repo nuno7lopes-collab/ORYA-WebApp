@@ -14,39 +14,56 @@ import { resolveUserIdentifier } from "@/lib/userResolver";
 import { createNotification } from "@/lib/notifications";
 import { normalizeEmail } from "@/lib/utils/email";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { PADEL_CLUB_STAFF_ROLES, normalizePadelClubStaffRole } from "@/lib/padel/clubStaffRole";
 
 const INVITE_EXPIRY_DAYS = 14;
 
-const PADEL_CLUB_STAFF_ROLES = ["ADMIN_CLUBE", "DIRETOR_PROVA", "STAFF"] as const;
-type PadelClubStaffRole = (typeof PADEL_CLUB_STAFF_ROLES)[number];
-const PADEL_CLUB_STAFF_ROLE_SET = new Set<PadelClubStaffRole>(PADEL_CLUB_STAFF_ROLES);
-
-const PADEL_CLUB_STAFF_ROLE_ALIASES: Record<string, PadelClubStaffRole> = {
-  ADMIN: "ADMIN_CLUBE",
-  ADMIN_CLUB: "ADMIN_CLUBE",
-  CLUB_ADMIN: "ADMIN_CLUBE",
-  DIRETOR: "DIRETOR_PROVA",
-  ARBITRO: "DIRETOR_PROVA",
-  ARBITRO_PROVA: "DIRETOR_PROVA",
-  REFEREE: "DIRETOR_PROVA",
-};
-
-function normalizePadelClubStaffRole(value: unknown): PadelClubStaffRole | null {
-  if (typeof value !== "string") return null;
-  const compact = value
-    .trim()
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  if (PADEL_CLUB_STAFF_ROLE_SET.has(compact as PadelClubStaffRole)) {
-    return compact as PadelClubStaffRole;
-  }
-  return PADEL_CLUB_STAFF_ROLE_ALIASES[compact] ?? null;
-}
-
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
+
+function serializePadelClubStaff(item: {
+  id: number;
+  padelClubId: number;
+  userId: string;
+  role: string;
+  inheritToEvents: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  user: {
+    id: string;
+    username: string | null;
+    fullName: string | null;
+    avatarUrl: string | null;
+    users?: { email: string | null } | null;
+  } | null;
+}) {
+  const email = item.user?.users?.email ?? null;
+  const user =
+    item.user === null
+      ? null
+      : {
+          id: item.user.id,
+          username: item.user.username,
+          fullName: item.user.fullName,
+          avatarUrl: item.user.avatarUrl,
+          email,
+        };
+  return {
+    id: item.id,
+    padelClubId: item.padelClubId,
+    userId: item.userId,
+    role: normalizePadelClubStaffRole(item.role) ?? item.role,
+    inheritToEvents: item.inheritToEvents,
+    isActive: item.isActive,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    fullName: user?.fullName ?? null,
+    username: user?.username ?? null,
+    email,
+    avatarUrl: user?.avatarUrl ?? null,
+    user,
+  };
+}
 
 const inviteStatus = (invite: {
   expiresAt: Date;
@@ -218,7 +235,12 @@ async function _POST(req: NextRequest) {
   const inheritToEvents = typeof body?.inheritToEvents === "boolean" ? body.inheritToEvents : true;
 
   if (!identifier) return jsonWrap({ ok: false, error: "IDENTIFIER_REQUIRED" }, { status: 400 });
-  if (!role) return jsonWrap({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
+  if (!role) {
+    return jsonWrap(
+      { ok: false, error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}` },
+      { status: 400 },
+    );
+  }
 
   const resolved = await resolveUserIdentifier(identifier);
   const targetUserId = resolved?.userId ?? null;
@@ -445,11 +467,15 @@ async function _PATCH(req: NextRequest) {
 
     return tx.padelClubStaff.findFirst({
       where: { padelClubId: invite.padelClubId, userId: ctx.user.id, deletedAt: null },
-      include: { user: { select: { id: true, username: true, fullName: true, avatarUrl: true } } },
+      include: {
+        user: {
+          select: { id: true, username: true, fullName: true, avatarUrl: true, users: { select: { email: true } } },
+        },
+      },
     });
   });
 
-  return jsonWrap({ ok: true, staff: updated }, { status: 200 });
+  return jsonWrap({ ok: true, staff: updated ? serializePadelClubStaff(updated) : null }, { status: 200 });
 }
 
 export const GET = withApiEnvelope(_GET);

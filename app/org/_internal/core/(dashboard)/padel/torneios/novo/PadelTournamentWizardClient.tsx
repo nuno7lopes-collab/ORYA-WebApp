@@ -68,8 +68,10 @@ type Court = {
 type StaffMember = {
   id: number;
   fullName?: string | null;
+  username?: string | null;
   email?: string | null;
   role?: string | null;
+  inheritToEvents?: boolean | null;
   isActive?: boolean;
 };
 
@@ -91,6 +93,11 @@ const PADEL_FORMATS = [
   { value: "AMERICANO", label: "Americano" },
   { value: "MEXICANO", label: "Mexicano" },
 ];
+const PADEL_FORMAT_LABEL_BY_VALUE = Object.fromEntries(PADEL_FORMATS.map((item) => [item.value, item.label])) as Record<
+  string,
+  string
+>;
+const resolveFormatLabel = (value: string) => PADEL_FORMAT_LABEL_BY_VALUE[value] ?? value;
 
 const ELIGIBILITY_OPTIONS = [
   { value: "OPEN", label: "Aberto" },
@@ -244,6 +251,21 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   }, [selectedClubId]);
 
   useEffect(() => {
+    const activeStaffIds = new Set(staffMembers.map((staff) => staff.id));
+    const inherited = staffMembers.filter((staff) => staff.inheritToEvents).map((staff) => staff.id);
+    setSelectedStaffIds((prev) => {
+      if (staffMembers.length === 0) return prev.length > 0 ? [] : prev;
+      const validPrev = prev.filter((id) => activeStaffIds.has(id));
+      if (validPrev.length > 0) {
+        const unchanged = validPrev.length === prev.length && validPrev.every((id, idx) => id === prev[idx]);
+        return unchanged ? prev : validPrev;
+      }
+      if (inherited.length > 0) return inherited;
+      return prev.length > 0 ? [] : prev;
+    });
+  }, [staffMembers]);
+
+  useEffect(() => {
     if (categories.length === 0) return;
     setCategoryDrafts((prev) => {
       const next = { ...prev };
@@ -325,6 +347,25 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     () => categories.filter((cat) => categoryDrafts[cat.id]?.selected),
     [categories, categoryDrafts],
   );
+  const categoryFormatOverrides = useMemo(
+    () =>
+      selectedCategories
+        .map((category) => {
+          const categoryFormat = categoryDrafts[category.id]?.format || format;
+          if (categoryFormat === format) return null;
+          return {
+            categoryId: category.id,
+            label: category.label,
+            format: categoryFormat,
+          };
+        })
+        .filter(Boolean) as Array<{ categoryId: number; label: string; format: string }>,
+    [categoryDrafts, format, selectedCategories],
+  );
+  const categoryFormatOverridesSummary = categoryFormatOverrides
+    .slice(0, 3)
+    .map((item) => `${item.label} (${resolveFormatLabel(item.format)})`)
+    .join(" · ");
 
   const activeCourts = useMemo(() => courts.filter((court) => court.isActive), [courts]);
   const resolvedCourts = useMemo(() => {
@@ -421,6 +462,20 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           selected: !current.selected,
         },
       };
+    });
+  };
+  const applyGlobalFormatToSelected = () => {
+    if (selectedCategories.length === 0) return;
+    setCategoryDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      selectedCategories.forEach((category) => {
+        const current = next[category.id] ?? { selected: true, price: "0", capacityTeams: "", format };
+        if (current.format === format) return;
+        changed = true;
+        next[category.id] = { ...current, format };
+      });
+      return changed ? next : prev;
     });
   };
 
@@ -609,6 +664,8 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             CATEGORY_PRICES_MISSING: "Preços por categoria",
             REGISTRATION_WINDOW_INVALID: "Janela de inscrições inválida",
             REGISTRATION_END_AFTER_START: "Fim das inscrições após início",
+            STAFF_MISSING_FOR_PARTNER_CLUBS: "Equipa obrigatória para clubes parceiros",
+            TOURNAMENT_DIRECTOR_REQUIRED: "Diretor de prova em falta",
           };
           const missingLabel = missing.length
             ? missing.map((code: string) => missingLabels[code] || code).join(", ")
@@ -919,7 +976,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
 
       <CreateWizardSectionCard
         title="Categorias e Pricing"
-        subtitle="Define categorias ativas, preço por jogador e capacidade por categoria."
+        subtitle="Define categorias ativas, preço por jogador, capacidade e formato por categoria."
       >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1001,7 +1058,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                           />
                         </label>
                         <label className="space-y-1 text-[12px] text-white/70">
-                          <span className="text-[10px] uppercase tracking-[0.18em] text-white/50">Formato</span>
+                          <span className="text-[10px] uppercase tracking-[0.18em] text-white/50">Formato da categoria</span>
                           <select
                             value={draft.format}
                             onChange={(e) =>
@@ -1047,7 +1104,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               </select>
             </label>
             <label className="space-y-1 text-sm text-white/70">
-              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Formato global</span>
+              <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Formato global (fallback)</span>
               <select
                 value={format}
                 onChange={(e) => setFormat(e.target.value)}
@@ -1059,7 +1116,25 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                   </option>
                 ))}
               </select>
+              <p className="text-[11px] text-white/55">Usado por defeito no torneio e nas categorias sem override.</p>
             </label>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-[12px]">
+            <p className="text-white/75">
+              {categoryFormatOverrides.length > 0
+                ? `${categoryFormatOverrides.length} categoria(s) com formato próprio. ${categoryFormatOverridesSummary}${
+                    categoryFormatOverrides.length > 3 ? "…" : ""
+                  }`
+                : "Sem overrides: todas as categorias seguem o formato global."}
+            </p>
+            <button
+              type="button"
+              onClick={applyGlobalFormatToSelected}
+              disabled={selectedCategories.length === 0 || categoryFormatOverrides.length === 0}
+              className={CTA_GHOST}
+            >
+              Aplicar formato global às selecionadas
+            </button>
           </div>
       </CreateWizardSectionCard>
 
@@ -1179,7 +1254,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                       className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
                     />
                     <span>
-                      {staff.fullName || staff.email || `Staff #${staff.id}`}
+                      {staff.fullName || staff.email || staff.username || `Staff #${staff.id}`}
                       {staff.role ? ` · ${staff.role}` : ""}
                     </span>
                   </label>

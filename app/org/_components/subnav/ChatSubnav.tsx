@@ -11,7 +11,6 @@ export default function ChatSubnav({ orgId, className }: { orgId: number | null;
       className={className}
       items={[
         { id: "inbox", label: "Caixa de entrada", href: buildOrgHref(orgId, "/chat") },
-        { id: "preview", label: "Pré-visualização", href: buildOrgHref(orgId, "/chat/preview") },
       ]}
     />
   );

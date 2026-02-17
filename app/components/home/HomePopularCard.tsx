@@ -25,7 +25,7 @@ const clamp = (value: number) => Math.max(0, Math.min(255, value));
 const DEFAULT_TINT: Tint = { r: 12, g: 16, b: 24 };
 
 const buildTint = (r: number, g: number, b: number): Tint => {
-  const factor = 0.48;
+  const factor = 0.58;
   return {
     r: clamp(Math.round(r * factor)),
     g: clamp(Math.round(g * factor)),
@@ -67,13 +67,13 @@ export default function HomePopularCard({
     sampledRef.current = false;
   }, [imageUrl]);
 
-  const overlayHeight = "68%";
+  const overlayHeight = "60%";
   const gradientStyle = useMemo(
     () => ({
       background: `linear-gradient(180deg, ${toRgba(tint, 0)} 0%, ${toRgba(
         tint,
-        0.45,
-      )} 18%, ${toRgba(tint, 0.82)} 42%, ${toRgba(tint, 0.98)} 70%, rgba(0, 0, 0, 0.6) 100%)`,
+        0.03,
+      )} 38%, ${toRgba(tint, 0.1)} 58%, ${toRgba(tint, 0.2)} 76%, ${toRgba(tint, 0.32)} 90%, rgba(8, 10, 14, 0.46) 100%)`,
     }),
     [tint],
   );
@@ -116,9 +116,9 @@ export default function HomePopularCard({
             className="absolute inset-x-0 bottom-0 rounded-b-2xl backdrop-blur-[16px]"
             style={{
               height: overlayHeight,
-              maskImage: "linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 32%, #000 100%)",
+              maskImage: "linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 46%, #000 100%)",
               WebkitMaskImage:
-                "linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 32%, #000 100%)",
+                "linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 46%, #000 100%)",
             }}
           />
           <div
@@ -130,7 +130,7 @@ export default function HomePopularCard({
             style={{
               height: overlayHeight,
               background:
-                "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.28) 30%, rgba(0,0,0,0.55) 100%)",
+                "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.03) 52%, rgba(0,0,0,0.1) 80%, rgba(0,0,0,0.2) 100%)",
             }}
           />
           {tagLabel ? (

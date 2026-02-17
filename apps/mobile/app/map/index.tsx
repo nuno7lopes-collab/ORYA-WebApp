@@ -43,6 +43,8 @@ import { useDiscoverStore } from "../../features/discover/store";
 import { useDebouncedValue, useDiscoverMapEvents } from "../../features/discover/hooks";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { resolveCityToAddress } from "../../features/discover/location";
+import { LocationPermissionModal } from "../../components/location/LocationPermissionModal";
+import { getLocationPermissionState, requestLocationConsent } from "../../lib/locationConsent";
 import { formatDistanceKm, getDistanceKm } from "../../lib/geo";
 import { resolveMediaUri } from "../../lib/media";
 import { safeBack } from "../../lib/navigation";
@@ -153,8 +155,11 @@ export default function MapScreen() {
   const [dataReady, setDataReady] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [locationStatus, setLocationStatus] = useState<Location.PermissionStatus | null>(null);
+  const [locationCanAskAgain, setLocationCanAskAgain] = useState(true);
   const [deviceCoords, setDeviceCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [locationModalBusy, setLocationModalBusy] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
   const [priceMin, setPriceMin] = useState(0);
@@ -369,14 +374,13 @@ export default function MapScreen() {
 
   const requestDeviceLocation = useCallback(async () => {
     try {
-      const current = await Location.getForegroundPermissionsAsync();
-      let status = current.status;
-      if (status === "undetermined") {
-        const request = await Location.requestForegroundPermissionsAsync();
-        status = request.status;
+      const permission = await getLocationPermissionState();
+      setLocationStatus(permission.permissionStatus);
+      setLocationCanAskAgain(permission.canAskAgain);
+      if (permission.permissionStatus !== Location.PermissionStatus.GRANTED) {
+        setDeviceCoords(null);
+        return;
       }
-      setLocationStatus(status);
-      if (status !== "granted") return;
 
       const lastKnown = await Location.getLastKnownPositionAsync({});
       if (lastKnown?.coords) {
@@ -422,6 +426,45 @@ export default function MapScreen() {
   const handleOpenSettings = useCallback(() => {
     Linking.openSettings().catch(() => undefined);
   }, []);
+
+  const handleOpenLocationModal = useCallback(() => {
+    setLocationError(null);
+    getLocationPermissionState()
+      .then((permission) => setLocationCanAskAgain(permission.canAskAgain))
+      .catch(() => undefined);
+    setLocationModalVisible(true);
+  }, []);
+
+  const handleLocationAllow = useCallback(async () => {
+    if (locationModalBusy) return;
+    setLocationModalBusy(true);
+    setLocationError(null);
+    try {
+      const result = await requestLocationConsent({ intent: "allow" });
+      setLocationStatus(result.permissionStatus);
+      setLocationCanAskAgain(result.canAskAgain);
+      await requestDeviceLocation();
+      setLocationModalVisible(false);
+    } catch {
+      setLocationError("Não foi possível obter a localização.");
+    } finally {
+      setLocationModalBusy(false);
+    }
+  }, [locationModalBusy, requestDeviceLocation]);
+
+  const handleLocationSkip = useCallback(async () => {
+    if (locationModalBusy) return;
+    setLocationModalBusy(true);
+    setLocationError(null);
+    try {
+      await requestLocationConsent({ intent: "skip" });
+    } catch {
+      // ignore network errors for modal dismissal
+    } finally {
+      setLocationModalBusy(false);
+      setLocationModalVisible(false);
+    }
+  }, [locationModalBusy]);
 
   const initialRegion = useMemo(() => {
     const lat = deviceCoords?.lat ?? ipLat ?? DEFAULT_REGION.latitude;
@@ -1019,7 +1062,7 @@ export default function MapScreen() {
 
               {locationStatus !== "granted" ? (
                 <Pressable
-                  onPress={handleOpenSettings}
+                  onPress={handleOpenLocationModal}
                   accessibilityRole="button"
                   accessibilityLabel="Ativar localização"
                   style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
@@ -1056,6 +1099,15 @@ export default function MapScreen() {
           onRefresh={() => discoverQuery.refetch()}
           removeClippedSubviews={Platform.OS === "android"}
           showsVerticalScrollIndicator={false}
+        />
+        <LocationPermissionModal
+          visible={locationModalVisible}
+          busy={locationModalBusy}
+          errorMessage={locationError}
+          canAskAgain={locationCanAskAgain}
+          onAllow={handleLocationAllow}
+          onSkip={handleLocationSkip}
+          onOpenSettings={handleOpenSettings}
         />
       </LiquidBackground>
     );
@@ -1146,7 +1198,7 @@ export default function MapScreen() {
 
           {locationStatus !== "granted" ? (
             <Pressable
-              onPress={handleOpenSettings}
+              onPress={handleOpenLocationModal}
               accessibilityRole="button"
               accessibilityLabel="Ativar localização"
               style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
@@ -1240,6 +1292,15 @@ export default function MapScreen() {
             </GlassSurface>
           </Pressable>
         </Animated.View>
+        <LocationPermissionModal
+          visible={locationModalVisible}
+          busy={locationModalBusy}
+          errorMessage={locationError}
+          canAskAgain={locationCanAskAgain}
+          onAllow={handleLocationAllow}
+          onSkip={handleLocationSkip}
+          onOpenSettings={handleOpenSettings}
+        />
       </View>
     </LiquidBackground>
   );

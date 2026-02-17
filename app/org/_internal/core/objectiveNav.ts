@@ -161,21 +161,6 @@ export function getObjectiveSections(
           label: "Recursos",
           href: `${baseHref}/resources`,
         },
-        {
-          id: "politicas",
-          label: "Políticas",
-          href: "/org/policies?view=booking",
-        },
-        {
-          id: "precos",
-          label: "Preços",
-          href: `${baseHref}/prices`,
-        },
-        {
-          id: "integracoes",
-          label: "Integrações",
-          href: `${baseHref}/integrations`,
-        },
       );
       if (focusId) {
         const focused = sections.find((section) => section.id === focusId);

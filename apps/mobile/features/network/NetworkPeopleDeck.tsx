@@ -64,7 +64,7 @@ export const NetworkPeopleDeck = memo(function NetworkPeopleDeck({
       <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.lg }}>
         <Text className="text-white text-sm font-semibold">Sem pessoas agora.</Text>
         <Pressable
-          onPress={() => router.push("/search")}
+          onPress={() => router.push({ pathname: "/search", params: { tab: "people" } })}
           className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
           style={{ minHeight: tokens.layout.touchTarget }}
           accessibilityRole="button"

@@ -2,9 +2,15 @@
 
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { buildPositionedEvents, invertIntervals, minuteToLabel, SLOT_MINUTES } from "./helpers";
+import { buildProjectedEvents, buildPositionedEvents, invertIntervals, minuteToLabel, SLOT_MINUTES } from "./helpers";
+import {
+  buildAggregateAgendaItems,
+  type AggregateAgendaItem as WeekAggregateAgendaItem,
+  type ProjectedAgendaItem as WeekProjectedAgendaItem,
+} from "../week/aggregation";
 import type { CalendarColumn, CalendarEvent } from "./types";
 import { EventBlock } from "./EventBlock";
+import { AggregateEventBlock } from "./AggregateEventBlock";
 
 export type VirtualRowItem = {
   key: string | number | bigint;
@@ -23,6 +29,9 @@ type DayColumnProps = {
   totalHeight: number;
   rowVirtualItems: VirtualRowItem[];
   onHoverChange?: (payload: { minute: number } | null) => void;
+  onHoverEventChange?: (event: CalendarEvent | null) => void;
+  onSelectEvent?: (event: CalendarEvent) => void;
+  selectedEventId?: string | null;
 };
 
 export function DayColumn({
@@ -35,11 +44,40 @@ export function DayColumn({
   totalHeight,
   rowVirtualItems,
   onHoverChange,
+  onHoverEventChange,
+  onSelectEvent,
+  selectedEventId,
 }: DayColumnProps) {
+  const projectedEvents = useMemo(
+    () => buildProjectedEvents({ events, day: date, timezone }),
+    [date, events, timezone],
+  );
   const positionedEvents = useMemo(
     () => buildPositionedEvents({ events, day: date, timezone, minuteHeight }),
     [date, events, minuteHeight, timezone],
   );
+  const aggregatePositions = useMemo<WeekProjectedAgendaItem<CalendarEvent>[]>(
+    () =>
+      projectedEvents.map((entry) => ({
+        item: entry.event,
+        start: entry.start,
+        end: entry.end,
+        startMinute: entry.startMinute,
+        endMinute: entry.endMinute,
+      })),
+    [projectedEvents],
+  );
+  const aggregateEvents = useMemo(
+    () =>
+      buildAggregateAgendaItems<CalendarEvent>({
+        positions: aggregatePositions,
+        dayKey: `${column.id}-${date.toISOString()}`,
+        minuteHeight,
+        minimumHeight: 20,
+      }),
+    [aggregatePositions, column.id, date, minuteHeight],
+  );
+  const useAggregateBlocks = column.entityKind === "GENERAL";
   const outsideIntervals = useMemo(() => invertIntervals(column.workingIntervals), [column.workingIntervals]);
   const emitHover = (element: HTMLDivElement, clientY: number) => {
     if (!onHoverChange) return;
@@ -98,9 +136,27 @@ export function DayColumn({
         </div>
       ) : null}
 
-      {positionedEvents.map((positioned) => (
-        <EventBlock key={positioned.event.id} positioned={positioned} timezone={timezone} />
-      ))}
+      {useAggregateBlocks
+        ? aggregateEvents.map((aggregate) => (
+            <AggregateEventBlock
+              key={`${aggregate.dayKey}-${aggregate.startMinute}-${aggregate.endMinute}`}
+              aggregate={aggregate}
+              timezone={timezone}
+              selectedEventId={selectedEventId}
+              onHoverEventChange={onHoverEventChange}
+              onSelectEvent={onSelectEvent}
+            />
+          ))
+        : positionedEvents.map((positioned) => (
+            <EventBlock
+              key={positioned.event.id}
+              positioned={positioned}
+              timezone={timezone}
+              selected={selectedEventId === positioned.event.id}
+              onHoverEventChange={onHoverEventChange}
+              onSelectEvent={onSelectEvent}
+            />
+          ))}
     </div>
   );
 }

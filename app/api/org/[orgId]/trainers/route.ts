@@ -5,7 +5,6 @@ import {
   NotificationType,
   OrganizationMemberRole,
   OrganizationModule,
-  OrganizationRolePack,
   TrainerProfileReviewStatus,
 } from "@prisma/client";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -18,6 +17,17 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+const TRAINER_MEMBER_ROLES: OrganizationMemberRole[] = [
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+  OrganizationMemberRole.STAFF,
+];
+
+function isTrainerEligibleRole(role: OrganizationMemberRole | null | undefined) {
+  return !!role && TRAINER_MEMBER_ROLES.includes(role);
+}
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,
@@ -87,12 +97,38 @@ async function _GET(req: NextRequest) {
 
     const trainerMembers = await listEffectiveOrganizationMembers({
       organizationId: organization.id,
-      roles: [OrganizationMemberRole.STAFF],
+      roles: TRAINER_MEMBER_ROLES,
     });
-    const coachMembers = trainerMembers.filter(
-      (member) => member.rolePack === OrganizationRolePack.COACH,
-    );
-    const trainerUserIds = coachMembers.map((m) => m.userId);
+
+    const explicitTrainerProfiles = await prisma.trainerProfile.findMany({
+      where: { organizationId: organization.id },
+      select: {
+        id: true,
+        organizationId: true,
+        userId: true,
+        title: true,
+        bio: true,
+        specialties: true,
+        certifications: true,
+        experienceYears: true,
+        coverImageUrl: true,
+        isPublished: true,
+        reviewStatus: true,
+        reviewNote: true,
+        reviewRequestedAt: true,
+        reviewedAt: true,
+        reviewedByUserId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    const trainerMembersByUserId = new Map(trainerMembers.map((member) => [member.userId, member]));
+    const explicitTrainerUserIds = explicitTrainerProfiles
+      .map((profile) => profile.userId)
+      .filter((userId) => trainerMembersByUserId.has(userId));
+    const trainerUserIds = Array.from(new Set(explicitTrainerUserIds));
+
     const users = trainerUserIds.length
       ? await prisma.profile.findMany({
           where: { id: { in: trainerUserIds }, isDeleted: false },
@@ -100,29 +136,49 @@ async function _GET(req: NextRequest) {
         })
       : [];
     const userById = new Map(users.map((entry) => [entry.id, entry]));
-    const trainerProfiles = trainerUserIds.length
-      ? await prisma.trainerProfile.findMany({
+    const reservationProfessionals = trainerUserIds.length
+      ? await prisma.reservationProfessional.findMany({
           where: { organizationId: organization.id, userId: { in: trainerUserIds } },
+          select: { id: true, userId: true, isActive: true },
         })
       : [];
+    const profileByUser = new Map(explicitTrainerProfiles.map((profile) => [profile.userId, profile]));
+    const professionalByUser = new Map(
+      reservationProfessionals
+        .filter((professional) => !!professional.userId)
+        .map((professional) => [professional.userId as string, professional]),
+    );
 
-    const profileByUser = new Map(trainerProfiles.map((profile) => [profile.userId, profile]));
-
-    const items = coachMembers.map((member) => {
+    const items = trainerUserIds
+      .map((userId) => trainerMembersByUserId.get(userId))
+      .filter(Boolean)
+      .map((member) => {
+      if (!member) return null;
       const profile = profileByUser.get(member.userId) ?? null;
+      const professional = professionalByUser.get(member.userId) ?? null;
       const userProfile = userById.get(member.userId);
       return {
         userId: member.userId,
         fullName: userProfile?.fullName ?? null,
         username: userProfile?.username ?? null,
         avatarUrl: userProfile?.avatarUrl ?? null,
+        role: member.role,
+        rolePack: member.rolePack ?? null,
+        professionalId: professional?.id ?? null,
+        professionalIsActive: professional?.isActive ?? null,
         isPublished: profile?.isPublished ?? false,
         reviewStatus: profile?.reviewStatus ?? TrainerProfileReviewStatus.DRAFT,
         reviewNote: profile?.reviewNote ?? null,
         reviewRequestedAt: profile?.reviewRequestedAt?.toISOString() ?? null,
         profile,
       };
-    });
+    })
+      .filter(Boolean)
+      .sort((a, b) => {
+        const aName = (a?.fullName || a?.username || "").toLowerCase();
+        const bName = (b?.fullName || b?.username || "").toLowerCase();
+        return aName.localeCompare(bName, "pt-PT");
+      });
 
     return respondOk(ctx, { items, organizationId: organization.id }, { status: 200 });
   } catch (err) {
@@ -181,10 +237,9 @@ async function _PATCH(req: NextRequest) {
 
     if (
       !trainerMembership ||
-      trainerMembership.role !== OrganizationMemberRole.STAFF ||
-      trainerMembership.rolePack !== OrganizationRolePack.COACH
+      !isTrainerEligibleRole(trainerMembership.role)
     ) {
-      return fail(ctx, 404, "NOT_COACH");
+      return fail(ctx, 404, "NOT_TEAM_MEMBER");
     }
 
     const existingProfile = await prisma.trainerProfile.findUnique({
@@ -289,7 +344,8 @@ async function _POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => null);
-    const organizationId = parseOrganizationId(body?.organizationId);
+    const organizationId = resolveOrganizationIdFromRequest(req) ?? parseOrganizationId(body?.organizationId);
+    const targetUserId = typeof body?.userId === "string" ? body.userId.trim() : "";
 
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: organizationId ?? undefined,
@@ -311,7 +367,81 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 403, "FORBIDDEN");
     }
 
-    return fail(ctx, 410, "TRAINER_CREATE_FLOW_REMOVED");
+    if (!targetUserId) {
+      return fail(ctx, 400, "INVALID_PAYLOAD");
+    }
+
+    const member = await getEffectiveOrganizationMember({
+      organizationId: organization.id,
+      userId: targetUserId,
+    });
+    if (!member || !isTrainerEligibleRole(member.role)) {
+      return fail(ctx, 404, "NOT_TEAM_MEMBER");
+    }
+
+    const targetProfile = await prisma.profile.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, fullName: true, username: true },
+    });
+    if (!targetProfile) {
+      return fail(ctx, 404, "USER_NOT_FOUND");
+    }
+
+    const existingTrainerProfile = await prisma.trainerProfile.findUnique({
+      where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
+      select: { id: true },
+    });
+
+    const trainerProfile = await prisma.trainerProfile.upsert({
+      where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
+      update: {},
+      create: {
+        organizationId: organization.id,
+        userId: targetUserId,
+        isPublished: false,
+        reviewStatus: TrainerProfileReviewStatus.DRAFT,
+      },
+    });
+
+    const existingProfessional = await prisma.reservationProfessional.findFirst({
+      where: { organizationId: organization.id, userId: targetUserId },
+      select: { id: true, isActive: true },
+    });
+    let professionalId = existingProfessional?.id ?? null;
+
+    if (!existingProfessional) {
+      const professional = await prisma.reservationProfessional.create({
+        data: {
+          organizationId: organization.id,
+          userId: targetUserId,
+          name: targetProfile.fullName?.trim() || targetProfile.username?.trim() || "Treinador",
+          roleTitle: "Treinador",
+          isActive: true,
+          priority: 0,
+        },
+        select: { id: true },
+      });
+      professionalId = professional.id;
+    } else if (!existingProfessional.isActive) {
+      await prisma.reservationProfessional.update({
+        where: { id: existingProfessional.id },
+        data: { isActive: true },
+      });
+    }
+
+    return respondOk(
+      ctx,
+      {
+        trainer: {
+          userId: targetUserId,
+          role: member.role,
+          rolePack: member.rolePack ?? null,
+          professionalId,
+          profile: trainerProfile,
+        },
+      },
+      { status: existingTrainerProfile ? 200 : 201 },
+    );
   } catch (err) {
     console.error("[organizacao/trainers][POST]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");

@@ -1027,15 +1027,5 @@ async function _POST(req: NextRequest) {
   }
 }
 
-async function _POST_DISABLED(req: NextRequest) {
-  const ctx = getRequestContext(req);
-  return fail(
-    ctx,
-    410,
-    "BACKOFFICE_BOOKING_DISABLED",
-    "Criação interna de reservas desativada. Use o fluxo de reserva do utilizador ou hard block operacional.",
-  );
-}
-
 export const GET = withApiEnvelope(_GET);
-export const POST = withApiEnvelope(_POST_DISABLED);
+export const POST = withApiEnvelope(_POST);
