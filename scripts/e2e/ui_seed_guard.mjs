@@ -139,6 +139,6 @@ async function main() {
 main().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`[ui_seed_guard] ${message}\n`);
-  process.stderr.write("[ui_seed_guard] se falhar por seed, correr: npm run seed:top-padel:full\n");
+  process.stderr.write("[ui_seed_guard] seed legacy removido; criar e executar o novo seed canónico antes do UI gate.\n");
   process.exit(1);
 });

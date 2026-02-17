@@ -219,8 +219,7 @@ if [[ "$RUN_MIGRATIONS" == "1" ]]; then
 fi
 
 if [[ "$RUN_SEED" == "1" ]]; then
-  log "Seeding events"
-  node scripts/seed_events.js >> "$REPORT" 2>&1
+  log "RUN_SEED=1 pedido, mas os seeds legacy foram removidos. Ignorar seeding automático."
 fi
 
 require_env DATABASE_URL
