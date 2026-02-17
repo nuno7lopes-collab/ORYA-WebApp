@@ -13,6 +13,7 @@ import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -63,6 +64,8 @@ async function _POST(req: NextRequest) {
           format: true,
           numberOfCourts: true,
           advancedSettings: true,
+          padelClubId: true,
+          partnerClubIds: true,
         },
       },
     },
@@ -99,6 +102,28 @@ async function _POST(req: NextRequest) {
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const configAdvanced = (event.padelTournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? {};
+  const requestedCourtIds = Array.isArray(body.courtIds)
+    ? body.courtIds
+        .map((value) => parseNumber(value))
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
+        .map((value) => Math.floor(value))
+    : [];
+  const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
+    ? body.courtPriorityOrder
+        .map((value) => parseNumber(value))
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
+        .map((value) => Math.floor(value))
+    : [];
+  const resolvedCourtSelection = await resolvePadelCourtSelection({
+    db: prisma,
+    organizationId: event.organizationId,
+    padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
+    partnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
+    advancedSettings: configAdvanced,
+    requestedCourtIds,
+    requestedCourtPriorityOrder,
+  });
+
   const capacityPolicyRaw =
     configAdvanced.capacityPolicy && typeof configAdvanced.capacityPolicy === "object"
       ? (configAdvanced.capacityPolicy as Record<string, unknown>)
@@ -122,12 +147,6 @@ async function _POST(req: NextRequest) {
         parseNumber(configAdvanced.gameDurationMinutes) ??
         60;
       const bufferMinutes = parseNumber(scheduleDefaultsRaw.bufferMinutes) ?? 5;
-      const courtIds = Array.isArray(configAdvanced.courtIds)
-        ? configAdvanced.courtIds
-            .map((value) => parseNumber(value))
-            .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
-            .map((value) => Math.floor(value))
-        : [];
       const formatProfilesByCategoryRaw =
         configAdvanced.formatProfilesByCategory && typeof configAdvanced.formatProfilesByCategory === "object"
           ? (configAdvanced.formatProfilesByCategory as Record<string, unknown>)
@@ -143,6 +162,14 @@ async function _POST(req: NextRequest) {
               typeof formatProfilesByCategoryRaw.global === "object"
             ? (formatProfilesByCategoryRaw.global as Record<string, unknown>)
             : null;
+      const resolvedAmMxProgressionMode =
+        categoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : undefined;
+      const resolvedNonStopMode =
+        categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+          ? categoryProfile.nonStopMode
+          : undefined;
+      const resolvedNonStopRounds =
+        parseNumber(categoryProfile?.nonStopRounds) ?? parseNumber(categoryProfile?.roundsHint);
       const confirmedTeams = await prisma.padelPairing.count({
         where: {
           eventId,
@@ -156,18 +183,22 @@ async function _POST(req: NextRequest) {
           : categoryFormatOverride
             ? categoryFormatOverride
             : format;
+      const parsedEffectiveFormat = parsePadelFormat(effectiveFormat);
 
       const plan = computePadelPlan({
-        format: effectiveFormat,
+        format: parsedEffectiveFormat ?? effectiveFormat,
         categories: [
           {
             categoryId: resolvedCategoryId,
             teams: confirmedTeams,
-            format: effectiveFormat,
+            format: parsedEffectiveFormat ?? effectiveFormat,
             amMxMode:
               categoryProfile?.amMxMode === "FIXED_PAIR" || categoryProfile?.amMxMode === "INDIVIDUAL_ROTATION"
                 ? (categoryProfile.amMxMode as "FIXED_PAIR" | "INDIVIDUAL_ROTATION")
                 : undefined,
+            amMxProgressionMode: resolvedAmMxProgressionMode,
+            nonStopMode: resolvedNonStopMode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST" | undefined,
+            nonStopRounds: resolvedNonStopRounds,
             roundsHint: parseNumber(categoryProfile?.roundsHint),
             groupCount: parseNumber(categoryProfile?.groupCount),
             groupSize: parseNumber(categoryProfile?.groupSize),
@@ -179,10 +210,10 @@ async function _POST(req: NextRequest) {
         windowEnd,
         durationMinutes,
         bufferMinutes,
-        courtIds,
+        courtIds: resolvedCourtSelection.courtIds,
         courtsCount:
           parseNumber(event.padelTournamentConfig?.numberOfCourts) ??
-          (courtIds.length > 0 ? courtIds.length : 1),
+          (resolvedCourtSelection.courts.length > 0 ? resolvedCourtSelection.courts.length : 1),
         categoryWeights:
           configAdvanced.categoryWeights && typeof configAdvanced.categoryWeights === "object"
             ? (configAdvanced.categoryWeights as Record<string, number>)
@@ -203,8 +234,30 @@ async function _POST(req: NextRequest) {
     }
   }
 
+  const formatProfilesByCategoryRaw =
+    configAdvanced.formatProfilesByCategory && typeof configAdvanced.formatProfilesByCategory === "object"
+      ? (configAdvanced.formatProfilesByCategory as Record<string, unknown>)
+      : null;
+  const profileKey = resolvedCategoryId ? String(resolvedCategoryId) : "global";
+  const categoryProfile =
+    formatProfilesByCategoryRaw &&
+    formatProfilesByCategoryRaw[profileKey] &&
+    typeof formatProfilesByCategoryRaw[profileKey] === "object"
+      ? (formatProfilesByCategoryRaw[profileKey] as Record<string, unknown>)
+      : formatProfilesByCategoryRaw &&
+          formatProfilesByCategoryRaw.global &&
+          typeof formatProfilesByCategoryRaw.global === "object"
+        ? (formatProfilesByCategoryRaw.global as Record<string, unknown>)
+        : null;
+  const effectiveFormatForGenerationRaw =
+    typeof categoryProfile?.format === "string"
+      ? categoryProfile.format
+      : categoryFormatOverride
+        ? categoryFormatOverride
+        : format;
+  const effectiveFormatForGeneration = parsePadelFormat(effectiveFormatForGenerationRaw) ?? format;
   const phaseNormalized = phase === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
-  const isGroupsFormat = format === "GRUPOS_ELIMINATORIAS";
+  const isGroupsFormat = effectiveFormatForGeneration === "GRUPOS_ELIMINATORIAS";
   const existingPolicy = isGroupsFormat ? "error" : "replace";
   const notifyUsers = !isGroupsFormat || phaseNormalized === "KNOCKOUT";
 
@@ -217,11 +270,13 @@ async function _POST(req: NextRequest) {
   const result = await autoGeneratePadelMatches({
     eventId,
     categoryId: resolvedCategoryId ?? null,
-    format,
+    format: effectiveFormatForGeneration,
     phase: isGroupsFormat ? phaseNormalized : undefined,
     allowIncomplete,
     existingPolicy,
     notifyUsers,
+    courtIds: resolvedCourtSelection.courtIds,
+    courtPriorityOrder: resolvedCourtSelection.courtPriorityOrder,
     actorUserId: user.id,
     auditAction: "PADEL_MATCHES_GENERATED",
   });

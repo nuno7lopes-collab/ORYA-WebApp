@@ -1228,7 +1228,10 @@ export function NewOrganizationEventPage({
                         Procurar no diretório
                       </button>
                       <Link
-                        href="/org/padel/clubs?section=padel-club&padel=clubs"
+                        href={appendOrganizationIdToHref(
+                          "/org/padel/clubs?section=padel-club&padel=clubs",
+                          organizationId,
+                        )}
                         className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                       >
                         Criar clube rápido
@@ -4070,7 +4073,7 @@ export function NewOrganizationEventPage({
                       <p className="text-[12px] text-white/70">Configuração</p>
                     </div>
                     <Link
-                      href="/org/padel/clubs?section=padel-club"
+                      href={appendOrganizationIdToHref("/org/padel/clubs?section=padel-club", organizationId)}
                       className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-white/30 hover:bg-white/15"
                     >
                       Hub
@@ -4137,7 +4140,10 @@ export function NewOrganizationEventPage({
                             Abrir diretório
                           </button>
                           <Link
-                            href="/org/padel/clubs?section=padel-club&padel=clubs"
+                            href={appendOrganizationIdToHref(
+                              "/org/padel/clubs?section=padel-club&padel=clubs",
+                              organizationId,
+                            )}
                             className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70 hover:border-white/30"
                           >
                             Criar clube rápido

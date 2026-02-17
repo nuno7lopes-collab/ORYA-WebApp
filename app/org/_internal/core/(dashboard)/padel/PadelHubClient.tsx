@@ -279,6 +279,20 @@ type PadelOpsSummaryResponse = {
   };
 };
 
+type PadelRoundsAdvanceResponse = {
+  ok: boolean;
+  generated?: number;
+  scheduled?: number;
+  unscheduledByReason?: Record<string, number>;
+  roundState?: {
+    format?: string | null;
+    categoryId?: number | null;
+    dryRun?: boolean;
+    updatedAt?: string | null;
+  } | null;
+  error?: string;
+};
+
 type CalendarBlock = {
   id: number;
   startAt: string | Date;
@@ -618,6 +632,19 @@ const getDelayInfo = (match: CalendarMatch) => {
   const status = statusRaw === "DELAYED" || statusRaw === "RESCHEDULED" ? statusRaw : null;
   const reason = typeof score.delayReason === "string" ? score.delayReason : null;
   return { status, reason };
+};
+
+const parsePositiveInt = (value: unknown) => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+};
+
+const mapNumberArray = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => parsePositiveInt(entry))
+    .filter((entry): entry is number => typeof entry === "number");
 };
 
 type TimelineItem = {
@@ -1173,6 +1200,11 @@ export default function PadelHubClient({
   const [autoSchedulePreview, setAutoSchedulePreview] = useState<
     Array<{ matchId: number; courtId: number; start: string; end: string }> | null
   >(null);
+  const [roundOpsCategoryKey, setRoundOpsCategoryKey] = useState("global");
+  const [roundOpsBusy, setRoundOpsBusy] = useState(false);
+  const [roundOpsMessage, setRoundOpsMessage] = useState<string | null>(null);
+  const [roundOpsWarning, setRoundOpsWarning] = useState<string | null>(null);
+  const [roundOpsError, setRoundOpsError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<{
     type: "block" | "availability" | "match";
     id: number;
@@ -1314,6 +1346,11 @@ export default function PadelHubClient({
   );
   const { data: entryCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
     entryEventId ? `/api/padel/event-categories?eventId=${entryEventId}` : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: eventCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
+    eventId ? `/api/padel/event-categories?eventId=${eventId}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -3117,6 +3154,134 @@ export default function PadelHubClient({
       : tournamentHasKnockoutPhase
         ? "Formato eliminatório: prioriza rondas KO e mantém margem para atrasos entre rondas."
         : "Formato sem eliminatórias: a prioridade aplica-se só às rondas gerais.";
+  const advancedSettings = (padelConfig?.advancedSettings ?? {}) as Record<string, unknown>;
+  const formatProfilesByCategory =
+    advancedSettings.formatProfilesByCategory && typeof advancedSettings.formatProfilesByCategory === "object"
+      ? (advancedSettings.formatProfilesByCategory as Record<string, unknown>)
+      : {};
+  const nonStopRuntimeByCategory =
+    advancedSettings.nonStopRuntimeByCategory && typeof advancedSettings.nonStopRuntimeByCategory === "object"
+      ? (advancedSettings.nonStopRuntimeByCategory as Record<string, unknown>)
+      : {};
+  const amMxRuntimeByCategory =
+    advancedSettings.amMxRuntimeByCategory && typeof advancedSettings.amMxRuntimeByCategory === "object"
+      ? (advancedSettings.amMxRuntimeByCategory as Record<string, unknown>)
+      : {};
+  const eventCategories = useMemo(() => {
+    if (!eventCategoriesRes?.ok || !Array.isArray(eventCategoriesRes.items)) return [];
+    return eventCategoriesRes.items;
+  }, [eventCategoriesRes]);
+  const eventCategoryLabelById = useMemo(() => {
+    const labels = new Map<number, string>();
+    for (const link of eventCategories) {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (!categoryId || labels.has(categoryId)) continue;
+      labels.set(categoryId, link.category?.label || `Categoria #${categoryId}`);
+    }
+    return labels;
+  }, [eventCategories]);
+  const runtimeCategoryKeys = useMemo(() => {
+    const keys = new Set<string>();
+    Object.keys(nonStopRuntimeByCategory).forEach((key) => keys.add(key));
+    Object.keys(amMxRuntimeByCategory).forEach((key) => keys.add(key));
+    if (keys.size === 0) keys.add("global");
+    return Array.from(keys).sort((a, b) => {
+      if (a === "global") return -1;
+      if (b === "global") return 1;
+      const numericA = parsePositiveInt(a);
+      const numericB = parsePositiveInt(b);
+      if (numericA !== null && numericB !== null) return numericA - numericB;
+      return a.localeCompare(b);
+    });
+  }, [amMxRuntimeByCategory, nonStopRuntimeByCategory]);
+  const selectedNonStopRuntime =
+    nonStopRuntimeByCategory[roundOpsCategoryKey] && typeof nonStopRuntimeByCategory[roundOpsCategoryKey] === "object"
+      ? (nonStopRuntimeByCategory[roundOpsCategoryKey] as Record<string, unknown>)
+      : null;
+  const selectedAmMxRuntime =
+    amMxRuntimeByCategory[roundOpsCategoryKey] && typeof amMxRuntimeByCategory[roundOpsCategoryKey] === "object"
+      ? (amMxRuntimeByCategory[roundOpsCategoryKey] as Record<string, unknown>)
+      : null;
+  const selectedCategoryProfile =
+    formatProfilesByCategory[roundOpsCategoryKey] && typeof formatProfilesByCategory[roundOpsCategoryKey] === "object"
+      ? (formatProfilesByCategory[roundOpsCategoryKey] as Record<string, unknown>)
+      : formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
+        ? (formatProfilesByCategory.global as Record<string, unknown>)
+        : null;
+  const roundOpsFormatRaw =
+    selectedNonStopRuntime
+      ? "NON_STOP"
+      : typeof selectedCategoryProfile?.format === "string"
+        ? selectedCategoryProfile.format
+        : selectedAmMxRuntime
+          ? tournamentFormatRaw
+          : tournamentFormatRaw;
+  const roundOpsFormatLabel = roundOpsFormatRaw
+    ? PADEL_FORMAT_LABELS[roundOpsFormatRaw] ?? roundOpsFormatRaw
+    : "Formato por definir";
+  const roundOpsHasRuntime = Boolean(selectedNonStopRuntime || selectedAmMxRuntime);
+  const roundOpsCategoryId = roundOpsCategoryKey === "global" ? null : parsePositiveInt(roundOpsCategoryKey);
+  const roundOpsCategoryLabel = (() => {
+    if (roundOpsCategoryKey === "global") return "Global";
+    if (!roundOpsCategoryId) return `Categoria ${roundOpsCategoryKey}`;
+    return eventCategoryLabelById.get(roundOpsCategoryId) ?? `Categoria #${roundOpsCategoryId}`;
+  })();
+  const nonStopActivePairs = useMemo(() => {
+    if (!selectedNonStopRuntime || !Array.isArray(selectedNonStopRuntime.activePairs)) return [];
+    return selectedNonStopRuntime.activePairs
+      .map((entry, idx) => {
+        if (!Array.isArray(entry)) return null;
+        const sideA = parsePositiveInt(entry[0]);
+        const sideB = parsePositiveInt(entry[1]);
+        return {
+          court: idx + 1,
+          sideA,
+          sideB,
+        };
+      })
+      .filter((entry): entry is { court: number; sideA: number | null; sideB: number | null } => Boolean(entry));
+  }, [selectedNonStopRuntime]);
+  const nonStopQueuePairingIds = useMemo(
+    () => mapNumberArray(selectedNonStopRuntime?.queue),
+    [selectedNonStopRuntime],
+  );
+  const nonStopRoundCurrent = parsePositiveInt(selectedNonStopRuntime?.round);
+  const nonStopRoundTotal = parsePositiveInt(selectedNonStopRuntime?.roundsTotal);
+  const amMxRoundCurrent = parsePositiveInt(selectedAmMxRuntime?.roundsGenerated);
+  const amMxRoundTotal = parsePositiveInt(selectedAmMxRuntime?.roundsTotal);
+  const roundOpsRoundLabel =
+    nonStopRoundCurrent !== null
+      ? `${nonStopRoundCurrent}${nonStopRoundTotal ? ` / ${nonStopRoundTotal}` : ""}`
+      : amMxRoundCurrent !== null
+        ? `${amMxRoundCurrent}${amMxRoundTotal ? ` / ${amMxRoundTotal}` : ""}`
+        : "—";
+  const formatRuntimeCategoryLabel = (key: string) => {
+    if (key === "global") return "Global";
+    const categoryId = parsePositiveInt(key);
+    if (!categoryId) return `Categoria ${key}`;
+    return eventCategoryLabelById.get(categoryId) ?? `Categoria #${categoryId}`;
+  };
+
+  useEffect(() => {
+    if (runtimeCategoryKeys.length === 0) {
+      setRoundOpsCategoryKey("global");
+      return;
+    }
+    if (!runtimeCategoryKeys.includes(roundOpsCategoryKey)) {
+      setRoundOpsCategoryKey(runtimeCategoryKeys[0] ?? "global");
+    }
+  }, [roundOpsCategoryKey, runtimeCategoryKeys]);
+
+  useEffect(() => {
+    setRoundOpsMessage(null);
+    setRoundOpsWarning(null);
+    setRoundOpsError(null);
+  }, [eventId, roundOpsCategoryKey]);
 
   const autoScheduleCapacity = useMemo(() => {
     const parseDate = (value: string | Date | null | undefined) => {
@@ -3807,6 +3972,95 @@ export default function PadelHubClient({
       toast("Erro ao guardar preferências", "err");
     } finally {
       setAutoScheduling(false);
+    }
+  };
+
+  const runRoundsAdvance = async (dryRun = false) => {
+    if (!eventId) {
+      setRoundOpsError("Seleciona um torneio para avançar rondas.");
+      return;
+    }
+    if (!roundOpsHasRuntime) {
+      setRoundOpsWarning("Gera os jogos primeiro para iniciar runtime de rondas.");
+      return;
+    }
+
+    const payload: Record<string, unknown> = { eventId };
+    if (roundOpsCategoryId) payload.categoryId = roundOpsCategoryId;
+    if (dryRun) payload.dryRun = true;
+
+    setRoundOpsBusy(true);
+    setRoundOpsMessage(null);
+    setRoundOpsWarning(null);
+    setRoundOpsError(null);
+    try {
+      const res = await fetch("/api/padel/rounds/advance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json().catch(() => null)) as PadelRoundsAdvanceResponse | null;
+      if (!res.ok || json?.ok === false) {
+        const errorCode = typeof json?.error === "string" ? json.error : null;
+        const fallbackMessage = dryRun
+          ? "Não foi possível simular o avanço da ronda."
+          : "Não foi possível avançar a ronda.";
+        const errorMessage = sanitizeUiErrorMessage(errorCode, fallbackMessage);
+        const warnErrors = new Set([
+          "ROUND_NOT_FINISHED",
+          "ROUND_LIMIT_REACHED",
+          "ROUND_ADVANCE_INCOMPLETE",
+          "ROUND_STATE_NOT_FOUND",
+          "ROUND_STATE_INVALID",
+          "ROUND_NOT_READY",
+          "ROUND_ADVANCE_NOT_SUPPORTED",
+        ]);
+        if (errorCode && warnErrors.has(errorCode)) {
+          setRoundOpsWarning(errorMessage);
+          toast(errorMessage, "warn");
+        } else {
+          setRoundOpsError(errorMessage);
+          toast(errorMessage, "err");
+        }
+        return;
+      }
+
+      const generated = Number(json?.generated ?? 0);
+      const scheduled = Number(json?.scheduled ?? 0);
+      const unscheduledByReason =
+        json?.unscheduledByReason && typeof json.unscheduledByReason === "object" ? json.unscheduledByReason : {};
+      const unscheduledCount = Object.values(unscheduledByReason).reduce((acc, value) => {
+        const numeric = typeof value === "number" ? value : Number(value);
+        return acc + (Number.isFinite(numeric) ? numeric : 0);
+      }, 0);
+
+      const baseSummary = dryRun
+        ? `Simulação pronta: ${generated} jogos para a próxima ronda (${roundOpsCategoryLabel}).`
+        : `Ronda avançada (${roundOpsCategoryLabel}): ${generated} jogos gerados, ${scheduled} agendados.`;
+      setRoundOpsMessage(baseSummary);
+      toast(dryRun ? "Simulação de ronda concluída" : "Ronda avançada", "ok");
+
+      if (unscheduledCount > 0) {
+        const reasonsLabel = Object.entries(unscheduledByReason)
+          .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
+          .join(" · ");
+        const warningLabel = `Sem slot para ${unscheduledCount} jogo(s). ${reasonsLabel}`;
+        setRoundOpsWarning(warningLabel);
+        toast(warningLabel, "warn");
+      }
+
+      if (!dryRun) {
+        await Promise.all([mutateCalendar(), mutatePadelConfig()]);
+      } else {
+        await mutatePadelConfig();
+      }
+    } catch (err) {
+      console.error("[padel/rounds/advance]", err);
+      const message = "Erro inesperado ao avançar ronda.";
+      setRoundOpsError(message);
+      toast(message, "err");
+    } finally {
+      setRoundOpsBusy(false);
     }
   };
 
@@ -4982,6 +5236,105 @@ export default function PadelHubClient({
                 </div>
               )}
               {!eventId && <p className="text-[12px] text-white/55">Falta eventId no URL.</p>}
+            </div>
+            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0d1a33]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
+              <p className="text-sm font-semibold text-white">Operação por rondas</p>
+              <p className="text-[12px] text-white/65">
+                Avança rondas com geração incremental e auto-agendamento imediato.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <select
+                  value={roundOpsCategoryKey}
+                  onChange={(e) => setRoundOpsCategoryKey(e.target.value)}
+                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                  disabled={!eventId || roundOpsBusy}
+                >
+                  {runtimeCategoryKeys.map((key) => (
+                    <option key={`round-cat-${key}`} value={key}>
+                      {formatRuntimeCategoryLabel(key)}
+                    </option>
+                  ))}
+                </select>
+                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
+                  <p>
+                    Formato: <span className="font-semibold text-white">{roundOpsFormatLabel}</span>
+                  </p>
+                  <p className="mt-1">
+                    Ronda atual: <span className="font-semibold text-white">{roundOpsRoundLabel}</span>
+                  </p>
+                </div>
+              </div>
+              {selectedNonStopRuntime && (
+                <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3 text-[12px] text-white/80">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-white">Fila NON_STOP</p>
+                    <span className={badge("slate")}>Espera: {nonStopQueuePairingIds.length}</span>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {nonStopActivePairs.length === 0 && (
+                      <p className="text-[11px] text-white/60">Sem pares ativos no runtime.</p>
+                    )}
+                    {nonStopActivePairs.map((entry) => (
+                      <div key={`ns-court-${entry.court}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
+                        <p className="text-[11px] uppercase tracking-[0.15em] text-white/55">Campo {entry.court}</p>
+                        <p className="mt-1 text-white/85">
+                          {entry.sideA ? `#${entry.sideA}` : "—"} vs {entry.sideB ? `#${entry.sideB}` : "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  {nonStopQueuePairingIds.length > 0 && (
+                    <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                      Fila (ordem de entrada):{" "}
+                      {nonStopQueuePairingIds.map((pairingId) => `#${pairingId}`).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              )}
+              {selectedAmMxRuntime && !selectedNonStopRuntime && (
+                <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-[11px] text-white/75">
+                  Progressão AM/MX dinâmica ativa para {roundOpsCategoryLabel}. O próximo avanço gera só a ronda
+                  seguinte.
+                </div>
+              )}
+              {!roundOpsHasRuntime && (
+                <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+                  Runtime ainda não iniciado. Gera os jogos do torneio para ativar avanço por rondas.
+                </div>
+              )}
+              {roundOpsMessage && (
+                <div className="rounded-xl border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+                  {roundOpsMessage}
+                </div>
+              )}
+              {roundOpsWarning && (
+                <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                  {roundOpsWarning}
+                </div>
+              )}
+              {roundOpsError && (
+                <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                  {roundOpsError}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => runRoundsAdvance(true)}
+                  disabled={!eventId || roundOpsBusy || !roundOpsHasRuntime}
+                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 disabled:opacity-60"
+                >
+                  {roundOpsBusy ? "A processar…" : "Simular avanço"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runRoundsAdvance(false)}
+                  disabled={!eventId || roundOpsBusy || !roundOpsHasRuntime}
+                  className={CTA_PAD_PRIMARY}
+                >
+                  {roundOpsBusy ? "A avançar…" : "Avançar ronda"}
+                </button>
+              </div>
             </div>
             <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Exportar calendário</p>

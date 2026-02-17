@@ -95,6 +95,42 @@ export function parseOrganizationIdFromPathname(pathname: string | null | undefi
   return parseOrgIdFromPathnameStrict(pathname);
 }
 
+const ORG_SHORTHAND_CANONICAL_SEGMENTS = new Set([
+  "analytics",
+  "analyze",
+  "bookings",
+  "calendar",
+  "categorias",
+  "chat",
+  "check-in",
+  "checkin",
+  "crm",
+  "events",
+  "eventos",
+  "finance",
+  "forms",
+  "inscricoes",
+  "manage",
+  "marketing",
+  "padel",
+  "profile",
+  "promote",
+  "reservas",
+  "scan",
+  "settings",
+  "staff",
+  "store",
+  "team",
+]);
+
+function isOrgShorthandRoute(pathname: string) {
+  const shorthandMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
+  if (!shorthandMatch?.[1]) return false;
+  const segment = shorthandMatch[1].trim().toLowerCase();
+  if (!segment || /^\d+$/.test(segment)) return false;
+  return ORG_SHORTHAND_CANONICAL_SEGMENTS.has(segment);
+}
+
 export function appendOrganizationIdToHref(href: string, organizationId: number | null): string {
   try {
     const isAbsolute = /^[a-z][a-z0-9+.-]*:/i.test(href);
@@ -116,6 +152,13 @@ export function appendOrganizationIdToHref(href: string, organizationId: number 
     if (isOrgDashboardShorthand) {
       if (!resolvedOrgId) return href;
       url.pathname = buildOrgHref(resolvedOrgId, "/overview");
+      url.searchParams.delete("organizationId");
+      url.searchParams.delete("org");
+      if (isAbsolute) return url.toString();
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+    if (resolvedOrgId && isOrgShorthandRoute(pathname)) {
+      url.pathname = `/org/${resolvedOrgId}${pathname.slice("/org".length)}`;
       url.searchParams.delete("organizationId");
       url.searchParams.delete("org");
       if (isAbsolute) return url.toString();

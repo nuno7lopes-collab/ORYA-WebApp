@@ -613,6 +613,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               format: formatValue,
               amMxMode:
                 formatValue === "AMERICANO" || formatValue === "MEXICANO" ? "INDIVIDUAL_ROTATION" : undefined,
+              amMxProgressionMode:
+                formatValue === "AMERICANO" || formatValue === "MEXICANO" ? "ROUND_BY_ROUND" : undefined,
+              nonStopMode: formatValue === "NON_STOP" ? "ACTIVE_QUEUE" : undefined,
             };
             return acc;
           }, {}),
@@ -634,6 +637,14 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             NON_STOP: 0.7,
             AMERICANO: 0.7,
             MEXICANO: 0.7,
+            byCategory: selectedCategories.reduce<Record<string, Record<string, number>>>((acc, category) => {
+              acc[String(category.id)] = {
+                NON_STOP: 0.7,
+                AMERICANO: 0.7,
+                MEXICANO: 0.7,
+              };
+              return acc;
+            }, {}),
           },
           courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
         },
@@ -755,6 +766,71 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       prev.includes(staffId) ? prev.filter((id) => id !== staffId) : [...prev, staffId],
     );
   };
+  const readinessDone = readinessItems.filter((item) => item.done).length;
+  const readinessPercent = readinessItems.length > 0 ? Math.round((readinessDone / readinessItems.length) * 100) : 0;
+  const blockingWarningsCount = registrationWarnings.length + scheduleWarnings.length;
+  const identityIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!title.trim()) issues.push("Título em falta.");
+    if (!selectedClubId) issues.push("Seleciona um clube.");
+    if (selectedClubId && !location.addressId) issues.push("Morada do clube não normalizada.");
+    if (!startsAt) issues.push("Data/hora de início em falta.");
+    if (!endsAt) issues.push("Data/hora de fim em falta.");
+    const startDate = parseDateTimeLocal(startsAt);
+    const endDate = parseDateTimeLocal(endsAt);
+    if (startDate && endDate && endDate <= startDate) {
+      issues.push("Fim deve ser depois do início.");
+    }
+    return issues;
+  }, [title, selectedClubId, location.addressId, startsAt, endsAt]);
+  const registrationIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!registrationStartsAt || !registrationEndsAt) {
+      issues.push("Janela de inscrições incompleta.");
+    }
+    if (!scheduleWindowStart || !scheduleWindowEnd) {
+      issues.push("Janela de calendário incompleta.");
+    }
+    return [...issues, ...registrationWarnings, ...scheduleWarnings];
+  }, [
+    registrationStartsAt,
+    registrationEndsAt,
+    scheduleWindowStart,
+    scheduleWindowEnd,
+    registrationWarnings,
+    scheduleWarnings,
+  ]);
+  const categoriesIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (selectedCategories.length === 0) issues.push("Seleciona pelo menos uma categoria.");
+    if (selectedCategories.length > 0 && !defaultCategoryId) {
+      issues.push("Define a categoria principal.");
+    }
+    return issues;
+  }, [selectedCategories.length, defaultCategoryId]);
+  const operationIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!format) issues.push("Formato global em falta.");
+    if (!eligibility) issues.push("Elegibilidade em falta.");
+    if (courtsCount <= 0) issues.push("Sem campos operacionais selecionados.");
+    if (isInterclub && (asNumber(teamSize) ?? 0) < 2) {
+      issues.push("Tamanho de equipa inválido para interclubes.");
+    }
+    return issues;
+  }, [format, eligibility, courtsCount, isInterclub, teamSize]);
+
+  const renderSectionIssues = (issues: string[]) =>
+    issues.length > 0 ? (
+      <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
+        <p className="font-semibold">Rever nesta secção</p>
+        <div className="mt-1 space-y-1">
+          {issues.slice(0, 3).map((issue, idx) => (
+            <p key={`${issue}-${idx}`}>• {issue}</p>
+          ))}
+          {issues.length > 3 ? <p>• +{issues.length - 3} ponto(s) adicional(is)</p> : null}
+        </div>
+      </div>
+    ) : null;
 
   return (
     <CreateWizardShell>
@@ -763,10 +839,68 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         title="Criar torneio"
         subtitle="Fluxo dedicado: configura clube, categorias, regras operacionais e prontidão para publicação."
       />
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Prontidão</p>
+          <p className="mt-1 text-lg font-semibold text-white">{readinessPercent}%</p>
+          <p className="text-[11px] text-white/60">
+            {readinessDone}/{readinessItems.length} checkpoints.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Categorias ativas</p>
+          <p className="mt-1 text-lg font-semibold text-white">{selectedCategories.length}</p>
+          <p className="text-[11px] text-white/60">Categoria principal: {defaultCategoryId ? "definida" : "pendente"}.</p>
+        </div>
+        <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Campos em uso</p>
+          <p className="mt-1 text-lg font-semibold text-white">{courtsCount || 0}</p>
+          <p className="text-[11px] text-white/60">{useAllCourts ? "Modo todos os campos" : "Seleção manual ativa"}.</p>
+        </div>
+        <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Publicação</p>
+          <p className="mt-1 text-lg font-semibold text-white">{savingMode === "PUBLISH" ? "A validar" : "Guardrails ativos"}</p>
+          <p className="text-[11px] text-white/60">
+            {blockingWarningsCount > 0
+              ? `${blockingWarningsCount} alerta(s) para rever antes de publicar.`
+              : "Lifecycle valida antes de publicar."}
+          </p>
+        </div>
+      </section>
+      <div className="rounded-full border border-white/12 bg-black/30 p-1">
+        <div className="h-2 rounded-full bg-white/10">
+          <div
+            className="h-2 rounded-full bg-gradient-to-r from-[#58D8FF] via-[#6BFFFF] to-[#6AFFC8] transition-all"
+            style={{ width: `${Math.max(8, readinessPercent)}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-[12px]">
+        {[
+          { id: "wizard-identity", label: "Identidade" },
+          { id: "wizard-registration", label: "Inscrições" },
+          { id: "wizard-categories", label: "Categorias" },
+          { id: "wizard-operation", label: "Operação" },
+        ].map((section) => (
+          <a
+            key={section.id}
+            href={`#${section.id}`}
+            className="rounded-full border border-white/14 bg-white/[0.04] px-3 py-1 text-white/75 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
+          >
+            {section.label}
+          </a>
+        ))}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-5">
 
       <CreateWizardSectionCard
+        id="wizard-identity"
         title="Identidade e Datas"
         subtitle="Nome do torneio, período e localização normalizada."
+        statusLabel={identityIssues.length === 0 ? "OK" : `Rever (${identityIssues.length})`}
+        statusTone={identityIssues.length === 0 ? "ok" : "warn"}
       >
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm text-white/70">
@@ -832,11 +966,15 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               <p className="text-[12px] text-white/60">Seleciona um clube para carregar a morada.</p>
             )}
           </div>
+          {renderSectionIssues(identityIssues)}
       </CreateWizardSectionCard>
 
       <CreateWizardSectionCard
+        id="wizard-registration"
         title="Inscrições e Agenda"
         subtitle="Janela de inscrições e defaults operacionais para calendário automático."
+        statusLabel={registrationIssues.length === 0 ? "OK" : `Rever (${registrationIssues.length})`}
+        statusTone={registrationIssues.length === 0 ? "ok" : "warn"}
       >
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -1001,11 +1139,15 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               )}
             </div>
           )}
+          {renderSectionIssues(registrationIssues)}
       </CreateWizardSectionCard>
 
       <CreateWizardSectionCard
+        id="wizard-categories"
         title="Categorias e Pricing"
         subtitle="Define categorias ativas, preço por jogador, capacidade e formato por categoria."
+        statusLabel={categoriesIssues.length === 0 ? "OK" : `Rever (${categoriesIssues.length})`}
+        statusTone={categoriesIssues.length === 0 ? "ok" : "warn"}
       >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1165,11 +1307,15 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               Aplicar formato global às selecionadas
             </button>
           </div>
+          {renderSectionIssues(categoriesIssues)}
       </CreateWizardSectionCard>
 
       <CreateWizardSectionCard
+        id="wizard-operation"
         title="Formato e Operação"
         subtitle="Elegibilidade, split, ruleset, interclub e seleção de campos/equipa."
+        statusLabel={operationIssues.length === 0 ? "OK" : `Rever (${operationIssues.length})`}
+        statusTone={operationIssues.length === 0 ? "ok" : "warn"}
       >
           <div className="grid gap-3 md:grid-cols-3">
             <label className="space-y-1 text-sm text-white/70">
@@ -1291,9 +1437,23 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               </div>
             </div>
           )}
+          {renderSectionIssues(operationIssues)}
       </CreateWizardSectionCard>
+        </div>
 
-      <CreateWizardChecklist title="Checklist de prontidão" items={readinessItems} />
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <CreateWizardChecklist title="Checklist de prontidão" items={readinessItems} />
+          <div className="rounded-3xl border border-white/12 bg-black/30 p-4">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Resumo operacional</p>
+            <div className="mt-3 space-y-2 text-[12px] text-white/75">
+              <p>Clube: {selectedClub?.name ?? "Selecionar clube"}</p>
+              <p>Formato global: {resolveFormatLabel(format)}</p>
+              <p>Equipa operacional: {selectedStaffIds.length} membro(s)</p>
+              <p>Inscrições: {registrationWarnings.length === 0 ? "Janela válida" : "Rever janela"}</p>
+            </div>
+          </div>
+        </aside>
+      </div>
 
       {error && <CreateWizardAlert variant="error">{error}</CreateWizardAlert>}
 

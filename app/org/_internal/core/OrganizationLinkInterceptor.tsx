@@ -5,10 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { appendOrganizationIdToHref, parseOrgIdFromPathnameStrict } from "@/lib/organizationIdUtils";
 
 function shouldNormalizePath(pathname: string) {
-  if (/^\/org(?:\/overview)?$/i.test(pathname)) return true;
-  const canonicalMatch = pathname.match(/^\/org\/([^/]+)(?:\/|$)/i);
-  if (!canonicalMatch) return false;
-  return /^\d+$/.test(canonicalMatch[1] ?? "");
+  return /^\/org(?:\/|$)/i.test(pathname);
 }
 
 export default function OrganizationLinkInterceptor({

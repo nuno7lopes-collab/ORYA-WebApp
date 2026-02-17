@@ -29,21 +29,27 @@ describe("organization canonical href helpers", () => {
     expect(parseOrgIdFromPathnameStrict("/org-hub/organizations")).toBeNull();
   });
 
-  it("appendOrganizationIdToHref preserva hrefs não canónicos sem normalização legacy", () => {
+  it("appendOrganizationIdToHref preserva hrefs legacy fora do namespace /org", () => {
     expect(appendOrganizationIdToHref("/organizacao/manage", 7)).toBe("/organizacao/manage");
     expect(appendOrganizationIdToHref("/organizacao/become", null)).toBe("/organizacao/become");
     expect(appendOrganizationIdToHref("/organizacao", null)).toBe("/organizacao");
     expect(appendOrganizationIdToHref("/org/become?organizationId=7", 7)).toBe("/org/become?organizationId=7");
-    expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/staff");
-    expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/analyze?section=ops");
     expect(appendOrganizationIdToHref("/org/7/overview?organizationId=7", 7)).toBe("/org/7/overview");
   });
 
-  it("appendOrganizationIdToHref só canoniza o shorthand dashboard /org", () => {
+  it("appendOrganizationIdToHref canoniza /org e shorthand modular", () => {
     expect(appendOrganizationIdToHref("/org?organizationId=7", 7)).toBe("/org/7/overview");
     expect(appendOrganizationIdToHref("/org/overview?section=ferramentas&organizationId=7", 7)).toBe(
       "/org/7/overview?section=ferramentas",
     );
     expect(appendOrganizationIdToHref("/org/overview?organizationId=7&org=7", 7)).toBe("/org/7/overview");
+    expect(appendOrganizationIdToHref("/org/staff", 7)).toBe("/org/7/staff");
+    expect(appendOrganizationIdToHref("/org/analyze?section=ops", 7)).toBe("/org/7/analyze?section=ops");
+    expect(appendOrganizationIdToHref("/org/padel/tournaments/create", 7)).toBe(
+      "/org/7/padel/tournaments/create",
+    );
+    expect(appendOrganizationIdToHref("/org/events/new?preset=padel", 7)).toBe(
+      "/org/7/events/new?preset=padel",
+    );
   });
 });

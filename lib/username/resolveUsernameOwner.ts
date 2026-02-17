@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeUsernameInput } from "@/lib/username";
-import { setUsernameForOwner } from "@/lib/globalUsernames";
+import { canonicalizeUsernameOwnerType, setUsernameForOwner } from "@/lib/globalUsernames";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 
 export type ResolvedUsernameOwner =
@@ -14,8 +14,10 @@ export type ResolveUsernameOwnerOptions = {
   backfillGlobalUsername?: boolean;
 };
 
-function normalizeOwnerType(raw: string | null | undefined) {
-  return raw === "organization" ? "organization" : "user";
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidLike(value: string) {
+  return UUID_REGEX.test(value);
 }
 
 async function tryBackfillGlobalUsername(owner: {
@@ -56,27 +58,32 @@ export async function resolveUsernameOwner(
   });
 
   if (global) {
-    const ownerType = normalizeOwnerType(global.ownerType);
-    if (expectedOwnerType && ownerType !== expectedOwnerType) {
-      return null;
-    }
-    if (ownerType === "user") {
-      const profile = await prisma.profile.findUnique({
-        where: { id: global.ownerId },
-        select: { id: true, isDeleted: true },
-      });
-      if (profile && (includeDeletedUser || !profile.isDeleted)) {
-        return { normalized, ownerType: "user", ownerId: profile.id };
+    const ownerType = canonicalizeUsernameOwnerType(global.ownerType);
+    if (ownerType) {
+      if (expectedOwnerType && ownerType !== expectedOwnerType) {
+        return null;
       }
-    } else {
-      const orgId = Number(global.ownerId);
-      if (!Number.isFinite(orgId)) return null;
-      const organization = await prisma.organization.findUnique({
-        where: { id: orgId },
-        select: { id: true, status: true },
-      });
-      if (organization && (!requireActiveOrganization || organization.status === "ACTIVE")) {
-        return { normalized, ownerType: "organization", ownerId: organization.id };
+      if (ownerType === "user") {
+        if (isUuidLike(global.ownerId)) {
+          const profile = await prisma.profile.findUnique({
+            where: { id: global.ownerId },
+            select: { id: true, isDeleted: true },
+          });
+          if (profile && (includeDeletedUser || !profile.isDeleted)) {
+            return { normalized, ownerType: "user", ownerId: profile.id };
+          }
+        }
+      } else {
+        const orgId = Number(global.ownerId);
+        if (Number.isFinite(orgId) && Number.isInteger(orgId) && orgId > 0) {
+          const organization = await prisma.organization.findUnique({
+            where: { id: orgId },
+            select: { id: true, status: true },
+          });
+          if (organization && (!requireActiveOrganization || organization.status === "ACTIVE")) {
+            return { normalized, ownerType: "organization", ownerId: organization.id };
+          }
+        }
       }
     }
   }

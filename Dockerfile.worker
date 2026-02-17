@@ -2,9 +2,10 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copiamos apenas o script do worker; dependências externas não são necessárias.
-COPY scripts/operations-loop.js ./
+# Copiamos apenas o script do worker mantendo o mesmo path usado no ECS task definition.
+RUN mkdir -p scripts
+COPY scripts/operations-loop.js ./scripts/operations-loop.js
 
 ENV NODE_ENV=production
 
-CMD ["node", "operations-loop.js"]
+CMD ["node", "scripts/operations-loop.js"]

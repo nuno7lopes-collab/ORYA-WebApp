@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { formatDateTime } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { DASHBOARD_CARD, CTA_NEUTRAL, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 
 type MarketingEvent = {
@@ -24,6 +25,7 @@ type PromoCodeLite = {
 type MarketingContentKitProps = {
   events: MarketingEvent[];
   promoCodes: PromoCodeLite[];
+  organizationId?: number | null;
 };
 
 const COPY_VARIANTS = [
@@ -66,7 +68,7 @@ const COPY_VARIANTS = [
   },
 ] as const;
 
-export default function MarketingContentKit({ events, promoCodes }: MarketingContentKitProps) {
+export default function MarketingContentKit({ events, promoCodes, organizationId = null }: MarketingContentKitProps) {
   const [origin, setOrigin] = useState("");
   const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?.id ? String(events[0].id) : "");
   const [selectedPromoId, setSelectedPromoId] = useState<string>("none");
@@ -181,7 +183,10 @@ export default function MarketingContentKit({ events, promoCodes }: MarketingCon
             <h3 className="text-lg font-semibold text-white">Gerador de links</h3>
             <p className="text-[12px] text-white/65">UTM + promo para partilhas rápidas.</p>
           </div>
-          <Link href="/org/crm/campaigns" className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}>
+          <Link
+            href={appendOrganizationIdToHref("/org/crm/campaigns", organizationId)}
+            className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
+          >
             Ir para campanhas
           </Link>
         </div>

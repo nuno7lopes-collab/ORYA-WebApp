@@ -51,4 +51,50 @@ describe("formatEngine capacity", () => {
     expect(summary.unscheduledByReason.NO_SLOT_AVAILABLE).toBe(2);
     expect(summary.unscheduledByReason.COURT_NOT_AVAILABLE).toBe(1);
   });
+
+  it("returns hard cap and queue estimates for NON_STOP modes", () => {
+    const hardCapPlan = computePadelPlan({
+      format: "NON_STOP",
+      windowStart: "2026-02-17T09:00:00.000Z",
+      windowEnd: "2026-02-17T15:00:00.000Z",
+      durationMinutes: 30,
+      bufferMinutes: 0,
+      courtsCount: 5,
+      categories: [
+        {
+          categoryId: 1,
+          teams: 14,
+          format: "NON_STOP",
+          nonStopMode: "HARD_CAP_WAITLIST",
+          nonStopRounds: 6,
+        },
+      ],
+    });
+    const hardCapCategory = hardCapPlan.categories[0]!;
+    expect(hardCapCategory.hardCapMax).toBe(10);
+    expect(hardCapCategory.nonStopMode).toBe("HARD_CAP_WAITLIST");
+    expect(hardCapCategory.recommendedMax).toBe(10);
+
+    const activeQueuePlan = computePadelPlan({
+      format: "NON_STOP",
+      windowStart: "2026-02-17T09:00:00.000Z",
+      windowEnd: "2026-02-17T15:00:00.000Z",
+      durationMinutes: 30,
+      bufferMinutes: 0,
+      courtsCount: 5,
+      categories: [
+        {
+          categoryId: 1,
+          teams: 14,
+          format: "NON_STOP",
+          nonStopMode: "ACTIVE_QUEUE",
+          nonStopRounds: 6,
+        },
+      ],
+    });
+    const activeQueueCategory = activeQueuePlan.categories[0]!;
+    expect(activeQueueCategory.hardCapMax).toBeNull();
+    expect(activeQueueCategory.queueEstimatedRounds).toBeGreaterThan(0);
+    expect(activeQueueCategory.nonStopMode).toBe("ACTIVE_QUEUE");
+  });
 });

@@ -3,7 +3,9 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
+import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { cn } from "@/lib/utils";
 
 type AttendeeItem = {
@@ -90,6 +92,8 @@ export default function EventAttendeesPanel({
   eventId: number;
   isPadelEvent?: boolean;
 }) {
+  const pathname = usePathname();
+  const organizationId = parseOrganizationIdFromPathname(pathname);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<string[]>(["ACTIVE", "CHECKED_IN"]);
@@ -205,7 +209,7 @@ export default function EventAttendeesPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px]">
-          <a href={`/org/check-in?eventId=${eventId}`} className={CTA_PRIMARY}>
+          <a href={appendOrganizationIdToHref(`/org/check-in?eventId=${eventId}`, organizationId)} className={CTA_PRIMARY}>
             Abrir check-in
           </a>
           <button type="button" className={CTA_SECONDARY} onClick={() => load(null, "reset")}>

@@ -257,10 +257,13 @@ export default function TrainerProfilePage() {
           </p>
           {canEdit && (
             <div className="flex flex-wrap gap-2">
-              <Link href="/org/bookings" className={CTA_SECONDARY}>
+              <Link href={appendOrganizationIdToHref("/org/bookings", organization?.id ?? browserOrgId)} className={CTA_SECONDARY}>
                 Ver agenda
               </Link>
-              <Link href="/org/bookings?create=service" className={CTA_SECONDARY}>
+              <Link
+                href={appendOrganizationIdToHref("/org/bookings?create=service", organization?.id ?? browserOrgId)}
+                className={CTA_SECONDARY}
+              >
                 Criar serviço
               </Link>
             </div>

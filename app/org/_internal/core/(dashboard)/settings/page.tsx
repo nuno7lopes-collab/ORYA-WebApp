@@ -134,6 +134,9 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [brandingCoverUrlInput, setBrandingCoverUrlInput] = useState("");
   const [savingPublicProfile, setSavingPublicProfile] = useState(false);
   const [publicProfileMessage, setPublicProfileMessage] = useState<string | null>(null);
+  const [orgFormDirty, setOrgFormDirty] = useState(false);
+  const [officialEmailDirty, setOfficialEmailDirty] = useState(false);
+  const [publicProfileDirty, setPublicProfileDirty] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const avatarFileRef = useRef<HTMLInputElement | null>(null);
@@ -142,6 +145,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [coverActionsOpen, setCoverActionsOpen] = useState(false);
   const [coverCropFile, setCoverCropFile] = useState<File | null>(null);
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
+  const hydratedOrganizationIdRef = useRef<number | null>(null);
 
   const [dangerConfirm, setDangerConfirm] = useState("");
   const [dangerFeedback, setDangerFeedback] = useState<string | null>(null);
@@ -155,32 +159,55 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
   useEffect(() => {
     if (!organization) return;
+    const organizationChanged = hydratedOrganizationIdRef.current !== organization.id;
+    if (organizationChanged) {
+      hydratedOrganizationIdRef.current = organization.id;
+      setOrgFormDirty(false);
+      setOfficialEmailDirty(false);
+      setPublicProfileDirty(false);
+    }
+
+    const shouldHydrateOrgForm = organizationChanged || !orgFormDirty;
+    const shouldHydrateOfficialEmail = organizationChanged || !officialEmailDirty;
+    const shouldHydratePublicProfile = organizationChanged || !publicProfileDirty;
+
     const formatted = organization.addressRef?.formattedAddress ?? "";
-    setAddressQuery(formatted);
-    setAddressId(organization.addressId ?? null);
-    setShowAddressPublicly((organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false);
-    const pendingEmail = normalizeOfficialEmail(
-      (organization as { officialEmailPending?: { newEmail?: string | null } | null })?.officialEmailPending?.newEmail ?? null,
-    );
-    setOfficialEmail(pendingEmail ?? "");
-    setContactPhone(profile?.contactPhone ?? "");
-    setSupportEmail(organization.supportEmail ?? "");
-    setSupportPhone(organization.supportPhone ?? "");
-    setPublicNameInput(organization.publicName ?? "");
-    setPublicUsernameInput(organization.username ?? "");
-    setPublicDescriptionInput(organization.publicDescription ?? "");
-    setPublicWebsiteInput(organization.publicWebsite ?? "");
-    setPublicInstagramHandle(extractPublicSocialHandle(organization.publicInstagram ?? null, "instagram"));
-    setPublicYoutubeHandle(extractPublicSocialHandle(organization.publicYoutube ?? null, "youtube"));
-    setPublicTiktokHandle(extractPublicSocialHandle(organization.publicTiktok ?? null, "tiktok"));
-    setPublicLinkedinHandle(extractPublicSocialHandle(organization.publicLinkedin ?? null, "linkedin"));
-    setBrandingAvatarUrlInput(organization.brandingAvatarUrl ?? "");
-    setBrandingCoverUrlInput(organization.brandingCoverUrl ?? "");
-    setAvatarActionsOpen(false);
-    setCoverActionsOpen(false);
-    setCoverCropFile(null);
-    setShowCoverCropModal(false);
-  }, [organization, profile]);
+    if (shouldHydrateOrgForm) {
+      setAddressQuery(formatted);
+      setAddressId(organization.addressId ?? null);
+      setShowAddressPublicly((organization as { showAddressPublicly?: boolean | null }).showAddressPublicly ?? false);
+      setContactPhone(profile?.contactPhone ?? "");
+      setSupportEmail(organization.supportEmail ?? "");
+      setSupportPhone(organization.supportPhone ?? "");
+    }
+
+    if (shouldHydrateOfficialEmail) {
+      const pendingEmail = normalizeOfficialEmail(
+        (organization as { officialEmailPending?: { newEmail?: string | null } | null })?.officialEmailPending?.newEmail ?? null,
+      );
+      setOfficialEmail(pendingEmail ?? "");
+    }
+
+    if (shouldHydratePublicProfile) {
+      setPublicNameInput(organization.publicName ?? "");
+      setPublicUsernameInput(organization.username ?? "");
+      setPublicDescriptionInput(organization.publicDescription ?? "");
+      setPublicWebsiteInput(organization.publicWebsite ?? "");
+      setPublicInstagramHandle(extractPublicSocialHandle(organization.publicInstagram ?? null, "instagram"));
+      setPublicYoutubeHandle(extractPublicSocialHandle(organization.publicYoutube ?? null, "youtube"));
+      setPublicTiktokHandle(extractPublicSocialHandle(organization.publicTiktok ?? null, "tiktok"));
+      setPublicLinkedinHandle(extractPublicSocialHandle(organization.publicLinkedin ?? null, "linkedin"));
+      setBrandingAvatarUrlInput(organization.brandingAvatarUrl ?? "");
+      setBrandingCoverUrlInput(organization.brandingCoverUrl ?? "");
+    }
+
+    if (organizationChanged) {
+      setAvatarActionsOpen(false);
+      setCoverActionsOpen(false);
+      setCoverCropFile(null);
+      setShowCoverCropModal(false);
+    }
+  }, [organization, profile, orgFormDirty, officialEmailDirty, publicProfileDirty]);
 
   const hasOrganization = useMemo(() => organization && data?.ok, [organization, data]);
   const bootstrappingSession = isUserLoading || (isLoading && !hasOrganization);
@@ -314,7 +341,8 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         setOrgMessage(json?.error || "Não foi possível guardar as definições.");
       } else {
         setOrgMessage("Dados da organização guardados.");
-        mutate();
+        await mutate();
+        setOrgFormDirty(false);
       }
     } catch (err) {
       console.error("[organização/settings] save", err);
@@ -395,6 +423,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
 
       setPublicProfileMessage("Perfil público guardado.");
       await mutate();
+      setPublicProfileDirty(false);
     } catch (err) {
       console.error("[organização/settings] public-profile", err);
       setPublicProfileMessage("Erro inesperado ao guardar perfil público.");
@@ -423,6 +452,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         return;
       }
       setTarget(json.url);
+      setPublicProfileDirty(true);
       setPublicProfileMessage(`${kind === "avatar" ? "Logo" : "Capa"} carregada. Guarda para publicar.`);
     } catch (err) {
       console.error("[organização/settings] branding-upload", err);
@@ -475,6 +505,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
         if (json?.error === "EMAIL_ALREADY_VERIFIED" || json?.errorCode === "EMAIL_ALREADY_VERIFIED") {
           setOfficialEmailMessage("Este email já está verificado.");
           await mutate();
+          setOfficialEmailDirty(false);
         } else {
           setOfficialEmailMessage(
             json?.message || json?.error || json?.errorCode || "Não foi possível iniciar a verificação.",
@@ -491,6 +522,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             : "Pedido enviado. Verifica a caixa de email para confirmar.",
       );
       await mutate();
+      setOfficialEmailDirty(false);
     } catch (err) {
       console.error("[organização/settings] official-email", err);
       setOfficialEmailMessage("Erro inesperado ao enviar pedido.");
@@ -526,6 +558,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setOfficialEmailMessage("Pedido pendente cancelado. Email ativo mantido.");
       setOfficialEmail("");
       await mutate();
+      setOfficialEmailDirty(false);
     } catch (err) {
       console.error("[organização/settings] official-email-cancel", err);
       setOfficialEmailMessage("Erro inesperado ao cancelar o pedido.");
@@ -807,7 +840,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <label className="pt-1 text-[12px] text-white/70">Novo email oficial</label>
               <input
                 value={officialEmail}
-                onChange={(e) => setOfficialEmail(e.target.value)}
+                onChange={(e) => {
+                  setOfficialEmail(e.target.value);
+                  setOfficialEmailDirty(true);
+                }}
                 disabled={!isOwnerOrCoOwner || officialEmailSaving || isOrganizationSuspended}
                 className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                   isOwnerOrCoOwner && !isOrganizationSuspended
@@ -884,7 +920,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             <label className="text-[12px] text-white/70">Email de suporte da loja (opcional)</label>
             <input
               value={supportEmail}
-              onChange={(e) => setSupportEmail(e.target.value)}
+              onChange={(e) => {
+                setSupportEmail(e.target.value);
+                setOrgFormDirty(true);
+              }}
               type="email"
               className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
               placeholder="suporte@organizacao.pt"
@@ -898,6 +937,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               onChange={(e) => {
                 const sanitized = sanitizePhone(e.target.value);
                 setSupportPhone(sanitized);
+                setOrgFormDirty(true);
                 if (sanitized && !isValidPhone(sanitized)) {
                   setSupportPhoneError("Telefone de suporte inválido.");
                 } else {
@@ -926,6 +966,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               onChange={(e) => {
                 const sanitized = sanitizePhone(e.target.value);
                 setContactPhone(sanitized);
+                setOrgFormDirty(true);
                 if (sanitized && !isValidPhone(sanitized)) {
                   setPhoneError("Telefone inválido. Introduz um número válido (podes incluir indicativo, ex.: +351...).");
                 } else {
@@ -951,10 +992,12 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               value={addressQuery}
               onValueChange={(next) => {
                 setAddressQuery(next);
+                setOrgFormDirty(true);
               }}
               addressId={addressId}
               onAddressIdChange={(next) => {
                 setAddressId(next);
+                setOrgFormDirty(true);
               }}
               disabled={!canEditOperational}
               minChars={2}
@@ -966,7 +1009,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <input
                 type="checkbox"
                 checked={showAddressPublicly}
-                onChange={(e) => setShowAddressPublicly(e.target.checked)}
+                onChange={(e) => {
+                  setShowAddressPublicly(e.target.checked);
+                  setOrgFormDirty(true);
+                }}
                 className="h-4 w-4 accent-[#6BFFFF]"
                 disabled={!canEditOperational}
               />
@@ -1032,7 +1078,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             <span className="text-[12px] text-white/70">Nome público</span>
             <input
               value={publicNameInput}
-              onChange={(e) => setPublicNameInput(e.target.value)}
+              onChange={(e) => {
+                setPublicNameInput(e.target.value);
+                setPublicProfileDirty(true);
+              }}
               disabled={!canEditPublicBranding}
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 canEditPublicBranding
@@ -1048,7 +1097,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <span className="pr-1 text-sm text-white/55">@</span>
               <input
                 value={publicUsernameInput}
-                onChange={(e) => setPublicUsernameInput(e.target.value.replace(/^@+/, ""))}
+                onChange={(e) => {
+                  setPublicUsernameInput(e.target.value.replace(/^@+/, ""));
+                  setPublicProfileDirty(true);
+                }}
                 disabled={!canEditPublicUsername}
                 className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
                   canEditPublicUsername ? "text-white" : "cursor-not-allowed text-white/60"
@@ -1107,6 +1159,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   type="button"
                   onClick={() => {
                     setBrandingAvatarUrlInput("");
+                    setPublicProfileDirty(true);
                     setAvatarActionsOpen(false);
                     setPublicProfileMessage("Logo removida. Guarda para publicar.");
                   }}
@@ -1168,6 +1221,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                   type="button"
                   onClick={() => {
                     setBrandingCoverUrlInput("");
+                    setPublicProfileDirty(true);
                     setCoverActionsOpen(false);
                     setPublicProfileMessage("Capa removida. Guarda para publicar.");
                   }}
@@ -1209,7 +1263,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           <span className="text-[12px] text-white/70">Bio pública</span>
           <textarea
             value={publicDescriptionInput}
-            onChange={(e) => setPublicDescriptionInput(e.target.value)}
+            onChange={(e) => {
+              setPublicDescriptionInput(e.target.value);
+              setPublicProfileDirty(true);
+            }}
             disabled={!canEditPublicProfile}
             className={`min-h-[90px] w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
               canEditPublicProfile
@@ -1225,7 +1282,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             <span className="text-[12px] text-white/70">Website</span>
             <input
               value={publicWebsiteInput}
-              onChange={(e) => setPublicWebsiteInput(e.target.value)}
+              onChange={(e) => {
+                setPublicWebsiteInput(e.target.value);
+                setPublicProfileDirty(true);
+              }}
               disabled={!canEditPublicProfile}
               className={`w-full rounded-xl border bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 ${
                 canEditPublicProfile
@@ -1241,7 +1301,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <span className="pr-2 text-[11px] text-white/50">https://www.instagram.com/</span>
               <input
                 value={publicInstagramHandle}
-                onChange={(e) => setPublicInstagramHandle(e.target.value)}
+                onChange={(e) => {
+                  setPublicInstagramHandle(e.target.value);
+                  setPublicProfileDirty(true);
+                }}
                 disabled={!canEditPublicProfile}
                 className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
                   canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
@@ -1259,7 +1322,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <span className="pr-2 text-[11px] text-white/50">https://www.youtube.com/</span>
               <input
                 value={publicYoutubeHandle}
-                onChange={(e) => setPublicYoutubeHandle(e.target.value)}
+                onChange={(e) => {
+                  setPublicYoutubeHandle(e.target.value);
+                  setPublicProfileDirty(true);
+                }}
                 disabled={!canEditPublicProfile}
                 className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
                   canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
@@ -1274,7 +1340,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
               <span className="pr-2 text-[11px] text-white/50">https://www.tiktok.com/@</span>
               <input
                 value={publicTiktokHandle}
-                onChange={(e) => setPublicTiktokHandle(e.target.value.replace(/^@+/, ""))}
+                onChange={(e) => {
+                  setPublicTiktokHandle(e.target.value.replace(/^@+/, ""));
+                  setPublicProfileDirty(true);
+                }}
                 disabled={!canEditPublicProfile}
                 className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
                   canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"
@@ -1291,7 +1360,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             <span className="pr-2 text-[11px] text-white/50">https://www.linkedin.com/company/</span>
             <input
               value={publicLinkedinHandle}
-              onChange={(e) => setPublicLinkedinHandle(e.target.value)}
+              onChange={(e) => {
+                setPublicLinkedinHandle(e.target.value);
+                setPublicProfileDirty(true);
+              }}
               disabled={!canEditPublicProfile}
               className={`w-full bg-transparent text-sm outline-none placeholder:text-white/35 ${
                 canEditPublicProfile ? "text-white" : "cursor-not-allowed text-white/60"

@@ -15,6 +15,13 @@ import { autoAdvancePadelByes } from "@/domain/padel/knockoutAdvance";
 import { normalizePadelScoreRules } from "@/domain/padel/score";
 import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
+import { parsePadelFormat } from "@/domain/padel/formatCatalog";
+import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
+import {
+  buildMexicanoRoundRelations,
+  deriveMexicanoRoundEntries,
+  type MexicanoRoundEntry,
+} from "@/domain/padel/mexicanoRecomposition";
 
 const MATCH_SYSTEM_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const MATCH_GENERATED_EVENT = "PADEL_MATCH_GENERATED";
@@ -38,6 +45,8 @@ type AutoGenerateInput = {
   allowIncomplete?: boolean;
   existingPolicy?: "skip" | "error" | "replace";
   notifyUsers?: boolean;
+  courtIds?: number[] | null;
+  courtPriorityOrder?: number[] | null;
   actorUserId?: string | null;
   auditAction?: "PADEL_MATCHES_GENERATED" | "PADEL_MATCHES_AUTO_GENERATED";
 };
@@ -227,6 +236,8 @@ export async function autoGeneratePadelMatches({
   allowIncomplete = false,
   existingPolicy = "skip",
   notifyUsers = true,
+  courtIds = null,
+  courtPriorityOrder = null,
   actorUserId = null,
   auditAction = "PADEL_MATCHES_AUTO_GENERATED",
 }: AutoGenerateInput): Promise<AutoGenerateResult> {
@@ -257,6 +268,8 @@ export async function autoGeneratePadelMatches({
       ruleSetVersionId: true,
       isInterclub: true,
       teamSize: true,
+      padelClubId: true,
+      partnerClubIds: true,
     },
   });
   const advanced = (config?.advancedSettings || {}) as {
@@ -269,6 +282,11 @@ export async function autoGeneratePadelMatches({
       indoor?: boolean | null;
     }>;
     courtIds?: Array<number | string | null>;
+    courtPriorityOrder?: Array<number | string | null>;
+    courtSelectionDefaults?: {
+      useAllCourts?: boolean;
+      courtIds?: Array<number | string | null>;
+    };
     groupsConfig?: GroupsConfig;
     seedRanks?: Record<string, unknown>;
     generationVersion?: string;
@@ -276,6 +294,8 @@ export async function autoGeneratePadelMatches({
     nonStopRounds?: number | null;
     rotationRounds?: number | null;
     formatProfilesByCategory?: Record<string, unknown>;
+    nonStopRuntimeByCategory?: Record<string, unknown>;
+    amMxRuntimeByCategory?: Record<string, unknown>;
   };
   const scoreRules = normalizePadelScoreRules(advanced.scoreRules);
 
@@ -284,62 +304,59 @@ export async function autoGeneratePadelMatches({
   }
 
   type CourtSlot = { id: number | null; name: string; clubName: string | null; displayOrder: number };
-  const courtsFromClubs = Array.isArray(advanced.courtsFromClubs)
-    ? advanced.courtsFromClubs
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
-        .map((entry, idx) => {
-          const idRaw = entry.id;
-          const id = typeof idRaw === "string" ? Number(idRaw) : idRaw;
-          const nameRaw = entry.name;
-          const name = typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : `Court ${idx + 1}`;
-          const clubNameRaw = entry.clubName;
-          const clubName = typeof clubNameRaw === "string" && clubNameRaw.trim() ? clubNameRaw.trim() : null;
-          const displayOrderRaw = entry.displayOrder;
-          const displayOrder =
-            typeof displayOrderRaw === "number" && Number.isFinite(displayOrderRaw) ? displayOrderRaw : idx;
-          return {
-            id: typeof id === "number" && Number.isFinite(id) ? id : null,
-            name,
-            clubName,
-            displayOrder,
-          };
-        })
+  const parsedRequestedCourtIds = Array.isArray(courtIds)
+    ? courtIds
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id): id is number => Number.isFinite(id) && id > 0)
+        .map((id) => Math.floor(id))
+    : [];
+  const parsedRequestedCourtPriorityOrder = Array.isArray(courtPriorityOrder)
+    ? courtPriorityOrder
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id): id is number => Number.isFinite(id) && id > 0)
+        .map((id) => Math.floor(id))
     : [];
 
-  const courtIdsRaw = Array.isArray(advanced.courtIds) ? advanced.courtIds : [];
-  const courtIds = courtIdsRaw
-    .map((id) => (typeof id === "string" ? Number(id) : id))
-    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+  const resolvedCourtSelection = await resolvePadelCourtSelection({
+    db: prisma,
+    organizationId,
+    padelClubId: config?.padelClubId ?? null,
+    partnerClubIds: config?.partnerClubIds ?? [],
+    advancedSettings: advanced as unknown as Record<string, unknown>,
+    requestedCourtIds: parsedRequestedCourtIds,
+    requestedCourtPriorityOrder: parsedRequestedCourtPriorityOrder,
+  });
 
-  let courtsList: CourtSlot[] = courtsFromClubs.sort((a, b) => a.displayOrder - b.displayOrder);
+  let courtsList: CourtSlot[] = resolvedCourtSelection.courts.map((court, idx) => ({
+    id: court.id,
+    name: court.name,
+    clubName: null,
+    displayOrder: typeof court.displayOrder === "number" ? court.displayOrder : idx,
+  }));
 
-  if (courtsList.length === 0 && courtIds.length > 0) {
-    const courts = await prisma.padelClubCourt.findMany({
-      where: {
-        id: { in: courtIds },
-        isActive: true,
-        club: { organizationId },
-      },
-      select: {
-        id: true,
-        name: true,
-        displayOrder: true,
-        club: { select: { name: true } },
-      },
-    });
-    const courtById = new Map(courts.map((court) => [court.id, court]));
-    courtsList = courtIds
-      .map((id, idx) => {
-        const court = courtById.get(id);
-        if (!court) return null;
-        return {
-          id: court.id,
-          name: court.name,
-          clubName: court.club?.name ?? null,
-          displayOrder: idx,
-        };
-      })
-      .filter((court): court is NonNullable<typeof court> => Boolean(court)) as CourtSlot[];
+  if (courtsList.length === 0) {
+    const legacyCourtsFromClubs = Array.isArray(advanced.courtsFromClubs)
+      ? advanced.courtsFromClubs
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+          .map((entry, idx) => {
+            const idRaw = entry.id;
+            const id = typeof idRaw === "string" ? Number(idRaw) : idRaw;
+            const nameRaw = entry.name;
+            const name = typeof nameRaw === "string" && nameRaw.trim() ? nameRaw.trim() : `Court ${idx + 1}`;
+            const clubNameRaw = entry.clubName;
+            const clubName = typeof clubNameRaw === "string" && clubNameRaw.trim() ? clubNameRaw.trim() : null;
+            const displayOrderRaw = entry.displayOrder;
+            const displayOrder =
+              typeof displayOrderRaw === "number" && Number.isFinite(displayOrderRaw) ? displayOrderRaw : idx;
+            return {
+              id: typeof id === "number" && Number.isFinite(id) ? id : null,
+              name,
+              clubName,
+              displayOrder,
+            };
+          })
+      : [];
+    courtsList = legacyCourtsFromClubs.sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
   if (courtsList.length === 0) {
@@ -394,18 +411,6 @@ export async function autoGeneratePadelMatches({
   );
   if (pairingIds.length < 2) return { ok: false, error: "NEED_PAIRINGS" };
 
-  const formatEffective = format ?? config?.format ?? padel_format.TODOS_CONTRA_TODOS;
-  const phaseEffective = phase ?? "GROUPS";
-  const seedSource = [
-    eventId,
-    resolvedCategoryId ?? "",
-    formatEffective,
-    phaseEffective,
-    advanced.generationVersion ?? "",
-    pairingIds.join(","),
-  ].join("|");
-  const seedHash = crypto.createHash("sha256").update(seedSource).digest("hex");
-  const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
   const formatProfilesByCategory =
     advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
       ? (advanced.formatProfilesByCategory as Record<string, unknown>)
@@ -421,7 +426,26 @@ export async function autoGeneratePadelMatches({
           typeof formatProfilesByCategory.global === "object"
         ? (formatProfilesByCategory.global as Record<string, unknown>)
         : null;
+  const formatFromCategoryProfile =
+    categoryProfile && typeof categoryProfile.format === "string" ? parsePadelFormat(categoryProfile.format) : null;
+  const formatEffective = formatFromCategoryProfile ?? format ?? config?.format ?? padel_format.TODOS_CONTRA_TODOS;
+  const phaseEffective = phase ?? "GROUPS";
+  const seedSource = [
+    eventId,
+    resolvedCategoryId ?? "",
+    formatEffective,
+    phaseEffective,
+    advanced.generationVersion ?? "",
+    pairingIds.join(","),
+  ].join("|");
+  const seedHash = crypto.createHash("sha256").update(seedSource).digest("hex");
+  const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
   const amMxMode = categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+  const amMxProgressionMode = categoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : null;
+  const nonStopMode =
+    categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+      ? (categoryProfile.nonStopMode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST")
+      : "HARD_CAP_WAITLIST";
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective !== "KNOCKOUT") {
     const existingGroupMatch = await prisma.eventMatchSlot.findFirst({
@@ -1085,12 +1109,15 @@ export async function autoGeneratePadelMatches({
         : "Jornada";
     const isIndividualRotationFormat =
       (formatEffective === "AMERICANO" || formatEffective === "MEXICANO") && amMxMode === "INDIVIDUAL_ROTATION";
+    const isDynamicIndividualRotation = isIndividualRotationFormat && amMxProgressionMode === "ROUND_BY_ROUND";
     let matchIdx = 0;
 
     if (formatEffective === "NON_STOP") {
       const profileRoundsRaw =
-        typeof categoryProfile?.roundsHint === "number"
-          ? Number(categoryProfile.roundsHint)
+        typeof categoryProfile?.nonStopRounds === "number"
+          ? Number(categoryProfile.nonStopRounds)
+          : typeof categoryProfile?.roundsHint === "number"
+            ? Number(categoryProfile.roundsHint)
           : typeof advanced.nonStopRounds === "number"
             ? Number(advanced.nonStopRounds)
             : typeof advanced.rotationRounds === "number"
@@ -1101,47 +1128,34 @@ export async function autoGeneratePadelMatches({
           ? Math.max(1, Math.floor(profileRoundsRaw))
           : 6;
       const totalTeams = drawPairingIds.length;
-      if (totalTeams % 2 !== 0) {
-        return { ok: false, error: "NON_STOP_REQUIRES_EVEN_TEAMS" };
-      }
       const maxTeamsWithoutBench = courtsList.length * 2;
-      if (totalTeams > maxTeamsWithoutBench) {
-        return { ok: false, error: "NON_STOP_MAX_TEAMS_EXCEEDED" };
+      if (nonStopMode === "HARD_CAP_WAITLIST") {
+        if (totalTeams % 2 !== 0) {
+          return { ok: false, error: "NON_STOP_REQUIRES_EVEN_TEAMS" };
+        }
+        if (totalTeams > maxTeamsWithoutBench) {
+          return { ok: false, error: "NON_STOP_MAX_TEAMS_EXCEEDED" };
+        }
       }
-      const activeCourtsCount = Math.min(courtsList.length, Math.floor(totalTeams / 2));
+      const activeCourtsCount = Math.min(courtsList.length, Math.max(1, Math.floor(totalTeams / 2)));
       if (activeCourtsCount <= 0) {
         return { ok: false, error: "NO_COURTS_AVAILABLE" };
       }
       const activeCourts = courtsList.slice(0, activeCourtsCount);
-      const buildKocFlow = (round: number, court: number) => {
-        if (round >= roundsCount) return null;
-        const nextRound = round + 1;
-        return {
-          nextWin: {
-            round: nextRound,
-            court: court === 1 ? 1 : court - 1,
-            side: court === 1 ? "A" : "B",
-          },
-          nextLose: {
-            round: nextRound,
-            court: court === activeCourtsCount ? activeCourtsCount : court + 1,
-            side: court === activeCourtsCount ? "B" : "A",
-          },
-        };
-      };
+      if (nonStopMode === "ACTIVE_QUEUE") {
+        const activeTeamsCount = activeCourtsCount * 2;
+        const activeTeams = drawPairingIds.slice(0, activeTeamsCount);
+        const queuedTeams = drawPairingIds.slice(activeTeamsCount);
+        const activePairs: Array<[number | null, number | null]> = [];
 
-      for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
         for (let courtIdx = 0; courtIdx < activeCourts.length; courtIdx += 1) {
-          const round = roundIdx + 1;
-          const court = courtIdx + 1;
           const courtSlot = activeCourts[courtIdx];
-          const flow = buildKocFlow(round, court);
-          const isFirstRound = roundIdx === 0;
-          const pairingAId = isFirstRound ? drawPairingIds[courtIdx * 2] ?? null : null;
-          const pairingBId = isFirstRound ? drawPairingIds[courtIdx * 2 + 1] ?? null : null;
-          if (isFirstRound && pairingAId == null && pairingBId == null) continue;
+          const pairingAId = activeTeams[courtIdx * 2] ?? null;
+          const pairingBId = activeTeams[courtIdx * 2 + 1] ?? null;
+          activePairs.push([pairingAId, pairingBId]);
+          if (pairingAId == null && pairingBId == null) continue;
 
-          const byeNeutral = isFirstRound && (pairingAId == null || pairingBId == null);
+          const byeNeutral = pairingAId == null || pairingBId == null;
           matchCreateData.push({
             eventId,
             categoryId: resolvedCategoryId ?? null,
@@ -1149,17 +1163,19 @@ export async function autoGeneratePadelMatches({
             pairingBId,
             status: byeNeutral ? "OFFICIAL" : "PENDING",
             roundType: "GROUPS",
-            roundLabel: `R${round}.C${court}`,
+            roundLabel: `R1.C${courtIdx + 1}`,
             groupLabel: "NS",
             courtId: courtSlot?.id ?? null,
             courtNumber: courtSlot ? courtIdx + 1 : null,
             courtName: courtSlot?.name || null,
             score: {
               mode: "TIMED_GAMES",
-              koc: {
-                round,
-                court,
-                ...(flow ?? {}),
+              nonStop: {
+                mode: "ACTIVE_QUEUE",
+                round: 1,
+                court: courtIdx + 1,
+                totalCourts: activeCourtsCount,
+                roundsTotal: roundsCount,
               },
               ...(byeNeutral
                 ? {
@@ -1174,6 +1190,98 @@ export async function autoGeneratePadelMatches({
             ...(byeNeutral ? { scoreSets: [] as Prisma.InputJsonValue, winnerPairingId: null } : {}),
           });
           matchIdx += 1;
+        }
+
+        const categoryRuntimeKey = resolvedCategoryId != null ? String(resolvedCategoryId) : "global";
+        const currentRuntimeRaw =
+          advanced.nonStopRuntimeByCategory && typeof advanced.nonStopRuntimeByCategory === "object"
+            ? (advanced.nonStopRuntimeByCategory as Record<string, unknown>)
+            : {};
+        const nextRuntimeByCategory = { ...currentRuntimeRaw };
+        nextRuntimeByCategory[categoryRuntimeKey] = {
+          mode: "ACTIVE_QUEUE",
+          round: 1,
+          roundsTotal: roundsCount,
+          activeCourtsCount,
+          courtIds: activeCourts
+            .map((court) => court.id)
+            .filter((courtId): courtId is number => typeof courtId === "number" && Number.isFinite(courtId)),
+          queue: queuedTeams,
+          activePairs,
+          updatedAt: new Date().toISOString(),
+        };
+        await prisma.padelTournamentConfig.update({
+          where: { eventId },
+          data: {
+            advancedSettings: {
+              ...(config?.advancedSettings as Record<string, unknown>),
+              nonStopRuntimeByCategory: nextRuntimeByCategory,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      } else {
+        const buildKocFlow = (round: number, court: number) => {
+          if (round >= roundsCount) return null;
+          const nextRound = round + 1;
+          return {
+            nextWin: {
+              round: nextRound,
+              court: court === 1 ? 1 : court - 1,
+              side: court === 1 ? "A" : "B",
+            },
+            nextLose: {
+              round: nextRound,
+              court: court === activeCourtsCount ? activeCourtsCount : court + 1,
+              side: court === activeCourtsCount ? "B" : "A",
+            },
+          };
+        };
+
+        for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
+          for (let courtIdx = 0; courtIdx < activeCourts.length; courtIdx += 1) {
+            const round = roundIdx + 1;
+            const court = courtIdx + 1;
+            const courtSlot = activeCourts[courtIdx];
+            const flow = buildKocFlow(round, court);
+            const isFirstRound = roundIdx === 0;
+            const pairingAId = isFirstRound ? drawPairingIds[courtIdx * 2] ?? null : null;
+            const pairingBId = isFirstRound ? drawPairingIds[courtIdx * 2 + 1] ?? null : null;
+            if (isFirstRound && pairingAId == null && pairingBId == null) continue;
+
+            const byeNeutral = isFirstRound && (pairingAId == null || pairingBId == null);
+            matchCreateData.push({
+              eventId,
+              categoryId: resolvedCategoryId ?? null,
+              pairingAId,
+              pairingBId,
+              status: byeNeutral ? "OFFICIAL" : "PENDING",
+              roundType: "GROUPS",
+              roundLabel: `R${round}.C${court}`,
+              groupLabel: "NS",
+              courtId: courtSlot?.id ?? null,
+              courtNumber: courtSlot ? courtIdx + 1 : null,
+              courtName: courtSlot?.name || null,
+              score: {
+                mode: "TIMED_GAMES",
+                koc: {
+                  round,
+                  court,
+                  ...(flow ?? {}),
+                },
+                ...(byeNeutral
+                  ? {
+                      resultType: "BYE_NEUTRAL",
+                      gamesA: 0,
+                      gamesB: 0,
+                      endedByBuzzer: false,
+                      endedAt: new Date().toISOString(),
+                    }
+                  : {}),
+              } as Prisma.InputJsonValue,
+              ...(byeNeutral ? { scoreSets: [] as Prisma.InputJsonValue, winnerPairingId: null } : {}),
+            });
+            matchIdx += 1;
+          }
         }
       }
     } else if (isIndividualRotationFormat) {
@@ -1273,12 +1381,17 @@ export async function autoGeneratePadelMatches({
         [0, 3, 1, 2],
       ];
 
-      for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
+      const createRotationRoundMatches = async (roundIdx: number, ordered: number[], previousRoundMatches?: Array<{ sideA: number[]; sideB: number[] }>) => {
         const rotationStep = formatEffective === "MEXICANO" ? roundIdx * 2 : roundIdx;
-        const rotated = rotateArray(baseOrder, rotationStep);
+        const rotated = rotateArray(ordered, rotationStep);
         const quartets = chunkArray(rotated, 4);
+        const previousRelations =
+          formatEffective === "MEXICANO" && previousRoundMatches
+            ? buildMexicanoRoundRelations(previousRoundMatches)
+            : null;
 
-        for (const quartet of quartets) {
+        for (let quartetIdx = 0; quartetIdx < quartets.length; quartetIdx += 1) {
+          const quartet = quartets[quartetIdx]!;
           if (quartet.length < 4) {
             for (const playerProfileId of quartet) {
               const byeParticipantId = await ensureTournamentParticipant(playerProfileId);
@@ -1315,9 +1428,23 @@ export async function autoGeneratePadelMatches({
             continue;
           }
 
-          const pattern = pairingPatterns[roundIdx % pairingPatterns.length];
-          const sideAPlayers = [quartet[pattern[0]], quartet[pattern[1]]];
-          const sideBPlayers = [quartet[pattern[2]], quartet[pattern[3]]];
+          let sideAPlayers: number[] = [];
+          let sideBPlayers: number[] = [];
+          if (formatEffective === "MEXICANO") {
+            const entries: MexicanoRoundEntry[] = deriveMexicanoRoundEntries(quartet, {
+              previousRoundRelations: previousRelations,
+            });
+            const firstMatch = entries.find((entry): entry is Extract<MexicanoRoundEntry, { kind: "MATCH" }> => entry.kind === "MATCH");
+            if (firstMatch) {
+              sideAPlayers = [...firstMatch.sideA];
+              sideBPlayers = [...firstMatch.sideB];
+            }
+          }
+          if (sideAPlayers.length !== 2 || sideBPlayers.length !== 2) {
+            const pattern = pairingPatterns[(roundIdx + quartetIdx) % pairingPatterns.length];
+            sideAPlayers = [quartet[pattern[0]], quartet[pattern[1]]];
+            sideBPlayers = [quartet[pattern[2]], quartet[pattern[3]]];
+          }
           const sideAParticipants = await Promise.all(
             sideAPlayers.map((playerProfileId) => ensureTournamentParticipant(playerProfileId)),
           );
@@ -1344,6 +1471,38 @@ export async function autoGeneratePadelMatches({
           }) - 1;
           matchParticipantAssignments.set(nextIndex, { sideA: sideAParticipants, sideB: sideBParticipants });
           matchIdx += 1;
+        }
+      };
+
+      if (isDynamicIndividualRotation) {
+        await createRotationRoundMatches(0, baseOrder);
+        const categoryRuntimeKey = resolvedCategoryId != null ? String(resolvedCategoryId) : "global";
+        const currentRuntimeRaw =
+          advanced.amMxRuntimeByCategory && typeof advanced.amMxRuntimeByCategory === "object"
+            ? (advanced.amMxRuntimeByCategory as Record<string, unknown>)
+            : {};
+        const nextRuntimeByCategory = { ...currentRuntimeRaw };
+        nextRuntimeByCategory[categoryRuntimeKey] = {
+          format: formatEffective,
+          mode: "INDIVIDUAL_ROTATION",
+          progressionMode: "ROUND_BY_ROUND",
+          roundsTotal: roundsCount,
+          roundsGenerated: 1,
+          seedOrder: baseOrder,
+          updatedAt: new Date().toISOString(),
+        };
+        await prisma.padelTournamentConfig.update({
+          where: { eventId },
+          data: {
+            advancedSettings: {
+              ...(config?.advancedSettings as Record<string, unknown>),
+              amMxRuntimeByCategory: nextRuntimeByCategory,
+            } as Prisma.InputJsonValue,
+          },
+        });
+      } else {
+        for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
+          await createRotationRoundMatches(roundIdx, baseOrder);
         }
       }
     } else {

@@ -6,6 +6,21 @@ import { isReservedAllowlistEntry } from "@/lib/reservedUsernames";
 type Tx = Prisma.TransactionClient | PrismaClient;
 export type UsernameOwnerType = "user" | "organization";
 
+const USER_OWNER_TYPE_ALIASES = ["user", "USER"] as const;
+const ORGANIZATION_OWNER_TYPE_ALIASES = ["organization", "ORG"] as const;
+
+export function canonicalizeUsernameOwnerType(raw: string | null | undefined): UsernameOwnerType | null {
+  if (!raw) return null;
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "user") return "user";
+  if (normalized === "organization" || normalized === "org") return "organization";
+  return null;
+}
+
+function ownerTypeAliases(ownerType: UsernameOwnerType) {
+  return ownerType === "organization" ? [...ORGANIZATION_OWNER_TYPE_ALIASES] : [...USER_OWNER_TYPE_ALIASES];
+}
+
 export class UsernameTakenError extends Error {
   code = "USERNAME_TAKEN";
   constructor(username: string) {
@@ -126,13 +141,14 @@ export async function setUsernameForOwner(options: {
       select: { ownerType: true, ownerId: true },
     });
 
-    if (existing && (existing.ownerType !== ownerType || existing.ownerId !== ownerIdStr)) {
+    const existingOwnerType = canonicalizeUsernameOwnerType(existing?.ownerType);
+    if (existing && (existingOwnerType !== ownerType || existing.ownerId !== ownerIdStr)) {
       throw new UsernameTakenError(username);
     }
 
     await trx.globalUsername.deleteMany({
       where: {
-        ownerType,
+        ownerType: { in: ownerTypeAliases(ownerType) },
         ownerId: ownerIdStr,
         username: { not: username },
       },
@@ -170,7 +186,7 @@ export async function clearUsernameForOwner(options: {
   const { ownerType, ownerId } = options;
   const client = options.tx ?? prisma;
   await client.globalUsername.deleteMany({
-    where: { ownerType, ownerId: String(ownerId) },
+    where: { ownerType: { in: ownerTypeAliases(ownerType) }, ownerId: String(ownerId) },
   });
   return { ok: true as const };
 }

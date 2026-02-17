@@ -4,9 +4,11 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatDateTime } from "@/lib/i18n";
+import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
@@ -170,6 +172,8 @@ function countActiveFilters(filters: CustomerFilters) {
 }
 
 export default function CrmClientesPage() {
+  const pathname = usePathname();
+  const organizationId = parseOrganizationIdFromPathname(pathname);
   const [draftFilters, setDraftFilters] = useState<CustomerFilters>(() => createEmptyFilters());
   const [filters, setFilters] = useState<CustomerFilters>(() => createEmptyFilters());
   const [page, setPage] = useState(1);
@@ -568,7 +572,7 @@ export default function CrmClientesPage() {
           {items.map((item) => (
             <Link
               key={item.id}
-              href={`/org/crm/customers/${item.id}`}
+              href={appendOrganizationIdToHref(`/org/crm/customers/${item.id}`, organizationId)}
               className={cn(DASHBOARD_CARD, "p-4 transition hover:border-white/25")}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">

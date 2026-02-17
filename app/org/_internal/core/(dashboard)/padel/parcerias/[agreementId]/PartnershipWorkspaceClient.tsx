@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
+import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 
 type Props = {
   agreementId: number | null;
@@ -607,7 +608,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
             <p className="text-sm text-white/70">Operação partilhada: acordo, janelas, permissões, exceções e calendário.</p>
           </div>
           <Link
-            href={`/org/padel/parcerias${organizationId ? `?organizationId=${organizationId}` : ""}`}
+            href={appendOrganizationIdToHref("/org/padel/parcerias", organizationId)}
             className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/85 hover:border-white/40"
           >
             Voltar

@@ -22,6 +22,7 @@ import {
 } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
@@ -297,69 +298,33 @@ async function _POST(req: NextRequest) {
         : "GROUPS_FIRST";
 
   const requestedCourtIds = Array.isArray(body.courtIds)
-    ? body.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+    ? body.courtIds
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id): id is number => Number.isFinite(id) && id > 0)
+        .map((id) => Math.floor(id))
     : [];
   const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
-    ? body.courtPriorityOrder.filter((id) => typeof id === "number" && Number.isFinite(id))
+    ? body.courtPriorityOrder
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id): id is number => Number.isFinite(id) && id > 0)
+        .map((id) => Math.floor(id))
     : [];
-  const configuredCourtIds = Array.isArray(advanced.courtIds)
-    ? advanced.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
-    : [];
-  const selectionDefaults = advanced.courtSelectionDefaults ?? {};
-  const defaultsCourtIds =
-    selectionDefaults.useAllCourts === false && Array.isArray(selectionDefaults.courtIds)
-      ? selectionDefaults.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
-      : [];
-  const selectedCourtIds =
-    requestedCourtIds.length > 0
-      ? requestedCourtIds
-      : defaultsCourtIds.length > 0
-        ? defaultsCourtIds
-        : configuredCourtIds;
-  const defaultCourtPriorityOrder = Array.isArray(advanced.courtPriorityOrder)
-    ? advanced.courtPriorityOrder.filter((id) => typeof id === "number" && Number.isFinite(id))
-    : [];
-
-  let courts = selectedCourtIds.length
-    ? await prisma.padelClubCourt.findMany({
-        where: { id: { in: selectedCourtIds }, club: { organizationId: organization.id }, isActive: true },
-        select: { id: true, name: true, displayOrder: true, padelClubId: true },
-        orderBy: [{ displayOrder: "asc" }],
-      })
-    : [];
-  if (courts.length === 0) {
-    const clubIds = [
-      event.padelTournamentConfig?.padelClubId ?? null,
-      ...(event.padelTournamentConfig?.partnerClubIds ?? []),
-    ].filter((id): id is number => typeof id === "number" && Number.isFinite(id));
-    if (clubIds.length > 0) {
-      courts = await prisma.padelClubCourt.findMany({
-        where: { padelClubId: { in: clubIds }, isActive: true },
-        select: { id: true, name: true, displayOrder: true, padelClubId: true },
-        orderBy: [{ displayOrder: "asc" }],
-      });
-    }
-  }
+  const courtSelection = await resolvePadelCourtSelection({
+    db: prisma,
+    organizationId: organization.id,
+    padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
+    partnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
+    advancedSettings: advanced as unknown as Record<string, unknown>,
+    requestedCourtIds,
+    requestedCourtPriorityOrder,
+  });
+  let courts = courtSelection.courts;
 
   if (courts.length === 0) {
     return jsonWrap({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });
   }
 
-  const priorityOrder =
-    requestedCourtPriorityOrder.length > 0 ? requestedCourtPriorityOrder : defaultCourtPriorityOrder;
-  if (priorityOrder.length > 0) {
-    const rankByCourtId = new Map(priorityOrder.map((courtId, idx) => [courtId, idx]));
-    courts = [...courts].sort((a, b) => {
-      const rankA = rankByCourtId.get(a.id);
-      const rankB = rankByCourtId.get(b.id);
-      if (typeof rankA === "number" && typeof rankB === "number" && rankA !== rankB) return rankA - rankB;
-      if (typeof rankA === "number") return -1;
-      if (typeof rankB === "number") return 1;
-      const orderA = typeof a.displayOrder === "number" ? a.displayOrder : Number.MAX_SAFE_INTEGER;
-      const orderB = typeof b.displayOrder === "number" ? b.displayOrder : Number.MAX_SAFE_INTEGER;
-      return orderA - orderB || a.id - b.id;
-    });
-  }
+  const priorityOrder = courtSelection.courtPriorityOrder;
 
   {
     const unscheduledMatchesRaw = await prisma.eventMatchSlot.findMany({

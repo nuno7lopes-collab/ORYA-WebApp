@@ -426,6 +426,30 @@ async function _POST(req: NextRequest) {
           if (payload.amMxMode === "FIXED_PAIR" || payload.amMxMode === "INDIVIDUAL_ROTATION") {
             parsed.amMxMode = payload.amMxMode;
           }
+          if (payload.amMxProgressionMode === "ROUND_BY_ROUND") {
+            parsed.amMxProgressionMode = payload.amMxProgressionMode;
+          }
+          if (payload.nonStopMode === "ACTIVE_QUEUE" || payload.nonStopMode === "HARD_CAP_WAITLIST") {
+            parsed.nonStopMode = payload.nonStopMode;
+          }
+          const nonStopRoundsRaw =
+            typeof payload.nonStopRounds === "number" ? payload.nonStopRounds : Number(payload.nonStopRounds);
+          if (Number.isFinite(nonStopRoundsRaw) && nonStopRoundsRaw > 0) {
+            parsed.nonStopRounds = Math.floor(nonStopRoundsRaw);
+          }
+          if (payload.nonStopQueueRules && typeof payload.nonStopQueueRules === "object") {
+            const queueRulesRaw = payload.nonStopQueueRules as Record<string, unknown>;
+            const queueRules: Record<string, unknown> = {};
+            if (queueRulesRaw.fairness === "LONGEST_WAIT_FIRST" || queueRulesRaw.fairness === "ROUND_ROBIN") {
+              queueRules.fairness = queueRulesRaw.fairness;
+            }
+            if (queueRulesRaw.tieBreak === "QUEUE_ENTERED_AT" || queueRulesRaw.tieBreak === "SEED") {
+              queueRules.tieBreak = queueRulesRaw.tieBreak;
+            }
+            if (Object.keys(queueRules).length > 0) {
+              parsed.nonStopQueueRules = queueRules;
+            }
+          }
           const roundsRaw =
             typeof payload.roundsHint === "number" ? payload.roundsHint : Number(payload.roundsHint);
           if (Number.isFinite(roundsRaw) && roundsRaw > 0) {
@@ -537,19 +561,48 @@ async function _POST(req: NextRequest) {
     }
   }
   const hasRankingWeights = Object.prototype.hasOwnProperty.call(body, "rankingWeights");
-  let rankingWeights: Record<string, number> | null | undefined = undefined;
+  let rankingWeights: Record<string, unknown> | null | undefined = undefined;
   if (hasRankingWeights) {
     if (body.rankingWeights && typeof body.rankingWeights === "object") {
-      rankingWeights = Object.entries(body.rankingWeights as Record<string, unknown>).reduce<Record<string, number>>(
-        (acc, [key, value]) => {
-          const parsed = typeof value === "number" ? value : Number(value);
-          if (Number.isFinite(parsed) && parsed >= 0) {
-            acc[String(key)] = Number(parsed);
-          }
-          return acc;
-        },
-        {},
-      );
+      const rankingWeightsRaw = body.rankingWeights as Record<string, unknown>;
+      const baseWeights = Object.entries(rankingWeightsRaw).reduce<Record<string, number>>((acc, [key, value]) => {
+        if (key === "byCategory") return acc;
+        const parsed = typeof value === "number" ? value : Number(value);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          acc[String(key)] = Number(parsed);
+        }
+        return acc;
+      }, {});
+      const byCategoryRaw =
+        rankingWeightsRaw.byCategory && typeof rankingWeightsRaw.byCategory === "object" && !Array.isArray(rankingWeightsRaw.byCategory)
+          ? (rankingWeightsRaw.byCategory as Record<string, unknown>)
+          : null;
+      const byCategory = byCategoryRaw
+        ? Object.entries(byCategoryRaw).reduce<Record<string, Record<string, number>>>((acc, [categoryKey, value]) => {
+            if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+            const parsedCategoryWeights = Object.entries(value as Record<string, unknown>).reduce<Record<string, number>>(
+              (weights, [formatKey, formatValue]) => {
+                const parsed = typeof formatValue === "number" ? formatValue : Number(formatValue);
+                if (Number.isFinite(parsed) && parsed >= 0) {
+                  weights[String(formatKey)] = Number(parsed);
+                }
+                return weights;
+              },
+              {},
+            );
+            if (Object.keys(parsedCategoryWeights).length > 0) {
+              acc[String(categoryKey)] = parsedCategoryWeights;
+            }
+            return acc;
+          }, {})
+        : {};
+      rankingWeights = {
+        ...baseWeights,
+        ...(Object.keys(byCategory).length > 0 ? { byCategory } : {}),
+      };
+      if (Object.keys(rankingWeights).length === 0) {
+        rankingWeights = {};
+      }
     } else {
       rankingWeights = null;
     }

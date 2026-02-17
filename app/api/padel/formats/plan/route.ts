@@ -9,6 +9,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -23,6 +24,12 @@ const parseDate = (value: unknown) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
+
+const parseAmMxProgressionMode = (value: unknown): "ROUND_BY_ROUND" | undefined =>
+  value === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : undefined;
+
+const parseNonStopMode = (value: unknown): "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST" | undefined =>
+  value === "ACTIVE_QUEUE" || value === "HARD_CAP_WAITLIST" ? value : undefined;
 
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
@@ -47,8 +54,10 @@ async function _POST(req: NextRequest) {
         endsAt: Date | null;
         format: string | null;
         numberOfCourts: number | null;
-        advancedSettings: Record<string, unknown>;
-      }
+      advancedSettings: Record<string, unknown>;
+      padelClubId: number | null;
+      partnerClubIds: number[];
+    }
     | null = null;
 
   if (eventId) {
@@ -64,6 +73,8 @@ async function _POST(req: NextRequest) {
             format: true,
             numberOfCourts: true,
             advancedSettings: true,
+            padelClubId: true,
+            partnerClubIds: true,
           },
         },
       },
@@ -78,6 +89,8 @@ async function _POST(req: NextRequest) {
       format: event.padelTournamentConfig?.format ?? null,
       numberOfCourts: event.padelTournamentConfig?.numberOfCourts ?? null,
       advancedSettings: ((event.padelTournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? {}),
+      padelClubId: event.padelTournamentConfig?.padelClubId ?? null,
+      partnerClubIds: event.padelTournamentConfig?.partnerClubIds ?? [],
     };
   } else if (organizationId) {
     resolvedOrganizationId = organizationId;
@@ -134,15 +147,23 @@ async function _POST(req: NextRequest) {
         .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
         .map((value) => Math.floor(value))
     : [];
-
-  const configuredCourtIds = Array.isArray(advanced.courtIds)
-    ? advanced.courtIds
+  const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
+    ? body.courtPriorityOrder
         .map((value) => parseNumber(value))
         .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
         .map((value) => Math.floor(value))
     : [];
 
-  const courtIds = requestedCourtIds.length > 0 ? requestedCourtIds : configuredCourtIds;
+  const courtSelection = await resolvePadelCourtSelection({
+    db: prisma,
+    organizationId: resolvedOrganizationId,
+    padelClubId: eventDefaults?.padelClubId ?? null,
+    partnerClubIds: eventDefaults?.partnerClubIds ?? [],
+    advancedSettings: advanced,
+    requestedCourtIds,
+    requestedCourtPriorityOrder,
+  });
+  const courtIds = courtSelection.courtIds;
 
   const categories = Array.isArray(body.categories)
     ? body.categories
@@ -182,6 +203,17 @@ async function _POST(req: NextRequest) {
                 : profileForCategory?.amMxMode === "FIXED_PAIR" || profileForCategory?.amMxMode === "INDIVIDUAL_ROTATION"
                   ? (profileForCategory.amMxMode as "FIXED_PAIR" | "INDIVIDUAL_ROTATION")
                   : undefined,
+            amMxProgressionMode:
+              parseAmMxProgressionMode(entry.amMxProgressionMode) ??
+              parseAmMxProgressionMode(profileForCategory?.amMxProgressionMode),
+            nonStopMode: parseNonStopMode(entry.nonStopMode) ?? parseNonStopMode(profileForCategory?.nonStopMode),
+            nonStopRounds: parseNumber(entry.nonStopRounds ?? profileForCategory?.nonStopRounds),
+            nonStopQueueRules:
+              entry.nonStopQueueRules && typeof entry.nonStopQueueRules === "object"
+                ? (entry.nonStopQueueRules as Record<string, unknown>)
+                : profileForCategory?.nonStopQueueRules && typeof profileForCategory.nonStopQueueRules === "object"
+                  ? (profileForCategory.nonStopQueueRules as Record<string, unknown>)
+                  : undefined,
             roundsHint: parseNumber(entry.roundsHint),
             groupCount: parseNumber(entry.groupCount),
             groupSize: parseNumber(entry.groupSize),
@@ -220,7 +252,8 @@ async function _POST(req: NextRequest) {
     durationMinutes,
     bufferMinutes,
     courtIds,
-    courtsCount: parseNumber(body.courtsCount) ?? eventDefaults?.numberOfCourts ?? null,
+    courtsCount:
+      parseNumber(body.courtsCount) ?? (courtSelection.courts.length > 0 ? courtSelection.courts.length : eventDefaults?.numberOfCourts ?? null),
     categoryWeights,
     roundsHint: parseNumber(body.roundsHint),
     groupCount: parseNumber(body.groupCount),
@@ -237,6 +270,8 @@ async function _POST(req: NextRequest) {
         eventId,
         organizationId: resolvedOrganizationId,
         courtIds,
+        courtPriorityOrder: courtSelection.courtPriorityOrder,
+        courtSelectionSource: courtSelection.source,
       },
     },
     { status: 200 },

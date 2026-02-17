@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@prisma/client";
+import { AnalyticsDimensionKey, AnalyticsMetricKey, PrismaClient, SourceType } from "@prisma/client";
 import { Pool } from "pg";
 import seedrandom from "seedrandom";
 
@@ -221,6 +221,66 @@ type BookingRecord = {
   status: "BOOKING_CONFIRMED" | "BOOKING_COMPLETED" | "BOOKING_CANCELLED";
 };
 
+type TopPadelFinancialRecord = {
+  organizationId: number;
+  paymentId: string;
+  purchaseId: string;
+  sourceType: "TICKET_ORDER" | "STORE_ORDER";
+  sourceId: string;
+  customerIdentityId: string;
+  paymentIntentId: string | null;
+  paymentStatus:
+    | "SUCCEEDED"
+    | "PROCESSING"
+    | "FAILED"
+    | "CANCELLED"
+    | "PARTIAL_REFUND"
+    | "REFUNDED"
+    | "DISPUTED";
+  grossCents: number;
+  platformFeeCents: number;
+  processorFeeCents: number;
+  netToOrgCents: number;
+  refundedCents: number;
+  currency: "EUR";
+  occurredAt: Date;
+  eventId: number | null;
+};
+
+type TopPadelPurchaseSnapshot = {
+  organizationId: number;
+  paymentId: string;
+  purchaseId: string;
+  sourceType: "TICKET_ORDER" | "STORE_ORDER";
+  sourceId: string;
+  customerIdentityId: string;
+  paymentIntentId: string | null;
+  grossCents: number;
+  platformFeeCents: number;
+  processorFeeCents: number;
+  netToOrgCents: number;
+  currency: "EUR";
+  occurredAt: Date;
+  eventId: number | null;
+};
+
+type StoreRefundSeed = {
+  userId: string;
+  sourceId: string;
+  amountCents: number;
+  occurredAt: Date;
+};
+
+type CrmContactFinancialProfile = {
+  contactId: string;
+  userId: string;
+  isStaff: boolean;
+  totalSpentCents: number;
+  totalOrders: number;
+  totalStoreOrders: number;
+  lastPurchaseAt: Date | null;
+};
+
 const cityPool = [
   { city: "Porto", address: "Rua de Ceuta 118, Porto", lat: 41.14961, lng: -8.61099 },
   { city: "Lisboa", address: "Avenida da Liberdade 185, Lisboa", lat: 38.72225, lng: -9.13934 },
@@ -300,8 +360,118 @@ function roundCents(value: number) {
   return Math.round(value);
 }
 
+function resolveSeedPaymentStatus(params: {
+  index: number;
+  grossCents: number;
+  refundedCents?: number;
+}): "SUCCEEDED" | "PROCESSING" | "FAILED" | "CANCELLED" | "PARTIAL_REFUND" | "REFUNDED" | "DISPUTED" {
+  const { index, grossCents } = params;
+  const refundedCents = Math.max(0, params.refundedCents ?? 0);
+  if (grossCents <= 0) return "SUCCEEDED";
+  if (refundedCents >= grossCents) return "REFUNDED";
+  if (refundedCents > 0) return "PARTIAL_REFUND";
+
+  const cycle = index % 24;
+  if (cycle === 3 || cycle === 19) return "PROCESSING";
+  if (cycle === 7) return "FAILED";
+  if (cycle === 11) return "CANCELLED";
+  if (cycle === 17) return "DISPUTED";
+  return "SUCCEEDED";
+}
+
+function shouldEmitLedgerForStatus(status: TopPadelFinancialRecord["paymentStatus"]) {
+  return status !== "FAILED" && status !== "CANCELLED";
+}
+
 function seedCoverUrl(kind: "event" | "tournament", index: number) {
   return `https://picsum.photos/seed/orya-${kind}-${index + 1}/1600/900`;
+}
+
+async function runSeedAnalyticsRollup(params: {
+  prisma: PrismaClient;
+  organizationId: number;
+  fromDate: Date;
+  toDate: Date;
+}) {
+  const { prisma, organizationId, fromDate, toDate } = params;
+  const fromIso = fromDate.toISOString().slice(0, 10);
+  const toIso = toDate.toISOString().slice(0, 10);
+
+  type RollupRow = {
+    bucket_date: string;
+    source_type: SourceType;
+    currency: string;
+    gross: number;
+    platform_fees: number;
+    processor_fees: number;
+    net_to_org: number;
+  };
+
+  const rows = await prisma.$queryRaw<RollupRow[]>`
+    SELECT
+      (le.created_at AT TIME ZONE 'Europe/Lisbon')::date AS bucket_date,
+      le.source_type AS source_type,
+      le.currency AS currency,
+      SUM(CASE WHEN le.entry_type = 'GROSS' THEN le.amount ELSE 0 END) AS gross,
+      SUM(CASE WHEN le.entry_type = 'PLATFORM_FEE' THEN -le.amount ELSE 0 END) AS platform_fees,
+      SUM(CASE WHEN le.entry_type IN ('PROCESSOR_FEES_FINAL', 'PROCESSOR_FEES_ADJUSTMENT') THEN -le.amount ELSE 0 END) AS processor_fees,
+      SUM(le.amount) AS net_to_org
+    FROM app_v3.ledger_entries le
+    JOIN app_v3.payments p ON p.id = le.payment_id
+    WHERE p.organization_id = ${organizationId}
+      AND (le.created_at AT TIME ZONE 'Europe/Lisbon')::date BETWEEN ${fromIso}::date AND ${toIso}::date
+    GROUP BY (le.created_at AT TIME ZONE 'Europe/Lisbon')::date, le.source_type, le.currency
+  `;
+
+  const moduleBySource: Partial<Record<SourceType, string>> = {
+    TICKET_ORDER: "EVENTOS",
+    STORE_ORDER: "LOJA",
+  };
+
+  let rollups = 0;
+  for (const row of rows) {
+    const bucketDate = new Date(`${row.bucket_date}T00:00:00.000Z`);
+    const metrics: Array<[AnalyticsMetricKey, number]> = [
+      [AnalyticsMetricKey.GROSS, Number(row.gross || 0)],
+      [AnalyticsMetricKey.PLATFORM_FEES, Number(row.platform_fees || 0)],
+      [AnalyticsMetricKey.PROCESSOR_FEES, Number(row.processor_fees || 0)],
+      [AnalyticsMetricKey.NET_TO_ORG, Number(row.net_to_org || 0)],
+    ];
+    const dimensions: Array<[AnalyticsDimensionKey, string]> = [
+      [AnalyticsDimensionKey.CURRENCY, row.currency || "EUR"],
+      [AnalyticsDimensionKey.SOURCE_TYPE, row.source_type],
+      [AnalyticsDimensionKey.MODULE, moduleBySource[row.source_type] ?? "EVENTOS"],
+      [AnalyticsDimensionKey.PAYMENT_PROVIDER, "STRIPE"],
+    ];
+
+    for (const [metricKey, value] of metrics) {
+      for (const [dimensionKey, dimensionValue] of dimensions) {
+        await prisma.analyticsRollup.upsert({
+          where: {
+            organizationId_bucketDate_metricKey_dimensionKey_dimensionValue: {
+              organizationId,
+              bucketDate,
+              metricKey,
+              dimensionKey,
+              dimensionValue,
+            },
+          },
+          update: { value },
+          create: {
+            organizationId,
+            bucketDate,
+            metricKey,
+            dimensionKey,
+            dimensionValue,
+            value,
+          },
+        });
+        rollups += 1;
+      }
+    }
+  }
+
+  return { rows: rows.length, rollups };
 }
 
 async function listAllAuthUsers(supabase: any) {
@@ -504,6 +674,9 @@ async function main() {
 
   const purchaseRecords: PurchaseRecord[] = [];
   const bookingRecords: BookingRecord[] = [];
+  const topPadelFinancialRecords: TopPadelFinancialRecord[] = [];
+  const topPadelPurchaseSnapshots: TopPadelPurchaseSnapshot[] = [];
+  const storeRefundSeeds: StoreRefundSeed[] = [];
 
   try {
     const nunoProfile = await prisma.profile.findUnique({ where: { username: "nuno" } });
@@ -857,12 +1030,41 @@ async function main() {
     });
     await prisma.paymentSnapshot.deleteMany({
       where: {
-        OR: [{ paymentId: { startsWith: "pay_evt_" } }, { paymentId: { startsWith: "pay_store_" } }],
+        OR: [
+          { paymentId: { startsWith: "pay_evt_" } },
+          { paymentId: { startsWith: "pay_store_" } },
+          { paymentId: { startsWith: "seed-evt-" } },
+          { paymentId: { startsWith: "seed-store-purchase-" } },
+        ],
       },
     });
     await prisma.payment.deleteMany({
       where: {
-        OR: [{ id: { startsWith: "pay_evt_" } }, { id: { startsWith: "pay_store_" } }],
+        OR: [
+          { id: { startsWith: "pay_evt_" } },
+          { id: { startsWith: "pay_store_" } },
+          { id: { startsWith: "seed-evt-" } },
+          { id: { startsWith: "seed-store-purchase-" } },
+        ],
+      },
+    });
+    await prisma.refund.deleteMany({
+      where: {
+        dedupeKey: { startsWith: "seed_refund_" },
+      },
+    });
+    await prisma.invoice.deleteMany({
+      where: {
+        invoiceNumber: { startsWith: "SEED-TP-" },
+      },
+    });
+    await prisma.payout.deleteMany({
+      where: {
+        OR: [
+          { sourceId: { startsWith: "seed-payout-batch-" } },
+          { paymentId: { startsWith: "pay_evt_" } },
+          { paymentId: { startsWith: "pay_store_" } },
+        ],
       },
     });
     const promoCodes = await Promise.all(
@@ -1014,6 +1216,16 @@ async function main() {
         const paymentIntentId = shouldCreatePayment
           ? `pi_seed_evt_${event.id}_${String(saleIndex + 1).padStart(4, "0")}`
           : null;
+        const seededPaymentStatus = resolveSeedPaymentStatus({
+          index: i * 100 + saleIndex,
+          grossCents: total,
+        });
+        const seededRefundedByStatus =
+          seededPaymentStatus === "REFUNDED"
+            ? total
+            : seededPaymentStatus === "PARTIAL_REFUND"
+              ? Math.max(100, roundCents(total * 0.35))
+              : 0;
 
         const summary = await prisma.saleSummary.create({
           data: {
@@ -1102,7 +1314,7 @@ async function main() {
               sourceType: "TICKET_ORDER",
               sourceId: purchaseId,
               customerIdentityId: buyer.id,
-              status: "SUCCEEDED",
+              status: seededPaymentStatus,
               feePolicyVersion: "seed-v1",
               pricingSnapshotJson: {
                 subtotalCents: subtotal,
@@ -1110,12 +1322,54 @@ async function main() {
                 totalCents: total,
                 platformFeeCents: platformFee,
                 processorFeeCents: processorFee,
+                seededPaymentStatus,
+                refundedCents: seededRefundedByStatus,
               },
               pricingSnapshotHash: makeAddressHash(`${purchaseId}:${total}`),
               processorFeesStatus: "FINAL",
               processorFeesActual: processorFee,
               idempotencyKey: `seed_evt_idemp_${purchaseId}`,
             },
+          });
+
+          if (org.id === topPadelOrg.id) {
+            topPadelFinancialRecords.push({
+              organizationId: topPadelOrg.id,
+              paymentId,
+              purchaseId,
+              sourceType: "TICKET_ORDER",
+              sourceId: purchaseId,
+              customerIdentityId: buyer.id,
+              paymentIntentId,
+              paymentStatus: seededPaymentStatus,
+              grossCents: total,
+              platformFeeCents: platformFee,
+              processorFeeCents: processorFee,
+              netToOrgCents: net,
+              refundedCents: seededRefundedByStatus,
+              currency: "EUR",
+              occurredAt: startsAt,
+              eventId: event.id,
+            });
+          }
+        }
+
+        if (org.id === topPadelOrg.id) {
+          topPadelPurchaseSnapshots.push({
+            organizationId: topPadelOrg.id,
+            paymentId: purchaseId,
+            purchaseId,
+            sourceType: "TICKET_ORDER",
+            sourceId: purchaseId,
+            customerIdentityId: buyer.id,
+            paymentIntentId,
+            grossCents: total,
+            platformFeeCents: platformFee,
+            processorFeeCents: processorFee,
+            netToOrgCents: net,
+            currency: "EUR",
+            occurredAt: startsAt,
+            eventId: event.id,
           });
         }
 
@@ -2132,13 +2386,17 @@ async function main() {
       const discount = i % 3 === 0 ? Math.round(lineTotal * 0.1) : 0;
       const shipping = lineTotal - discount >= 9000 ? 0 : 450;
       const total = lineTotal - discount + shipping;
+      const orderStatus: "PAID" | "FULFILLED" | "PARTIAL_REFUND" | "REFUNDED" =
+        i % 11 === 0 ? "REFUNDED" : i % 7 === 0 ? "PARTIAL_REFUND" : i % 5 === 0 ? "FULFILLED" : "PAID";
+      const refundedCents = orderStatus === "REFUNDED" ? total : orderStatus === "PARTIAL_REFUND" ? roundCents(total * 0.35) : 0;
+      const netCapturedCents = Math.max(0, total - refundedCents);
 
       const order = await prisma.storeOrder.create({
         data: {
           storeId: store.id,
           userId: buyer.id,
           orderNumber: `TP-2026-${String(i + 1).padStart(4, "0")}`,
-          status: i % 5 === 0 ? "FULFILLED" : "PAID",
+          status: orderStatus,
           paymentIntentId: `pi_seed_store_${String(i + 1).padStart(4, "0")}`,
           purchaseId: `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
           subtotalCents: lineTotal,
@@ -2212,6 +2470,11 @@ async function main() {
       const paymentId = `pay_store_${String(i + 1).padStart(4, "0")}`;
       const platformFee = roundCents(total * 0.08);
       const processorFee = roundCents(total * 0.018);
+      const paymentStatus = resolveSeedPaymentStatus({
+        index: 5000 + i,
+        grossCents: total,
+        refundedCents,
+      });
       await prisma.payment.create({
         data: {
           id: paymentId,
@@ -2219,9 +2482,16 @@ async function main() {
           sourceType: "STORE_ORDER",
           sourceId: String(order.id),
           customerIdentityId: buyer.id,
-          status: "SUCCEEDED",
+          status: paymentStatus,
           feePolicyVersion: "seed-v1",
-          pricingSnapshotJson: { total, platformFee, processorFee },
+          pricingSnapshotJson: {
+            total,
+            platformFee,
+            processorFee,
+            refundedCents,
+            netCapturedCents,
+            seededPaymentStatus: paymentStatus,
+          },
           pricingSnapshotHash: makeAddressHash(`store:${order.id}:${total}`),
           processorFeesStatus: "FINAL",
           processorFeesActual: processorFee,
@@ -2229,14 +2499,410 @@ async function main() {
         },
       });
 
+      topPadelFinancialRecords.push({
+        organizationId: topPadelOrg.id,
+        paymentId,
+        purchaseId: order.purchaseId ?? `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
+        sourceType: "STORE_ORDER",
+        sourceId: String(order.id),
+        customerIdentityId: buyer.id,
+        paymentIntentId: order.paymentIntentId ?? null,
+        paymentStatus,
+        grossCents: total,
+        platformFeeCents: platformFee,
+        processorFeeCents: processorFee,
+        netToOrgCents: Math.max(0, total - platformFee - processorFee),
+        refundedCents,
+        currency: "EUR",
+        occurredAt: order.createdAt,
+        eventId: null,
+      });
+
+      topPadelPurchaseSnapshots.push({
+        organizationId: topPadelOrg.id,
+        paymentId: order.purchaseId ?? `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
+        purchaseId: order.purchaseId ?? `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
+        sourceType: "STORE_ORDER",
+        sourceId: String(order.id),
+        customerIdentityId: buyer.id,
+        paymentIntentId: order.paymentIntentId ?? null,
+        grossCents: total,
+        platformFeeCents: platformFee,
+        processorFeeCents: processorFee,
+        netToOrgCents: Math.max(0, total - platformFee - processorFee),
+        currency: "EUR",
+        occurredAt: order.createdAt,
+        eventId: null,
+      });
+
+      if (refundedCents > 0) {
+        storeRefundSeeds.push({
+          userId: buyer.id,
+          sourceId: String(order.id),
+          amountCents: refundedCents,
+          occurredAt: plusDays(now, -randInt(1, 45)),
+        });
+      }
+
       purchaseRecords.push({
         organizationId: topPadelOrg.id,
         userId: buyer.id,
-        amountCents: total,
+        amountCents: netCapturedCents,
         occurredAt: order.createdAt,
         sourceType: "STORE_ORDER",
         sourceId: String(order.id),
       });
+    }
+
+    const paymentRecordByPurchaseId = new Map(
+      topPadelFinancialRecords.map((record) => [record.purchaseId, record] as const),
+    );
+
+    for (const snapshot of topPadelPurchaseSnapshots) {
+      const linkedPayment = paymentRecordByPurchaseId.get(snapshot.purchaseId);
+      await prisma.payment.upsert({
+        where: { id: snapshot.paymentId },
+        update: {
+          organizationId: snapshot.organizationId,
+          sourceType: snapshot.sourceType,
+          sourceId: snapshot.sourceId,
+          customerIdentityId: snapshot.customerIdentityId,
+          status: "SUCCEEDED",
+          feePolicyVersion: "seed-v1",
+          pricingSnapshotJson: {
+            totalCents: snapshot.grossCents,
+            platformFeeCents: snapshot.platformFeeCents,
+            processorFeeCents: snapshot.processorFeeCents,
+            netCents: snapshot.netToOrgCents,
+            sourceType: snapshot.sourceType,
+            sourceId: snapshot.sourceId,
+          },
+          pricingSnapshotHash: makeAddressHash(
+            `snapshot-payment:${snapshot.paymentId}:${snapshot.grossCents}:${snapshot.sourceId}`,
+          ),
+          processorFeesStatus: "FINAL",
+          processorFeesActual: snapshot.processorFeeCents,
+          idempotencyKey: `seed_snapshot_idemp_${snapshot.paymentId}`,
+        },
+        create: {
+          id: snapshot.paymentId,
+          organizationId: snapshot.organizationId,
+          sourceType: snapshot.sourceType,
+          sourceId: snapshot.sourceId,
+          customerIdentityId: snapshot.customerIdentityId,
+          status: "SUCCEEDED",
+          feePolicyVersion: "seed-v1",
+          pricingSnapshotJson: {
+            totalCents: snapshot.grossCents,
+            platformFeeCents: snapshot.platformFeeCents,
+            processorFeeCents: snapshot.processorFeeCents,
+            netCents: snapshot.netToOrgCents,
+            sourceType: snapshot.sourceType,
+            sourceId: snapshot.sourceId,
+          },
+          pricingSnapshotHash: makeAddressHash(
+            `snapshot-payment:${snapshot.paymentId}:${snapshot.grossCents}:${snapshot.sourceId}`,
+          ),
+          processorFeesStatus: "FINAL",
+          processorFeesActual: snapshot.processorFeeCents,
+          idempotencyKey: `seed_snapshot_idemp_${snapshot.paymentId}`,
+          createdAt: snapshot.occurredAt,
+          updatedAt: snapshot.occurredAt,
+        },
+      });
+      await prisma.paymentSnapshot.upsert({
+        where: { paymentId: snapshot.paymentId },
+        update: {
+          organizationId: snapshot.organizationId,
+          sourceType: snapshot.sourceType,
+          sourceId: snapshot.sourceId,
+          status: "SUCCEEDED",
+          currency: snapshot.currency,
+          grossCents: snapshot.grossCents,
+          platformFeeCents: snapshot.platformFeeCents,
+          processorFeesCents: snapshot.processorFeeCents,
+          netToOrgCents: snapshot.netToOrgCents,
+          lastEventId: linkedPayment?.paymentId ?? linkedPayment?.paymentIntentId ?? null,
+        },
+        create: {
+          paymentId: snapshot.paymentId,
+          organizationId: snapshot.organizationId,
+          sourceType: snapshot.sourceType,
+          sourceId: snapshot.sourceId,
+          status: "SUCCEEDED",
+          currency: snapshot.currency,
+          grossCents: snapshot.grossCents,
+          platformFeeCents: snapshot.platformFeeCents,
+          processorFeesCents: snapshot.processorFeeCents,
+          netToOrgCents: snapshot.netToOrgCents,
+          lastEventId: linkedPayment?.paymentId ?? linkedPayment?.paymentIntentId ?? null,
+          createdAt: snapshot.occurredAt,
+          updatedAt: snapshot.occurredAt,
+        },
+      });
+    }
+
+    const refundReasonCycle = ["CANCELLED", "DATE_CHANGED", "DELETED"] as const;
+    const eventRefundTargets = topPadelFinancialRecords
+      .filter(
+        (record) =>
+          record.sourceType === "TICKET_ORDER" &&
+          record.eventId &&
+          record.grossCents > 0 &&
+          (record.paymentStatus === "SUCCEEDED" || record.paymentStatus === "PARTIAL_REFUND"),
+      )
+      .slice(0, 10);
+
+    for (let idx = 0; idx < eventRefundTargets.length; idx += 1) {
+      const record = eventRefundTargets[idx]!;
+      const refundRatio = idx % 3 === 0 ? 0.5 : 0.25;
+      const refundAmount = Math.min(record.grossCents, Math.max(100, roundCents(record.grossCents * refundRatio)));
+      const platformFeeReversal =
+        record.grossCents > 0 ? Math.min(record.platformFeeCents, roundCents((record.platformFeeCents * refundAmount) / record.grossCents)) : 0;
+      const processorFeeReversal =
+        record.grossCents > 0 ? Math.min(record.processorFeeCents, roundCents((record.processorFeeCents * refundAmount) / record.grossCents)) : 0;
+      const feesExcludedCents = platformFeeReversal + processorFeeReversal;
+
+      record.refundedCents = Math.min(record.grossCents, record.refundedCents + refundAmount);
+
+      await prisma.refund.create({
+        data: {
+          dedupeKey: `seed_refund_${record.purchaseId}`,
+          purchaseId: record.purchaseId,
+          paymentIntentId: record.paymentIntentId,
+          eventId: record.eventId!,
+          baseAmountCents: refundAmount,
+          feesExcludedCents,
+          reason: refundReasonCycle[idx % refundReasonCycle.length]!,
+          refundedBy: miguelProfile.id,
+          refundedAt: plusDays(now, -randInt(1, 35)),
+          stripeRefundId: `re_seed_${record.paymentId}_${idx + 1}`,
+          auditPayload: {
+            seed: true,
+            reason: "Ajuste financeiro seed para reconciliacao e CRM.",
+            grossCents: record.grossCents,
+            refundAmount,
+            feesExcludedCents,
+          },
+        },
+      });
+    }
+
+    const ledgerRows: Array<{
+      paymentId: string;
+      entryType:
+        | "GROSS"
+        | "PLATFORM_FEE"
+        | "PROCESSOR_FEES_FINAL"
+        | "REFUND_GROSS"
+        | "REFUND_PLATFORM_FEE_REVERSAL"
+        | "REFUND_PROCESSOR_FEES_REVERSAL"
+        | "DISPUTE_FEE"
+        | "CHARGEBACK_GROSS"
+        | "CHARGEBACK_PLATFORM_FEE_REVERSAL";
+      amount: number;
+      currency: "EUR";
+      sourceType: "TICKET_ORDER" | "STORE_ORDER";
+      sourceId: string;
+      causationId: string;
+      correlationId: string;
+      createdAt: Date;
+    }> = [];
+
+    const pushLedgerEntry = (
+      record: TopPadelFinancialRecord,
+      suffix: string,
+      entryType:
+        | "GROSS"
+        | "PLATFORM_FEE"
+        | "PROCESSOR_FEES_FINAL"
+        | "REFUND_GROSS"
+        | "REFUND_PLATFORM_FEE_REVERSAL"
+        | "REFUND_PROCESSOR_FEES_REVERSAL"
+        | "DISPUTE_FEE"
+        | "CHARGEBACK_GROSS"
+        | "CHARGEBACK_PLATFORM_FEE_REVERSAL",
+      amount: number,
+    ) => {
+      ledgerRows.push({
+        paymentId: record.paymentId,
+        entryType,
+        amount,
+        currency: "EUR",
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        causationId: `seed_fin_${record.paymentId}_${suffix}`,
+        correlationId: `seed_fin_corr_${record.paymentId}`,
+        createdAt: record.occurredAt,
+      });
+    };
+
+    for (const record of topPadelFinancialRecords) {
+      if (!shouldEmitLedgerForStatus(record.paymentStatus)) continue;
+      pushLedgerEntry(record, "gross", "GROSS", record.grossCents);
+      pushLedgerEntry(record, "platform_fee", "PLATFORM_FEE", -record.platformFeeCents);
+      pushLedgerEntry(record, "processor_fee", "PROCESSOR_FEES_FINAL", -record.processorFeeCents);
+
+      if (record.refundedCents > 0) {
+        const platformFeeReversal =
+          record.grossCents > 0 ? Math.min(record.platformFeeCents, roundCents((record.platformFeeCents * record.refundedCents) / record.grossCents)) : 0;
+        const processorFeeReversal =
+          record.grossCents > 0 ? Math.min(record.processorFeeCents, roundCents((record.processorFeeCents * record.refundedCents) / record.grossCents)) : 0;
+        pushLedgerEntry(record, "refund_gross", "REFUND_GROSS", -record.refundedCents);
+        pushLedgerEntry(record, "refund_platform_fee", "REFUND_PLATFORM_FEE_REVERSAL", platformFeeReversal);
+        pushLedgerEntry(record, "refund_processor_fee", "REFUND_PROCESSOR_FEES_REVERSAL", processorFeeReversal);
+      }
+    }
+
+    const disputeTargets = topPadelFinancialRecords
+      .filter(
+        (record) =>
+          record.sourceType === "STORE_ORDER" &&
+          record.paymentStatus === "DISPUTED" &&
+          record.grossCents >= 5000,
+      )
+      .slice(0, 2);
+    for (let idx = 0; idx < disputeTargets.length; idx += 1) {
+      const record = disputeTargets[idx]!;
+      const disputeFee = 1500 + idx * 300;
+      pushLedgerEntry(record, `dispute_fee_${idx + 1}`, "DISPUTE_FEE", -disputeFee);
+      pushLedgerEntry(record, `chargeback_gross_${idx + 1}`, "CHARGEBACK_GROSS", -record.grossCents);
+      pushLedgerEntry(
+        record,
+        `chargeback_platform_${idx + 1}`,
+        "CHARGEBACK_PLATFORM_FEE_REVERSAL",
+        record.platformFeeCents,
+      );
+    }
+
+    if (ledgerRows.length > 0) {
+      await prisma.ledgerEntry.createMany({ data: ledgerRows });
+    }
+
+    const invoiceRows = topPadelFinancialRecords.flatMap((record, idx) => {
+      const netAfterRefunds = Math.max(0, record.netToOrgCents - record.refundedCents);
+      const consumerInvoice = {
+        organizationId: topPadelOrg.id,
+        customerIdentityId: record.customerIdentityId,
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        kind: "CONSUMER" as const,
+        status: "PAID" as const,
+        invoiceNumber: `SEED-TP-INV-${String(idx + 1).padStart(5, "0")}`,
+        currency: "EUR",
+        amountCents: record.grossCents,
+        issuedAt: plusMinutes(record.occurredAt, 1),
+        paidAt: plusMinutes(record.occurredAt, 6),
+        metadata: {
+          seed: true,
+          purchaseId: record.purchaseId,
+          grossCents: record.grossCents,
+          refundedCents: record.refundedCents,
+          netAfterRefunds,
+          summaryText: "Fatura seed gerada para analises de bruto, taxas e liquido.",
+        },
+      };
+      const feeInvoice = {
+        organizationId: topPadelOrg.id,
+        customerIdentityId: record.customerIdentityId,
+        sourceType: record.sourceType,
+        sourceId: record.sourceId,
+        kind: "PLATFORM_FEE" as const,
+        status: "PAID" as const,
+        invoiceNumber: `SEED-TP-FEE-${String(idx + 1).padStart(5, "0")}`,
+        currency: "EUR",
+        amountCents: record.platformFeeCents + record.processorFeeCents,
+        issuedAt: plusMinutes(record.occurredAt, 2),
+        paidAt: plusMinutes(record.occurredAt, 7),
+        metadata: {
+          seed: true,
+          purchaseId: record.purchaseId,
+          platformFeeCents: record.platformFeeCents,
+          processorFeeCents: record.processorFeeCents,
+          summaryText: "Encargo seed para testes de taxas operacionais.",
+        },
+      };
+      return [consumerInvoice, feeInvoice];
+    });
+
+    if (invoiceRows.length > 0) {
+      await prisma.invoice.createMany({ data: invoiceRows });
+    }
+
+    const sortedPaymentRecords = [...topPadelFinancialRecords].sort(
+      (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
+    );
+    const payoutRows: Array<{
+      organizationId: number;
+      sourceType: string;
+      sourceId: string;
+      paymentId: string | null;
+      paymentIntentId: string | null;
+      transferId: string | null;
+      currency: "EUR";
+      grossAmountCents: number;
+      platformFeeCents: number;
+      feeMode: "INCLUDED";
+      amountCents: number;
+      status: "PENDING" | "RELEASED" | "FAILED";
+      releasedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = [];
+
+    const payoutBatchSize = 12;
+    for (let i = 0; i < sortedPaymentRecords.length; i += payoutBatchSize) {
+      const batch = sortedPaymentRecords.slice(i, i + payoutBatchSize);
+      if (batch.length === 0) continue;
+      const grossAmountCents = batch.reduce((sum, row) => sum + row.grossCents, 0);
+      const platformFeeCents = batch.reduce((sum, row) => sum + row.platformFeeCents, 0);
+      const batchNet = batch.reduce(
+        (sum, row) => sum + Math.max(0, row.netToOrgCents - row.refundedCents),
+        0,
+      );
+      const batchIndex = Math.floor(i / payoutBatchSize);
+      const status: "PENDING" | "RELEASED" | "FAILED" =
+        batchIndex % 6 === 5 ? "FAILED" : batchIndex % 4 === 3 ? "PENDING" : "RELEASED";
+      const batchCreatedAt = batch[batch.length - 1]!.occurredAt;
+      payoutRows.push({
+        organizationId: topPadelOrg.id,
+        sourceType: "SEED_BATCH",
+        sourceId: `seed-payout-batch-${String(batchIndex + 1).padStart(3, "0")}`,
+        paymentId: batch[0]!.paymentId,
+        paymentIntentId: batch[0]!.paymentIntentId,
+        transferId: status === "RELEASED" ? `tr_seed_tp_${String(batchIndex + 1).padStart(5, "0")}` : null,
+        currency: "EUR",
+        grossAmountCents,
+        platformFeeCents,
+        feeMode: "INCLUDED",
+        amountCents: Math.max(0, batchNet),
+        status,
+        releasedAt: status === "RELEASED" ? plusDays(batchCreatedAt, 2) : null,
+        createdAt: batchCreatedAt,
+        updatedAt: batchCreatedAt,
+      });
+    }
+
+    if (payoutRows.length > 0) {
+      await prisma.payout.createMany({ data: payoutRows });
+    }
+
+    let topPadelRollupResult: { rows: number; rollups: number } | null = null;
+    if (topPadelFinancialRecords.length > 0) {
+      const sortedDates = [...topPadelFinancialRecords]
+        .map((record) => record.occurredAt)
+        .sort((a, b) => a.getTime() - b.getTime());
+      const fromDate = sortedDates[0]!;
+      const toDate = sortedDates[sortedDates.length - 1]!;
+      topPadelRollupResult = await runSeedAnalyticsRollup({
+        prisma,
+        organizationId: topPadelOrg.id,
+        fromDate,
+        toDate,
+      });
+      console.log(
+        `[seed] analytics rollup Top Padel rows=${topPadelRollupResult.rows} rollups=${topPadelRollupResult.rollups}`,
+      );
     }
 
     const followRows: Array<{ follower_id: string; following_id: string }> = [];
@@ -2273,16 +2939,52 @@ async function main() {
     }
 
     await prisma.organization_follows.createMany({ data: orgFollowRows, skipDuplicates: true });
+    await prisma.crmContactNote.deleteMany({
+      where: {
+        organizationId: topPadelOrg.id,
+        OR: [
+          { body: "Cliente ativo e recorrente. Perfil criado via seed realista." },
+          { body: { startsWith: "[SEED_FINANCE]" } },
+        ],
+      },
+    });
 
     const topPadelUsers = allUsers;
     const contactsByUser = new Map<string, string>();
+    const crmContactFinancialProfiles: CrmContactFinancialProfile[] = [];
 
-    for (const user of topPadelUsers) {
+    for (const [userIndex, user] of topPadelUsers.entries()) {
       const userPurchases = purchaseRecords.filter((p) => p.organizationId === topPadelOrg.id && p.userId === user.id);
       const userBookings = bookingRecords.filter((b) => b.organizationId === topPadelOrg.id && b.userId === user.id);
       const totalSpent = userPurchases.reduce((sum, row) => sum + row.amountCents, 0);
       const totalStoreOrders = userPurchases.filter((p) => p.sourceType === "STORE_ORDER").length;
       const totalEventOrders = userPurchases.filter((p) => p.sourceType === "EVENT_TICKET").length;
+      const isStaffContact = staffUsers.some((s) => s.id === user.id) || user.id === miguelProfile.id;
+      const marketingEmailOptIn = maybe(0.84);
+      const marketingPushOptIn = maybe(0.78);
+      const contactPhone = `+35191${String(2000000 + userIndex).padStart(7, "0")}`;
+      const totalOrders = totalEventOrders;
+      const valueTier =
+        totalSpent >= 120000
+          ? "vip"
+          : totalSpent >= 60000
+            ? "gold"
+            : totalSpent >= 20000
+              ? "silver"
+              : totalSpent > 0
+                ? "bronze"
+                : "lead";
+      const spendBehaviorTag =
+        totalStoreOrders > totalEventOrders ? "store-first" : totalEventOrders > 0 ? "event-first" : "prospect";
+      const contactTags = isStaffContact
+        ? ["staff", "seed"]
+        : [
+            "seed",
+            "active",
+            totalSpent > 0 ? "cliente-pagante" : "sem-compra",
+            `tier-${valueTier}`,
+            spendBehaviorTag,
+          ];
 
       const contact = await prisma.crmContact.upsert({
         where: {
@@ -2293,12 +2995,13 @@ async function main() {
         },
         update: {
           status: "ACTIVE",
-          contactType: staffUsers.some((s) => s.id === user.id) || user.id === miguelProfile.id ? "STAFF" : "CUSTOMER",
+          contactType: isStaffContact ? "STAFF" : "CUSTOMER",
           displayName: user.fullName,
           contactEmail: `${user.username}@orya.test`,
+          contactPhone,
           legalBasis: "CONTRACT",
-          marketingEmailOptIn: true,
-          marketingPushOptIn: true,
+          marketingEmailOptIn,
+          marketingPushOptIn,
           firstInteractionAt: userPurchases[0]?.occurredAt ?? userBookings[0]?.occurredAt ?? now,
           lastActivityAt:
             userPurchases.at(-1)?.occurredAt ??
@@ -2306,26 +3009,41 @@ async function main() {
             plusDays(now, -randInt(0, 20)),
           lastPurchaseAt: userPurchases.at(-1)?.occurredAt ?? null,
           totalSpentCents: totalSpent,
-          totalOrders: totalEventOrders,
+          totalOrders,
           totalBookings: userBookings.length,
           totalAttendances: Math.max(0, userBookings.filter((b) => b.status === "BOOKING_COMPLETED").length),
           totalTournaments: randInt(0, 6),
           totalStoreOrders,
-          tags: staffUsers.some((s) => s.id === user.id) ? ["staff"] : ["seed", "active"],
+          tags: contactTags,
           sourceType: "seed",
           sourceId: user.id,
-          customFields: { seeded: true },
+          customFields: {
+            seeded: true,
+            financeProfile: {
+              valueTier,
+              totalOrders,
+              totalStoreOrders,
+              totalSpentCents: totalSpent,
+              estimatedFeeRateBps: 980,
+              estimatedNetCents: Math.max(0, totalSpent - roundCents(totalSpent * 0.098)),
+              summaryText:
+                totalSpent > 0
+                  ? "Cliente pagante com historico financeiro valido para analises de taxas e liquido."
+                  : "Contacto sem compras; util para analises de conversao.",
+            },
+          },
         },
         create: {
           organizationId: topPadelOrg.id,
           userId: user.id,
           status: "ACTIVE",
-          contactType: staffUsers.some((s) => s.id === user.id) || user.id === miguelProfile.id ? "STAFF" : "CUSTOMER",
+          contactType: isStaffContact ? "STAFF" : "CUSTOMER",
           displayName: user.fullName,
           contactEmail: `${user.username}@orya.test`,
+          contactPhone,
           legalBasis: "CONTRACT",
-          marketingEmailOptIn: true,
-          marketingPushOptIn: true,
+          marketingEmailOptIn,
+          marketingPushOptIn,
           firstInteractionAt: userPurchases[0]?.occurredAt ?? userBookings[0]?.occurredAt ?? now,
           lastActivityAt:
             userPurchases.at(-1)?.occurredAt ??
@@ -2333,44 +3051,73 @@ async function main() {
             plusDays(now, -randInt(0, 20)),
           lastPurchaseAt: userPurchases.at(-1)?.occurredAt ?? null,
           totalSpentCents: totalSpent,
-          totalOrders: totalEventOrders,
+          totalOrders,
           totalBookings: userBookings.length,
           totalAttendances: Math.max(0, userBookings.filter((b) => b.status === "BOOKING_COMPLETED").length),
           totalTournaments: randInt(0, 6),
           totalStoreOrders,
-          tags: staffUsers.some((s) => s.id === user.id) ? ["staff"] : ["seed", "active"],
+          tags: contactTags,
           sourceType: "seed",
           sourceId: user.id,
-          customFields: { seeded: true },
+          customFields: {
+            seeded: true,
+            financeProfile: {
+              valueTier,
+              totalOrders,
+              totalStoreOrders,
+              totalSpentCents: totalSpent,
+              estimatedFeeRateBps: 980,
+              estimatedNetCents: Math.max(0, totalSpent - roundCents(totalSpent * 0.098)),
+              summaryText:
+                totalSpent > 0
+                  ? "Cliente pagante com historico financeiro valido para analises de taxas e liquido."
+                  : "Contacto sem compras; util para analises de conversao.",
+            },
+          },
         },
       });
 
       contactsByUser.set(user.id, contact.id);
 
-      await prisma.crmContactConsent.upsert({
-        where: {
-          organizationId_contactId_type: {
+      for (const consentType of ["MARKETING", "CONTACT_EMAIL", "CONTACT_SMS"] as const) {
+        const grantedAt = plusDays(now, -randInt(1, 120));
+        const status =
+          consentType === "MARKETING"
+            ? marketingEmailOptIn
+              ? "GRANTED"
+              : "REVOKED"
+            : consentType === "CONTACT_SMS"
+              ? marketingPushOptIn
+                ? "GRANTED"
+                : "REVOKED"
+              : "GRANTED";
+        await prisma.crmContactConsent.upsert({
+          where: {
+            organizationId_contactId_type: {
+              organizationId: topPadelOrg.id,
+              contactId: contact.id,
+              type: consentType,
+            },
+          },
+          update: {
+            status,
+            source: "seed",
+            grantedAt: status === "GRANTED" ? grantedAt : null,
+            revokedAt: status === "REVOKED" ? grantedAt : null,
+          },
+          create: {
             organizationId: topPadelOrg.id,
             contactId: contact.id,
-            type: "MARKETING",
+            type: consentType,
+            status,
+            source: "seed",
+            grantedAt: status === "GRANTED" ? grantedAt : null,
+            revokedAt: status === "REVOKED" ? grantedAt : null,
           },
-        },
-        update: {
-          status: "GRANTED",
-          source: "seed",
-          grantedAt: plusDays(now, -randInt(1, 120)),
-        },
-        create: {
-          organizationId: topPadelOrg.id,
-          contactId: contact.id,
-          type: "MARKETING",
-          status: "GRANTED",
-          source: "seed",
-          grantedAt: plusDays(now, -randInt(1, 120)),
-        },
-      });
+        });
+      }
 
-      if (maybe(0.22)) {
+      if (maybe(0.2)) {
         await prisma.crmContactNote.create({
           data: {
             organizationId: topPadelOrg.id,
@@ -2380,6 +3127,16 @@ async function main() {
           },
         });
       }
+
+      crmContactFinancialProfiles.push({
+        contactId: contact.id,
+        userId: user.id,
+        isStaff: isStaffContact,
+        totalSpentCents: totalSpent,
+        totalOrders,
+        totalStoreOrders,
+        lastPurchaseAt: userPurchases.at(-1)?.occurredAt ?? null,
+      });
 
       const playerProfile = await prisma.padelPlayerProfile.findFirst({
         where: {
@@ -2414,7 +3171,81 @@ async function main() {
       }
     }
 
-    await prisma.crmInteraction.deleteMany({ where: { organizationId: topPadelOrg.id } });
+    const topPayingContacts = [...crmContactFinancialProfiles]
+      .filter((profile) => !profile.isStaff && profile.totalSpentCents > 0)
+      .sort((a, b) => b.totalSpentCents - a.totalSpentCents)
+      .slice(0, 36);
+
+    const churnRiskCutoff = plusDays(now, -75);
+    const churnRiskContacts = crmContactFinancialProfiles
+      .filter(
+        (profile) =>
+          !profile.isStaff &&
+          profile.totalSpentCents > 0 &&
+          (!profile.lastPurchaseAt || profile.lastPurchaseAt.getTime() < churnRiskCutoff.getTime()),
+      )
+      .slice(0, 20);
+    for (const profile of churnRiskContacts) {
+      await prisma.crmContact.update({
+        where: { id: profile.contactId },
+        data: {
+          tags: {
+            set: ["seed", "active", "cliente-pagante", "churn-risk"],
+          },
+        },
+      });
+      await prisma.crmContactNote.create({
+        data: {
+          organizationId: topPadelOrg.id,
+          contactId: profile.contactId,
+          authorUserId: miguelProfile.id,
+          body: "[SEED_FINANCE] Contacto com risco de churn identificado por baixa atividade recente.",
+        },
+      });
+    }
+
+    for (let idx = 0; idx < topPayingContacts.length; idx += 1) {
+      const profile = topPayingContacts[idx]!;
+      const avgTicketCents = profile.totalOrders > 0 ? Math.round(profile.totalSpentCents / profile.totalOrders) : profile.totalSpentCents;
+      const estimatedFeesCents = roundCents(profile.totalSpentCents * 0.098);
+      const estimatedNetCents = Math.max(0, profile.totalSpentCents - estimatedFeesCents);
+      const body = `[SEED_FINANCE] Cliente pagante segmentado em carteira ativa. Total gasto: ${(profile.totalSpentCents / 100).toFixed(2)} EUR. Ticket medio: ${(avgTicketCents / 100).toFixed(2)} EUR. Taxas estimadas: ${(estimatedFeesCents / 100).toFixed(2)} EUR. Liquido estimado: ${(estimatedNetCents / 100).toFixed(2)} EUR.`;
+      await prisma.crmContactNote.create({
+        data: {
+          organizationId: topPadelOrg.id,
+          contactId: profile.contactId,
+          authorUserId: miguelProfile.id,
+          body,
+        },
+      });
+    }
+
+    const noteCounts = await prisma.crmContactNote.groupBy({
+      by: ["contactId"],
+      where: { organizationId: topPadelOrg.id },
+      _count: { _all: true },
+    });
+    await prisma.crmContact.updateMany({
+      where: { organizationId: topPadelOrg.id },
+      data: { notesCount: 0 },
+    });
+    for (const row of noteCounts) {
+      await prisma.crmContact.update({
+        where: { id: row.contactId },
+        data: { notesCount: row._count._all },
+      });
+    }
+
+    await prisma.crmInteraction.deleteMany({
+      where: {
+        organizationId: topPadelOrg.id,
+        OR: [
+          { externalId: { startsWith: "seed_crm_" } },
+          { sourceId: { startsWith: "seed_" } },
+          { sourceId: { startsWith: "org_" } },
+        ],
+      },
+    });
 
     let crmInteractionCounter = 1;
     for (const purchase of purchaseRecords.filter((p) => p.organizationId === topPadelOrg.id)) {
@@ -2478,6 +3309,114 @@ async function main() {
       });
     }
 
+    const refundContacts = storeRefundSeeds
+      .map((refund) => ({
+        ...refund,
+        contactId: contactsByUser.get(refund.userId) ?? null,
+      }))
+      .filter((entry): entry is StoreRefundSeed & { contactId: string } => Boolean(entry.contactId));
+    for (const refund of refundContacts) {
+      await prisma.crmInteraction.create({
+        data: {
+          organizationId: topPadelOrg.id,
+          contactId: refund.contactId,
+          userId: refund.userId,
+          externalId: `seed_crm_store_refund_${crmInteractionCounter++}`,
+          type: "STORE_ORDER_REFUNDED",
+          sourceType: "STORE_ORDER",
+          sourceId: refund.sourceId,
+          occurredAt: refund.occurredAt,
+          amountCents: -Math.abs(refund.amountCents),
+          currency: "EUR",
+          metadata: {
+            seed: true,
+            reason: "refund_seed",
+            summaryText: "Reembolso seed para analises CRM financeiras.",
+          },
+        },
+      });
+    }
+
+    const membershipContacts = [...topPayingContacts].slice(0, 28);
+    for (let idx = 0; idx < membershipContacts.length; idx += 1) {
+      const profile = membershipContacts[idx]!;
+      await prisma.crmInteraction.create({
+        data: {
+          organizationId: topPadelOrg.id,
+          contactId: profile.contactId,
+          userId: profile.userId,
+          externalId: `seed_crm_membership_start_${crmInteractionCounter++}`,
+          type: "MEMBERSHIP_STARTED",
+          sourceType: "MEMBERSHIP",
+          sourceId: `seed_membership_${profile.userId}`,
+          occurredAt: plusDays(now, -(120 - idx * 2)),
+          amountCents: idx < 10 ? 3490 : 2490,
+          currency: "EUR",
+          metadata: {
+            seed: true,
+            plan: idx < 10 ? "premium" : "club",
+            summaryText: "Inicio de subscricao seed para metricas de retencao.",
+          },
+        },
+      });
+
+      if (idx % 2 === 0) {
+        await prisma.crmInteraction.create({
+          data: {
+            organizationId: topPadelOrg.id,
+            contactId: profile.contactId,
+            userId: profile.userId,
+            externalId: `seed_crm_membership_renew_${crmInteractionCounter++}`,
+            type: "MEMBERSHIP_RENEWED",
+            sourceType: "MEMBERSHIP",
+            sourceId: `seed_membership_${profile.userId}`,
+            occurredAt: plusDays(now, -(60 - idx)),
+            amountCents: idx < 8 ? 3490 : 2490,
+            currency: "EUR",
+            metadata: { seed: true, cycle: "monthly" },
+          },
+        });
+      }
+
+      if (idx % 7 === 0) {
+        await prisma.crmInteraction.create({
+          data: {
+            organizationId: topPadelOrg.id,
+            contactId: profile.contactId,
+            userId: profile.userId,
+            externalId: `seed_crm_membership_cancel_${crmInteractionCounter++}`,
+            type: "MEMBERSHIP_CANCELLED",
+            sourceType: "MEMBERSHIP",
+            sourceId: `seed_membership_${profile.userId}`,
+            occurredAt: plusDays(now, -randInt(1, 40)),
+            amountCents: null,
+            currency: "EUR",
+            metadata: { seed: true, reason: "budget_adjustment" },
+          },
+        });
+      }
+
+      await prisma.crmInteraction.create({
+        data: {
+          organizationId: topPadelOrg.id,
+          contactId: profile.contactId,
+          userId: profile.userId,
+          externalId: `seed_crm_manual_adjust_${crmInteractionCounter++}`,
+          type: "MANUAL_ADJUSTMENT",
+          sourceType: "MANUAL",
+          sourceId: `seed_manual_${profile.userId}_${idx + 1}`,
+          occurredAt: plusDays(now, -randInt(1, 90)),
+          amountCents: idx % 4 === 0 ? -500 : 300,
+          currency: "EUR",
+          metadata: {
+            seed: true,
+            category: idx % 4 === 0 ? "credit_note" : "upsell_adjustment",
+            summaryText: "Ajuste manual seed para relatorios de CRM.",
+          },
+        },
+      });
+    }
+
     const counts = {
       profiles: await prisma.profile.count(),
       organizations: await prisma.organization.count(),
@@ -2491,6 +3430,12 @@ async function main() {
       tickets: await prisma.ticket.count(),
       sales: await prisma.saleSummary.count(),
       payments: await prisma.payment.count(),
+      paymentSnapshots: await prisma.paymentSnapshot.count(),
+      ledgerEntries: await prisma.ledgerEntry.count(),
+      refunds: await prisma.refund.count(),
+      invoices: await prisma.invoice.count(),
+      payouts: await prisma.payout.count(),
+      analyticsRollups: await prisma.analyticsRollup.count(),
       chatConversations: await prisma.chatConversation.count(),
       chatMessages: await prisma.chatConversationMessage.count(),
       crmContacts: await prisma.crmContact.count(),

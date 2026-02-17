@@ -40,6 +40,7 @@ const profiles = {
     format: padel_format.NON_STOP,
     label: "Non-stop (King of Court)",
     minTeams: 4,
+    defaultNonStopMode: "ACTIVE_QUEUE",
     isTimed: true,
   },
   AMERICANO: {
@@ -47,6 +48,7 @@ const profiles = {
     label: "Americano",
     minTeams: 2,
     defaultAmMxMode: "INDIVIDUAL_ROTATION",
+    defaultAmMxProgressionMode: "ROUND_BY_ROUND",
     isTimed: true,
   },
   MEXICANO: {
@@ -54,6 +56,7 @@ const profiles = {
     label: "Mexicano",
     minTeams: 2,
     defaultAmMxMode: "INDIVIDUAL_ROTATION",
+    defaultAmMxProgressionMode: "ROUND_BY_ROUND",
     isTimed: true,
   },
 } satisfies Record<padel_format, PadelFormatProfile>;

@@ -638,7 +638,11 @@ Resources:
           HealthCheck:
             Command:
               - CMD-SHELL
-              - "curl -sf -H \"x-orya-cron-secret: ${ORYA_CRON_SECRET}\" http://localhost:3000${HealthCheckPath} || exit 1"
+              - !Join
+                - ""
+                - - "curl -sf -H \"x-orya-cron-secret: $ORYA_CRON_SECRET\" http://localhost:3000"
+                  - !Ref HealthCheckPath
+                  - " || exit 1"
             Interval: 30
             Timeout: 5
             Retries: 3
@@ -693,6 +697,8 @@ Resources:
 
   WebServiceAlb:
     Type: AWS::ECS::Service
+    DependsOn:
+      - Listener443
     Properties:
       ServiceName: !Sub "orya-${EnvironmentName}-web"
       Cluster: !Ref ECSCluster

@@ -3,7 +3,9 @@ import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { getPadelFormatProfile } from "@/domain/padel/formatEngine/registry";
 import type {
   PadelAmMxMode,
+  PadelAmMxProgressionMode,
   PadelCapacityPolicy,
+  PadelNonStopMode,
   PadelPlanAlternative,
   PadelPlanCategoryInput,
   PadelPlanCategoryResult,
@@ -52,6 +54,12 @@ const resolveFormat = (raw: unknown, fallback: padel_format) => parsePadelFormat
 
 const resolveAmMxMode = (raw: unknown): PadelAmMxMode =>
   raw === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+
+const resolveAmMxProgressionMode = (raw: unknown): PadelAmMxProgressionMode =>
+  raw === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND";
+
+const resolveNonStopMode = (raw: unknown): PadelNonStopMode =>
+  raw === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE";
 
 const splitGroups = (teams: number, groupCount: number) => {
   const safeGroupCount = Math.max(1, Math.min(Math.floor(groupCount), Math.max(1, teams)));
@@ -110,6 +118,8 @@ type EstimateInput = {
   qualifyPerGroup?: number | null;
   extraQualifiers?: number | null;
   amMxMode?: PadelAmMxMode | null;
+  amMxProgressionMode?: PadelAmMxProgressionMode | null;
+  nonStopMode?: PadelNonStopMode | null;
 };
 
 type EstimateResult = {
@@ -118,6 +128,8 @@ type EstimateResult = {
   warnings: string[];
   rounds: PadelRoundBlueprint[];
   amMxMode?: PadelAmMxMode;
+  amMxProgressionMode?: PadelAmMxProgressionMode;
+  nonStopMode?: PadelNonStopMode;
 };
 
 function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
@@ -137,6 +149,8 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
       warnings,
       rounds: [],
       amMxMode: profile.defaultAmMxMode,
+      amMxProgressionMode: profile.defaultAmMxProgressionMode,
+      nonStopMode: profile.defaultNonStopMode,
     };
   }
 
@@ -228,11 +242,16 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
   }
 
   if (format === padel_format.NON_STOP) {
+    const nonStopMode = resolveNonStopMode(input.nonStopMode ?? profile.defaultNonStopMode ?? "ACTIVE_QUEUE");
     const rounds = Math.max(1, toPositiveInt(input.roundsHint, DEFAULT_NON_STOP_ROUNDS));
     const courtsUsed = Math.max(1, input.courtsUsed);
     const recommendedMaxTeams = courtsUsed * 2;
     if (teams > recommendedMaxTeams) {
-      warnings.push(`Para King of Court sem espera, recomendado até ${recommendedMaxTeams} duplas.`);
+      if (nonStopMode === "HARD_CAP_WAITLIST") {
+        warnings.push(`Modo hard-cap: máximo competitivo recomendado ${recommendedMaxTeams} duplas.`);
+      } else {
+        warnings.push(`Modo fila ativa: acima de ${recommendedMaxTeams} duplas entram em rotação por espera.`);
+      }
     }
 
     return {
@@ -244,11 +263,15 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
         matches: courtsUsed,
         type: "NON_STOP" as const,
       })),
+      nonStopMode,
     };
   }
 
   if (format === padel_format.AMERICANO || format === padel_format.MEXICANO) {
     const amMxMode = resolveAmMxMode(input.amMxMode ?? profile.defaultAmMxMode ?? "INDIVIDUAL_ROTATION");
+    const amMxProgressionMode = resolveAmMxProgressionMode(
+      input.amMxProgressionMode ?? profile.defaultAmMxProgressionMode ?? "ROUND_BY_ROUND",
+    );
     if (amMxMode === "FIXED_PAIR") {
       return {
         minTeams: profile.minTeams,
@@ -256,6 +279,7 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
         warnings,
         rounds: [{ label: "Fase fixa", matches: roundRobinMatches(teams), type: "ROUND_ROBIN" }],
         amMxMode,
+        amMxProgressionMode,
       };
     }
 
@@ -268,6 +292,7 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
         warnings,
         rounds: [],
         amMxMode,
+        amMxProgressionMode,
       };
     }
 
@@ -288,6 +313,7 @@ function estimateMatchesForCategory(input: EstimateInput): EstimateResult {
         type: "AM_MX_ROTATION" as const,
       })),
       amMxMode,
+      amMxProgressionMode,
     };
   }
 
@@ -346,6 +372,8 @@ function estimateMaxTeamsForSlots(params: {
   courtsUsed: number;
   roundsHint?: number | null;
   amMxMode?: PadelAmMxMode | null;
+  amMxProgressionMode?: PadelAmMxProgressionMode | null;
+  nonStopMode?: PadelNonStopMode | null;
   groupCount?: number | null;
   groupSize?: number | null;
   qualifyPerGroup?: number | null;
@@ -358,6 +386,8 @@ function estimateMaxTeamsForSlots(params: {
     courtsUsed,
     roundsHint,
     amMxMode,
+    amMxProgressionMode,
+    nonStopMode,
     groupCount,
     groupSize,
     qualifyPerGroup,
@@ -379,6 +409,8 @@ function estimateMaxTeamsForSlots(params: {
       courtsUsed,
       roundsHint,
       amMxMode,
+      amMxProgressionMode,
+      nonStopMode,
       groupCount,
       groupSize,
       qualifyPerGroup,
@@ -433,6 +465,11 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
             label: "Geral",
             teams: Math.max(0, toPositiveInt(input.teams, 0)),
             format: baseFormat,
+            amMxMode: input.amMxMode ?? null,
+            amMxProgressionMode: input.amMxProgressionMode ?? null,
+            nonStopMode: input.nonStopMode ?? null,
+            nonStopRounds: input.nonStopRounds ?? null,
+            nonStopQueueRules: input.nonStopQueueRules ?? null,
             roundsHint: input.roundsHint ?? null,
             groupCount: input.groupCount ?? null,
             groupSize: input.groupSize ?? null,
@@ -463,8 +500,10 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
       format: categoryFormat,
       teams,
       courtsUsed,
-      roundsHint: category.roundsHint ?? input.roundsHint ?? null,
-      amMxMode: category.amMxMode ?? null,
+      roundsHint: category.nonStopRounds ?? category.roundsHint ?? input.nonStopRounds ?? input.roundsHint ?? null,
+      amMxMode: category.amMxMode ?? input.amMxMode ?? null,
+      amMxProgressionMode: category.amMxProgressionMode ?? input.amMxProgressionMode ?? null,
+      nonStopMode: category.nonStopMode ?? input.nonStopMode ?? null,
       groupCount: category.groupCount ?? input.groupCount ?? null,
       groupSize: category.groupSize ?? input.groupSize ?? null,
       qualifyPerGroup: category.qualifyPerGroup ?? input.qualifyPerGroup ?? null,
@@ -475,13 +514,24 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
       format: categoryFormat,
       slots: slotsForCategory,
       courtsUsed,
-      roundsHint: category.roundsHint ?? input.roundsHint ?? null,
-      amMxMode: category.amMxMode ?? null,
+      roundsHint: category.nonStopRounds ?? category.roundsHint ?? input.nonStopRounds ?? input.roundsHint ?? null,
+      amMxMode: category.amMxMode ?? input.amMxMode ?? null,
+      amMxProgressionMode: category.amMxProgressionMode ?? input.amMxProgressionMode ?? null,
+      nonStopMode: category.nonStopMode ?? input.nonStopMode ?? null,
       groupCount: category.groupCount ?? input.groupCount ?? null,
       groupSize: category.groupSize ?? input.groupSize ?? null,
       qualifyPerGroup: category.qualifyPerGroup ?? input.qualifyPerGroup ?? null,
       extraQualifiers: category.extraQualifiers ?? input.extraQualifiers ?? null,
     });
+    const hardCapMax =
+      categoryFormat === padel_format.NON_STOP &&
+      resolveNonStopMode(category.nonStopMode ?? estimated.nonStopMode ?? "ACTIVE_QUEUE") === "HARD_CAP_WAITLIST"
+        ? courtsUsed * 2
+        : null;
+    const queueEstimatedRounds =
+      categoryFormat === padel_format.NON_STOP && teams > courtsUsed * 2
+        ? Math.max(1, teams - courtsUsed * 2)
+        : null;
 
     return {
       key,
@@ -495,11 +545,16 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
       minTeams: estimated.minTeams,
       matchesNeeded: estimated.matchesNeeded,
       allocatedSlots: slotsForCategory,
+      recommendedMax: recommendedMaxTeams,
+      hardCapMax,
+      queueEstimatedRounds,
       recommendedMaxTeams,
       feasible: estimated.matchesNeeded <= slotsForCategory && teams >= estimated.minTeams,
       warnings: estimated.warnings,
       rounds: estimated.rounds,
       amMxMode: estimated.amMxMode,
+      amMxProgressionMode: estimated.amMxProgressionMode,
+      nonStopMode: estimated.nonStopMode,
     };
   });
 

@@ -326,13 +326,21 @@ export default function InscricoesPage({ embedded }: InscricoesPageProps) {
               </div>
               <div className="flex flex-wrap items-center gap-3 text-[12px]">
                 <Link
-                  href={`/org/forms/${form.id}?tab=construcao`}
+                  href={
+                    organizationId
+                      ? buildOrgHref(organizationId, `/forms/${form.id}`, { tab: "construcao" })
+                      : buildOrgHubHref("/organizations")
+                  }
                   className="rounded-full bg-white px-3 py-1 text-black"
                 >
                   Editar
                 </Link>
                 <Link
-                  href={`/org/forms/${form.id}?tab=respostas&respostas=individual`}
+                  href={
+                    organizationId
+                      ? buildOrgHref(organizationId, `/forms/${form.id}`, { tab: "respostas", respostas: "individual" })
+                      : buildOrgHubHref("/organizations")
+                  }
                   className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
                 >
                   Respostas

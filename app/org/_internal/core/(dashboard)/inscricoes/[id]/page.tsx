@@ -618,7 +618,7 @@ export default function InscricaoDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <Link
-            href="/org/forms"
+            href={appendOrganizationIdToHref("/org/forms", organizationId)}
             className="rounded-full border border-white/20 px-3 py-1 text-white/80 hover:bg-white/10"
           >
             Voltar

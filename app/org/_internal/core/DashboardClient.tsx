@@ -5041,7 +5041,7 @@ function OrganizacaoPageInner({
                         </div>
                         <div className="flex flex-wrap justify-end gap-2 text-[11px]">
                           <Link
-                            href="/org/marketing?marketing=promos"
+                            href={appendOrganizationIdToHref("/org/marketing?marketing=promos", scopedOrganizationId)}
                             className={cn(CTA_SECONDARY, "px-3 py-1 text-[11px]")}
                           >
                             {ev.tag.suggestion}
@@ -5201,6 +5201,7 @@ function OrganizacaoPageInner({
                   : eventsList
               }
               promoCodes={marketingPromos}
+              organizationId={scopedOrganizationId}
             />
           </div>
         )}

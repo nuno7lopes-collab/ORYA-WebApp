@@ -1,12 +1,21 @@
 import { padel_format } from "@prisma/client";
 
 export type PadelAmMxMode = "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+export type PadelAmMxProgressionMode = "ROUND_BY_ROUND";
+export type PadelNonStopMode = "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+
+export type PadelNonStopQueueRules = {
+  fairness?: "LONGEST_WAIT_FIRST" | "ROUND_ROBIN";
+  tieBreak?: "QUEUE_ENTERED_AT" | "SEED";
+};
 
 export type PadelFormatProfile = {
   format: padel_format;
   label: string;
   minTeams: number;
   defaultAmMxMode?: PadelAmMxMode;
+  defaultAmMxProgressionMode?: PadelAmMxProgressionMode;
+  defaultNonStopMode?: PadelNonStopMode;
   requiresKnockout?: boolean;
   isTimed?: boolean;
 };
@@ -38,6 +47,10 @@ export type PadelPlanCategoryInput = {
   teams: number;
   format?: padel_format | string | null;
   amMxMode?: PadelAmMxMode | null;
+  amMxProgressionMode?: PadelAmMxProgressionMode | null;
+  nonStopMode?: PadelNonStopMode | null;
+  nonStopRounds?: number | null;
+  nonStopQueueRules?: PadelNonStopQueueRules | null;
   roundsHint?: number | null;
   groupCount?: number | null;
   groupSize?: number | null;
@@ -49,6 +62,11 @@ export type PadelPlanInput = {
   format: padel_format | string;
   categories?: PadelPlanCategoryInput[];
   teams?: number | null;
+  amMxMode?: PadelAmMxMode | null;
+  amMxProgressionMode?: PadelAmMxProgressionMode | null;
+  nonStopMode?: PadelNonStopMode | null;
+  nonStopRounds?: number | null;
+  nonStopQueueRules?: PadelNonStopQueueRules | null;
   windowStart: Date | string;
   windowEnd: Date | string;
   durationMinutes: number;
@@ -72,11 +90,16 @@ export type PadelPlanCategoryResult = {
   minTeams: number;
   matchesNeeded: number;
   allocatedSlots: number;
+  recommendedMax: number;
+  hardCapMax: number | null;
+  queueEstimatedRounds: number | null;
   recommendedMaxTeams: number;
   feasible: boolean;
   warnings: string[];
   rounds: PadelRoundBlueprint[];
   amMxMode?: PadelAmMxMode;
+  amMxProgressionMode?: PadelAmMxProgressionMode;
+  nonStopMode?: PadelNonStopMode;
 };
 
 export type PadelPlanAlternative =

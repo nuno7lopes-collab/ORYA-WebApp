@@ -4,9 +4,11 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/i18n";
+import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
@@ -255,6 +257,8 @@ function parsePositiveInt(value: string) {
 }
 
 export default function CrmSegmentosPage() {
+  const pathname = usePathname();
+  const organizationId = parseOrganizationIdFromPathname(pathname);
   const { data, isLoading, mutate } = useSWR<SegmentListResponse>(resolveCanonicalOrgApiPath("/api/org/[orgId]/crm/segmentos"), fetcher);
   const segments = data?.ok ? data.items ?? [] : [];
 
@@ -952,7 +956,7 @@ export default function CrmSegmentosPage() {
           {filteredSegments.map((segment) => (
             <Link
               key={segment.id}
-              href={`/org/crm/segments/${segment.id}`}
+              href={appendOrganizationIdToHref(`/org/crm/segments/${segment.id}`, organizationId)}
               className={cn(DASHBOARD_CARD, "p-4 transition hover:border-white/25")}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">

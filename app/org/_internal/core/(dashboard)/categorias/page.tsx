@@ -5,9 +5,11 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import useSWR from "swr";
 import Link from "next/link";
 import { useMemo } from "react";
+import { usePathname } from "next/navigation";
 import { useUser } from "@/app/hooks/useUser";
 import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
+import { appendOrganizationIdToHref, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type EventsResponse = {
   ok: boolean;
@@ -41,6 +43,8 @@ const CATEGORY_CARDS = [
 ];
 
 export default function OrganizationCategoriesPage() {
+  const pathname = usePathname();
+  const organizationId = parseOrganizationIdFromPathname(pathname);
   const { user, isLoading: userLoading } = useUser();
   const { data } = useSWR<EventsResponse>(
     user ? resolveCanonicalOrgApiPath("/api/org/[orgId]/events/list") : null,
@@ -112,13 +116,19 @@ export default function OrganizationCategoriesPage() {
             </div>
             <div className="flex gap-2">
               <Link
-                href={`${cat.preset === "padel" ? "/org/padel/tournaments" : "/org/events"}?cat=${cat.template}`}
+                href={appendOrganizationIdToHref(
+                  `${cat.preset === "padel" ? "/org/padel/tournaments" : "/org/events"}?cat=${cat.template}`,
+                  organizationId,
+                )}
                 className="flex-1 rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:bg-white/10 text-center"
               >
                 Ver eventos
               </Link>
               <Link
-                href={`${cat.preset === "padel" ? "/org/padel/tournaments/create" : "/org/events/new"}?preset=${cat.preset}`}
+                href={appendOrganizationIdToHref(
+                  `${cat.preset === "padel" ? "/org/padel/tournaments/create" : "/org/events/new"}?preset=${cat.preset}`,
+                  organizationId,
+                )}
                 className={`${CTA_PRIMARY} flex-1 justify-center px-3 py-1.5 text-[12px]`}
               >
                 Criar {cat.preset === "restaurante" ? "jantar" : cat.preset === "padel" ? "torneio" : "evento"}
