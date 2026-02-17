@@ -13,9 +13,9 @@ const MUTABLE_INFRA_ROUTES = [
   "app/api/admin/infra/rotate-secrets/route.ts",
 ];
 
-function runRg(command: string, shell = "/bin/zsh") {
+function runRg(command: string) {
   try {
-    return execSync(command, { stdio: "pipe", shell }).toString().trim();
+    return execSync(command, { stdio: "pipe" }).toString().trim();
   } catch (error: any) {
     if (typeof error?.status === "number" && error.status === 1) {
       return "";

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { execSync } from "node:child_process";
 
-function run(command: string, shell = "/bin/zsh") {
+function run(command: string) {
   try {
-    return execSync(command, { stdio: "pipe", shell }).toString().trim();
+    return execSync(command, { stdio: "pipe" }).toString().trim();
   } catch (error: any) {
     if (typeof error?.status === "number" && error.status === 1) {
       return "";
