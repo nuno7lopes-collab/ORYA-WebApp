@@ -2,8 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 import { prisma } from "@/lib/prisma";
 
+const rebuildPadelRatingsForEvent = vi.hoisted(() =>
+  vi.fn(async () => ({ ok: true, processedMatches: 1, processedPlayers: 2, rankingRows: 2 })),
+);
+
 vi.mock("@/lib/organizationAudit", () => ({
   recordOrganizationAuditSafe: vi.fn(async () => ({})),
+}));
+vi.mock("@/domain/padel/ratingEngine", () => ({
+  rebuildPadelRatingsForEvent,
 }));
 
 let matchState: any = null;
@@ -68,6 +75,7 @@ describe("padel outbox consumer", () => {
     };
     prismaMock.eventMatchSlot.update.mockClear();
     prismaMock.eventMatchSlot.findUnique.mockClear();
+    rebuildPadelRatingsForEvent.mockClear();
   });
 
   it("auto schedule aplica updates e é idempotente", async () => {
@@ -140,5 +148,30 @@ describe("padel outbox consumer", () => {
       },
     });
     expect((matchState.score as any).delayStatus).toBe("DELAYED");
+  });
+
+  it("executa rebuild de rating quando recebe PADEL_RATING_REBUILD_REQUESTED", async () => {
+    const result = await handlePadelOutboxEvent({
+      eventType: "PADEL_RATING_REBUILD_REQUESTED",
+      payload: {
+        eventId: 10,
+        organizationId: 99,
+        matchId: 1,
+        actorUserId: "u1",
+        beforeStatus: "IN_PROGRESS",
+        reasonCode: "COUNTED_STATUS_TRANSITION",
+        requestedAt: new Date("2026-02-17T10:00:00Z").toISOString(),
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({ ok: true }));
+    expect(rebuildPadelRatingsForEvent).toHaveBeenCalledTimes(1);
+    expect(rebuildPadelRatingsForEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: 99,
+        eventId: 10,
+        actorUserId: "u1",
+      }),
+    );
   });
 });

@@ -356,6 +356,90 @@ async function mergeRatingProfiles(params: {
   await tx.padelRatingProfile.delete({ where: { id: sourceRating.id } });
 }
 
+async function mergeHistoryProjections(params: {
+  tx: Prisma.TransactionClient | PrismaClient;
+  organizationId: number;
+  sourceProfileId: number;
+  targetProfileId: number;
+}) {
+  const { tx, organizationId, sourceProfileId, targetProfileId } = params;
+  const historyProjection = (tx as Prisma.TransactionClient & {
+    padelPlayerHistoryProjection?: {
+      findMany: (...args: any[]) => Promise<any[]>;
+      findFirst: (...args: any[]) => Promise<any>;
+      update: (...args: any[]) => Promise<any>;
+      delete: (...args: any[]) => Promise<any>;
+      updateMany: (...args: any[]) => Promise<any>;
+    };
+  }).padelPlayerHistoryProjection;
+  if (!historyProjection) return;
+
+  const sourceRows = await historyProjection.findMany({
+    where: { organizationId, playerProfileId: sourceProfileId },
+    select: {
+      id: true,
+      eventId: true,
+      categoryId: true,
+      finalPosition: true,
+      wonTitle: true,
+      bracketSnapshot: true,
+      computedAt: true,
+    },
+  });
+
+  for (const sourceRow of sourceRows) {
+    const duplicate = await historyProjection.findFirst({
+      where: {
+        eventId: sourceRow.eventId,
+        categoryId: sourceRow.categoryId,
+        playerProfileId: targetProfileId,
+      },
+      select: {
+        id: true,
+        finalPosition: true,
+        wonTitle: true,
+        bracketSnapshot: true,
+        computedAt: true,
+      },
+    });
+
+    if (!duplicate?.id) {
+      await historyProjection.update({
+        where: { id: sourceRow.id },
+        data: { playerProfileId: targetProfileId },
+      });
+      continue;
+    }
+
+    const mergedFinalPosition = (() => {
+      if (typeof sourceRow.finalPosition === "number" && typeof duplicate.finalPosition === "number") {
+        return Math.min(sourceRow.finalPosition, duplicate.finalPosition);
+      }
+      if (typeof duplicate.finalPosition === "number") return duplicate.finalPosition;
+      if (typeof sourceRow.finalPosition === "number") return sourceRow.finalPosition;
+      return null;
+    })();
+
+    await historyProjection.update({
+      where: { id: duplicate.id },
+      data: {
+        finalPosition: mergedFinalPosition,
+        wonTitle: Boolean(duplicate.wonTitle || sourceRow.wonTitle),
+        bracketSnapshot:
+          (duplicate.bracketSnapshot as Prisma.InputJsonValue | null) ??
+          (sourceRow.bracketSnapshot as Prisma.InputJsonValue | null),
+        computedAt: maxDate(duplicate.computedAt, sourceRow.computedAt) ?? duplicate.computedAt,
+      },
+    });
+    await historyProjection.delete({ where: { id: sourceRow.id } });
+  }
+
+  await historyProjection.updateMany({
+    where: { organizationId, partnerPlayerProfileId: sourceProfileId },
+    data: { partnerPlayerProfileId: targetProfileId },
+  });
+}
+
 async function mergePlayerProfileData(params: {
   tx: Prisma.TransactionClient | PrismaClient;
   organizationId: number;
@@ -404,6 +488,12 @@ async function mergePlayerProfileData(params: {
     targetProfileId,
     claimKey,
   });
+  await mergeHistoryProjections({
+    tx,
+    organizationId,
+    sourceProfileId,
+    targetProfileId,
+  });
 
   try {
     await tx.padelPlayerProfile.delete({ where: { id: sourceProfileId } });
@@ -418,6 +508,35 @@ async function mergePlayerProfileData(params: {
       },
     });
   }
+}
+
+export async function mergePadelPlayerProfiles(params: {
+  tx: Prisma.TransactionClient | PrismaClient;
+  organizationId: number;
+  userId: string;
+  sourceProfileId: number;
+  targetProfileId: number;
+  claimKey?: string | null;
+}) {
+  const claimKey = typeof params.claimKey === "string" && params.claimKey.trim() ? params.claimKey.trim() : null;
+  if (params.sourceProfileId === params.targetProfileId) return params.targetProfileId;
+
+  await mergePlayerProfileData({
+    tx: params.tx,
+    organizationId: params.organizationId,
+    sourceProfileId: params.sourceProfileId,
+    targetProfileId: params.targetProfileId,
+    userId: params.userId,
+    claimKey,
+  });
+  await params.tx.padelPlayerProfile.update({
+    where: { id: params.targetProfileId },
+    data: {
+      userId: params.userId,
+      isActive: true,
+    },
+  });
+  return params.targetProfileId;
 }
 
 export async function ensurePadelPlayerProfileId(

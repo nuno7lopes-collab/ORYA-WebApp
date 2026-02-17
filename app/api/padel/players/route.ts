@@ -99,6 +99,39 @@ async function _GET(req: NextRequest) {
   const crmByUserId = new Map(crmContacts.filter((contact) => contact.userId).map((contact) => [contact.userId, contact]));
   const crmById = new Map(crmContacts.map((contact) => [contact.id, contact]));
   const profileIds = players.map((player) => player.id);
+  const [ratingProfiles, orgRatingOrder] = await Promise.all([
+    profileIds.length
+      ? prisma.padelRatingProfile.findMany({
+          where: {
+            organizationId: organization.id,
+            playerId: { in: profileIds },
+          },
+          select: {
+            playerId: true,
+            rating: true,
+            matchesPlayed: true,
+            leaderboardEligible: true,
+            blockedNewMatches: true,
+            lastMatchAt: true,
+            lastRebuildAt: true,
+          },
+        })
+      : Promise.resolve([]),
+    prisma.padelRatingProfile.findMany({
+      where: { organizationId: organization.id },
+      select: { playerId: true },
+      orderBy: [{ rating: "desc" }, { playerId: "asc" }],
+    }),
+  ]);
+  type RatingProfileRow = (typeof ratingProfiles)[number];
+  const ratingProfileMap = new Map<number, RatingProfileRow>();
+  ratingProfiles.forEach((row) => {
+    ratingProfileMap.set(row.playerId, row);
+  });
+  const orgPositionMap = new Map<number, number>();
+  orgRatingOrder.forEach((row, idx) => {
+    orgPositionMap.set(row.playerId, idx + 1);
+  });
 
   const pairingSlots = profileIds.length
     ? await prisma.padelPairingSlot.findMany({
@@ -194,6 +227,7 @@ async function _GET(req: NextRequest) {
     const resolvedFullName = crm?.displayName ?? profile?.fullName ?? player.fullName;
     const resolvedEmail = crm?.contactEmail ?? profile?.users?.email ?? player.email ?? null;
     const resolvedPhone = crm?.contactPhone ?? profile?.contactPhone ?? player.phone ?? null;
+    const ratingProfile = ratingProfileMap.get(player.id) ?? null;
     return {
       ...player,
       fullName: resolvedFullName || player.fullName,
@@ -225,6 +259,15 @@ async function _GET(req: NextRequest) {
             marketingOptIn: crm.marketingEmailOptIn,
           }
         : null,
+      ranking: {
+        rating: ratingProfile ? Number(ratingProfile.rating) : null,
+        orgPosition: orgPositionMap.get(player.id) ?? null,
+        matchesPlayed: ratingProfile?.matchesPlayed ?? 0,
+        leaderboardEligible: ratingProfile?.leaderboardEligible ?? false,
+        blockedNewMatches: ratingProfile?.blockedNewMatches ?? false,
+        lastMatchAt: ratingProfile?.lastMatchAt ?? null,
+        lastRebuildAt: ratingProfile?.lastRebuildAt ?? null,
+      },
     };
   });
 

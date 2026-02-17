@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { computeCancellationRefundFromSnapshot } from "@/lib/reservas/confirmationSnapshot";
 
 describe("booking cancellation refund", () => {
-  it("client cancel keeps fees + applies penalty", () => {
+  it("client cancel keeps only processor fee", () => {
     const snapshot = {
       version: 2,
       createdAt: "2026-02-04T12:00:00.000Z",
@@ -41,9 +41,9 @@ describe("booking cancellation refund", () => {
     const res = computeCancellationRefundFromSnapshot(snapshot, { actor: "CLIENT", stripeFeeCentsActual: 250 });
     expect(res?.rule).toBe("CLIENT_CANCEL_KEEP_FEES");
     expect(res?.totalCents).toBe(11_000);
-    expect(res?.penaltyCents).toBe(1000);
-    expect(res?.feesRetainedCents).toBe(1080);
-    expect(res?.refundCents).toBe(8920);
+    expect(res?.penaltyCents).toBe(0);
+    expect(res?.feesRetainedCents).toBe(250);
+    expect(res?.refundCents).toBe(10_750);
   });
 
   it("org cancel is full refund", () => {

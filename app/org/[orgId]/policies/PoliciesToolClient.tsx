@@ -30,15 +30,6 @@ type PoliciesResponse = {
   items: PolicyItem[];
 };
 
-type MeResponse = {
-  organization?: {
-    infoPolicies?: string | null;
-    infoRules?: string | null;
-    infoRequirements?: string | null;
-    infoLocationNotes?: string | null;
-  } | null;
-};
-
 type PolicyDraft = {
   name: string;
   policyType: OrganizationPolicyType;
@@ -48,13 +39,6 @@ type PolicyDraft = {
   allowReschedule: boolean;
   rescheduleWindowPreset: WindowPreset;
   rescheduleWindowCustom: string;
-};
-
-type TermsDraft = {
-  infoPolicies: string;
-  infoRules: string;
-  infoRequirements: string;
-  infoLocationNotes: string;
 };
 
 type StorePolicyMode = "NO_RETURNS" | "WINDOW_DAYS";
@@ -87,15 +71,6 @@ const swrOptions = {
   shouldRetryOnError: true,
   errorRetryCount: 2,
 } as const;
-
-const REFUND_TEXT_TEMPLATES: Record<"FLEXIVEL" | "MODERADA" | "RIGIDA", string> = {
-  FLEXIVEL:
-    "Reembolso total permitido até 48 horas antes do início. Após esse prazo, aplica-se retenção mínima para custos operacionais.",
-  MODERADA:
-    "Reembolso total permitido até 24 horas antes. Cancelamentos tardios podem gerar retenção parcial de acordo com a penalização definida.",
-  RIGIDA:
-    "Sem reembolso após confirmação, exceto obrigação legal. Ajustes extraordinários dependem de validação operacional.",
-};
 
 function unwrapEnvelope(payload: unknown) {
   if (!payload || typeof payload !== "object") return payload;
@@ -213,8 +188,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
 
   const { data: policiesData, error: policiesError, mutate: mutatePolicies, isLoading: policiesLoading } =
     useSWR<PoliciesResponse>(`${orgApiBase}/policies`, apiFetcher, swrOptions);
-  const { data: meData, error: meError, mutate: mutateMe, isLoading: meLoading } =
-    useSWR<MeResponse>(`${orgApiBase}/me`, apiFetcher, swrOptions);
   const {
     data: storePolicyData,
     error: storePolicyError,
@@ -230,33 +203,11 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
   const [editDraft, setEditDraft] = useState<PolicyDraft | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [termsDraft, setTermsDraft] = useState<TermsDraft>({
-    infoPolicies: "",
-    infoRules: "",
-    infoRequirements: "",
-    infoLocationNotes: "",
-  });
-  const [termsLoaded, setTermsLoaded] = useState(false);
-  const [termsSaving, setTermsSaving] = useState(false);
-  const [termsError, setTermsError] = useState<string | null>(null);
-  const [termsSuccess, setTermsSuccess] = useState<string | null>(null);
-  const [refundTemplate, setRefundTemplate] = useState<"CUSTOM" | "FLEXIVEL" | "MODERADA" | "RIGIDA">("CUSTOM");
   const [storePolicyDraft, setStorePolicyDraft] = useState<StorePolicyDraft>(createInitialStorePolicyDraft);
   const [storePolicyLoaded, setStorePolicyLoaded] = useState(false);
   const [storePolicySaving, setStorePolicySaving] = useState(false);
   const [storePolicyErrorMessage, setStorePolicyErrorMessage] = useState<string | null>(null);
   const [storePolicySuccessMessage, setStorePolicySuccessMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!meData?.organization || termsLoaded) return;
-    setTermsDraft({
-      infoPolicies: meData.organization.infoPolicies ?? "",
-      infoRules: meData.organization.infoRules ?? "",
-      infoRequirements: meData.organization.infoRequirements ?? "",
-      infoLocationNotes: meData.organization.infoLocationNotes ?? "",
-    });
-    setTermsLoaded(true);
-  }, [meData?.organization, termsLoaded]);
 
   useEffect(() => {
     if (!storePolicyData?.policy || storePolicyLoaded) return;
@@ -456,35 +407,6 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     [mutatePolicies, orgApiBase],
   );
 
-  const saveTerms = useCallback(async () => {
-    if (termsSaving) return;
-    setTermsSaving(true);
-    setTermsError(null);
-    setTermsSuccess(null);
-    try {
-      const response = await fetch(`${orgApiBase}/me`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          infoPolicies: termsDraft.infoPolicies,
-          infoRules: termsDraft.infoRules,
-          infoRequirements: termsDraft.infoRequirements,
-          infoLocationNotes: termsDraft.infoLocationNotes,
-        }),
-      });
-      const json = await response.json().catch(() => null);
-      if (!response.ok || json?.ok === false) {
-        throw new Error((json && (json.error || json.message)) || "Erro ao guardar termos.");
-      }
-      setTermsSuccess("Textos guardados com sucesso.");
-      await mutateMe();
-    } catch (error) {
-      setTermsError(error instanceof Error ? error.message : "Erro ao guardar termos.");
-    } finally {
-      setTermsSaving(false);
-    }
-  }, [mutateMe, orgApiBase, termsDraft, termsSaving]);
-
   const saveStorePolicy = useCallback(async () => {
     if (storePolicySaving) return;
     setStorePolicySaving(true);
@@ -522,21 +444,16 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     }
   }, [mutateStorePolicy, orgApiBase, storePolicyDraft, storePolicySaving]);
 
-  const applyRefundTemplate = useCallback((value: "CUSTOM" | "FLEXIVEL" | "MODERADA" | "RIGIDA") => {
-    setRefundTemplate(value);
-    if (value === "CUSTOM") return;
-    setTermsDraft((prev) => ({ ...prev, infoPolicies: REFUND_TEXT_TEMPLATES[value] }));
-  }, []);
-
   const headerByView: Record<PoliciesAllowedView, string> = {
     overview: "Políticas da organização",
     booking: "Políticas de reservas",
-    terms: "Termos e textos legais",
+    terms: "Termos canónicos",
     store: "Políticas da loja",
     guardrails: "Guardrails e limites",
   };
 
   const hasPoliciesData = policies.length > 0;
+  const canonicalLegalUrl = storePolicyData?.policy.legalUrl ?? "/username/legal";
 
   return (
     <section className="space-y-5 text-white sm:space-y-6">
@@ -554,10 +471,9 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
         </div>
       </div>
 
-      {(policiesError || meError || storePolicyError) && (
+      {(policiesError || storePolicyError) && (
         <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
           {(policiesError instanceof Error ? policiesError.message : null) ??
-            (meError instanceof Error ? meError.message : null) ??
             (storePolicyError instanceof Error ? storePolicyError.message : "Erro ao carregar dados.")}
         </div>
       )}
@@ -595,12 +511,16 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
                 <EmptyState label="Ainda não existem políticas carregadas." />
               )}
             </Panel>
-            <Panel title="Termos públicos" subtitle="Resumo dos textos configurados">
-              <div className="space-y-2 text-sm">
-                <PreviewRow label="Políticas e termos" value={termsDraft.infoPolicies} />
-                <PreviewRow label="Regras operacionais" value={termsDraft.infoRules} />
-                <PreviewRow label="Requisitos" value={termsDraft.infoRequirements} />
-                <PreviewRow label="Notas adicionais" value={termsDraft.infoLocationNotes} />
+            <Panel title="Termos públicos" subtitle="Template legal fechado em URL canónica">
+              <div className="space-y-2 rounded-xl border border-white/12 bg-white/5 p-3 text-sm text-white/80">
+                <p>
+                  URL pública:{" "}
+                  <span className="font-semibold text-white">{canonicalLegalUrl}</span>
+                </p>
+                <p>
+                  Conteúdo legal é gerado por template ORYA (termos, privacidade, reservas e loja) sem campos de texto
+                  livre editáveis.
+                </p>
               </div>
             </Panel>
           </div>
@@ -609,7 +529,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               Gerir políticas de reservas
             </button>
             <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "terms" })}>
-              Editar termos e textos
+              Ver termos canónicos
             </button>
             <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "store" })}>
               Configurar política da loja
@@ -720,75 +640,22 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
       )}
 
       {view === "terms" && (
-        <Panel title="Termos e textos" subtitle="Edita políticas textuais e aplica templates de reembolso">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Template de reembolso">
-              <select
-                className={INPUT}
-                value={refundTemplate}
-                onChange={(event) => applyRefundTemplate(event.target.value as "CUSTOM" | "FLEXIVEL" | "MODERADA" | "RIGIDA")}
-              >
-                <option value="CUSTOM">Personalizado</option>
-                <option value="FLEXIVEL">Flexível</option>
-                <option value="MODERADA">Moderada</option>
-                <option value="RIGIDA">Rígida</option>
-              </select>
-            </Field>
+        <Panel
+          title="Termos e políticas legais"
+          subtitle="Conteúdo 100% canónico gerado por templates ORYA"
+        >
+          <div className="space-y-3 text-sm text-white/80">
+            <div className="rounded-xl border border-white/12 bg-white/5 p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Página legal canónica</p>
+              <p className="mt-1 font-semibold text-white">{canonicalLegalUrl}</p>
+              <p className="mt-1 text-white/70">
+                A página inclui secções fixas de termos, privacidade, reservas e loja com links internos para checkout
+                e superfícies públicas.
+              </p>
+            </div>
             <div className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
-              O template pré-preenche o texto e podes sempre editar manualmente antes de guardar.
+              Texto livre está bloqueado nesta ferramenta. Alterações legais são derivadas apenas de campos estruturados.
             </div>
-          </div>
-
-          <div className="mt-3 grid gap-3">
-            <Field label="Políticas e termos gerais">
-              <textarea
-                className={TEXTAREA}
-                value={termsDraft.infoPolicies}
-                onChange={(event) => setTermsDraft((prev) => ({ ...prev, infoPolicies: event.target.value }))}
-                placeholder="Descreve termos, condições e política de reembolso."
-              />
-            </Field>
-            <Field label="Regras operacionais">
-              <textarea
-                className={TEXTAREA}
-                value={termsDraft.infoRules}
-                onChange={(event) => setTermsDraft((prev) => ({ ...prev, infoRules: event.target.value }))}
-                placeholder="Define regras de cancelamento, reagendamento e no-show."
-              />
-            </Field>
-            <Field label="Requisitos e elegibilidade">
-              <textarea
-                className={TEXTAREA}
-                value={termsDraft.infoRequirements}
-                onChange={(event) => setTermsDraft((prev) => ({ ...prev, infoRequirements: event.target.value }))}
-                placeholder="Define requisitos para participação/compra."
-              />
-            </Field>
-            <Field label="Notas adicionais">
-              <textarea
-                className={TEXTAREA}
-                value={termsDraft.infoLocationNotes}
-                onChange={(event) => setTermsDraft((prev) => ({ ...prev, infoLocationNotes: event.target.value }))}
-                placeholder="Notas extras para contexto operacional/legal."
-              />
-            </Field>
-          </div>
-
-          {termsError ? (
-            <div className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
-              {termsError}
-            </div>
-          ) : null}
-          {termsSuccess ? (
-            <div className="mt-3 rounded-xl border border-emerald-300/45 bg-emerald-500/12 px-3 py-2 text-sm text-emerald-100">
-              {termsSuccess}
-            </div>
-          ) : null}
-
-          <div className="mt-3">
-            <button type="button" className={CTA_PRIMARY} onClick={() => void saveTerms()} disabled={termsSaving || meLoading}>
-              {termsSaving ? "A guardar..." : "Guardar textos"}
-            </button>
           </div>
         </Panel>
       )}
@@ -932,7 +799,10 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
               Janelas são sempre validadas em minutos e normalizadas para inteiro não negativo.
             </li>
             <li className={GUARDRAIL_ITEM}>
-              Textos legais publicos sao gerados por template fechado e URL interna `/{username}/legal`.
+              Textos legais publicos sao gerados por template fechado e URL interna '/username/legal'.
+            </li>
+            <li className={GUARDRAIL_ITEM}>
+              No-show fee esta fora de customizacao nesta versao (lockado em 0 na politica publica).
             </li>
             <li className={GUARDRAIL_ITEM}>
               Política da loja usa template fechado: devoluções `sem devoluções` ou `0..730 dias`, com clamp automático.
@@ -1171,19 +1041,8 @@ function EmptyState({ label }: { label: string }) {
   );
 }
 
-function PreviewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-black/15 px-2 py-2">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-white/60">{label}</p>
-      <p className="mt-1 text-[12px] text-white/80">{value.trim() || "Sem conteúdo definido."}</p>
-    </div>
-  );
-}
-
 const INPUT =
   "h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80";
-const TEXTAREA =
-  "min-h-[120px] rounded-xl border border-white/20 bg-[#141414] px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-300/80";
 const CTA_PRIMARY =
   "inline-flex items-center gap-2 rounded-full border border-[#22D3EE]/55 bg-[#22D3EE]/18 px-5 py-2 text-sm font-semibold text-white transition hover:border-[#22D3EE]/75 hover:bg-[#22D3EE]/24";
 const CTA_NEUTRAL =

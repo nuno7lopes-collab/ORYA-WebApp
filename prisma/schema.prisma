@@ -116,16 +116,6 @@ model Profile {
   servicesInstructing                                             Service[]                        @relation("ServiceInstructor")
   reservationProfessionals                                        ReservationProfessional[]
   trainerProfiles                                                 TrainerProfile[]
-  chatMembers                                                     ChatMember[]
-  chatMessages                                                    ChatMessage[]                    @relation("ChatMessageUser")
-  chatReadStates                                                  ChatReadState[]
-  chatModerationLogs                                              ChatModerationLog[]
-  chatInvites                                                     ChatInvite[]
-  chatEventInvites                                                ChatEventInvite[]
-  chatConversationRequestsRequested                               ChatConversationRequest[]        @relation("ChatConversationRequestRequester")
-  chatConversationRequestsTargeted                                ChatConversationRequest[]        @relation("ChatConversationRequestTargetUser")
-  chatChannelRequests                                             ChatChannelRequest[]             @relation("ChatChannelRequestRequester")
-  chatChannelRequestsResolved                                     ChatChannelRequest[]             @relation("ChatChannelRequestResolver")
   chatConversationsCreated                                        ChatConversation[]               @relation("ChatConversationCreator")
   chatConversationMembers                                         ChatConversationMember[]         @relation("ChatConversationMemberUser")
   chatConversationMessages                                        ChatConversationMessage[]        @relation("ChatConversationMessageSender")
@@ -295,10 +285,7 @@ model Organization {
   bookingSplitDebts                                                        BookingSplitDebt[]
   bookingSplitSettlementSnapshots                                          BookingSplitSettlementSnapshot[]
   scheduleDelays                                                           ScheduleDelay[]
-  chatThreads                                                              ChatThread[]
   chatConversations                                                        ChatConversation[]
-  chatConversationRequests                                                 ChatConversationRequest[]
-  chatChannelRequests                                                      ChatChannelRequest[]
   classSeries                                                              ClassSeries[]
   classSessions                                                            ClassSession[]
   weeklyAvailabilityTemplates                                              WeeklyAvailabilityTemplate[]
@@ -1206,168 +1193,6 @@ model NotificationOutbox {
   @@schema("app_v3")
 }
 
-model ChatThread {
-  env            String              @default("prod")
-  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  entityType     ChatEntityType      @map("entity_type")
-  entityId       Int                 @map("entity_id")
-  organizationId Int                 @map("organization_id")
-  openAt         DateTime            @map("open_at") @db.Timestamptz(6)
-  readOnlyAt     DateTime            @map("read_only_at") @db.Timestamptz(6)
-  closeAt        DateTime            @map("close_at") @db.Timestamptz(6)
-  deleteAfter    DateTime?           @map("delete_after") @db.Timestamptz(6)
-  legalHoldUntil DateTime?           @map("legal_hold_until") @db.Timestamptz(6)
-  openNotifiedAt DateTime?           @map("open_notified_at") @db.Timestamptz(6)
-  status         ChatThreadStatus    @default(ANNOUNCEMENTS)
-  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members        ChatMember[]
-  messages       ChatMessage[]
-  reads          ChatReadState[]
-  moderationLogs ChatModerationLog[]
-  invites        ChatInvite[]
-  eventInvites   ChatEventInvite[]
-
-  @@unique([entityType, entityId], map: "chat_threads_entity_unique")
-  @@index([organizationId], map: "chat_threads_org_idx")
-  @@index([status], map: "chat_threads_status_idx")
-  @@index([openAt], map: "chat_threads_open_idx")
-  @@index([closeAt], map: "chat_threads_close_idx")
-  @@index([deleteAfter], map: "chat_threads_delete_after_idx")
-  @@map("chat_threads")
-  @@schema("app_v3")
-}
-
-model ChatMember {
-  env             String         @default("prod")
-  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  threadId        String         @map("thread_id") @db.Uuid
-  userId          String         @map("user_id") @db.Uuid
-  role            ChatMemberRole @default(PARTICIPANT)
-  joinedAt        DateTime       @default(now()) @map("joined_at") @db.Timestamptz(6)
-  leftAt          DateTime?      @map("left_at") @db.Timestamptz(6)
-  accessRevokedAt DateTime?      @map("access_revoked_at") @db.Timestamptz(6)
-  mutedUntil      DateTime?      @map("muted_until") @db.Timestamptz(6)
-  bannedAt        DateTime?      @map("banned_at") @db.Timestamptz(6)
-  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  thread          ChatThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  user            Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([threadId, userId], map: "chat_members_thread_user_unique")
-  @@index([threadId], map: "chat_members_thread_idx")
-  @@index([userId], map: "chat_members_user_idx")
-  @@index([threadId, leftAt], map: "chat_members_thread_active_idx")
-  @@map("chat_members")
-  @@schema("app_v3")
-}
-
-model ChatMessage {
-  env       String          @default("prod")
-  id        String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  threadId  String          @map("thread_id") @db.Uuid
-  userId    String?         @map("user_id") @db.Uuid
-  kind      ChatMessageKind @default(USER)
-  body      String
-  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  deletedAt DateTime?       @map("deleted_at") @db.Timestamptz(6)
-  thread    ChatThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  user      Profile?        @relation("ChatMessageUser", fields: [userId], references: [id], onDelete: SetNull)
-
-  @@index([threadId, createdAt(sort: Desc)], map: "chat_messages_thread_created_idx")
-  @@index([userId], map: "chat_messages_user_idx")
-  @@map("chat_messages")
-  @@schema("app_v3")
-}
-
-model ChatReadState {
-  env        String     @default("prod")
-  threadId   String     @map("thread_id") @db.Uuid
-  userId     String     @map("user_id") @db.Uuid
-  lastReadAt DateTime   @default(now()) @map("last_read_at") @db.Timestamptz(6)
-  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  user       Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([threadId, userId])
-  @@index([userId], map: "chat_read_state_user_idx")
-  @@map("chat_read_state")
-  @@schema("app_v3")
-}
-
-model ChatModerationLog {
-  env         String     @default("prod")
-  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  threadId    String     @map("thread_id") @db.Uuid
-  actorUserId String?    @map("actor_user_id") @db.Uuid
-  action      String
-  metadata    Json?      @default("{}")
-  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  thread      ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  actor       Profile?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-
-  @@index([threadId], map: "chat_moderation_thread_idx")
-  @@index([actorUserId], map: "chat_moderation_actor_idx")
-  @@map("chat_moderation_log")
-  @@schema("app_v3")
-}
-
-model ChatInvite {
-  env             String           @default("prod")
-  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  threadId        String           @map("thread_id") @db.Uuid
-  eventId         Int              @map("event_id")
-  userId          String?          @map("user_id") @db.Uuid
-  ownerIdentityId String?          @map("owner_identity_id") @db.Uuid
-  status          ChatInviteStatus @default(PENDING)
-  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(6)
-  acceptedAt      DateTime?        @map("accepted_at") @db.Timestamptz(6)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  thread          ChatThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user            Profile?         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ownerIdentity   EmailIdentity?   @relation(fields: [ownerIdentityId], references: [id], onDelete: Cascade)
-
-  @@unique([threadId, userId], map: "chat_invites_thread_user_unique")
-  @@unique([threadId, ownerIdentityId], map: "chat_invites_thread_identity_unique")
-  @@index([eventId], map: "chat_invites_event_idx")
-  @@index([userId], map: "chat_invites_user_idx")
-  @@index([ownerIdentityId], map: "chat_invites_identity_idx")
-  @@index([status], map: "chat_invites_status_idx")
-  @@index([expiresAt], map: "chat_invites_expires_idx")
-  @@map("chat_invites")
-  @@schema("app_v3")
-}
-
-model ChatEventInvite {
-  env           String                @default("prod")
-  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  eventId       Int                   @map("event_id")
-  threadId      String                @map("thread_id") @db.Uuid
-  entitlementId String                @map("entitlement_id") @db.Uuid
-  userId        String?               @map("user_id") @db.Uuid
-  status        ChatEventInviteStatus @default(PENDING)
-  invitedAt     DateTime              @default(now()) @map("invited_at") @db.Timestamptz(6)
-  acceptedAt    DateTime?             @map("accepted_at") @db.Timestamptz(6)
-  expiresAt     DateTime              @map("expires_at") @db.Timestamptz(6)
-  revokedAt     DateTime?             @map("revoked_at") @db.Timestamptz(6)
-  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  event       Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  thread      ChatThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  entitlement Entitlement @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
-  user        Profile?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([eventId, entitlementId], map: "chat_event_invites_event_entitlement_unique")
-  @@index([userId, status], map: "chat_event_invites_user_status_idx")
-  @@index([threadId, status], map: "chat_event_invites_thread_status_idx")
-  @@index([status], map: "chat_event_invites_status_idx")
-  @@map("chat_event_invites")
-  @@schema("app_v3")
-}
-
 model ChatConversation {
   env             String                      @default("prod")
   id              String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1393,7 +1218,6 @@ model ChatConversation {
   lastMessage  ChatConversationMessage?  @relation("ChatConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: SetNull)
   members      ChatConversationMember[]
   messages     ChatConversationMessage[] @relation("ChatConversationMessages")
-  requests     ChatConversationRequest[]
 
   @@index([organizationId], map: "chat_conversations_org_idx")
   @@index([lastMessageAt], map: "chat_conversations_last_message_idx")
@@ -1566,55 +1390,6 @@ model ChatUserBlock {
   @@schema("app_v3")
 }
 
-model ChatConversationRequest {
-  env                  String                        @default("prod")
-  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  requesterId          String                        @map("requester_id") @db.Uuid
-  targetUserId         String?                       @map("target_user_id") @db.Uuid
-  targetOrganizationId Int?                          @map("target_organization_id")
-  contextType          ChatConversationContextType   @map("context_type")
-  contextId            String?                       @map("context_id") @db.Text
-  status               ChatConversationRequestStatus @default(PENDING)
-  conversationId       String?                       @map("conversation_id") @db.Uuid
-  createdAt            DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  resolvedAt           DateTime?                     @map("resolved_at") @db.Timestamptz(6)
-
-  requester          Profile           @relation("ChatConversationRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  targetUser         Profile?          @relation("ChatConversationRequestTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
-  targetOrganization Organization?     @relation(fields: [targetOrganizationId], references: [id], onDelete: Cascade)
-  conversation       ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-
-  @@index([requesterId, status], map: "chat_conversation_requests_requester_status_idx")
-  @@index([targetUserId, status], map: "chat_conversation_requests_target_user_status_idx")
-  @@index([targetOrganizationId, status], map: "chat_conversation_requests_target_org_status_idx")
-  @@index([contextType, contextId], map: "chat_conversation_requests_context_idx")
-  @@map("chat_conversation_requests")
-  @@schema("app_v3")
-}
-
-model ChatChannelRequest {
-  env              String                   @default("prod")
-  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId   Int                      @map("organization_id")
-  requesterId      String                   @map("requester_id") @db.Uuid
-  title            String
-  status           ChatChannelRequestStatus @default(PENDING)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  resolvedAt       DateTime?                @map("resolved_at") @db.Timestamptz(6)
-  resolvedByUserId String?                  @map("resolved_by_user_id") @db.Uuid
-
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  requester    Profile      @relation("ChatChannelRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  resolvedBy   Profile?     @relation("ChatChannelRequestResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([organizationId, status], map: "chat_channel_requests_org_status_idx")
-  @@index([requesterId, status], map: "chat_channel_requests_requester_status_idx")
-  @@map("chat_channel_requests")
-  @@schema("app_v3")
-}
-
 model ChatAccessGrant {
   env                  String                       @default("prod")
   id                   String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1676,7 +1451,6 @@ model EmailIdentity {
   userId          String?             @map("user_id") @db.Uuid
   createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  chatInvites     ChatInvite[]
   crmContacts     CrmContact[]
   mergeLogsFrom   IdentityMergeLog[]  @relation("IdentityMergeFrom")
   mergeLogsTo     IdentityMergeLog[]  @relation("IdentityMergeTo")
@@ -2052,8 +1826,6 @@ model Event {
   refundPolicyVersions           RefundPolicyVersion[]
   favorites                      EventFavorite[]
   userEventSignals               UserEventSignal[]
-  chatInvites                    ChatInvite[]
-  chatEventInvites               ChatEventInvite[]
   guestTicketAccessTokens        GuestTicketAccessToken[]
 
   @@index([type, status])
@@ -2963,6 +2735,7 @@ model PadelPlayerProfile {
   partnerHistoryProjections PadelPlayerHistoryProjection[] @relation("PadelPlayerHistoryProjectionPartner")
 
   @@index([organizationId, crmContactId], map: "padel_player_profiles_org_crm_contact_idx")
+  @@unique([organizationId, userId], map: "padel_player_profiles_org_user_uq")
   @@map("padel_player_profiles")
   @@schema("app_v3")
 }
@@ -4558,7 +4331,6 @@ model Entitlement {
   ticket               Ticket?              @relation("TicketEntitlement", fields: [ticketId], references: [id], onDelete: SetNull)
   checkins             EntitlementCheckin[]
   qrTokens             EntitlementQrToken[]
-  chatEventInvites     ChatEventInvite[]
 
   @@unique([purchaseId, saleLineId, lineItemIndex, ownerKey, type], map: "entitlements_purchase_sale_owner_type_idx")
   @@unique([bookingId, lineItemIndex, ownerKey, type], map: "entitlements_booking_owner_line_idx")
@@ -6107,55 +5879,6 @@ enum NotificationType {
   @@schema("app_v3")
 }
 
-enum ChatEntityType {
-  EVENT
-  BOOKING
-
-  @@schema("app_v3")
-}
-
-enum ChatThreadStatus {
-  ANNOUNCEMENTS
-  OPEN
-  READ_ONLY
-  CLOSED
-
-  @@schema("app_v3")
-}
-
-enum ChatMemberRole {
-  PARTICIPANT
-  ORG
-  PLATFORM_ADMIN
-
-  @@schema("app_v3")
-}
-
-enum ChatMessageKind {
-  USER
-  ANNOUNCEMENT
-  SYSTEM
-
-  @@schema("app_v3")
-}
-
-enum ChatInviteStatus {
-  PENDING
-  ACCEPTED
-  EXPIRED
-
-  @@schema("app_v3")
-}
-
-enum ChatEventInviteStatus {
-  PENDING
-  ACCEPTED
-  EXPIRED
-  REVOKED
-
-  @@schema("app_v3")
-}
-
 enum ChatConversationContextType {
   ORG_CHANNEL
   ORG_CONTACT
@@ -6164,16 +5887,6 @@ enum ChatConversationContextType {
   SERVICE
   USER_DM
   USER_GROUP
-
-  @@schema("app_v3")
-}
-
-enum ChatConversationRequestStatus {
-  PENDING
-  ACCEPTED
-  DECLINED
-  EXPIRED
-  CANCELLED
 
   @@schema("app_v3")
 }
@@ -6189,15 +5902,6 @@ enum ChatConversationType {
   DIRECT
   GROUP
   CHANNEL
-
-  @@schema("app_v3")
-}
-
-enum ChatChannelRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
 
   @@schema("app_v3")
 }

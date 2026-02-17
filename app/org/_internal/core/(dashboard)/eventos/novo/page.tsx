@@ -725,6 +725,16 @@ export function NewOrganizationEventPage({
   }, [draftLoaded, forcePreset, hasEventosModule, selectedPreset]);
 
   useEffect(() => {
+    if (forcePreset) return;
+    if (selectedPreset !== "padel") return;
+    const targetOrgId =
+      organizationIdFromStatus && Number.isFinite(organizationIdFromStatus)
+        ? organizationIdFromStatus
+        : organizationId;
+    router.push(appendOrganizationIdToHref("/org/padel/tournaments/create", targetOrgId));
+  }, [forcePreset, organizationId, organizationIdFromStatus, router, selectedPreset]);
+
+  useEffect(() => {
     if (!draftLoaded) return;
     setFreeTicketName((prev) => {
       const normalized = prev?.trim();
@@ -3551,7 +3561,9 @@ export function NewOrganizationEventPage({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSelectedPreset("padel")}
+                      onClick={() =>
+                        router.push(appendOrganizationIdToHref("/org/padel/tournaments/create", organizationId))
+                      }
                       className={`rounded-full px-3 py-1 font-semibold transition ${
                         selectedPreset === "padel" ? "bg-white text-black shadow" : "text-white/70"
                       }`}

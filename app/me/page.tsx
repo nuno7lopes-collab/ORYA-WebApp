@@ -62,6 +62,16 @@ export default function MePage() {
   const { data: padelSummaryData } = useSWR<{
     ok: boolean;
     stats?: { matchesPlayed?: number; wins?: number; losses?: number; winRate?: number; tournaments?: number };
+    ranking?: {
+      rating?: number | null;
+      globalPosition?: number | null;
+      orgPosition?: number | null;
+      matchesPlayed?: number;
+      leaderboardEligible?: boolean;
+      lastMatchAt?: string | null;
+      lastRebuildAt?: string | null;
+      sourcePlayerProfileId?: number | null;
+    };
   }>(user ? "/api/padel/me/summary" : null, fetcher);
   const { data: padelMatchesData } = useSWR<{
     ok: boolean;
@@ -151,6 +161,7 @@ export default function MePage() {
   const padelUpcomingMatches = padelMatchesData?.items ?? [];
   const nextPadelMatch = padelUpcomingMatches[0] ?? null;
   const padelStats = padelSummaryData?.stats ?? null;
+  const padelRanking = padelSummaryData?.ranking ?? null;
   const latestPadelTitle = (padelHistoryData?.titles ?? [])[0] ?? null;
   const organizations = orgsData?.items ?? [];
 
@@ -413,12 +424,28 @@ export default function MePage() {
                   </p>
                 </Link>
               )}
-              {(padelStats || latestPadelTitle) && (
+              {(padelStats || latestPadelTitle || padelRanking) && (
                 <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70 space-y-1">
                   {padelStats && (
                     <p>
                       {padelStats.matchesPlayed ?? 0} jogos · {padelStats.wins ?? 0}V-{padelStats.losses ?? 0}D · WR{" "}
                       {padelStats.winRate ?? 0}%
+                    </p>
+                  )}
+                  {padelRanking && (
+                    <p>
+                      Ranking{" "}
+                      {typeof padelRanking.globalPosition === "number"
+                        ? `global #${padelRanking.globalPosition}`
+                        : "global —"}
+                      {" · "}
+                      {typeof padelRanking.orgPosition === "number"
+                        ? `org #${padelRanking.orgPosition}`
+                        : "org —"}
+                      {" · "}
+                      {typeof padelRanking.rating === "number"
+                        ? `${Math.round(padelRanking.rating)} pts`
+                        : "sem rating"}
                     </p>
                   )}
                   {latestPadelTitle && (

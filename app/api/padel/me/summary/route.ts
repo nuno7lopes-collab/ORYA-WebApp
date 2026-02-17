@@ -27,7 +27,7 @@ async function _GET() {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }
 
-  const [profile, fallbackPadel] = await Promise.all([
+  const [profile, fallbackPadel, playerProfiles] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: user.id },
       select: {
@@ -46,7 +46,65 @@ async function _GET() {
       orderBy: { updatedAt: "desc" },
       select: { level: true, preferredSide: true, clubName: true },
     }),
+    prisma.padelPlayerProfile.findMany({
+      where: { userId: user.id, isActive: true },
+      select: {
+        id: true,
+        organizationId: true,
+        updatedAt: true,
+        ratingProfile: {
+          select: {
+            rating: true,
+            matchesPlayed: true,
+            leaderboardEligible: true,
+            blockedNewMatches: true,
+            lastMatchAt: true,
+            lastRebuildAt: true,
+          },
+        },
+      },
+    }),
   ]);
+
+  const byRankingPriority = (a: (typeof playerProfiles)[number], b: (typeof playerProfiles)[number]) => {
+    const aMatches = a.ratingProfile?.matchesPlayed ?? -1;
+    const bMatches = b.ratingProfile?.matchesPlayed ?? -1;
+    if (aMatches !== bMatches) return bMatches - aMatches;
+    const aRating = a.ratingProfile?.rating ?? -1;
+    const bRating = b.ratingProfile?.rating ?? -1;
+    if (aRating !== bRating) return bRating - aRating;
+    return b.updatedAt.getTime() - a.updatedAt.getTime();
+  };
+  const sourcePlayerProfile = [...playerProfiles].sort(byRankingPriority)[0] ?? null;
+  const sourceRating = sourcePlayerProfile?.ratingProfile ?? null;
+  let orgPosition: number | null = null;
+  let globalPosition: number | null = null;
+
+  if (sourcePlayerProfile && sourceRating) {
+    const orgAhead = await prisma.padelRatingProfile.count({
+      where: {
+        organizationId: sourcePlayerProfile.organizationId,
+        OR: [
+          { rating: { gt: sourceRating.rating } },
+          { rating: sourceRating.rating, playerId: { lt: sourcePlayerProfile.id } },
+        ],
+      },
+    });
+    orgPosition = orgAhead + 1;
+
+    if (sourceRating.leaderboardEligible) {
+      const globalAhead = await prisma.padelRatingProfile.count({
+        where: {
+          leaderboardEligible: true,
+          OR: [
+            { rating: { gt: sourceRating.rating } },
+            { rating: sourceRating.rating, playerId: { lt: sourcePlayerProfile.id } },
+          ],
+        },
+      });
+      globalPosition = globalAhead + 1;
+    }
+  }
 
   const padelProfile = {
     level: profile?.padelLevel ?? fallbackPadel?.level ?? null,
@@ -248,6 +306,16 @@ async function _GET() {
         tournaments: uniqueTournaments,
         pairingsActive: activePairings.length,
         waitlistCount: waitlistItems.length,
+      },
+      ranking: {
+        rating: sourceRating ? Number(sourceRating.rating) : null,
+        globalPosition,
+        orgPosition,
+        matchesPlayed: sourceRating?.matchesPlayed ?? 0,
+        leaderboardEligible: sourceRating?.leaderboardEligible ?? false,
+        lastMatchAt: sourceRating?.lastMatchAt ?? null,
+        lastRebuildAt: sourceRating?.lastRebuildAt ?? null,
+        sourcePlayerProfileId: sourcePlayerProfile?.id ?? null,
       },
       pairings: pairingItems,
       waitlist: waitlistItems,

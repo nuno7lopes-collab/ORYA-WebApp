@@ -57,6 +57,9 @@ Atualizado: 2026-02-17
 - Danger zone org: `suspend` owner-only com step-up obrigatório, auditoria before/after e reversão controlada na janela de 30 dias.
 - Suspensão organização v2: reativação self-service do `OWNER` no dashboard/settings dentro da janela de 30 dias; eliminação definitiva só após fim dessa janela.
 - Address autocomplete UX v1: dropdown canónico em overlay (sem reflow), relevância visual por secções e confirmação estrita por seleção normalizada (`addressId`).
+- Criação de torneio Padel v1: entrada canónica fechada em `POST /api/org/[orgId]/tournaments/create`; `POST /api/org/[orgId]/events/create` rejeita payload Padel com `410 PADEL_CREATE_MOVED` e `target` explícito.
+- Entrada de UI Padel: `/org/[orgId]/events/new?preset=padel` redireciona para `/org/[orgId]/padel/tournaments/create`.
+- Lifecycle Padel: criação mantém `DRAFT` por contrato e publicação continua exclusiva em `/api/padel/tournaments/lifecycle`.
 
 ### 00.6 Registo de Decisão Normativa (NORMATIVO)
 - Decisões FECHADO NÃO dependem de drafts/ficheiros temporários para serem válidas.
@@ -119,6 +122,57 @@ Atualizado: 2026-02-17
 - Referências a outros ficheiros existem apenas para rastreabilidade editorial/auditoria.
 - Nenhum contrato normativo depende da leitura de outro documento para ser válido.
 - Em conflito entre SSOT e documento auxiliar, prevalece sempre o SSOT.
+
+### 00.9 Mapa Canónico de Higienização DB (2026-02-17)
+- Estado: **FECHADO** para o escopo autorizado nesta ronda.
+- Ambiente: DB única de desenvolvimento (workflow `developer`).
+- Fonte de evidência operacional:
+  - `reports/schema_baseline_2026-02-17.md`
+  - `reports/schema_diff_matrix_2026-02-17.csv`
+  - `reports/auth_schema_audit_2026-02-17.md`
+  - `reports/schema_hygiene_closeout_2026-02-17.md`
+
+#### 00.9.1 Canónico Mantido (`app_v3`)
+- Mensagens modernas:
+  - `chat_conversations`
+  - `chat_conversation_members`
+  - `chat_conversation_messages`
+  - `chat_conversation_attachments`
+  - `chat_message_reactions`
+  - `chat_message_pins`
+  - `chat_message_reports`
+  - `chat_user_blocks`
+  - `chat_user_presence`
+  - `chat_access_grants`
+
+#### 00.9.2 Legado Removido (`app_v3`)
+- Tabelas:
+  - `chat_threads`
+  - `chat_members`
+  - `chat_messages`
+  - `chat_read_state`
+  - `chat_moderation_log`
+  - `chat_invites`
+  - `chat_event_invites`
+  - `chat_conversation_requests`
+  - `chat_channel_requests`
+- Triggers/Funções legacy `chat_*` de sincronização de threads v1.
+- Colunas legacy removidas em:
+  - `events`
+  - `search_index_items`
+  - `organizations`
+  - `profiles`
+  - `padel_clubs`
+  - `services`
+
+#### 00.9.3 Bloqueios Explícitos (não alterados)
+- `app_v3.padel_tournament_roles`
+- `app_v3.refund_policy_versions`
+- Política desta ronda: manter bloqueio por instrução do owner (sem create/drop/refactor nestas duas peças).
+
+#### 00.9.4 Exceções Intencionais de Modelação
+- `app_v3.cron_job_locks` permanece fora do Prisma por desenho (uso SQL raw em lock de cron).
+- `auth.*` é tratado como inventário read-only nesta ronda (sem DDL), com classificação de risco no relatório dedicado.
 
 ## 01 Global Invariants (I*)
 
@@ -3255,6 +3309,28 @@ D18.18) Ranking global Padel com contrato matemático versionado (FECHADO)
 	•	A conversão `rating -> nível` (escala visual) é logarítmica e parametrizada no `RankingPolicyContract`.
 	•	Coeficientes de `carry` e `underdog` são parâmetros de contrato (não heurística ad-hoc).
 	•	Qualquer alteração de fórmula/parâmetros exige nova versão de contrato (`v2+`) sem mutação retroativa de histórico.
+	•	Contagem canónica de jogos para rating é estritamente: `OFFICIAL | WALKOVER | RETIRED`.
+	•	Atualização de ranking por mutação de resultado é assíncrona e obrigatória via outbox:
+		- evento interno: `PADEL_RATING_REBUILD_REQUESTED`;
+		- payload mínimo: `{ eventId, organizationId, matchId, actorUserId, beforeStatus, reasonCode, requestedAt }`;
+		- handler executa `rebuildPadelRatingsForEvent` em transação.
+	•	Mutações de resultado que DEVEM disparar rebuild:
+		- transição para/desde estado contado (`OFFICIAL|WALKOVER|RETIRED`);
+		- correção de score/winner em match já contado.
+	•	Eventos de resultado `submit|confirm|reject|override|reset_pending|pending_expired` devem convergir no mesmo caminho de projeção de `match_updated` (sem lacunas de runtime).
+	•	Contrato de rastreabilidade de `GET /api/padel/rankings` inclui:
+		- `meta.countedStatuses=["OFFICIAL","WALKOVER","RETIRED"]`;
+		- `meta.generatedAt` obrigatório.
+	•	Backfill canónico de fecho:
+		- endpoint interno suporta `rebuildAllRatings=true` para recalcular todos os eventos elegíveis com paginação/cursor;
+		- execução deve produzir relatório auditável (`processedEvents`, `rebuiltEvents`, `rankingRowsRebuilt`, `errors[]`, `nextCursor`).
+	•	Propagação UI obrigatória do ranking:
+		- Hub de jogadores (`/api/padel/players`) devolve bloco `ranking` por jogador;
+		- resumo do utilizador (`/api/padel/me/summary`) devolve `ranking` com posição global/org;
+		- perfil público `/<username>/padel` e `/me` expõem rating/posição/jogos com ligação para `/padel/rankings`.
+	•	Unicidade canónica de perfil competitivo por utilizador na organização:
+		- constraint DB obrigatória em `(organization_id, user_id)` (tolerando `NULL` de `user_id` para perfis não vinculados);
+		- dedupe operacional prévio usa merge determinístico e preserva histórico competitivo.
 
 
 #### G08.017 (origem: D18.13)
@@ -3790,7 +3866,8 @@ Hard-cut de slugs legacy em `/org/:orgId/*`:
     - `policyType`: `FLEXIBLE|MODERATE|RIGID|CUSTOM`.
     - defaults bootstrap: `FLEXIBLE=1440`, `MODERATE=2880`, `RIGID=4320` minutos.
     - `cancellationPenaltyBps` é operacionalmente fixo em `0` (não configurável).
-    - `guestBookingAllowed` default `false`; `noShowFeeCents` default `0`.
+    - `guestBookingAllowed` default `false`.
+    - `noShowFeeCents` fica fora de customização de policy nesta versão e é lockado em `0` na API pública de políticas.
   - CRM (`CrmOrganizationPolicy`):
     - `timezone` default `Europe/Lisbon`.
     - quiet hours clamp `[0..1439]`.
@@ -5433,7 +5510,7 @@ node scripts/verify_ssot_canonical_groups.mjs
 | --- | --- | --- | --- | --- |
 | `calendario_motor_unico.md` | Motor temporal canónico 5m | `lib/reservas/availability.ts`, `app/api/servicos/[id]/calendario/route.ts`, `app/api/servicos/[id]/reservar/route.ts`, `app/api/org/[orgId]/reservas/[id]/reschedule/route.ts` | `npm test`, `npm run gate:ui-ux` | Validação/cálculo de slots e write-paths em múltiplos de 5 |
 | `reservas.md` | Assignment por serviço e booking v1 alinhado | `lib/reservas/serviceAssignment.ts`, `app/api/org/[orgId]/servicos/route.ts`, `app/api/org/[orgId]/servicos/[id]/route.ts`, `app/[username]/_components/ReservasBookingClient.tsx` | `npm run typecheck`, `npm test` | Enum canónico aceite e propagado FE/BE |
-| `policies_organizacao_fechado.md` | DF-01/DF-02/DF-03 (`POST` gate email + campos + policy global) | `app/api/org/[orgId]/policies/route.ts`, `app/api/org/[orgId]/policies/[id]/route.ts`, `app/api/org/[orgId]/me/route.ts`, `app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx` | `npm test`, `npm run gate:ui-ux` | `guestBookingAllowed`, `noShowFeeCents` e `orgRescheduleWindowMinutes` em round-trip |
+| `policies_organizacao_fechado.md` | DF-01/DF-02/DF-03 (`POST` gate email + campos + policy global) | `app/api/org/[orgId]/policies/route.ts`, `app/api/org/[orgId]/policies/[id]/route.ts`, `app/api/org/[orgId]/me/route.ts`, `app/org/_internal/core/(dashboard)/reservas/politicas/page.tsx` | `npm test`, `npm run gate:ui-ux` | `guestBookingAllowed` e `orgRescheduleWindowMinutes` em round-trip; `noShowFeeCents` lockado em `0` |
 | `dashboard_org_decisions.md` | Dashboard com `calendar` non-hideable e visibilidade UI-only | `lib/organizationDashboardTools.ts`, `app/api/org/[orgId]/dashboard/tools/visibility/route.ts` | `tests/org/dashboardToolIconsUnique.test.ts`, `npm test` | `NON_HIDEABLE_DASHBOARD_TOOL_IDS` inclui `calendar` |
 | `identidade_auth_historico_pre_fecho.md` | Histórico absorvido no contrato final de identidade/auth | `app/api/auth/logout/route.ts`, `app/api/org-hub/organizations/switch/route.ts`, `proxy.ts` | `npm test`, `SSOT_NORMATIVE_MODE=SSOT_ONLY SSOT_ENFORCE_SINGLE_DOC=1 npm run gate:ssot-normative` | Sem autoridade paralela remanescente fora do SSOT |
 | `identidade_auth_sessao_cookies_mobile_access.md` | Sessão/cookies/mobile access consolidados | `proxy.ts`, `app/api/auth/logout/route.ts`, `app/org/_internal/core/OrganizationTopBar.tsx`, `app/org/_internal/core/organizations/OrganizationsHubClient.tsx` | `npm test`, `npm run gate:ui-ux` | Escritas de `orya_organization` com política `Secure` por ambiente |
@@ -5443,4 +5520,4 @@ node scripts/verify_ssot_canonical_groups.mjs
 | `ws_handshake_and_jwt_claims.md` | Contrato WS/JWT consolidado no SSOT | `scripts/chat-ws-server.js`, `tests/ops/wsHandshakeRateLimitGuardrails.test.ts` | `npm test` | Guardrails WS/JWT mantidos sob contrato único |
 | `padel_live_implementacao.md` | Execução live padel alinhada à norma ativa | `app/api/padel/*`, `domain/padel/*` | `tests/padel/live*.test.ts`, `npm test` | Matriz live com cobertura de permissões, transições e notificações |
 | `padel_live_normativo.md` | Regras live padel consolidadas no SSOT | `domain/padel/*`, `app/api/padel/*` | `tests/padel/livePublicParity.test.ts`, `tests/padel/liveStateTransitionGuards.test.ts` | Paridade público/interno e guardas de estado validadas |
-| `padel.md` | Domínio padel/tournaments fechado em secções G08 | `app/org/[orgId]/padel/*`, `app/api/org/[orgId]/padel/*`, `domain/padel/*` | `tests/padel/*.test.ts`, `npm test` | Cobertura de torneios, ratings, resultados e integridade |
+| `padel.md` | Ranking padel fechado end-to-end (trigger automático + projeções + perfis) em G08.022 | `domain/padel/matches/commands.ts`, `domain/padel/outbox.ts`, `domain/padel/playerProfile.ts`, `app/api/padel/players/route.ts`, `app/api/padel/me/summary/route.ts`, `app/api/padel/rankings/route.ts`, `app/[username]/padel/page.tsx`, `app/me/page.tsx`, `app/api/internal/ops/padel/backfill/route.ts` | `tests/padel/matchResultCardsCommands.test.ts`, `tests/padel/internalBackfillRoute.test.ts`, `tests/outbox/padelOutbox.test.ts`, `npm run typecheck`, `npm test` | Rebuild de rating automático por mutação de resultado, contagem canónica (`OFFICIAL|WALKOVER|RETIRED`), ranking visível em Hub/perfil público/me e backfill auditável com cursor |

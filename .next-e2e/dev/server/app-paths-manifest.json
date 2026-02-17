@@ -1,0 +1,5 @@
+{
+  "/api/public/profile/route": "app/api/public/profile/route.js",
+  "/login/page": "app/login/page.js",
+  "/admin/(protected)/page": "app/admin/(protected)/page.js"
+}

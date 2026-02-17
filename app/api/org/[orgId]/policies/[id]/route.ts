@@ -106,8 +106,11 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (typeof payload?.guestBookingAllowed === "boolean") {
       updates.guestBookingAllowed = payload.guestBookingAllowed;
     }
-    if (Number.isFinite(Number(payload?.noShowFeeCents))) {
-      updates.noShowFeeCents = Math.max(0, Math.round(Number(payload.noShowFeeCents)));
+    if (payload?.cancellationPenaltyBps !== undefined && Number(payload?.cancellationPenaltyBps) !== 0) {
+      return fail(400, "CANCELLATION_PENALTY_LOCKED");
+    }
+    if (payload?.noShowFeeCents !== undefined && Number(payload?.noShowFeeCents) !== 0) {
+      return fail(400, "NO_SHOW_POLICY_LOCKED");
     }
     if (typeof payload?.policyType === "string") {
       const raw = payload.policyType.trim().toUpperCase();
@@ -120,6 +123,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       return fail(400, "Sem alterações.");
     }
     updates.cancellationPenaltyBps = 0;
+    updates.noShowFeeCents = 0;
 
     const policy = await prisma.organizationPolicy.update({
       where: { id: policyId },
@@ -138,6 +142,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       },
     });
     policy.cancellationPenaltyBps = 0;
+    policy.noShowFeeCents = 0;
 
     const { ip, userAgent } = getRequestMeta(req);
     await recordOrganizationAudit(prisma, {

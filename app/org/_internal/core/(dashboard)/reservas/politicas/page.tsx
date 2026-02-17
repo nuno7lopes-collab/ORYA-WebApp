@@ -28,7 +28,6 @@ type PolicyItem = {
   allowReschedule: boolean;
   rescheduleWindowMinutes: number | null;
   guestBookingAllowed: boolean;
-  noShowFeeCents: number;
 };
 
 type PoliciesPayload = {
@@ -60,7 +59,6 @@ export default function PoliticasReservaPage() {
   const [name, setName] = useState("");
   const [minutes, setMinutes] = useState("2880");
   const [guestBookingAllowed, setGuestBookingAllowed] = useState(false);
-  const [noShowFeeCents, setNoShowFeeCents] = useState("0");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [globalPolicySaving, setGlobalPolicySaving] = useState(false);
@@ -74,7 +72,6 @@ export default function PoliticasReservaPage() {
     allowReschedule: boolean;
     rescheduleWindowMinutes: string;
     guestBookingAllowed: boolean;
-    noShowFeeCents: string;
     saving: boolean;
     error: string | null;
   } | null>(null);
@@ -104,7 +101,6 @@ export default function PoliticasReservaPage() {
         allowReschedule: true,
         rescheduleWindowMinutes: minutes.trim() ? Number(minutes) : null,
         guestBookingAllowed,
-        noShowFeeCents: noShowFeeCents.trim() ? Number(noShowFeeCents) : 0,
       };
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/policies"), {
         method: "POST",
@@ -118,7 +114,6 @@ export default function PoliticasReservaPage() {
       setName("");
       setMinutes("2880");
       setGuestBookingAllowed(false);
-      setNoShowFeeCents("0");
       mutate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar política.");
@@ -136,7 +131,6 @@ export default function PoliticasReservaPage() {
       allowReschedule: policy.allowReschedule,
       rescheduleWindowMinutes: policy.rescheduleWindowMinutes === null ? "" : String(policy.rescheduleWindowMinutes),
       guestBookingAllowed: Boolean(policy.guestBookingAllowed),
-      noShowFeeCents: String(policy.noShowFeeCents ?? 0),
       saving: false,
       error: null,
     });
@@ -166,7 +160,6 @@ export default function PoliticasReservaPage() {
             ? Number(editDraft.rescheduleWindowMinutes)
             : null,
           guestBookingAllowed: editDraft.guestBookingAllowed,
-          noShowFeeCents: editDraft.noShowFeeCents.trim() ? Number(editDraft.noShowFeeCents) : 0,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -252,7 +245,7 @@ export default function PoliticasReservaPage() {
             {saving ? "A criar..." : "Criar"}
           </button>
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-1">
           <label className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
             <span>Permitir reservas de convidado</span>
             <input
@@ -262,12 +255,6 @@ export default function PoliticasReservaPage() {
               disabled={saving}
             />
           </label>
-          <input
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-            placeholder="No-show fee (cêntimos)"
-            value={noShowFeeCents}
-            onChange={(event) => setNoShowFeeCents(event.target.value)}
-          />
         </div>
 
         <div className="grid gap-3 md:grid-cols-[1.6fr_auto]">
@@ -309,8 +296,6 @@ export default function PoliticasReservaPage() {
                       Penalizacao 0%
                       {" · "}
                       {policy.guestBookingAllowed ? "Convidados permitidos" : "Convidados bloqueados"}
-                      {" · "}
-                      No-show {policy.noShowFeeCents ?? 0} cêntimos
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -375,15 +360,6 @@ export default function PoliticasReservaPage() {
                   className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/70 outline-none"
                   value="0% (fixo)"
                   disabled
-                />
-              </label>
-              <label className="text-[12px] text-white/70">
-                No-show fee (cêntimos)
-                <input
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={editDraft.noShowFeeCents}
-                  onChange={(e) => setEditDraft({ ...editDraft, noShowFeeCents: e.target.value })}
-                  disabled={editDraft.saving}
                 />
               </label>
             </div>
@@ -463,9 +439,6 @@ export default function PoliticasReservaPage() {
               </p>
               <p className="mt-1">
                 Penalizacao: 0%
-              </p>
-              <p className="mt-1">
-                No-show fee: {Number(editDraft.noShowFeeCents || "0") || 0} cêntimos
               </p>
               <p className="mt-1">
                 Convidados: {editDraft.guestBookingAllowed ? "permitidos" : "bloqueados"}

@@ -89,7 +89,6 @@ async function _GET(req: NextRequest) {
         allowReschedule: true,
         rescheduleWindowMinutes: true,
         guestBookingAllowed: true,
-        noShowFeeCents: true,
         createdAt: true,
       },
     });
@@ -103,6 +102,7 @@ async function _GET(req: NextRequest) {
       items: items.map((item) => ({
         ...item,
         cancellationPenaltyBps: 0,
+        noShowFeeCents: 0,
       })),
       organizationPolicy: {
         orgRescheduleWindowMinutes: orgSettings?.orgRescheduleWindowMinutes ?? 240,
@@ -179,6 +179,12 @@ async function _POST(req: NextRequest) {
     const allowCancellation =
       typeof payload?.allowCancellation === "boolean" ? payload.allowCancellation : true;
     const cancellationPenaltyBps = 0;
+    if (
+      payload?.cancellationPenaltyBps !== undefined &&
+      Number(payload?.cancellationPenaltyBps) !== 0
+    ) {
+      return fail(400, "CANCELLATION_PENALTY_LOCKED");
+    }
     const allowReschedule =
       typeof payload?.allowReschedule === "boolean" ? payload.allowReschedule : true;
     const rescheduleWindowMinutes =
@@ -189,9 +195,10 @@ async function _POST(req: NextRequest) {
           : cancellationWindowMinutes;
     const guestBookingAllowed =
       typeof payload?.guestBookingAllowed === "boolean" ? payload.guestBookingAllowed : false;
-    const noShowFeeCents = Number.isFinite(Number(payload?.noShowFeeCents))
-      ? Math.max(0, Math.round(Number(payload.noShowFeeCents)))
-      : 0;
+    if (payload?.noShowFeeCents !== undefined && Number(payload?.noShowFeeCents) !== 0) {
+      return fail(400, "NO_SHOW_POLICY_LOCKED");
+    }
+    const noShowFeeCents = 0;
 
     if (!name) {
       return fail(400, "Nome é obrigatório.");
@@ -239,7 +246,7 @@ async function _POST(req: NextRequest) {
         allowReschedule: policy.allowReschedule,
         rescheduleWindowMinutes: policy.rescheduleWindowMinutes,
         guestBookingAllowed: policy.guestBookingAllowed,
-        noShowFeeCents: policy.noShowFeeCents,
+        noShowFeeCents: 0,
       },
       ip,
       userAgent,

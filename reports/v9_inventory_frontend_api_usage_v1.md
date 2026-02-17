@@ -676,7 +676,6 @@ Total endpoints referenced: 361
 
 ## /api/org/[param]/events/create
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
-- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/org/[param]/events/list
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
@@ -863,6 +862,7 @@ Total endpoints referenced: 361
 
 ## /api/org/[param]/tournaments/create
 - app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/org/[param]/trainers
 - app/org/_internal/core/(dashboard)/staff/page.tsx

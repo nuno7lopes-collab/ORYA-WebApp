@@ -1,6 +1,7 @@
 {
   "version": 1,
   "webPages": [
+    "app/[username]/legal/page.tsx",
     "app/[username]/loja/carrinho/page.tsx",
     "app/[username]/loja/checkout/page.tsx",
     "app/[username]/loja/descargas/page.tsx",
@@ -400,6 +401,7 @@
       "app/signup/page.tsx"
     ],
     "public": [
+      "app/[username]/legal/page.tsx",
       "app/[username]/loja/carrinho/page.tsx",
       "app/[username]/loja/checkout/page.tsx",
       "app/[username]/loja/descargas/page.tsx",
@@ -521,12 +523,12 @@
     ]
   },
   "counts": {
-    "webTotal": 231,
+    "webTotal": 232,
     "mobileTotal": 42,
     "org": 77,
     "admin": 17,
     "user": 21,
-    "public": 59,
+    "public": 60,
     "legacyCompat": 57
   }
 }

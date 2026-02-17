@@ -387,20 +387,33 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
               {!feesData ? (
                 <p className="mt-2 text-[12px] text-white/55">A carregar configuração de taxas…</p>
               ) : (
-                <div className="mt-2 grid gap-3 text-[12px] text-white/75 md:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">ORYA</p>
-                    <p className="mt-1 font-semibold text-white">
-                      {feesData.orya.feeBps / 100}% + {formatMoney(feesData.orya.feeFixedCents)}
-                    </p>
+                <div className="mt-2 space-y-3 text-[12px] text-white/75">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">ORYA</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {feesData.orya.feeBps / 100}% + {formatMoney(feesData.orya.feeFixedCents)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
+                        Stripe {feesData.stripe.region}
+                      </p>
+                      <p className="mt-1 font-semibold text-white">
+                        {feesData.stripe.feeBps / 100}% + {formatMoney(feesData.stripe.feeFixedCents)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">
-                      Stripe {feesData.stripe.region}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    <p className="text-[11px] text-white/65">
+                      As fees canónicas são editáveis no painel de admin de configurações e aplicadas globalmente.
                     </p>
-                    <p className="mt-1 font-semibold text-white">
-                      {feesData.stripe.feeBps / 100}% + {formatMoney(feesData.stripe.feeFixedCents)}
-                    </p>
+                    <a
+                      href="/admin/settings"
+                      className="admin-button-secondary px-3 py-1 text-[11px]"
+                    >
+                      Configurar fees
+                    </a>
                   </div>
                 </div>
               )}

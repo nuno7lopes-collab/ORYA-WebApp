@@ -40,6 +40,17 @@ function formatDate(date?: Date | null) {
   }).format(date);
 }
 
+function formatDateTimeLabel(date?: Date | null) {
+  if (!date) return "—";
+  return new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function resolveMatchDate(match: {
   startTime?: Date | null;
   plannedStartAt?: Date | null;
@@ -721,6 +732,73 @@ export default async function PadelProfilePage({ params }: PageProps) {
     tournamentsPlayed,
     currentWinStreak,
   });
+  const rankingProfiles = await prisma.padelPlayerProfile.findMany({
+    where: { userId: resolvedProfile.id, isActive: true },
+    select: {
+      id: true,
+      organizationId: true,
+      updatedAt: true,
+      organization: {
+        select: {
+          publicName: true,
+          businessName: true,
+          username: true,
+        },
+      },
+      ratingProfile: {
+        select: {
+          rating: true,
+          matchesPlayed: true,
+          leaderboardEligible: true,
+          lastMatchAt: true,
+          lastRebuildAt: true,
+        },
+      },
+    },
+  });
+  const rankingSource =
+    [...rankingProfiles].sort((a, b) => {
+      const aMatches = a.ratingProfile?.matchesPlayed ?? -1;
+      const bMatches = b.ratingProfile?.matchesPlayed ?? -1;
+      if (aMatches !== bMatches) return bMatches - aMatches;
+      const aRating = typeof a.ratingProfile?.rating === "number" ? a.ratingProfile.rating : Number(a.ratingProfile?.rating ?? -1);
+      const bRating = typeof b.ratingProfile?.rating === "number" ? b.ratingProfile.rating : Number(b.ratingProfile?.rating ?? -1);
+      if (aRating !== bRating) return bRating - aRating;
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    })[0] ?? null;
+  const rankingData = rankingSource?.ratingProfile ?? null;
+  let rankingOrgPosition: number | null = null;
+  let rankingGlobalPosition: number | null = null;
+  if (rankingSource && rankingData) {
+    const orgAhead = await prisma.padelRatingProfile.count({
+      where: {
+        organizationId: rankingSource.organizationId,
+        OR: [
+          { rating: { gt: rankingData.rating } },
+          { rating: rankingData.rating, playerId: { lt: rankingSource.id } },
+        ],
+      },
+    });
+    rankingOrgPosition = orgAhead + 1;
+
+    if (rankingData.leaderboardEligible) {
+      const globalAhead = await prisma.padelRatingProfile.count({
+        where: {
+          leaderboardEligible: true,
+          OR: [
+            { rating: { gt: rankingData.rating } },
+            { rating: rankingData.rating, playerId: { lt: rankingSource.id } },
+          ],
+        },
+      });
+      rankingGlobalPosition = globalAhead + 1;
+    }
+  }
+  const rankingOrgName =
+    rankingSource?.organization.publicName ||
+    rankingSource?.organization.businessName ||
+    (rankingSource?.organization.username ? `@${rankingSource.organization.username}` : null) ||
+    null;
   const playerHistory = await prisma.padelPlayerHistoryProjection.findMany({
     where: {
       playerProfile: {
@@ -803,6 +881,55 @@ export default async function PadelProfilePage({ params }: PageProps) {
                   tone="default"
                 />
               </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Ranking oficial</p>
+                  <h2 className="mt-2 text-sm font-semibold text-white/95">Posicionamento competitivo</h2>
+                  <p className="text-[12px] text-white/70">
+                    Atualização automática por resultados oficiais, walkover e retired.
+                  </p>
+                </div>
+                <Link
+                  href="/padel/rankings"
+                  className="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[11px] text-white/85 hover:bg-white/15"
+                >
+                  Ver ranking global →
+                </Link>
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                  title="Global"
+                  value={typeof rankingGlobalPosition === "number" ? `#${rankingGlobalPosition}` : "—"}
+                  subtitle={rankingData?.leaderboardEligible ? "Elegível no leaderboard." : "Sem elegibilidade global."}
+                  tone="emerald"
+                />
+                <StatCard
+                  title="Organização"
+                  value={typeof rankingOrgPosition === "number" ? `#${rankingOrgPosition}` : "—"}
+                  subtitle={rankingOrgName ? `${rankingOrgName}` : "Sem organização elegível."}
+                  tone="cyan"
+                />
+                <StatCard
+                  title="Rating"
+                  value={rankingData?.rating != null ? Math.round(Number(rankingData.rating)) : "—"}
+                  subtitle="Pontos Glicko-2."
+                  tone="purple"
+                />
+                <StatCard
+                  title="Jogos contados"
+                  value={rankingData?.matchesPlayed ?? 0}
+                  subtitle={`Último rebuild ${formatDateTimeLabel(rankingData?.lastRebuildAt ?? null)}`}
+                  tone="default"
+                />
+              </div>
+              {rankingData && (
+                <p className="mt-4 text-[12px] text-white/65">
+                  Último jogo contado: {formatDateTimeLabel(rankingData.lastMatchAt ?? null)}.
+                </p>
+              )}
             </section>
 
             <section className="rounded-3xl border border-white/15 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.6)] backdrop-blur-2xl">

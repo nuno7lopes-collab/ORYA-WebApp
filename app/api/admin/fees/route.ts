@@ -62,6 +62,8 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: updatesErrors.join(", ") }, { status: 400 });
     }
 
+    const before = await getPlatformAndStripeFees();
+
     await Promise.all([
       setPlatformFees({
         feeBps: Number.isFinite(platformFeeBpsRaw)
@@ -87,11 +89,11 @@ async function _POST(req: NextRequest) {
       action: "FEES_UPDATE",
       actorUserId: admin.userId,
       payload: {
-        platformFeeBps: orya.feeBps,
-        platformFeeFixedCents: orya.feeFixedCents,
-        stripeFeeBps: stripe.feeBps,
-        stripeFeeFixedCents: stripe.feeFixedCents,
-        stripeRegion: stripe.region,
+        before,
+        after: {
+          orya,
+          stripe,
+        },
       },
     });
 

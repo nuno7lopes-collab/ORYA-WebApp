@@ -11,7 +11,6 @@ import {
 import { prisma } from "@/lib/prisma";
 import { appendEventLog } from "@/domain/eventLog/append";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
-import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 
 type MatchCommandBase = {
   eventId: number;
@@ -116,9 +115,9 @@ const isResultMutationData = (
   if (!Object.prototype.hasOwnProperty.call(payload, "status")) return false;
 
   const status = payload.status;
-  if (typeof status === "string") return isPadelOfficialStatus(status);
+  if (typeof status === "string") return true;
   if (status && typeof status === "object" && "set" in status) {
-    return isPadelOfficialStatus((status as { set?: unknown }).set as string | null | undefined);
+    return true;
   }
   return false;
 };

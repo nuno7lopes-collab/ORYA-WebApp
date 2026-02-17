@@ -10,6 +10,7 @@ import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { resolvePartnershipScheduleConstraints } from "@/domain/padel/partnershipSchedulePolicy";
 import { isPadelOfficialStatus, isPadelTerminalStatus } from "@/domain/padel/liveStatus";
+import { rebuildPadelRatingsForEvent } from "@/domain/padel/ratingEngine";
 import { Prisma } from "@prisma/client";
 
 type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
@@ -50,9 +51,27 @@ type MatchUpdatedPayload = {
   beforeStatus: string | null;
 };
 
+type RatingRebuildRequestedPayload = {
+  eventId: number;
+  organizationId: number;
+  matchId?: number | null;
+  actorUserId?: string | null;
+  beforeStatus?: string | null;
+  reasonCode?: string | null;
+  requestedAt?: string | null;
+};
+
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const MATCH_BATCH_GENERATED = "PADEL_MATCH_GENERATED";
 const MATCH_DELETED_EVENT = "PADEL_MATCH_DELETED";
+const MATCH_RESULT_EVENTS = new Set([
+  "PADEL_MATCH_RESULT_SUBMITTED",
+  "PADEL_MATCH_RESULT_CONFIRMED",
+  "PADEL_MATCH_RESULT_REJECTED",
+  "PADEL_MATCH_RESULT_OVERRIDDEN",
+  "PADEL_MATCH_PENDING_RESET",
+  "PADEL_MATCH_PENDING_EXPIRED",
+]);
 
 function normalizeDelayPolicy(value: unknown): DelayPolicy {
   if (value === "SINGLE_MATCH" || value === "CASCADE_SAME_COURT" || value === "GLOBAL_REPLAN") {
@@ -130,15 +149,56 @@ export async function handlePadelOutboxEvent(params: { eventType: string; payloa
       return handleAutoScheduleRequested(params.payload as AutoScheduleRequestedPayload);
     case "PADEL_MATCH_DELAY_REQUESTED":
       return handleMatchDelayRequested(params.payload as MatchDelayRequestedPayload);
+    case "PADEL_RATING_REBUILD_REQUESTED":
+      return handleRatingRebuildRequested(params.payload as RatingRebuildRequestedPayload);
     case "PADEL_MATCH_UPDATED":
       return handleMatchUpdated(params.payload as MatchUpdatedPayload);
-    case SYSTEM_MATCH_EVENT:
-    case MATCH_BATCH_GENERATED:
-    case MATCH_DELETED_EVENT:
-      return { ok: true } as const;
     default:
+      if (MATCH_RESULT_EVENTS.has(params.eventType)) {
+        return handleMatchUpdated(params.payload as MatchUpdatedPayload);
+      }
+      if (
+        params.eventType === SYSTEM_MATCH_EVENT ||
+        params.eventType === MATCH_BATCH_GENERATED ||
+        params.eventType === MATCH_DELETED_EVENT
+      ) {
+        return { ok: true } as const;
+      }
       return { ok: false, code: "PADEL_OUTBOX_UNHANDLED" } as const;
   }
+}
+
+async function handleRatingRebuildRequested(payload: RatingRebuildRequestedPayload) {
+  const eventId = Number(payload?.eventId);
+  const organizationId = Number(payload?.organizationId);
+  if (!Number.isFinite(eventId) || !Number.isFinite(organizationId)) {
+    return { ok: false, code: "PADEL_RATING_REBUILD_INVALID_PAYLOAD" } as const;
+  }
+
+  const result = await prisma.$transaction((tx) =>
+    rebuildPadelRatingsForEvent({
+      tx,
+      organizationId,
+      eventId,
+      actorUserId: payload?.actorUserId ?? null,
+    }),
+  );
+  await recordOrganizationAuditSafe({
+    organizationId,
+    actorUserId: payload?.actorUserId ?? null,
+    action: "PADEL_RATING_REBUILD_REQUESTED",
+    metadata: {
+      eventId,
+      matchId: payload?.matchId ?? null,
+      beforeStatus: payload?.beforeStatus ?? null,
+      reasonCode: payload?.reasonCode ?? null,
+      requestedAt: payload?.requestedAt ?? null,
+      processedMatches: result.processedMatches,
+      processedPlayers: result.processedPlayers,
+      rankingRows: result.rankingRows,
+    },
+  });
+  return { ok: true, result } as const;
 }
 
 async function handleAutoScheduleRequested(payload: AutoScheduleRequestedPayload) {

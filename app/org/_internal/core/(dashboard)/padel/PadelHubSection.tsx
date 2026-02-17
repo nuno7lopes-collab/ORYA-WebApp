@@ -48,6 +48,15 @@ type Player = {
     lastActivityAt: string | Date | null;
     marketingOptIn: boolean;
   } | null;
+  ranking?: {
+    rating: number | null;
+    orgPosition: number | null;
+    matchesPlayed: number;
+    leaderboardEligible: boolean;
+    blockedNewMatches: boolean;
+    lastMatchAt: string | Date | null;
+    lastRebuildAt: string | Date | null;
+  } | null;
 };
 
 type PadelHubResponse<T> = {

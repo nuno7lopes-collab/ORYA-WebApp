@@ -31,70 +31,82 @@ export async function createTournamentForEvent(input: {
   correlationId?: string | null;
   inscriptionDeadlineAt?: Date | null;
 }) {
+  return prisma.$transaction(async (tx) => createTournamentForEventInTx(tx, input));
+}
+
+export async function createTournamentForEventInTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    eventId: number;
+    format: TournamentFormat;
+    config: Record<string, unknown>;
+    actorUserId: string;
+    correlationId?: string | null;
+    inscriptionDeadlineAt?: Date | null;
+  },
+) {
   const { eventId, format, config, actorUserId, correlationId, inscriptionDeadlineAt } = input;
   if (!Number.isFinite(eventId)) {
     return { ok: false as const, error: "EVENT_ID_REQUIRED" };
   }
 
-  return prisma.$transaction(async (tx) => {
-    const event = await tx.event.findUnique({
-      where: { id: eventId },
-      select: { id: true, organizationId: true, templateType: true, startsAt: true, tournament: { select: { id: true } } },
-    });
-    if (event?.organizationId == null) return { ok: false as const, error: "NOT_FOUND" };
-    const organizationId = event.organizationId;
-    if (event.templateType !== EventTemplateType.PADEL) {
-      return { ok: false as const, error: "EVENT_NOT_PADEL" };
-    }
-    if (event.tournament?.id) {
-      return { ok: true as const, tournamentId: event.tournament.id, created: false };
-    }
-
-    const resolvedDeadline =
-      inscriptionDeadlineAt && !Number.isNaN(new Date(inscriptionDeadlineAt).getTime()) ? inscriptionDeadlineAt : null;
-    const fallbackDeadline =
-      event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
-        ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)
-        : null;
-    const tournament = await tx.tournament.create({
-      data: {
-        eventId,
-        format,
-        config: config as Prisma.InputJsonValue,
-        ...(resolvedDeadline || fallbackDeadline ? { inscriptionDeadlineAt: resolvedDeadline ?? fallbackDeadline } : {}),
-      },
-      select: { id: true },
-    });
-
-    const eventIdLog = crypto.randomUUID();
-    const idempotencyKey = `tournament.created:${eventId}`;
-    await appendEventLog(
-      {
-        eventId: eventIdLog,
-        organizationId,
-        eventType: "tournament.created",
-        idempotencyKey,
-        actorUserId,
-        sourceType: SourceType.TOURNAMENT,
-        sourceId: String(tournament.id),
-        correlationId: correlationId ?? null,
-        payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
-      },
-      tx
-    );
-    await recordOutboxEvent(
-      {
-        eventId: eventIdLog,
-        eventType: "tournament.created",
-        dedupeKey: idempotencyKey,
-        payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
-        correlationId: correlationId ?? null,
-      },
-      tx
-    );
-
-    return { ok: true as const, tournamentId: tournament.id, created: true };
+  const event = await tx.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, organizationId: true, templateType: true, startsAt: true, tournament: { select: { id: true } } },
   });
+  if (event?.organizationId == null) return { ok: false as const, error: "NOT_FOUND" };
+  const organizationId = event.organizationId;
+  if (event.templateType !== EventTemplateType.PADEL) {
+    return { ok: false as const, error: "EVENT_NOT_PADEL" };
+  }
+  if (event.tournament?.id) {
+    return { ok: true as const, tournamentId: event.tournament.id, created: false };
+  }
+
+  const resolvedDeadline =
+    inscriptionDeadlineAt && !Number.isNaN(new Date(inscriptionDeadlineAt).getTime()) ? inscriptionDeadlineAt : null;
+  const fallbackDeadline =
+    event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
+      ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)
+      : null;
+  const tournament = await tx.tournament.create({
+    data: {
+      eventId,
+      format,
+      config: config as Prisma.InputJsonValue,
+      ...(resolvedDeadline || fallbackDeadline ? { inscriptionDeadlineAt: resolvedDeadline ?? fallbackDeadline } : {}),
+    },
+    select: { id: true },
+  });
+
+  const eventIdLog = crypto.randomUUID();
+  const idempotencyKey = `tournament.created:${eventId}`;
+  await appendEventLog(
+    {
+      eventId: eventIdLog,
+      organizationId,
+      eventType: "tournament.created",
+      idempotencyKey,
+      actorUserId,
+      sourceType: SourceType.TOURNAMENT,
+      sourceId: String(tournament.id),
+      correlationId: correlationId ?? null,
+      payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
+    },
+    tx
+  );
+  await recordOutboxEvent(
+    {
+      eventId: eventIdLog,
+      eventType: "tournament.created",
+      dedupeKey: idempotencyKey,
+      payload: { tournamentId: tournament.id, eventId } as Prisma.InputJsonValue,
+      correlationId: correlationId ?? null,
+    },
+    tx
+  );
+
+  return { ok: true as const, tournamentId: tournament.id, created: true };
 }
 
 export async function updateTournament(input: {

@@ -38,6 +38,7 @@ async function _POST(req: NextRequest) {
     ? parseBool(params.get("rebuildHistoryProjection"))
     : true;
   const rebuildMissingRatings = parseBool(params.get("rebuildMissingRatings"));
+  const rebuildAllRatings = parseBool(params.get("rebuildAllRatings"));
 
   const events = await prisma.event.findMany({
     where: {
@@ -75,7 +76,9 @@ async function _POST(req: NextRequest) {
   let ratingContextUpdatedTotal = 0;
   let historyRowsTotal = 0;
   let ratingsRebuiltTotal = 0;
+  let rebuiltEventsTotal = 0;
   let eventErrors = 0;
+  const errors: Array<{ eventId: number; organizationId: number; message: string }> = [];
 
   for (const event of events) {
     const organizationId = event.organizationId;
@@ -117,7 +120,9 @@ async function _POST(req: NextRequest) {
           if (result.ok) ratingContextUpdatedTotal += result.updated;
         }
 
-        if (rebuildMissingRatings && doneMatches > 0 && ratingEvents === 0) {
+        const shouldRebuildRatings =
+          doneMatches > 0 && (rebuildAllRatings || (rebuildMissingRatings && ratingEvents === 0));
+        if (shouldRebuildRatings) {
           const result = await prisma.$transaction((tx) =>
             rebuildPadelRatingsForEvent({
               tx,
@@ -127,6 +132,7 @@ async function _POST(req: NextRequest) {
             }),
           );
           ratingRebuild = result;
+          rebuiltEventsTotal += 1;
           ratingsRebuiltTotal += result.rankingRows;
         }
 
@@ -144,6 +150,11 @@ async function _POST(req: NextRequest) {
       } catch (err) {
         error = err instanceof Error ? err.message : "BACKFILL_FAILED";
         eventErrors += 1;
+        errors.push({
+          eventId: event.id,
+          organizationId,
+          message: error,
+        });
       }
     }
 
@@ -175,13 +186,19 @@ async function _POST(req: NextRequest) {
         backfillRatingContext,
         rebuildHistoryProjection,
         rebuildMissingRatings,
+        rebuildAllRatings,
       },
+      processedEvents: rows.length,
+      rebuiltEvents: rebuiltEventsTotal,
       processed: rows.length,
       nextCursor,
+      errors,
       totals: {
         ratingContextUpdated: ratingContextUpdatedTotal,
         historyRowsRebuilt: historyRowsTotal,
         rankingRowsRebuilt: ratingsRebuiltTotal,
+        rebuiltEvents: rebuiltEventsTotal,
+        processedEvents: rows.length,
         eventErrors,
       },
       rows,

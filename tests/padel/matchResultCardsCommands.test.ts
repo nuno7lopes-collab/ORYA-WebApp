@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PadelMatchResultCardStatus, PadelMatchSide } from "@prisma/client";
 import { submitPadelMatchResultCard, updatePadelMatch } from "@/domain/padel/matches/commands";
 
+const recordOutboxEvent = vi.hoisted(() => vi.fn(async () => ({ eventId: "evt_test" })));
+
 vi.mock("@/domain/outbox/producer", () => ({
-  recordOutboxEvent: vi.fn(async () => ({ eventId: "evt_test" })),
+  recordOutboxEvent,
 }));
 vi.mock("@/domain/eventLog/append", () => ({
   appendEventLog: vi.fn(async () => null),
@@ -109,6 +111,128 @@ function createResultCardTx() {
 }
 
 describe("padel match result cards commands", () => {
+  beforeEach(() => {
+    recordOutboxEvent.mockClear();
+  });
+
+  it("emite rebuild de rating em transição para estado contado", async () => {
+    const tx: any = {
+      eventMatchSlot: {
+        findUnique: vi.fn(async () => ({ status: "IN_PROGRESS" })),
+        update: vi.fn(async () => ({ id: 55, status: "OFFICIAL", eventId: 7 })),
+      },
+      padelMatchResultCard: {
+        findUnique: vi.fn(async () => null),
+      },
+    };
+
+    await updatePadelMatch({
+      tx,
+      matchId: 55,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { status: "OFFICIAL" },
+    });
+
+    expect(recordOutboxEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "PADEL_RATING_REBUILD_REQUESTED",
+      }),
+      tx,
+    );
+  });
+
+  it("emite rebuild de rating em correção de score num jogo oficial", async () => {
+    const tx: any = {
+      eventMatchSlot: {
+        findUnique: vi.fn(async () => ({ status: "OFFICIAL" })),
+        update: vi.fn(async () => ({ id: 56, status: "OFFICIAL", eventId: 7 })),
+      },
+      padelMatchResultCard: {
+        findUnique: vi.fn(async () => null),
+      },
+    };
+
+    await updatePadelMatch({
+      tx,
+      matchId: 56,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { scoreSets: [{ teamA: 6, teamB: 4 }] as any },
+    });
+
+    const ratingCalls = recordOutboxEvent.mock.calls.filter(
+      ([payload]) => payload?.eventType === "PADEL_RATING_REBUILD_REQUESTED",
+    );
+    expect(ratingCalls.length).toBe(1);
+    expect(ratingCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          reasonCode: "COUNTED_RESULT_CORRECTION",
+        }),
+      }),
+    );
+  });
+
+  it("emite rebuild em OFFICIAL -> DISPUTED e em DISPUTED -> OFFICIAL", async () => {
+    const txToDisputed: any = {
+      eventMatchSlot: {
+        findUnique: vi.fn(async () => ({ status: "OFFICIAL" })),
+        update: vi.fn(async () => ({ id: 57, status: "DISPUTED", eventId: 7 })),
+      },
+      padelMatchResultCard: {
+        findUnique: vi.fn(async () => null),
+      },
+    };
+    await updatePadelMatch({
+      tx: txToDisputed,
+      matchId: 57,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { status: "DISPUTED" },
+    });
+
+    const txToOfficial: any = {
+      eventMatchSlot: {
+        findUnique: vi.fn(async () => ({ status: "DISPUTED" })),
+        update: vi.fn(async () => ({ id: 57, status: "OFFICIAL", eventId: 7 })),
+      },
+      padelMatchResultCard: {
+        findUnique: vi.fn(async () => null),
+      },
+    };
+    await updatePadelMatch({
+      tx: txToOfficial,
+      matchId: 57,
+      eventId: 7,
+      organizationId: 3,
+      actorUserId: "u-admin",
+      data: { status: "OFFICIAL" },
+    });
+
+    const ratingCalls = recordOutboxEvent.mock.calls.filter(
+      ([payload]) => payload?.eventType === "PADEL_RATING_REBUILD_REQUESTED",
+    );
+    expect(ratingCalls.length).toBe(2);
+    expect(ratingCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          reasonCode: "COUNTED_STATUS_TRANSITION",
+        }),
+      }),
+    );
+    expect(ratingCalls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          reasonCode: "COUNTED_STATUS_TRANSITION",
+        }),
+      }),
+    );
+  });
+
   it("confirma card quando existem assinaturas de ambos os lados no mesmo payload", async () => {
     const state = createResultCardTx();
 
@@ -186,6 +310,7 @@ describe("padel match result cards commands", () => {
         update: vi.fn(async () => null),
       },
       eventMatchSlot: {
+        findUnique: vi.fn(async () => ({ status: "IN_PROGRESS" })),
         update: vi.fn(async () => ({ id: 44, eventId: 3, status: "OFFICIAL" })),
       },
     };

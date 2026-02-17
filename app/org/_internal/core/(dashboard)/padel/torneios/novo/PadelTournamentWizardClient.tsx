@@ -9,6 +9,15 @@ import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { computeMatchSlots, estimateMaxTeamsForSlots } from "@/lib/padel/capacityRecommendation";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import type { Prisma } from "@prisma/client";
+import { CTA_GHOST, CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
+import {
+  CreateWizardActionBar,
+  CreateWizardAlert,
+  CreateWizardChecklist,
+  CreateWizardHeader,
+  CreateWizardSectionCard,
+  CreateWizardShell,
+} from "@/app/org/_internal/core/(dashboard)/_components/create-wizard";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -54,6 +63,14 @@ type Court = {
   indoor?: boolean | null;
   displayOrder?: number | null;
   isActive: boolean;
+};
+
+type StaffMember = {
+  id: number;
+  fullName?: string | null;
+  email?: string | null;
+  role?: string | null;
+  isActive?: boolean;
 };
 
 type CategoryDraft = {
@@ -172,6 +189,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [defaultCategoryId, setDefaultCategoryId] = useState<number | null>(null);
   const [useAllCourts, setUseAllCourts] = useState(true);
   const [selectedCourtIds, setSelectedCourtIds] = useState<number[]>([]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<number[]>([]);
   const [savingMode, setSavingMode] = useState<"DRAFT" | "PUBLISH" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftEventId, setDraftEventId] = useState<number | null>(null);
@@ -195,6 +213,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     clubIdNumber ? `/api/padel/clubs/${clubIdNumber}/courts` : null,
     fetcher,
   );
+  const { data: staffRes } = useSWR<{ ok?: boolean; items?: StaffMember[] }>(
+    clubIdNumber ? `/api/padel/clubs/${clubIdNumber}/staff` : null,
+    fetcher,
+  );
 
   const clubs = useMemo(() => (Array.isArray(clubsRes?.items) ? clubsRes?.items ?? [] : []), [clubsRes?.items]);
   const categories = useMemo(
@@ -203,6 +225,11 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   );
   const rulesets = useMemo(() => (Array.isArray(rulesetsRes?.items) ? rulesetsRes?.items ?? [] : []), [rulesetsRes?.items]);
   const courts = useMemo(() => (Array.isArray(courtsRes?.items) ? courtsRes?.items ?? [] : []), [courtsRes?.items]);
+  const staffMembers = useMemo(
+    () =>
+      (Array.isArray(staffRes?.items) ? staffRes?.items ?? [] : []).filter((staff) => staff.isActive !== false),
+    [staffRes?.items],
+  );
 
   useEffect(() => {
     if (selectedClubId || clubs.length === 0) return;
@@ -212,6 +239,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
 
   useEffect(() => {
     setSelectedCourtIds([]);
+    setSelectedStaffIds([]);
     setUseAllCourts(true);
   }, [selectedClubId]);
 
@@ -493,10 +521,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       status: "DRAFT",
       timezone: timezone || undefined,
       addressId: location.addressId,
-      templateType: "PADEL",
       pricingMode: hasPaid ? "STANDARD" : "FREE_ONLY",
       padel: {
-        padelClubId: clubIdValue,
+        clubId: clubIdValue,
         categoryIds: selectedCategories.map((cat) => cat.id),
         defaultCategoryId,
         format,
@@ -507,6 +534,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         teamSize: isInterclub && teamSizeValue ? Math.floor(teamSizeValue) : null,
         categoryConfigs,
         courtIds: courtIdsPayload,
+        staffIds: selectedStaffIds,
         numberOfCourts,
         padelV2Enabled: true,
         advancedSettings: {
@@ -540,13 +568,17 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
 
     setSavingMode(mode);
     try {
-      const res = await fetch(`/api/org/${organizationId}/events/create`, {
+      const res = await fetch(`/api/org/${organizationId}/tournaments/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
+        if (json?.errorCode === "PADEL_CREATE_MOVED" && typeof json?.details?.target === "string") {
+          router.push(json.details.target);
+          return;
+        }
         const message = sanitizeUiErrorMessage(
           json?.message ?? json?.error ?? json?.errorCode,
           "Falha ao criar torneio.",
@@ -599,18 +631,57 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] py-10 text-white">
-      <div className="mx-auto w-full max-w-5xl space-y-8 px-4">
-        <header className="space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Assistente de padel</p>
-          <h1 className="text-3xl font-semibold">Novo torneio de Padel</h1>
-          <p className="text-sm text-white/65">
-            Fluxo dedicado para padel: escolhe clube, categorias e regras num único passo.
-          </p>
-        </header>
+  const readinessItems = useMemo(
+    () => [
+      { id: "identity", label: "Título e datas base", done: Boolean(title.trim() && startsAt && endsAt), blockedLabel: "Falta" },
+      { id: "club", label: "Clube com morada normalizada", done: Boolean(selectedClubId && location.addressId), blockedLabel: "Bloqueado" },
+      { id: "courts", label: "Campos operacionais válidos", done: courtsCount > 0, blockedLabel: "Sem campos" },
+      { id: "categories", label: "Categorias e categoria principal", done: selectedCategories.length > 0 && Boolean(defaultCategoryId), blockedLabel: "Sem categorias" },
+      {
+        id: "rules",
+        label: "Formato e regras operacionais",
+        done: Boolean(format && eligibility && (!isInterclub || (asNumber(teamSize) ?? 0) >= 2)),
+        blockedLabel: "Incompleto",
+      },
+      { id: "registration", label: "Janela de inscrições válida", done: registrationWarnings.length === 0, blockedLabel: "Janela inválida" },
+      { id: "schedule", label: "Defaults de agenda válidos", done: scheduleWarnings.length === 0, blockedLabel: "Agenda inválida" },
+    ],
+    [
+      title,
+      startsAt,
+      endsAt,
+      selectedClubId,
+      location.addressId,
+      courtsCount,
+      selectedCategories.length,
+      defaultCategoryId,
+      format,
+      eligibility,
+      isInterclub,
+      teamSize,
+      registrationWarnings.length,
+      scheduleWarnings.length,
+    ],
+  );
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-gradient-to-br from-white/5 via-[#0b1322] to-[#05070f] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+  const toggleStaff = (staffId: number) => {
+    setSelectedStaffIds((prev) =>
+      prev.includes(staffId) ? prev.filter((id) => id !== staffId) : [...prev, staffId],
+    );
+  };
+
+  return (
+    <CreateWizardShell>
+      <CreateWizardHeader
+        eyebrow="Assistente Padel"
+        title="Criar torneio"
+        subtitle="Fluxo dedicado: configura clube, categorias, regras operacionais e prontidão para publicação."
+      />
+
+      <CreateWizardSectionCard
+        title="Identidade e Datas"
+        subtitle="Nome do torneio, período e localização normalizada."
+      >
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Título</span>
@@ -675,15 +746,12 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               <p className="text-[12px] text-white/60">Seleciona um clube para carregar a morada.</p>
             )}
           </div>
-        </section>
+      </CreateWizardSectionCard>
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-[#0b1322] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-          <div>
-            <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Inscrições & agenda</p>
-            <p className="text-sm text-white/70">
-              Define o fuso horário, a janela de inscrições e os padrões para o calendário (agendamento automático).
-            </p>
-          </div>
+      <CreateWizardSectionCard
+        title="Inscrições e Agenda"
+        subtitle="Janela de inscrições e defaults operacionais para calendário automático."
+      >
 
           <div className="grid gap-3 md:grid-cols-3">
             <label className="space-y-1 text-sm text-white/70">
@@ -847,9 +915,12 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               )}
             </div>
           )}
-        </section>
+      </CreateWizardSectionCard>
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-[#0b1322] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <CreateWizardSectionCard
+        title="Categorias e Pricing"
+        subtitle="Define categorias ativas, preço por jogador e capacidade por categoria."
+      >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Categorias</p>
@@ -990,9 +1061,12 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               </select>
             </label>
           </div>
-        </section>
+      </CreateWizardSectionCard>
 
-        <section className="grid gap-6 rounded-3xl border border-white/10 bg-[#0b1322] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <CreateWizardSectionCard
+        title="Formato e Operação"
+        subtitle="Elegibilidade, split, ruleset, interclub e seleção de campos/equipa."
+      >
           <div className="grid gap-3 md:grid-cols-3">
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Elegibilidade</span>
@@ -1088,32 +1162,56 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               )}
             </div>
           )}
-        </section>
 
-        {error && (
-          <div className="rounded-2xl border border-rose-300/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-            {error}
-          </div>
-        )}
+          {selectedClub && staffMembers.length > 0 && (
+            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Equipa operacional</p>
+                <span className="text-[11px] text-white/60">Selecionados: {selectedStaffIds.length}</span>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {staffMembers.map((staff) => (
+                  <label key={`staff-${staff.id}`} className="flex items-center gap-2 text-sm text-white/70">
+                    <input
+                      type="checkbox"
+                      checked={selectedStaffIds.includes(staff.id)}
+                      onChange={() => toggleStaff(staff.id)}
+                      className="h-4 w-4 rounded border-white/30 bg-black/40 text-[#6BFFFF]"
+                    />
+                    <span>
+                      {staff.fullName || staff.email || `Staff #${staff.id}`}
+                      {staff.role ? ` · ${staff.role}` : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+      </CreateWizardSectionCard>
 
-        {draftEventId && (
-          <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Rascunho criado.{" "}
-            <Link
-              href={appendOrganizationIdToHref(`/org/padel/tournaments/${draftEventId}`, organizationId)}
-              className="underline"
-            >
-              Abrir torneio
-            </Link>
-          </div>
-        )}
+      <CreateWizardChecklist title="Checklist de prontidão" items={readinessItems} />
 
+      {error && <CreateWizardAlert variant="error">{error}</CreateWizardAlert>}
+
+      {draftEventId && (
+        <CreateWizardAlert variant="warning">
+          Rascunho criado.{" "}
+          <Link
+            href={appendOrganizationIdToHref(`/org/padel/tournaments/${draftEventId}`, organizationId)}
+            className="underline"
+          >
+            Abrir torneio
+          </Link>
+        </CreateWizardAlert>
+      )}
+
+      <CreateWizardActionBar>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={() => handleSubmit("DRAFT")}
             disabled={saving}
-            className="rounded-full border border-white/30 px-6 py-3 text-sm font-semibold text-white shadow disabled:opacity-60"
+            className={`${CTA_GHOST} disabled:opacity-60`}
           >
             {savingMode === "DRAFT" ? "A guardar…" : "Guardar rascunho"}
           </button>
@@ -1121,13 +1219,13 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             type="button"
             onClick={() => handleSubmit("PUBLISH")}
             disabled={saving}
-            className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black shadow disabled:opacity-60"
+            className={`${CTA_PRIMARY} disabled:opacity-60`}
           >
             {savingMode === "PUBLISH" ? "A publicar…" : "Publicar"}
           </button>
-          <span className="text-[12px] text-white/60">Assistente dedicado a padel. Sem bilhetes.</span>
+          <span className="text-[12px] text-white/60">Criar = rascunho. Publicação é validada por lifecycle.</span>
         </div>
-      </div>
-    </div>
+      </CreateWizardActionBar>
+    </CreateWizardShell>
   );
 }

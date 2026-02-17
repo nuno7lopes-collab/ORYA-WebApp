@@ -131,4 +131,52 @@ describe("POST /api/internal/ops/padel/backfill", () => {
     expect(body.rows[0].contextBackfill.updated).toBe(2);
     expect(body.rows[0].historyRebuild.rows).toBe(4);
   });
+
+  it("recalcula ratings para todos os eventos quando rebuildAllRatings=true", async () => {
+    prisma.event.findMany.mockResolvedValue([
+      {
+        id: 30,
+        slug: "open-30",
+        title: "Open 30",
+        organizationId: 77,
+        padelTournamentConfig: { lifecycleStatus: "COMPLETED" },
+      },
+      {
+        id: 31,
+        slug: "open-31",
+        title: "Open 31",
+        organizationId: 77,
+        padelTournamentConfig: { lifecycleStatus: "COMPLETED" },
+      },
+    ]);
+    prisma.padelRatingEvent.count
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(1);
+    prisma.padelPlayerHistoryProjection.count.mockResolvedValue(0);
+    prisma.eventMatchSlot.count.mockResolvedValue(2);
+
+    rebuildPadelRatingsForEvent
+      .mockResolvedValueOnce({ processedMatches: 2, processedPlayers: 4, rankingRows: 4 })
+      .mockResolvedValueOnce({ processedMatches: 3, processedPlayers: 5, rankingRows: 5 });
+
+    const req = new NextRequest(
+      "http://localhost/api/internal/ops/padel/backfill?apply=true&rebuildAllRatings=true&limit=2",
+      {
+        method: "POST",
+      },
+    );
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.options.rebuildAllRatings).toBe(true);
+    expect(body.processedEvents).toBe(2);
+    expect(body.rebuiltEvents).toBe(2);
+    expect(body.totals.rebuiltEvents).toBe(2);
+    expect(body.totals.rankingRowsRebuilt).toBe(9);
+    expect(rebuildPadelRatingsForEvent).toHaveBeenCalledTimes(2);
+  });
 });

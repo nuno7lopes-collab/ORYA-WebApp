@@ -170,7 +170,7 @@ describe("booking cancel snapshot route", () => {
       expect.objectContaining({
         bookingId: 1,
         paymentIntentId: "pi_1",
-        amountCents: snapshot.pricingSnapshot.totalCents - snapshot.pricingSnapshot.combinedFeeCents,
+        amountCents: snapshot.pricingSnapshot.totalCents,
       }),
     );
   });

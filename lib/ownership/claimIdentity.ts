@@ -184,10 +184,7 @@ export async function claimIdentity(email: string, userId: string, opts?: ClaimI
       where: { ownerIdentityId: sourceIdentity.id },
       data: { ownerIdentityId: targetIdentity.id, ownerUserId: userId },
     });
-    const movedChatInvites = await tx.chatInvite.updateMany({
-      where: { ownerIdentityId: sourceIdentity.id },
-      data: { ownerIdentityId: targetIdentity.id },
-    });
+    const movedChatInvites = { count: 0 };
     const movedCrmContacts = await tx.crmContact.updateMany({
       where: { emailIdentityId: sourceIdentity.id },
       data: { emailIdentityId: targetIdentity.id },

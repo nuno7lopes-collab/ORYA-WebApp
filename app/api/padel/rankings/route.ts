@@ -21,6 +21,7 @@ import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const DEFAULT_LIMIT = 50;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const COUNTED_STATUSES = ["OFFICIAL", "WALKOVER", "RETIRED"] as const;
 
 const clampLimit = (raw: string | null) => {
   const parsed = raw ? Number(raw) : NaN;
@@ -153,6 +154,8 @@ async function _GET(req: NextRequest) {
         meta: {
           bootstrap,
           reason: bootstrap ? "NO_RATING_DATA" : null,
+          countedStatuses: COUNTED_STATUSES,
+          generatedAt: new Date().toISOString(),
         },
       },
       { status: 200 },
@@ -233,6 +236,8 @@ async function _GET(req: NextRequest) {
         meta: {
           bootstrap,
           reason: bootstrap ? "NO_RATING_DATA" : null,
+          countedStatuses: COUNTED_STATUSES,
+          generatedAt: new Date().toISOString(),
         },
       },
       { status: 200 },
@@ -300,6 +305,8 @@ async function _GET(req: NextRequest) {
       meta: {
         bootstrap,
         reason: bootstrap ? "NO_RATING_DATA" : null,
+        countedStatuses: COUNTED_STATUSES,
+        generatedAt: new Date().toISOString(),
       },
     },
     { status: 200 },

@@ -111,6 +111,15 @@ type Player = {
     lastActivityAt: string | Date | null;
     marketingOptIn: boolean;
   } | null;
+  ranking?: {
+    rating: number | null;
+    orgPosition: number | null;
+    matchesPlayed: number;
+    leaderboardEligible: boolean;
+    blockedNewMatches: boolean;
+    lastMatchAt: string | Date | null;
+    lastRebuildAt: string | Date | null;
+  } | null;
 };
 
 type Team = {
@@ -5882,6 +5891,7 @@ export default function PadelHubClient({
                   <th className="px-3 py-2">Jogador</th>
                   <th className="px-3 py-2">Email</th>
                   <th className="px-3 py-2">Telefone</th>
+                  <th className="px-3 py-2">Ranking</th>
                   <th className="px-3 py-2">CRM</th>
                   <th className="px-3 py-2">Torneios</th>
                 </tr>
@@ -5889,7 +5899,7 @@ export default function PadelHubClient({
               <tbody>
                 {filteredPlayers.length === 0 && (
                   <tr>
-                    <td className="px-3 py-3 text-[13px] text-white/60" colSpan={5}>
+                    <td className="px-3 py-3 text-[13px] text-white/60" colSpan={6}>
                       Sem jogadores. A lista aparece com inscrições.
                     </td>
                   </tr>
@@ -5920,6 +5930,26 @@ export default function PadelHubClient({
                     </td>
                     <td className="px-3 py-2">{p.email || "—"}</td>
                     <td className="px-3 py-2">{p.phone || "—"}</td>
+                    <td className="px-3 py-2">
+                      {p.ranking ? (
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className={badge(p.ranking.orgPosition ? "green" : "slate")}>
+                              {p.ranking.orgPosition ? `#${p.ranking.orgPosition}` : "Sem posição"}
+                            </span>
+                            <span className={badge("slate")}>
+                              {p.ranking.rating != null ? `${Math.round(p.ranking.rating)} pts` : "Sem rating"}
+                            </span>
+                            <span className={badge("slate")}>{p.ranking.matchesPlayed} jogos</span>
+                          </div>
+                          {p.ranking.blockedNewMatches && (
+                            <p className="text-[11px] text-amber-200">Bloqueado para novos jogos</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-white/50">Sem ranking</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       {p.crm ? (
                         <div className="space-y-1">

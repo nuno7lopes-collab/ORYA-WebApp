@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const FORMAT_FILES = [
-  "app/api/org/[orgId]/events/create/route.ts",
+  "app/api/org/[orgId]/tournaments/create/route.ts",
   "app/api/padel/tournaments/config/route.ts",
   "app/api/padel/discover/route.ts",
   "app/api/padel/event-categories/route.ts",
@@ -49,8 +49,8 @@ describe("padel format catalog guardrails (D18.11)", () => {
     expect(catalog).toContain("padel_format.MEXICANO");
   });
 
-  it("create de evento padel falha fechado sem fallback de formato", () => {
-    const createRoute = readLocal("app/api/org/[orgId]/events/create/route.ts");
+  it("create canónico de torneio padel falha fechado sem fallback de formato", () => {
+    const createRoute = readLocal("app/api/org/[orgId]/tournaments/create/route.ts");
     expect(createRoute).toContain("INVALID_FORMAT");
     expect(createRoute).toContain("parsePadelFormat");
     expect(createRoute).not.toContain("resolvePadelFormat");
@@ -136,7 +136,7 @@ describe("padel lifecycle governance guardrails (N5)", () => {
   });
 
   it("auto-atribui DIRETOR_PROVA no create de evento padel", () => {
-    const content = readLocal("app/api/org/[orgId]/events/create/route.ts");
+    const content = readLocal("app/api/org/[orgId]/tournaments/create/route.ts");
     expect(content).toContain("padelTournamentRoleAssignment.upsert");
     expect(content).toContain("PadelTournamentRole.DIRETOR_PROVA");
   });

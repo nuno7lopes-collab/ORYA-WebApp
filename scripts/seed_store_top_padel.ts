@@ -187,11 +187,6 @@ async function ensureStore(organizationId: number) {
       catalogLocked: false,
       checkoutEnabled: true,
       currency: "EUR",
-      supportEmail,
-      returnPolicy:
-        "Trocas em 14 dias para produtos sem sinais de uso. Em caso de defeito, contactar o suporte.",
-      privacyPolicy: "Os teus dados sao usados apenas para gestao de encomendas e suporte.",
-      termsUrl: "https://orya.pt/termos-loja-top-padel",
       freeShippingThresholdCents: 5000,
     },
     create: {
@@ -201,11 +196,6 @@ async function ensureStore(organizationId: number) {
       catalogLocked: false,
       checkoutEnabled: true,
       currency: "EUR",
-      supportEmail,
-      returnPolicy:
-        "Trocas em 14 dias para produtos sem sinais de uso. Em caso de defeito, contactar o suporte.",
-      privacyPolicy: "Os teus dados sao usados apenas para gestao de encomendas e suporte.",
-      termsUrl: "https://orya.pt/termos-loja-top-padel",
       freeShippingThresholdCents: 5000,
     },
     select: { id: true, status: true, showOnProfile: true, catalogLocked: true, checkoutEnabled: true },
