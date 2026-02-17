@@ -81,6 +81,15 @@ function buildTx() {
     padelRatingEvent: {
       create: vi.fn(async ({ data }: any) => ({ id: Math.random(), ...data })),
     },
+    padelTournamentConfig: {
+      findUnique: vi.fn(async () => ({
+        format: null,
+        advancedSettings: null,
+      })),
+    },
+    platformSetting: {
+      findUnique: vi.fn(async () => null),
+    },
     padelRankingEntry: {
       deleteMany: vi.fn(async () => ({ count: 0 })),
       createMany: vi.fn(async ({ data }: any) => ({ count: data.length })),

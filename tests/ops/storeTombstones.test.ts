@@ -4,7 +4,7 @@ import { execSync } from "node:child_process";
 function listRoutes(prefix: string) {
   let output = "";
   try {
-    output = execSync(`rg --files ${prefix} -g "route.ts"`, { stdio: "pipe", shell: "/bin/zsh" })
+    output = execSync(`rg --files ${prefix} -g "route.ts"`, { stdio: "pipe" })
       .toString()
       .trim();
   } catch (error: any) {
