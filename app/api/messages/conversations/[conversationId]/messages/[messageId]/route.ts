@@ -7,14 +7,19 @@ import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scop
 
 export async function DELETE(
   req: NextRequest,
-  context: { params: { conversationId: string; messageId: string } },
+  context: {
+    params:
+      | Promise<{ conversationId: string; messageId: string }>
+      | { conversationId: string; messageId: string };
+  },
 ) {
   const mobileGate = enforceB2CMobileOnly(req);
   if (mobileGate) return mobileGate;
   const scope = getMessagesScope(req);
+  const params = await context.params;
   if (scope === "b2c") {
-    return deleteB2CMessage(req, context);
+    return deleteB2CMessage(req, { params });
   }
 
-  return deleteOrgMessage(req, { params: { messageId: context.params.messageId } });
+  return deleteOrgMessage(req, { params: { messageId: params.messageId } });
 }

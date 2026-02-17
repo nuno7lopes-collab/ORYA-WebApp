@@ -125,6 +125,18 @@ export default function OrganizationDashboardShell({
   const lastSyncAttemptRef = useRef<{ id: number; at: number } | null>(null);
 
   useEffect(() => {
+    if (!activeOrg?.id) return;
+    try {
+      sessionStorage.setItem("orya_last_organization_id", String(activeOrg.id));
+      if (activeOrg.username) {
+        sessionStorage.setItem("orya_last_organization_username", activeOrg.username);
+      }
+    } catch {
+      // Ignore storage errors in restricted browsing contexts.
+    }
+  }, [activeOrg?.id, activeOrg?.username]);
+
+  useEffect(() => {
     if (!emailGateToast) return;
     const timer = setTimeout(() => setEmailGateToast(null), 4200);
     return () => clearTimeout(timer);

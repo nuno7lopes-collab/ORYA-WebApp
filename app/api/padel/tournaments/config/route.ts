@@ -409,6 +409,151 @@ async function _POST(req: NextRequest) {
       scheduleDefaults = null;
     }
   }
+  const hasFormatProfilesByCategory = Object.prototype.hasOwnProperty.call(body, "formatProfilesByCategory");
+  let formatProfilesByCategory: Record<string, Record<string, unknown>> | null | undefined = undefined;
+  if (hasFormatProfilesByCategory) {
+    if (body.formatProfilesByCategory && typeof body.formatProfilesByCategory === "object") {
+      const raw = body.formatProfilesByCategory as Record<string, unknown>;
+      formatProfilesByCategory = Object.entries(raw).reduce<Record<string, Record<string, unknown>>>(
+        (acc, [categoryKey, value]) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+          const payload = value as Record<string, unknown>;
+          const parsed: Record<string, unknown> = {};
+          if (typeof payload.format === "string") {
+            const parsedFormat = parsePadelFormat(payload.format);
+            if (parsedFormat) parsed.format = parsedFormat;
+          }
+          if (payload.amMxMode === "FIXED_PAIR" || payload.amMxMode === "INDIVIDUAL_ROTATION") {
+            parsed.amMxMode = payload.amMxMode;
+          }
+          const roundsRaw =
+            typeof payload.roundsHint === "number" ? payload.roundsHint : Number(payload.roundsHint);
+          if (Number.isFinite(roundsRaw) && roundsRaw > 0) {
+            parsed.roundsHint = Math.floor(roundsRaw);
+          }
+          const groupCountRaw =
+            typeof payload.groupCount === "number" ? payload.groupCount : Number(payload.groupCount);
+          if (Number.isFinite(groupCountRaw) && groupCountRaw > 0) {
+            parsed.groupCount = Math.floor(groupCountRaw);
+          }
+          const groupSizeRaw =
+            typeof payload.groupSize === "number" ? payload.groupSize : Number(payload.groupSize);
+          if (Number.isFinite(groupSizeRaw) && groupSizeRaw > 1) {
+            parsed.groupSize = Math.floor(groupSizeRaw);
+          }
+          const qualifyPerGroupRaw =
+            typeof payload.qualifyPerGroup === "number" ? payload.qualifyPerGroup : Number(payload.qualifyPerGroup);
+          if (Number.isFinite(qualifyPerGroupRaw) && qualifyPerGroupRaw > 0) {
+            parsed.qualifyPerGroup = Math.floor(qualifyPerGroupRaw);
+          }
+          const extraQualifiersRaw =
+            typeof payload.extraQualifiers === "number" ? payload.extraQualifiers : Number(payload.extraQualifiers);
+          if (Number.isFinite(extraQualifiersRaw) && extraQualifiersRaw >= 0) {
+            parsed.extraQualifiers = Math.floor(extraQualifiersRaw);
+          }
+          acc[String(categoryKey)] = parsed;
+          return acc;
+        },
+        {},
+      );
+    } else {
+      formatProfilesByCategory = null;
+    }
+  }
+  const hasCapacityPolicy = Object.prototype.hasOwnProperty.call(body, "capacityPolicy");
+  let capacityPolicy:
+    | {
+        publishWarnOnly: boolean;
+        hardBlockGenerate: boolean;
+        hardBlockAutoSchedule: boolean;
+      }
+    | null
+    | undefined = undefined;
+  if (hasCapacityPolicy) {
+    if (body.capacityPolicy && typeof body.capacityPolicy === "object") {
+      const payload = body.capacityPolicy as Record<string, unknown>;
+      capacityPolicy = {
+        publishWarnOnly: payload.publishWarnOnly !== false,
+        hardBlockGenerate: payload.hardBlockGenerate !== false,
+        hardBlockAutoSchedule: payload.hardBlockAutoSchedule !== false,
+      };
+    } else {
+      capacityPolicy = null;
+    }
+  }
+  const hasCategoryWeights = Object.prototype.hasOwnProperty.call(body, "categoryWeights");
+  let categoryWeights: Record<string, number> | null | undefined = undefined;
+  if (hasCategoryWeights) {
+    if (body.categoryWeights && typeof body.categoryWeights === "object") {
+      categoryWeights = Object.entries(body.categoryWeights as Record<string, unknown>).reduce<Record<string, number>>(
+        (acc, [key, value]) => {
+          const parsed = typeof value === "number" ? value : Number(value);
+          if (Number.isFinite(parsed) && parsed > 0) {
+            acc[String(key)] = Number(parsed);
+          }
+          return acc;
+        },
+        {},
+      );
+    } else {
+      categoryWeights = null;
+    }
+  }
+  const hasCourtSelectionDefaults = Object.prototype.hasOwnProperty.call(body, "courtSelectionDefaults");
+  let courtSelectionDefaults:
+    | {
+        useAllCourts: boolean;
+        courtIds: number[];
+      }
+    | null
+    | undefined = undefined;
+  if (hasCourtSelectionDefaults) {
+    if (body.courtSelectionDefaults && typeof body.courtSelectionDefaults === "object") {
+      const payload = body.courtSelectionDefaults as Record<string, unknown>;
+      const selectedCourtIds = Array.isArray(payload.courtIds)
+        ? payload.courtIds
+            .map((value) => (typeof value === "number" ? value : Number(value)))
+            .filter((value): value is number => Number.isFinite(value) && value > 0)
+            .map((value) => Math.floor(value))
+        : [];
+      courtSelectionDefaults = {
+        useAllCourts: payload.useAllCourts !== false,
+        courtIds: selectedCourtIds,
+      };
+    } else {
+      courtSelectionDefaults = null;
+    }
+  }
+  const hasCourtPriorityOrder = Object.prototype.hasOwnProperty.call(body, "courtPriorityOrder");
+  let courtPriorityOrder: number[] | null | undefined = undefined;
+  if (hasCourtPriorityOrder) {
+    if (Array.isArray(body.courtPriorityOrder)) {
+      courtPriorityOrder = body.courtPriorityOrder
+        .map((value) => (typeof value === "number" ? value : Number(value)))
+        .filter((value): value is number => Number.isFinite(value) && value > 0)
+        .map((value) => Math.floor(value));
+    } else {
+      courtPriorityOrder = null;
+    }
+  }
+  const hasRankingWeights = Object.prototype.hasOwnProperty.call(body, "rankingWeights");
+  let rankingWeights: Record<string, number> | null | undefined = undefined;
+  if (hasRankingWeights) {
+    if (body.rankingWeights && typeof body.rankingWeights === "object") {
+      rankingWeights = Object.entries(body.rankingWeights as Record<string, unknown>).reduce<Record<string, number>>(
+        (acc, [key, value]) => {
+          const parsed = typeof value === "number" ? value : Number(value);
+          if (Number.isFinite(parsed) && parsed >= 0) {
+            acc[String(key)] = Number(parsed);
+          }
+          return acc;
+        },
+        {},
+      );
+    } else {
+      rankingWeights = null;
+    }
+  }
   const hasTemplateId = Object.prototype.hasOwnProperty.call(body, "templateId");
   const templateId =
     hasTemplateId && typeof body.templateId === "string"
@@ -560,6 +705,12 @@ async function _POST(req: NextRequest) {
         hasScoreRules ||
         hasIsInterclub ||
         hasTeamSize ||
+        hasFormatProfilesByCategory ||
+        hasCapacityPolicy ||
+        hasCategoryWeights ||
+        hasCourtSelectionDefaults ||
+        hasCourtPriorityOrder ||
+        hasRankingWeights ||
         hasNumberOfCourts;
       if (lifecycleLocked && hasCompetitiveConfigChange) {
         throw new Error("TOURNAMENT_CONFIG_LOCKED");
@@ -602,6 +753,12 @@ async function _POST(req: NextRequest) {
         ...(competitionState !== undefined ? { competitionState } : {}),
         ...(seedRanks !== undefined ? { seedRanks } : {}),
         ...(scheduleDefaults !== undefined ? { scheduleDefaults } : {}),
+        ...(formatProfilesByCategory !== undefined ? { formatProfilesByCategory } : {}),
+        ...(capacityPolicy !== undefined ? { capacityPolicy } : {}),
+        ...(categoryWeights !== undefined ? { categoryWeights } : {}),
+        ...(courtSelectionDefaults !== undefined ? { courtSelectionDefaults } : {}),
+        ...(courtPriorityOrder !== undefined ? { courtPriorityOrder } : {}),
+        ...(rankingWeights !== undefined ? { rankingWeights } : {}),
         ...(templateId !== undefined ? { templateId } : {}),
         ...(tvMonitor !== undefined ? { tvMonitor } : {}),
         ...(scoreRules !== undefined ? { scoreRules } : {}),

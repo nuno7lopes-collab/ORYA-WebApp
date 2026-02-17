@@ -1,6 +1,7 @@
 import { Prisma, PadelRatingSanctionType } from "@prisma/client";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import { pickCanonicalField } from "@/lib/location/eventLocation";
+import { normalizePadelRankingFormatWeights, type PadelRankingFormatWeights } from "@/lib/platformSettings";
 
 type DbClient = Prisma.TransactionClient;
 
@@ -23,6 +24,8 @@ const TIER_MULTIPLIERS: Record<string, number> = {
   MAJOR: 2,
 };
 
+const PADEL_RANKING_WEIGHTS_KEY = "padel.rankingWeightsByFormat";
+
 function normalizeTierContext(rawTier: string | null | undefined) {
   if (!rawTier) return null;
   const normalized = rawTier.trim().toUpperCase();
@@ -33,6 +36,31 @@ function normalizeCityContext(rawCity: string | null | undefined) {
   if (!rawCity) return null;
   const normalized = rawCity.trim().toLowerCase();
   return normalized.length > 0 ? normalized : null;
+}
+
+function parseRankingWeight(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.min(2, Math.max(0, parsed));
+}
+
+function toSocialFormatKey(format: string | null | undefined): keyof PadelRankingFormatWeights | null {
+  if (format === "NON_STOP" || format === "AMERICANO" || format === "MEXICANO") return format;
+  return null;
+}
+
+async function getGlobalPadelRankingFormatWeightsTx(tx: DbClient): Promise<PadelRankingFormatWeights> {
+  const stored = await tx.platformSetting.findUnique({
+    where: { key: PADEL_RANKING_WEIGHTS_KEY },
+    select: { value: true },
+  });
+  if (!stored?.value) return normalizePadelRankingFormatWeights({});
+  try {
+    const parsed = JSON.parse(stored.value);
+    return normalizePadelRankingFormatWeights(parsed);
+  } catch {
+    return normalizePadelRankingFormatWeights({});
+  }
 }
 
 export type RatingProfileState = {
@@ -328,6 +356,40 @@ export async function rebuildPadelRatingsForEvent(params: {
   const contextTier = context?.tier ?? null;
   const contextClubId = context?.clubId ?? null;
   const contextCity = context?.city ?? null;
+  const tournamentConfig = await tx.padelTournamentConfig.findUnique({
+    where: { eventId },
+    select: { format: true, advancedSettings: true },
+  });
+  const eventFormat = tournamentConfig?.format ?? null;
+  const advancedSettings =
+    (tournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? null;
+  const rankingWeightsRaw =
+    advancedSettings?.rankingWeights && typeof advancedSettings.rankingWeights === "object"
+      ? (advancedSettings.rankingWeights as Record<string, unknown>)
+      : null;
+  const rankingWeightsByCategoryRaw =
+    rankingWeightsRaw?.byCategory && typeof rankingWeightsRaw.byCategory === "object"
+      ? (rankingWeightsRaw.byCategory as Record<string, unknown>)
+      : null;
+  const globalFormatWeights = await getGlobalPadelRankingFormatWeightsTx(tx);
+  const eventFormatWeightOverride = (() => {
+    const formatKey = toSocialFormatKey(eventFormat);
+    if (!formatKey || !rankingWeightsRaw) return null;
+    return parseRankingWeight(rankingWeightsRaw[formatKey]);
+  })();
+  const resolveFormatWeight = (categoryId: number | null) => {
+    const formatKey = toSocialFormatKey(eventFormat);
+    if (!formatKey) return 1;
+    if (categoryId != null && rankingWeightsByCategoryRaw) {
+      const categoryConfig = rankingWeightsByCategoryRaw[String(categoryId)];
+      if (categoryConfig && typeof categoryConfig === "object" && !Array.isArray(categoryConfig)) {
+        const perCategory = parseRankingWeight((categoryConfig as Record<string, unknown>)[formatKey]);
+        if (perCategory !== null) return perCategory;
+      }
+    }
+    if (eventFormatWeightOverride !== null) return eventFormatWeightOverride;
+    return globalFormatWeights[formatKey] ?? 1;
+  };
 
   const matches = await tx.eventMatchSlot.findMany({
     where: {
@@ -336,6 +398,7 @@ export async function rebuildPadelRatingsForEvent(params: {
     },
     select: {
       id: true,
+      categoryId: true,
       score: true,
       scoreSets: true,
       plannedEndAt: true,
@@ -401,6 +464,7 @@ export async function rebuildPadelRatingsForEvent(params: {
 
     const scoreA = scoreFromGames(stats.aGames, stats.bGames);
     const scoreB = scoreFromGames(stats.bGames, stats.aGames);
+    const formatWeight = resolveFormatWeight(match.categoryId ?? null);
 
     const now = match.actualEndAt ?? match.plannedEndAt ?? match.updatedAt;
 
@@ -423,7 +487,7 @@ export async function rebuildPadelRatingsForEvent(params: {
               (sidePlayers.length - 1)
             : ownAvgRating;
         const carryMultiplier = resolveCarryMultiplier(current.rating, partnerAvg, sideScore);
-        const multiplier = tierMultiplier * carryMultiplier;
+        const multiplierFinal = tierMultiplier * carryMultiplier * formatWeight;
 
         const updated = glicko2Update({
           rating: current.rating,
@@ -433,7 +497,7 @@ export async function rebuildPadelRatingsForEvent(params: {
           opponentRating: opponentAvgRating,
           opponentRd: opponentAvgRd,
           actualScore: sideScore,
-          multiplier,
+          multiplier: multiplierFinal,
         });
 
         await tx.padelRatingEvent.create({
@@ -462,6 +526,9 @@ export async function rebuildPadelRatingsForEvent(params: {
               contextTier,
               contextClubId,
               contextCity,
+              format: eventFormat,
+              formatWeight,
+              multiplierFinal,
             },
           },
         });

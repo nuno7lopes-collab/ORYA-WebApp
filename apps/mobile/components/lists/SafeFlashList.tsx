@@ -1,15 +1,16 @@
 import type { ReactElement } from "react";
-import { FlatList, UIManager, type FlatListProps } from "react-native";
+import { FlatList, Platform, UIManager, type FlatListProps } from "react-native";
 import { FlashList, type FlashListProps } from "@shopify/flash-list";
 
 const hasAutoLayoutView = Boolean(UIManager.getViewManagerConfig?.("AutoLayoutView"));
+const shouldUseFlashList = hasAutoLayoutView && Platform.OS !== "web";
 
 type SafeFlashListProps<T> = FlatListProps<T> & {
   estimatedItemSize?: number;
 };
 
 export const SafeFlashList = <T,>(props: SafeFlashListProps<T>): ReactElement => {
-  if (hasAutoLayoutView) {
+  if (shouldUseFlashList) {
     return <FlashList {...(props as unknown as FlashListProps<T>)} />;
   }
 

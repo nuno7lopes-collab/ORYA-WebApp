@@ -42,7 +42,6 @@ import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useGlobalSearchParams, useRouter } from "expo-router";
 import { useScopedTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
 import { useIsFocused } from "@react-navigation/native";
-import { resolveEventInterestTags } from "../../features/events/interestTags";
 
 if (
   Platform.OS === "android" &&
@@ -80,6 +79,7 @@ const GRID_BREAKPOINT_LARGE = 920;
 const GRID_GAP = 10;
 const GRID_PADDING = 20;
 const GRID_SKELETON_ROWS = 4;
+const SERVICE_ROW_MIN_HEIGHT = 136;
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -90,6 +90,7 @@ export default function DiscoverScreen() {
   const worlds = useDiscoverStore((state) => state.worlds);
   const dateFilter = useDiscoverStore((state) => state.dateFilter);
   const city = useDiscoverStore((state) => state.city);
+  const locationLabel = useDiscoverStore((state) => state.locationLabel);
   const locationAddressId = useDiscoverStore(
     (state) => state.locationAddressId,
   );
@@ -100,18 +101,12 @@ export default function DiscoverScreen() {
   const setWorlds = useDiscoverStore((state) => state.setWorlds);
   const setDateFilter = useDiscoverStore((state) => state.setDateFilter);
   const setLocation = useDiscoverStore((state) => state.setLocation);
+  const clearLocation = useDiscoverStore((state) => state.clearLocation);
   const distanceKm = useDiscoverStore((state) => state.distanceKm);
   const setDistanceKm = useDiscoverStore((state) => state.setDistanceKm);
   const resetFilters = useDiscoverStore((state) => state.resetFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dataReady, setDataReady] = useState(false);
-  const [hiddenEventIds, setHiddenEventIds] = useState<number[]>([]);
-  const hiddenEventSet = useMemo(
-    () => new Set(hiddenEventIds),
-    [hiddenEventIds],
-  );
-  const [hiddenTags, setHiddenTags] = useState<string[]>([]);
-  const hiddenTagSet = useMemo(() => new Set(hiddenTags), [hiddenTags]);
   const searchParamsAppliedRef = useRef(false);
   const previousItemsLengthRef = useRef(0);
   const debouncedCity = useDebouncedValue(city, 320);
@@ -124,30 +119,6 @@ export default function DiscoverScreen() {
   const topBar = useTopBarScroll();
   const locationResolveRef = useRef(false);
   const { width: screenWidth } = useWindowDimensions();
-  const gridColumns = useMemo(() => {
-    if (screenWidth >= GRID_BREAKPOINT_LARGE) return GRID_COLUMNS_LARGE;
-    if (screenWidth >= GRID_BREAKPOINT_MEDIUM) return GRID_COLUMNS_MEDIUM;
-    return GRID_COLUMNS_PHONE;
-  }, [screenWidth]);
-  const gridItemWidth = useMemo(() => {
-    const available =
-      screenWidth - GRID_PADDING * 2 - GRID_GAP * (gridColumns - 1);
-    const minSize =
-      gridColumns === GRID_COLUMNS_PHONE
-        ? 140
-        : gridColumns === GRID_COLUMNS_MEDIUM
-          ? 116
-          : 102;
-    return Math.max(minSize, Math.floor(available / gridColumns));
-  }, [gridColumns, screenWidth]);
-  const gridItemHeight = useMemo(
-    () =>
-      Math.round(
-        gridItemWidth *
-          (gridColumns === GRID_COLUMNS_PHONE ? 1.18 : 1.12),
-      ),
-    [gridColumns, gridItemWidth],
-  );
 
   const { block, unblock } = useScopedTabSwipeBlocker();
   const worldScrollBlockedRef = useRef(false);
@@ -200,6 +171,10 @@ export default function DiscoverScreen() {
 
   const isAllWorlds =
     worlds.length === 0 || worlds.length === WORLD_OPTIONS.length;
+  const isServicesOnlyWorld =
+    !isAllWorlds && worlds.length === 1 && worlds[0] === "services";
+  const shouldUseRowLayout =
+    Platform.OS === "web" || Platform.OS === "ios" || isServicesOnlyWorld;
   const resolvedKind: DiscoverKind = isAllWorlds
     ? "all"
     : worlds.length === 1
@@ -209,6 +184,40 @@ export default function DiscoverScreen() {
           ? "padel"
           : "events"
       : "all";
+  const listColumns = useMemo(() => {
+    if (shouldUseRowLayout) return 1;
+    if (screenWidth >= GRID_BREAKPOINT_LARGE) return GRID_COLUMNS_LARGE;
+    if (screenWidth >= GRID_BREAKPOINT_MEDIUM) return GRID_COLUMNS_MEDIUM;
+    return GRID_COLUMNS_PHONE;
+  }, [screenWidth, shouldUseRowLayout]);
+  const cardLayout: "grid" | "row" = shouldUseRowLayout ? "row" : "grid";
+  const gridItemWidth = useMemo(() => {
+    const available =
+      screenWidth - GRID_PADDING * 2 - GRID_GAP * (listColumns - 1);
+    const rawWidth = Math.floor(available / listColumns);
+
+    if (shouldUseRowLayout) {
+      return Math.max(240, rawWidth);
+    }
+
+    const minSize =
+      listColumns === GRID_COLUMNS_PHONE
+        ? 140
+        : listColumns === GRID_COLUMNS_MEDIUM
+          ? 116
+          : 102;
+    return Math.max(minSize, rawWidth);
+  }, [listColumns, screenWidth, shouldUseRowLayout]);
+  const gridItemHeight = useMemo(() => {
+    if (shouldUseRowLayout) {
+      return Math.max(
+        SERVICE_ROW_MIN_HEIGHT,
+        Math.round(gridItemWidth * 0.46),
+      );
+    }
+    const ratio = listColumns === GRID_COLUMNS_PHONE ? 1.18 : 1.12;
+    return Math.round(gridItemWidth * ratio);
+  }, [gridItemWidth, listColumns, shouldUseRowLayout]);
 
   const feedEnabled = dataReady;
   const canShowMapCta = resolvedKind !== "services";
@@ -262,12 +271,6 @@ export default function DiscoverScreen() {
 
   const feedItems = useMemo(() => {
     const filtered = items.filter((item) => {
-      if (item.type === "event" && hiddenEventSet.has(item.event.id))
-        return false;
-      if (item.type === "event" && hiddenTagSet.size > 0) {
-        const tags = resolveEventInterestTags(item.event);
-        if (tags.some((tag) => hiddenTagSet.has(tag))) return false;
-      }
       if (!isAllWorlds) {
         if (item.type === "event") {
           const isPadelEvent = (item.event.categories ?? []).includes("PADEL");
@@ -300,11 +303,8 @@ export default function DiscoverScreen() {
     return filtered;
   }, [
     distanceKm,
-    hiddenEventSet,
-    hiddenTagSet,
     isAllWorlds,
     items,
-    priceFilter,
     userLat,
     userLon,
     worlds,
@@ -339,28 +339,29 @@ export default function DiscoverScreen() {
         onPress: () => setDistanceKm(5),
       });
     }
-    if (!isAllWorlds) {
-      worlds.forEach((world) => {
-        const meta = WORLD_OPTIONS.find((option) => option.key === world);
-        chips.push({
-          key: `world-${world}`,
-          label: meta?.label ?? world,
-          onPress: () => toggleWorld(world),
-        });
+    const appliedLocation = locationLabel.trim() || city.trim();
+    const shouldCountLocation =
+      locationSource === "APPLE_MAPS" && appliedLocation.length > 0;
+    if (shouldCountLocation) {
+      chips.push({
+        key: "location",
+        label: t("discover:filters.appliedLocation", { location: appliedLocation }),
+        onPress: () => clearLocation(),
       });
     }
     return chips;
   }, [
+    city,
     dateFilter,
     distanceKm,
-    isAllWorlds,
+    clearLocation,
+    locationLabel,
+    locationSource,
     priceFilter,
     setDateFilter,
     setDistanceKm,
     setPriceFilter,
     t,
-    toggleWorld,
-    worlds,
   ]);
 
   const hasActiveFilters = activeFilters.length > 0;
@@ -372,12 +373,16 @@ export default function DiscoverScreen() {
   const listData = useMemo<DiscoverListItem[]>(
     () =>
       showSkeleton
-        ? Array.from({ length: gridColumns * GRID_SKELETON_ROWS }, (_, index) => ({
+        ? Array.from({
+            length: shouldUseRowLayout
+              ? 6
+              : listColumns * GRID_SKELETON_ROWS,
+          }, (_, index) => ({
             kind: "skeleton" as const,
             key: `discover-skeleton-${index}`,
           }))
         : feedItems.map((offer) => ({ kind: "offer" as const, offer })),
-    [feedItems, gridColumns, showSkeleton],
+    [feedItems, listColumns, shouldUseRowLayout, showSkeleton],
   );
 
   const activeKindMeta = useMemo(() => {
@@ -476,20 +481,6 @@ export default function DiscoverScreen() {
     router.push("/search");
   }, [router]);
 
-  const handleToggleDateQuick = useCallback(
-    (target: Extract<DiscoverDateFilter, "today" | "weekend">) => {
-      setDateFilter(dateFilter === target ? "all" : target);
-    },
-    [dateFilter, setDateFilter],
-  );
-
-  const handleTogglePriceQuick = useCallback(
-    (target: Extract<DiscoverPriceFilter, "free" | "paid">) => {
-      setPriceFilter(priceFilter === target ? "all" : target);
-    },
-    [priceFilter, setPriceFilter],
-  );
-
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
@@ -522,12 +513,21 @@ export default function DiscoverScreen() {
           offer={item.offer}
           size={gridItemWidth}
           height={gridItemHeight}
+          layout={cardLayout}
           source="discover"
           style={styles.gridItem}
         />
       );
     },
-    [gridItemHeight, gridItemWidth],
+    [cardLayout, gridItemHeight, gridItemWidth],
+  );
+  const getItemLayout = useCallback(
+    (_data: DiscoverListItem[] | null | undefined, index: number) => ({
+      length: gridItemHeight + GRID_GAP,
+      offset: (gridItemHeight + GRID_GAP) * index,
+      index,
+    }),
+    [gridItemHeight],
   );
 
   const keyExtractor = useCallback(
@@ -567,7 +567,7 @@ export default function DiscoverScreen() {
           showMessages={false}
         />
         <SafeFlashList
-          key={`discover-grid-${gridColumns}`}
+          key={`discover-grid-${cardLayout}-${listColumns}`}
           contentContainerStyle={{
             paddingHorizontal: GRID_PADDING,
             paddingBottom: tabBarPadding,
@@ -576,8 +576,8 @@ export default function DiscoverScreen() {
           data={listData}
           keyExtractor={keyExtractor}
           keyboardShouldPersistTaps="handled"
-          numColumns={gridColumns}
-          columnWrapperStyle={styles.gridRow}
+          numColumns={listColumns}
+          columnWrapperStyle={listColumns > 1 ? styles.gridRow : undefined}
           estimatedItemSize={gridItemHeight + GRID_GAP}
           refreshing={isRefetching}
           onRefresh={handleRefresh}
@@ -593,6 +593,8 @@ export default function DiscoverScreen() {
           onScrollEndDrag={topBar.onScrollEndDrag}
           onMomentumScrollEnd={topBar.onMomentumScrollEnd}
           scrollEventThrottle={16}
+          disableVirtualization={Platform.OS === "web"}
+          getItemLayout={getItemLayout}
           ListHeaderComponentStyle={styles.listHeader}
           ListHeaderComponent={
             <View style={{ width: "100%" }}>
@@ -661,82 +663,6 @@ export default function DiscoverScreen() {
                   onMomentumScrollEnd={handleWorldScrollEnd}
                 >
                   <Pressable
-                    onPress={() => handleToggleDateQuick("today")}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("discover:filters.date")}
-                    style={({ pressed }) => [
-                      styles.quickFilterChip,
-                      dateFilter === "today" ? styles.quickFilterChipActive : null,
-                      pressed ? { opacity: 0.9 } : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name="calendar-outline"
-                      size={14}
-                      color="rgba(240,246,255,0.9)"
-                    />
-                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
-                      {DATE_FILTER_LABELS.today}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleToggleDateQuick("weekend")}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("discover:filters.date")}
-                    style={({ pressed }) => [
-                      styles.quickFilterChip,
-                      dateFilter === "weekend" ? styles.quickFilterChipActive : null,
-                      pressed ? { opacity: 0.9 } : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name="today-outline"
-                      size={14}
-                      color="rgba(240,246,255,0.9)"
-                    />
-                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
-                      {DATE_FILTER_LABELS.weekend}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleTogglePriceQuick("free")}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("discover:filters.price")}
-                    style={({ pressed }) => [
-                      styles.quickFilterChip,
-                      priceFilter === "free" ? styles.quickFilterChipActive : null,
-                      pressed ? { opacity: 0.9 } : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name="pricetag-outline"
-                      size={14}
-                      color="rgba(240,246,255,0.9)"
-                    />
-                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
-                      {PRICE_FILTER_LABELS.free}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleTogglePriceQuick("paid")}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("discover:filters.price")}
-                    style={({ pressed }) => [
-                      styles.quickFilterChip,
-                      priceFilter === "paid" ? styles.quickFilterChipActive : null,
-                      pressed ? { opacity: 0.9 } : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name="card-outline"
-                      size={14}
-                      color="rgba(240,246,255,0.9)"
-                    />
-                    <Text style={styles.quickFilterText} numberOfLines={1} allowFontScaling={false}>
-                      {PRICE_FILTER_LABELS.paid}
-                    </Text>
-                  </Pressable>
-                  <Pressable
                     onPress={() => setFiltersOpen(true)}
                     accessibilityRole="button"
                     accessibilityLabel={t("discover:cta.openFilters")}
@@ -764,61 +690,6 @@ export default function DiscoverScreen() {
                   </Pressable>
                 </ScrollView>
               </View>
-
-              {hasActiveFilters ? (
-                <View style={styles.activeFiltersWrap}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
-                    onScrollBeginDrag={handleWorldScrollStart}
-                    onScrollEndDrag={handleWorldScrollEnd}
-                    onMomentumScrollEnd={handleWorldScrollEnd}
-                  >
-                    {activeFilters.map((filter) => (
-                      <Pressable
-                        key={filter.key}
-                        onPress={filter.onPress}
-                        accessibilityRole="button"
-                        accessibilityLabel={t("discover:cta.removeFilter", {
-                          label: filter.label,
-                        })}
-                        style={({ pressed }) => [
-                          styles.activeChip,
-                          pressed ? { opacity: 0.9 } : null,
-                        ]}
-                      >
-                        <Text style={styles.activeChipText} numberOfLines={1}>
-                          {filter.label}
-                        </Text>
-                        <Ionicons
-                          name="close"
-                          size={12}
-                          color="rgba(240,246,255,0.7)"
-                        />
-                      </Pressable>
-                    ))}
-                    <Pressable
-                      onPress={resetFilters}
-                      accessibilityRole="button"
-                      accessibilityLabel={t("discover:cta.clearFilters")}
-                      style={({ pressed }) => [
-                        styles.clearChip,
-                        pressed ? { opacity: 0.9 } : null,
-                      ]}
-                    >
-                      <Ionicons
-                        name="refresh"
-                        size={14}
-                        color="rgba(240,246,255,0.7)"
-                      />
-                      <Text style={styles.activeChipText}>
-                        {t("common:actions.clearFilters")}
-                      </Text>
-                    </Pressable>
-                  </ScrollView>
-                </View>
-              ) : null}
 
               <View style={styles.headerSectionWrap}>
                 <SectionHeader
@@ -927,7 +798,7 @@ export default function DiscoverScreen() {
                       ) : null}
                     </GlassSurface>
                     <View style={styles.emptyGhostGrid}>
-                      {Array.from({ length: gridColumns * 3 }, (_, index) => (
+                      {Array.from({ length: listColumns * 3 }, (_, index) => (
                         <View
                           key={`empty-ghost-${index}`}
                           style={[
@@ -941,7 +812,7 @@ export default function DiscoverScreen() {
                 ) : null}
                 {isFetchingNextPage ? (
                   <View style={styles.gridFooterRow}>
-                    {Array.from({ length: gridColumns }, (_, index) => (
+                    {Array.from({ length: listColumns }, (_, index) => (
                       <DiscoverGridCardSkeleton
                         key={`discover-loading-${index}`}
                         size={gridItemWidth}
@@ -1058,29 +929,6 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
     gap: 8,
   },
-  quickFilterChip: {
-    minHeight: tokens.layout.touchTarget,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(255,255,255,0.08)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    minWidth: 132,
-  },
-  quickFilterChipActive: {
-    borderColor: "rgba(170, 220, 255, 0.55)",
-    backgroundColor: "rgba(255,255,255,0.18)",
-  },
-  quickFilterText: {
-    color: "rgba(238, 246, 255, 0.9)",
-    fontSize: 12,
-    fontWeight: "600",
-  },
   filtersButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1117,9 +965,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
-  activeFiltersWrap: {
-    paddingBottom: 14,
-  },
   headerSectionWrap: {
     paddingBottom: 4,
   },
@@ -1132,6 +977,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     marginBottom: GRID_GAP,
+    flexShrink: 0,
   },
   gridFooterRow: {
     width: "100%",
@@ -1233,35 +1079,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: "rgba(235, 244, 255, 0.72)",
     fontSize: 14,
-    fontWeight: "600",
-  },
-  activeChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(255,255,255,0.1)",
-    minHeight: tokens.layout.touchTarget,
-  },
-  clearChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    minHeight: tokens.layout.touchTarget,
-  },
-  activeChipText: {
-    color: "rgba(255,255,255,0.75)",
-    fontSize: 12,
     fontWeight: "600",
   },
 });

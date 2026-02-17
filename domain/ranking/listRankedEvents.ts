@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { SearchIndexVisibility, EventTemplateType, Prisma, SourceType } from "@prisma/client";
 import {
+  toPublicEventCardWithPrice,
   toPublicEventCardWithPriceFromIndex,
   isPublicEventCardComplete,
   PublicEventCard,
@@ -8,6 +9,7 @@ import {
 } from "@/domain/events/publicEventCard";
 import { rankEvents } from "@/domain/ranking/eventRanker";
 import { filterOrphanedEventSearchItems } from "@/domain/searchIndex/guard";
+import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
 type RankedEventsParams = {
   q?: string | null;
@@ -35,6 +37,7 @@ type RankedEventsParams = {
 };
 
 const DEFAULT_PAGE_SIZE = 12;
+const SEARCH_INDEX_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function clampTake(value: number | null): number {
   if (!value || Number.isNaN(value)) return DEFAULT_PAGE_SIZE;
@@ -46,6 +49,30 @@ function parsePrice(value: string | null): number | null {
   const parsed = parseFloat(value);
   if (!Number.isFinite(parsed)) return null;
   return Math.max(0, parsed);
+}
+
+function parseTemplateTypes(templateTypesParam: string | null): EventTemplateType[] {
+  const raw = (templateTypesParam || "")
+    .split(",")
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+  if (raw.length === 0) return [];
+  const allowed = new Set(Object.values(EventTemplateType));
+  return raw.filter((item): item is EventTemplateType => allowed.has(item as EventTemplateType));
+}
+
+function parseCategorySelection(categoriesParam: string | null) {
+  const categoryFilters = (categoriesParam || "")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+  if (categoryFilters.length === 0) return null;
+  const hasPadel = categoryFilters.includes("PADEL");
+  const hasGeneral =
+    categoryFilters.includes("GERAL") ||
+    categoryFilters.includes("EVENTOS") ||
+    categoryFilters.includes("OTHER");
+  return { hasPadel, hasGeneral };
 }
 
 function pushAndFilter(where: Prisma.SearchIndexItemWhereInput, filter: Prisma.SearchIndexItemWhereInput) {
@@ -137,16 +164,10 @@ function applyDateRangeFilter(where: Prisma.SearchIndexItemWhereInput, startDate
 }
 
 function applyTemplateTypeFilter(where: Prisma.SearchIndexItemWhereInput, templateTypesParam: string | null) {
-  const raw = (templateTypesParam || "")
-    .split(",")
-    .map((item) => item.trim().toUpperCase())
-    .filter(Boolean);
-  if (raw.length === 0) return;
-  const allowed = new Set(Object.values(EventTemplateType));
-  const filtered = raw.filter((item) => allowed.has(item as EventTemplateType));
+  const filtered = parseTemplateTypes(templateTypesParam);
   if (filtered.length === 0) return;
   const typeFilter: Prisma.SearchIndexItemWhereInput = {
-    templateType: { in: filtered as EventTemplateType[] },
+    templateType: { in: filtered },
   };
   if (Array.isArray(where.AND)) {
     where.AND.push(typeFilter);
@@ -202,13 +223,9 @@ function applyBoundsFilter(where: Prisma.SearchIndexItemWhereInput, bounds: { no
 }
 
 function applyCategoryFilter(where: Prisma.SearchIndexItemWhereInput, categoriesParam: string | null) {
-  const categoryFilters = (categoriesParam || "")
-    .split(",")
-    .map((c) => c.trim().toUpperCase())
-    .filter(Boolean);
-  if (categoryFilters.length === 0) return;
-  const hasPadel = categoryFilters.includes("PADEL");
-  const hasGeneral = categoryFilters.includes("GERAL") || categoryFilters.includes("EVENTOS") || categoryFilters.includes("OTHER");
+  const selection = parseCategorySelection(categoriesParam);
+  if (!selection) return;
+  const { hasPadel, hasGeneral } = selection;
   const andFilters: Prisma.SearchIndexItemWhereInput[] = [];
   if (hasPadel && !hasGeneral) {
     andFilters.push({ templateType: EventTemplateType.PADEL });
@@ -284,12 +301,335 @@ function filterByPrice(items: RankedEventCard[], priceMin: number | null, priceM
   });
 }
 
+function pushEventAndFilter(where: Prisma.EventWhereInput, filter: Prisma.EventWhereInput) {
+  if (Array.isArray(where.AND)) {
+    where.AND.push(filter);
+    return;
+  }
+  if (where.AND) {
+    where.AND = [where.AND, filter];
+    return;
+  }
+  where.AND = [filter];
+}
+
+function applyEventDateFilter(where: Prisma.EventWhereInput, dateParam: string | null, dayParam: string | null) {
+  if (dateParam === "agora") {
+    const now = new Date();
+    pushEventAndFilter(where, {
+      OR: [
+        { startsAt: { gte: now } },
+        { AND: [{ startsAt: { lte: now } }, { endsAt: { gte: now } }] },
+      ],
+    });
+    return;
+  }
+  if (dateParam === "today") {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+    where.startsAt = { gte: startOfDay, lte: endOfDay };
+    return;
+  }
+  if (dateParam === "upcoming") {
+    where.startsAt = { gte: new Date() };
+    return;
+  }
+  if (dateParam === "weekend") {
+    const now = new Date();
+    const day = now.getDay();
+    let start = new Date(now);
+    let end = new Date(now);
+    if (day === 0) {
+      start = now;
+      end.setHours(23, 59, 59, 999);
+    } else {
+      const daysToSaturday = (6 - day + 7) % 7;
+      start.setDate(now.getDate() + daysToSaturday);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(start);
+      end.setDate(start.getDate() + 1);
+      end.setHours(23, 59, 59, 999);
+    }
+    where.startsAt = { gte: start, lte: end };
+    return;
+  }
+  if (dateParam === "day" && dayParam) {
+    const day = new Date(dayParam);
+    if (!Number.isNaN(day.getTime())) {
+      const startOfDay = new Date(day);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(day);
+      endOfDay.setHours(23, 59, 59, 999);
+      where.startsAt = { gte: startOfDay, lte: endOfDay };
+    }
+  }
+}
+
+function applyEventDateRangeFilter(where: Prisma.EventWhereInput, startDateParam: string | null, endDateParam: string | null): boolean {
+  if (!startDateParam && !endDateParam) return false;
+  const start = startDateParam ? new Date(startDateParam) : null;
+  const end = endDateParam ? new Date(endDateParam) : null;
+  if (start && !Number.isNaN(start.getTime())) start.setHours(0, 0, 0, 0);
+  if (end && !Number.isNaN(end.getTime())) end.setHours(23, 59, 59, 999);
+  if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    where.startsAt = { gte: start, lte: end };
+    return true;
+  }
+  if (start && !Number.isNaN(start.getTime())) {
+    where.startsAt = { gte: start };
+    return true;
+  }
+  if (end && !Number.isNaN(end.getTime())) {
+    where.startsAt = { lte: end };
+    return true;
+  }
+  return false;
+}
+
+function applyEventBoundsFilter(where: Prisma.EventWhereInput, bounds: { north?: number | null; south?: number | null; east?: number | null; west?: number | null }) {
+  if (bounds.north == null || bounds.south == null || bounds.east == null || bounds.west == null) return;
+  let north = bounds.north;
+  let south = bounds.south;
+  let east = bounds.east;
+  let west = bounds.west;
+  if (![north, south, east, west].every((value) => Number.isFinite(value))) return;
+  if (north < south) [north, south] = [south, north];
+  const clampLat = (value: number) => Math.min(90, Math.max(-90, value));
+  const wrapLng = (value: number) => {
+    let v = value;
+    while (v > 180) v -= 360;
+    while (v < -180) v += 360;
+    return v;
+  };
+  north = clampLat(north);
+  south = clampLat(south);
+  east = wrapLng(east);
+  west = wrapLng(west);
+
+  const addressFilter: Prisma.AddressWhereInput = {
+    latitude: { gte: south, lte: north },
+  };
+  if (west <= east) {
+    addressFilter.longitude = { gte: west, lte: east };
+  } else {
+    addressFilter.OR = [{ longitude: { gte: west } }, { longitude: { lte: east } }];
+  }
+
+  pushEventAndFilter(where, { addressRef: addressFilter });
+}
+
+function buildFallbackEventWhere(params: RankedEventsParams): Prisma.EventWhereInput {
+  const q = params.q?.trim() || null;
+  const city = params.city?.trim() || null;
+  const where: Prisma.EventWhereInput = {
+    status: { in: PUBLIC_EVENT_DISCOVER_STATUSES },
+    isDeleted: false,
+    organizationId: { not: null },
+    organization: { status: "ACTIVE" },
+  };
+
+  if (q) {
+    pushEventAndFilter(where, {
+      OR: [
+        { title: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
+        { addressRef: { formattedAddress: { contains: q, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  if (city) {
+    pushEventAndFilter(where, {
+      addressRef: { formattedAddress: { contains: city, mode: "insensitive" } },
+    });
+  }
+
+  applyEventBoundsFilter(where, {
+    north: params.north ?? null,
+    south: params.south ?? null,
+    east: params.east ?? null,
+    west: params.west ?? null,
+  });
+
+  const categorySelection = parseCategorySelection(params.categories ?? null);
+  if (categorySelection) {
+    if (categorySelection.hasPadel && !categorySelection.hasGeneral) {
+      pushEventAndFilter(where, { templateType: EventTemplateType.PADEL });
+    } else if (!categorySelection.hasPadel && categorySelection.hasGeneral) {
+      pushEventAndFilter(where, {
+        OR: [{ templateType: { not: EventTemplateType.PADEL } }, { templateType: null }],
+      });
+    }
+  }
+
+  const templateTypes = parseTemplateTypes(params.templateTypes ?? null);
+  if (templateTypes.length > 0) {
+    pushEventAndFilter(where, {
+      templateType: { in: templateTypes },
+    });
+  }
+
+  const rangeApplied = applyEventDateRangeFilter(where, params.startDate ?? null, params.endDate ?? null);
+  if (!rangeApplied) {
+    applyEventDateFilter(where, params.date ?? null, params.day ?? null);
+  }
+
+  return where;
+}
+
+async function listRankedEventsFromEvents(
+  params: RankedEventsParams,
+  opts: {
+    take: number;
+    sort: "rank" | "startsAt";
+    priceMin: number | null;
+    priceMax: number | null;
+  },
+): Promise<{ items: PublicEventCard[]; nextCursor: string | null }> {
+  const cursorNumber = params.cursor ? Number(params.cursor) : NaN;
+  const cursorId = Number.isFinite(cursorNumber) && cursorNumber > 0 ? Math.floor(cursorNumber) : null;
+
+  const events = await prisma.event.findMany({
+    where: buildFallbackEventWhere(params),
+    orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+    take: opts.take + 1,
+    ...(cursorId ? { skip: 1, cursor: { id: cursorId } } : {}),
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      description: true,
+      startsAt: true,
+      endsAt: true,
+      status: true,
+      templateType: true,
+      interestTags: true,
+      ownerUserId: true,
+      organizationId: true,
+      organization: {
+        select: {
+          publicName: true,
+          businessName: true,
+          username: true,
+        },
+      },
+      addressId: true,
+      addressRef: {
+        select: { formattedAddress: true, canonical: true, latitude: true, longitude: true },
+      },
+      pricingMode: true,
+      coverImageUrl: true,
+      ticketTypes: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          price: true,
+          currency: true,
+          status: true,
+          startsAt: true,
+          endsAt: true,
+          totalQuantity: true,
+          soldQuantity: true,
+          sortOrder: true,
+          padelEventCategoryLinkId: true,
+          padelEventCategoryLink: {
+            select: {
+              category: {
+                select: { label: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  let nextCursor: string | null = null;
+  if (events.length > opts.take) {
+    const next = events.pop();
+    nextCursor = next ? String(next.id) : null;
+  }
+
+  const mapped = events
+    .map((event) => ({
+      event: toPublicEventCardWithPrice({
+        event: {
+          ...event,
+          description: event.description ?? null,
+          templateType: event.templateType ?? null,
+          addressId: event.addressId ?? null,
+          pricingMode: event.pricingMode ?? null,
+          coverImageUrl: event.coverImageUrl ?? null,
+          addressRef: event.addressRef ?? null,
+          ticketTypes: event.ticketTypes ?? [],
+          interestTags: event.interestTags ?? [],
+        },
+      }),
+      organizationId: event.organizationId ?? undefined,
+    }))
+    .filter(({ event }) =>
+      isPublicEventCardComplete(event) &&
+      event.status !== "PAST" &&
+      event.status !== "CANCELLED" &&
+      event.status !== "DRAFT",
+    );
+
+  const filtered = filterByPrice(
+    mapped.map((entry) => ({
+      ...entry.event,
+      organizationId: entry.organizationId,
+    })),
+    opts.priceMin,
+    opts.priceMax,
+  );
+
+  const ranked = await rankEvents(filtered, {
+    userId: params.viewerId ?? null,
+    favouriteCategories: params.favouriteCategories ?? null,
+    lat: params.lat ?? null,
+    lng: params.lng ?? null,
+  });
+
+  const visible = ranked.filter((item) => !item.hidden);
+  const ordered = (opts.sort === "startsAt"
+    ? [...visible].sort((a, b) => {
+        const aMs = a.event.startsAt ? new Date(a.event.startsAt).getTime() : Number.POSITIVE_INFINITY;
+        const bMs = b.event.startsAt ? new Date(b.event.startsAt).getTime() : Number.POSITIVE_INFINITY;
+        if (aMs !== bMs) return aMs - bMs;
+        return (a.event.id ?? 0) - (b.event.id ?? 0);
+      })
+    : [...visible].sort((a, b) => b.rank.score - a.rank.score)
+  ).map((item) => {
+    const { _priceFromCents, organizationId, ...rest } = item.event as RankedEventCard;
+    return {
+      ...rest,
+      rank: item.rank,
+    };
+  });
+
+  return { items: ordered, nextCursor };
+}
+
 export async function listRankedEvents(params: RankedEventsParams): Promise<{ items: PublicEventCard[]; nextCursor: string | null }> {
   const cursorId = params.cursor ?? null;
   const take = clampTake(params.limit ?? DEFAULT_PAGE_SIZE);
   const priceMin = parsePrice(params.priceMin ?? null);
   const priceMax = parsePrice(params.priceMax ?? null);
   const sort = params.sort === "startsAt" ? "startsAt" : "rank";
+  const hasSearchCursor = typeof cursorId === "string" && cursorId.trim().length > 0;
+  const isSearchCursorValid = hasSearchCursor ? SEARCH_INDEX_UUID_PATTERN.test(cursorId as string) : true;
+
+  if (!isSearchCursorValid) {
+    return listRankedEventsFromEvents(params, {
+      take,
+      sort,
+      priceMin,
+      priceMax,
+    });
+  }
 
   const query = {
     where: buildWhere(params),
@@ -312,6 +652,14 @@ export async function listRankedEvents(params: RankedEventsParams): Promise<{ it
   }
 
   const safeItems = await filterOrphanedEventSearchItems(items);
+  if (safeItems.length === 0) {
+    return listRankedEventsFromEvents(params, {
+      take,
+      sort,
+      priceMin,
+      priceMax,
+    });
+  }
 
   const mapped = safeItems
     .map((event) => ({

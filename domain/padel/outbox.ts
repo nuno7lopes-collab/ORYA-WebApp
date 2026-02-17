@@ -20,6 +20,8 @@ type AutoScheduleRequestedPayload = {
   eventId: number;
   organizationId: number;
   actorUserId: string;
+  skipped?: Array<{ matchId: number; reason: string }>;
+  unscheduledByReason?: Record<string, number>;
   scheduledUpdates: Array<{
     matchId: number;
     courtId: number;
@@ -230,6 +232,8 @@ async function handleAutoScheduleRequested(payload: AutoScheduleRequestedPayload
       eventId: payload.eventId,
       scheduledCount: payload.scheduledUpdates.length,
       matchIds: payload.scheduledUpdates.map((u) => u.matchId),
+      skippedCount: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+      unscheduledByReason: payload.unscheduledByReason ?? {},
     },
   });
   return { ok: true } as const;
@@ -698,6 +702,107 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
   if (resolvedWinnerParticipantId || resolvedWinnerPairingId) {
     await queueMatchResult(involvedUserIds, updated.id, updated.eventId);
     await queueNextOpponent(involvedUserIds, updated.id, updated.eventId);
+
+    if (
+      updated.event.padelTournamentConfig?.format === "NON_STOP" &&
+      updated.roundType === "GROUPS" &&
+      updated.groupLabel === "NS"
+    ) {
+      const loserPairingId =
+        resolvedWinnerPairingId && updated.pairingAId && updated.pairingBId
+          ? resolvedWinnerPairingId === updated.pairingAId
+            ? updated.pairingBId
+            : updated.pairingAId
+          : null;
+      const parseTarget = (raw: unknown): { round: number; court: number; side: "A" | "B" } | null => {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+        const payload = raw as Record<string, unknown>;
+        const round = Number(payload.round);
+        const court = Number(payload.court);
+        const side = payload.side === "B" ? "B" : payload.side === "A" ? "A" : null;
+        if (!Number.isFinite(round) || round <= 0 || !Number.isFinite(court) || court <= 0 || !side) return null;
+        return { round: Math.floor(round), court: Math.floor(court), side };
+      };
+      const scorePayload = updated.score && typeof updated.score === "object" ? (updated.score as Record<string, unknown>) : {};
+      const kocPayload =
+        scorePayload.koc && typeof scorePayload.koc === "object" ? (scorePayload.koc as Record<string, unknown>) : null;
+      const winnerTarget = parseTarget(kocPayload?.nextWin);
+      const loserTarget = parseTarget(kocPayload?.nextLose);
+      const targetLabels = Array.from(
+        new Set(
+          [winnerTarget, loserTarget]
+            .filter((target): target is NonNullable<typeof target> => Boolean(target))
+            .map((target) => `R${target.round}.C${target.court}`),
+        ),
+      );
+      if (targetLabels.length > 0) {
+        const targetMatches = await prisma.eventMatchSlot.findMany({
+          where: {
+            eventId: updated.eventId,
+            roundType: "GROUPS",
+            groupLabel: "NS",
+            ...(updated.categoryId ? { categoryId: updated.categoryId } : {}),
+            roundLabel: { in: targetLabels },
+          },
+          select: {
+            id: true,
+            roundLabel: true,
+            pairingAId: true,
+            pairingBId: true,
+          },
+        });
+        const targetByLabel = new Map(
+          targetMatches
+            .filter((match) => typeof match.roundLabel === "string" && match.roundLabel.trim().length > 0)
+            .map((match) => [match.roundLabel as string, match]),
+        );
+        const applyTarget = async (
+          target: { round: number; court: number; side: "A" | "B" } | null,
+          pairingId: number | null,
+        ) => {
+          if (!target || !pairingId) return;
+          const label = `R${target.round}.C${target.court}`;
+          const match = targetByLabel.get(label);
+          if (!match) return;
+          const update: { pairingAId?: number; pairingBId?: number } = {};
+          if (target.side === "A") {
+            if (match.pairingAId == null || match.pairingAId === pairingId) {
+              update.pairingAId = pairingId;
+            } else if (match.pairingBId == null || match.pairingBId === pairingId) {
+              update.pairingBId = pairingId;
+            } else {
+              return;
+            }
+          } else {
+            if (match.pairingBId == null || match.pairingBId === pairingId) {
+              update.pairingBId = pairingId;
+            } else if (match.pairingAId == null || match.pairingAId === pairingId) {
+              update.pairingAId = pairingId;
+            } else {
+              return;
+            }
+          }
+          if (!update.pairingAId && !update.pairingBId) return;
+          const { match: updatedTarget } = await updatePadelMatch({
+            matchId: match.id,
+            data: update,
+            ...systemContext,
+            select: { id: true, roundLabel: true, pairingAId: true, pairingBId: true },
+          });
+          if (updatedTarget.roundLabel) {
+            targetByLabel.set(updatedTarget.roundLabel, {
+              id: updatedTarget.id,
+              roundLabel: updatedTarget.roundLabel,
+              pairingAId: updatedTarget.pairingAId ?? null,
+              pairingBId: updatedTarget.pairingBId ?? null,
+            });
+          }
+        };
+
+        await applyTarget(winnerTarget, resolvedWinnerPairingId);
+        await applyTarget(loserTarget, loserPairingId);
+      }
+    }
 
     if (updated.roundType === "KNOCKOUT") {
       const config = await prisma.padelTournamentConfig.findUnique({

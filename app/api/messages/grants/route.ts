@@ -16,6 +16,10 @@ type GrantListItem = {
   status: ChatAccessGrantStatus;
   contextType: string | null;
   contextId: string | null;
+  requesterId: string | null;
+  targetUserId: string | null;
+  organizationId: number | null;
+  targetOrganizationId: number | null;
   conversationId: string | null;
   threadId: string | null;
   eventId: number | null;
@@ -110,10 +114,13 @@ async function mapGrantItems(
     status: ChatAccessGrantStatus;
     contextType: string | null;
     contextId: string | null;
+    requesterId: string | null;
+    targetUserId: string | null;
+    organizationId: number | null;
+    targetOrganizationId: number | null;
     conversationId: string | null;
     threadId: string | null;
     eventId: number | null;
-    requesterId: string | null;
     title: string | null;
     expiresAt: Date | null;
     createdAt: Date;
@@ -189,6 +196,10 @@ async function mapGrantItems(
       status: grant.status,
       contextType: grant.contextType,
       contextId: grant.contextId,
+      requesterId: grant.requesterId,
+      targetUserId: grant.targetUserId,
+      organizationId: grant.organizationId,
+      targetOrganizationId: grant.targetOrganizationId,
       conversationId,
       threadId: grant.threadId,
       eventId: grant.eventId,
@@ -298,10 +309,13 @@ export async function GET(req: NextRequest) {
         status: true,
         contextType: true,
         contextId: true,
+        requesterId: true,
+        targetUserId: true,
+        organizationId: true,
+        targetOrganizationId: true,
         conversationId: true,
         threadId: true,
         eventId: true,
-        requesterId: true,
         title: true,
         expiresAt: true,
         createdAt: true,

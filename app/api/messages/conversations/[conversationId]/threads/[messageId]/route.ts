@@ -5,7 +5,12 @@ import { GET as getOrgThread } from "@/lib/messages/handlers/chat/conversations/
 
 export async function GET(
   req: NextRequest,
-  context: { params: { conversationId: string; messageId: string } },
+  context: {
+    params:
+      | Promise<{ conversationId: string; messageId: string }>
+      | { conversationId: string; messageId: string };
+  },
 ) {
-  return getOrgThread(req, context);
+  const params = await context.params;
+  return getOrgThread(req, { params });
 }

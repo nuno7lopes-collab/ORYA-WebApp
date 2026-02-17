@@ -6,10 +6,18 @@ import {
   DELETE as deleteOrgReaction,
 } from "@/lib/messages/handlers/chat/messages/[messageId]/reactions/route";
 
-export async function POST(req: NextRequest, context: { params: { messageId: string } }) {
-  return postOrgReaction(req, context);
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ messageId: string }> | { messageId: string } },
+) {
+  const params = await context.params;
+  return postOrgReaction(req, { params });
 }
 
-export async function DELETE(req: NextRequest, context: { params: { messageId: string } }) {
-  return deleteOrgReaction(req, context);
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ messageId: string }> | { messageId: string } },
+) {
+  const params = await context.params;
+  return deleteOrgReaction(req, { params });
 }

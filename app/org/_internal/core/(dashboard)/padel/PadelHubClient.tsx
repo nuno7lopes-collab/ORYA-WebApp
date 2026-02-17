@@ -1150,6 +1150,7 @@ export default function PadelHubClient({
   const [noShowFilter, setNoShowFilter] = useState<"ALL" | "WITH" | "NONE">("ALL");
   const [calendarScope, setCalendarScope] = useState<"week" | "day">("week");
   const [calendarView, setCalendarView] = useState<"timeline" | "list">("timeline");
+  const [calendarDataView, setCalendarDataView] = useState<"complete" | "games">("complete");
   const [calendarViewTouched, setCalendarViewTouched] = useState(false);
   const [calendarFilter, setCalendarFilter] = useState<"all" | "club">("all");
   const [calendarError, setCalendarError] = useState<string | null>(null);
@@ -1165,6 +1166,8 @@ export default function PadelHubClient({
     rest: "10",
     priority: "",
   });
+  const [autoScheduleCourtIds, setAutoScheduleCourtIds] = useState<number[]>([]);
+  const [autoScheduleCourtPriorityOrder, setAutoScheduleCourtPriorityOrder] = useState<number[]>([]);
   const [autoScheduling, setAutoScheduling] = useState(false);
   const [autoScheduleSummary, setAutoScheduleSummary] = useState<string | null>(null);
   const [autoSchedulePreview, setAutoSchedulePreview] = useState<
@@ -1357,6 +1360,67 @@ export default function PadelHubClient({
     minRestMinutes?: number | null;
     priority?: "GROUPS_FIRST" | "KNOCKOUT_FIRST" | null;
   };
+  const autoScheduleCourtOptions = useMemo(() => {
+    const advanced = (padelConfig?.advancedSettings ?? {}) as {
+      courtsFromClubs?: Array<{
+        id?: number | string | null;
+        name?: string | null;
+        clubName?: string | null;
+        displayOrder?: number | null;
+      }>;
+      courtIds?: Array<number | string | null>;
+    };
+    const fromClubs = Array.isArray(advanced.courtsFromClubs)
+      ? advanced.courtsFromClubs
+          .map((entry, idx) => {
+            const idRaw = typeof entry?.id === "number" ? entry.id : Number(entry?.id);
+            if (!Number.isFinite(idRaw) || idRaw <= 0) return null;
+            const id = Math.floor(idRaw);
+            const nameRaw = typeof entry?.name === "string" ? entry.name.trim() : "";
+            const clubNameRaw = typeof entry?.clubName === "string" ? entry.clubName.trim() : "";
+            const displayOrderRaw =
+              typeof entry?.displayOrder === "number" && Number.isFinite(entry.displayOrder)
+                ? entry.displayOrder
+                : idx;
+            return {
+              id,
+              name: nameRaw || `Campo ${id}`,
+              clubName: clubNameRaw || null,
+              displayOrder: displayOrderRaw,
+            };
+          })
+          .filter((entry): entry is { id: number; name: string; clubName: string | null; displayOrder: number } =>
+            Boolean(entry),
+          )
+      : [];
+
+    if (fromClubs.length > 0) {
+      const byId = new Map<number, { id: number; name: string; clubName: string | null; displayOrder: number }>();
+      fromClubs.forEach((entry) => {
+        if (!byId.has(entry.id)) byId.set(entry.id, entry);
+      });
+      return Array.from(byId.values()).sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id);
+    }
+
+    const fromIds = Array.isArray(advanced.courtIds)
+      ? advanced.courtIds
+          .map((value, idx) => {
+            const raw = typeof value === "number" ? value : Number(value);
+            if (!Number.isFinite(raw) || raw <= 0) return null;
+            const id = Math.floor(raw);
+            return {
+              id,
+              name: `Campo ${id}`,
+              clubName: null as string | null,
+              displayOrder: idx,
+            };
+          })
+          .filter((entry): entry is { id: number; name: string; clubName: string | null; displayOrder: number } =>
+            Boolean(entry),
+          )
+      : [];
+    return fromIds;
+  }, [padelConfig?.advancedSettings]);
 
   useEffect(() => {
     if (resolvedPadelTab && allowedTabs.includes(resolvedPadelTab) && resolvedPadelTab !== activeTab) {
@@ -1480,6 +1544,47 @@ export default function PadelHubClient({
     scheduleDefaults.priority,
     slotMinutes,
   ]);
+
+  useEffect(() => {
+    const optionIds = autoScheduleCourtOptions.map((court) => court.id);
+    if (optionIds.length === 0) {
+      setAutoScheduleCourtIds([]);
+      setAutoScheduleCourtPriorityOrder([]);
+      return;
+    }
+
+    const advanced = (padelConfig?.advancedSettings ?? {}) as {
+      courtSelectionDefaults?: {
+        useAllCourts?: boolean;
+        courtIds?: Array<number | string | null>;
+      };
+      courtPriorityOrder?: Array<number | string | null>;
+    };
+    const selectionDefaults = advanced.courtSelectionDefaults ?? {};
+    const preferredSubset =
+      selectionDefaults.useAllCourts === false && Array.isArray(selectionDefaults.courtIds)
+        ? selectionDefaults.courtIds
+            .map((value) => (typeof value === "number" ? value : Number(value)))
+            .filter((value): value is number => Number.isFinite(value) && value > 0)
+            .map((value) => Math.floor(value))
+            .filter((id) => optionIds.includes(id))
+        : [];
+    const selectedIds = preferredSubset.length > 0 ? preferredSubset : optionIds;
+    const configuredPriority = Array.isArray(advanced.courtPriorityOrder)
+      ? advanced.courtPriorityOrder
+          .map((value) => (typeof value === "number" ? value : Number(value)))
+          .filter((value): value is number => Number.isFinite(value) && value > 0)
+          .map((value) => Math.floor(value))
+          .filter((id) => selectedIds.includes(id))
+      : [];
+    const priority = [...configuredPriority, ...selectedIds.filter((id) => !configuredPriority.includes(id))];
+    setAutoScheduleCourtIds((prev) =>
+      prev.length === selectedIds.length && prev.every((id, idx) => id === selectedIds[idx]) ? prev : selectedIds,
+    );
+    setAutoScheduleCourtPriorityOrder((prev) =>
+      prev.length === priority.length && prev.every((id, idx) => id === priority[idx]) ? prev : priority,
+    );
+  }, [autoScheduleCourtOptions, padelConfig?.eventId, padelConfig?.advancedSettings]);
 
   const setPadelSection = (section: PadelTab) => {
     setSwitchingTab(true);
@@ -3028,13 +3133,9 @@ export default function PadelHubClient({
     const durationMinutes = Number.isFinite(duration) && duration > 0 ? duration : 60;
     const bufferMinutes = Number.isFinite(buffer) && buffer >= 0 ? buffer : calendarBuffer;
 
-    const advanced = (padelConfig?.advancedSettings || {}) as {
-      courtsFromClubs?: Array<unknown>;
-      courtIds?: Array<unknown>;
-    };
-    const courtsFromClubs = Array.isArray(advanced.courtsFromClubs) ? advanced.courtsFromClubs.length : 0;
-    const courtsFromIds = Array.isArray(advanced.courtIds) ? advanced.courtIds.length : 0;
-    const courtsCount = courtsFromClubs || courtsFromIds || padelConfig?.numberOfCourts || 0;
+    const effectiveCourtIds =
+      autoScheduleCourtIds.length > 0 ? autoScheduleCourtIds : autoScheduleCourtOptions.map((court) => court.id);
+    const courtsCount = effectiveCourtIds.length || padelConfig?.numberOfCourts || 0;
     if (!courtsCount) return null;
 
     const totalSlots = computeMatchSlots({
@@ -3061,6 +3162,8 @@ export default function PadelHubClient({
     calendarMatchesRaw.length,
     padelConfig?.advancedSettings,
     padelConfig?.numberOfCourts,
+    autoScheduleCourtIds,
+    autoScheduleCourtOptions,
   ]);
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date();
@@ -3116,14 +3219,19 @@ export default function PadelHubClient({
   const isWithinRange = (date: string | Date) =>
     calendarScope === "day" ? isWithinDay(date) : isWithinWeek(date);
 
+  const showOnlyTournamentGames = calendarDataView === "games";
   const calendarBlocks =
-    calendarScope === "day" || calendarScope === "week"
-      ? calendarBlocksRaw.filter((b) => isWithinRange(b.startAt))
-      : calendarBlocksRaw;
+    showOnlyTournamentGames
+      ? []
+      : calendarScope === "day" || calendarScope === "week"
+        ? calendarBlocksRaw.filter((b) => isWithinRange(b.startAt))
+        : calendarBlocksRaw;
   const calendarAvailabilities =
-    calendarScope === "day" || calendarScope === "week"
-      ? calendarAvailabilitiesRaw.filter((b) => isWithinRange(b.startAt))
-      : calendarAvailabilitiesRaw;
+    showOnlyTournamentGames
+      ? []
+      : calendarScope === "day" || calendarScope === "week"
+        ? calendarAvailabilitiesRaw.filter((b) => isWithinRange(b.startAt))
+        : calendarAvailabilitiesRaw;
   const matchStartsWithinDay = (m: CalendarMatch) => {
     const start = m.startTime || m.plannedStartAt;
     if (!start) return false;
@@ -3421,6 +3529,45 @@ export default function PadelHubClient({
     }
   };
 
+  const autoScheduleEffectiveCourtIds = useMemo(() => {
+    if (autoScheduleCourtIds.length > 0) return autoScheduleCourtIds;
+    return autoScheduleCourtOptions.map((court) => court.id);
+  }, [autoScheduleCourtIds, autoScheduleCourtOptions]);
+
+  const autoScheduleEffectivePriorityOrder = useMemo(() => {
+    const selected = new Set(autoScheduleEffectiveCourtIds);
+    const prioritized = autoScheduleCourtPriorityOrder.filter((id) => selected.has(id));
+    return [...prioritized, ...autoScheduleEffectiveCourtIds.filter((id) => !prioritized.includes(id))];
+  }, [autoScheduleCourtPriorityOrder, autoScheduleEffectiveCourtIds]);
+
+  const toggleAutoScheduleCourt = (courtId: number) => {
+    if (!Number.isFinite(courtId)) return;
+    setAutoScheduleCourtIds((prev) => {
+      const exists = prev.includes(courtId);
+      if (exists && prev.length <= 1) return prev;
+      const next = exists ? prev.filter((id) => id !== courtId) : [...prev, courtId];
+      return next;
+    });
+    setAutoScheduleCourtPriorityOrder((prev) => {
+      const exists = prev.includes(courtId);
+      if (exists && prev.length <= 1) return prev;
+      const next = exists ? prev.filter((id) => id !== courtId) : [...prev, courtId];
+      return next;
+    });
+  };
+
+  const moveAutoScheduleCourtPriority = (courtId: number, direction: -1 | 1) => {
+    setAutoScheduleCourtPriorityOrder((prev) => {
+      const idx = prev.indexOf(courtId);
+      if (idx === -1) return prev;
+      const nextIdx = idx + direction;
+      if (nextIdx < 0 || nextIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[nextIdx]] = [next[nextIdx], next[idx]];
+      return next;
+    });
+  };
+
   const runAutoSchedule = async () => {
     if (!eventId) {
       setCalendarError("Abre a partir de um torneio para auto-agendar.");
@@ -3445,6 +3592,10 @@ export default function PadelHubClient({
     if (Number.isFinite(bufferMinutesValue) && bufferMinutesValue >= 0) payload.bufferMinutes = bufferMinutesValue;
     if (Number.isFinite(restMinutesValue) && restMinutesValue >= 0) payload.minRestMinutes = restMinutesValue;
     if (autoScheduleForm.priority) payload.priority = autoScheduleForm.priority;
+    if (autoScheduleEffectiveCourtIds.length > 0) payload.courtIds = autoScheduleEffectiveCourtIds;
+    if (autoScheduleEffectivePriorityOrder.length > 0) {
+      payload.courtPriorityOrder = autoScheduleEffectivePriorityOrder;
+    }
 
     setAutoScheduling(true);
     setCalendarError(null);
@@ -3460,6 +3611,20 @@ export default function PadelHubClient({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
+        if (json?.error === "AUTO_SCHEDULE_INFEASIBLE") {
+          const reasons =
+            json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
+              ? Object.entries(json.unscheduledByReason as Record<string, unknown>)
+                  .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
+                  .join(" · ")
+              : null;
+          const errMsg = reasons
+            ? `Auto-agendamento inviável. ${reasons}.`
+            : "Auto-agendamento inviável para a janela/campos atuais.";
+          setCalendarError(errMsg);
+          toast(errMsg, "warn");
+          return;
+        }
         const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível auto-agendar.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
@@ -3518,6 +3683,10 @@ export default function PadelHubClient({
     if (Number.isFinite(bufferMinutesValue) && bufferMinutesValue >= 0) payload.bufferMinutes = bufferMinutesValue;
     if (Number.isFinite(restMinutesValue) && restMinutesValue >= 0) payload.minRestMinutes = restMinutesValue;
     if (autoScheduleForm.priority) payload.priority = autoScheduleForm.priority;
+    if (autoScheduleEffectiveCourtIds.length > 0) payload.courtIds = autoScheduleEffectiveCourtIds;
+    if (autoScheduleEffectivePriorityOrder.length > 0) {
+      payload.courtPriorityOrder = autoScheduleEffectivePriorityOrder;
+    }
 
     setAutoScheduling(true);
     setCalendarError(null);
@@ -3613,6 +3782,13 @@ export default function PadelHubClient({
                 ? autoScheduleForm.priority
                 : null,
           },
+          courtSelectionDefaults: {
+            useAllCourts:
+              autoScheduleCourtOptions.length > 0 &&
+              autoScheduleEffectiveCourtIds.length >= autoScheduleCourtOptions.length,
+            courtIds: autoScheduleEffectiveCourtIds,
+          },
+          courtPriorityOrder: autoScheduleEffectivePriorityOrder,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -4011,6 +4187,23 @@ export default function PadelHubClient({
                     }}
                     className={`rounded-full px-3 py-1 font-semibold transition ${
                       calendarView === opt.key ? "bg-white text-black shadow" : "text-white/75"
+                    }`}
+                    disabled={switchingTab}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
+                {[
+                  { key: "complete", label: "Completo" },
+                  { key: "games", label: "Jogos" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setCalendarDataView(opt.key as "complete" | "games")}
+                    className={`rounded-full px-3 py-1 font-semibold transition ${
+                      calendarDataView === opt.key ? "bg-white text-black shadow" : "text-white/75"
                     }`}
                     disabled={switchingTab}
                   >
@@ -4660,6 +4853,78 @@ export default function PadelHubClient({
                   Descanso mínimo evita jogos seguidos da mesma dupla.
                 </div>
               </div>
+              {autoScheduleCourtOptions.length > 0 && (
+                <div className="space-y-2 rounded-lg border border-white/10 bg-black/25 p-3">
+                  <div className="flex items-center justify-between text-[11px] text-white/75">
+                    <p>Campos nesta execução: {autoScheduleEffectiveCourtIds.length}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ids = autoScheduleCourtOptions.map((court) => court.id);
+                        setAutoScheduleCourtIds(ids);
+                        setAutoScheduleCourtPriorityOrder(ids);
+                      }}
+                      className="rounded-full border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35"
+                      disabled={!eventId || autoScheduling}
+                    >
+                      Usar todos
+                    </button>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {autoScheduleCourtOptions.map((court) => {
+                      const selected = autoScheduleEffectiveCourtIds.includes(court.id);
+                      const priorityIndex = autoScheduleEffectivePriorityOrder.indexOf(court.id);
+                      return (
+                        <div
+                          key={`auto-court-${court.id}`}
+                          className={`rounded-lg border px-2 py-2 text-[11px] ${
+                            selected ? "border-cyan-300/40 bg-cyan-500/10" : "border-white/10 bg-black/20"
+                          }`}
+                        >
+                          <label className="flex items-center gap-2 text-white/85">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleAutoScheduleCourt(court.id)}
+                              disabled={!eventId || autoScheduling}
+                            />
+                            <span>{court.name}</span>
+                          </label>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className="text-white/60">
+                              Prioridade {priorityIndex >= 0 ? `#${priorityIndex + 1}` : "—"}
+                            </span>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveAutoScheduleCourtPriority(court.id, -1)}
+                                className="rounded border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35 disabled:opacity-40"
+                                disabled={!selected || priorityIndex <= 0 || !eventId || autoScheduling}
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveAutoScheduleCourtPriority(court.id, 1)}
+                                className="rounded border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35 disabled:opacity-40"
+                                disabled={
+                                  !selected ||
+                                  priorityIndex === -1 ||
+                                  priorityIndex >= autoScheduleEffectivePriorityOrder.length - 1 ||
+                                  !eventId ||
+                                  autoScheduling
+                                }
+                              >
+                                ↓
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {!tournamentHasKnockoutPhase && tournamentFormatRaw && (
                 <p className="text-[11px] text-amber-200/85">
                   Este formato não usa eliminatórias; a prioridade de eliminatórias pode não ter efeito.

@@ -66,7 +66,11 @@ export default function MessagesTabScreen() {
   const isFocused = useIsFocused();
   const accessToken = session?.access_token ?? null;
   const inboxQuery = useMessagesInbox(Boolean(session?.user?.id) && isFocused, accessToken);
-  const requestsQuery = useMessageRequests(Boolean(session?.user?.id) && isFocused, accessToken);
+  const requestsQuery = useMessageRequests(
+    Boolean(session?.user?.id) && isFocused,
+    accessToken,
+    session?.user?.id,
+  );
   const items = inboxQuery.data?.items ?? [];
   const requestItems = requestsQuery.data?.items ?? [];
   const pendingRequests = useMemo(

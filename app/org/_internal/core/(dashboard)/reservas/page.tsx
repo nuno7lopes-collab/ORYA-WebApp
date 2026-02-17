@@ -430,7 +430,6 @@ export default function ReservasDashboardPage() {
       : null;
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtId, setSelectedPadelCourtId] = useState<number | null>(null);
-  const calendarTab = "agenda";
   const [focusDate, setFocusDate] = useState(() => new Date());
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
@@ -1729,7 +1728,7 @@ export default function ReservasDashboardPage() {
   };
 
   return (
-    <div className="space-y-5" data-calendar-tab={calendarTab}>
+    <div className="space-y-5">
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

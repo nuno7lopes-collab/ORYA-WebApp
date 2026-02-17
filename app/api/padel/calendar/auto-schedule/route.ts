@@ -195,6 +195,7 @@ async function _POST(req: NextRequest) {
           padelClubId: true,
           partnerClubIds: true,
           advancedSettings: true,
+          format: true,
         },
       },
     },
@@ -205,6 +206,14 @@ async function _POST(req: NextRequest) {
 
   const advanced = (event.padelTournamentConfig?.advancedSettings || {}) as {
     courtIds?: number[];
+    courtPriorityOrder?: number[];
+    courtSelectionDefaults?: {
+      useAllCourts?: boolean;
+      courtIds?: number[];
+    };
+    capacityPolicy?: {
+      hardBlockAutoSchedule?: boolean;
+    };
     gameDurationMinutes?: number | null;
     scheduleDefaults?: {
       windowStart?: string | null;
@@ -290,10 +299,26 @@ async function _POST(req: NextRequest) {
   const requestedCourtIds = Array.isArray(body.courtIds)
     ? body.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
     : [];
+  const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
+    ? body.courtPriorityOrder.filter((id) => typeof id === "number" && Number.isFinite(id))
+    : [];
   const configuredCourtIds = Array.isArray(advanced.courtIds)
     ? advanced.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
     : [];
-  const selectedCourtIds = requestedCourtIds.length > 0 ? requestedCourtIds : configuredCourtIds;
+  const selectionDefaults = advanced.courtSelectionDefaults ?? {};
+  const defaultsCourtIds =
+    selectionDefaults.useAllCourts === false && Array.isArray(selectionDefaults.courtIds)
+      ? selectionDefaults.courtIds.filter((id) => typeof id === "number" && Number.isFinite(id))
+      : [];
+  const selectedCourtIds =
+    requestedCourtIds.length > 0
+      ? requestedCourtIds
+      : defaultsCourtIds.length > 0
+        ? defaultsCourtIds
+        : configuredCourtIds;
+  const defaultCourtPriorityOrder = Array.isArray(advanced.courtPriorityOrder)
+    ? advanced.courtPriorityOrder.filter((id) => typeof id === "number" && Number.isFinite(id))
+    : [];
 
   let courts = selectedCourtIds.length
     ? await prisma.padelClubCourt.findMany({
@@ -318,6 +343,22 @@ async function _POST(req: NextRequest) {
 
   if (courts.length === 0) {
     return jsonWrap({ ok: false, error: "NO_COURTS_CONFIGURED" }, { status: 400 });
+  }
+
+  const priorityOrder =
+    requestedCourtPriorityOrder.length > 0 ? requestedCourtPriorityOrder : defaultCourtPriorityOrder;
+  if (priorityOrder.length > 0) {
+    const rankByCourtId = new Map(priorityOrder.map((courtId, idx) => [courtId, idx]));
+    courts = [...courts].sort((a, b) => {
+      const rankA = rankByCourtId.get(a.id);
+      const rankB = rankByCourtId.get(b.id);
+      if (typeof rankA === "number" && typeof rankB === "number" && rankA !== rankB) return rankA - rankB;
+      if (typeof rankA === "number") return -1;
+      if (typeof rankB === "number") return 1;
+      const orderA = typeof a.displayOrder === "number" ? a.displayOrder : Number.MAX_SAFE_INTEGER;
+      const orderB = typeof b.displayOrder === "number" ? b.displayOrder : Number.MAX_SAFE_INTEGER;
+      return orderA - orderB || a.id - b.id;
+    });
   }
 
   {
@@ -379,7 +420,7 @@ async function _POST(req: NextRequest) {
 
     if (unscheduledMatchesRaw.length === 0) {
       return jsonWrap(
-        { ok: true, scheduledCount: 0, skippedCount: 0, skipped: [] },
+        { ok: true, scheduledCount: 0, skippedCount: 0, skipped: [], unscheduledByReason: {} },
         { status: 200 },
       );
     }
@@ -547,8 +588,44 @@ async function _POST(req: NextRequest) {
         bufferMinutes,
         minRestMinutes,
         priority,
+        allowPlaceholderMatches: event.padelTournamentConfig?.format === "NON_STOP",
       },
     });
+    const unscheduledByReason = scheduleResult.unscheduledByReason;
+    const shouldHardBlockAutoSchedule = advanced.capacityPolicy?.hardBlockAutoSchedule !== false;
+    if (shouldHardBlockAutoSchedule && !dryRun && scheduleResult.skipped.length > 0) {
+      return jsonWrap(
+        {
+          ok: false,
+          error: "AUTO_SCHEDULE_INFEASIBLE",
+          scheduledCount: scheduleResult.scheduled.length,
+          skippedCount: scheduleResult.skipped.length,
+          skipped: scheduleResult.skipped,
+          unscheduledByReason,
+          suggestions: {
+            addWindowHours:
+              courts.length > 0
+                ? Math.ceil((scheduleResult.skipped.length * (durationMinutes + bufferMinutes)) / (courts.length * 60))
+                : null,
+            addCourts:
+              Math.max(
+                1,
+                Math.ceil(
+                  scheduleResult.skipped.length /
+                    Math.max(
+                      1,
+                      Math.floor(
+                        Math.max(1, (windowEnd.getTime() - windowStart.getTime()) / 60000) /
+                          Math.max(1, durationMinutes + bufferMinutes),
+                      ),
+                    ),
+                ),
+              ),
+          },
+        },
+        { status: 409 },
+      );
+    }
 
     const nowIso = now.toISOString();
     const scoreByMatchId = new Map<number, Record<string, unknown>>();
@@ -713,6 +790,7 @@ async function _POST(req: NextRequest) {
             score: (update.score ?? null) as Prisma.InputJsonValue,
           })),
           skipped,
+          unscheduledByReason,
           matchIds: targetMatchIds ?? null,
           requestedAt: new Date().toISOString(),
           requestMeta: getRequestMeta(req),
@@ -722,6 +800,7 @@ async function _POST(req: NextRequest) {
           eventId: event.id,
           scheduledUpdates,
           skipped,
+          unscheduledByReason,
           matchIds: targetMatchIds ?? null,
           priority,
           minRestMinutes,
@@ -750,6 +829,7 @@ async function _POST(req: NextRequest) {
               eventId: event.id,
               scheduledCount: scheduledUpdates.length,
               skippedCount: skipped.length,
+              unscheduledByReason,
               matchIds: targetMatchIds ?? null,
             },
           },
@@ -766,9 +846,12 @@ async function _POST(req: NextRequest) {
           eventId: event.id,
           scheduledCount: scheduledUpdates.length,
           skippedCount: skipped.length,
+          unscheduledByReason,
           matchIds: targetMatchIds ?? null,
           priority,
           minRestMinutes,
+          courtIds: courts.map((court) => court.id),
+          courtPriorityOrder: priorityOrder,
         },
         ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
         userAgent: req.headers.get("user-agent") || null,
@@ -781,9 +864,12 @@ async function _POST(req: NextRequest) {
         scheduledCount: scheduledUpdates.length,
         skippedCount: skipped.length,
         skipped,
+        unscheduledByReason,
         dryRun,
         priority,
         minRestMinutes,
+        courtIds: courts.map((court) => court.id),
+        courtPriorityOrder: priorityOrder,
         queued: !dryRun && scheduledUpdates.length > 0,
         eventId: outboxEventId,
         warnings,

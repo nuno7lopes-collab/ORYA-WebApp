@@ -6,13 +6,25 @@ export type PlatformFeeConfig = {
   feeFixedCents: number;
 };
 
+export type PadelRankingFormatWeights = {
+  NON_STOP: number;
+  AMERICANO: number;
+  MEXICANO: number;
+};
+
 type FeeKeys =
   | "platform_fee_bps"
   | "platform_fee_fixed_cents"
   | "stripe_fee_bps_eu"
   | "stripe_fee_fixed_cents_eu";
 
-type PlatformSettingKey = FeeKeys | "org_transfer_enabled" | "platform.officialEmail";
+type PlatformSettingKey =
+  | FeeKeys
+  | "org_transfer_enabled"
+  | "platform.officialEmail"
+  | "padel.rankingWeightsByFormat";
+
+const PADEL_RANKING_WEIGHTS_BY_FORMAT_KEY: PlatformSettingKey = "padel.rankingWeightsByFormat";
 
 const envPlatformFeeBps = process.env.PLATFORM_FEE_BPS ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS;
 const envPlatformFeePercent = process.env.PLATFORM_FEE_PERCENT ?? process.env.NEXT_PUBLIC_PLATFORM_FEE_PERCENT;
@@ -36,6 +48,12 @@ const DEFAULT_STRIPE_FEE_FIXED_CENTS_EU = Number.isFinite(Number(process.env.STR
   : Math.round(Number(process.env.STRIPE_FEE_FIXED_EUR_EU ?? 0.25) * 100) || 25; // €0.25
 
 const PLATFORM_OFFICIAL_EMAIL_KEY: PlatformSettingKey = "platform.officialEmail";
+
+const DEFAULT_PADEL_RANKING_FORMAT_WEIGHTS: PadelRankingFormatWeights = {
+  NON_STOP: 0.7,
+  AMERICANO: 0.7,
+  MEXICANO: 0.7,
+};
 
 function parseNumber(raw: unknown, fallback: number) {
   const n = Number(raw);
@@ -163,4 +181,44 @@ export async function setPlatformOfficialEmail(email: string): Promise<string> {
   }
   await upsertSettings([{ key: PLATFORM_OFFICIAL_EMAIL_KEY, value: normalized }]);
   return normalized;
+}
+
+export function normalizePadelRankingFormatWeights(
+  raw: unknown,
+  fallback: PadelRankingFormatWeights = DEFAULT_PADEL_RANKING_FORMAT_WEIGHTS,
+): PadelRankingFormatWeights {
+  if (!raw || typeof raw !== "object") {
+    return { ...fallback };
+  }
+  const payload = raw as Record<string, unknown>;
+  const parseWeight = (key: keyof PadelRankingFormatWeights) => {
+    const value = payload[key];
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(parsed)) return fallback[key];
+    return Math.min(2, Math.max(0, Number(parsed)));
+  };
+  return {
+    NON_STOP: parseWeight("NON_STOP"),
+    AMERICANO: parseWeight("AMERICANO"),
+    MEXICANO: parseWeight("MEXICANO"),
+  };
+}
+
+export async function getPadelRankingFormatWeights(): Promise<PadelRankingFormatWeights> {
+  const map = await getSettingsMap([PADEL_RANKING_WEIGHTS_BY_FORMAT_KEY]);
+  const raw = map[PADEL_RANKING_WEIGHTS_BY_FORMAT_KEY];
+  if (!raw) return { ...DEFAULT_PADEL_RANKING_FORMAT_WEIGHTS };
+  try {
+    const parsed = JSON.parse(raw);
+    return normalizePadelRankingFormatWeights(parsed, DEFAULT_PADEL_RANKING_FORMAT_WEIGHTS);
+  } catch {
+    return { ...DEFAULT_PADEL_RANKING_FORMAT_WEIGHTS };
+  }
+}
+
+export async function setPadelRankingFormatWeights(config: Partial<PadelRankingFormatWeights>) {
+  const before = await getPadelRankingFormatWeights();
+  const merged = normalizePadelRankingFormatWeights({ ...before, ...config }, before);
+  await upsertSettings([{ key: PADEL_RANKING_WEIGHTS_BY_FORMAT_KEY, value: JSON.stringify(merged) }]);
+  return merged;
 }

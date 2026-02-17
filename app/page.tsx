@@ -240,9 +240,6 @@ export default async function HomePage() {
             <p className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-white md:text-[40px]">
               Eventos populares perto de ti
             </p>
-            <p className="text-[12px] text-white/65">
-              Curadoria por localização via IP, com prioridade para eventos ativos e próximos.
-            </p>
           </div>
           <Link href={discoverHref} className="text-[12px] text-white/75 hover:text-white/95 transition">
             Descobrir mais

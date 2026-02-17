@@ -492,7 +492,7 @@ export default function SearchScreen() {
                 <View
                   key={`recent-${item}`}
                   className="flex-row items-center rounded-full border border-white/12 bg-white/8 pl-3 pr-1"
-                  style={{ minHeight: 34 }}
+                  style={{ minHeight: tokens.layout.touchTarget }}
                 >
                   <Pressable
                     onPress={() => setQuery(item)}
@@ -541,7 +541,7 @@ export default function SearchScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Pesquisar ${item}`}
                   className="rounded-full border border-white/12 bg-white/8 px-3"
-                  style={{ minHeight: 34, justifyContent: "center" }}
+                  style={{ minHeight: tokens.layout.touchTarget, justifyContent: "center" }}
                 >
                   <Text className="text-white/80 text-xs font-semibold">{item}</Text>
                 </Pressable>

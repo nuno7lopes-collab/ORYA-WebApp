@@ -10,10 +10,23 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
+import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+
+const parseNumber = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  return null;
+};
+
+const parseDate = (value: unknown) => {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 
 async function _POST(req: NextRequest) {
   const mobileGate = enforceMobileVersionGate(req);
@@ -40,19 +53,33 @@ async function _POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { id: true, organizationId: true },
+    select: {
+      id: true,
+      organizationId: true,
+      startsAt: true,
+      endsAt: true,
+      padelTournamentConfig: {
+        select: {
+          format: true,
+          numberOfCourts: true,
+          advancedSettings: true,
+        },
+      },
+    },
   });
   if (!event || !event.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   const resolvedCategoryId = Number.isFinite(categoryId) ? categoryId : null;
+  let categoryFormatOverride: string | null = null;
   if (resolvedCategoryId) {
     const link = await prisma.padelEventCategoryLink.findFirst({
       where: { eventId, padelCategoryId: resolvedCategoryId, isEnabled: true },
-      select: { id: true },
+      select: { id: true, format: true },
     });
     if (!link) {
       return jsonWrap({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
     }
+    categoryFormatOverride = typeof link.format === "string" ? link.format : null;
   }
   const matchCategoryFilter = resolvedCategoryId ? { categoryId: resolvedCategoryId } : {};
 
@@ -70,6 +97,112 @@ async function _POST(req: NextRequest) {
     required: "EDIT",
   });
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+  const configAdvanced = (event.padelTournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? {};
+  const capacityPolicyRaw =
+    configAdvanced.capacityPolicy && typeof configAdvanced.capacityPolicy === "object"
+      ? (configAdvanced.capacityPolicy as Record<string, unknown>)
+      : null;
+  const shouldHardBlockGenerate = capacityPolicyRaw?.hardBlockGenerate !== false;
+  if (shouldHardBlockGenerate) {
+    const scheduleDefaultsRaw =
+      configAdvanced.scheduleDefaults && typeof configAdvanced.scheduleDefaults === "object"
+        ? (configAdvanced.scheduleDefaults as Record<string, unknown>)
+        : {};
+    const windowStart =
+      parseDate(scheduleDefaultsRaw.windowStart) ??
+      (event.startsAt ? new Date(event.startsAt) : null);
+    const windowEnd =
+      parseDate(scheduleDefaultsRaw.windowEnd) ??
+      (event.endsAt ? new Date(event.endsAt) : null);
+
+    if (windowStart && windowEnd && windowEnd > windowStart) {
+      const durationMinutes =
+        parseNumber(scheduleDefaultsRaw.durationMinutes) ??
+        parseNumber(configAdvanced.gameDurationMinutes) ??
+        60;
+      const bufferMinutes = parseNumber(scheduleDefaultsRaw.bufferMinutes) ?? 5;
+      const courtIds = Array.isArray(configAdvanced.courtIds)
+        ? configAdvanced.courtIds
+            .map((value) => parseNumber(value))
+            .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
+            .map((value) => Math.floor(value))
+        : [];
+      const formatProfilesByCategoryRaw =
+        configAdvanced.formatProfilesByCategory && typeof configAdvanced.formatProfilesByCategory === "object"
+          ? (configAdvanced.formatProfilesByCategory as Record<string, unknown>)
+          : null;
+      const profileKey = resolvedCategoryId ? String(resolvedCategoryId) : "global";
+      const categoryProfile =
+        formatProfilesByCategoryRaw &&
+        formatProfilesByCategoryRaw[profileKey] &&
+        typeof formatProfilesByCategoryRaw[profileKey] === "object"
+          ? (formatProfilesByCategoryRaw[profileKey] as Record<string, unknown>)
+          : formatProfilesByCategoryRaw &&
+              formatProfilesByCategoryRaw.global &&
+              typeof formatProfilesByCategoryRaw.global === "object"
+            ? (formatProfilesByCategoryRaw.global as Record<string, unknown>)
+            : null;
+      const confirmedTeams = await prisma.padelPairing.count({
+        where: {
+          eventId,
+          pairingStatus: "COMPLETE",
+          ...(resolvedCategoryId ? { categoryId: resolvedCategoryId } : {}),
+        },
+      });
+      const effectiveFormat =
+        typeof categoryProfile?.format === "string"
+          ? categoryProfile.format
+          : categoryFormatOverride
+            ? categoryFormatOverride
+            : format;
+
+      const plan = computePadelPlan({
+        format: effectiveFormat,
+        categories: [
+          {
+            categoryId: resolvedCategoryId,
+            teams: confirmedTeams,
+            format: effectiveFormat,
+            amMxMode:
+              categoryProfile?.amMxMode === "FIXED_PAIR" || categoryProfile?.amMxMode === "INDIVIDUAL_ROTATION"
+                ? (categoryProfile.amMxMode as "FIXED_PAIR" | "INDIVIDUAL_ROTATION")
+                : undefined,
+            roundsHint: parseNumber(categoryProfile?.roundsHint),
+            groupCount: parseNumber(categoryProfile?.groupCount),
+            groupSize: parseNumber(categoryProfile?.groupSize),
+            qualifyPerGroup: parseNumber(categoryProfile?.qualifyPerGroup),
+            extraQualifiers: parseNumber(categoryProfile?.extraQualifiers),
+          },
+        ],
+        windowStart,
+        windowEnd,
+        durationMinutes,
+        bufferMinutes,
+        courtIds,
+        courtsCount:
+          parseNumber(event.padelTournamentConfig?.numberOfCourts) ??
+          (courtIds.length > 0 ? courtIds.length : 1),
+        categoryWeights:
+          configAdvanced.categoryWeights && typeof configAdvanced.categoryWeights === "object"
+            ? (configAdvanced.categoryWeights as Record<string, number>)
+            : undefined,
+      });
+
+      if (!plan.feasible) {
+        return jsonWrap(
+          {
+            ok: false,
+            error: "GENERATION_PLAN_INFEASIBLE",
+            reason: "Confirmed entries do not fit the configured format plan.",
+            plan,
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   const phaseNormalized = phase === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
   const isGroupsFormat = format === "GRUPOS_ELIMINATORIAS";
   const existingPolicy = isGroupsFormat ? "error" : "replace";

@@ -40,7 +40,7 @@ export default function MessageRequestsScreen() {
   const topBar = useTopBarScroll({ hideOnScroll: false });
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
-  const requestsQuery = useMessageRequests(Boolean(session?.user?.id), accessToken);
+  const requestsQuery = useMessageRequests(Boolean(session?.user?.id), accessToken, session?.user?.id);
   const requestItems = requestsQuery.data?.items ?? [];
   const items = useMemo(
     () => requestItems.filter((item) => item.status === "PENDING"),

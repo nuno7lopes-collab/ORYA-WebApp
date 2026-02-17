@@ -57,7 +57,7 @@ export type ServiceItem = {
 export type ApiResponse = {
   items: ExploreItem[];
   pagination: {
-    nextCursor: number | null;
+    nextCursor: string | null;
     hasMore: boolean;
   };
 };

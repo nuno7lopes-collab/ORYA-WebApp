@@ -246,11 +246,15 @@ async function ensureOrgOrServiceConversation(params: {
   }
 }
 
-export async function POST(req: NextRequest, context: { params: { grantId: string } }) {
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ grantId: string }> | { grantId: string } },
+) {
   try {
     const mobileGate = enforceB2CMobileOnly(req);
     if (mobileGate) return mobileGate;
-    const grantId = context.params.grantId?.trim();
+    const params = await context.params;
+    const grantId = params.grantId?.trim();
     if (!grantId) {
       return jsonWrap({ ok: false, error: "INVALID_GRANT" }, { status: 400 });
     }

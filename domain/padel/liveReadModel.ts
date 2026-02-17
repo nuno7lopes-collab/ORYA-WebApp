@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   computePadelStandingsByGroup,
+  computePadelStandingsByGroupForPlayers,
   normalizePadelPointsTable,
   normalizePadelTieBreakRules,
+  type PadelStandingEntityType,
   type PadelStandingRow,
 } from "@/domain/padel/standings";
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
@@ -199,12 +201,21 @@ function formatDayKey(date: Date, timezone: string) {
 
 function toStandingGroups(params: {
   matches: MatchRow[];
-  labelByPairingId: Map<number, string>;
+  labelByEntityId: Map<number, string>;
   pointsTable: Record<string, number>;
   tieBreakRules: string[];
+  entityType: PadelStandingEntityType;
 }) {
   const matchesForStandings = params.matches.map((match) => {
     const participants = Array.isArray(match.participants) ? match.participants : [];
+    const sideAPlayerIds = participants
+      .filter((row) => row.side === "A")
+      .map((row) => row.participant?.playerProfileId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+    const sideBPlayerIds = participants
+      .filter((row) => row.side === "B")
+      .map((row) => row.participant?.playerProfileId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
     const pairingAId =
       participants
         .filter((row) => row.side === "A")
@@ -222,21 +233,27 @@ function toStandingGroups(params: {
       score: match.score,
       groupLabel: match.groupLabel,
       status: match.status,
-      pairingAId,
-      pairingBId,
-      sideAEntityIds: undefined,
-      sideBEntityIds: undefined,
+      pairingAId: params.entityType === "PAIRING" ? pairingAId : null,
+      pairingBId: params.entityType === "PAIRING" ? pairingBId : null,
+      sideAEntityIds: params.entityType === "PLAYER" ? sideAPlayerIds : undefined,
+      sideBEntityIds: params.entityType === "PLAYER" ? sideBPlayerIds : undefined,
     };
   });
 
-  const standingsByGroup = computePadelStandingsByGroup(
-    matchesForStandings,
-    normalizePadelPointsTable(params.pointsTable),
-    normalizePadelTieBreakRules(params.tieBreakRules),
-    {
-      drawOrderSeed: "live-read-model",
-    },
-  );
+  const normalizedPoints = normalizePadelPointsTable(params.pointsTable);
+  const normalizedTieBreaks = normalizePadelTieBreakRules(params.tieBreakRules);
+  const standingsByGroup =
+    params.entityType === "PLAYER"
+      ? computePadelStandingsByGroupForPlayers(
+          matchesForStandings,
+          new Map<number, number[]>(),
+          normalizedPoints,
+          normalizedTieBreaks,
+          { drawOrderSeed: "live-read-model" },
+        )
+      : computePadelStandingsByGroup(matchesForStandings, normalizedPoints, normalizedTieBreaks, {
+          drawOrderSeed: "live-read-model",
+        });
 
   return Object.entries(standingsByGroup)
     .map(([groupLabel, rows]) => ({
@@ -247,7 +264,9 @@ function toStandingGroups(params: {
         return {
           rank: index + 1,
           entityId: row.entityId,
-          label: params.labelByPairingId.get(row.entityId) ?? `Dupla ${row.entityId}`,
+          label:
+            params.labelByEntityId.get(row.entityId) ??
+            (params.entityType === "PLAYER" ? `Jogador ${row.entityId}` : `Dupla ${row.entityId}`),
           points: row.points,
           wins: row.wins,
           losses: row.losses,
@@ -277,6 +296,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         select: {
           advancedSettings: true,
           lifecycleStatus: true,
+          format: true,
         },
       },
       accessPolicies: {
@@ -344,6 +364,21 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
       .filter((name) => name.trim().length > 0);
     labelByPairingId.set(pairing.id, names.length > 0 ? names.join(" / ") : `Dupla ${pairing.id}`);
   });
+  const format = event.padelTournamentConfig?.format ?? null;
+  const standingsEntityType: PadelStandingEntityType =
+    format === "AMERICANO" || format === "MEXICANO" ? "PLAYER" : "PAIRING";
+  const labelByPlayerId = new Map<number, string>();
+  if (standingsEntityType === "PLAYER") {
+    matches.forEach((match) => {
+      (match.participants ?? []).forEach((row) => {
+        const playerId = row.participant?.playerProfileId;
+        if (typeof playerId !== "number" || !Number.isFinite(playerId) || labelByPlayerId.has(playerId)) return;
+        const rawLabel =
+          row.participant?.playerProfile?.displayName || row.participant?.playerProfile?.fullName || `Jogador ${playerId}`;
+        labelByPlayerId.set(playerId, params.visibility === "public" ? maskPublicLabel(rawLabel) : rawLabel);
+      });
+    });
+  }
 
   const courtMap = new Map<
     string,
@@ -505,21 +540,26 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
   }
 
   const ruleSnapshot = await resolvePadelRuleSetSnapshotForEvent({ eventId: params.eventId });
+  const labelByEntityId =
+    standingsEntityType === "PLAYER"
+      ? labelByPlayerId
+      : new Map(
+          Array.from(labelByPairingId.entries()).map(([pairingId, label]) => [
+            pairingId,
+            params.visibility === "public"
+              ? label
+                  .split("/")
+                  .map((name) => maskPublicLabel(name.trim()))
+                  .join(" / ")
+              : label,
+          ]),
+        );
   const standings = toStandingGroups({
     matches: matches.filter((match) => match.roundType === "GROUPS"),
-    labelByPairingId: new Map(
-      Array.from(labelByPairingId.entries()).map(([pairingId, label]) => [
-        pairingId,
-        params.visibility === "public"
-          ? label
-              .split("/")
-              .map((name) => maskPublicLabel(name.trim()))
-              .join(" / ")
-          : label,
-      ]),
-    ),
+    labelByEntityId,
     pointsTable: normalizePadelPointsTable(ruleSnapshot.pointsTable),
     tieBreakRules: normalizePadelTieBreakRules(ruleSnapshot.tieBreakRules),
+    entityType: standingsEntityType,
   });
 
   const latestResultsSorted = latestResultsFeed

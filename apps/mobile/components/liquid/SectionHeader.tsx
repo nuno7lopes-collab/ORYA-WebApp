@@ -10,8 +10,23 @@ type SectionHeaderProps = {
 export function SectionHeader({ title, subtitle }: SectionHeaderProps) {
   return (
     <View className="mb-3 gap-1">
-      <AppHeading variant="section">{title}</AppHeading>
-      {subtitle ? <AppText variant="caption" tone="secondary">{subtitle}</AppText> : null}
+      <AppHeading
+        variant="section"
+        allowFontScaling={false}
+        maxFontSizeMultiplier={1}
+      >
+        {title}
+      </AppHeading>
+      {subtitle ? (
+        <AppText
+          variant="caption"
+          tone="secondary"
+          allowFontScaling={false}
+          maxFontSizeMultiplier={1}
+        >
+          {subtitle}
+        </AppText>
+      ) : null}
     </View>
   );
 }

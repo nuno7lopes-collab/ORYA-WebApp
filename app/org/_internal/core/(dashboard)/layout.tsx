@@ -194,15 +194,6 @@ export default async function OrganizationDashboardLayout({ children }: { childr
       }
     >
       <OrganizationLangSetter language={organizationLanguage} />
-      {activeOrganization?.id ? (
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{sessionStorage.setItem("orya_last_organization_id","${activeOrganization.id}");${
-              organizationUsername ? `sessionStorage.setItem("orya_last_organization_username","${organizationUsername}");` : ""
-            }}catch(e){}`,
-          }}
-        />
-      ) : null}
       <OrganizationDashboardShell
         activeOrg={activeOrgLite}
         orgOptions={orgOptions}

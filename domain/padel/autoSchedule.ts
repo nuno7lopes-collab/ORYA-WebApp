@@ -50,6 +50,7 @@ export type AutoScheduleConfig = {
   bufferMinutes: number;
   minRestMinutes: number;
   priority: "GROUPS_FIRST" | "KNOCKOUT_FIRST";
+  allowPlaceholderMatches?: boolean;
 };
 
 export type AutoScheduleResult = {
@@ -61,6 +62,7 @@ export type AutoScheduleResult = {
     durationMinutes: number;
   }>;
   skipped: Array<{ matchId: number; reason: string }>;
+  unscheduledByReason: Record<string, number>;
 };
 
 type Interval = { start: Date; end: Date };
@@ -162,6 +164,7 @@ export function computeAutoSchedulePlan({
     bufferMinutes,
     minRestMinutes,
     priority,
+    allowPlaceholderMatches = false,
   } = config;
 
   const courtIds = courts.map((court) => court.id);
@@ -311,11 +314,12 @@ export function computeAutoSchedulePlan({
   for (const match of sortedMatches) {
     const hasSideA = Array.isArray(match.sideAProfileIds) && match.sideAProfileIds.length > 0;
     const hasSideB = Array.isArray(match.sideBProfileIds) && match.sideBProfileIds.length > 0;
-    if (!hasSideA || !hasSideB) {
+    if ((!hasSideA || !hasSideB) && !allowPlaceholderMatches) {
       skipped.push({ matchId: match.id, reason: "MISSING_PARTICIPANTS" });
       continue;
     }
-    const participants = resolveMatchParticipants(match);
+
+    const participants = hasSideA && hasSideB ? resolveMatchParticipants(match) : { profileIds: [], emails: [] };
     const matchDuration =
       match.plannedDurationMinutes && match.plannedDurationMinutes > 0
         ? match.plannedDurationMinutes
@@ -335,10 +339,7 @@ export function computeAutoSchedulePlan({
     let bestSlot: { start: Date; end: Date; courtId: number } | null = null;
     for (const courtId of candidateCourts) {
       const baseStart = nextStartByCourt.get(courtId) ?? windowStart;
-      let candidate = roundUpToSlot(
-        new Date(Math.max(baseStart.getTime(), windowStart.getTime())),
-        slotMinutes,
-      );
+      let candidate = roundUpToSlot(new Date(Math.max(baseStart.getTime(), windowStart.getTime())), slotMinutes);
 
       while (candidate.getTime() + matchDurationMs <= windowEnd.getTime()) {
         const end = new Date(candidate.getTime() + matchDurationMs);
@@ -372,5 +373,11 @@ export function computeAutoSchedulePlan({
     nextStartByCourt.set(bestSlot.courtId, nextStart);
   }
 
-  return { scheduled, skipped };
+  const unscheduledByReason = skipped.reduce<Record<string, number>>((acc, item) => {
+    const reason = item.reason?.trim() || "UNKNOWN";
+    acc[reason] = (acc[reason] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return { scheduled, skipped, unscheduledByReason };
 }

@@ -5,12 +5,16 @@ import { POST as postOrgLeave } from "@/lib/messages/handlers/chat/conversations
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 
-export async function POST(req: NextRequest, context: { params: { conversationId: string } }) {
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ conversationId: string }> | { conversationId: string } },
+) {
   const mobileGate = enforceB2CMobileOnly(req);
   if (mobileGate) return mobileGate;
   const scope = getMessagesScope(req);
   if (scope === "b2c") {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
-  return postOrgLeave(req, context);
+  const params = await context.params;
+  return postOrgLeave(req, { params });
 }

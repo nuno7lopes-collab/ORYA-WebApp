@@ -193,7 +193,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     return today;
   });
 
-  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
@@ -211,6 +211,11 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const serviceRequestController = useRef<AbortController | null>(null);
   const padelRequestController = useRef<AbortController | null>(null);
   const [hydratedFromParams, setHydratedFromParams] = useState(false);
+
+  useEffect(() => {
+    if (!initialWorld) return;
+    setWorld(initialWorld);
+  }, [initialWorld]);
 
   // City via geolocation (opcional)
   // Geolocation desativada para evitar preencher com valores inválidos
@@ -557,7 +562,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     </>
   );
 
-  async function fetchItems(opts?: { append?: boolean; cursor?: number | null }) {
+  async function fetchItems(opts?: { append?: boolean; cursor?: string | null }) {
     const append = opts?.append ?? false;
     const cursorToUse = opts?.cursor ?? null;
 
@@ -1111,7 +1116,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const activeLoading = isReservasWorld ? serviceLoading : isPadelWorld ? padelLoading : loading;
   const activeHasMore = isReservasWorld ? serviceHasMore : isPadelWorld ? false : hasMore;
   const activeIsLoadingMore = isReservasWorld ? serviceLoadingMore : isPadelWorld ? false : isLoadingMore;
-  const activeNextCursor = isReservasWorld ? serviceNextCursor : isPadelWorld ? null : nextCursor;
   const emptyStateSuggestions = useMemo(() => {
     const suggestions: Array<{ key: string; label: string; apply: () => void }> = [];
 
@@ -1166,7 +1170,10 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       suggestions.push({
         key: "world-eventos",
         label: "Experimentar mundo Eventos",
-        apply: () => setWorld("EVENTOS"),
+        apply: () => {
+          setWorld("EVENTOS");
+          router.push(WORLD_HREFS.EVENTOS);
+        },
       });
     }
 
@@ -1180,6 +1187,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     priceMin,
     search,
     world,
+    router,
   ]);
 
   return (
@@ -1200,6 +1208,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   <Link
                     key={opt.value}
                     href={WORLD_HREFS[opt.value]}
+                    onClick={() => setWorld(opt.value)}
                       className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-[11px] md:text-[12px] font-semibold transition ${
                         isActive
                           ? "bg-white text-black shadow-[0_0_18px_rgba(255,255,255,0.35)]"
@@ -1655,8 +1664,8 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
                   type="button"
                   onClick={() =>
                     isReservasWorld
-                      ? fetchServices({ append: true, cursor: activeNextCursor })
-                      : fetchItems({ append: true, cursor: activeNextCursor })
+                      ? fetchServices({ append: true, cursor: serviceNextCursor })
+                      : fetchItems({ append: true, cursor: nextCursor })
                   }
                   disabled={activeIsLoadingMore}
                   className="px-5 py-2 rounded-full bg-white/5 border border-white/20 text-xs text-white/80 hover:bg-white/10 disabled:opacity-60"

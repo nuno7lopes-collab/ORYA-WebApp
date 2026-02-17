@@ -1,7 +1,7 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens, type PublicEventCard, useTranslation } from "@orya/shared";
@@ -15,6 +15,7 @@ type DiscoverGridCardProps = {
   offer: DiscoverOfferCard;
   size?: number;
   height?: number;
+  layout?: "grid" | "row";
   source?: string;
   style?: StyleProp<ViewStyle>;
 };
@@ -67,7 +68,7 @@ const formatServicePrice = (service: DiscoverServiceCard, t: (key: string, optio
 
 const resolveFallbackIcon = (event: PublicEventCard | null, service: DiscoverServiceCard | null) => {
   if (service?.kind === "COURT") return "tennisball";
-  if (service?.kind === "CLASS") return "briefcase";
+  if (service) return "briefcase";
   if (event?.tournament) return "trophy";
   if ((event?.categories ?? []).includes("PADEL")) return "tennisball";
   return "calendar";
@@ -118,10 +119,12 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
   offer,
   size = 110,
   height,
+  layout = "grid",
   source = "discover",
   style,
 }: DiscoverGridCardProps) {
   const { t } = useTranslation();
+  const router = useRouter();
   const isService = offer.type === "service";
   const event = !isService ? offer.event : null;
   const service = isService ? offer.service : null;
@@ -226,23 +229,55 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           },
     [eventPreviewParams, isService, servicePreviewParams],
   );
+  const handlePress = useCallback(() => {
+    router.push(linkHref as any);
+  }, [linkHref, router]);
 
   const accessibilityLabel = event?.title ?? service?.title ?? t("discover:offer");
-  const cardHeight = Math.max(height ?? size, size);
-  const compact = size <= 136;
-  const cozy = size > 136 && size < 180;
+  const safeSize =
+    Number.isFinite(size) && size > 0 ? size : 160;
+  const safeHeight =
+    typeof height === "number" && Number.isFinite(height) && height > 0
+      ? height
+      : safeSize;
+  const cardHeight = Math.max(safeHeight, 96);
+  const isRowLayout = layout === "row";
+  const compact = safeSize <= 136;
+  const cozy = safeSize > 136 && safeSize < 180;
   const typeBadgeMaxWidth = compact ? "68%" : cozy ? "64%" : "60%";
   const priceBadgeMaxWidth = compact ? "60%" : cozy ? "56%" : "52%";
   const titleLines = compact ? 2 : 3;
+  const rowMetaLabel = useMemo(() => {
+    if (service) {
+      const organizationLabel =
+        service.organization.publicName ||
+        service.organization.businessName ||
+        "ORYA";
+      const instructorLabel =
+        service.instructor?.fullName || service.instructor?.username || "";
+      if (instructorLabel) {
+        const combined = `${organizationLabel} · ${instructorLabel}`;
+        if (metaLabel?.toLowerCase() === combined.toLowerCase()) return null;
+        return combined;
+      }
+      if (metaLabel?.toLowerCase() === organizationLabel.toLowerCase()) {
+        return null;
+      }
+      return organizationLabel;
+    }
+    return null;
+  }, [metaLabel, service]);
 
-  return (
-    <Link href={linkHref} asChild push>
+  if (isRowLayout) {
+    return (
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
+        onPress={handlePress}
         style={({ pressed }) => [
           styles.card,
-          { width: size, height: cardHeight },
+          styles.rowCard,
+          { width: safeSize, height: cardHeight },
           style,
           pressed ? styles.cardPressed : null,
         ]}
@@ -265,59 +300,147 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           />
         )}
         <LinearGradient
-          colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.72)"]}
+          colors={["rgba(0,0,0,0.2)", "rgba(0,0,0,0.82)"]}
           start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
+          end={{ x: 1, y: 1 }}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
         {!hasCover ? (
-          <View style={styles.fallbackContent} pointerEvents="none">
+          <View style={styles.rowFallbackIcon} pointerEvents="none">
             <Ionicons
               name={resolveFallbackIcon(event, service)}
-              size={compact ? 20 : 24}
+              size={18}
               color="rgba(240,246,255,0.85)"
             />
           </View>
         ) : null}
-        <View style={styles.badgeTop} pointerEvents="none">
-          <View style={{ maxWidth: typeBadgeMaxWidth }}>
+        <View style={styles.rowContent} pointerEvents="none">
+          <View style={styles.rowTop}>
             <Badge label={typeLabel} />
+            {priceLabel ? <Badge label={priceLabel} variant="price" /> : null}
           </View>
-        </View>
-        {priceLabel ? (
-          <View style={styles.badgeBottom} pointerEvents="none">
-            <View style={{ maxWidth: priceBadgeMaxWidth }}>
-              <Badge label={priceLabel} variant="price" />
-            </View>
-          </View>
-        ) : null}
-        <View
-          style={[
-            styles.bottomContent,
-            compact ? styles.bottomContentCompact : cozy ? styles.bottomContentCozy : null,
-          ]}
-          pointerEvents="none"
-        >
-          <Text
-            style={[styles.title, compact ? styles.titleCompact : cozy ? styles.titleCozy : styles.titleComfort]}
-            numberOfLines={titleLines}
-            allowFontScaling={false}
-          >
-            {fallbackTitle}
-          </Text>
-          {metaLabel ? (
+          <View style={styles.rowBody}>
             <Text
-              style={[styles.meta, compact ? styles.metaCompact : cozy ? styles.metaCozy : styles.metaComfort]}
-              numberOfLines={1}
+              style={styles.rowTitle}
+              numberOfLines={2}
               allowFontScaling={false}
             >
-              {metaLabel}
+              {fallbackTitle}
             </Text>
-          ) : null}
+            {metaLabel ? (
+              <Text
+                style={styles.rowMeta}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >
+                {metaLabel}
+              </Text>
+            ) : null}
+            {rowMetaLabel ? (
+              <Text
+                style={styles.rowSubMeta}
+                numberOfLines={1}
+                allowFontScaling={false}
+              >
+                {rowMetaLabel}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.rowChevron} pointerEvents="none">
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color="rgba(255,255,255,0.8)"
+          />
         </View>
       </Pressable>
-    </Link>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={handlePress}
+      style={({ pressed }) => [
+        styles.card,
+        { width: safeSize, height: cardHeight },
+        style,
+        pressed ? styles.cardPressed : null,
+      ]}
+    >
+      {hasCover ? (
+        <Image
+          source={{ uri: coverImage as string }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          transition={180}
+          cachePolicy="memory-disk"
+          onError={() => setCoverFailed(true)}
+        />
+      ) : (
+        <LinearGradient
+          colors={[fallbackTint, "rgba(7, 10, 18, 0.95)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.08)", "rgba(0,0,0,0.72)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {!hasCover ? (
+        <View style={styles.fallbackContent} pointerEvents="none">
+          <Ionicons
+            name={resolveFallbackIcon(event, service)}
+            size={compact ? 20 : 24}
+            color="rgba(240,246,255,0.85)"
+          />
+        </View>
+      ) : null}
+      <View style={styles.badgeTop} pointerEvents="none">
+        <View style={{ maxWidth: typeBadgeMaxWidth }}>
+          <Badge label={typeLabel} />
+        </View>
+      </View>
+      {priceLabel ? (
+        <View style={styles.badgeBottom} pointerEvents="none">
+          <View style={{ maxWidth: priceBadgeMaxWidth }}>
+            <Badge label={priceLabel} variant="price" />
+          </View>
+        </View>
+      ) : null}
+      <View
+        style={[
+          styles.bottomContent,
+          compact ? styles.bottomContentCompact : cozy ? styles.bottomContentCozy : null,
+        ]}
+        pointerEvents="none"
+      >
+        <Text
+          style={[styles.title, compact ? styles.titleCompact : cozy ? styles.titleCozy : styles.titleComfort]}
+          numberOfLines={titleLines}
+          allowFontScaling={false}
+        >
+          {fallbackTitle}
+        </Text>
+        {metaLabel ? (
+          <Text
+            style={[styles.meta, compact ? styles.metaCompact : cozy ? styles.metaCozy : styles.metaComfort]}
+            numberOfLines={1}
+            allowFontScaling={false}
+          >
+            {metaLabel}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
   );
 });
 
@@ -330,9 +453,15 @@ export const DiscoverGridCardSkeleton = memo(function DiscoverGridCardSkeleton({
   height?: number;
   style?: StyleProp<ViewStyle>;
 }) {
+  const safeSize =
+    Number.isFinite(size) && size > 0 ? size : 160;
+  const safeHeight =
+    typeof height === "number" && Number.isFinite(height) && height > 0
+      ? height
+      : safeSize;
   return (
-    <View style={[{ width: size }, style]}>
-      <GlassSkeleton height={height ?? size} />
+    <View style={[{ width: safeSize }, style]}>
+      <GlassSkeleton height={safeHeight} />
     </View>
   );
 });
@@ -349,6 +478,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.28,
     shadowRadius: 10,
     elevation: 3,
+  },
+  rowCard: {
+    borderRadius: 18,
   },
   cardPressed: {
     opacity: 0.92,
@@ -442,5 +574,66 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     paddingHorizontal: 10,
+  },
+  rowContent: {
+    flex: 1,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  rowTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  rowBody: {
+    gap: 3,
+    paddingRight: 18,
+  },
+  rowTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  rowMeta: {
+    color: "rgba(233, 244, 255, 0.82)",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  rowSubMeta: {
+    color: "rgba(224, 238, 255, 0.66)",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "500",
+  },
+  rowChevron: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(8, 12, 20, 0.35)",
+  },
+  rowFallbackIcon: {
+    position: "absolute",
+    right: 12,
+    top: 12,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(8,12,20,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

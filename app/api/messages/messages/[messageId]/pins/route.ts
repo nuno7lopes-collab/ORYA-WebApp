@@ -6,10 +6,18 @@ import {
   DELETE as deleteOrgPin,
 } from "@/lib/messages/handlers/chat/messages/[messageId]/pins/route";
 
-export async function POST(req: NextRequest, context: { params: { messageId: string } }) {
-  return postOrgPin(req, context);
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ messageId: string }> | { messageId: string } },
+) {
+  const params = await context.params;
+  return postOrgPin(req, { params });
 }
 
-export async function DELETE(req: NextRequest, context: { params: { messageId: string } }) {
-  return deleteOrgPin(req, context);
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ messageId: string }> | { messageId: string } },
+) {
+  const params = await context.params;
+  return deleteOrgPin(req, { params });
 }

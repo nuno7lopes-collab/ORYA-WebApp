@@ -104,29 +104,45 @@ export const acceptMessageInvite = async (
 };
 
 export const fetchMessageRequests = async (
+  currentUserId?: string | null,
   accessToken?: string | null,
 ): Promise<MessageRequestsResponse> => {
   const path = withB2CScope("/api/messages/grants");
   const url = new URL(path, "https://orya.local");
-  url.searchParams.set("kind", "USER_DM_REQUEST,ORG_CONTACT_REQUEST,SERVICE_REQUEST");
+  url.searchParams.set("kind", "USER_DM_REQUEST");
+  url.searchParams.set("status", "PENDING");
 
   const payload = await requestMessagesApi<{ items: Array<any> }>(
     `${url.pathname}?${url.searchParams.toString()}`,
     accessToken,
   );
 
+  const actionableItems = (payload.items ?? []).filter((item) => {
+    if (item?.kind !== "USER_DM_REQUEST") return false;
+    if (item?.status !== "PENDING") return false;
+
+    const requesterId =
+      typeof item?.requesterId === "string"
+        ? item.requesterId
+        : typeof item?.requester?.id === "string"
+          ? item.requester.id
+          : null;
+    const targetUserId = typeof item?.targetUserId === "string" ? item.targetUserId : null;
+    if (!requesterId || !targetUserId) return false;
+
+    if (typeof currentUserId === "string" && currentUserId.trim().length > 0) {
+      if (targetUserId !== currentUserId) return false;
+      if (requesterId === currentUserId) return false;
+    }
+
+    return Boolean(item?.requester);
+  });
+
   return {
-    items: (payload.items ?? []).map((item) => ({
+    items: actionableItems.map((item) => ({
       id: item.id,
       status: item.status,
-      contextType:
-        item.contextType === "USER_DM"
-          ? "USER_DM"
-          : item.kind === "ORG_CONTACT_REQUEST"
-            ? "ORG_CONTACT"
-            : item.kind === "SERVICE_REQUEST"
-              ? "SERVICE"
-              : item.contextType ?? "USER_DM",
+      contextType: "USER_DM",
       contextId: item.contextId ?? null,
       createdAt: item.createdAt,
       requester: item.requester,

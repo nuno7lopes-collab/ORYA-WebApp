@@ -273,6 +273,9 @@ export async function autoGeneratePadelMatches({
     seedRanks?: Record<string, unknown>;
     generationVersion?: string;
     scoreRules?: unknown;
+    nonStopRounds?: number | null;
+    rotationRounds?: number | null;
+    formatProfilesByCategory?: Record<string, unknown>;
   };
   const scoreRules = normalizePadelScoreRules(advanced.scoreRules);
 
@@ -403,6 +406,22 @@ export async function autoGeneratePadelMatches({
   ].join("|");
   const seedHash = crypto.createHash("sha256").update(seedSource).digest("hex");
   const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
+  const formatProfilesByCategory =
+    advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
+      ? (advanced.formatProfilesByCategory as Record<string, unknown>)
+      : null;
+  const categoryProfile =
+    formatProfilesByCategory &&
+    resolvedCategoryId &&
+    formatProfilesByCategory[String(resolvedCategoryId)] &&
+    typeof formatProfilesByCategory[String(resolvedCategoryId)] === "object"
+      ? (formatProfilesByCategory[String(resolvedCategoryId)] as Record<string, unknown>)
+      : formatProfilesByCategory &&
+          formatProfilesByCategory.global &&
+          typeof formatProfilesByCategory.global === "object"
+        ? (formatProfilesByCategory.global as Record<string, unknown>)
+        : null;
+  const amMxMode = categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective !== "KNOCKOUT") {
     const existingGroupMatch = await prisma.eventMatchSlot.findFirst({
@@ -1064,10 +1083,100 @@ export async function autoGeneratePadelMatches({
       formatEffective === "NON_STOP" || formatEffective === "AMERICANO" || formatEffective === "MEXICANO"
         ? "Ronda"
         : "Jornada";
-    const isIndividualRotationFormat = formatEffective === "AMERICANO" || formatEffective === "MEXICANO";
+    const isIndividualRotationFormat =
+      (formatEffective === "AMERICANO" || formatEffective === "MEXICANO") && amMxMode === "INDIVIDUAL_ROTATION";
     let matchIdx = 0;
 
-    if (isIndividualRotationFormat) {
+    if (formatEffective === "NON_STOP") {
+      const profileRoundsRaw =
+        typeof categoryProfile?.roundsHint === "number"
+          ? Number(categoryProfile.roundsHint)
+          : typeof advanced.nonStopRounds === "number"
+            ? Number(advanced.nonStopRounds)
+            : typeof advanced.rotationRounds === "number"
+              ? Number(advanced.rotationRounds)
+              : null;
+      const roundsCount =
+        profileRoundsRaw && Number.isFinite(profileRoundsRaw) && profileRoundsRaw > 0
+          ? Math.max(1, Math.floor(profileRoundsRaw))
+          : 6;
+      const totalTeams = drawPairingIds.length;
+      if (totalTeams % 2 !== 0) {
+        return { ok: false, error: "NON_STOP_REQUIRES_EVEN_TEAMS" };
+      }
+      const maxTeamsWithoutBench = courtsList.length * 2;
+      if (totalTeams > maxTeamsWithoutBench) {
+        return { ok: false, error: "NON_STOP_MAX_TEAMS_EXCEEDED" };
+      }
+      const activeCourtsCount = Math.min(courtsList.length, Math.floor(totalTeams / 2));
+      if (activeCourtsCount <= 0) {
+        return { ok: false, error: "NO_COURTS_AVAILABLE" };
+      }
+      const activeCourts = courtsList.slice(0, activeCourtsCount);
+      const buildKocFlow = (round: number, court: number) => {
+        if (round >= roundsCount) return null;
+        const nextRound = round + 1;
+        return {
+          nextWin: {
+            round: nextRound,
+            court: court === 1 ? 1 : court - 1,
+            side: court === 1 ? "A" : "B",
+          },
+          nextLose: {
+            round: nextRound,
+            court: court === activeCourtsCount ? activeCourtsCount : court + 1,
+            side: court === activeCourtsCount ? "B" : "A",
+          },
+        };
+      };
+
+      for (let roundIdx = 0; roundIdx < roundsCount; roundIdx += 1) {
+        for (let courtIdx = 0; courtIdx < activeCourts.length; courtIdx += 1) {
+          const round = roundIdx + 1;
+          const court = courtIdx + 1;
+          const courtSlot = activeCourts[courtIdx];
+          const flow = buildKocFlow(round, court);
+          const isFirstRound = roundIdx === 0;
+          const pairingAId = isFirstRound ? drawPairingIds[courtIdx * 2] ?? null : null;
+          const pairingBId = isFirstRound ? drawPairingIds[courtIdx * 2 + 1] ?? null : null;
+          if (isFirstRound && pairingAId == null && pairingBId == null) continue;
+
+          const byeNeutral = isFirstRound && (pairingAId == null || pairingBId == null);
+          matchCreateData.push({
+            eventId,
+            categoryId: resolvedCategoryId ?? null,
+            pairingAId,
+            pairingBId,
+            status: byeNeutral ? "OFFICIAL" : "PENDING",
+            roundType: "GROUPS",
+            roundLabel: `R${round}.C${court}`,
+            groupLabel: "NS",
+            courtId: courtSlot?.id ?? null,
+            courtNumber: courtSlot ? courtIdx + 1 : null,
+            courtName: courtSlot?.name || null,
+            score: {
+              mode: "TIMED_GAMES",
+              koc: {
+                round,
+                court,
+                ...(flow ?? {}),
+              },
+              ...(byeNeutral
+                ? {
+                    resultType: "BYE_NEUTRAL",
+                    gamesA: 0,
+                    gamesB: 0,
+                    endedByBuzzer: false,
+                    endedAt: new Date().toISOString(),
+                  }
+                : {}),
+            } as Prisma.InputJsonValue,
+            ...(byeNeutral ? { scoreSets: [] as Prisma.InputJsonValue, winnerPairingId: null } : {}),
+          });
+          matchIdx += 1;
+        }
+      }
+    } else if (isIndividualRotationFormat) {
       const rotationTag = `AUTO_ROTATION:${eventId}:${resolvedCategoryId ?? 0}:${formatEffective}`;
 
       let playerProfileIds = Array.from(
@@ -1145,8 +1254,10 @@ export async function autoGeneratePadelMatches({
 
       const advancedRecord = advanced as Record<string, unknown>;
       const roundsRaw =
-        typeof advancedRecord.rotationRounds === "number"
-          ? Number(advancedRecord.rotationRounds)
+        typeof categoryProfile?.roundsHint === "number"
+          ? Number(categoryProfile.roundsHint)
+          : typeof advancedRecord.rotationRounds === "number"
+            ? Number(advancedRecord.rotationRounds)
           : typeof advancedRecord.nonStopRounds === "number"
             ? Number(advancedRecord.nonStopRounds)
             : null;

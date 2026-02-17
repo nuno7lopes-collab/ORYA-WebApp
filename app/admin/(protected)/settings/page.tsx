@@ -26,6 +26,16 @@ type MfaStatusResponse =
       configMissing?: boolean;
     }
   | { ok: false; error?: string };
+type PadelAdminSettingsResponse =
+  | {
+      ok: true;
+      rankingWeights: {
+        NON_STOP: number;
+        AMERICANO: number;
+        MEXICANO: number;
+      };
+    }
+  | { ok: false; error?: string };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -53,6 +63,13 @@ export default function AdminSettingsPage() {
     fetcher,
     { revalidateOnFocus: false },
   );
+  const {
+    data: padelSettingsData,
+    isLoading: isPadelSettingsLoading,
+    mutate: mutatePadelSettings,
+  } = useSWR<PadelAdminSettingsResponse>("/api/admin/padel/settings", fetcher, {
+    revalidateOnFocus: false,
+  });
 
   const [platformPercent, setPlatformPercent] = useState("8.00");
   const [platformFixed, setPlatformFixed] = useState("0.30");
@@ -65,6 +82,12 @@ export default function AdminSettingsPage() {
   const [platformEmailSaving, setPlatformEmailSaving] = useState(false);
   const [platformEmailError, setPlatformEmailError] = useState<string | null>(null);
   const [platformEmailSuccess, setPlatformEmailSuccess] = useState<string | null>(null);
+  const [socialWeightNonStop, setSocialWeightNonStop] = useState("0.70");
+  const [socialWeightAmericano, setSocialWeightAmericano] = useState("0.70");
+  const [socialWeightMexicano, setSocialWeightMexicano] = useState("0.70");
+  const [padelSettingsSaving, setPadelSettingsSaving] = useState(false);
+  const [padelSettingsError, setPadelSettingsError] = useState<string | null>(null);
+  const [padelSettingsSuccess, setPadelSettingsSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     if (data && data.ok) {
@@ -80,6 +103,14 @@ export default function AdminSettingsPage() {
       setPlatformEmail(platformEmailData.email ?? "");
     }
   }, [platformEmailData]);
+
+  useEffect(() => {
+    if (padelSettingsData && padelSettingsData.ok) {
+      setSocialWeightNonStop((padelSettingsData.rankingWeights.NON_STOP ?? 0.7).toFixed(2));
+      setSocialWeightAmericano((padelSettingsData.rankingWeights.AMERICANO ?? 0.7).toFixed(2));
+      setSocialWeightMexicano((padelSettingsData.rankingWeights.MEXICANO ?? 0.7).toFixed(2));
+    }
+  }, [padelSettingsData]);
 
   const parsedPlatformBps = useMemo(
     () => Math.max(0, Math.round(Number(platformPercent || "0") * 100)),
@@ -160,6 +191,41 @@ export default function AdminSettingsPage() {
       setPlatformEmailError("Erro inesperado ao guardar.");
     } finally {
       setPlatformEmailSaving(false);
+    }
+  };
+
+  const handleSavePadelSettings = async () => {
+    setPadelSettingsError(null);
+    setPadelSettingsSuccess(null);
+    setPadelSettingsSaving(true);
+    try {
+      const payload = {
+        rankingWeights: {
+          NON_STOP: Number(socialWeightNonStop),
+          AMERICANO: Number(socialWeightAmericano),
+          MEXICANO: Number(socialWeightMexicano),
+        },
+      };
+      const res = await fetch("/api/admin/padel/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json().catch(() => null)) as PadelAdminSettingsResponse | null;
+      if (!res.ok || !json || !json.ok) {
+        const msg = json && "error" in json && typeof json.error === "string"
+          ? json.error
+          : "Não foi possível guardar os pesos de ranking.";
+        setPadelSettingsError(msg);
+        return;
+      }
+      setPadelSettingsSuccess("Pesos de ranking social guardados.");
+      await mutatePadelSettings();
+    } catch (err) {
+      console.error("Erro ao guardar settings de padel", err);
+      setPadelSettingsError("Erro inesperado ao guardar.");
+    } finally {
+      setPadelSettingsSaving(false);
     }
   };
 
@@ -380,6 +446,69 @@ export default function AdminSettingsPage() {
           {saveSuccess && <p className="mt-3 text-[11px] text-emerald-300">{saveSuccess}</p>}
           {saveError && <p className="mt-3 text-[11px] text-red-300">{saveError}</p>}
           {data && !data.ok && <p className="mt-3 text-[11px] text-red-300">Erro a carregar fees.</p>}
+        </div>
+
+        <div className="admin-card p-4">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Padel</p>
+              <h3 className="text-sm font-semibold text-white">Peso ranking por formato social</h3>
+              <p className="text-[12px] text-white/60">
+                Multiplicador adicional aplicado em NON_STOP, AMERICANO e MEXICANO.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleSavePadelSettings}
+              disabled={padelSettingsSaving || isPadelSettingsLoading}
+              className="admin-button px-3 py-1.5 text-sm disabled:opacity-60"
+            >
+              {padelSettingsSaving ? "A guardar…" : "Guardar pesos"}
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3 text-sm text-white/85 md:grid-cols-3">
+            <label className="flex items-center justify-between gap-3">
+              <span>NON_STOP</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="2"
+                value={socialWeightNonStop}
+                onChange={(e) => setSocialWeightNonStop(e.target.value)}
+                className="admin-input w-24 text-right"
+                disabled={isPadelSettingsLoading}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>AMERICANO</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="2"
+                value={socialWeightAmericano}
+                onChange={(e) => setSocialWeightAmericano(e.target.value)}
+                className="admin-input w-24 text-right"
+                disabled={isPadelSettingsLoading}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span>MEXICANO</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="2"
+                value={socialWeightMexicano}
+                onChange={(e) => setSocialWeightMexicano(e.target.value)}
+                className="admin-input w-24 text-right"
+                disabled={isPadelSettingsLoading}
+              />
+            </label>
+          </div>
+          {padelSettingsError && <p className="mt-3 text-[12px] text-red-200">{padelSettingsError}</p>}
+          {padelSettingsSuccess && <p className="mt-3 text-[12px] text-emerald-200">{padelSettingsSuccess}</p>}
         </div>
 
         <div className="admin-card p-4">

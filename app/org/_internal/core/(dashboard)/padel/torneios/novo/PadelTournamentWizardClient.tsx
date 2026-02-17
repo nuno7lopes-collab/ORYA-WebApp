@@ -606,6 +606,35 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             minRestMinutes: Number.isFinite(scheduleRest) ? Math.max(0, Math.round(scheduleRest)) : null,
             priority: schedulePriority,
           },
+          formatProfilesByCategory: selectedCategories.reduce<Record<string, Record<string, unknown>>>((acc, category) => {
+            const draft = categoryDrafts[category.id];
+            const formatValue = draft?.format || format;
+            acc[String(category.id)] = {
+              format: formatValue,
+              amMxMode:
+                formatValue === "AMERICANO" || formatValue === "MEXICANO" ? "INDIVIDUAL_ROTATION" : undefined,
+            };
+            return acc;
+          }, {}),
+          capacityPolicy: {
+            publishWarnOnly: true,
+            hardBlockGenerate: true,
+            hardBlockAutoSchedule: true,
+          },
+          categoryWeights: selectedCategories.reduce<Record<string, number>>((acc, category) => {
+            acc[String(category.id)] = 1;
+            return acc;
+          }, {}),
+          courtSelectionDefaults: {
+            useAllCourts,
+            courtIds: courtIdsPayload,
+          },
+          courtPriorityOrder: (resolvedCourts.length > 0 ? resolvedCourts : activeCourts).map((court) => court.id),
+          rankingWeights: {
+            NON_STOP: 0.7,
+            AMERICANO: 0.7,
+            MEXICANO: 0.7,
+          },
           courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
         },
       },

@@ -29,11 +29,15 @@ export const useMessageInvites = (
     refetchOnWindowFocus: false,
   });
 
-export const useMessageRequests = (enabled = true, accessToken?: string | null) =>
+export const useMessageRequests = (
+  enabled = true,
+  accessToken?: string | null,
+  currentUserId?: string | null,
+) =>
   useQuery({
-    queryKey: ["messages", "requests", accessToken ?? "anon"],
-    queryFn: () => fetchMessageRequests(accessToken),
-    enabled: enabled && Boolean(accessToken),
+    queryKey: ["messages", "requests", accessToken ?? "anon", currentUserId ?? "anon"],
+    queryFn: () => fetchMessageRequests(currentUserId, accessToken),
+    enabled: enabled && Boolean(accessToken) && Boolean(currentUserId),
     retry: false,
     staleTime: 1000 * 60,
     refetchOnWindowFocus: false,
