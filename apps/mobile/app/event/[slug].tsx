@@ -46,6 +46,12 @@ import {
   usePadelMatches,
   usePadelStandings,
 } from "../../features/tournaments/hooks";
+import {
+  resolveRegistrationBlockReason,
+  resolveRegistrationPrimaryCtaLabel,
+  shouldShowMyPairingSection,
+  shouldShowOpenPairingsSection,
+} from "../../features/tournaments/uxState";
 import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyCTA } from "../../components/events/StickyCTA";
@@ -54,11 +60,6 @@ import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { resolveMediaUri } from "../../lib/media";
 import { trackEvent } from "../../lib/analytics";
-import { acceptMessageInvite } from "../../features/messages/api";
-import {
-  useMessageInvites,
-  useMessagesInbox,
-} from "../../features/messages/hooks";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
@@ -131,11 +132,9 @@ const resolveAccessBadge = (
   t: (key: string) => string,
 ) => {
   const normalized = mode?.toUpperCase();
-  if (normalized === "PUBLIC")
-    return { label: t("events:access.public"), variant: "accent" as const };
-  if (normalized === "INVITE_ONLY")
+  if (normalized === "INVITE_ONLY" || normalized === "UNLISTED")
     return { label: t("events:access.invite"), variant: "muted" as const };
-  return { label: t("events:access.unlisted"), variant: "muted" as const };
+  return { label: t("events:access.public"), variant: "accent" as const };
 };
 
 const resolvePadelRegistrationLabel = (
@@ -401,7 +400,6 @@ export default function EventDetail() {
   const [inviteContact, setInviteContact] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
   const [pairingActionBusy, setPairingActionBusy] = useState(false);
-  const [inviteAccepting, setInviteAccepting] = useState(false);
 
   const triggerLightHaptic = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
@@ -821,7 +819,10 @@ export default function EventDetail() {
     ? t("events:detail.ctaJoin")
     : t("events:detail.ctaBuy");
 
-  const cover = resolveMediaUri(data?.coverImageUrl ?? null);
+  const fallbackCover = data?.slug
+    ? `https://picsum.photos/seed/orya-event-${encodeURIComponent(data.slug)}/1600/900`
+    : null;
+  const cover = resolveMediaUri(data?.coverImageUrl ?? fallbackCover ?? null);
   const category = data?.categories?.[0] ?? null;
   const date = formatDateRange(data?.startsAt, data?.endsAt);
   const location =
@@ -900,26 +901,6 @@ export default function EventDetail() {
     return null;
   }, [data, location, t]);
 
-  const inboxQuery = useMessagesInbox(Boolean(session?.user?.id), accessToken);
-  const inviteQuery = useMessageInvites(
-    data?.id ?? null,
-    Boolean(session?.user?.id && data?.id),
-    accessToken,
-  );
-
-  const eventChatThread = useMemo(() => {
-    const eventId = data?.id ?? null;
-    if (!eventId) return null;
-    return (
-      inboxQuery.data?.items?.find(
-        (item) =>
-          item.kind === "EVENT" &&
-          item.event?.id === eventId &&
-          item.conversationId,
-      ) ?? null
-    );
-  }, [data?.id, inboxQuery.data?.items]);
-
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
   const openPairingsQuery = useOpenPairings(
@@ -945,49 +926,43 @@ export default function EventDetail() {
     liveEnabled,
   );
 
-  const chatStatusLabel = useMemo(() => {
-    const status = eventChatThread?.status;
-    if (status === "OPEN") return t("messages:status.open");
-    if (status === "ANNOUNCEMENTS") return t("messages:status.announcements");
-    if (status === "READ_ONLY") return t("messages:status.readOnly");
-    if (status === "CLOSED") return t("messages:status.closed");
-    return t("messages:thread.unavailable");
-  }, [eventChatThread?.status, t]);
-
-  const pendingInvite = inviteQuery.data?.items?.[0] ?? null;
-
-  const handleAcceptChatInvite = async () => {
-    triggerLightHaptic();
-    if (!pendingInvite || inviteAccepting) return;
-    setInviteAccepting(true);
-    try {
-      const result = await acceptMessageInvite(pendingInvite.id, accessToken);
-      await Promise.all([inboxQuery.refetch(), inviteQuery.refetch()]);
-      const conversationId =
-        result?.conversationId ?? pendingInvite.conversationId ?? null;
-      if (conversationId && data?.id) {
-        router.push({
-          pathname: "/messages/[threadId]",
-          params: {
-            threadId: conversationId,
-            eventId: String(data.id),
-            title: data.title ?? "",
-            coverImageUrl: cover ?? "",
-            startsAt: data.startsAt ?? "",
-            endsAt: data.endsAt ?? "",
-            slug: data.slug ?? "",
-          },
-        });
-      }
-    } catch (err) {
-      Alert.alert(
-        t("events:detail.chatTitle"),
-        getUserFacingError(err, t("events:invite.acceptChatFailed")),
-      );
-    } finally {
-      setInviteAccepting(false);
-    }
-  };
+  const openPairings = openPairingsQuery.data ?? [];
+  const myPairings = myPairingsQuery.data ?? [];
+  const showOpenPairingsCard = shouldShowOpenPairingsSection(
+    openPairingsQuery.isLoading,
+    openPairings.length,
+  );
+  const showMyPairingCard = shouldShowMyPairingSection(
+    Boolean(session?.user?.id),
+    myPairingsQuery.isLoading,
+    myPairings.length,
+  );
+  const registrationBlockReason = resolveRegistrationBlockReason({
+    registrationOpen,
+    hasCategory: Boolean(activeCategoryId),
+    joinMode,
+    inviteContact,
+    pairingBusy,
+    padelActionsDisabled,
+  });
+  const canSubmitRegistration = registrationBlockReason === null;
+  const registrationPrimaryLabel = resolveRegistrationPrimaryCtaLabel(paymentMode);
+  const registrationPrimaryText =
+    registrationPrimaryLabel === "CREATE_AND_CONTINUE"
+      ? t("events:padel.ctaCreatePairingContinue")
+      : t("events:padel.ctaCreatePairingPay");
+  const registrationHint =
+    registrationBlockReason === "MISSING_CATEGORY"
+      ? t("events:padel.categoryRequired")
+      : registrationBlockReason === "REGISTRATION_CLOSED"
+        ? registrationMessage
+        : registrationBlockReason === "MISSING_INVITE_CONTACT"
+          ? t("events:padel.partnerRequired")
+          : registrationBlockReason === "BUSY"
+            ? t("events:padel.creatingPairing")
+            : registrationBlockReason === "POLICY_LOCKED"
+              ? t("events:padel.completeProfileToAccept")
+              : t("events:padel.registrationReadyHint");
 
   const handleShare = async () => {
     triggerLightHaptic();
@@ -1065,13 +1040,21 @@ export default function EventDetail() {
         myPairingsQuery.refetch(),
         openPairingsQuery.refetch(),
       ]);
+      const createdPairingId =
+        typeof result?.pairing?.id === "number" ? result.pairing.id : null;
+      if (createdPairingId && !result.waitlist) {
+        await handlePayPairing({
+          id: createdPairingId,
+          categoryId: activeCategoryId,
+        });
+      }
     } catch (err: any) {
       if (err?.message?.includes("PADEL_ONBOARDING_REQUIRED")) {
         Alert.alert(
           t("events:padel.onboardingRequiredTitle"),
           t("events:padel.onboardingRequiredBody"),
         );
-        router.push("/onboarding");
+        router.push("/(tabs)/profile");
         return;
       }
       Alert.alert(
@@ -1157,10 +1140,10 @@ export default function EventDetail() {
     }
   };
 
-  const handlePayPairing = async (pairing: {
+  async function handlePayPairing(pairing: {
     id: number;
     categoryId?: number | null;
-  }) => {
+  }) {
     triggerLightHaptic();
     if (!data) return;
     if (!session?.user?.id) {
@@ -1246,7 +1229,7 @@ export default function EventDetail() {
     } finally {
       setPairingActionBusy(false);
     }
-  };
+  }
   const heroTranslate = scrollY.interpolate({
     inputRange: [0, 220],
     outputRange: [0, -24],
@@ -1924,96 +1907,6 @@ export default function EventDetail() {
                   </GlassCard>
                 ) : null}
 
-                <GlassCard intensity={58}>
-                  <View className="gap-3">
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-white text-sm font-semibold">
-                        {t("events:detail.chatTitle")}
-                      </Text>
-                      <Text className="text-white/60 text-xs">
-                        {chatStatusLabel}
-                      </Text>
-                    </View>
-                    {!session?.user?.id ? (
-                      <View className="gap-2">
-                        <Text className="text-white/65 text-sm">
-                          {t("events:detail.chatSigninBody")}
-                        </Text>
-                        <Pressable
-                          onPress={openAuth}
-                          className="self-start rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                          style={{ minHeight: tokens.layout.touchTarget }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("common:actions.signIn")}
-                        >
-                          <Text className="text-white text-xs font-semibold">
-                            {t("common:actions.signIn")}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    ) : inboxQuery.isLoading || inviteQuery.isLoading ? (
-                      <Text className="text-white/60 text-sm">
-                        {t("events:detail.chatLoading")}
-                      </Text>
-                    ) : eventChatThread ? (
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname: "/messages/[threadId]",
-                            params: {
-                              threadId: eventChatThread.conversationId ?? "",
-                              eventId: String(data?.id ?? ""),
-                              title: data?.title ?? "",
-                              coverImageUrl: cover ?? "",
-                              startsAt: data?.startsAt ?? "",
-                              endsAt: data?.endsAt ?? "",
-                              slug: data?.slug ?? "",
-                            },
-                          })
-                        }
-                        className="rounded-2xl bg-white/90 px-4 py-3"
-                        style={{ minHeight: tokens.layout.touchTarget }}
-                        accessibilityRole="button"
-                        accessibilityLabel={t("events:detail.chatOpen")}
-                      >
-                        <Text
-                          className="text-center text-sm font-semibold"
-                          style={{ color: "#0b101a" }}
-                        >
-                          {t("events:detail.chatOpen")}
-                        </Text>
-                      </Pressable>
-                    ) : pendingInvite ? (
-                      <View className="gap-2">
-                        <Text className="text-white/70 text-sm">
-                          {t("events:invite.chatPending")}
-                        </Text>
-                        <Pressable
-                          onPress={handleAcceptChatInvite}
-                          disabled={inviteAccepting}
-                          className="rounded-2xl bg-white/90 px-4 py-3 disabled:opacity-60"
-                          style={{ minHeight: tokens.layout.touchTarget }}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("events:invite.accept")}
-                        >
-                          <Text
-                            className="text-center text-sm font-semibold"
-                            style={{ color: "#0b101a" }}
-                          >
-                            {inviteAccepting
-                              ? t("events:invite.accepting")
-                              : t("events:invite.accept")}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    ) : inboxQuery.isError || !eventChatThread ? (
-                      <Text className="text-white/60 text-sm">
-                        {t("messages:thread.errors.participantsOnly")}
-                      </Text>
-                    ) : null}
-                  </View>
-                </GlassCard>
-
                 {isInviteOnly ? (
                   <GlassCard intensity={52}>
                     <View className="gap-3">
@@ -2223,6 +2116,9 @@ export default function EventDetail() {
                           <Text className="text-white text-sm font-semibold">
                             {t("events:padel.categoriesTitle")}
                           </Text>
+                          <Text className="text-white/60 text-xs">
+                            {t("events:padel.categoriesHelp")}
+                          </Text>
                           {visiblePadelCategories.map((category) => {
                             const isSelected = category.id === activeCategoryId;
                             const disabled = !category.isEnabled;
@@ -2259,9 +2155,17 @@ export default function EventDetail() {
                                 <View className="flex-row items-center justify-between">
                                   <View className="flex-1 pr-4">
                                     {category.label ? (
-                                      <Text className="text-white text-sm font-semibold">
-                                        {category.label}
-                                      </Text>
+                                      <View className="flex-row items-center gap-2">
+                                        <Text className="text-white text-sm font-semibold">
+                                          {category.label}
+                                        </Text>
+                                        {isSelected ? (
+                                          <GlassPill
+                                            label={t("events:padel.categorySelected")}
+                                            variant="accent"
+                                          />
+                                        ) : null}
+                                      </View>
                                     ) : null}
                                     {category.format ? (
                                       <Text className="text-white/60 text-xs mt-1">
@@ -2299,81 +2203,116 @@ export default function EventDetail() {
                     ) : null}
 
                     <GlassCard intensity={56}>
-                      <View className="gap-3">
+                      <View className="gap-4">
                         <Text className="text-white text-sm font-semibold">
                           {t("events:padel.registrationSection")}
                         </Text>
-                        <View className="flex-row flex-wrap gap-2">
-                          {(["FULL", "SPLIT"] as const).map((mode) => {
-                            const active = paymentMode === mode;
-                            return (
-                              <Pressable
-                                key={`mode-${mode}`}
-                                onPress={() => setPaymentMode(mode)}
-                                className={
-                                  active
-                                    ? "rounded-full bg-white/20 px-4 py-2"
-                                    : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
-                                }
-                                style={{ minHeight: tokens.layout.touchTarget }}
-                                accessibilityRole="button"
-                                accessibilityLabel={
-                                  resolvePadelPaymentModeLabel(mode, t) ??
-                                  undefined
-                                }
-                                accessibilityState={{ selected: active }}
-                              >
-                                <Text
-                                  className={
-                                    active
-                                      ? "text-white text-xs font-semibold"
-                                      : "text-white/70 text-xs"
-                                  }
-                                >
-                                  {resolvePadelPaymentModeLabel(mode, t)}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
+                        <View className="gap-2">
+                          <View className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                            <Text className="text-white/70 text-[11px] uppercase tracking-[0.12em]">
+                              {t("events:padel.registrationFlow.step1Title")}
+                            </Text>
+                            <Text className="text-white text-sm font-semibold mt-1">
+                              {selectedPadelCategory
+                                ? t("events:padel.registrationFlow.step1Ready", {
+                                    category: selectedPadelCategory.label ?? "",
+                                  }).trim()
+                                : t("events:padel.registrationFlow.step1Missing")}
+                            </Text>
+                          </View>
+                          <View className="rounded-2xl border border-sky-300/35 bg-sky-400/15 px-3 py-3">
+                            <Text className="text-sky-100/80 text-[11px] uppercase tracking-[0.12em]">
+                              {t("events:padel.registrationFlow.step2Title")}
+                            </Text>
+                            <Text className="text-sky-100 text-sm font-semibold mt-1">
+                              {t("events:padel.registrationFlow.step2Subtitle")}
+                            </Text>
+                          </View>
                         </View>
-                        <View className="flex-row flex-wrap gap-2">
-                          {(
-                            [
-                              { key: "INVITE_PARTNER" },
-                              { key: "LOOKING_FOR_PARTNER" },
-                            ] as const
-                          ).map((option) => {
-                            const active = joinMode === option.key;
-                            const label =
-                              option.key === "INVITE_PARTNER"
-                                ? t("events:padel.join.invitePartner")
-                                : t("events:padel.join.openPair");
-                            return (
-                              <Pressable
-                                key={option.key}
-                                onPress={() => setJoinMode(option.key)}
-                                className={
-                                  active
-                                    ? "rounded-full bg-white/20 px-4 py-2"
-                                    : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
-                                }
-                                style={{ minHeight: tokens.layout.touchTarget }}
-                                accessibilityRole="button"
-                                accessibilityLabel={label}
-                                accessibilityState={{ selected: active }}
-                              >
-                                <Text
+                        <Text className="text-white/65 text-xs leading-5">
+                          {t("events:padel.registrationFlow.helper")}
+                        </Text>
+                        <View className="gap-2">
+                          <Text className="text-white/65 text-[11px] uppercase tracking-[0.12em]">
+                            {t("events:padel.paymentModeTitle")}
+                          </Text>
+                          <View className="flex-row flex-wrap gap-2">
+                            {(["FULL", "SPLIT"] as const).map((mode) => {
+                              const active = paymentMode === mode;
+                              return (
+                                <Pressable
+                                  key={`mode-${mode}`}
+                                  onPress={() => setPaymentMode(mode)}
                                   className={
                                     active
-                                      ? "text-white text-xs font-semibold"
-                                      : "text-white/70 text-xs"
+                                      ? "rounded-full bg-white/20 px-4 py-2"
+                                      : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
                                   }
+                                  style={{ minHeight: tokens.layout.touchTarget }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={
+                                    resolvePadelPaymentModeLabel(mode, t) ??
+                                    undefined
+                                  }
+                                  accessibilityState={{ selected: active }}
                                 >
-                                  {label}
-                                </Text>
-                              </Pressable>
-                            );
-                          })}
+                                  <Text
+                                    className={
+                                      active
+                                        ? "text-white text-xs font-semibold"
+                                        : "text-white/70 text-xs"
+                                    }
+                                  >
+                                    {resolvePadelPaymentModeLabel(mode, t)}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                        <View className="gap-2">
+                          <Text className="text-white/65 text-[11px] uppercase tracking-[0.12em]">
+                            {t("events:padel.joinModeTitle")}
+                          </Text>
+                          <View className="flex-row flex-wrap gap-2">
+                            {(
+                              [
+                                { key: "INVITE_PARTNER" },
+                                { key: "LOOKING_FOR_PARTNER" },
+                              ] as const
+                            ).map((option) => {
+                              const active = joinMode === option.key;
+                              const label =
+                                option.key === "INVITE_PARTNER"
+                                  ? t("events:padel.join.invitePartner")
+                                  : t("events:padel.join.openPair");
+                              return (
+                                <Pressable
+                                  key={option.key}
+                                  onPress={() => setJoinMode(option.key)}
+                                  className={
+                                    active
+                                      ? "rounded-full bg-white/20 px-4 py-2"
+                                      : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                                  }
+                                  style={{ minHeight: tokens.layout.touchTarget }}
+                                  accessibilityRole="button"
+                                  accessibilityLabel={label}
+                                  accessibilityState={{ selected: active }}
+                                >
+                                  <Text
+                                    className={
+                                      active
+                                        ? "text-white text-xs font-semibold"
+                                        : "text-white/70 text-xs"
+                                    }
+                                  >
+                                    {label}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
                         </View>
                         {joinMode === "INVITE_PARTNER" ? (
                           <TextInput
@@ -2405,138 +2344,68 @@ export default function EventDetail() {
                         ) : (
                           <Pressable
                             onPress={handleCreatePairing}
-                            disabled={padelActionsDisabled || pairingBusy}
+                            disabled={!canSubmitRegistration}
                             className={
-                              padelActionsDisabled
+                              !canSubmitRegistration
                                 ? "rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                                : "rounded-2xl bg-white/90 px-4 py-3"
+                                : "rounded-2xl border border-sky-200/40 bg-sky-100 px-4 py-3"
                             }
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
                             accessibilityLabel={t("events:padel.createPairing")}
                             accessibilityState={{
-                              disabled: padelActionsDisabled || pairingBusy,
+                              disabled: !canSubmitRegistration,
                             }}
                           >
                             <Text
                               className={`text-center text-sm font-semibold ${
-                                padelActionsDisabled ? "text-white/50" : ""
+                                !canSubmitRegistration ? "text-white/50" : ""
                               }`}
                               style={
-                                padelActionsDisabled
+                                !canSubmitRegistration
                                   ? undefined
-                                  : { color: "#0b101a" }
+                                  : { color: "#082347" }
                               }
                             >
                               {pairingBusy
                                 ? t("events:padel.creatingPairing")
-                                : t("events:padel.createPairing")}
+                                : registrationPrimaryText}
                             </Text>
                           </Pressable>
                         )}
-                        {!registrationOpen ? (
-                          <Text className="text-white/60 text-xs">
-                            {registrationMessage}
-                          </Text>
-                        ) : null}
+                        <Text
+                          className={
+                            canSubmitRegistration
+                              ? "text-sky-100/80 text-xs"
+                              : "text-amber-200 text-xs"
+                          }
+                        >
+                          {registrationHint}
+                        </Text>
                       </View>
                     </GlassCard>
 
-                    <GlassCard intensity={54}>
-                      <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">
-                          {t("events:padel.openPairingsTitle")}
-                        </Text>
-                        {openPairingsQuery.isLoading ? (
-                          <Text className="text-white/60 text-sm">
-                            {t("events:padel.openPairingsLoading")}
+                    {showMyPairingCard ? (
+                      <GlassCard intensity={56}>
+                        <View className="gap-3">
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:padel.myPairingTitle")}
                           </Text>
-                        ) : (openPairingsQuery.data ?? []).length === 0 ? (
-                          <Text className="text-white/60 text-sm">
-                            {t("events:padel.openPairingsEmpty")}
-                          </Text>
-                        ) : (
-                          (openPairingsQuery.data ?? []).map((pairing) => (
-                            <View
-                              key={`open-${pairing.id}`}
-                              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                            >
-                              <View className="flex-row items-center justify-between">
-                                {pairing.category?.label ? (
-                                  <Text className="text-white text-sm font-semibold">
-                                    {pairing.category.label}
-                                  </Text>
-                                ) : null}
-                                <Text className="text-white/60 text-xs">
-                                  {t("events:padel.openSlots", {
-                                    count: pairing.openSlots ?? 0,
-                                  })}
-                                </Text>
-                              </View>
-                              <View className="flex-row items-center justify-between pt-2">
-                                {pairing.deadlineAt &&
-                                formatDateRange(pairing.deadlineAt) ? (
-                                  <Text className="text-white/55 text-xs">
-                                    {t("events:padel.deadline", {
-                                      date: formatDateRange(pairing.deadlineAt),
-                                    })}
-                                  </Text>
-                                ) : null}
-                                <Pressable
-                                  onPress={() =>
-                                    handleJoinOpenPairing(pairing.id)
-                                  }
-                                  disabled={padelActionsDisabled || pairingBusy}
-                                  className="rounded-full border border-white/15 bg-white/10 px-3 py-2"
-                                  style={{
-                                    minHeight: tokens.layout.touchTarget,
-                                  }}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t("common:actions.join")}
-                                  accessibilityState={{
-                                    disabled:
-                                      padelActionsDisabled || pairingBusy,
-                                  }}
-                                >
-                                  <Text className="text-white text-xs font-semibold">
-                                    {t("common:actions.join")}
-                                  </Text>
-                                </Pressable>
-                              </View>
-                            </View>
-                          ))
-                        )}
-                      </View>
-                    </GlassCard>
-
-                    <GlassCard intensity={56}>
-                      <View className="gap-3">
-                        <Text className="text-white text-sm font-semibold">
-                          {t("events:padel.myPairingTitle")}
-                        </Text>
-                        {!session?.user?.id ? (
-                          <Text className="text-white/65 text-sm">
-                            {t("events:padel.signInToViewPairings")}
-                          </Text>
-                        ) : myPairingsQuery.isLoading ? (
-                          <Text className="text-white/60 text-sm">
-                            {t("events:padel.myPairingLoading")}
-                          </Text>
-                        ) : (myPairingsQuery.data ?? []).length === 0 ? (
-                          <Text className="text-white/60 text-sm">
-                            {t("events:padel.myPairingEmpty")}
-                          </Text>
-                        ) : (
+                          {myPairingsQuery.isLoading ? (
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.myPairingLoading")}
+                            </Text>
+                          ) : (
                           (() => {
                             const pairingIdValue = pairingIdParam
                               ? Number(pairingIdParam)
                               : null;
                             const pairing =
                               (Number.isFinite(pairingIdValue)
-                                ? (myPairingsQuery.data ?? []).find(
+                                ? myPairings.find(
                                     (p) => p.id === pairingIdValue,
                                   )
-                                : null) ?? (myPairingsQuery.data ?? [])[0];
+                                : null) ?? myPairings[0];
                             const unpaidSlot = pairing.slots?.find(
                               (slot) => slot.paymentStatus !== "PAID",
                             );
@@ -2665,9 +2534,95 @@ export default function EventDetail() {
                               </View>
                             );
                           })()
-                        )}
-                      </View>
-                    </GlassCard>
+                          )}
+                        </View>
+                      </GlassCard>
+                    ) : null}
+
+                    {showOpenPairingsCard ? (
+                      <GlassCard intensity={54}>
+                        <View className="gap-3">
+                          <Text className="text-white text-sm font-semibold">
+                            {t("events:padel.openPairingsTitle")}
+                          </Text>
+                          <Text className="text-white/60 text-xs">
+                            {t("events:padel.openPairingsSubtitle")}
+                          </Text>
+                          {openPairingsQuery.isLoading ? (
+                            <Text className="text-white/60 text-sm">
+                              {t("events:padel.openPairingsLoading")}
+                            </Text>
+                          ) : (
+                            openPairings.map((pairing) => (
+                              <View
+                                key={`open-${pairing.id}`}
+                                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                              >
+                                <View className="flex-row items-center justify-between">
+                                  {pairing.category?.label ? (
+                                    <Text className="text-white text-sm font-semibold">
+                                      {pairing.category.label}
+                                    </Text>
+                                  ) : null}
+                                  <Text className="text-white/60 text-xs">
+                                    {t("events:padel.openSlots", {
+                                      count: pairing.openSlots ?? 0,
+                                    })}
+                                  </Text>
+                                </View>
+                                <View className="pt-2 gap-2">
+                                  {pairing.deadlineAt &&
+                                  formatDateRange(pairing.deadlineAt) ? (
+                                    <Text className="text-white/55 text-xs">
+                                      {t("events:padel.deadline", {
+                                        date: formatDateRange(pairing.deadlineAt),
+                                      })}
+                                    </Text>
+                                  ) : null}
+                                  {Array.isArray(pairing.seekingPlayers) &&
+                                  pairing.seekingPlayers.length > 0 ? (
+                                    <Text className="text-white/70 text-xs">
+                                      {pairing.seekingPlayers
+                                        .slice(0, 3)
+                                        .map((player) => {
+                                          const label =
+                                            player?.displayName ??
+                                            player?.username ??
+                                            "Jogador";
+                                          return player?.level
+                                            ? `${label} · ${player.level}`
+                                            : label;
+                                        })
+                                        .join(" · ")}
+                                    </Text>
+                                  ) : null}
+                                  <Pressable
+                                    onPress={() =>
+                                      handleJoinOpenPairing(pairing.id)
+                                    }
+                                    disabled={padelActionsDisabled || pairingBusy}
+                                    className="self-start rounded-full border border-white/15 bg-white/10 px-3 py-2"
+                                    style={{
+                                      minHeight: tokens.layout.touchTarget,
+                                    }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={t("common:actions.join")}
+                                    accessibilityState={{
+                                      disabled:
+                                        padelActionsDisabled || pairingBusy,
+                                    }}
+                                  >
+                                    <Text className="text-white text-xs font-semibold">
+                                      {t("common:actions.join")}
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                              </View>
+                            ))
+                          )}
+                        </View>
+                      </GlassCard>
+                    ) : null}
 
                     {liveEnabled ? (
                       <GlassCard intensity={54}>

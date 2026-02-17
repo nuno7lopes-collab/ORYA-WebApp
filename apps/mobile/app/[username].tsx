@@ -20,13 +20,15 @@ import { EventCardSquare, EventCardSquareSkeleton } from "../components/events/E
 import { useOrganizationFollowers, useUserFollowers, useUserFollowing } from "../features/network/followLists";
 import { FollowListModal } from "../components/profile/FollowListModal";
 import { ProfileHeader } from "../components/profile/ProfileHeader";
-import { normalizeUsernameInput } from "../lib/username";
+import { buildUsernameCandidates } from "../features/profile/usernameCandidates";
 import { trackCrmEngagement } from "../lib/crm";
 
 export default function PublicProfileScreen() {
   const params = useLocalSearchParams<{ username?: string }>();
   const rawUsername = typeof params.username === "string" ? params.username : "";
-  const username = normalizeUsernameInput(rawUsername);
+  const usernameCandidates = useMemo(() => buildUsernameCandidates(rawUsername), [rawUsername]);
+  const [usernameCandidateIndex, setUsernameCandidateIndex] = useState(0);
+  const username = usernameCandidates[usernameCandidateIndex] ?? "";
   const router = useRouter();
   const navigation = useNavigation();
   const { session } = useAuth();
@@ -54,6 +56,16 @@ export default function PublicProfileScreen() {
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
   const viewSentRef = useRef(false);
+
+  useEffect(() => {
+    setUsernameCandidateIndex(0);
+  }, [rawUsername]);
+
+  useEffect(() => {
+    if (!profileQuery.isError) return;
+    if (usernameCandidateIndex >= usernameCandidates.length - 1) return;
+    setUsernameCandidateIndex((prev) => prev + 1);
+  }, [profileQuery.isError, usernameCandidateIndex, usernameCandidates.length]);
 
   const isSelf = Boolean(data?.isSelf);
   const isLocked = Boolean(privacy?.isPrivate && !canView);

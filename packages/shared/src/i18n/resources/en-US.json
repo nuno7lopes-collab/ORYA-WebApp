@@ -127,6 +127,8 @@
     "email": {
       "title": "Sign in with email",
       "subtitle": "Use your email to continue on ORYA.",
+      "identifierLabel": "Email or username",
+      "identifierPlaceholder": "email@example.com or @username",
       "helper": "Confirm your email and check spam if needed.",
       "signIn": "Sign in",
       "signUp": "Create account",
@@ -141,6 +143,7 @@
       "linkSent": "Link sent. Confirm your email and sign in with your password.",
       "errors": {
         "invalidEmail": "Invalid email.",
+        "invalidIdentifier": "Enter a valid email or username.",
         "emptyPassword": "Enter your password.",
         "invalidCredentials": "Email or password is incorrect.",
         "emailNotConfirmed": "Confirm your email to continue.",
@@ -149,6 +152,7 @@
         "signupDisabled": "Sign-up is temporarily unavailable.",
         "invalidPassword": "Invalid password.",
         "passwordMin": "Password must be at least 6 characters.",
+        "rateLimited": "Too many attempts. Try again in a few minutes.",
         "unknown": "Couldn't sign in. Try again.",
         "resetFailed": "Couldn't send the reset email.",
         "resetSent": "We sent a password reset link.",
@@ -215,11 +219,15 @@
       "location": "Location",
       "locationPlaceholder": "Search for a location",
       "clearLocation": "Clear location",
+      "locationOptional": "Location (optional)",
+      "locationOptionalHint": "Use only if you want a custom manual area.",
       "distance": "Distance",
       "date": "Date",
       "price": "Price",
       "eventType": "Type",
       "nearbyDistance": "Near you · {distance}",
+      "appliedLocation": "In {location}",
+      "appliedDistance": "Up to {distance} km",
       "validating": "Validating address...",
       "locationCity": "Location: {city}",
       "searching": "Searching...",
@@ -594,7 +602,7 @@
     "access": {
       "public": "PUBLIC",
       "invite": "INVITE",
-      "unlisted": "UNLISTED"
+      "unlisted": "RESTRICTED"
     },
     "tickets": {
       "title": "Tickets",
@@ -672,12 +680,24 @@
       "statusLabel": "Status: {status}",
       "timelineTitle": "Timeline",
       "categoriesTitle": "Categories",
+      "categoriesHelp": "Pick the competitive category to unlock registration.",
       "categoryLabel": "Category {label}",
       "categorySelect": "Select category",
+      "categorySelected": "Selected",
       "capacityTeams": "{count, plural, one {# team} other {# teams}}",
       "capacityUnlimited": "No limit",
       "categoryUnavailable": "Unavailable",
       "registrationSection": "Registration",
+      "registrationFlow": {
+        "step1Title": "Step 1",
+        "step1Missing": "Select category",
+        "step1Ready": "Category {category}",
+        "step2Title": "Step 2",
+        "step2Subtitle": "Pairing setup + checkout",
+        "helper": "Set payment and partner mode. Once the pairing is created, checkout opens immediately."
+      },
+      "paymentModeTitle": "Payment mode",
+      "joinModeTitle": "How do you want to form your pair",
       "join": {
         "invitePartner": "Invite partner",
         "openPair": "Open pair"
@@ -719,13 +739,17 @@
       "waitlistBody": "You're on the waitlist.",
       "pairingCreatedTitle": "Pair created",
       "pairingCreatedBody": "Your pair was created successfully.",
+      "ctaCreatePairingPay": "Create pair and pay",
+      "ctaCreatePairingContinue": "Create pair and continue",
+      "registrationReadyHint": "All set. We will open checkout in the next step.",
       "onboardingRequiredTitle": "Complete your profile",
-      "onboardingRequiredBody": "Finish padel onboarding to continue.",
+      "onboardingRequiredBody": "Complete your padel profile to continue.",
       "pairingCreateFailed": "Couldn't create the pair.",
       "pairingTitle": "Pairs",
       "joinSuccess": "You're in. You'll receive confirmation soon.",
       "joinFailed": "Couldn't join the pair.",
       "invalidCategoryPayment": "Invalid category for payment.",
+      "openPairingsSubtitle": "Players and pairs with open slots and compatible competitive profile.",
       "payment": {
         "full": "Full payment",
         "split": "Split payment"
@@ -745,6 +769,7 @@
       "hub": {
         "title": "Padel Hub",
         "openLabel": "Open Padel Hub",
+        "discoverSubtitle": "Tournaments, rankings, and live matches.",
         "profileTitle": "Padel profile",
         "profileSubtitle": "Your competitive snapshot",
         "playerFallback": "Player",

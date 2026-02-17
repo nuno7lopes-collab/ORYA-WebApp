@@ -127,6 +127,8 @@
     "email": {
       "title": "Iniciar sesión con email",
       "subtitle": "Usa tu email para continuar en ORYA.",
+      "identifierLabel": "Email o usuario",
+      "identifierPlaceholder": "email@ejemplo.es o @usuario",
       "helper": "Confirma tu email y revisa el spam si es necesario.",
       "signIn": "Iniciar sesión",
       "signUp": "Crear cuenta",
@@ -141,6 +143,7 @@
       "linkSent": "Enlace enviado. Confirma tu email e inicia sesión con tu contraseña.",
       "errors": {
         "invalidEmail": "Email inválido.",
+        "invalidIdentifier": "Indica un email o usuario válido.",
         "emptyPassword": "Introduce la contraseña.",
         "invalidCredentials": "Email o contraseña incorrectos.",
         "emailNotConfirmed": "Confirma tu email para continuar.",
@@ -149,6 +152,7 @@
         "signupDisabled": "El registro no está disponible temporalmente.",
         "invalidPassword": "Contraseña inválida.",
         "passwordMin": "La contraseña debe tener al menos 6 caracteres.",
+        "rateLimited": "Demasiados intentos. Inténtalo de nuevo en unos minutos.",
         "unknown": "No se pudo iniciar sesión. Inténtalo de nuevo.",
         "resetFailed": "No se pudo enviar el email de recuperación.",
         "resetSent": "Enviamos un enlace para recuperar la contraseña.",
@@ -215,11 +219,15 @@
       "location": "Ubicación",
       "locationPlaceholder": "Busca una ubicación",
       "clearLocation": "Borrar ubicación",
+      "locationOptional": "Ubicación (opcional)",
+      "locationOptionalHint": "Úsala solo si quieres ajustar la zona manualmente.",
       "distance": "Distancia",
       "date": "Fecha",
       "price": "Precio",
       "eventType": "Tipo",
       "nearbyDistance": "Cerca de ti · {distance}",
+      "appliedLocation": "En {location}",
+      "appliedDistance": "Hasta {distance} km",
       "validating": "Validando dirección...",
       "locationCity": "Ubicación: {city}",
       "searching": "Buscando...",
@@ -594,7 +602,7 @@
     "access": {
       "public": "PÚBLICO",
       "invite": "INVITACIÓN",
-      "unlisted": "NO LISTADO"
+      "unlisted": "ACCESO RESERVADO"
     },
     "tickets": {
       "title": "Entradas",
@@ -672,12 +680,24 @@
       "statusLabel": "Estado: {status}",
       "timelineTitle": "Cronología",
       "categoriesTitle": "Categorías",
+      "categoriesHelp": "Elige la categoría competitiva para desbloquear la inscripción.",
       "categoryLabel": "Categoría {label}",
       "categorySelect": "Seleccionar categoría",
+      "categorySelected": "Seleccionada",
       "capacityTeams": "{count, plural, one {# equipo} other {# equipos}}",
       "capacityUnlimited": "Sin límite",
       "categoryUnavailable": "No disponible",
       "registrationSection": "Inscripción",
+      "registrationFlow": {
+        "step1Title": "Paso 1",
+        "step1Missing": "Seleccionar categoría",
+        "step1Ready": "Categoría {category}",
+        "step2Title": "Paso 2",
+        "step2Subtitle": "Configuración de pareja + checkout",
+        "helper": "Configura el pago y la pareja. Al crear la pareja, el checkout se abre de inmediato."
+      },
+      "paymentModeTitle": "Modalidad de pago",
+      "joinModeTitle": "Cómo quieres formar la pareja",
       "join": {
         "invitePartner": "Invitar pareja",
         "openPair": "Pareja abierta"
@@ -719,13 +739,17 @@
       "waitlistBody": "Estás en la lista de espera.",
       "pairingCreatedTitle": "Pareja creada",
       "pairingCreatedBody": "Tu pareja se creó correctamente.",
+      "ctaCreatePairingPay": "Crear pareja y pagar",
+      "ctaCreatePairingContinue": "Crear pareja y continuar",
+      "registrationReadyHint": "Todo listo. Abriremos checkout en el siguiente paso.",
       "onboardingRequiredTitle": "Completa tu perfil",
-      "onboardingRequiredBody": "Finaliza el onboarding de pádel para continuar.",
+      "onboardingRequiredBody": "Completa tu perfil de pádel para continuar.",
       "pairingCreateFailed": "No se pudo crear la pareja.",
       "pairingTitle": "Parejas",
       "joinSuccess": "Solicitud enviada. Recibirás confirmación pronto.",
       "joinFailed": "No se pudo unir.",
       "invalidCategoryPayment": "Categoría inválida para el pago.",
+      "openPairingsSubtitle": "Jugadores y parejas con plaza abierta y perfil competitivo compatible.",
       "payment": {
         "full": "Pago completo",
         "split": "Pago dividido"
@@ -745,6 +769,7 @@
       "hub": {
         "title": "Padel Hub",
         "openLabel": "Abrir Padel Hub",
+        "discoverSubtitle": "Torneos, rankings y partidos en directo.",
         "profileTitle": "Perfil de pádel",
         "profileSubtitle": "Tu resumen competitivo",
         "playerFallback": "Jugador",
