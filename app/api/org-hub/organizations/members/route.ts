@@ -36,9 +36,9 @@ function errorCodeForStatus(status: number) {
   if (status === 400) return "BAD_REQUEST";
   return "INTERNAL_ERROR";
 }
-async function _GET(req: NextRequest) {
-  const ctx = getRequestContext(req);
-  const fail = (
+
+function failFactory(ctx: ReturnType<typeof getRequestContext>) {
+  return (
     status: number,
     message: string,
     errorCode = errorCodeForStatus(status),
@@ -48,6 +48,11 @@ async function _GET(req: NextRequest) {
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
     return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
   };
+}
+
+async function _GET(req: NextRequest) {
+  const ctx = getRequestContext(req);
+  const fail = failFactory(ctx);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -88,7 +93,6 @@ async function _GET(req: NextRequest) {
 
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
 
-    // Qualquer membro pode consultar; ações ficam restritas por role
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
     if (!callerMembership) {
       return fail(403, "FORBIDDEN");
@@ -110,14 +114,14 @@ async function _GET(req: NextRequest) {
       : [];
     const userById = new Map(users.map((item) => [item.id, item]));
 
-    const items = visibleMembers.slice(0, limit).map((m) => {
-      const profile = userById.get(m.userId);
+    const items = visibleMembers.slice(0, limit).map((member) => {
+      const profile = userById.get(member.userId);
       return {
-        userId: m.userId,
-        role: m.role,
-        rolePack: m.rolePack,
+        userId: member.userId,
+        role: member.role,
+        rolePack: member.rolePack,
         invitedByUserId: null,
-        createdAt: m.createdAt,
+        createdAt: member.createdAt,
         fullName: profile?.fullName ?? null,
         username: profile?.username ?? null,
         avatarUrl: profile?.avatarUrl ?? null,
@@ -126,9 +130,7 @@ async function _GET(req: NextRequest) {
       };
     });
 
-    return respondOk(ctx, { items, viewerRole: callerMembership.role, organizationId },
-      { status: 200 },
-    );
+    return respondOk(ctx, { items, viewerRole: callerMembership.role, organizationId }, { status: 200 });
   } catch (err) {
     console.error("[organização/members][GET]", err);
     return fail(500, "INTERNAL_ERROR");
@@ -137,16 +139,7 @@ async function _GET(req: NextRequest) {
 
 async function _PATCH(req: NextRequest) {
   const ctx = getRequestContext(req);
-  const fail = (
-    status: number,
-    message: string,
-    errorCode = errorCodeForStatus(status),
-    retryable = status >= 500,
-  ) => {
-    const resolvedMessage = typeof message === "string" ? message : String(message);
-    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
-  };
+  const fail = failFactory(ctx);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -173,6 +166,7 @@ async function _PATCH(req: NextRequest) {
       }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
+
     const organizationId = orgResolution.organizationId;
     const targetUserId = typeof body?.userId === "string" ? body.userId : null;
     const role = typeof body?.role === "string" ? body.role.toUpperCase() : null;
@@ -186,12 +180,10 @@ async function _PATCH(req: NextRequest) {
     if (!organizationId || !targetUserId || !role) {
       return fail(400, "INVALID_PAYLOAD");
     }
-    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole)) {
+    if (!Object.values(OrganizationMemberRole).includes(role as OrganizationMemberRole) || role === "TRAINER") {
       return fail(400, "INVALID_ROLE");
     }
-    if (role === "TRAINER") {
-      return fail(400, "INVALID_ROLE");
-    }
+
     const rolePackPolicy = resolveRolePackForRole({
       role: role as OrganizationMemberRole,
       rolePackRaw,
@@ -211,7 +203,16 @@ async function _PATCH(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
@@ -220,21 +221,6 @@ async function _PATCH(req: NextRequest) {
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
 
-    const group = await prisma.organizationGroup.findUnique({
-      where: { id: callerMembership.groupId },
-      select: { ownerUserId: true },
-    });
-    if (!group) {
-      return fail(404, "GROUP_NOT_FOUND");
-    }
-
-    const group = await prisma.organizationGroup.findUnique({
-      where: { id: callerMembership.groupId },
-      select: { ownerUserId: true },
-    });
-    if (!group) {
-      return fail(404, "GROUP_NOT_FOUND");
-    }
     const staffAccess = await ensureMemberModuleAccess({
       organizationId,
       userId: user.id,
@@ -245,6 +231,14 @@ async function _PATCH(req: NextRequest) {
     });
     if (!staffAccess.ok) {
       return fail(403, "FORBIDDEN");
+    }
+
+    const group = await prisma.organizationGroup.findUnique({
+      where: { id: callerMembership.groupId },
+      select: { ownerUserId: true },
+    });
+    if (!group) {
+      return fail(404, "GROUP_NOT_FOUND");
     }
 
     const targetMembership = await getEffectiveOrganizationMember({
@@ -262,24 +256,11 @@ async function _PATCH(req: NextRequest) {
     if (targetIsGovernance) {
       return fail(409, "GROUP_GOVERNANCE_LOCKED");
     }
+
     if (targetUserId === group.ownerUserId) {
       return fail(409, "GROUP_OWNER_INVARIANT");
     }
 
-    const targetIsGovernance = await prisma.organizationGroupMember.findFirst({
-      where: { groupId: callerMembership.groupId, userId: targetUserId, isGovernance: true },
-      select: { id: true },
-    });
-
-    if (targetIsGovernance) {
-      const attemptedRoleChange = targetMembership.role !== (role as OrganizationMemberRole);
-      const attemptedRolePackChange = (targetMembership.rolePack ?? null) !== normalizedRolePack;
-      if (attemptedRoleChange || attemptedRolePackChange) {
-        return fail(409, "GROUP_GOVERNANCE_LOCKED");
-      }
-    }
-
-    // Strong invariant: within a group, only the group owner can be OWNER of member orgs.
     if (role === "OWNER" && targetUserId !== group.ownerUserId) {
       return fail(409, "GROUP_OWNER_INVARIANT");
     }
@@ -292,8 +273,7 @@ async function _PATCH(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
-    const ownerAllowed = callerRole === "OWNER";
-    if (role === "OWNER" && !ownerAllowed) {
+    if (role === "OWNER" && callerRole !== "OWNER") {
       return fail(403, "ONLY_OWNER_CAN_SET_OWNER");
     }
 
@@ -308,7 +288,6 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    // Se promover para OWNER, garantir que fica único (demovendo outros para CO_OWNER)
     if (role === "OWNER") {
       await prisma.$transaction(async (tx) => setSoleOwner(tx, organizationId, targetUserId));
       await recordOrganizationAuditSafe({
@@ -325,7 +304,6 @@ async function _PATCH(req: NextRequest) {
       return respondOk(ctx, {}, { status: 200 });
     }
 
-    // Bloqueia que o único owner se despromova a si próprio
     if (targetMembership.role === "OWNER" && targetUserId === user.id && role !== "OWNER") {
       const otherOwners = await countEffectiveOrganizationMembersByRole({
         organizationId,
@@ -389,22 +367,16 @@ async function _PATCH(req: NextRequest) {
     if (message === "GROUP_GOVERNANCE_LOCKED") {
       return fail(409, "GROUP_GOVERNANCE_LOCKED");
     }
+    if (message === "GROUP_OWNER_INVARIANT") {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
     return fail(500, "INTERNAL_ERROR");
   }
 }
 
 async function _DELETE(req: NextRequest) {
   const ctx = getRequestContext(req);
-  const fail = (
-    status: number,
-    message: string,
-    errorCode = errorCodeForStatus(status),
-    retryable = status >= 500,
-  ) => {
-    const resolvedMessage = typeof message === "string" ? message : String(message);
-    const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
-    return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
-  };
+  const fail = failFactory(ctx);
   try {
     const supabase = await createSupabaseServer();
     const {
@@ -427,9 +399,9 @@ async function _DELETE(req: NextRequest) {
       }
       return fail(400, "INVALID_ORGANIZATION_ID");
     }
+
     const organizationId = orgResolution.organizationId;
     const targetUserId = url.searchParams.get("userId");
-
     if (!organizationId || !targetUserId) {
       return fail(400, "INVALID_PARAMS");
     }
@@ -443,7 +415,16 @@ async function _DELETE(req: NextRequest) {
       organizationId,
     });
     if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
+      return respondError(
+        ctx,
+        {
+          errorCode: emailGate.errorCode ?? "FORBIDDEN",
+          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
+          retryable: false,
+          details: emailGate,
+        },
+        { status: 403 },
+      );
     }
 
     const callerMembership = await resolveGroupMemberForOrg({ organizationId, userId: user.id });
@@ -451,6 +432,7 @@ async function _DELETE(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
+
     const staffAccess = await ensureMemberModuleAccess({
       organizationId,
       userId: user.id,
@@ -463,6 +445,14 @@ async function _DELETE(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
 
+    const group = await prisma.organizationGroup.findUnique({
+      where: { id: callerMembership.groupId },
+      select: { ownerUserId: true },
+    });
+    if (!group) {
+      return fail(404, "GROUP_NOT_FOUND");
+    }
+
     const targetMembership = await getEffectiveOrganizationMember({
       organizationId,
       userId: targetUserId,
@@ -471,14 +461,25 @@ async function _DELETE(req: NextRequest) {
       return fail(404, "NOT_MEMBER");
     }
 
+    const targetIsGovernance = await prisma.organizationGroupMember.findFirst({
+      where: { groupId: callerMembership.groupId, userId: targetUserId, isGovernance: true },
+      select: { id: true },
+    });
+    if (targetIsGovernance) {
+      return fail(409, "GROUP_GOVERNANCE_LOCKED");
+    }
+
+    if (targetUserId === group.ownerUserId) {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
+
     const manageAllowed = canManageMembers(callerRole, targetMembership.role, targetMembership.role);
     if (!manageAllowed) {
       return fail(403, "FORBIDDEN");
     }
 
     if (targetMembership.role === "OWNER") {
-      const ownerAllowed = callerRole === "OWNER";
-      if (!ownerAllowed) {
+      if (callerRole !== "OWNER") {
         return fail(403, "ONLY_OWNER_CAN_REMOVE_OWNER");
       }
 
@@ -533,9 +534,13 @@ async function _DELETE(req: NextRequest) {
     if (message === "GROUP_GOVERNANCE_LOCKED") {
       return fail(409, "GROUP_GOVERNANCE_LOCKED");
     }
+    if (message === "GROUP_OWNER_INVARIANT") {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
     return fail(500, "INTERNAL_ERROR");
   }
 }
+
 export const GET = withApiEnvelope(_GET);
 export const PATCH = withApiEnvelope(_PATCH);
 export const DELETE = withApiEnvelope(_DELETE);
