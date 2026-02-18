@@ -132,56 +132,6 @@ jobs:
           cache-to: type=gha,scope=orya-worker,mode=max
           provenance: false
 
-      - name: Run DB migrations via ECS task
-        if: ${{ steps.resolve_target.outputs.target == 'all' || steps.resolve_target.outputs.target == 'web' }}
-        env:
-          WEB_DIGEST: ${{ steps.build_web.outputs.digest }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${WEB_DIGEST}" ]]; then
-            echo "WEB_DIGEST vazio; build web falhou." >&2
-            exit 1
-          fi
-
-          current_td=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE_WEB}" --query "services[0].taskDefinition" --output text)
-          aws ecs describe-task-definition --task-definition "${current_td}" --query taskDefinition --output json > /tmp/migrate-base.json
-
-          jq --arg img "${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}@${WEB_DIGEST}" '
-            .containerDefinitions |= map(
-              if .name == "orya-web" then
-                .image = $img
-                | .command = ["sh","-lc","npx prisma migrate deploy --schema=prisma/schema.prisma"]
-              else . end
-            )
-            | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt)
-            | walk(if type=="object" then with_entries(select(.value != null)) else . end)
-          ' /tmp/migrate-base.json > /tmp/migrate-task.json
-
-          migrate_td=$(aws ecs register-task-definition --cli-input-json file:///tmp/migrate-task.json --query "taskDefinition.taskDefinitionArn" --output text)
-
-          subnets=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE_WEB}" --query "services[0].networkConfiguration.awsvpcConfiguration.subnets" --output text | tr '\t' ',')
-          sgs=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE_WEB}" --query "services[0].networkConfiguration.awsvpcConfiguration.securityGroups" --output text | tr '\t' ',')
-          assign_public_ip=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE_WEB}" --query "services[0].networkConfiguration.awsvpcConfiguration.assignPublicIp" --output text)
-
-          task_arn=$(aws ecs run-task \
-            --cluster "${ECS_CLUSTER}" \
-            --task-definition "${migrate_td}" \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[${subnets}],securityGroups=[${sgs}],assignPublicIp=${assign_public_ip}}" \
-            --query "tasks[0].taskArn" \
-            --output text)
-
-          echo "migration task: ${task_arn}"
-          aws ecs wait tasks-stopped --cluster "${ECS_CLUSTER}" --tasks "${task_arn}"
-
-          exit_code=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" --tasks "${task_arn}" --query "tasks[0].containers[?name=='orya-web']|[0].exitCode" --output text)
-          if [[ "${exit_code}" != "0" ]]; then
-            reason=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" --tasks "${task_arn}" --query "tasks[0].stoppedReason" --output text)
-            echo "Migration task failed (exit=${exit_code}): ${reason}" >&2
-            exit 1
-          fi
-
       - name: Roll out task definitions by image digest
         env:
           WEB_DIGEST: ${{ steps.build_web.outputs.digest }}
