@@ -177,7 +177,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       }),
     ]);
 
-    const hasCustomTemplates = templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0);
+    const hasCustomTemplates = templates.length > 0;
 
     return respondOk(ctx, {scope: { scopeType, scopeId },
       templates,

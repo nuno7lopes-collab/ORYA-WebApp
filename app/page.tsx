@@ -212,7 +212,7 @@ export default async function HomePage() {
     "inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-6 py-3 text-[13px] text-white/85 hover:border-white/35 hover:bg-white/10 transition";
 
   return (
-    <main className="min-h-0 bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white flex flex-col">
+    <main className="min-h-0 flex flex-1 flex-col bg-[linear-gradient(180deg,#0b1014_0%,#0d1320_50%,#101826_100%)] text-white">
       <MobileTopBar />
 
       <section className="orya-page-width px-4 md:px-8 pt-36 md:pt-40 pb-6 lg:pt-44">
@@ -257,7 +257,9 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <HomeFooter />
+      <div className="mt-auto">
+        <HomeFooter />
+      </div>
     </main>
   );
 }

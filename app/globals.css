@@ -622,6 +622,8 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "SF Pro Display", -apple-system, sans-serif;
   overflow-x: hidden;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 .admin-shell {
@@ -905,7 +907,7 @@ body:not([data-nav-hidden="true"]) .main-shell {
   padding-bottom: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   body:not([data-nav-hidden="true"]) .main-shell {
     padding-bottom: 120px;
   }

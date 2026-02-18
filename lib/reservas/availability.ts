@@ -6,9 +6,15 @@ export type AvailabilitySlot = {
 };
 
 const MINUTES_PER_DAY = 24 * 60;
+const DEFAULT_OPEN_WEEKDAY_INTERVAL: Interval = { startMinute: 8 * 60, endMinute: 17 * 60 };
 
 function clampMinute(value: number) {
   return Math.max(0, Math.min(MINUTES_PER_DAY, value));
+}
+
+function getDefaultTemplateIntervals(dayOfWeek: number): Interval[] {
+  if (dayOfWeek === 0 || dayOfWeek === 6) return [];
+  return [{ ...DEFAULT_OPEN_WEEKDAY_INTERVAL }];
 }
 
 function parseInterval(raw: any): Interval | null {
@@ -84,9 +90,22 @@ function getTimeZoneOffset(date: Date, timeZone: string) {
   const year = Number(map.get("year"));
   const month = Number(map.get("month"));
   const day = Number(map.get("day"));
-  const hour = Number(map.get("hour"));
+  // In some ICU/locale combinations midnight is emitted as 24:xx.
+  // Treat it as 00:xx on the same day to avoid date drift.
+  const rawHour = Number(map.get("hour"));
+  const hour = rawHour === 24 ? 0 : rawHour;
   const minute = Number(map.get("minute"));
   const second = Number(map.get("second"));
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return 0;
+  }
   const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
   return (asUtc - date.getTime()) / 60000;
 }
@@ -120,18 +139,14 @@ export function getDateParts(date: Date, timeZone: string) {
   };
 }
 
-function addDays(parts: { year: number; month: number; day: number }, days: number) {
-  const base = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  base.setUTCDate(base.getUTCDate() + days);
-  return { year: base.getUTCFullYear(), month: base.getUTCMonth() + 1, day: base.getUTCDate() };
-}
-
 export function resolveIntervalsForDate(params: {
   dayOfWeek: number;
   templatesByDay: Map<number, Interval[]>;
   overrides: Array<{ kind: string; intervals: Interval[] }>;
 }) {
-  let intervals = params.templatesByDay.get(params.dayOfWeek) ?? [];
+  let intervals = params.templatesByDay.has(params.dayOfWeek)
+    ? params.templatesByDay.get(params.dayOfWeek) ?? []
+    : getDefaultTemplateIntervals(params.dayOfWeek);
   if (!params.overrides.length) return intervals;
   for (const override of params.overrides) {
     if (override.kind === "CLOSED") {
@@ -179,13 +194,29 @@ export function buildSlotsForRange(params: {
 
   const startParts = getDateParts(params.rangeStart, params.timezone);
   const endParts = getDateParts(params.rangeEnd, params.timezone);
+  const startDayUtc = Date.UTC(startParts.year, startParts.month - 1, startParts.day);
+  const endDayUtc = Date.UTC(endParts.year, endParts.month - 1, endParts.day);
+  if (
+    !Number.isFinite(startDayUtc) ||
+    !Number.isFinite(endDayUtc) ||
+    endDayUtc < startDayUtc
+  ) {
+    return [];
+  }
   const slots: AvailabilitySlot[] = [];
-  let current = { ...startParts };
-  const endKey = getDateKey(endParts.year, endParts.month, endParts.day);
-
-  while (true) {
+  for (
+    let currentDayUtc = startDayUtc;
+    currentDayUtc <= endDayUtc;
+    currentDayUtc += 24 * 60 * 60 * 1000
+  ) {
+    const cursor = new Date(currentDayUtc);
+    const current = {
+      year: cursor.getUTCFullYear(),
+      month: cursor.getUTCMonth() + 1,
+      day: cursor.getUTCDate(),
+    };
     const key = getDateKey(current.year, current.month, current.day);
-    const dayOfWeek = new Date(Date.UTC(current.year, current.month - 1, current.day)).getUTCDay();
+    const dayOfWeek = cursor.getUTCDay();
     const overrides = overridesByDate.get(key) ?? [];
     const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides });
     if (intervals.length) {
@@ -203,8 +234,6 @@ export function buildSlotsForRange(params: {
         }
       }
     }
-    if (key === endKey) break;
-    current = addDays(current, 1);
   }
 
   return slots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());

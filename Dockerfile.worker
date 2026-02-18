@@ -5,6 +5,7 @@ WORKDIR /app
 # Copiamos apenas o script do worker mantendo o mesmo path usado no ECS task definition.
 RUN mkdir -p scripts
 COPY scripts/operations-loop.js ./scripts/operations-loop.js
+COPY scripts/operations-loop.js ./operations-loop.js
 
 ENV NODE_ENV=production
 

@@ -21,6 +21,20 @@ export const isAuthError = (error: unknown) => {
   return message.includes("API 401") || message.includes("UNAUTHENTICATED");
 };
 
+const isConnectivityError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("network request failed") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("networkerror") ||
+    lower.includes("api timeout") ||
+    lower.includes("api offline") ||
+    lower.includes("aborterror") ||
+    lower.includes("aborted")
+  );
+};
+
 export const resolveOnboardingGate = ({
   session,
   localOnboardingDone,
@@ -48,7 +62,11 @@ export const resolveOnboardingGate = ({
   if (isLoading && !hasCached) return "loading";
 
   if (profileQuery.isError && !hasRemoteData && !hasCached) {
-    return localOnboardingDone ? "ready" : "offline";
+    if (isAuthError(profileQuery.error)) return "sign-in";
+    if (isConnectivityError(profileQuery.error)) {
+      return localOnboardingDone ? "ready" : "offline";
+    }
+    return localOnboardingDone ? "ready" : "onboarding";
   }
 
   const cachedHasBasics = Boolean(

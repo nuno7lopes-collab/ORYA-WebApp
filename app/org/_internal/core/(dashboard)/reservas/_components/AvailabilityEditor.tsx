@@ -135,7 +135,7 @@ export default function AvailabilityEditor({
   const overrides = availabilityData?.overrides ?? [];
   const inheritsOrganization = availabilityData?.inheritsOrganization ?? false;
   const hasAvailability = availabilityData
-    ? templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0)
+    ? templates.length === 0 || templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0)
     : true;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
@@ -509,6 +509,11 @@ export default function AvailabilityEditor({
         {inheritsOrganization && (
           <p className="mt-2 text-[12px] text-white/60">
             Sem horários próprios. A usar disponibilidade base da organização.
+          </p>
+        )}
+        {!inheritsOrganization && scopeType === "ORGANIZATION" && templates.length === 0 && (
+          <p className="mt-2 text-[12px] text-white/60">
+            Default ativo: 2ª a 6ª, 08:00-17:00 (sábado/domingo fechado).
           </p>
         )}
       </div>

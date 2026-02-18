@@ -73,14 +73,14 @@ export default async function RootLayout({
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full`}
       suppressHydrationWarning
     >
-      <body className="antialiased min-h-screen md:min-h-0 flex flex-col font-sans">
+      <body className="antialiased min-h-screen flex flex-col font-sans">
         <BackgroundShell>
           <ThemeRuntime />
           <AuthModalProvider>
             <AuthLinkInterceptor />
             <Navbar adminHostHint={isAdminHost} />
             <RecoveryRedirector />
-            <div className="main-shell min-h-0 flex flex-col transition-[padding] duration-200">
+            <div className="main-shell min-h-0 flex flex-1 flex-col transition-[padding] duration-200">
               {children}
             </div>
             <AuthModal />

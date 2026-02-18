@@ -6,13 +6,22 @@ ENV PRISMA_SKIP_POSTINSTALL=1
 RUN npm config set fetch-retries 5 \
   && npm config set fetch-retry-mintimeout 20000 \
   && npm config set fetch-retry-maxtimeout 120000 \
+  && npm config set audit false \
+  && npm config set fund false \
   && npm config set cache /tmp/.npm \
-  && npm ci --ignore-scripts
+  && npm ci --ignore-scripts --prefer-offline
 
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+RUN DIRECT_URL=postgresql://postgres:postgres@localhost:5432/postgres?schema=public \
+    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres?schema=public \
+    PRISMA_GENERATE_NO_ENGINE=1 npx prisma generate && npm run build
 
 FROM node:20-alpine AS runner
 WORKDIR /app

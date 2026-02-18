@@ -178,6 +178,16 @@ function getMonthLabel(date: Date) {
   return date.toLocaleString("pt-PT", { month: "long", year: "numeric" });
 }
 
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(base: Date, months: number) {
+  const next = new Date(base);
+  next.setMonth(next.getMonth() + months);
+  return startOfMonth(next);
+}
+
 function buildMonthDays(date: Date) {
   const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
   const startWeekday = firstOfMonth.getDay();
@@ -317,6 +327,9 @@ export default function ReservasBookingClient({
   const { user } = useUser();
   const { openModal: openAuthModal, isOpen: isAuthOpen } = useAuthModal();
   const mountedRef = useRef(true);
+  const calendarRequestRef = useRef(0);
+  const slotsRequestRef = useRef(0);
+  const slotsAbortRef = useRef<AbortController | null>(null);
   const allowServiceSelection = fixedServiceId == null;
 
   const activeServices = services.filter((service) => service.isActive);
@@ -391,6 +404,17 @@ export default function ReservasBookingClient({
   const requiresResource = assignmentConfig.requiresResource;
   const isHybridAssignment = assignmentConfig.isHybrid;
   const timezone = organization.timezone || "Europe/Lisbon";
+  const minCalendarMonth = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return startOfMonth(now);
+  }, []);
+  const maxCalendarMonth = useMemo(() => addMonths(minCalendarMonth, 3), [minCalendarMonth]);
+  const monthTime = calendarMonth.getTime();
+  const minMonthTime = minCalendarMonth.getTime();
+  const maxMonthTime = maxCalendarMonth.getTime();
+  const canGoPrevMonth = monthTime > minMonthTime;
+  const canGoNextMonth = monthTime < maxMonthTime;
   const selectedProfessional =
     selectedProfessionalId != null
       ? availableProfessionals.find((pro) => pro.id === selectedProfessionalId) ?? null
@@ -663,6 +687,8 @@ export default function ReservasBookingClient({
     }
 
     const controller = new AbortController();
+    const requestId = calendarRequestRef.current + 1;
+    calendarRequestRef.current = requestId;
     setCalendarLoading(true);
     setCalendarError(null);
 
@@ -686,16 +712,22 @@ export default function ReservasBookingClient({
     })
       .then((res) => res.json())
       .then((data) => {
+        if (calendarRequestRef.current !== requestId) return;
         if (!data?.ok) {
           throw new Error(data?.message || data?.error || "Erro ao carregar calendário.");
         }
         setAvailabilityDays(Array.isArray(data.days) ? data.days : []);
       })
       .catch((err) => {
+        if (calendarRequestRef.current !== requestId) return;
         if (err?.name === "AbortError") return;
         setCalendarError(err instanceof Error ? err.message : "Erro ao carregar calendário.");
       })
-      .finally(() => setCalendarLoading(false));
+      .finally(() => {
+        if (calendarRequestRef.current === requestId) {
+          setCalendarLoading(false);
+        }
+      });
 
     return () => controller.abort();
   }, [
@@ -709,15 +741,36 @@ export default function ReservasBookingClient({
     selectedPackageId,
   ]);
 
+  useEffect(() => {
+    if (!selectedDay) return;
+    if (!selectedDay.startsWith(`${calendarMonthParam}-`)) {
+      setSelectedDay(null);
+      setDaySlots([]);
+      setSlotsError(null);
+      if (!bookingPending) {
+        setSelectedSlot(null);
+      }
+    }
+  }, [calendarMonthParam, selectedDay, bookingPending]);
+
+  useEffect(
+    () => () => {
+      slotsAbortRef.current?.abort();
+    },
+    [],
+  );
+
   const availabilityMap = useMemo(() => {
     const map = new Map<string, AvailabilityDay>();
     availabilityDays.forEach((day) => map.set(day.date, day));
     return map;
   }, [availabilityDays]);
 
-  const loadDaySlots = (iso: string) => {
+  const loadDaySlots = (iso: string, options?: { force?: boolean }) => {
     if (!selectedServiceId) return;
     if (requiresResource && !selectedPartySize) return;
+    const availability = availabilityMap.get(iso);
+    if (!options?.force && !availability?.hasAvailability) return;
 
     setSelectedDay(iso);
     if (!bookingPending) {
@@ -726,6 +779,11 @@ export default function ReservasBookingClient({
     setSlotsLoading(true);
     setSlotsError(null);
     setDaySlots([]);
+    slotsAbortRef.current?.abort();
+    const controller = new AbortController();
+    slotsAbortRef.current = controller;
+    const requestId = slotsRequestRef.current + 1;
+    slotsRequestRef.current = requestId;
 
     const params = new URLSearchParams({ day: iso });
     if (requiresProfessional && selectedProfessionalId) {
@@ -741,16 +799,28 @@ export default function ReservasBookingClient({
       params.set("addons", addonsParam);
     }
 
-    fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, { cache: "no-store" })
+    fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
       .then((res) => res.json())
       .then((data) => {
+        if (slotsRequestRef.current !== requestId) return;
         if (!data?.ok) {
           throw new Error(data?.message || data?.error || "Erro ao carregar horários.");
         }
         setDaySlots(Array.isArray(data.items) ? data.items : []);
       })
-      .catch((err) => setSlotsError(err instanceof Error ? err.message : "Erro ao carregar horários."))
-      .finally(() => setSlotsLoading(false));
+      .catch((err) => {
+        if (slotsRequestRef.current !== requestId) return;
+        if (err?.name === "AbortError") return;
+        setSlotsError(err instanceof Error ? err.message : "Erro ao carregar horários.");
+      })
+      .finally(() => {
+        if (slotsRequestRef.current === requestId) {
+          setSlotsLoading(false);
+        }
+      });
   };
 
   const startBookingCheckout = async (bookingId: number, method?: PaymentMethod) => {
@@ -856,7 +926,7 @@ export default function ReservasBookingClient({
           setBookingSuccess("Agendamento confirmado.");
           setBookingPending(null);
           setCheckout(null);
-          loadDaySlots(startsAtIso.slice(0, 10));
+          loadDaySlots(startsAtIso.slice(0, 10), { force: true });
           return;
         }
         if (status && ["CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "CANCELLED"].includes(status)) {
@@ -1029,7 +1099,7 @@ export default function ReservasBookingClient({
 
   const shellHeightClass =
     mode === "modal"
-      ? "h-[100svh] sm:h-[min(90svh,820px)]"
+      ? "h-[100dvh] sm:h-[min(90dvh,820px)]"
       : "h-[min(84svh,760px)] sm:h-[min(86svh,760px)]";
   const shellRadiusClass = mode === "modal" ? "rounded-none sm:rounded-[28px]" : "rounded-3xl";
 
@@ -1183,7 +1253,7 @@ export default function ReservasBookingClient({
       <div className={cn(shellClass, shellHeightClass, shellRadiusClass)}>
         <div className="pointer-events-none absolute -left-24 -top-28 h-56 w-56 rounded-full bg-[radial-gradient(circle_at_center,_rgba(255,0,200,0.25),_transparent_65%)] blur-2xl" />
         <div className="pointer-events-none absolute -right-24 -bottom-28 h-64 w-64 rounded-full bg-[radial-gradient(circle_at_center,_rgba(107,255,255,0.28),_transparent_65%)] blur-2xl" />
-        <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-4 sm:p-6 lg:overflow-hidden">
+        <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-6 lg:overflow-hidden">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
@@ -1210,7 +1280,7 @@ export default function ReservasBookingClient({
               )}
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:flex-wrap sm:overflow-visible">
+            <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 px-1 sm:flex-wrap sm:overflow-visible">
               {stepItems.map((step) => {
                 const isActive = activeStep === step.id;
                 const enabled = stepEnabled(step.id);
@@ -1220,7 +1290,7 @@ export default function ReservasBookingClient({
                     type="button"
                     disabled={!enabled}
                     onClick={() => enabled && goToStep(step.id)}
-                    className={`flex min-w-[130px] items-center gap-2 rounded-full border px-3 py-2 text-left transition sm:min-w-0 ${
+                    className={`flex min-w-[112px] items-center gap-2 rounded-full border px-3 py-2 text-left transition sm:min-w-0 ${
                       isActive
                         ? "border-white/40 bg-white/15 text-white"
                         : "border-white/10 bg-white/5 text-white/75 hover:border-white/30 hover:bg-white/10"
@@ -1238,6 +1308,16 @@ export default function ReservasBookingClient({
                 );
               })}
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/12 bg-[#090f1a]/80 p-3 lg:hidden">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-white">{selectedService?.title ?? "Serviço por definir"}</p>
+              <p className="text-sm font-semibold text-white">{totalPriceLabel ?? "--"}</p>
+            </div>
+            <p className="mt-1 text-[12px] text-white/65">
+              {selectedDateLabel && selectedTimeLabel ? `${selectedDateLabel} · ${selectedTimeLabel}` : "Data por definir"}
+            </p>
           </div>
 
           <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -1471,11 +1551,8 @@ export default function ReservasBookingClient({
                   <div className="flex items-center gap-2 text-[12px] text-white/60">
                     <button
                       type="button"
-                      onClick={() => {
-                        const prev = new Date(calendarMonth);
-                        prev.setMonth(prev.getMonth() - 1);
-                        setCalendarMonth(prev);
-                      }}
+                      onClick={() => setCalendarMonth((prev) => addMonths(prev, -1))}
+                      disabled={!canGoPrevMonth}
                       className={ghostButtonClass}
                     >
                       ←
@@ -1483,11 +1560,8 @@ export default function ReservasBookingClient({
                     <span className="font-semibold capitalize">{monthLabel}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        const next = new Date(calendarMonth);
-                        next.setMonth(next.getMonth() + 1);
-                        setCalendarMonth(next);
-                      }}
+                      onClick={() => setCalendarMonth((prev) => addMonths(prev, 1))}
+                      disabled={!canGoNextMonth}
                       className={ghostButtonClass}
                     >
                       →
@@ -1516,10 +1590,11 @@ export default function ReservasBookingClient({
                             key={`${iso}-${idx}`}
                             type="button"
                             onClick={() => loadDaySlots(iso)}
+                            disabled={!isAvailable}
                             className={`h-11 w-11 rounded-2xl border text-center text-white/80 transition ${
                               isSelected
                                 ? "border-white/60 bg-white/15"
-                                : isAvailable
+                              : isAvailable
                                   ? "border-white/20 bg-white/5 hover:bg-white/10"
                                   : "border-white/5 bg-white/5 opacity-40"
                             }`}
@@ -1798,7 +1873,7 @@ export default function ReservasBookingClient({
               )}
             </div>
 
-            <aside className="min-h-0 space-y-4 lg:overflow-y-auto lg:pr-1">
+            <aside className="hidden min-h-0 space-y-4 lg:block lg:overflow-y-auto lg:pr-1">
               <div className={panelClass}>
                 <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Resumo</p>
                 <div className="mt-3 divide-y divide-white/10">

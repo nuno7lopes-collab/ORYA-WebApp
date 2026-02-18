@@ -436,6 +436,7 @@ async function _POST(
     const dateParts = getDateParts(startsAt, timezone);
     const dayStart = makeUtcDateFromLocal({ ...dateParts, hour: 0, minute: 0 }, timezone);
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
+    const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + effectiveDurationMinutes * 60 * 1000);
@@ -473,7 +474,7 @@ async function _POST(
       prisma.booking.findMany({
         where: {
           organizationId: service.organizationId,
-          startsAt: { lt: bookingEndsAt },
+          startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
@@ -487,7 +488,7 @@ async function _POST(
               organizationId: service.organizationId,
               status: "SCHEDULED",
               startsAt: { lt: bookingEndsAt },
-              endsAt: { gt: startsAt },
+              endsAt: { gt: bookingWindowStart },
               ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
             },
             select: { id: true, startsAt: true, endsAt: true, professionalId: true },

@@ -24,4 +24,5 @@ backups
 out
 dist
 .turbo
+.next
 .next/cache

@@ -462,7 +462,7 @@ export default function ReservasBookingSection({
       {modalOpen && activeServices.length > 0 ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-hidden="true" />
-          <div className="relative max-h-[100svh] w-full p-0 sm:p-6">
+          <div className="relative max-h-[100dvh] w-full p-0 sm:p-6">
             <div className={modalShellClass}>
               <ReservasBookingClient
                 mode="modal"

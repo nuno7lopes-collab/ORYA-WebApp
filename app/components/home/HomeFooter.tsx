@@ -82,7 +82,7 @@ export default function HomeFooter() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="pt-6 md:pt-2">
+    <footer className="-mb-[120px] pb-[120px] pt-6 md:mb-0 md:pb-0 md:pt-2">
       <div className="relative w-full">
         <div
           aria-hidden="true"

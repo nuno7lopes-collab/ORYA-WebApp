@@ -1,4 +1,4 @@
-import { buildSlotsForRange, normalizeIntervals } from "@/lib/reservas/availability";
+import { buildSlotsForRange } from "@/lib/reservas/availability";
 
 export type AvailabilityScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
 
@@ -58,9 +58,8 @@ export function resolveScopeData(params: {
   const key = buildScopeKey(params.scopeType, params.scopeId);
   const scopedTemplates = params.templatesByScope.get(key) ?? [];
   const scopedOverrides = params.overridesByScope.get(key) ?? [];
-  const hasCustomTemplates = scopedTemplates.some(
-    (template) => normalizeIntervals(template.intervals).length > 0,
-  );
+  // Any persisted template row means this scope is explicitly configured.
+  const hasCustomTemplates = scopedTemplates.length > 0;
   return {
     templates: hasCustomTemplates ? scopedTemplates : params.orgTemplates,
     overrides: hasCustomTemplates ? scopedOverrides : params.orgOverrides,

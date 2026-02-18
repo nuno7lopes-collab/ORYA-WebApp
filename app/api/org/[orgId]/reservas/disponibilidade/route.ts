@@ -157,7 +157,7 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
-    const hasCustomTemplates = templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0);
+    const hasCustomTemplates = templates.length > 0;
 
     return respondOk(ctx, {
       scope: { scopeType, scopeId },
