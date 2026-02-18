@@ -118,26 +118,6 @@ const normalizeIntegerInput = (value: string) => {
   return match ? match[0] : "";
 };
 
-const formatDateLabel = (value: string) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleDateString("pt-PT", {
-    day: "2-digit",
-    month: "short",
-  });
-};
-
-const formatTimeLabel = (value: string) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleTimeString("pt-PT", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
-
 const pickCanonicalField = (canonical: Prisma.JsonValue | null | undefined, keys: string[]) => {
   if (!canonical || typeof canonical !== "object" || Array.isArray(canonical)) return null;
   const record = canonical as Record<string, unknown>;
@@ -171,12 +151,6 @@ const formatPadelClubLocationLabel = (club: PadelClubSummary | PadelPublicClub |
   return [city, formatted].filter(Boolean).join(" · ");
 };
 
-const formatMonthLabel = (value: Date) =>
-  value.toLocaleDateString("pt-PT", {
-    month: "long",
-    year: "numeric",
-  });
-
 const formatInputDate = (date: Date) => {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -187,73 +161,12 @@ const formatInputTime = (date: Date) => {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
 
-const parseInputDate = (value: string) => {
-  const [year, month, day] = value.split("-").map((part) => Number(part));
-  if (!year || !month || !day) return null;
-  return new Date(year, month - 1, day);
-};
-
 const roundToNextHour = (base: Date) => {
   const next = new Date(base);
   const hasMinutes = next.getMinutes() > 0 || next.getSeconds() > 0 || next.getMilliseconds() > 0;
   next.setMinutes(0, 0, 0);
   if (hasMinutes) next.setHours(next.getHours() + 1);
   return next;
-};
-
-const WEEKDAY_LABELS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"];
-
-const toMonthStart = (value: Date) => new Date(value.getFullYear(), value.getMonth(), 1);
-
-const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate());
-
-const isSameDay = (a: Date, b: Date) => startOfDay(a).getTime() === startOfDay(b).getTime();
-
-const isBeforeDay = (a: Date, b: Date) => startOfDay(a).getTime() < startOfDay(b).getTime();
-
-const buildCalendarCells = (viewDate: Date) => {
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const firstDayOfMonth = new Date(year, month, 1);
-  const firstWeekday = (firstDayOfMonth.getDay() + 6) % 7; // Monday = 0
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-  const cells: Array<{ date: Date; inMonth: boolean }> = [];
-
-  for (let i = 0; i < 42; i += 1) {
-    const dayIndex = i - firstWeekday + 1;
-    if (dayIndex <= 0) {
-      cells.push({
-        date: new Date(year, month - 1, daysInPrevMonth + dayIndex),
-        inMonth: false,
-      });
-    } else if (dayIndex > daysInMonth) {
-      cells.push({
-        date: new Date(year, month + 1, dayIndex - daysInMonth),
-        inMonth: false,
-      });
-    } else {
-      cells.push({
-        date: new Date(year, month, dayIndex),
-        inMonth: true,
-      });
-    }
-  }
-  return cells;
-};
-
-const buildTimeSlots = () => {
-  const slots: string[] = [];
-  for (let hour = 0; hour < 24; hour += 1) {
-    slots.push(`${hour.toString().padStart(2, "0")}:00`);
-    slots.push(`${hour.toString().padStart(2, "0")}:30`);
-  }
-  return slots;
-};
-
-const buildLocalDateTime = (date: string, time: string) => {
-  if (!date || !time) return "";
-  return `${date}T${time}`;
 };
 
 const MODAL_OVERLAY_CLASS = "fixed inset-0 bg-black/75 backdrop-blur-sm";
@@ -330,15 +243,8 @@ export function NewOrganizationEventPage({
   const [showCoverCropModal, setShowCoverCropModal] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [showTicketsModal, setShowTicketsModal] = useState(false);
-  const [schedulePopover, setSchedulePopover] = useState<
-    "startDate" | "startTime" | "endDate" | "endTime" | null
-  >(null);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
   const [showCoverModal, setShowCoverModal] = useState(false);
-  const [startDateInput, setStartDateInput] = useState("");
-  const [startTimeInput, setStartTimeInput] = useState("");
-  const [endDateInput, setEndDateInput] = useState("");
-  const [endTimeInput, setEndTimeInput] = useState("");
   const [padelFormat, setPadelFormat] = useState("TODOS_CONTRA_TODOS");
   const [padelEligibility, setPadelEligibility] = useState("OPEN");
   const [padelRuleSetId, setPadelRuleSetId] = useState<number | null>(null);
@@ -353,8 +259,6 @@ export function NewOrganizationEventPage({
   const [padelMaxEntriesTotal, setPadelMaxEntriesTotal] = useState("");
   const [padelAdvancedOpen, setPadelAdvancedOpen] = useState(false);
   const [padelRulesOpen, setPadelRulesOpen] = useState(false);
-  const [startCalendarView, setStartCalendarView] = useState(() => toMonthStart(new Date()));
-  const [endCalendarView, setEndCalendarView] = useState(() => toMonthStart(new Date()));
   const [coverSearch, setCoverSearch] = useState("");
   const [coverCategory, setCoverCategory] =
     useState<"SUGESTOES" | "ALL" | "EVENTOS" | "PADEL" | "RESERVAS" | "GERAL">("SUGESTOES");
@@ -394,15 +298,9 @@ export function NewOrganizationEventPage({
   const padelCategoriesRef = useRef<HTMLDivElement | null>(null);
   const padelTicketsRef = useRef<HTMLDivElement | null>(null);
   const padelOperationRef = useRef<HTMLDivElement | null>(null);
+  const startsAtFieldRef = useRef<HTMLDivElement | null>(null);
+  const endsAtFieldRef = useRef<HTMLDivElement | null>(null);
   const scheduleInitializedRef = useRef(false);
-  const startDatePopoverRef = useRef<HTMLDivElement | null>(null);
-  const startTimePopoverRef = useRef<HTMLDivElement | null>(null);
-  const endDatePopoverRef = useRef<HTMLDivElement | null>(null);
-  const endTimePopoverRef = useRef<HTMLDivElement | null>(null);
-  const startDateInputRef = useRef<HTMLDivElement | null>(null);
-  const startTimeInputRef = useRef<HTMLDivElement | null>(null);
-  const endDateInputRef = useRef<HTMLDivElement | null>(null);
-  const endTimeInputRef = useRef<HTMLDivElement | null>(null);
   const locationSectionRef = useRef<HTMLDivElement | null>(null);
   const locationSearchRef = useRef<HTMLInputElement | null>(null);
   const descriptionModalRef = useRef<HTMLDivElement | null>(null);
@@ -543,9 +441,6 @@ export function NewOrganizationEventPage({
     () => !isGratisEvent && ticketTypes.some((t) => Number(t.price.replace(",", ".")) > 0),
     [isGratisEvent, ticketTypes],
   );
-  const timeSlots = useMemo(() => buildTimeSlots(), []);
-  const startCalendarCells = useMemo(() => buildCalendarCells(startCalendarView), [startCalendarView]);
-  const endCalendarCells = useMemo(() => buildCalendarCells(endCalendarView), [endCalendarView]);
   const organizationOfficialEmail =
     (organizationStatus?.organization as { officialEmail?: string | null } | null)?.officialEmail ?? null;
   const organizationOfficialEmailNormalized = normalizeOfficialEmail(organizationOfficialEmail);
@@ -774,42 +669,10 @@ export function NewOrganizationEventPage({
     const start = roundToNextHour(new Date());
     const end = new Date(start);
     end.setHours(end.getHours() + 5);
-    setStartsAt(buildLocalDateTime(formatInputDate(start), formatInputTime(start)));
-    setEndsAt(buildLocalDateTime(formatInputDate(end), formatInputTime(end)));
+    setStartsAt(`${formatInputDate(start)}T${formatInputTime(start)}`);
+    setEndsAt(`${formatInputDate(end)}T${formatInputTime(end)}`);
     scheduleInitializedRef.current = true;
   }, [draftLoaded, startsAt, endsAt]);
-
-  useEffect(() => {
-    if (!startsAt) {
-      setStartDateInput("");
-      setStartTimeInput("");
-      return;
-    }
-    const [date, time] = startsAt.split("T");
-    setStartDateInput(date ?? "");
-    setStartTimeInput(time ? time.slice(0, 5) : "");
-  }, [startsAt]);
-
-  useEffect(() => {
-    if (!endsAt) {
-      setEndDateInput("");
-      setEndTimeInput("");
-      return;
-    }
-    const [date, time] = endsAt.split("T");
-    setEndDateInput(date ?? "");
-    setEndTimeInput(time ? time.slice(0, 5) : "");
-  }, [endsAt]);
-
-  useEffect(() => {
-    const parsed = startDateInput ? parseInputDate(startDateInput) : null;
-    if (parsed) setStartCalendarView(toMonthStart(parsed));
-  }, [startDateInput]);
-
-  useEffect(() => {
-    const parsed = endDateInput ? parseInputDate(endDateInput) : null;
-    if (parsed) setEndCalendarView(toMonthStart(parsed));
-  }, [endDateInput]);
 
   useEffect(() => {
     if (!isGratisEvent) return;
@@ -1109,10 +972,6 @@ export function NewOrganizationEventPage({
     return parsed.toISOString();
   };
   const dateOrderWarning = startsAt && endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime();
-  const today = startOfDay(new Date());
-  const selectedStartDate = startDateInput ? parseInputDate(startDateInput) : null;
-  const selectedEndDate = endDateInput ? parseInputDate(endDateInput) : null;
-  const minEndDate = selectedStartDate ?? today;
 
   const selectPartnerClubFromDirectory = async (club: PadelPublicClub) => {
     if (!organizationIdFromStatus) {
@@ -1947,8 +1806,14 @@ export function NewOrganizationEventPage({
       return;
     }
     if (field === "startsAt" || field === "endsAt") {
-      setSchedulePopover(field === "startsAt" ? "startDate" : "endDate");
-      setPendingFocusField(field);
+      const targetRef = field === "startsAt" ? startsAtFieldRef : endsAtFieldRef;
+      if (targetRef.current) {
+        targetRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => {
+          const button = targetRef.current?.querySelector("button") as HTMLButtonElement | null;
+          button?.focus({ preventScroll: true });
+        }, 120);
+      }
       return;
     }
     if (field === "location") {
@@ -1980,18 +1845,6 @@ export function NewOrganizationEventPage({
       return;
     }
 
-    if (pendingFocusField === "startsAt" && schedulePopover === "startDate") {
-      startDateInputRef.current?.focus({ preventScroll: true });
-      setPendingFocusField(null);
-      return;
-    }
-
-    if (pendingFocusField === "endsAt" && schedulePopover === "endDate") {
-      endDateInputRef.current?.focus({ preventScroll: true });
-      setPendingFocusField(null);
-      return;
-    }
-
     if (pendingFocusField === "description" && showDescriptionModal) {
       const focusable = descriptionModalRef.current?.querySelector("textarea,input,button,select") as HTMLElement | null;
       if (focusable) {
@@ -2002,7 +1855,6 @@ export function NewOrganizationEventPage({
   }, [
     pendingFocusField,
     isTicketsModalOpen,
-    schedulePopover,
     showDescriptionModal,
   ]);
 
@@ -2078,48 +1930,6 @@ export function NewOrganizationEventPage({
       clearErrorsForFields(["endsAt"]);
     }
   }, [endsAt, startsAt]);
-
-  useEffect(() => {
-    if (!schedulePopover) return;
-    const refs: Record<NonNullable<typeof schedulePopover>, RefObject<HTMLDivElement | null>> = {
-      startDate: startDatePopoverRef,
-      startTime: startTimePopoverRef,
-      endDate: endDatePopoverRef,
-      endTime: endTimePopoverRef,
-    };
-    const activeRef = refs[schedulePopover];
-    const handleOutside = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (activeRef?.current && target && !activeRef.current.contains(target)) {
-        setSchedulePopover(null);
-      }
-    };
-    document.addEventListener("mousedown", handleOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleOutside);
-    };
-  }, [schedulePopover]);
-
-  useEffect(() => {
-    if (schedulePopover === "startDate") {
-      const base = startDateInput ? parseInputDate(startDateInput) : new Date();
-      if (base) setStartCalendarView(toMonthStart(base));
-    }
-    if (schedulePopover === "endDate") {
-      const base =
-        (endDateInput ? parseInputDate(endDateInput) : null) ??
-        (startDateInput ? parseInputDate(startDateInput) : null) ??
-        new Date();
-      if (base) setEndCalendarView(toMonthStart(base));
-    }
-  }, [schedulePopover, startDateInput, endDateInput]);
-
-  useEffect(() => {
-    if (schedulePopover === "startDate") startDateInputRef.current?.focus();
-    if (schedulePopover === "startTime") startTimeInputRef.current?.focus();
-    if (schedulePopover === "endDate") endDateInputRef.current?.focus();
-    if (schedulePopover === "endTime") endTimeInputRef.current?.focus();
-  }, [schedulePopover]);
 
   const FormAlert = ({
     variant,
@@ -2797,65 +2607,6 @@ export function NewOrganizationEventPage({
       </div>
     </div>
   );
-
-  const resolveStartFallback = () => {
-    const base = startsAt ? new Date(startsAt) : roundToNextHour(new Date());
-    return Number.isNaN(base.getTime()) ? roundToNextHour(new Date()) : base;
-  };
-
-  const resolveEndFallback = () => {
-    const baseStart = resolveStartFallback();
-    const base = endsAt ? new Date(endsAt) : new Date(baseStart.getTime() + 5 * 60 * 60 * 1000);
-    return Number.isNaN(base.getTime()) ? new Date(baseStart.getTime() + 5 * 60 * 60 * 1000) : base;
-  };
-
-  const handleStartDateChange = (value: string) => {
-    if (!value) {
-      setStartDateInput("");
-      setStartsAt("");
-      return;
-    }
-    const fallbackTime = startTimeInput || formatInputTime(resolveStartFallback());
-    setStartDateInput(value);
-    setStartTimeInput(fallbackTime);
-    setStartsAt(buildLocalDateTime(value, fallbackTime));
-  };
-
-  const handleStartTimeChange = (value: string) => {
-    if (!value) {
-      setStartTimeInput("");
-      setStartsAt("");
-      return;
-    }
-    const fallbackDate = startDateInput || formatInputDate(resolveStartFallback());
-    setStartDateInput(fallbackDate);
-    setStartTimeInput(value);
-    setStartsAt(buildLocalDateTime(fallbackDate, value));
-  };
-
-  const handleEndDateChange = (value: string) => {
-    if (!value) {
-      setEndDateInput("");
-      setEndsAt("");
-      return;
-    }
-    const fallbackTime = endTimeInput || formatInputTime(resolveEndFallback());
-    setEndDateInput(value);
-    setEndTimeInput(fallbackTime);
-    setEndsAt(buildLocalDateTime(value, fallbackTime));
-  };
-
-  const handleEndTimeChange = (value: string) => {
-    if (!value) {
-      setEndTimeInput("");
-      setEndsAt("");
-      return;
-    }
-    const fallbackDate = endDateInput || startDateInput || formatInputDate(resolveEndFallback());
-    setEndDateInput(fallbackDate);
-    setEndTimeInput(value);
-    setEndsAt(buildLocalDateTime(fallbackDate, value));
-  };
 
   const applyPadelFormatToAll = () => {
     if (padelCategoryIds.length === 0) return;
@@ -3651,330 +3402,26 @@ export function NewOrganizationEventPage({
               </div>
 
               <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 space-y-2">
-                <div className="flex items-center justify-between gap-3 text-[11px] text-white/70">
-                  <span>Início</span>
-                  <div className="flex items-center gap-2 text-[10px]">
-                    <div ref={startDatePopoverRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSchedulePopover((prev) => (prev === "startDate" ? null : "startDate"))
-                        }
-                        className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
-                          schedulePopover === "startDate"
-                            ? "border-white/40 bg-white/15 text-white"
-                            : "border-white/15 bg-white/5 text-white/85 hover:border-white/35"
-                        }`}
-                      >
-                        {startsAt ? formatDateLabel(startsAt) : "Data"}
-                      </button>
-                      {schedulePopover === "startDate" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl orya-menu-surface p-3">
-                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              Data de início
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setStartCalendarView(toMonthStart(today));
-                                handleStartDateChange(formatInputDate(today));
-                                setSchedulePopover(null);
-                              }}
-                              className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                            >
-                              Hoje
-                            </button>
-                          </div>
-                          <div className="mt-3 flex items-center justify-between">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setStartCalendarView(
-                                  (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1),
-                                )
-                              }
-                              className="h-8 w-8 rounded-full border border-white/10 text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                              aria-label="Mês anterior"
-                            >
-                              ‹
-                            </button>
-                            <span className="text-[13px] font-semibold text-white/85 capitalize">
-                              {formatMonthLabel(startCalendarView)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setStartCalendarView(
-                                  (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1),
-                                )
-                              }
-                              className="h-8 w-8 rounded-full border border-white/10 text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                              aria-label="Mês seguinte"
-                            >
-                              ›
-                            </button>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-2">
-                            <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              {WEEKDAY_LABELS.map((label) => (
-                                <span key={label} className="text-center">
-                                  {label}
-                                </span>
-                              ))}
-                            </div>
-                            <div
-                              ref={startDateInputRef}
-                              tabIndex={-1}
-                              className="mt-2 grid grid-cols-7 gap-1"
-                            >
-                              {startCalendarCells.map((cell, index) => {
-                                const isDisabled = isBeforeDay(cell.date, today);
-                                const isSelected = selectedStartDate
-                                  ? isSameDay(cell.date, selectedStartDate)
-                                  : false;
-                                const isToday = isSameDay(cell.date, today);
-                                return (
-                                  <button
-                                    key={`${cell.date.toISOString()}-${index}`}
-                                    type="button"
-                                    disabled={isDisabled}
-                                    onClick={() => {
-                                      handleStartDateChange(formatInputDate(cell.date));
-                                      setSchedulePopover(null);
-                                    }}
-                                    className={`h-8 rounded-lg text-[12px] font-medium transition ${
-                                      isSelected
-                                        ? "bg-[var(--orya-cyan)] text-black shadow-[0_8px_18px_rgba(107,255,255,0.35)]"
-                                        : isToday
-                                          ? "border border-[var(--orya-cyan)] bg-white/5 text-white"
-                                          : cell.inMonth
-                                            ? "bg-white/[0.04] text-white/85 hover:bg-white/12"
-                                            : "text-white/35 hover:bg-white/8 hover:text-white/60"
-                                    } ${isDisabled ? "cursor-not-allowed text-white/20 hover:bg-transparent" : ""}`}
-                                  >
-                                    {cell.date.getDate()}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div ref={startTimePopoverRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSchedulePopover((prev) => (prev === "startTime" ? null : "startTime"))
-                        }
-                        className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
-                          schedulePopover === "startTime"
-                            ? "border-white/40 bg-white/15 text-white"
-                            : "border-white/15 bg-white/5 text-white/85 hover:border-white/35"
-                        }`}
-                      >
-                        {startsAt ? formatTimeLabel(startsAt) : "Hora"}
-                      </button>
-                      {schedulePopover === "startTime" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl orya-menu-surface p-3">
-                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              Hora de início
-                            </span>
-                            <span className="text-[10px] text-white/40">00:00 → 23:30</span>
-                          </div>
-                          <div
-                            ref={startTimeInputRef}
-                            tabIndex={-1}
-                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-white/5 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                          >
-                            {timeSlots.map((slot) => {
-                              const isSelected = slot === startTimeInput;
-                              return (
-                                <button
-                                  key={`start-${slot}`}
-                                  type="button"
-                                  onClick={() => {
-                                    handleStartTimeChange(slot);
-                                    setSchedulePopover(null);
-                                  }}
-                                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[12px] transition ${
-                                    isSelected
-                                      ? "bg-[var(--orya-cyan)] text-black shadow-[0_6px_14px_rgba(107,255,255,0.35)]"
-                                      : "text-white/80 hover:bg-white/10"
-                                  }`}
-                                >
-                                  <span>{slot}</span>
-                                  {isSelected && <span className="text-[10px] font-semibold">Selecionado</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div ref={startsAtFieldRef} className="space-y-1">
+                  <p className="text-[11px] text-white/70">Início</p>
+                  <OryaDateTimeField
+                    value={startsAt}
+                    onChange={setStartsAt}
+                    className="w-full"
+                    dateButtonClassName="h-9 flex-1 rounded-full text-[11px]"
+                    timeButtonClassName="h-9 rounded-full text-[11px]"
+                  />
                 </div>
-
-                <div className="flex items-center justify-between gap-3 text-[11px] text-white/70">
-                  <span>Fim</span>
-                  <div className="flex items-center gap-2 text-[10px]">
-                    <div ref={endDatePopoverRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSchedulePopover((prev) => (prev === "endDate" ? null : "endDate"))
-                        }
-                        className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
-                          schedulePopover === "endDate"
-                            ? "border-white/40 bg-white/15 text-white"
-                            : "border-white/15 bg-white/5 text-white/80 hover:border-white/35"
-                        }`}
-                      >
-                        {endsAt ? formatDateLabel(endsAt) : "Data"}
-                      </button>
-                      {schedulePopover === "endDate" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[280px] rounded-2xl orya-menu-surface p-3">
-                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              Data de fim
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEndCalendarView(toMonthStart(minEndDate));
-                                handleEndDateChange(formatInputDate(minEndDate));
-                                setSchedulePopover(null);
-                              }}
-                              className="rounded-full border border-white/15 bg-white/5 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                            >
-                              {isSameDay(minEndDate, today) ? "Hoje" : "Igual ao início"}
-                            </button>
-                          </div>
-                          <div className="mt-3 flex items-center justify-between">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEndCalendarView(
-                                  (prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1),
-                                )
-                              }
-                              className="h-8 w-8 rounded-full border border-white/10 text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                              aria-label="Mês anterior"
-                            >
-                              ‹
-                            </button>
-                            <span className="text-[13px] font-semibold text-white/85 capitalize">
-                              {formatMonthLabel(endCalendarView)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setEndCalendarView(
-                                  (prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1),
-                                )
-                              }
-                              className="h-8 w-8 rounded-full border border-white/10 text-white/70 transition hover:border-white/30 hover:bg-white/10"
-                              aria-label="Mês seguinte"
-                            >
-                              ›
-                            </button>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-2">
-                            <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              {WEEKDAY_LABELS.map((label) => (
-                                <span key={label} className="text-center">
-                                  {label}
-                                </span>
-                              ))}
-                            </div>
-                            <div ref={endDateInputRef} tabIndex={-1} className="mt-2 grid grid-cols-7 gap-1">
-                              {endCalendarCells.map((cell, index) => {
-                                const isDisabled = isBeforeDay(cell.date, minEndDate);
-                                const isSelected = selectedEndDate ? isSameDay(cell.date, selectedEndDate) : false;
-                                const isToday = isSameDay(cell.date, today);
-                                return (
-                                  <button
-                                    key={`${cell.date.toISOString()}-${index}`}
-                                    type="button"
-                                    disabled={isDisabled}
-                                    onClick={() => {
-                                      handleEndDateChange(formatInputDate(cell.date));
-                                      setSchedulePopover(null);
-                                    }}
-                                    className={`h-8 rounded-lg text-[12px] font-medium transition ${
-                                      isSelected
-                                        ? "bg-[var(--orya-cyan)] text-black shadow-[0_8px_18px_rgba(107,255,255,0.35)]"
-                                        : isToday
-                                          ? "border border-[var(--orya-cyan)] bg-white/5 text-white"
-                                          : cell.inMonth
-                                            ? "bg-white/[0.04] text-white/85 hover:bg-white/12"
-                                            : "text-white/35 hover:bg-white/8 hover:text-white/60"
-                                    } ${isDisabled ? "cursor-not-allowed text-white/20 hover:bg-transparent" : ""}`}
-                                  >
-                                    {cell.date.getDate()}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div ref={endTimePopoverRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSchedulePopover((prev) => (prev === "endTime" ? null : "endTime"))
-                        }
-                        className={`rounded-full border px-2 py-0.5 text-[10px] transition ${
-                          schedulePopover === "endTime"
-                            ? "border-white/40 bg-white/15 text-white"
-                            : "border-white/15 bg-white/5 text-white/80 hover:border-white/35"
-                        }`}
-                      >
-                        {endsAt ? formatTimeLabel(endsAt) : "Hora"}
-                      </button>
-                      {schedulePopover === "endTime" && (
-                        <div className="absolute right-0 z-[var(--z-popover)] mt-2 w-[210px] rounded-2xl orya-menu-surface p-3">
-                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                            <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
-                              Hora de fim
-                            </span>
-                            <span className="text-[10px] text-white/40">00:00 → 23:30</span>
-                          </div>
-                          <div
-                            ref={endTimeInputRef}
-                            tabIndex={-1}
-                            className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-xl border border-white/12 bg-white/5 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                          >
-                            {timeSlots.map((slot) => {
-                              const isSelected = slot === endTimeInput;
-                              return (
-                                <button
-                                  key={`end-${slot}`}
-                                  type="button"
-                                  onClick={() => {
-                                    handleEndTimeChange(slot);
-                                    setSchedulePopover(null);
-                                  }}
-                                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-[12px] transition ${
-                                    isSelected
-                                      ? "bg-[var(--orya-cyan)] text-black shadow-[0_6px_14px_rgba(107,255,255,0.35)]"
-                                      : "text-white/80 hover:bg-white/10"
-                                  }`}
-                                >
-                                  <span>{slot}</span>
-                                  {isSelected && <span className="text-[10px] font-semibold">Selecionado</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div ref={endsAtFieldRef} className="space-y-1">
+                  <p className="text-[11px] text-white/70">Fim</p>
+                  <OryaDateTimeField
+                    value={endsAt}
+                    onChange={setEndsAt}
+                    minDateTime={startsAt || undefined}
+                    className="w-full"
+                    dateButtonClassName="h-9 flex-1 rounded-full text-[11px]"
+                    timeButtonClassName="h-9 rounded-full text-[11px]"
+                  />
                 </div>
                 {scheduleError && <p className="text-[10px] text-pink-200">{scheduleError}</p>}
               </div>

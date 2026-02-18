@@ -9,6 +9,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { cn } from "@/lib/utils";
 import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { resolveLocale, t } from "@/lib/i18n";
+import { resolveInviteActionFeedback } from "@/lib/invites/actionFeedback";
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 type InviteType = "ORGANIZATION_MEMBER" | "CLUB_STAFF" | "TEAM_MEMBER";
@@ -160,7 +161,11 @@ export default function OrganizationInvitesClient({
       });
       const payload = await res.json();
       if (!res.ok || !payload?.ok) {
-        setActionMessage(payload?.error ?? t("orgInvitesActionError", locale));
+        const feedback = resolveInviteActionFeedback(payload, t("orgInvitesActionError", locale));
+        setActionMessage(feedback.message);
+        if (feedback.shouldRefresh) {
+          await mutate();
+        }
       } else {
         setActionMessage(
           action === "ACCEPT" ? t("orgInvitesAcceptedMessage", locale) : t("orgInvitesDeclinedMessage", locale),

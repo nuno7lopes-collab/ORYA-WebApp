@@ -178,4 +178,20 @@ describe("team invites concurrent transitions", () => {
     expect(statuses).toEqual([200, 409]);
     expect(runtime.invite?.cancelledAt).toBeTruthy();
   });
+
+  it("allows only one winner for simultaneous ACCEPT and CANCEL", async () => {
+    runtime.membership = { memberId: "gm-2", groupId: 7, role: "ADMIN", rolePack: null };
+    runtime.canAccess = true;
+    runtime.findBarrier = createPairBarrier(2);
+
+    const [acceptRes, cancelRes] = await Promise.all([
+      teamInvitesPatch(buildRequest("ACCEPT"), { params: Promise.resolve({ id: "11" }) }),
+      teamInvitesPatch(buildRequest("CANCEL"), { params: Promise.resolve({ id: "11" }) }),
+    ]);
+
+    const statuses = [acceptRes.status, cancelRes.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 409]);
+    expect(runtime.memberUpserts).toBeLessThanOrEqual(1);
+    expect(Boolean(runtime.invite?.acceptedAt)).not.toBe(Boolean(runtime.invite?.cancelledAt));
+  });
 });

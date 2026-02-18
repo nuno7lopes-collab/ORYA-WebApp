@@ -217,4 +217,25 @@ describe("org-hub invite transitions concurrent guardrails", () => {
     expect(statuses).toEqual([200, 400]);
     expect(recordOrganizationAudit).toHaveBeenCalledTimes(1);
   });
+
+  it("allows only one winner for simultaneous ACCEPT and CANCEL", async () => {
+    runtime.authUser = { id: "admin-user", email: "admin@example.com" };
+    runtime.membership = { memberId: "gm-2", groupId: 7, role: "ADMIN", rolePack: null };
+    runtime.moduleAccessOk = true;
+    runtime.currentMember = { memberId: "current-2" };
+    runtime.invite = {
+      ...runtime.invite!,
+      targetIdentifier: "admin@example.com",
+      targetUserId: null,
+    };
+    runtime.findBarrier = createPairBarrier(2);
+
+    const [acceptRes, cancelRes] = await Promise.all([PATCH(buildRequest("ACCEPT")), PATCH(buildRequest("CANCEL"))]);
+
+    const statuses = [acceptRes.status, cancelRes.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 400]);
+    expect(recordOrganizationAudit).toHaveBeenCalledTimes(1);
+    expect(ensureUserIsOrganization.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(Boolean(runtime.invite?.acceptedAt)).not.toBe(Boolean(runtime.invite?.cancelledAt));
+  });
 });

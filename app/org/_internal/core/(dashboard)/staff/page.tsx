@@ -16,6 +16,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
 import { ACCESS_LABELS, MODULE_LABELS, getDefaultModuleAccess, normalizeAccessLevel } from "@/lib/organizationRbac";
 import { parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
+import { resolveInviteActionFeedback } from "@/lib/invites/actionFeedback";
 import type { OrganizationModule, OrganizationRolePack } from "@prisma/client";
 
 type MemberRole = "OWNER" | "CO_OWNER" | "ADMIN" | "STAFF" | "PROMOTER";
@@ -676,7 +677,12 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
-        pushToast(json?.error || "Não foi possível atualizar o convite.");
+        const feedback = resolveInviteActionFeedback(json, "Não foi possível atualizar o convite.");
+        pushToast(feedback.message);
+        if (feedback.shouldRefresh) {
+          await mutateInvites();
+          await mutateMembers();
+        }
       } else {
         pushToast(
           action === "CANCEL"

@@ -9,6 +9,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 import { useSearchParams } from "next/navigation";
+import { resolveInviteActionFeedback } from "@/lib/invites/actionFeedback";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -386,7 +387,7 @@ export default function SocialHubPage() {
   };
 
   const [notificationActionPending, setNotificationActionPending] = useState<Record<string, boolean>>({});
-  const [notificationStatus, setNotificationStatus] = useState<Record<string, "Aceite" | "Recusado">>({});
+  const [notificationStatus, setNotificationStatus] = useState<Record<string, "Aceite" | "Recusado" | "Atualizado">>({});
   const [followBackState, setFollowBackState] = useState<Record<string, boolean>>({});
   const handleNotificationAction = async (
     item: NotificationItem,
@@ -423,15 +424,23 @@ export default function SocialHubPage() {
       } else if (action.type === "accept_org_invite" || action.type === "decline_org_invite") {
         const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
         if (inviteId) {
-          await fetch("/api/org-hub/organizations/members/invites", {
+          const res = await fetch("/api/org-hub/organizations/members/invites", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ inviteId, action: action.type === "accept_org_invite" ? "ACCEPT" : "DECLINE" }),
           });
-          setNotificationStatus((prev) => ({
-            ...prev,
-            [item.id]: action.type === "accept_org_invite" ? "Aceite" : "Recusado",
-          }));
+          const payload = await res.json().catch(() => null);
+          if (!res.ok || payload?.ok === false) {
+            const feedback = resolveInviteActionFeedback(payload, "Não foi possível atualizar o convite.");
+            if (feedback.shouldRefresh) {
+              setNotificationStatus((prev) => ({ ...prev, [item.id]: "Atualizado" }));
+            }
+          } else {
+            setNotificationStatus((prev) => ({
+              ...prev,
+              [item.id]: action.type === "accept_org_invite" ? "Aceite" : "Recusado",
+            }));
+          }
         }
       } else if (action.type === "accept_club_staff_invite" || action.type === "decline_club_staff_invite") {
         const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
@@ -443,7 +452,7 @@ export default function SocialHubPage() {
               ? Number(padelClubIdRaw)
               : null;
         if (inviteId && Number.isFinite(padelClubId)) {
-          await fetch(`/api/padel/clubs/${padelClubId}/staff/invites`, {
+          const res = await fetch(`/api/padel/clubs/${padelClubId}/staff/invites`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -451,10 +460,18 @@ export default function SocialHubPage() {
               action: action.type === "accept_club_staff_invite" ? "ACCEPT" : "DECLINE",
             }),
           });
-          setNotificationStatus((prev) => ({
-            ...prev,
-            [item.id]: action.type === "accept_club_staff_invite" ? "Aceite" : "Recusado",
-          }));
+          const payload = await res.json().catch(() => null);
+          if (!res.ok || payload?.ok === false) {
+            const feedback = resolveInviteActionFeedback(payload, "Não foi possível atualizar o convite.");
+            if (feedback.shouldRefresh) {
+              setNotificationStatus((prev) => ({ ...prev, [item.id]: "Atualizado" }));
+            }
+          } else {
+            setNotificationStatus((prev) => ({
+              ...prev,
+              [item.id]: action.type === "accept_club_staff_invite" ? "Aceite" : "Recusado",
+            }));
+          }
         }
       } else if (action.type === "accept_team_member_invite" || action.type === "decline_team_member_invite") {
         const inviteId = typeof action.payload?.inviteId === "string" ? action.payload.inviteId : null;
@@ -466,7 +483,7 @@ export default function SocialHubPage() {
               ? Number(teamIdRaw)
               : null;
         if (inviteId && Number.isFinite(teamId)) {
-          await fetch(`/api/padel/teams/${teamId}/invites`, {
+          const res = await fetch(`/api/padel/teams/${teamId}/invites`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -474,10 +491,18 @@ export default function SocialHubPage() {
               action: action.type === "accept_team_member_invite" ? "ACCEPT" : "DECLINE",
             }),
           });
-          setNotificationStatus((prev) => ({
-            ...prev,
-            [item.id]: action.type === "accept_team_member_invite" ? "Aceite" : "Recusado",
-          }));
+          const payload = await res.json().catch(() => null);
+          if (!res.ok || payload?.ok === false) {
+            const feedback = resolveInviteActionFeedback(payload, "Não foi possível atualizar o convite.");
+            if (feedback.shouldRefresh) {
+              setNotificationStatus((prev) => ({ ...prev, [item.id]: "Atualizado" }));
+            }
+          } else {
+            setNotificationStatus((prev) => ({
+              ...prev,
+              [item.id]: action.type === "accept_team_member_invite" ? "Aceite" : "Recusado",
+            }));
+          }
         }
       } else if (action.type === "open") {
         const url = typeof action.payload?.url === "string" ? action.payload.url : item.ctaUrl;

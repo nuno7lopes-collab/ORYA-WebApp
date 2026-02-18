@@ -231,4 +231,20 @@ describe("club staff invites concurrent transitions", () => {
     expect(statuses).toEqual([200, 409]);
     expect(runtime.invite?.cancelledAt).toBeTruthy();
   });
+
+  it("allows only one winner for simultaneous ACCEPT and CANCEL", async () => {
+    runtime.membership = { memberId: "gm-2", groupId: 7, role: "ADMIN", rolePack: null };
+    runtime.canAccess = true;
+    runtime.findBarrier = createPairBarrier(2);
+
+    const [acceptRes, cancelRes] = await Promise.all([
+      clubStaffInvitesPatch(buildRequest("ACCEPT")),
+      clubStaffInvitesPatch(buildRequest("CANCEL")),
+    ]);
+
+    const statuses = [acceptRes.status, cancelRes.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 409]);
+    expect(runtime.staffCreates).toBeLessThanOrEqual(1);
+    expect(Boolean(runtime.invite?.acceptedAt)).not.toBe(Boolean(runtime.invite?.cancelledAt));
+  });
 });
