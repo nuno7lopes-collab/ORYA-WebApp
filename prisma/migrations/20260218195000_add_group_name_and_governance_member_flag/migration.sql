@@ -6,21 +6,19 @@ ADD COLUMN "name" TEXT;
 ALTER TABLE "app_v3"."organization_group_members"
 ADD COLUMN "is_governance" BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Backfill group name from first organization (fallbacks to Grupo #id).
+-- Backfill group name from first organization (fallback to Grupo #id).
 UPDATE "app_v3"."organization_groups" g
-SET "name" = COALESCE(src.public_name, src.business_name, 'Grupo #' || g.id::text)
-FROM LATERAL (
-  SELECT o."public_name" AS public_name, o."business_name" AS business_name
-  FROM "app_v3"."organizations" o
-  WHERE o."group_id" = g.id
-  ORDER BY o.id ASC
-  LIMIT 1
-) src
+SET "name" = COALESCE(
+  (
+    SELECT COALESCE(o."public_name", o."business_name")
+    FROM "app_v3"."organizations" o
+    WHERE o."group_id" = g.id
+    ORDER BY o.id ASC
+    LIMIT 1
+  ),
+  'Grupo #' || g.id::text
+)
 WHERE g."name" IS NULL;
-
-UPDATE "app_v3"."organization_groups"
-SET "name" = 'Grupo #' || id::text
-WHERE "name" IS NULL;
 
 -- Mark group owners as governance members and enforce global scope.
 UPDATE "app_v3"."organization_group_members" m

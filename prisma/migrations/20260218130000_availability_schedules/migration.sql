@@ -27,8 +27,15 @@ ALTER TABLE app_v3.weekly_availability_templates
   ADD COLUMN IF NOT EXISTS availability_id INTEGER;
 
 INSERT INTO app_v3.availability_schedules (organization_id, scope_type, scope_id, start_date, end_date)
-SELECT DISTINCT organization_id, scope_type, scope_id, CURRENT_DATE, NULL
-FROM app_v3.weekly_availability_templates;
+SELECT DISTINCT t.organization_id, t.scope_type, t.scope_id, CURRENT_DATE::date, NULL::date
+FROM app_v3.weekly_availability_templates t
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM app_v3.availability_schedules s
+  WHERE s.organization_id = t.organization_id
+    AND s.scope_type = t.scope_type
+    AND s.scope_id = t.scope_id
+);
 
 UPDATE app_v3.weekly_availability_templates t
 SET availability_id = s.id

@@ -91,6 +91,40 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY"
           } >> "$GITHUB_ENV"
 
+      - name: Load database env for migrations
+        run: |
+          set -euo pipefail
+          SECRET_ID="orya/prod/app"
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text)
+          DATABASE_URL=$(echo "$SECRET_JSON" | jq -r '.DATABASE_URL')
+          DIRECT_URL=$(echo "$SECRET_JSON" | jq -r '.DIRECT_URL')
+          if [[ -z "$DATABASE_URL" || "$DATABASE_URL" == "null" ]]; then
+            echo "Missing DATABASE_URL in $SECRET_ID" >&2
+            exit 1
+          fi
+          if [[ -z "$DIRECT_URL" || "$DIRECT_URL" == "null" ]]; then
+            echo "Missing DIRECT_URL in $SECRET_ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$DATABASE_URL"
+          echo "::add-mask::$DIRECT_URL"
+          {
+            echo "DATABASE_URL=$DATABASE_URL"
+            echo "DIRECT_URL=$DIRECT_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Node for migrations
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies for migrations
+        run: npm ci --ignore-scripts --prefer-offline
+
+      - name: Run Prisma migrations (prod)
+        run: npm run db:deploy
+
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
