@@ -26,3 +26,6 @@ dist
 .turbo
 .next
 .next/cache
+.next-e2e
+test-results
+playwright-report

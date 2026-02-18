@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable
+      PRISMA_GENERATE_NO_ENGINE: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,4 +21,4 @@ jobs:
       - run: npm ci
       - run: env -i PATH="$PATH" NODE_ENV=test npm run build
       - run: env -i PATH="$PATH" NODE_ENV=test npx vitest run
-      - run: DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable" DIRECT_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres?sslmode=disable" npm run db:gates:offline
+      - run: npm run db:gates:offline

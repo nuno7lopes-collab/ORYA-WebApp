@@ -2,9 +2,27 @@ name: Deploy ECS (prod)
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Serviço(s) a publicar"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - web
+          - worker
   push:
     branches:
       - developer
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-ecs-prod
+  cancel-in-progress: false
 
 env:
   AWS_REGION: eu-west-1
@@ -21,34 +39,35 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
+      - name: Resolve deploy target
+        id: resolve_target
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            target="${{ inputs.target }}"
+          else
+            target="all"
+          fi
+          echo "DEPLOY_TARGET=${target}" >> "$GITHUB_ENV"
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate AWS auth config
+        run: |
+          if [[ -z "${{ secrets.AWS_ROLE_TO_ASSUME }}" ]]; then
+            echo "Configure o secret AWS_ROLE_TO_ASSUME para OIDC." >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install deps
-        run: npm ci
-
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Unit tests (vitest)
-        run: npm run test:coverage
-
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-ecs
 
       - name: Load public env for web build
         run: |
@@ -75,35 +94,94 @@ jobs:
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push web image
-        run: |
-          docker build -t ${ECR_REPOSITORY_WEB}:latest -f Dockerfile.web \
-            --build-arg NEXT_PUBLIC_SUPABASE_URL \
-            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY \
-            .
-          docker tag ${ECR_REPOSITORY_WEB}:latest ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
-          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}:latest
+        id: build_web
+        if: ${{ steps.resolve_target.outputs.target == 'all' || steps.resolve_target.outputs.target == 'web' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.web
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_WEB }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_WEB }}:latest
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          cache-from: type=gha,scope=orya-web
+          cache-to: type=gha,scope=orya-web,mode=max
+          provenance: false
 
       - name: Build & push worker image
-        run: |
-          docker build -t ${ECR_REPOSITORY_WORKER}:latest -f Dockerfile.worker .
-          docker tag ${ECR_REPOSITORY_WORKER}:latest ${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}:latest
-          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}:latest
+        id: build_worker
+        if: ${{ steps.resolve_target.outputs.target == 'all' || steps.resolve_target.outputs.target == 'worker' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_WORKER }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY_WORKER }}:latest
+          cache-from: type=gha,scope=orya-worker
+          cache-to: type=gha,scope=orya-worker,mode=max
+          provenance: false
 
-      - name: Render task definitions
+      - name: Roll out task definitions by image digest
+        env:
+          WEB_DIGEST: ${{ steps.build_web.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.build_worker.outputs.digest }}
         run: |
-          python3 scripts/render-taskdef.py infra/ecs/taskdef-web.json /tmp/taskdef-web.json ${ECR_REGISTRY}
-          python3 scripts/render-taskdef.py infra/ecs/taskdef-worker.json /tmp/taskdef-worker.json ${ECR_REGISTRY}
+          set -euo pipefail
 
-      - name: Register task definitions
-        run: |
-          aws ecs register-task-definition --cli-input-json file:///tmp/taskdef-web.json
-          aws ecs register-task-definition --cli-input-json file:///tmp/taskdef-worker.json
+          update_service_with_digest() {
+            local service_name="$1"
+            local container_name="$2"
+            local image_ref="$3"
+            local current_td new_td
 
-      - name: Deploy web service
-        run: |
-          aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE_WEB} --force-new-deployment
+            current_td=$(aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${service_name}" --query "services[0].taskDefinition" --output text)
+            aws ecs describe-task-definition --task-definition "${current_td}" --query taskDefinition --output json > "/tmp/${service_name}-base.json"
 
-      - name: Deploy worker service
+            jq --arg img "${image_ref}" --arg cname "${container_name}" '
+              .containerDefinitions |= map(if .name == $cname then .image = $img else . end)
+              | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt)
+              | walk(if type=="object" then with_entries(select(.value != null)) else . end)
+            ' "/tmp/${service_name}-base.json" > "/tmp/${service_name}-new.json"
+
+            new_td=$(aws ecs register-task-definition --cli-input-json "file:///tmp/${service_name}-new.json" --query "taskDefinition.taskDefinitionArn" --output text)
+            aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${service_name}" --task-definition "${new_td}" >/dev/null
+            echo "${service_name} -> ${new_td}"
+          }
+
+          services=()
+
+          if [[ "${DEPLOY_TARGET}" == "all" || "${DEPLOY_TARGET}" == "web" ]]; then
+            if [[ -z "${WEB_DIGEST}" ]]; then
+              echo "WEB_DIGEST vazio; build web falhou." >&2
+              exit 1
+            fi
+            update_service_with_digest "${ECS_SERVICE_WEB}" "orya-web" "${ECR_REGISTRY}/${ECR_REPOSITORY_WEB}@${WEB_DIGEST}"
+            services+=("${ECS_SERVICE_WEB}")
+          fi
+
+          if [[ "${DEPLOY_TARGET}" == "all" || "${DEPLOY_TARGET}" == "worker" ]]; then
+            if [[ -z "${WORKER_DIGEST}" ]]; then
+              echo "WORKER_DIGEST vazio; build worker falhou." >&2
+              exit 1
+            fi
+            update_service_with_digest "${ECS_SERVICE_WORKER}" "orya-worker" "${ECR_REGISTRY}/${ECR_REPOSITORY_WORKER}@${WORKER_DIGEST}"
+            services+=("${ECS_SERVICE_WORKER}")
+          fi
+
+          aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${services[@]}"
+
+      - name: Smoke check public site
+        if: ${{ steps.resolve_target.outputs.target == 'all' || steps.resolve_target.outputs.target == 'web' }}
         run: |
-          aws ecs update-service --cluster ${ECS_CLUSTER} --service ${ECS_SERVICE_WORKER} --force-new-deployment
+          curl -fsS https://orya.pt/ >/dev/null
