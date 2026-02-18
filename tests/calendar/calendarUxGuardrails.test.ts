@@ -43,14 +43,16 @@ describe("calendar ux guardrails", () => {
     expect(weekClient).toContain("Atalhos: ← → · T · D · G");
 
     expect(datePicker).toContain("OryaDateField");
-    expect(sharedDateField).toContain("Atalhos: setas, Home/End, PgUp/PgDn, Enter, Esc.");
     expect(sharedDateField).toContain('event.key === "ArrowLeft"');
     expect(sharedDateField).toContain('event.key === "ArrowRight"');
     expect(sharedDateField).toContain('event.key === "ArrowUp"');
     expect(sharedDateField).toContain('event.key === "ArrowDown"');
+    expect(sharedDateField).toContain('event.key === "Home"');
+    expect(sharedDateField).toContain('event.key === "End"');
     expect(sharedDateField).toContain('event.key === "PageUp"');
     expect(sharedDateField).toContain('event.key === "PageDown"');
     expect(sharedDateField).toContain('event.key === "Enter" || event.key === " "');
+    expect(sharedDateField).toContain('event.key === "Escape"');
   });
 
   it("keeps booking flow accessibility and mobile continuity cues", () => {
