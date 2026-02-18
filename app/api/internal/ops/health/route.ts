@@ -6,7 +6,8 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(req: NextRequest) {
   if (!requireInternalSecret(req)) {
-    return jsonWrap({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    // ALB health checks do not send internal auth headers.
+    return jsonWrap({ ok: true, ts: new Date().toISOString(), probe: true });
   }
 
   const health = await getOpsHealth();

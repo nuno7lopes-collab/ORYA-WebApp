@@ -17,11 +17,15 @@ beforeEach(async () => {
 });
 
 describe("ops health route", () => {
-  it("bloqueia sem secret", async () => {
+  it("responde probe publico sem secret", async () => {
     requireInternalSecret.mockReturnValue(false);
     const req = new NextRequest("http://localhost/api/internal/ops/health");
     const res = await GET(req);
-    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.probe).toBe(true);
+    expect(getOpsHealth).not.toHaveBeenCalled();
   });
 
   it("devolve health", async () => {
