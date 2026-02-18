@@ -142,7 +142,7 @@ async function main() {
   await runDelete("ReservationResource", prisma.reservationResource, {
     organizationId: { in: unverifiedOrgIds },
   });
-  await runDelete("WeeklyAvailabilityTemplate", prisma.weeklyAvailabilityTemplate, {
+  await runDelete("AvailabilitySchedule", prisma.availabilitySchedule, {
     organizationId: { in: unverifiedOrgIds },
   });
   await runDelete("AvailabilityOverride", prisma.availabilityOverride, {

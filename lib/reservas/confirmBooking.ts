@@ -1,7 +1,7 @@
 import type { BookingStatus, Prisma } from "@prisma/client";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
-import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import {

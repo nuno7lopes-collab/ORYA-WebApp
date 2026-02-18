@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const prismaServiceFindMany = vi.hoisted(() => vi.fn());
+const prismaAvailabilityScheduleFindMany = vi.hoisted(() => vi.fn());
 const prismaWeeklyTemplateFindMany = vi.hoisted(() => vi.fn());
 const prismaAvailabilityOverrideFindMany = vi.hoisted(() => vi.fn());
 const prismaBookingFindMany = vi.hoisted(() => vi.fn());
@@ -11,6 +12,7 @@ const prismaReservationResourceFindMany = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     service: { findMany: prismaServiceFindMany },
+    availabilitySchedule: { findMany: prismaAvailabilityScheduleFindMany },
     weeklyAvailabilityTemplate: { findMany: prismaWeeklyTemplateFindMany },
     availabilityOverride: { findMany: prismaAvailabilityOverrideFindMany },
     booking: { findMany: prismaBookingFindMany },
@@ -22,6 +24,7 @@ vi.mock("@/lib/prisma", () => ({
 describe("GET /api/servicos/list", () => {
   beforeEach(() => {
     prismaServiceFindMany.mockReset();
+    prismaAvailabilityScheduleFindMany.mockReset();
     prismaWeeklyTemplateFindMany.mockReset();
     prismaAvailabilityOverrideFindMany.mockReset();
     prismaBookingFindMany.mockReset();
@@ -29,6 +32,7 @@ describe("GET /api/servicos/list", () => {
     prismaReservationResourceFindMany.mockReset();
 
     prismaServiceFindMany.mockResolvedValue([]);
+    prismaAvailabilityScheduleFindMany.mockResolvedValue([]);
     prismaWeeklyTemplateFindMany.mockResolvedValue([]);
     prismaAvailabilityOverrideFindMany.mockResolvedValue([]);
     prismaBookingFindMany.mockResolvedValue([]);
@@ -61,4 +65,3 @@ describe("GET /api/servicos/list", () => {
     );
   });
 });
-

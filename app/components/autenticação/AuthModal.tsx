@@ -112,6 +112,7 @@ function AuthModalContent({
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
   const confirmPasswordInputRef = useRef<HTMLInputElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const didHydratePendingStepRef = useRef(false);
   const titleId = useId();
   const subtitleId = useId();
 
@@ -130,6 +131,20 @@ function AuthModalContent({
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem("orya_pending_email");
+        window.localStorage.removeItem("orya_pending_step");
+        window.localStorage.removeItem("orya_otp_last_sent_at");
+        window.localStorage.removeItem("orya_otp_type");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function clearPendingVerificationStep() {
+    setOtp("");
+    setVerifyOtpSent(false);
+    if (typeof window !== "undefined") {
+      try {
         window.localStorage.removeItem("orya_pending_step");
         window.localStorage.removeItem("orya_otp_last_sent_at");
         window.localStorage.removeItem("orya_otp_type");
@@ -165,6 +180,23 @@ function AuthModalContent({
     setOnboardingInterests([]);
     setError(null);
     setMode("login");
+  }
+
+  function switchAuthMode(nextMode: "login" | "signup") {
+    clearPendingVerificationStep();
+    clearPasswordInputs();
+    setMode(nextMode);
+    setError(null);
+    setLoading(false);
+    setPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setLoginOtpSending(false);
+    setResetPasswordSending(false);
+    setLoginOtpSent(false);
+    setResetEmailSent(false);
+    setSignupCooldown(0);
   }
 
   const canClose = !isOnboarding && dismissible;
@@ -343,20 +375,21 @@ function AuthModalContent({
     }
   }, [mode, profile?.favouriteCategories]);
 
-  // Recupera email pendente após reload
+  // Recupera estado pendente apenas no primeiro render do modal.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || didHydratePendingStepRef.current) return;
+    didHydratePendingStepRef.current = true;
     try {
       const pendingEmail = window.localStorage.getItem("orya_pending_email");
       const pendingStep = window.localStorage.getItem("orya_pending_step");
       if (pendingEmail && !email) setEmail(pendingEmail);
-      if (pendingStep === "verify") {
+      if (pendingStep === "verify" && mode !== "signup") {
         setMode("verify");
       }
     } catch {
       /* ignore */
     }
-  }, [email, setEmail, setMode]);
+  }, [email, mode, setEmail, setMode]);
 
   useEffect(() => {
     if (!isOnboarding || !profile) return;
@@ -967,7 +1000,7 @@ function AuthModalContent({
       : mode === "signup"
       ? "Demora segundos. Depois é só viver eventos."
       : mode === "verify"
-      ? "Valida o código que enviámos para o teu email."
+      ? "Valida o código que enviámos para o teu email (ou abre o link recebido)."
       : mode === "reset"
       ? "Enviaremos um link seguro para redefinires a palavra-passe."
       : "Só falta isto para ficares pronto.";
@@ -1105,7 +1138,7 @@ function AuthModalContent({
             <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/12 bg-white/[0.045] p-1 text-sm">
               <button
                 type="button"
-                onClick={() => setMode("login")}
+                onClick={() => switchAuthMode("login")}
                 className={`rounded-xl px-3 py-2 font-semibold transition ${
                   isLogin
                     ? "border border-[#22D3EE]/55 bg-[#22D3EE]/18 text-white shadow-[0_12px_30px_rgba(34,211,238,0.26)]"
@@ -1116,7 +1149,7 @@ function AuthModalContent({
               </button>
               <button
                 type="button"
-                onClick={() => setMode("signup")}
+                onClick={() => switchAuthMode("signup")}
                 className={`rounded-xl px-3 py-2 font-semibold transition ${
                   isSignup
                     ? "border border-[#22D3EE]/55 bg-[#22D3EE]/18 text-white shadow-[0_12px_30px_rgba(34,211,238,0.26)]"
@@ -1159,6 +1192,7 @@ function AuthModalContent({
               <input
                 ref={passwordInputRef}
                 type={showPassword ? "text" : "password"}
+                value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setError(null);
@@ -1169,17 +1203,7 @@ function AuthModalContent({
               />
               <button
                 type="button"
-                onClick={() => {
-                  const currentValue = passwordInputRef.current?.value ?? "";
-                  setShowPassword((v) => !v);
-                  window.setTimeout(() => {
-                    if (!passwordInputRef.current) return;
-                    if (!passwordInputRef.current.value && currentValue) {
-                      passwordInputRef.current.value = currentValue;
-                    }
-                    setPassword(passwordInputRef.current.value || currentValue);
-                  }, 0);
-                }}
+                onClick={() => setShowPassword((v) => !v)}
                 className="text-[12px] font-semibold text-white/78 transition hover:text-white"
               >
                 {showPassword ? "Ocultar" : "Mostrar"}
@@ -1210,6 +1234,7 @@ function AuthModalContent({
                   <input
                     ref={confirmPasswordInputRef}
                     type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
                     onChange={(e) => {
                       setConfirmPassword(e.target.value);
                       setError(null);
@@ -1220,17 +1245,7 @@ function AuthModalContent({
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      const currentValue = confirmPasswordInputRef.current?.value ?? "";
-                      setShowConfirmPassword((v) => !v);
-                      window.setTimeout(() => {
-                        if (!confirmPasswordInputRef.current) return;
-                        if (!confirmPasswordInputRef.current.value && currentValue) {
-                          confirmPasswordInputRef.current.value = currentValue;
-                        }
-                        setConfirmPassword(confirmPasswordInputRef.current.value || currentValue);
-                      }, 0);
-                    }}
+                    onClick={() => setShowConfirmPassword((v) => !v)}
                     className="text-[12px] font-semibold text-white/78 transition hover:text-white"
                   >
                     {showConfirmPassword ? "Ocultar" : "Mostrar"}
@@ -1374,7 +1389,7 @@ function AuthModalContent({
         {mode === "verify" && (
           <>
             <p className="text-sm text-white/80 mb-2">
-              Código enviado para{" "}
+              Enviámos confirmação para{" "}
               <strong>{isEmailLike(email) ? email : "teu email"}</strong>.
             </p>
             <label className={fieldLabelClass}>Email</label>
@@ -1408,7 +1423,7 @@ function AuthModalContent({
               placeholder="Código de 6 dígitos"
             />
             <div className="mt-2 text-[12px] text-white/65">
-              Se não recebeste o email, verifica a caixa de spam.
+              Se não recebeste o email, verifica a caixa de spam e procura também por um link de confirmação.
             </div>
             <div className="mt-3 flex items-center justify-between text-[12px] text-white/65">
               <button
@@ -1629,12 +1644,12 @@ function AuthModalContent({
             </div>
             {mode === "signup" && error.toLowerCase().includes("já tem conta") && (
               <div className="space-y-2 text-[12px] text-white/75">
-                <button
-                  type="button"
-                  onClick={() => setMode("login")}
-                  className={`${buttonGhostClass} w-full`}
-                >
-                  Ir para login
+                  <button
+                    type="button"
+                    onClick={() => switchAuthMode("login")}
+                    className={`${buttonGhostClass} w-full`}
+                  >
+                    Ir para login
                 </button>
                 <button
                   type="button"
@@ -1722,7 +1737,7 @@ function AuthModalContent({
           {mode === "reset" && (
             <button
               type="button"
-              onClick={() => setMode("login")}
+              onClick={() => switchAuthMode("login")}
               className="text-[12px] text-white/60 hover:text-white"
             >
               Voltar ao login

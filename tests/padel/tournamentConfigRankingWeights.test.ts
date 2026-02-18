@@ -10,6 +10,7 @@ const updateTournament = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   event: { findUnique: vi.fn() },
+  padelCategory: { findFirst: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -72,6 +73,7 @@ beforeEach(async () => {
   createTournamentForEvent.mockReset();
   updateTournament.mockReset();
   prisma.event.findUnique.mockReset();
+  prisma.padelCategory.findFirst.mockReset();
   prisma.$transaction.mockReset();
 
   createSupabaseServer.mockResolvedValue({
@@ -85,7 +87,14 @@ beforeEach(async () => {
   ensurePadelRuleSetVersion.mockResolvedValue({ id: 700 });
   createTournamentForEvent.mockResolvedValue({ ok: true });
   updateTournament.mockResolvedValue({ ok: true });
-  prisma.event.findUnique.mockResolvedValue(null);
+  prisma.event.findUnique.mockResolvedValue({
+    id: 1001,
+    organizationId: 321,
+    templateType: "PADEL",
+    startsAt: new Date("2026-04-01T10:00:00.000Z"),
+    tournament: null,
+  });
+  prisma.padelCategory.findFirst.mockResolvedValue({ id: 12 });
 
   POST = (await import("@/app/api/padel/tournaments/config/route")).POST;
 });

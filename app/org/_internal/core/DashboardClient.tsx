@@ -2161,7 +2161,7 @@ function OrganizacaoPageInner({
     {
       id: "staff",
       label: "Primeiro membro convidado",
-      description: "Convida alguém para a tua equipa.",
+      description: "Convida alguém para o staff da organização.",
       done: hasInvitedStaff,
       href: "/org/team",
       iconKey: "STAFF",
@@ -2300,7 +2300,7 @@ function OrganizacaoPageInner({
               iconKey: "TOOL_PADEL_CLUBE",
               title: "Clube de padel",
               summary: "Operação diária do clube e gestão de campos.",
-              bullets: ["Clubes + campos", "Jogadores + treinadores", "Comunidade + aulas"],
+              bullets: ["Clube base + campos", "Campos + staff operacional", "Jogadores + treinadores"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/clubs` : undefined,
               flow: "Operações",
             }
@@ -2311,8 +2311,8 @@ function OrganizacaoPageInner({
               moduleKey: "TORNEIOS",
               iconKey: "TOOL_PADEL_TORNEIOS",
               title: "Torneios de padel",
-              summary: "Calendário competitivo, equipas e operação ao vivo.",
-              bullets: ["Criação + calendário", "Categorias + equipas", "Jogadores + ao vivo"],
+              summary: "Calendário competitivo, equipas de competição e operação ao vivo.",
+              bullets: ["Criação + calendário", "Categorias + equipas", "Staff + operação live"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/padel/tournaments` : undefined,
               flow: "Operações",
             }

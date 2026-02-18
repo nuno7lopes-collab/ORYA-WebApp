@@ -4,14 +4,14 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { normalizeAndValidateUsername, checkUsernameAvailability } from "@/lib/globalUsernames";
-import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
+import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
 import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function buildEmailHtml(code: string) {
+function buildEmailHtml(code: string, actionLink?: string | null) {
   return `
     <table width="100%" cellspacing="0" cellpadding="0" style="background:#0b0b12;padding:32px 0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;">
       <tr>
@@ -29,6 +29,12 @@ function buildEmailHtml(code: string) {
                 <div style="display:inline-block;padding:12px 18px;border-radius:12px;background:#111522;border:1px solid rgba(255,255,255,0.08);font-size:24px;font-weight:800;letter-spacing:6px;color:#fdfdfd;">
                   ${code}
                 </div>
+                ${
+                  actionLink
+                    ? `<p style="margin:20px 0 0 0;color:#cdd5e6;font-size:13px;">Se preferires, também podes confirmar diretamente aqui:</p>
+                <p style="margin:10px 0 0 0;"><a href="${actionLink}" style="color:#8fd6ff;text-decoration:underline;">Abrir link de confirmação</a></p>`
+                    : ""
+                }
                 <p style="margin:24px 0 0 0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora.</p>
               </td>
             </tr>
@@ -44,9 +50,61 @@ function buildEmailHtml(code: string) {
   `;
 }
 
+function buildEmailText(code: string, actionLink?: string | null) {
+  return [
+    "Aqui está o teu código de verificação ORYA:",
+    code,
+    actionLink ? `Ou confirma diretamente neste link: ${actionLink}` : null,
+    "Se não foste tu, ignora este email.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function buildMagicLinkEmailHtml(actionLink: string) {
+  return `
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#0b0b12;padding:32px 0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;">
+      <tr>
+        <td align="center">
+          <table width="480" cellpadding="0" cellspacing="0" style="background:#0f111a;border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);box-shadow:0 16px 60px rgba(0,0,0,0.55);color:#f7f7f7;">
+            <tr>
+              <td style="padding:28px 32px;background:linear-gradient(135deg,#ff00c8,#5b8bff);color:#0b0b12;font-size:22px;font-weight:800;letter-spacing:-0.3px;">
+                ORYA · Confirmar acesso
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px;color:#e5e7eb;font-size:14px;line-height:1.6;">
+                <p style="margin:0 0 12px 0;">Para continuar, abre o link seguro:</p>
+                <p style="margin:0 0 24px 0;">
+                  <a href="${actionLink}" style="color:#8fd6ff;text-decoration:underline;">Confirmar acesso ORYA</a>
+                </p>
+                <p style="margin:0;color:#aeb7c6;font-size:13px;">Se não foste tu, ignora este email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+function buildMagicLinkEmailText(actionLink: string) {
+  return `Para continuar na ORYA, abre este link seguro: ${actionLink}\n\nSe não foste tu, ignora este email.`;
+}
+
+function isMobileClientRequest(req: NextRequest) {
+  const platform =
+    req.headers.get("x-client-platform") ||
+    req.headers.get("x-app-platform") ||
+    req.headers.get("x-platform");
+  const normalized = platform?.trim().toLowerCase() ?? "";
+  return normalized === "mobile" || normalized === "ios" || normalized === "android";
+}
+
 async function _POST(req: NextRequest) {
   try {
-    if (!isSameOriginOrApp(req)) {
+    const isMobileClient = isMobileClientRequest(req);
+    if (!isAppRequest(req) && !isSameOrigin(req, { allowMissing: isMobileClient })) {
       return jsonWrap(
         { ok: false, errorCode: "FORBIDDEN", message: "Pedido não autorizado." },
         { status: 403 }
@@ -200,6 +258,7 @@ async function _POST(req: NextRequest) {
     }
 
     let otp: string | null = null;
+    let actionLink: string | null = null;
     const { data, error } = await supabaseAdmin.auth.admin.generateLink(linkPayload as any);
 
     if (error) {
@@ -230,6 +289,7 @@ async function _POST(req: NextRequest) {
           );
         }
         otp = loginRes.data?.properties?.email_otp ?? null;
+        actionLink = loginRes.data?.properties?.action_link ?? null;
       } else if (errorCode === "weak_password") {
         const reasons =
           typeof error === "object" && error && "reasons" in error
@@ -261,9 +321,10 @@ async function _POST(req: NextRequest) {
       }
     } else {
       otp = data?.properties?.email_otp ?? null;
+      actionLink = data?.properties?.action_link ?? null;
     }
 
-    if (!otp) {
+    if (!otp && !actionLink) {
       console.error("[send-otp] missing email_otp in response", {
         requestId: ctx.requestId,
         correlationId: ctx.correlationId,
@@ -279,10 +340,31 @@ async function _POST(req: NextRequest) {
     }
 
     try {
-      await sendEmail({
+      const message = otp
+        ? {
+            subject: "Código de verificação ORYA",
+            html: buildEmailHtml(otp, actionLink),
+            text: buildEmailText(otp, actionLink),
+          }
+        : {
+            subject: "Confirma o teu acesso ORYA",
+            html: buildMagicLinkEmailHtml(actionLink as string),
+            text: buildMagicLinkEmailText(actionLink as string),
+          };
+      const sendResult = await sendEmail({
         to: rawEmail,
-        subject: `Código ORYA: ${otp}`,
-        html: buildEmailHtml(otp),
+        subject: message.subject,
+        html: message.html,
+        text: message.text,
+      });
+      console.info("[send-otp] email sent", {
+        requestId: ctx.requestId,
+        correlationId: ctx.correlationId,
+        mode: otp ? "otp" : "magiclink",
+        messageId:
+          sendResult && typeof sendResult === "object" && "messageId" in sendResult
+            ? (sendResult as { messageId?: string }).messageId ?? null
+            : null,
       });
     } catch (mailErr) {
       console.error("[send-otp] email send error", {
@@ -301,7 +383,7 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    // Por defeito devolvemos otpType signup para evitar enumeração.
+    // Mantém resposta opaca para evitar enumeração de contas.
     return jsonWrap({ ok: true, otpType: "signup" });
   } catch (err) {
     const ctx = getRequestContext(req);

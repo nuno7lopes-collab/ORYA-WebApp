@@ -345,7 +345,7 @@ export default function AuthWall({
 
         setMode("verify");
         setIdentifier(emailToUse);
-        setError("Enviámos um código para confirmar o email. Introduz para continuares.");
+        setError("Enviámos um código/link para confirmar o email. Introduz o código ou abre o link recebido.");
         setAuthOtpCooldown(60);
         return;
       }
@@ -511,7 +511,7 @@ export default function AuthWall({
                 }}
               />
               <div className="text-[11px] text-white/65">
-                Se não recebeste o email, verifica a caixa de spam.
+                Se não recebeste o email, verifica a caixa de spam e procura também por um link de confirmação.
               </div>
               <div className="text-[11px] text-white/65">
                 <button

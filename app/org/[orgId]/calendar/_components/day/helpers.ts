@@ -1,4 +1,4 @@
-import { getDateParts, makeUtcDateFromLocal, normalizeIntervals, resolveIntervalsForDate } from "@/lib/reservas/availability";
+import { getDateParts, makeUtcDateFromLocal, normalizeIntervals, resolveIntervalsForDate, resolveScheduleForDate } from "@/lib/reservas/availability";
 import type {
   ActiveFilterChip,
   AgendaItem,
@@ -22,7 +22,8 @@ export const DEFAULT_HOUR_HEIGHT = 56;
 const DEFAULT_WORKING_WEEKDAY_INTERVALS: TimeInterval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
 
 export type NormalizedAvailability = {
-  templatesByDay: Map<number, TimeInterval[]>;
+  schedules: Array<{ id: number; startDate: Date; endDate: Date | null; createdAt?: Date }>;
+  templatesBySchedule: Map<number, Map<number, TimeInterval[]>>;
   overridesByDate: Map<string, Array<{ kind: string; intervals: TimeInterval[] }>>;
   inheritsOrganization: boolean;
 };
@@ -112,6 +113,15 @@ export function formatDateParam(date: Date, timezone: string) {
 export function getDayKey(date: Date, timezone: string) {
   const parts = getDateParts(date, timezone);
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`;
+}
+
+function getOverrideKey(value: string, timezone: string) {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return getDayKey(parsed, timezone);
 }
 
 export function isSameDay(a: Date, b: Date, timezone: string) {
@@ -367,18 +377,19 @@ export function buildPositionedEvents(params: {
 }
 
 export function normalizeAvailability(payload: AvailabilityResponse, timezone: string): NormalizedAvailability {
-  const templatesByDay = new Map<number, TimeInterval[]>();
+  const templatesBySchedule = new Map<number, Map<number, TimeInterval[]>>();
   const overridesByDate = new Map<string, Array<{ kind: string; intervals: TimeInterval[] }>>();
 
   (payload.templates ?? []).forEach((template) => {
-    if (!Number.isFinite(template.dayOfWeek)) return;
-    templatesByDay.set(template.dayOfWeek, normalizeIntervals(template.intervals));
+    if (!Number.isFinite(template.dayOfWeek) || !Number.isFinite(template.availabilityId)) return;
+    const byDay = templatesBySchedule.get(template.availabilityId) ?? new Map<number, TimeInterval[]>();
+    byDay.set(template.dayOfWeek, normalizeIntervals(template.intervals));
+    templatesBySchedule.set(template.availabilityId, byDay);
   });
 
   (payload.overrides ?? []).forEach((override) => {
-    const date = new Date(override.date);
-    if (Number.isNaN(date.getTime())) return;
-    const key = getDayKey(date, timezone);
+    const key = getOverrideKey(override.date, timezone);
+    if (!key) return;
     const existing = overridesByDate.get(key) ?? [];
     existing.push({
       kind: typeof override.kind === "string" ? override.kind.toUpperCase() : "OPEN",
@@ -388,7 +399,15 @@ export function normalizeAvailability(payload: AvailabilityResponse, timezone: s
   });
 
   return {
-    templatesByDay,
+    schedules: (payload.schedules ?? [])
+      .map((schedule) => ({
+        id: schedule.id,
+        startDate: new Date(schedule.startDate),
+        endDate: schedule.endDate ? new Date(schedule.endDate) : null,
+        createdAt: schedule.createdAt ? new Date(schedule.createdAt) : undefined,
+      }))
+      .filter((schedule) => Number.isFinite(schedule.id) && !Number.isNaN(schedule.startDate.getTime())),
+    templatesBySchedule,
     overridesByDate,
     inheritsOrganization: Boolean(payload.inheritsOrganization),
   };
@@ -403,17 +422,20 @@ export function resolveIntervalsForDay(
   const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
   const defaultIntervals = dayOfWeek === 0 || dayOfWeek === 6 ? [] : DEFAULT_WORKING_WEEKDAY_INTERVALS;
   if (!normalized) return defaultIntervals;
+  const schedule = resolveScheduleForDate(normalized.schedules, day, timezone);
+  const templatesByDay = schedule ? normalized.templatesBySchedule.get(schedule.id) ?? new Map() : new Map();
   const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
   const resolved = resolveIntervalsForDate({
     dayOfWeek,
-    templatesByDay: normalized.templatesByDay,
+    templatesByDay,
     overrides,
+    fallbackToDefault: !schedule,
   });
   if (resolved.length > 0) return resolved;
-  if (normalized.templatesByDay.size === 0 && overrides.length === 0) {
+  if (!schedule && overrides.length === 0) {
     return defaultIntervals;
   }
-  return [];
+  return resolved;
 }
 
 export function invertIntervals(intervals: TimeInterval[]) {

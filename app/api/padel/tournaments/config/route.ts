@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
   OrganizationMemberRole,
@@ -244,15 +244,31 @@ async function _POST(req: NextRequest) {
       ? Math.floor(ruleSetIdRaw)
       : null;
   const hasDefaultCategoryId = Object.prototype.hasOwnProperty.call(body, "defaultCategoryId");
+  const defaultCategoryInput = hasDefaultCategoryId ? body.defaultCategoryId : undefined;
+  const shouldClearDefaultCategory =
+    defaultCategoryInput === null ||
+    (typeof defaultCategoryInput === "string" && defaultCategoryInput.trim() === "");
   const defaultCategoryRaw =
     hasDefaultCategoryId &&
-    (typeof body.defaultCategoryId === "number" || typeof body.defaultCategoryId === "string")
-      ? Number(body.defaultCategoryId)
+    !shouldClearDefaultCategory &&
+    (typeof defaultCategoryInput === "number" || typeof defaultCategoryInput === "string")
+      ? Number(defaultCategoryInput)
       : null;
   const defaultCategoryId =
-    hasDefaultCategoryId && typeof defaultCategoryRaw === "number" && Number.isFinite(defaultCategoryRaw)
+    hasDefaultCategoryId &&
+    !shouldClearDefaultCategory &&
+    typeof defaultCategoryRaw === "number" &&
+    Number.isFinite(defaultCategoryRaw) &&
+    defaultCategoryRaw > 0
       ? Math.floor(defaultCategoryRaw)
       : null;
+  if (
+    hasDefaultCategoryId &&
+    !shouldClearDefaultCategory &&
+    (defaultCategoryId === null || !Number.isFinite(defaultCategoryId))
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_DEFAULT_CATEGORY" }, { status: 400 });
+  }
   const hasEligibilityType = Object.prototype.hasOwnProperty.call(body, "eligibilityType");
   const eligibilityType =
     hasEligibilityType &&
@@ -750,6 +766,17 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 
+  const event = await prisma.event.findUnique({
+    where: { id: eventId, isDeleted: false },
+    select: { id: true, organizationId: true, templateType: true, startsAt: true, tournament: { select: { id: true, inscriptionDeadlineAt: true } } },
+  });
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+  if (event.organizationId !== organizationIdBody) {
+    return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: organizationIdBody,
     roles: ROLE_ALLOWLIST,
@@ -767,6 +794,19 @@ async function _POST(req: NextRequest) {
   });
   if (!editPermission.ok) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
+  if (hasDefaultCategoryId && defaultCategoryId !== null) {
+    const defaultCategory = await prisma.padelCategory.findFirst({
+      where: {
+        id: defaultCategoryId,
+        organizationId: organization.id,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (!defaultCategory) {
+      return jsonWrap({ ok: false, error: "INVALID_DEFAULT_CATEGORY" }, { status: 400 });
+    }
   }
 
   try {
@@ -955,16 +995,7 @@ async function _POST(req: NextRequest) {
       registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
         ? new Date(registrationEndsAtRaw)
         : null;
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      select: {
-        id: true,
-        templateType: true,
-        startsAt: true,
-        tournament: { select: { id: true, inscriptionDeadlineAt: true } },
-      },
-    });
-    if (event?.templateType === "PADEL") {
+    if (event.templateType === "PADEL") {
       const fallbackDeadline =
         event.startsAt && !Number.isNaN(new Date(event.startsAt).getTime())
           ? new Date(event.startsAt.getTime() - 24 * 60 * 60 * 1000)

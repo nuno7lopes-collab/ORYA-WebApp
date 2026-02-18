@@ -949,7 +949,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             CATEGORY_PRICES_MISSING: "Preços por categoria",
             REGISTRATION_WINDOW_INVALID: "Janela de inscrições inválida",
             REGISTRATION_END_AFTER_START: "Fim das inscrições após início",
-            STAFF_MISSING_FOR_PARTNER_CLUBS: "Equipa obrigatória para clubes parceiros",
+            STAFF_MISSING_FOR_PARTNER_CLUBS: "Staff obrigatório para clubes parceiros",
             TOURNAMENT_DIRECTOR_REQUIRED: "Diretor de prova em falta",
           };
           const missingLabel = missing.length
@@ -1849,7 +1849,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       <CreateWizardSectionCard
         id="wizard-operation"
         title="Formato e Operação"
-        subtitle="Elegibilidade, split, ruleset, interclub e seleção de campos/equipa."
+        subtitle="Elegibilidade, split, ruleset, interclub e seleção de campos/staff."
         statusLabel={operationIssues.length === 0 ? "OK" : `Rever (${operationIssues.length})`}
         statusTone={operationIssues.length === 0 ? "ok" : "warn"}
       >
@@ -2004,7 +2004,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           {selectedClub && staffMembers.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Equipa operacional</p>
+                <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Staff operacional</p>
                 <span className="text-[11px] text-white/60">Selecionados: {selectedStaffIds.length}</span>
               </div>
               <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -2042,7 +2042,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                   NON_STOP: {globalNonStopMode === "ACTIVE_QUEUE" ? "fila ativa" : "hard cap"} · {globalNonStopRounds || "6"} rondas
                 </p>
               )}
-              <p>Equipa operacional: {selectedStaffIds.length} membro(s)</p>
+              <p>Staff operacional: {selectedStaffIds.length} membro(s)</p>
               <p>Inscrições: {registrationWarnings.length === 0 ? "Janela válida" : "Rever janela"}</p>
             </div>
           </div>

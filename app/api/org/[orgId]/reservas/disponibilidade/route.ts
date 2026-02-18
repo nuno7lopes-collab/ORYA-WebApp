@@ -5,9 +5,9 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { normalizeIntervals } from "@/lib/reservas/availability";
+import { getDateParts, normalizeIntervals, resolveScheduleForDate } from "@/lib/reservas/availability";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -54,10 +54,34 @@ function parseScopeId(raw: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function toDateKey(year: number, month: number, day: number) {
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+function parseDateInput(raw: unknown) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return { year, month, day, date, key: toDateKey(year, month, day) };
+}
+
 function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
+}
+
+function toInputJson(value: Prisma.JsonValue): Prisma.InputJsonValue {
+  return value === null ? (Prisma.JsonNull as unknown as Prisma.InputJsonValue) : (value as Prisma.InputJsonValue);
 }
 
 async function resolveScope(params: {
@@ -144,12 +168,37 @@ async function _GET(req: NextRequest) {
     }
 
     const { scopeType, scopeId } = scopeResolution;
+    const timezone = organization.timezone || "Europe/Lisbon";
+    const scheduleIdParam = parseScopeId(req.nextUrl.searchParams.get("scheduleId"));
+    const includeTemplatesAll = req.nextUrl.searchParams.get("includeTemplates") === "all";
+
+    const schedules = await prisma.availabilitySchedule.findMany({
+      where: { organizationId: organization.id, scopeType, scopeId },
+      orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+      select: { id: true, startDate: true, endDate: true, createdAt: true, updatedAt: true },
+    });
+    const activeSchedule = resolveScheduleForDate(schedules, new Date(), timezone);
+    const selectedSchedule = scheduleIdParam
+      ? schedules.find((schedule) => schedule.id === scheduleIdParam) ?? null
+      : activeSchedule;
+
+    const scheduleIds = schedules.map((schedule) => schedule.id);
     const [templates, overrides] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
-        where: { organizationId: organization.id, scopeType, scopeId },
-        orderBy: { dayOfWeek: "asc" },
-        select: { id: true, dayOfWeek: true, intervals: true },
-      }),
+      includeTemplatesAll
+        ? scheduleIds.length
+          ? prisma.weeklyAvailabilityTemplate.findMany({
+              where: { availabilityId: { in: scheduleIds } },
+              orderBy: [{ availabilityId: "asc" }, { dayOfWeek: "asc" }],
+              select: { id: true, dayOfWeek: true, intervals: true, availabilityId: true },
+            })
+          : Promise.resolve([])
+        : selectedSchedule
+          ? prisma.weeklyAvailabilityTemplate.findMany({
+              where: { availabilityId: selectedSchedule.id },
+              orderBy: { dayOfWeek: "asc" },
+              select: { id: true, dayOfWeek: true, intervals: true, availabilityId: true },
+            })
+          : Promise.resolve([]),
       prisma.availabilityOverride.findMany({
         where: { organizationId: organization.id, scopeType, scopeId },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -157,13 +206,15 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
-    const hasCustomTemplates = templates.length > 0;
-
     return respondOk(ctx, {
       scope: { scopeType, scopeId },
+      timezone,
+      schedules,
+      activeScheduleId: activeSchedule?.id ?? null,
+      selectedScheduleId: selectedSchedule?.id ?? null,
       templates,
       overrides,
-      inheritsOrganization: scopeType !== "ORGANIZATION" && !hasCustomTemplates,
+      inheritsOrganization: scopeType !== "ORGANIZATION" && !activeSchedule,
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
@@ -217,31 +268,157 @@ async function _POST(req: NextRequest) {
     const { scopeType, scopeId } = scopeResolution;
     const mode = typeof payload?.mode === "string" ? payload.mode.trim().toUpperCase() : "";
     const { ip, userAgent } = getRequestMeta(req);
+    const timezone = organization.timezone || "Europe/Lisbon";
+
+    if (mode === "SCHEDULE") {
+      const scheduleId = parseScopeId(payload?.scheduleId);
+      const startInput = parseDateInput(payload?.startDate);
+      if (!startInput) {
+        return fail(ctx, 400, "INVALID_START_DATE", "Data de início inválida.");
+      }
+      const endInput = payload?.endDate ? parseDateInput(payload.endDate) : null;
+      if (payload?.endDate && !endInput) {
+        return fail(ctx, 400, "INVALID_END_DATE", "Data de fim inválida.");
+      }
+
+      const todayParts = getDateParts(new Date(), timezone);
+      const todayKey = toDateKey(todayParts.year, todayParts.month, todayParts.day);
+      if (startInput.key < todayKey) {
+        return fail(ctx, 400, "START_IN_PAST", "A disponibilidade tem de começar hoje ou no futuro.");
+      }
+      if (endInput && endInput.key < startInput.key) {
+        return fail(ctx, 400, "END_BEFORE_START", "A data de fim tem de ser depois da data de início.");
+      }
+
+      if (scheduleId) {
+        const existing = await prisma.availabilitySchedule.findFirst({
+          where: { id: scheduleId, organizationId: organization.id, scopeType, scopeId },
+          select: { id: true },
+        });
+        if (!existing) {
+          return fail(ctx, 404, "SCHEDULE_NOT_FOUND", "Disponibilidade não encontrada.");
+        }
+        const schedule = await prisma.availabilitySchedule.update({
+          where: { id: scheduleId },
+          data: {
+            startDate: startInput.date,
+            endDate: endInput ? endInput.date : null,
+          },
+        });
+        await recordOrganizationAudit(prisma, {
+          organizationId: organization.id,
+          actorUserId: profile.id,
+          action: "AVAILABILITY_SCHEDULE_UPDATED",
+          metadata: { scheduleId: schedule.id, startDate: startInput.key, endDate: endInput?.key ?? null, scopeType, scopeId },
+          ip,
+          userAgent,
+        });
+        return respondOk(ctx, { schedule });
+      }
+
+      const schedule = await prisma.availabilitySchedule.create({
+        data: {
+          organizationId: organization.id,
+          scopeType,
+          scopeId,
+          startDate: startInput.date,
+          endDate: endInput ? endInput.date : null,
+        },
+      });
+
+      const cloneId = parseScopeId(payload?.cloneFromScheduleId);
+      if (cloneId) {
+        const cloneSchedule = await prisma.availabilitySchedule.findFirst({
+          where: { id: cloneId, organizationId: organization.id, scopeType, scopeId },
+          select: { id: true },
+        });
+        if (!cloneSchedule) {
+          return fail(ctx, 404, "SCHEDULE_NOT_FOUND", "Disponibilidade para copiar não encontrada.");
+        }
+        const cloneTemplates = await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: cloneSchedule.id },
+          select: { dayOfWeek: true, intervals: true },
+        });
+        if (cloneTemplates.length) {
+          await prisma.weeklyAvailabilityTemplate.createMany({
+            data: cloneTemplates.map((template) => ({
+              availabilityId: schedule.id,
+              dayOfWeek: template.dayOfWeek,
+              intervals: toInputJson(template.intervals),
+            })),
+          });
+        }
+      }
+
+      await recordOrganizationAudit(prisma, {
+        organizationId: organization.id,
+        actorUserId: profile.id,
+        action: "AVAILABILITY_SCHEDULE_CREATED",
+        metadata: { scheduleId: schedule.id, startDate: startInput.key, endDate: endInput?.key ?? null, scopeType, scopeId },
+        ip,
+        userAgent,
+      });
+
+      return respondOk(ctx, { schedule }, { status: 201 });
+    }
+
+    if (mode === "SCHEDULE_DELETE") {
+      const scheduleId = parseScopeId(payload?.scheduleId);
+      if (!scheduleId) {
+        return fail(ctx, 400, "INVALID_SCHEDULE", "Disponibilidade inválida.");
+      }
+      const schedule = await prisma.availabilitySchedule.findFirst({
+        where: { id: scheduleId, organizationId: organization.id, scopeType, scopeId },
+        select: { id: true },
+      });
+      if (!schedule) {
+        return fail(ctx, 404, "SCHEDULE_NOT_FOUND", "Disponibilidade não encontrada.");
+      }
+      await prisma.availabilitySchedule.delete({ where: { id: scheduleId } });
+      await recordOrganizationAudit(prisma, {
+        organizationId: organization.id,
+        actorUserId: profile.id,
+        action: "AVAILABILITY_SCHEDULE_DELETED",
+        metadata: { scheduleId, scopeType, scopeId },
+        ip,
+        userAgent,
+      });
+      return respondOk(ctx, { ok: true });
+    }
 
     if (mode === "TEMPLATE") {
       const dayOfWeek = Number(payload?.dayOfWeek);
       if (!Number.isFinite(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
         return fail(ctx, 400, "INVALID_DAY", "Dia inválido.");
       }
+      const scheduleId = parseScopeId(payload?.scheduleId);
+      if (!scheduleId) {
+        return fail(ctx, 400, "INVALID_SCHEDULE", "Disponibilidade inválida.");
+      }
+      const schedule = await prisma.availabilitySchedule.findFirst({
+        where: { id: scheduleId, organizationId: organization.id, scopeType, scopeId },
+        select: { id: true },
+      });
+      if (!schedule) {
+        return fail(ctx, 404, "SCHEDULE_NOT_FOUND", "Disponibilidade não encontrada.");
+      }
       const intervals = normalizeIntervals(payload?.intervals);
       const template = await prisma.weeklyAvailabilityTemplate.upsert({
         where: {
-          organizationId_scopeType_scopeId_dayOfWeek: {
-            organizationId: organization.id,
-            scopeType,
-            scopeId,
+          availabilityId_dayOfWeek: {
+            availabilityId: schedule.id,
             dayOfWeek,
           },
         },
         update: { intervals },
-        create: { organizationId: organization.id, scopeType, scopeId, dayOfWeek, intervals },
+        create: { availabilityId: schedule.id, dayOfWeek, intervals },
       });
 
       await recordOrganizationAudit(prisma, {
         organizationId: organization.id,
         actorUserId: profile.id,
         action: "AVAILABILITY_TEMPLATE_UPDATED",
-        metadata: { dayOfWeek, intervals, scopeType, scopeId },
+        metadata: { dayOfWeek, intervals, scopeType, scopeId, scheduleId: schedule.id },
         ip,
         userAgent,
       });
@@ -250,19 +427,14 @@ async function _POST(req: NextRequest) {
     }
 
     if (mode === "OVERRIDE") {
-      const dateRaw = typeof payload?.date === "string" ? payload.date.trim() : "";
+      const dateInput = parseDateInput(payload?.date);
       const kindRaw = typeof payload?.kind === "string" ? payload.kind.trim().toUpperCase() : "";
-      const match = dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!match) {
+      if (!dateInput) {
         return fail(ctx, 400, "INVALID_DATE", "Data inválida.");
       }
       if (!["CLOSED", "OPEN", "BLOCK"].includes(kindRaw)) {
         return fail(ctx, 400, "INVALID_OVERRIDE_KIND", "Tipo de override inválido.");
       }
-      const year = Number(match[1]);
-      const month = Number(match[2]);
-      const day = Number(match[3]);
-      const date = new Date(Date.UTC(year, month - 1, day));
       const intervals = kindRaw === "CLOSED" ? [] : normalizeIntervals(payload?.intervals);
 
       const override = await prisma.availabilityOverride.create({
@@ -270,7 +442,7 @@ async function _POST(req: NextRequest) {
           organizationId: organization.id,
           scopeType,
           scopeId,
-          date,
+          date: dateInput.date,
           kind: kindRaw as "CLOSED" | "OPEN" | "BLOCK",
           intervals,
         },
@@ -280,7 +452,7 @@ async function _POST(req: NextRequest) {
         organizationId: organization.id,
         actorUserId: profile.id,
         action: "AVAILABILITY_OVERRIDE_CREATED",
-        metadata: { date: dateRaw, kind: kindRaw, intervals, scopeType, scopeId },
+        metadata: { date: dateInput.key, kind: kindRaw, intervals, scopeType, scopeId },
         ip,
         userAgent,
       });

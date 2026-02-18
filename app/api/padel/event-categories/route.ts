@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
@@ -318,6 +318,7 @@ async function _POST(req: NextRequest) {
     select: { id: true, padelCategoryId: true, isEnabled: true },
   });
   const existingByCategory = new Map(existing.map((l) => [l.padelCategoryId, l]));
+  const seenCategoryIds = new Set<number>();
 
   const now = new Date();
   if (event.startsAt && event.startsAt.getTime() <= now.getTime()) {
@@ -327,43 +328,51 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const updates = linksInput.map((link) => {
-    const padelCategoryId = typeof link.padelCategoryId === "number" ? link.padelCategoryId : null;
-    if (!padelCategoryId || !validCategoryIds.has(padelCategoryId)) {
-      throw new Error("INVALID_CATEGORY");
-    }
-    const format = parsePadelFormat(link.format) ?? undefined;
-    const capacityTeams =
-      typeof link.capacityTeams === "number" && Number.isFinite(link.capacityTeams) && link.capacityTeams > 0
-        ? Math.floor(link.capacityTeams)
-        : null;
-    const capacityPlayers =
-      typeof link.capacityPlayers === "number" && Number.isFinite(link.capacityPlayers) && link.capacityPlayers > 0
-        ? Math.floor(link.capacityPlayers)
-        : null;
-
-    return prisma.padelEventCategoryLink.upsert({
-      where: { eventId_padelCategoryId: { eventId, padelCategoryId } },
-      update: {
-        format: format ?? undefined,
-        capacityTeams,
-        capacityPlayers,
-        isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : undefined,
-        isHidden: typeof link.isHidden === "boolean" ? link.isHidden : undefined,
-      },
-      create: {
-        eventId,
-        padelCategoryId,
-        format: format ?? undefined,
-        capacityTeams,
-        capacityPlayers,
-        isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : true,
-        isHidden: typeof link.isHidden === "boolean" ? link.isHidden : false,
-      },
-    });
-  });
-
   try {
+    const updates = linksInput.map((link) => {
+      const padelCategoryId = typeof link.padelCategoryId === "number" ? link.padelCategoryId : null;
+      if (!padelCategoryId || !validCategoryIds.has(padelCategoryId)) {
+        throw new Error("INVALID_CATEGORY");
+      }
+      if (seenCategoryIds.has(padelCategoryId)) {
+        throw new Error("DUPLICATE_CATEGORY");
+      }
+      seenCategoryIds.add(padelCategoryId);
+      const formatRaw = typeof link.format === "string" ? link.format.trim() : "";
+      const format = formatRaw ? parsePadelFormat(formatRaw) : null;
+      if (formatRaw && !format) {
+        throw new Error("INVALID_FORMAT");
+      }
+      const capacityTeams =
+        typeof link.capacityTeams === "number" && Number.isFinite(link.capacityTeams) && link.capacityTeams > 0
+          ? Math.floor(link.capacityTeams)
+          : null;
+      const capacityPlayers =
+        typeof link.capacityPlayers === "number" && Number.isFinite(link.capacityPlayers) && link.capacityPlayers > 0
+          ? Math.floor(link.capacityPlayers)
+          : null;
+
+      return prisma.padelEventCategoryLink.upsert({
+        where: { eventId_padelCategoryId: { eventId, padelCategoryId } },
+        update: {
+          format: format ?? undefined,
+          capacityTeams,
+          capacityPlayers,
+          isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : undefined,
+          isHidden: typeof link.isHidden === "boolean" ? link.isHidden : undefined,
+        },
+        create: {
+          eventId,
+          padelCategoryId,
+          format: format ?? undefined,
+          capacityTeams,
+          capacityPlayers,
+          isEnabled: typeof link.isEnabled === "boolean" ? link.isEnabled : true,
+          isHidden: typeof link.isHidden === "boolean" ? link.isHidden : false,
+        },
+      });
+    });
+
     const updated = await prisma.$transaction(updates);
 
     const refundsTriggered: Array<{ linkId: number; count: number }> = [];
@@ -385,6 +394,12 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     if ((err as Error).message === "INVALID_CATEGORY") {
       return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
+    }
+    if ((err as Error).message === "INVALID_FORMAT") {
+      return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
+    }
+    if ((err as Error).message === "DUPLICATE_CATEGORY") {
+      return jsonWrap({ ok: false, error: "DUPLICATE_CATEGORY" }, { status: 400 });
     }
     console.error("[padel/event-categories][POST]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

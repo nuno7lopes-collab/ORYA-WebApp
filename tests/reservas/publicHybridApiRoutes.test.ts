@@ -10,6 +10,7 @@ const prisma = vi.hoisted(() => ({
   service: { findFirst: vi.fn() },
   reservationProfessional: { findMany: vi.fn(), findFirst: vi.fn() },
   reservationResource: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
+  availabilitySchedule: { findMany: vi.fn() },
   weeklyAvailabilityTemplate: { findMany: vi.fn() },
   availabilityOverride: { findMany: vi.fn() },
   booking: { findMany: vi.fn(), count: vi.fn() },
@@ -62,6 +63,7 @@ beforeEach(() => {
   prisma.reservationResource.findMany.mockReset();
   prisma.reservationResource.findFirst.mockReset();
   prisma.reservationResource.findUnique.mockReset();
+  prisma.availabilitySchedule.findMany.mockReset();
   prisma.weeklyAvailabilityTemplate.findMany.mockReset();
   prisma.availabilityOverride.findMany.mockReset();
   prisma.booking.findMany.mockReset();
@@ -72,6 +74,7 @@ beforeEach(() => {
   prisma.bookingAddon.createMany.mockReset();
   prisma.$transaction.mockReset();
 
+  prisma.availabilitySchedule.findMany.mockResolvedValue([]);
   prisma.weeklyAvailabilityTemplate.findMany.mockResolvedValue([]);
   prisma.availabilityOverride.findMany.mockResolvedValue([]);
   prisma.booking.findMany.mockResolvedValue([]);

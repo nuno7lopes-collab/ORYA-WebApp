@@ -1136,7 +1136,7 @@ async function main() {
     const toUtcDateOnly = (date: Date) =>
       new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
-    await prisma.weeklyAvailabilityTemplate.deleteMany({
+    await prisma.availabilitySchedule.deleteMany({
       where: {
         organizationId: topPadelOrg.id,
         scopeType: { in: ["PROFESSIONAL", "RESOURCE"] },
@@ -1149,14 +1149,30 @@ async function main() {
       },
     });
 
+    const scheduleStart = toUtcDateOnly(now);
+    const professionalSchedules = await Promise.all(
+      professionals.map((professional) =>
+        prisma.availabilitySchedule.create({
+          data: {
+            organizationId: topPadelOrg.id,
+            scopeType: "PROFESSIONAL",
+            scopeId: professional.id,
+            startDate: scheduleStart,
+          },
+          select: { id: true, scopeId: true },
+        }),
+      ),
+    );
+    const professionalScheduleById = new Map(professionalSchedules.map((schedule) => [schedule.scopeId, schedule.id]));
+
     const professionalTemplates = professionals.flatMap((professional, index) => {
+      const availabilityId = professionalScheduleById.get(professional.id);
+      if (!availabilityId) return [];
       const firstShiftStart = 8 * 60 + (index % 3) * 30;
       const secondShiftStart = 14 * 60 + (index % 2) * 15;
       const secondShiftEnd = 19 * 60 - (index % 2) * 15;
       return [1, 2, 3, 4, 5].map((dayOfWeek) => ({
-        organizationId: topPadelOrg.id,
-        scopeType: "PROFESSIONAL" as const,
-        scopeId: professional.id,
+        availabilityId,
         dayOfWeek,
         intervals: [
           { startMinute: firstShiftStart, endMinute: 12 * 60 + 30 },
@@ -1169,13 +1185,28 @@ async function main() {
       skipDuplicates: true,
     });
 
+    const resourceSchedules = await Promise.all(
+      resources.map((resource) =>
+        prisma.availabilitySchedule.create({
+          data: {
+            organizationId: topPadelOrg.id,
+            scopeType: "RESOURCE",
+            scopeId: resource.id,
+            startDate: scheduleStart,
+          },
+          select: { id: true, scopeId: true },
+        }),
+      ),
+    );
+    const resourceScheduleById = new Map(resourceSchedules.map((schedule) => [schedule.scopeId, schedule.id]));
+
     const resourceTemplates = resources.flatMap((resource, index) => {
+      const availabilityId = resourceScheduleById.get(resource.id);
+      if (!availabilityId) return [];
       const startMinute = 7 * 60 + (index % 2) * 30;
       const endMinute = 23 * 60 - (index % 3) * 15;
       return [1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
-        organizationId: topPadelOrg.id,
-        scopeType: "RESOURCE" as const,
-        scopeId: resource.id,
+        availabilityId,
         dayOfWeek,
         intervals: [{ startMinute, endMinute }],
       }));

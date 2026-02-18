@@ -337,7 +337,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
   return (
     <div
       aria-busy={loadingSwitch}
-      className={cn("mx-auto w-full max-w-6xl px-4 py-10 text-white md:px-6 md:py-12 lg:px-8")}
+      className={cn("mx-auto w-full max-w-[1240px] px-4 py-10 text-white sm:px-6 md:py-12 lg:px-8")}
     >
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">

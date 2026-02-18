@@ -5,7 +5,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import { normalizeIntervals } from "@/lib/reservas/availability";
+import { getDateParts, normalizeIntervals } from "@/lib/reservas/availability";
 import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import {
   CTA_DANGER,
@@ -21,15 +21,20 @@ const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"] as const;
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 const SLOT_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
-const MINI_CHIP =
-  "rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-white/20 hover:bg-white/10 hover:text-white";
-const MINI_CHIP_ACTIVE =
-  "border-white/30 bg-white/15 text-white shadow-[0_8px_20px_rgba(0,0,0,0.35)]";
 
 type AvailabilityTemplate = {
   id: number;
+  availabilityId?: number;
   dayOfWeek: number;
   intervals: Array<{ startMinute: number; endMinute: number }>;
+};
+
+type AvailabilitySchedule = {
+  id: number;
+  startDate: string;
+  endDate: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type AvailabilityOverride = {
@@ -44,6 +49,10 @@ type TimeDraft = { start: string; end: string };
 
 type AvailabilityResponse = {
   ok: boolean;
+  timezone?: string;
+  schedules: AvailabilitySchedule[];
+  activeScheduleId?: number | null;
+  selectedScheduleId?: number | null;
   templates: AvailabilityTemplate[];
   overrides: AvailabilityOverride[];
   inheritsOrganization?: boolean;
@@ -66,6 +75,11 @@ function minutesToTime(minutes: number) {
   const hours = Math.floor(clamped / 60);
   const mins = clamped % 60;
   return `${padTime(hours)}:${padTime(mins)}`;
+}
+
+function toDateInput(value: string | null | undefined) {
+  if (!value) return "";
+  return value.slice(0, 10);
 }
 
 function timeToMinutes(value: string) {
@@ -129,23 +143,38 @@ export default function AvailabilityEditor({
     return params.toString();
   }, [scopeType, scopeId]);
 
-  const availabilityKey = resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/disponibilidade?${scopeParams}`);
+  const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
+  const availabilityKey = resolveCanonicalOrgApiPath(
+    `/api/org/[orgId]/reservas/disponibilidade?${scopeParams}${selectedScheduleId ? `&scheduleId=${selectedScheduleId}` : ""}`,
+  );
   const { data: availabilityData, mutate: mutateAvailability } = useSWR<AvailabilityResponse>(availabilityKey, fetcher);
 
+  const schedules = availabilityData?.schedules ?? [];
+  const activeScheduleId = availabilityData?.activeScheduleId ?? null;
+  const selectedSchedule = schedules.find((schedule) => schedule.id === (selectedScheduleId ?? availabilityData?.selectedScheduleId ?? null)) ?? null;
   const templates = availabilityData?.templates ?? [];
   const overrides = availabilityData?.overrides ?? [];
   const inheritsOrganization = availabilityData?.inheritsOrganization ?? false;
   const hasAvailability = availabilityData
-    ? templates.length === 0 || templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0)
+    ? templates.some((template) => normalizeIntervals(template.intervals ?? []).length > 0)
     : true;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
   const slotHeight = minuteHeight * SLOT_MINUTES;
+  const timezone = availabilityData?.timezone ?? "Europe/Lisbon";
+  const todayParts = getDateParts(new Date(), timezone);
+  const minScheduleDate = `${todayParts.year}-${padTime(todayParts.month)}-${padTime(todayParts.day)}`;
 
   const [templateDrafts, setTemplateDrafts] = useState<Record<number, IntervalDraft[]>>({});
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
-  const [templateSavingDay, setTemplateSavingDay] = useState<number | null>(null);
   const [templateSavingAll, setTemplateSavingAll] = useState(false);
+  const [scheduleStartDate, setScheduleStartDate] = useState("");
+  const [scheduleEndDate, setScheduleEndDate] = useState("");
+  const [scheduleNoEnd, setScheduleNoEnd] = useState(true);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleFormMode, setScheduleFormMode] = useState<"create" | "edit">("create");
+  const [scheduleDraftId, setScheduleDraftId] = useState<number | null>(null);
+  const [cloneFromActive, setCloneFromActive] = useState(true);
   const [overrideDate, setOverrideDate] = useState("");
   const [overrideKind, setOverrideKind] = useState<AvailabilityOverride["kind"]>("CLOSED");
   const [overrideIntervals, setOverrideIntervals] = useState<TimeDraft[]>([]);
@@ -166,6 +195,18 @@ export default function AvailabilityEditor({
     if (!availabilityData?.templates) return;
     setTemplateDrafts(buildTemplateDrafts(availabilityData.templates));
   }, [availabilityData?.templates]);
+
+  useEffect(() => {
+    if (!availabilityData) return;
+    const availableIds = new Set(schedules.map((schedule) => schedule.id));
+    const fallbackId = availabilityData.selectedScheduleId ?? availabilityData.activeScheduleId ?? null;
+    if (selectedScheduleId && availableIds.has(selectedScheduleId)) return;
+    if (fallbackId && availableIds.has(fallbackId)) {
+      setSelectedScheduleId(fallbackId);
+    } else if (!availableIds.size) {
+      setSelectedScheduleId(null);
+    }
+  }, [availabilityData, schedules, selectedScheduleId]);
 
   const handleTemplateAdd = (dayIdx: number) => {
     setTemplateDrafts((prev) => ({
@@ -206,37 +247,11 @@ export default function AvailabilityEditor({
     });
   };
 
-  const handleTemplateSave = async (dayIdx: number) => {
-    const drafts = templateDrafts[dayIdx] ?? [];
-    const parsed = normalizeIntervals(drafts);
-
-    setTemplateSavingDay(dayIdx);
-    setAvailabilityError(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "TEMPLATE",
-          scopeType,
-          scopeId,
-          dayOfWeek: dayIdx,
-          intervals: parsed,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "Erro ao guardar disponibilidade.");
-      }
-      mutateAvailability();
-    } catch (err) {
-      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
-    } finally {
-      setTemplateSavingDay(null);
-    }
-  };
-
   const handleTemplateSaveAll = async () => {
+    if (!selectedScheduleId) {
+      setAvailabilityError("Cria ou seleciona uma disponibilidade base primeiro.");
+      return;
+    }
     setTemplateSavingAll(true);
     setAvailabilityError(null);
     try {
@@ -250,6 +265,7 @@ export default function AvailabilityEditor({
             mode: "TEMPLATE",
             scopeType,
             scopeId,
+            scheduleId: selectedScheduleId,
             dayOfWeek: dayIdx,
             intervals: parsed,
           }),
@@ -264,6 +280,93 @@ export default function AvailabilityEditor({
       setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
     } finally {
       setTemplateSavingAll(false);
+    }
+  };
+
+  const resetScheduleForm = () => {
+    setScheduleFormMode("create");
+    setScheduleDraftId(null);
+    setScheduleStartDate("");
+    setScheduleEndDate("");
+    setScheduleNoEnd(true);
+    setCloneFromActive(true);
+  };
+
+  const handleEditSchedule = (schedule: AvailabilitySchedule) => {
+    setScheduleFormMode("edit");
+    setScheduleDraftId(schedule.id);
+    setScheduleStartDate(toDateInput(schedule.startDate));
+    setScheduleEndDate(toDateInput(schedule.endDate));
+    setScheduleNoEnd(!schedule.endDate);
+    setCloneFromActive(false);
+  };
+
+  const handleScheduleSubmit = async () => {
+    if (!scheduleStartDate) {
+      setAvailabilityError("Seleciona a data de início.");
+      return;
+    }
+    if (!scheduleNoEnd && !scheduleEndDate) {
+      setAvailabilityError("Seleciona a data de fim ou marca como sem fim.");
+      return;
+    }
+    setScheduleSaving(true);
+    setAvailabilityError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "SCHEDULE",
+          scopeType,
+          scopeId,
+          scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : undefined,
+          startDate: scheduleStartDate,
+          endDate: scheduleNoEnd ? null : scheduleEndDate,
+          cloneFromScheduleId: scheduleFormMode === "create" && cloneFromActive ? activeScheduleId : undefined,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao guardar disponibilidade.");
+      }
+      const nextId = json?.schedule?.id ?? null;
+      resetScheduleForm();
+      mutateAvailability();
+      if (nextId) {
+        setSelectedScheduleId(nextId);
+      }
+    } catch (err) {
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
+
+  const handleScheduleDelete = async (scheduleId: number) => {
+    if (!window.confirm("Remover esta disponibilidade?")) return;
+    setAvailabilityError(null);
+    try {
+      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "SCHEDULE_DELETE",
+          scopeType,
+          scopeId,
+          scheduleId,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "Erro ao remover disponibilidade.");
+      }
+      mutateAvailability();
+      if (selectedScheduleId === scheduleId) {
+        setSelectedScheduleId(activeScheduleId ?? null);
+      }
+    } catch (err) {
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao remover disponibilidade.");
     }
   };
 
@@ -544,11 +647,134 @@ export default function AvailabilityEditor({
             Sem horários próprios. A usar disponibilidade base da organização.
           </p>
         )}
-        {!inheritsOrganization && scopeType === "ORGANIZATION" && templates.length === 0 && (
+        {!inheritsOrganization && scopeType === "ORGANIZATION" && schedules.length === 0 && (
           <p className="mt-2 text-[12px] text-white/60">
             Default ativo: 2ª a 6ª, 08:00-17:00 (sábado/domingo fechado).
           </p>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-white">Disponibilidade base</h3>
+            <p className="text-[12px] text-white/60">
+              Cada disponibilidade aplica-se a partir da data de início e pode ter fim.
+            </p>
+          </div>
+          <button type="button" className={CTA_NEUTRAL} onClick={resetScheduleForm}>
+            Nova disponibilidade
+          </button>
+        </div>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {schedules.length === 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
+              Sem disponibilidades criadas. Cria uma para começares.
+            </div>
+          )}
+          {schedules.map((schedule) => {
+            const startKey = toDateInput(schedule.startDate);
+            const endKey = toDateInput(schedule.endDate);
+            const isActive = Boolean(startKey) && startKey <= minScheduleDate && (!endKey || minScheduleDate <= endKey);
+            const isFuture = Boolean(startKey) && startKey > minScheduleDate;
+            const isSelected = selectedScheduleId === schedule.id;
+            const labelStart = schedule.startDate
+              ? new Date(schedule.startDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })
+              : "—";
+            const labelEnd = schedule.endDate
+              ? new Date(schedule.endDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })
+              : "Sem fim";
+            return (
+              <div
+                key={`schedule-${schedule.id}`}
+                className={cn(
+                  "rounded-xl border border-white/10 bg-black/20 p-3 transition",
+                  isSelected ? "border-cyan-300/60 shadow-[0_18px_40px_rgba(34,211,238,0.25)]" : "hover:border-white/25",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    className="text-left"
+                    onClick={() => setSelectedScheduleId(schedule.id)}
+                  >
+                    <p className="text-sm font-semibold text-white">
+                      {labelStart} → {labelEnd}
+                    </p>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/50">
+                      {isActive ? "Ativo" : isFuture ? "Futuro" : "Terminado"}
+                      {schedule.id === activeScheduleId ? " · Atual" : ""}
+                    </p>
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button type="button" className={CTA_NEUTRAL} onClick={() => handleEditSchedule(schedule)}>
+                      Editar
+                    </button>
+                    <button type="button" className={CTA_DANGER} onClick={() => handleScheduleDelete(schedule.id)}>
+                      Remover
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div>
+            <label className="text-sm text-white/80">Início</label>
+            <OryaDateField
+              value={scheduleStartDate}
+              onChange={setScheduleStartDate}
+              className="mt-1 w-full"
+              buttonClassName="h-10 rounded-xl"
+              minDate={minScheduleDate}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-white/80">Fim</label>
+            <OryaDateField
+              value={scheduleEndDate}
+              onChange={setScheduleEndDate}
+              className="mt-1 w-full"
+              buttonClassName="h-10 rounded-xl"
+              disabled={scheduleNoEnd}
+              minDate={scheduleStartDate || minScheduleDate}
+            />
+          </div>
+          <div className="flex flex-col justify-end gap-2">
+            <label className="flex items-center gap-2 text-xs text-white/70">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/20 bg-black/30"
+                checked={scheduleNoEnd}
+                onChange={(event) => {
+                  setScheduleNoEnd(event.target.checked);
+                  if (event.target.checked) setScheduleEndDate("");
+                }}
+              />
+              Sem fim
+            </label>
+            {scheduleFormMode === "create" && (
+              <label className="flex items-center gap-2 text-xs text-white/70">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-white/20 bg-black/30"
+                  checked={cloneFromActive}
+                  onChange={(event) => setCloneFromActive(event.target.checked)}
+                  disabled={!activeScheduleId}
+                />
+                Copiar da disponibilidade ativa
+              </label>
+            )}
+          </div>
+          <div className="flex items-end">
+            <button type="button" className={CTA_PRIMARY} onClick={handleScheduleSubmit} disabled={scheduleSaving}>
+              {scheduleSaving ? "A guardar..." : scheduleFormMode === "edit" ? "Atualizar disponibilidade" : "Criar disponibilidade"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {!hasAvailability && !inheritsOrganization && (
@@ -593,20 +819,7 @@ export default function AvailabilityEditor({
                       key={`availability-header-${label}`}
                       className="flex h-11 items-center justify-center rounded-t-lg rounded-b-none border border-white/10 border-b-0 bg-white/[0.06] px-3 py-0 text-[11px] font-semibold text-white/70 shadow-[0_10px_26px_rgba(0,0,0,0.22)]"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-white/80">{label}</span>
-                        <button
-                          type="button"
-                          className={cn(
-                            MINI_CHIP,
-                            templateSavingDay === dayIdx && MINI_CHIP_ACTIVE,
-                          )}
-                          onClick={() => handleTemplateSave(dayIdx)}
-                          disabled={templateSavingDay === dayIdx || templateSavingAll}
-                        >
-                          {templateSavingDay === dayIdx ? "..." : "Guardar"}
-                        </button>
-                      </div>
+                      <span className="font-semibold text-white/80">{label}</span>
                     </div>
                   );
                 })}

@@ -75,8 +75,16 @@ export type CollectionResponse<T> = {
 };
 
 export type AvailabilityTemplate = {
+  availabilityId: number;
   dayOfWeek: number;
   intervals: unknown;
+};
+
+export type AvailabilitySchedule = {
+  id: number;
+  startDate: string;
+  endDate: string | null;
+  createdAt?: string;
 };
 
 export type AvailabilityOverride = {
@@ -87,6 +95,7 @@ export type AvailabilityOverride = {
 
 export type AvailabilityResponse = {
   ok: boolean;
+  schedules?: AvailabilitySchedule[];
   templates?: AvailabilityTemplate[];
   overrides?: AvailabilityOverride[];
   inheritsOrganization?: boolean;

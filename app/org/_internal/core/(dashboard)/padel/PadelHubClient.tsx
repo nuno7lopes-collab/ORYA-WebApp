@@ -18,6 +18,7 @@ import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi
 import {
   buildPadelCategoryKey,
   buildPadelDefaultCategories,
+  isReservedPadelMandatoryLabel,
   sortPadelCategories,
 } from "@/domain/padelDefaultCategories";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
@@ -604,7 +605,7 @@ const CATEGORY_GENDER_OPTIONS = [
   { value: "MIXED", label: "Misto" },
   { value: "MIXED_FREE", label: "Misto livre" },
 ];
-const CATEGORY_LEVEL_OPTIONS = ["1", "2", "3", "4", "5", "6"];
+const CATEGORY_LEVEL_OPTIONS = ["7", "8", "9", "10", "11", "12"];
 const TRAINER_STATUS_LABEL: Record<TrainerItem["reviewStatus"], string> = {
   DRAFT: "Rascunho",
   PENDING: "Em revisão",
@@ -2246,10 +2247,10 @@ export default function PadelHubClient({
     ];
     const other: PadelCategory[] = [];
     baseCategories.forEach((cat) => {
-      const label = cat.label.toLowerCase();
-      if (label.startsWith("masculino")) groups[0].items.push(cat);
-      else if (label.startsWith("feminino")) groups[1].items.push(cat);
-      else if (label.startsWith("misto")) groups[2].items.push(cat);
+      const gender = (cat.genderRestriction ?? "").trim().toUpperCase();
+      if (gender === "MALE") groups[0].items.push(cat);
+      else if (gender === "FEMALE") groups[1].items.push(cat);
+      else if (gender === "MIXED") groups[2].items.push(cat);
       else other.push(cat);
     });
     const result = groups.filter((group) => group.items.length > 0);
@@ -2332,6 +2333,11 @@ export default function PadelHubClient({
   const getQuickCategoryLabel = (genderValue: string, levelValue: string) => {
     const normalizedGender = genderValue.trim();
     const normalizedLevel = levelValue.trim();
+    const codePrefix =
+      normalizedGender === "MALE" ? "M" : normalizedGender === "FEMALE" ? "F" : normalizedGender === "MIXED" ? "MX" : null;
+    if (codePrefix && normalizedLevel) {
+      return `${codePrefix}${normalizedLevel}`;
+    }
     const resolvedGenderLabel = CATEGORY_GENDER_OPTIONS.find((opt) => opt.value === normalizedGender)?.label;
     const baseLabel = normalizedGender ? resolvedGenderLabel || "Aberta" : "Aberta";
     return normalizedLevel ? `${baseLabel} ${normalizedLevel}` : baseLabel;
@@ -2423,13 +2429,18 @@ export default function PadelHubClient({
   };
 
   const createCategory = async () => {
-    if (!categoryForm.label.trim()) {
+    const label = categoryForm.label.trim();
+    if (!label) {
       setCategoryError("Escreve o nome da categoria.");
+      return;
+    }
+    if (isReservedPadelMandatoryLabel(label)) {
+      setCategoryError("Código reservado: M1..M6, F1..F6 e MX1..MX6 já são obrigatórios.");
       return;
     }
     await submitCategory(
       {
-        label: categoryForm.label.trim(),
+        label,
         genderRestriction: categoryForm.genderRestriction || null,
         minLevel: categoryForm.minLevel || null,
         maxLevel: categoryForm.maxLevel || null,
@@ -2449,6 +2460,10 @@ export default function PadelHubClient({
     }
     const genderValue = categoryQuickGender.trim();
     const label = getQuickCategoryLabel(genderValue, levelValue);
+    if (isReservedPadelMandatoryLabel(label)) {
+      setCategoryError("Código reservado: M1..M6, F1..F6 e MX1..MX6 já são obrigatórios.");
+      return;
+    }
     await submitCategory({
       label,
       genderRestriction: genderValue || null,
@@ -2963,11 +2978,11 @@ export default function PadelHubClient({
         syncActiveCountOnClub(clubId, list);
       } else setCourtError(sanitizeUiErrorMessage(courtsJson?.error, "Erro ao carregar campos."));
       if (staffRes.ok && Array.isArray(staffJson?.items)) setStaff(staffJson.items as PadelClubStaff[]);
-      else setStaffError(sanitizeUiErrorMessage(staffJson?.error, "Erro ao carregar equipa."));
+      else setStaffError(sanitizeUiErrorMessage(staffJson?.error, "Erro ao carregar staff."));
     } catch (err) {
       console.error("[padel/clubs] load courts/staff", err);
       setCourtError("Erro ao carregar campos.");
-      setStaffError("Erro ao carregar equipa.");
+      setStaffError("Erro ao carregar staff.");
     } finally {
       setLoadingDrawer(false);
     }
@@ -3365,7 +3380,7 @@ export default function PadelHubClient({
     if (!selectedClub) return;
     const selectedMember = staffMode === "existing" ? staffOptions.find((m) => m.userId === staffForm.staffMemberId) : null;
     if (staffMode === "existing" && !selectedMember) {
-      setStaffError("Escolhe um membro da equipa global.");
+      setStaffError("Escolhe um membro do staff global.");
       return;
     }
     const inviteEmail = staffForm.email.trim().toLowerCase();
@@ -5307,15 +5322,15 @@ export default function PadelHubClient({
       },
       {
         id: "open-clubs",
-        label: "Clubes",
-        description: "Lista e gestão de clubes.",
+        label: "Clube",
+        description: "Criação e dados base do clube.",
         run: () => setPadelSection("clubs"),
         enabled: toolMode === "CLUB",
       },
       {
         id: "open-courts",
         label: "Campos",
-        description: "Configurar campos e disponibilidade.",
+        description: "Configurar campos e staff operacional.",
         run: () => setPadelSection("courts"),
         enabled: toolMode === "CLUB",
       },
@@ -7067,13 +7082,13 @@ export default function PadelHubClient({
         <div className="space-y-4 transition-all duration-250 ease-out opacity-100 translate-y-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-white">{isCourtsTab ? "Campos" : "Clubes"}</h2>
+              <h2 className="text-sm font-semibold text-white">{isCourtsTab ? "Campos" : "Clube"}</h2>
               <p className="text-[12px] text-white/65">
                 {isCourtsTab
-                  ? "Campos ativos por clube e equipa de apoio."
+                  ? "Subnavegação Campos: atualização de campos e staff por clube."
                   : isClubOwnerMode
-                    ? "Morada, campos e clube principal."
-                    : "Clubes parceiros usados nos torneios."}
+                    ? "Subnavegação Clube: criação e gestão base do clube."
+                    : "Subnavegação Clube: criação de clubes parceiros usados nos torneios."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -7150,10 +7165,12 @@ export default function PadelHubClient({
                     role="button"
                     tabIndex={0}
                     onClick={() => {
+                      if (!isCourtsTab) return;
                       setDrawerClubId(club.id);
                       loadCourtsAndStaff(club.id);
                     }}
                     onKeyDown={(e) => {
+                      if (!isCourtsTab) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         setDrawerClubId(club.id);
@@ -7186,12 +7203,18 @@ export default function PadelHubClient({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setDrawerClubId(club.id);
-                          loadCourtsAndStaff(club.id);
+                          if (isCourtsTab) {
+                            setDrawerClubId(club.id);
+                            loadCourtsAndStaff(club.id);
+                          } else {
+                            setPadelSection("courts");
+                            setDrawerClubId(club.id);
+                            loadCourtsAndStaff(club.id);
+                          }
                         }}
                         className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white hover:border-white/30"
                       >
-                        Campos & equipa
+                        {isCourtsTab ? "Campos & staff" : "Abrir campos"}
                       </button>
                       <button
                         type="button"
@@ -7236,12 +7259,12 @@ export default function PadelHubClient({
             </div>
           )}
 
-          {drawerClubId && selectedClub && (
+          {isCourtsTab && drawerClubId && selectedClub && (
             <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/65 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos & equipa</p>
-                  <p className="text-sm text-white/70">Campos ativos e equipa herdável para o assistente.</p>
+                  <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos & staff</p>
+                  <p className="text-sm text-white/70">Atualização de campos e staff operacional por clube.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="sr-only" htmlFor="club-switcher">
@@ -7465,7 +7488,7 @@ export default function PadelHubClient({
                 <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-white">Equipa do clube</p>
+                      <p className="text-sm font-semibold text-white">Staff do clube</p>
                       <p className="text-[11px] text-white/60">
                         {staff.length} membros · {inheritedStaffCount} herdam para torneios
                       </p>
@@ -7477,8 +7500,8 @@ export default function PadelHubClient({
                     {[
                       {
                         key: "existing",
-                        label: "Equipa da organização",
-                        desc: "Reaproveita quem já tens na equipa global e herda para torneios.",
+                        label: "Staff da organização",
+                        desc: "Reaproveita quem já tens no staff global e herda para torneios.",
                       },
                       {
                         key: "external",
@@ -7528,7 +7551,7 @@ export default function PadelHubClient({
                         <div className="rounded-lg border border-white/15 bg-white/5 p-3 text-[12px] text-white/75">
                           <p className="font-semibold text-white/90">Resumo rápido</p>
                           <p className="text-white/70">
-                            Herdado da equipa global; ficará marcado como herdado neste clube e nos torneios.
+                            Herdado do staff global; ficará marcado como herdado neste clube e nos torneios.
                           </p>
                         </div>
                       )}
@@ -7557,7 +7580,7 @@ export default function PadelHubClient({
                     >
                       <option value="ADMIN_CLUBE">Admin clube</option>
                       <option value="DIRETOR_PROVA">Diretor / Árbitro</option>
-                      <option value="STAFF">Equipa de campo</option>
+                      <option value="STAFF">Staff de campo</option>
                     </select>
                     <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
                       {[
@@ -7605,7 +7628,7 @@ export default function PadelHubClient({
                   </div>
 
                   <div className="space-y-2 rounded-lg border border-white/12 bg-white/5 p-2 text-[12px] text-white/80">
-                    {staff.length === 0 && <p className="text-white/60">Sem equipa.</p>}
+                    {staff.length === 0 && <p className="text-white/60">Sem staff.</p>}
                     {staff.map((s) => (
                       <div
                         key={s.id}
@@ -7773,7 +7796,7 @@ export default function PadelHubClient({
                               value={draft.label}
                               onChange={(e) => updateCategoryDraft(cat.id, { label: e.target.value })}
                               className="mt-2 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                              placeholder="Ex: M3, F2, Mista Open"
+                              placeholder="Ex: M7, F8, MX Open"
                             />
                           </div>
                           <span
@@ -7951,7 +7974,7 @@ export default function PadelHubClient({
                 value={categoryForm.label}
                 onChange={(e) => setCategoryForm((prev) => ({ ...prev, label: e.target.value }))}
                 className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                placeholder="Nome da categoria"
+                placeholder="Ex: M7, F8, MX Open"
               />
               <select
                 value={categoryForm.genderRestriction}
@@ -9429,7 +9452,7 @@ export default function PadelHubClient({
           open
           title="Apagar clube?"
           description="Remove definitivamente este clube e os campos associados. Não aparecerá mais no painel nem no assistente."
-          consequences={["Ação permanente.", "Campos e equipa associada deixam de estar disponíveis."]}
+          consequences={["Ação permanente.", "Campos e staff associado deixam de estar disponíveis."]}
           confirmLabel="Apagar"
           dangerLevel="high"
           onClose={() => setDeleteClubDialog(null)}

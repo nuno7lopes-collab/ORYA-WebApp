@@ -280,8 +280,8 @@ async function commitMembershipRequest(tx: TxLike, requestId: string) {
     }
 
     const newGroupName =
-      organization.publicName?.trim() ||
-      organization.businessName?.trim() ||
+      request.organization.publicName?.trim() ||
+      request.organization.businessName?.trim() ||
       `Grupo #${request.organizationId}`;
     const newGroup = await tx.organizationGroup.create({
       data: {
@@ -661,10 +661,11 @@ export async function startJoinRequest(input: { groupId: number; organizationId:
     throw new Error("ORGANIZATION_ALREADY_IN_GROUP");
   }
 
-  const currentOwner = await resolveOrganizationPrimaryOwner({ tx: prisma, organizationId });
-  if (userId !== group.ownerUserId && userId !== currentOwner) {
-    throw new Error("FORBIDDEN");
+  if (userId !== group.ownerUserId) {
+    throw new Error("ONLY_GROUP_OWNER");
   }
+
+  const currentOwner = await resolveOrganizationPrimaryOwner({ tx: prisma, organizationId });
 
   await prisma.groupMembershipRequest.updateMany({
     where: {

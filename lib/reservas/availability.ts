@@ -124,6 +124,10 @@ function getDateKey(year: number, month: number, day: number) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+function getDateKeyFromDate(date: Date) {
+  return getDateKey(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+}
+
 export function getDateParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -160,15 +164,13 @@ export type ScheduleOverride = {
   intervals: unknown;
 };
 
-function scheduleStartKey(schedule: AvailabilitySchedule, timeZone: string) {
-  const parts = getDateParts(schedule.startDate, timeZone);
-  return getDateKey(parts.year, parts.month, parts.day);
+function scheduleStartKey(schedule: AvailabilitySchedule) {
+  return getDateKeyFromDate(schedule.startDate);
 }
 
-function scheduleEndKey(schedule: AvailabilitySchedule, timeZone: string) {
+function scheduleEndKey(schedule: AvailabilitySchedule) {
   if (!schedule.endDate) return null;
-  const parts = getDateParts(schedule.endDate, timeZone);
-  return getDateKey(parts.year, parts.month, parts.day);
+  return getDateKeyFromDate(schedule.endDate);
 }
 
 export function resolveScheduleForDate(
@@ -183,9 +185,9 @@ export function resolveScheduleForDate(
   let selectedKey: string | null = null;
   let selectedCreatedAt = 0;
   for (const schedule of schedules) {
-    const startKey = scheduleStartKey(schedule, timeZone);
+    const startKey = scheduleStartKey(schedule);
     if (targetKey < startKey) continue;
-    const endKey = scheduleEndKey(schedule, timeZone);
+    const endKey = scheduleEndKey(schedule);
     if (endKey && targetKey > endKey) continue;
     const createdAt = schedule.createdAt ? schedule.createdAt.getTime() : 0;
     if (!selected || startKey > (selectedKey ?? "") || (startKey === selectedKey && createdAt > selectedCreatedAt)) {
@@ -247,8 +249,7 @@ export function buildSlotsForRange(params: {
 
   const overridesByDate = new Map<string, Array<{ kind: string; intervals: Interval[] }>>();
   params.overrides.forEach((override) => {
-    const keyParts = getDateParts(override.date, params.timezone);
-    const key = getDateKey(keyParts.year, keyParts.month, keyParts.day);
+    const key = getDateKeyFromDate(override.date);
     const existing = overridesByDate.get(key) ?? [];
     existing.push({ kind: override.kind, intervals: normalizeIntervals(override.intervals) });
     overridesByDate.set(key, existing);
@@ -325,8 +326,7 @@ export function buildSlotsForRangeWithSchedules(params: {
 
   const overridesByDate = new Map<string, Array<{ kind: string; intervals: Interval[] }>>();
   params.overrides.forEach((override) => {
-    const keyParts = getDateParts(override.date, params.timezone);
-    const key = getDateKey(keyParts.year, keyParts.month, keyParts.day);
+    const key = getDateKeyFromDate(override.date);
     const existing = overridesByDate.get(key) ?? [];
     existing.push({ kind: override.kind, intervals: normalizeIntervals(override.intervals) });
     overridesByDate.set(key, existing);

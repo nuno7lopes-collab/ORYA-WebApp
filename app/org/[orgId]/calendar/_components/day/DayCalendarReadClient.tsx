@@ -343,6 +343,7 @@ export default function DayCalendarReadClient() {
             scopeType: seed.entityKind,
             scopeId: String(seed.entityId),
           });
+          query.set("includeTemplates", "all");
           const url = `/api/org/${organizationId}/reservas/disponibilidade?${query.toString()}`;
           try {
             const payload = await fetchJson<AvailabilityResponse>(url);
@@ -361,7 +362,7 @@ export default function DayCalendarReadClient() {
   const { data: organizationAvailability } = useSWR<ReturnType<typeof normalizeAvailability> | undefined>(
     organizationAvailabilityKey,
     async () => {
-      const url = `/api/org/${organizationId}/reservas/disponibilidade?scopeType=ORGANIZATION`;
+      const url = `/api/org/${organizationId}/reservas/disponibilidade?scopeType=ORGANIZATION&includeTemplates=all`;
       try {
         const payload = await fetchJson<AvailabilityResponse>(url);
         if (!payload?.ok) return undefined;

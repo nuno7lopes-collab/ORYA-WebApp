@@ -45,6 +45,14 @@ function parseSourceTypes(raw: string | null) {
   return mapped.length > 0 ? mapped : [SourceType.EVENT, SourceType.TOURNAMENT, SourceType.BOOKING];
 }
 
+function parseStatuses(raw: string | null) {
+  if (!raw) return [] as string[];
+  return raw
+    .split(",")
+    .map((value) => value.trim().toUpperCase())
+    .filter((value) => /^[A-Z0-9_\\-]+$/.test(value));
+}
+
 async function _GET(req: NextRequest, context: { params: Promise<{ groupId: string }> }) {
   const ctx = getRequestContext(req);
   try {
@@ -89,6 +97,7 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
 
     const requestedOrgIds = parseOrgIds(url.searchParams.get("orgIds"));
     const sourceTypes = parseSourceTypes(url.searchParams.get("types"));
+    const statuses = parseStatuses(url.searchParams.get("statuses"));
 
     const organizations = await prisma.organization.findMany({
       where: { groupId },
@@ -113,7 +122,9 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
         organizationId: { in: scopedOrgIds },
         ...buildAgendaOverlapFilter({ from, to }),
         sourceType: { in: sourceTypes },
-        status: { not: "DELETED" },
+        ...(statuses.length > 0
+          ? { status: { in: statuses } }
+          : { status: { not: "DELETED" } }),
       },
       select: {
         organizationId: true,

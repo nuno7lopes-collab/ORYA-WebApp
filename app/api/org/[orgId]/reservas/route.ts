@@ -6,7 +6,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
-import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
@@ -959,27 +959,24 @@ async function _POST(req: NextRequest) {
                 { resourceId: { in: resourceScopeIds } },
               ],
             };
-    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
+    const scopeFilters =
+      availabilityMode === "HYBRID"
+        ? [
+            { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+            { scopeType: "PROFESSIONAL" as const, scopeId: { in: professionalScopeIds } },
+            { scopeType: "RESOURCE" as const, scopeId: { in: resourceScopeIds } },
+          ]
+        : [
+            { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+            { scopeType, scopeId: { in: scopeIds } },
+          ];
+    const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR:
-                  availabilityMode === "HYBRID"
-                    ? [
-                        { scopeType: "ORGANIZATION", scopeId: 0 },
-                        { scopeType: "PROFESSIONAL", scopeId: { in: professionalScopeIds } },
-                        { scopeType: "RESOURCE", scopeId: { in: resourceScopeIds } },
-                      ]
-                    : [
-                        { scopeType: "ORGANIZATION", scopeId: 0 },
-                        { scopeType, scopeId: { in: scopeIds } },
-                      ],
-              }),
+          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
         },
-        select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
@@ -987,17 +984,7 @@ async function _POST(req: NextRequest) {
           ...(shouldUseOrgOnly
             ? { scopeType: "ORGANIZATION", scopeId: 0 }
             : {
-                OR:
-                  availabilityMode === "HYBRID"
-                    ? [
-                        { scopeType: "ORGANIZATION", scopeId: 0 },
-                        { scopeType: "PROFESSIONAL", scopeId: { in: professionalScopeIds } },
-                        { scopeType: "RESOURCE", scopeId: { in: resourceScopeIds } },
-                      ]
-                    : [
-                        { scopeType: "ORGANIZATION", scopeId: 0 },
-                        { scopeType, scopeId: { in: scopeIds } },
-                      ],
+                OR: scopeFilters,
               }),
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
@@ -1030,9 +1017,16 @@ async function _POST(req: NextRequest) {
         : Promise.resolve([]),
     ]);
 
-    const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+    const scheduleIds = schedules.map((schedule) => schedule.id);
+    const templates = scheduleIds.length
+      ? await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: { in: scheduleIds } },
+          select: { availabilityId: true, dayOfWeek: true, intervals: true },
+        })
+      : [];
+    const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-    const templatesByScope = groupByScope(templates);
+    const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
     const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
@@ -1050,9 +1044,10 @@ async function _POST(req: NextRequest) {
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });
@@ -1088,9 +1083,10 @@ async function _POST(req: NextRequest) {
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,
-          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgSchedules: orgSchedules as ScopedSchedule[],
+          templates: templates as ScopedTemplate[],
           orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
+          schedulesByScope,
           overridesByScope,
           blocks,
         });

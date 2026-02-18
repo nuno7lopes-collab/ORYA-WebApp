@@ -10,6 +10,7 @@ const updateTournament = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   event: { findUnique: vi.fn() },
+  padelCategory: { findFirst: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -65,6 +66,7 @@ beforeEach(async () => {
   createTournamentForEvent.mockReset();
   updateTournament.mockReset();
   prisma.event.findUnique.mockReset();
+  prisma.padelCategory.findFirst.mockReset();
   prisma.$transaction.mockReset();
 
   createSupabaseServer.mockResolvedValue({
@@ -78,12 +80,67 @@ beforeEach(async () => {
   ensurePadelRuleSetVersion.mockResolvedValue({ id: 500 });
   createTournamentForEvent.mockResolvedValue({ ok: true });
   updateTournament.mockResolvedValue({ ok: true });
-  prisma.event.findUnique.mockResolvedValue(null);
+  prisma.event.findUnique.mockResolvedValue({
+    id: 1,
+    organizationId: 99,
+    templateType: "PADEL",
+    startsAt: new Date("2026-04-01T10:00:00.000Z"),
+    tournament: null,
+  });
+  prisma.padelCategory.findFirst.mockResolvedValue({ id: 12 });
 
   POST = (await import("@/app/api/padel/tournaments/config/route")).POST;
 });
 
 describe("POST /api/padel/tournaments/config lock contract", () => {
+  it("bloqueia quando o eventId não pertence à organização do request", async () => {
+    prisma.event.findUnique.mockResolvedValueOnce({
+      id: 1,
+      organizationId: 777,
+      templateType: "PADEL",
+      startsAt: new Date("2026-04-01T10:00:00.000Z"),
+      tournament: null,
+    });
+
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        featuredMatchId: 77,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("FORBIDDEN");
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("recusa defaultCategoryId fora do catálogo ativo da organização", async () => {
+    prisma.padelCategory.findFirst.mockResolvedValueOnce(null);
+
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        defaultCategoryId: 9999,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("INVALID_DEFAULT_CATEGORY");
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("bloqueia alterações competitivas após LOCKED com 409 TOURNAMENT_CONFIG_LOCKED", async () => {
     const tx = {
       padelTournamentConfig: {

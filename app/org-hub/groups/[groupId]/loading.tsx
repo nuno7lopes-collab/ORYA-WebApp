@@ -1,6 +1,6 @@
 export default function GroupDashboardLoading() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 text-white md:px-6 md:py-12 lg:px-8">
+    <div className="mx-auto w-full max-w-[1240px] px-4 py-10 text-white sm:px-6 md:py-12 lg:px-8">
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-white/5 p-5">
           <div className="h-6 w-40 rounded-full bg-white/10" />

@@ -590,7 +590,7 @@ async function _POST(req: NextRequest) {
     if (partnerClubIds.length > 0 && resolvedStaffIds.length === 0) {
       return fail(
         400,
-        "Seleciona pelo menos 1 elemento de equipa para clubes parceiros.",
+        "Seleciona pelo menos 1 elemento de staff para clubes parceiros.",
         "STAFF_REQUIRED_FOR_PARTNER_CLUBS",
         false,
       );

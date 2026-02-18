@@ -9,6 +9,7 @@ import {
   groupByScope,
   type AvailabilityScopeType,
   type ScopedOverride,
+  type ScopedSchedule,
   type ScopedTemplate,
 } from "@/lib/reservas/scopedAvailability";
 import { normalizeReservationAssignmentMode, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
@@ -458,7 +459,7 @@ async function _POST(
         { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now } },
       ],
     };
-    const templateScopes =
+    const scopeFilters =
       availabilityMode === "HYBRID"
         ? [
             { scopeType: "ORGANIZATION" as const, scopeId: 0 },
@@ -469,18 +470,18 @@ async function _POST(
             { scopeType: "ORGANIZATION" as const, scopeId: 0 },
             { scopeType, scopeId: { in: scopeIds } },
           ];
-    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
+    const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
         where: {
           organizationId: booking.organizationId,
-          OR: templateScopes,
+          OR: scopeFilters,
         },
-        select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
           organizationId: booking.organizationId,
-          OR: templateScopes,
+          OR: scopeFilters,
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
         orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -509,9 +510,16 @@ async function _POST(
           }),
     ]);
 
-    const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+    const scheduleIds = schedules.map((schedule) => schedule.id);
+    const templates = scheduleIds.length
+      ? await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: { in: scheduleIds } },
+          select: { availabilityId: true, dayOfWeek: true, intervals: true },
+        })
+      : [];
+    const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-    const templatesByScope = groupByScope(templates);
+    const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
     const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
@@ -530,9 +538,10 @@ async function _POST(
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });
@@ -609,9 +618,10 @@ async function _POST(
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,
-          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgSchedules: orgSchedules as ScopedSchedule[],
+          templates: templates as ScopedTemplate[],
           orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
+          schedulesByScope,
           overridesByScope,
           blocks,
         });

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { OrgType, Prisma } from "@prisma/client";
 import { findNextSlot } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
-import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -250,10 +250,10 @@ async function _GET(req: NextRequest) {
     const trimmed = hasMore ? services.slice(0, take) : services;
     const organizationIds = Array.from(new Set(trimmed.map((service) => service.organization.id)));
 
-    const [templates, overrides, bookings, professionals, resources] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
+    const [schedules, overrides, bookings, professionals, resources] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
         where: { organizationId: { in: organizationIds } },
-        select: { organizationId: true, scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        select: { id: true, organizationId: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
@@ -296,11 +296,29 @@ async function _GET(req: NextRequest) {
       }),
     ]);
 
+    const scheduleIds = schedules.map((schedule) => schedule.id);
+    const templates = scheduleIds.length
+      ? await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: { in: scheduleIds } },
+          select: { availabilityId: true, dayOfWeek: true, intervals: true },
+        })
+      : [];
+    const scheduleOrgMap = new Map<number, number>();
+    const schedulesByOrg = new Map<number, typeof schedules>();
+    schedules.forEach((schedule) => {
+      scheduleOrgMap.set(schedule.id, schedule.organizationId);
+      const list = schedulesByOrg.get(schedule.organizationId) ?? [];
+      list.push(schedule);
+      schedulesByOrg.set(schedule.organizationId, list);
+    });
+
     const templatesByOrg = new Map<number, typeof templates>();
     templates.forEach((template) => {
-      const list = templatesByOrg.get(template.organizationId) ?? [];
+      const orgId = scheduleOrgMap.get(template.availabilityId);
+      if (!orgId) return;
+      const list = templatesByOrg.get(orgId) ?? [];
       list.push(template);
-      templatesByOrg.set(template.organizationId, list);
+      templatesByOrg.set(orgId, list);
     });
 
     const overridesByOrg = new Map<number, typeof overrides>();
@@ -341,9 +359,9 @@ async function _GET(req: NextRequest) {
       const orgTemplatesAll = templatesByOrg.get(orgId) ?? [];
       const orgOverridesAll = overridesByOrg.get(orgId) ?? [];
       const blocks = bookingsByOrg.get(orgId) ?? [];
-      const orgTemplates = orgTemplatesAll.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+      const orgSchedules = (schedulesByOrg.get(orgId) ?? []).filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
       const orgOverrides = orgOverridesAll.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-      const templatesByScope = groupByScope(orgTemplatesAll);
+      const schedulesByScope = groupByScope(schedulesByOrg.get(orgId) ?? []);
       const overridesByScope = groupByScope(orgOverridesAll);
 
       const assignmentConfig = resolveServiceAssignmentMode({
@@ -400,9 +418,10 @@ async function _GET(req: NextRequest) {
             now,
             scopeType: "RESOURCE",
             scopeId: resource.id,
-            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgSchedules: orgSchedules as ScopedSchedule[],
+            templates: orgTemplatesAll as ScopedTemplate[],
             orgOverrides: orgOverrides as ScopedOverride[],
-            templatesByScope,
+            schedulesByScope,
             overridesByScope,
             blocks,
           });
@@ -424,9 +443,10 @@ async function _GET(req: NextRequest) {
             now,
             scopeType: scope.scopeType,
             scopeId: scope.scopeId,
-            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgSchedules: orgSchedules as ScopedSchedule[],
+            templates: orgTemplatesAll as ScopedTemplate[],
             orgOverrides: orgOverrides as ScopedOverride[],
-            templatesByScope,
+            schedulesByScope,
             overridesByScope,
             blocks,
           });
@@ -450,9 +470,10 @@ async function _GET(req: NextRequest) {
             now,
             scopeType: "PROFESSIONAL",
             scopeId: professional.id,
-            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgSchedules: orgSchedules as ScopedSchedule[],
+            templates: orgTemplatesAll as ScopedTemplate[],
             orgOverrides: orgOverrides as ScopedOverride[],
-            templatesByScope,
+            schedulesByScope,
             overridesByScope,
             blocks,
           });
@@ -471,9 +492,10 @@ async function _GET(req: NextRequest) {
             now,
             scopeType: "RESOURCE",
             scopeId: resource.id,
-            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgSchedules: orgSchedules as ScopedSchedule[],
+            templates: orgTemplatesAll as ScopedTemplate[],
             orgOverrides: orgOverrides as ScopedOverride[],
-            templatesByScope,
+            schedulesByScope,
             overridesByScope,
             blocks,
           });

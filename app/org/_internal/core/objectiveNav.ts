@@ -199,8 +199,8 @@ export function getObjectiveSections(
           label: "Gestão de Clube Padel",
           href: padelClubHref("clubs"),
           items: [
-            { id: "clubs", label: "Clubes", href: padelClubHref("clubs") },
-            { id: "courts", label: "Campos", href: padelClubHref("courts") },
+            { id: "clubs", label: "Clube (criação)", href: padelClubHref("clubs") },
+            { id: "courts", label: "Campos (gestão)", href: padelClubHref("courts") },
             { id: "players", label: "Jogadores", href: padelClubHref("players") },
             { id: "community", label: "Comunidade", href: padelClubHref("community") },
             { id: "trainers", label: "Treinadores", href: padelClubHref("trainers") },

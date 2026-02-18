@@ -31,6 +31,20 @@ describe("group join/exit routes", () => {
     expect(res.status).toBe(409);
   });
 
+  it("maps ONLY_GROUP_OWNER to 403 on join start", async () => {
+    startJoinRequest.mockRejectedValue(new Error("ONLY_GROUP_OWNER"));
+
+    const res = await joinRequestPost(
+      new NextRequest("http://localhost/api/org-hub/groups/join-requests", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ groupId: 10, organizationId: 99 }),
+      }),
+    );
+
+    expect(res.status).toBe(403);
+  });
+
   it("maps ORGANIZATION_INACTIVE to 409 on exit start", async () => {
     startExitRequest.mockRejectedValue(new Error("ORGANIZATION_INACTIVE"));
 

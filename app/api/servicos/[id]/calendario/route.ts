@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
-import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { buildHybridSlotMatrix } from "@/lib/reservas/hybridAssignment";
@@ -353,26 +353,23 @@ async function _GET(
         const professionalIds = professionals.map((item) => item.id);
         const resourceIds = resources.map((item) => item.id);
 
-        const [templates, overrides, bookings, classSessions] = await Promise.all([
-          prisma.weeklyAvailabilityTemplate.findMany({
+        const scopeFilters = [
+          { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+          { scopeType: "PROFESSIONAL" as const, scopeId: { in: professionalIds } },
+          { scopeType: "RESOURCE" as const, scopeId: { in: resourceIds } },
+        ];
+        const [schedules, overrides, bookings, classSessions] = await Promise.all([
+          prisma.availabilitySchedule.findMany({
             where: {
               organizationId: service.organizationId,
-              OR: [
-                { scopeType: "ORGANIZATION", scopeId: 0 },
-                { scopeType: "PROFESSIONAL", scopeId: { in: professionalIds } },
-                { scopeType: "RESOURCE", scopeId: { in: resourceIds } },
-              ],
+              OR: scopeFilters,
             },
-            select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+            select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
           }),
           prisma.availabilityOverride.findMany({
             where: {
               organizationId: service.organizationId,
-              OR: [
-                { scopeType: "ORGANIZATION", scopeId: 0 },
-                { scopeType: "PROFESSIONAL", scopeId: { in: professionalIds } },
-                { scopeType: "RESOURCE", scopeId: { in: resourceIds } },
-              ],
+              OR: scopeFilters,
               date: new Date(Date.UTC(dayParam.year, dayParam.month - 1, dayParam.day)),
             },
             orderBy: [{ date: "asc" }, { createdAt: "asc" }],
@@ -411,9 +408,16 @@ async function _GET(
           }),
         ]);
 
-        const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+        const scheduleIds = schedules.map((schedule) => schedule.id);
+        const templates = scheduleIds.length
+          ? await prisma.weeklyAvailabilityTemplate.findMany({
+              where: { availabilityId: { in: scheduleIds } },
+              select: { availabilityId: true, dayOfWeek: true, intervals: true },
+            })
+          : [];
+        const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
         const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-        const templatesByScope = groupByScope(templates);
+        const schedulesByScope = groupByScope(schedules);
         const overridesByScope = groupByScope(overrides);
         const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
         const matrix = buildHybridSlotMatrix({
@@ -425,9 +429,10 @@ async function _GET(
           now,
           professionals,
           resources,
-          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgSchedules: orgSchedules as ScopedSchedule[],
+          templates: templates as ScopedTemplate[],
           orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
+          schedulesByScope,
           overridesByScope,
           blocks,
         });
@@ -494,20 +499,17 @@ async function _GET(
         return jsonWrap({ ok: true, items: [], selectionRules });
       }
 
-      const [templates, overrides, bookings, classSessions] = await Promise.all([
-        prisma.weeklyAvailabilityTemplate.findMany({
+      const scopeFilters = [
+        { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+        { scopeType, scopeId: { in: scopeIds } },
+      ];
+      const [schedules, overrides, bookings, classSessions] = await Promise.all([
+        prisma.availabilitySchedule.findMany({
           where: {
             organizationId: service.organizationId,
-            ...(shouldUseOrgOnly
-              ? { scopeType: "ORGANIZATION", scopeId: 0 }
-              : {
-                  OR: [
-                    { scopeType: "ORGANIZATION", scopeId: 0 },
-                    { scopeType, scopeId: { in: scopeIds } },
-                  ],
-                }),
+            ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
           },
-          select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+          select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
         }),
         prisma.availabilityOverride.findMany({
           where: {
@@ -515,10 +517,7 @@ async function _GET(
             ...(shouldUseOrgOnly
               ? { scopeType: "ORGANIZATION", scopeId: 0 }
               : {
-                  OR: [
-                    { scopeType: "ORGANIZATION", scopeId: 0 },
-                    { scopeType, scopeId: { in: scopeIds } },
-                  ],
+                  OR: scopeFilters,
                 }),
             date: new Date(Date.UTC(dayParam.year, dayParam.month - 1, dayParam.day)),
           },
@@ -550,9 +549,16 @@ async function _GET(
           : Promise.resolve([]),
       ]);
 
-      const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+      const scheduleIds = schedules.map((schedule) => schedule.id);
+      const templates = scheduleIds.length
+        ? await prisma.weeklyAvailabilityTemplate.findMany({
+            where: { availabilityId: { in: scheduleIds } },
+            select: { availabilityId: true, dayOfWeek: true, intervals: true },
+          })
+        : [];
+      const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
       const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-      const templatesByScope = groupByScope(templates);
+      const schedulesByScope = groupByScope(schedules);
       const overridesByScope = groupByScope(overrides);
       const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
       const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
@@ -570,9 +576,10 @@ async function _GET(
           now,
           scopeType: scope.scopeType,
           scopeId: scope.scopeId,
-          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgSchedules: orgSchedules as ScopedSchedule[],
+          templates: templates as ScopedTemplate[],
           orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
+          schedulesByScope,
           overridesByScope,
           blocks,
         });
@@ -764,26 +771,23 @@ async function _GET(
 
       const professionalIds = professionals.map((item) => item.id);
       const resourceIds = resources.map((item) => item.id);
-      const [templates, overrides, bookings, classSessions] = await Promise.all([
-        prisma.weeklyAvailabilityTemplate.findMany({
+      const scopeFilters = [
+        { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+        { scopeType: "PROFESSIONAL" as const, scopeId: { in: professionalIds } },
+        { scopeType: "RESOURCE" as const, scopeId: { in: resourceIds } },
+      ];
+      const [schedules, overrides, bookings, classSessions] = await Promise.all([
+        prisma.availabilitySchedule.findMany({
           where: {
             organizationId: service.organizationId,
-            OR: [
-              { scopeType: "ORGANIZATION", scopeId: 0 },
-              { scopeType: "PROFESSIONAL", scopeId: { in: professionalIds } },
-              { scopeType: "RESOURCE", scopeId: { in: resourceIds } },
-            ],
+            OR: scopeFilters,
           },
-          select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+          select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
         }),
         prisma.availabilityOverride.findMany({
           where: {
             organizationId: service.organizationId,
-            OR: [
-              { scopeType: "ORGANIZATION", scopeId: 0 },
-              { scopeType: "PROFESSIONAL", scopeId: { in: professionalIds } },
-              { scopeType: "RESOURCE", scopeId: { in: resourceIds } },
-            ],
+            OR: scopeFilters,
             date: {
               gte: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())),
               lte: new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())),
@@ -825,9 +829,16 @@ async function _GET(
         }),
       ]);
 
-      const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+      const scheduleIds = schedules.map((schedule) => schedule.id);
+      const templates = scheduleIds.length
+        ? await prisma.weeklyAvailabilityTemplate.findMany({
+            where: { availabilityId: { in: scheduleIds } },
+            select: { availabilityId: true, dayOfWeek: true, intervals: true },
+          })
+        : [];
+      const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
       const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-      const templatesByScope = groupByScope(templates);
+      const schedulesByScope = groupByScope(schedules);
       const overridesByScope = groupByScope(overrides);
       const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
       const matrix = buildHybridSlotMatrix({
@@ -839,9 +850,10 @@ async function _GET(
         now,
         professionals,
         resources,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });
@@ -917,20 +929,17 @@ async function _GET(
       return respondMonth(buildEmptyDays());
     }
 
-    const [templates, overrides, bookings, classSessions] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
+    const scopeFilters = [
+      { scopeType: "ORGANIZATION" as const, scopeId: 0 },
+      { scopeType, scopeId: { in: scopeIds } },
+    ];
+    const [schedules, overrides, bookings, classSessions] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR: [
-                  { scopeType: "ORGANIZATION", scopeId: 0 },
-                  { scopeType, scopeId: { in: scopeIds } },
-                ],
-              }),
+          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
         },
-        select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
@@ -938,10 +947,7 @@ async function _GET(
           ...(shouldUseOrgOnly
             ? { scopeType: "ORGANIZATION", scopeId: 0 }
             : {
-                OR: [
-                  { scopeType: "ORGANIZATION", scopeId: 0 },
-                  { scopeType, scopeId: { in: scopeIds } },
-                ],
+                OR: scopeFilters,
               }),
           date: {
             gte: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())),
@@ -976,9 +982,16 @@ async function _GET(
         : Promise.resolve([]),
     ]);
 
-    const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+    const scheduleIds = schedules.map((schedule) => schedule.id);
+    const templates = scheduleIds.length
+      ? await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: { in: scheduleIds } },
+          select: { availabilityId: true, dayOfWeek: true, intervals: true },
+        })
+      : [];
+    const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-    const templatesByScope = groupByScope(templates);
+    const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
     const blocks = [...buildBlocks(bookings), ...buildSessionBlocks(classSessions)];
 
@@ -997,9 +1010,10 @@ async function _GET(
         now,
         scopeType: scope.scopeType,
         scopeId: scope.scopeId,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });

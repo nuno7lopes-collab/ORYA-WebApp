@@ -249,35 +249,35 @@ async function _PATCH(req: NextRequest) {
       return fail(404, "NOT_MEMBER");
     }
 
+    const nextRole = role as OrganizationMemberRole;
+    const isTargetGroupOwner = targetUserId === group.ownerUserId;
+    const wantsOwnerRole = nextRole === OrganizationMemberRole.OWNER;
+
     const targetIsGovernance = await prisma.organizationGroupMember.findFirst({
       where: { groupId: callerMembership.groupId, userId: targetUserId, isGovernance: true },
       select: { id: true },
     });
-    if (targetIsGovernance) {
+    if (targetIsGovernance && !(isTargetGroupOwner && wantsOwnerRole)) {
       return fail(409, "GROUP_GOVERNANCE_LOCKED");
     }
 
-    if (targetUserId === group.ownerUserId) {
+    if (wantsOwnerRole && !isTargetGroupOwner) {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
+    if (!wantsOwnerRole && isTargetGroupOwner) {
       return fail(409, "GROUP_OWNER_INVARIANT");
     }
 
-    if (role === "OWNER" && targetUserId !== group.ownerUserId) {
-      return fail(409, "GROUP_OWNER_INVARIANT");
-    }
-    if (role !== "OWNER" && targetUserId === group.ownerUserId) {
-      return fail(409, "GROUP_OWNER_INVARIANT");
-    }
-
-    const manageAllowed = canManageMembers(callerRole, targetMembership.role, role as OrganizationMemberRole);
+    const manageAllowed = canManageMembers(callerRole, targetMembership.role, nextRole);
     if (!manageAllowed) {
       return fail(403, "FORBIDDEN");
     }
 
-    if (role === "OWNER" && callerRole !== "OWNER") {
+    if (wantsOwnerRole && callerRole !== "OWNER") {
       return fail(403, "ONLY_OWNER_CAN_SET_OWNER");
     }
 
-    if (targetMembership.role === "OWNER" && role !== "OWNER") {
+    if (targetMembership.role === "OWNER" && !wantsOwnerRole) {
       const otherOwners = await countEffectiveOrganizationMembersByRole({
         organizationId,
         role: "OWNER",
@@ -288,7 +288,7 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    if (role === "OWNER") {
+    if (wantsOwnerRole) {
       await prisma.$transaction(async (tx) => setSoleOwner(tx, organizationId, targetUserId));
       await recordOrganizationAuditSafe({
         organizationId,
@@ -304,7 +304,7 @@ async function _PATCH(req: NextRequest) {
       return respondOk(ctx, {}, { status: 200 });
     }
 
-    if (targetMembership.role === "OWNER" && targetUserId === user.id && role !== "OWNER") {
+    if (targetMembership.role === "OWNER" && targetUserId === user.id && !wantsOwnerRole) {
       const otherOwners = await countEffectiveOrganizationMembersByRole({
         organizationId,
         role: "OWNER",
@@ -319,13 +319,13 @@ async function _PATCH(req: NextRequest) {
       await setGroupMemberRoleForOrg({
         organizationId,
         userId: targetUserId,
-        role: role as OrganizationMemberRole,
+        role: nextRole,
         rolePack: normalizedRolePack,
         client: tx,
       });
     });
 
-    if (targetMembership.role === "OWNER" && role !== "OWNER") {
+    if (targetMembership.role === "OWNER" && !wantsOwnerRole) {
       await recordOrganizationAuditSafe({
         organizationId,
         groupId: callerMembership.groupId,

@@ -17,7 +17,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isUnauthenticatedError } from "@/lib/security";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
-import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedSchedule, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
@@ -588,7 +588,7 @@ async function _POST(
                 { resourceId: { in: resourceScopeIds } },
               ],
             };
-    const templateScopes =
+    const scopeFilters =
       availabilityMode === "HYBRID"
         ? [
             { scopeType: "ORGANIZATION" as const, scopeId: 0 },
@@ -607,17 +607,13 @@ async function _POST(
         { status: { in: [...activePendingStates] as any }, pendingExpiresAt: { gt: now } },
       ],
     };
-    const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
-      prisma.weeklyAvailabilityTemplate.findMany({
+    const [schedules, overrides, blockingBookings, classSessions] = await Promise.all([
+      prisma.availabilitySchedule.findMany({
         where: {
           organizationId: service.organizationId,
-          ...(shouldUseOrgOnly
-            ? { scopeType: "ORGANIZATION", scopeId: 0 }
-            : {
-                OR: templateScopes,
-              }),
+          ...(shouldUseOrgOnly ? { scopeType: "ORGANIZATION", scopeId: 0 } : { OR: scopeFilters }),
         },
-        select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+        select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
       }),
       prisma.availabilityOverride.findMany({
         where: {
@@ -625,7 +621,7 @@ async function _POST(
           ...(shouldUseOrgOnly
             ? { scopeType: "ORGANIZATION", scopeId: 0 }
             : {
-                OR: templateScopes,
+                OR: scopeFilters,
               }),
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
@@ -654,9 +650,16 @@ async function _POST(
           }),
     ]);
 
-    const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+    const scheduleIds = schedules.map((schedule) => schedule.id);
+    const templates = scheduleIds.length
+      ? await prisma.weeklyAvailabilityTemplate.findMany({
+          where: { availabilityId: { in: scheduleIds } },
+          select: { availabilityId: true, dayOfWeek: true, intervals: true },
+        })
+      : [];
+    const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
     const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-    const templatesByScope = groupByScope(templates);
+    const schedulesByScope = groupByScope(schedules);
     const overridesByScope = groupByScope(overrides);
     const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
     const slotKey = startsAt.toISOString();
@@ -674,9 +677,10 @@ async function _POST(
         now,
         professionals: professionalScopes,
         resources: resourceScopes,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });
@@ -747,16 +751,17 @@ async function _POST(
           rangeEnd: dayEnd,
           timezone,
           durationMinutes: effectiveDurationMinutes,
-          stepMinutes: SLOT_STEP_MINUTES,
-          now,
-          scopeType: scope.scopeType,
-          scopeId: scope.scopeId,
-          orgTemplates: orgTemplates as ScopedTemplate[],
-          orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
-          overridesByScope,
-          blocks,
-        });
+        stepMinutes: SLOT_STEP_MINUTES,
+        now,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
+        orgOverrides: orgOverrides as ScopedOverride[],
+        schedulesByScope,
+        overridesByScope,
+        blocks,
+      });
         const isAvailable = slots.some((slot) => slot.startsAt.toISOString() === slotKey);
         if (isAvailable) {
           selectedScopeId = scope.scopeId;

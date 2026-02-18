@@ -60,9 +60,18 @@ const TAB_OPTIONS: Array<{ id: TabKey; label: string }> = [
   { id: "resources", label: "Recursos" },
 ];
 
+const AGENDA_STATUS_OPTIONS = ["PENDING", "CONFIRMED", "ACTIVE", "CANCELLED"] as const;
+
 const STATUS_META: Record<string, string> = {
   ACTIVE: "border-emerald-300/45 bg-emerald-300/14 text-emerald-100",
   SUSPENDED: "border-red-300/45 bg-red-300/14 text-red-100",
+};
+
+const AGENDA_STATUS_META: Record<string, string> = {
+  CONFIRMED: "border-emerald-300/45 bg-emerald-300/14 text-emerald-100",
+  ACTIVE: "border-sky-300/45 bg-sky-300/14 text-sky-100",
+  PENDING: "border-amber-300/45 bg-amber-300/14 text-amber-100",
+  CANCELLED: "border-red-300/45 bg-red-300/14 text-red-100",
 };
 
 function formatDate(value: string | Date) {
@@ -92,6 +101,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [orgSelection, setOrgSelection] = useState<number[]>([]);
   const [typeSelection, setTypeSelection] = useState<string[]>(["RESERVATION", "EVENT", "TOURNAMENT"]);
+  const [statusSelection, setStatusSelection] = useState<string[]>([]);
   const [fromDate, setFromDate] = useState(() => new Date());
   const [toDate, setToDate] = useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
@@ -111,6 +121,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
           to: new Date(`${toDateInputValue(toDate)}T23:59:59`).toISOString(),
           orgIds: orgIds.join(","),
           types: typeSelection.join(","),
+          statuses: statusSelection.join(","),
         });
         const res = await fetch(`/api/org-hub/groups/${group.id}/dashboard/agenda?${params.toString()}`, {
           signal: controller.signal,
@@ -129,28 +140,38 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
     };
     void loadAgenda();
     return () => controller.abort();
-  }, [tab, orgSelection, typeSelection, fromDate, toDate, organizations, group.id]);
+  }, [tab, orgSelection, typeSelection, statusSelection, fromDate, toDate, organizations, group.id]);
 
   const groupedAgenda = useMemo(() => {
-    if (!agendaItems.length) return [] as Array<{ dateLabel: string; items: AgendaItem[] }>;
-    const grouped: Array<{ dateLabel: string; items: AgendaItem[] }> = [];
-    let currentDate = "";
-    let currentBucket: AgendaItem[] = [];
+    if (!agendaItems.length) {
+      return [] as Array<{
+        dateLabel: string;
+        orgBuckets: Array<{ organizationId: number; organizationName: string; items: AgendaItem[] }>;
+      }>;
+    }
+
+    const byDate = new Map<
+      string,
+      Map<number, { organizationId: number; organizationName: string; items: AgendaItem[] }>
+    >();
+
     for (const item of agendaItems) {
       const dateLabel = formatDate(item.startsAt);
-      if (dateLabel !== currentDate) {
-        if (currentBucket.length) {
-          grouped.push({ dateLabel: currentDate, items: currentBucket });
-        }
-        currentDate = dateLabel;
-        currentBucket = [];
-      }
-      currentBucket.push(item);
+      const dateBucket = byDate.get(dateLabel) ?? new Map();
+      const orgBucket = dateBucket.get(item.organizationId) ?? {
+        organizationId: item.organizationId,
+        organizationName: item.organizationName,
+        items: [],
+      };
+      orgBucket.items.push(item);
+      dateBucket.set(item.organizationId, orgBucket);
+      byDate.set(dateLabel, dateBucket);
     }
-    if (currentBucket.length) {
-      grouped.push({ dateLabel: currentDate, items: currentBucket });
-    }
-    return grouped;
+
+    return Array.from(byDate.entries()).map(([dateLabel, orgMap]) => ({
+      dateLabel,
+      orgBuckets: Array.from(orgMap.values()).sort((a, b) => a.organizationName.localeCompare(b.organizationName, "pt")),
+    }));
   }, [agendaItems]);
 
   const groupedProfessionals = useMemo(() => {
@@ -174,7 +195,7 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
   }, [resources]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10 text-white md:px-6 md:py-12 lg:px-8">
+    <div className="mx-auto w-full max-w-[1240px] px-4 py-10 text-white sm:px-6 md:py-12 lg:px-8">
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
           <OrgHubTopNav groupDashboardHref={groupDashboardHref} />
@@ -380,6 +401,40 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                   );
                 })}
               </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {AGENDA_STATUS_OPTIONS.map((status) => {
+                  const active = statusSelection.includes(status);
+                  return (
+                    <button
+                      key={`status-${status}`}
+                      type="button"
+                      onClick={() =>
+                        setStatusSelection((prev) =>
+                          prev.includes(status) ? prev.filter((item) => item !== status) : [...prev, status],
+                        )
+                      }
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition",
+                        active
+                          ? "border-sky-300/50 bg-sky-300/15 text-sky-100"
+                          : "border-white/20 bg-white/8 text-white/70 hover:bg-white/12",
+                      )}
+                    >
+                      {status}
+                    </button>
+                  );
+                })}
+                {statusSelection.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusSelection([])}
+                    className="rounded-full border border-white/20 bg-white/8 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70 hover:bg-white/12"
+                  >
+                    Estado: todos
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="rounded-3xl border border-white/12 bg-[linear-gradient(160deg,rgba(12,20,36,0.6),rgba(7,11,22,0.7))] p-5">
@@ -393,21 +448,43 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
                   {groupedAgenda.map((bucket) => (
                     <div key={bucket.dateLabel}>
                       <p className="text-[12px] uppercase tracking-[0.22em] text-white/60">{bucket.dateLabel}</p>
-                      <div className="mt-2 space-y-2">
-                        {bucket.items.map((item, index) => (
-                          <div
-                            key={`${item.organizationId}-${item.startsAt}-${index}`}
-                            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/6 px-4 py-3"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-white">{item.title}</p>
-                              <p className="text-[12px] text-white/60">{item.organizationName}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[12px] text-white/80">{formatTimeRange(item.startsAt, item.endsAt)}</p>
-                              <p className="text-[11px] uppercase tracking-[0.16em] text-white/50">
-                                {item.kind === "RESERVATION" ? "Reserva" : item.kind === "EVENT" ? "Evento" : "Torneio"}
+                      <div className="mt-2 space-y-3">
+                        {bucket.orgBuckets.map((orgBucket) => (
+                          <div key={`${bucket.dateLabel}:${orgBucket.organizationId}`} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/75">
+                                {orgBucket.organizationName}
                               </p>
+                              <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70">
+                                {orgBucket.items.length} item{orgBucket.items.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-2">
+                              {orgBucket.items.map((item, index) => (
+                                <div
+                                  key={`${item.organizationId}-${item.startsAt}-${index}`}
+                                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/6 px-4 py-3"
+                                >
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">{item.title}</p>
+                                    <p className="text-[11px] uppercase tracking-[0.16em] text-white/50">
+                                      {item.kind === "RESERVATION" ? "Reserva" : item.kind === "EVENT" ? "Evento" : "Torneio"}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-[12px] text-white/80">{formatTimeRange(item.startsAt, item.endsAt)}</p>
+                                    <span
+                                      className={cn(
+                                        "mt-1 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
+                                        AGENDA_STATUS_META[item.status?.toUpperCase?.() ?? ""] ??
+                                          "border-white/20 bg-white/8 text-white/70",
+                                      )}
+                                    >
+                                      {item.status || "N/A"}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ))}

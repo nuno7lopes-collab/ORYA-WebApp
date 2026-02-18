@@ -27,7 +27,7 @@ export default async function GroupDashboardPage({ params }: { params: { groupId
   const groupId = parsePositiveInt(params.groupId);
   if (!groupId) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-16 text-white">
+      <div className="mx-auto w-full max-w-[1240px] px-4 py-16 text-white sm:px-6 lg:px-8">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
           Grupo inválido.
         </div>
@@ -41,7 +41,7 @@ export default async function GroupDashboardPage({ params }: { params: { groupId
   });
   if (!group) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-16 text-white">
+      <div className="mx-auto w-full max-w-[1240px] px-4 py-16 text-white sm:px-6 lg:px-8">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
           Grupo não encontrado.
         </div>
@@ -63,7 +63,7 @@ export default async function GroupDashboardPage({ params }: { params: { groupId
     });
     if (!governanceMember) {
       return (
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 text-white">
+        <div className="mx-auto w-full max-w-[1240px] px-4 py-16 text-white sm:px-6 lg:px-8">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
             Sem permissões para ver este grupo.
           </div>
