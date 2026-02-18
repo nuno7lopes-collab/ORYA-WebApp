@@ -1,0 +1,23 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+ENV PRISMA_SKIP_POSTINSTALL=1
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && npm config set audit false \
+  && npm config set fund false \
+  && npm config set cache /tmp/.npm \
+  && npm ci --ignore-scripts --prefer-offline
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+RUN apk add --no-cache bash ca-certificates openssl \
+  && update-ca-certificates
+ENV NODE_ENV=production
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/prisma ./prisma
+COPY scripts/chat-ws-server.js ./scripts/chat-ws-server.js
+EXPOSE 4001
+CMD ["node", "scripts/chat-ws-server.js"]

@@ -6,6 +6,7 @@ PROFILE=${AWS_PROFILE:-codex}
 ACCOUNT_ID=${AWS_ACCOUNT_ID:-""}
 WEB_REPO=${WEB_REPO:-orya-web}
 WORKER_REPO=${WORKER_REPO:-orya-worker}
+CHAT_WS_REPO=${CHAT_WS_REPO:-orya-chat-ws}
 SHA=${GIT_SHA:-$(git rev-parse --short=12 HEAD)}
 if [[ -z "${DOCKER_PLATFORM:-}" ]]; then
   # ECS Fargate in this account runs linux/amd64; default to amd64 to avoid pull failures.
@@ -32,6 +33,8 @@ while [[ $# -gt 0 ]]; do
       WEB_REPO="$2"; TARGET=web; shift 2;;
     --worker-repo)
       WORKER_REPO="$2"; TARGET=worker; shift 2;;
+    --chat-ws-repo)
+      CHAT_WS_REPO="$2"; TARGET=chat-ws; shift 2;;
     --target)
       TARGET="$2"; shift 2;;
     *)
@@ -60,6 +63,9 @@ fi
 if [[ "$TARGET" == "all" || "$TARGET" == "worker" ]]; then
   ensure_repo "$WORKER_REPO"
 fi
+if [[ "$TARGET" == "all" || "$TARGET" == "chat-ws" ]]; then
+  ensure_repo "$CHAT_WS_REPO"
+fi
 
 aws ecr get-login-password --profile "$PROFILE" --region "$REGION" | \
   docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
@@ -68,6 +74,8 @@ WEB_IMAGE_SHA="$REGISTRY/$WEB_REPO:$SHA"
 WEB_IMAGE_LATEST="$REGISTRY/$WEB_REPO:latest"
 WORKER_IMAGE_SHA="$REGISTRY/$WORKER_REPO:$SHA"
 WORKER_IMAGE_LATEST="$REGISTRY/$WORKER_REPO:latest"
+CHAT_WS_IMAGE_SHA="$REGISTRY/$CHAT_WS_REPO:$SHA"
+CHAT_WS_IMAGE_LATEST="$REGISTRY/$CHAT_WS_REPO:latest"
 WEB_BUILD_ARGS=()
 
 if [[ "$TARGET" == "all" || "$TARGET" == "web" ]]; then
@@ -80,6 +88,11 @@ if [[ "$TARGET" == "all" || "$TARGET" == "web" ]]; then
     --build-arg "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}"
     --build-arg "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
   )
+  if [[ -n "${NEXT_PUBLIC_CHAT_WS_URL:-}" ]]; then
+    WEB_BUILD_ARGS+=(
+      --build-arg "NEXT_PUBLIC_CHAT_WS_URL=${NEXT_PUBLIC_CHAT_WS_URL}"
+    )
+  fi
   if [[ ! -f Dockerfile.web ]]; then
     echo "Missing Dockerfile.web" >&2
     exit 1
@@ -95,4 +108,15 @@ if [[ "$TARGET" == "all" || "$TARGET" == "worker" ]]; then
   docker push "$WORKER_IMAGE_SHA"
   docker push "$WORKER_IMAGE_LATEST"
   echo "WORKER_IMAGE_SHA=$WORKER_IMAGE_SHA"
+fi
+
+if [[ "$TARGET" == "all" || "$TARGET" == "chat-ws" ]]; then
+  if [[ ! -f Dockerfile.chat-ws ]]; then
+    echo "Missing Dockerfile.chat-ws" >&2
+    exit 1
+  fi
+  docker build --platform "$DOCKER_PLATFORM" -f Dockerfile.chat-ws -t "$CHAT_WS_IMAGE_SHA" -t "$CHAT_WS_IMAGE_LATEST" .
+  docker push "$CHAT_WS_IMAGE_SHA"
+  docker push "$CHAT_WS_IMAGE_LATEST"
+  echo "CHAT_WS_IMAGE_SHA=$CHAT_WS_IMAGE_SHA"
 fi

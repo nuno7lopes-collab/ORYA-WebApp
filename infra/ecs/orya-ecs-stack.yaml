@@ -65,12 +65,24 @@ Parameters:
   WorkerImage:
     Type: String
     Description: ECR image URI for worker (e.g. 495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-worker:latest)
+  ChatWsImage:
+    Type: String
+    Description: ECR image URI for chat-ws (e.g. 495219734037.dkr.ecr.eu-west-1.amazonaws.com/orya-chat-ws:latest)
   WebDesiredCount:
     Type: Number
     Default: 1
   WorkerDesiredCount:
     Type: Number
     Default: 1
+  ChatWsDesiredCount:
+    Type: Number
+    Default: 1
+  EnableChatWs:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
   TaskCpu:
     Type: String
     Default: "512"
@@ -83,6 +95,9 @@ Parameters:
   HealthCheckPath:
     Type: String
     Default: /api/internal/ops/health
+  ChatWsHealthCheckPath:
+    Type: String
+    Default: /healthz
   OutboxSchedule:
     Type: String
     Default: rate(1 minute)
@@ -107,6 +122,7 @@ Conditions:
   NoALB: !Equals [!Ref CreateALB, "false"]
   UseWorker: !Equals [!Ref EnableWorker, "true"]
   UseOutboxSchedule: !And [!Equals [!Ref EnableWorker, "true"], !Equals [!Ref EnableOutboxSchedule, "true"]]
+  UseChatWs: !Equals [!Ref EnableChatWs, "true"]
   HasBudgetEmail: !Not [!Equals [!Ref BudgetNotificationEmail, ""]]
   CreateEcr: !Equals [!Ref CreateEcrRepos, "true"]
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
@@ -115,6 +131,7 @@ Conditions:
   CreateDns: !And [!Equals [!Ref CreateDnsRecords, "true"], !Condition HasHostedZone, !Condition HasALB]
   CreateAppDns: !And [!Condition CreateDns, !Condition HasAppDomain]
   CreateAdminDns: !And [!Condition CreateDns, !Condition HasAdminDomain]
+  HasALBAndChatWs: !And [!Condition HasALB, !Condition UseChatWs]
 
 Resources:
   EcrRepoWeb:
@@ -169,6 +186,32 @@ Resources:
               }
             ]
           }
+  EcrRepoChatWs:
+    Type: AWS::ECR::Repository
+    Condition: CreateEcr
+    Properties:
+      RepositoryName: orya-chat-ws
+      Tags:
+        - Key: Project
+          Value: ORYA
+        - Key: Env
+          Value: !Ref EnvironmentName
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 5 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
 
   LogGroupWeb:
     Type: AWS::Logs::LogGroup
@@ -184,6 +227,17 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/ecs/orya/${EnvironmentName}/worker"
+      RetentionInDays: !Ref LogsRetentionDays
+      Tags:
+        - Key: Project
+          Value: ORYA
+        - Key: Env
+          Value: !Ref EnvironmentName
+  LogGroupChatWs:
+    Type: AWS::Logs::LogGroup
+    Condition: UseChatWs
+    Properties:
+      LogGroupName: !Sub "/ecs/orya/${EnvironmentName}/chat-ws"
       RetentionInDays: !Ref LogsRetentionDays
       Tags:
         - Key: Project
@@ -334,6 +388,19 @@ Resources:
             FromPort: 3000
             ToPort: 3000
             CidrIp: 0.0.0.0/0
+        - !If
+          - HasALBAndChatWs
+          - IpProtocol: tcp
+            FromPort: 4001
+            ToPort: 4001
+            SourceSecurityGroupId: !Ref ALBSecurityGroup
+          - !If
+            - UseChatWs
+            - IpProtocol: tcp
+              FromPort: 4001
+              ToPort: 4001
+              CidrIp: 0.0.0.0/0
+            - !Ref AWS::NoValue
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -373,6 +440,25 @@ Resources:
         - Key: Env
           Value: !Ref EnvironmentName
 
+  ChatWsTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: HasALBAndChatWs
+    Properties:
+      Name: !Sub "orya-${EnvironmentName}-chat-ws-tg"
+      Port: 4001
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckPath: !Ref ChatWsHealthCheckPath
+      Matcher:
+        HttpCode: "200-399"
+      Tags:
+        - Key: Project
+          Value: ORYA
+        - Key: Env
+          Value: !Ref EnvironmentName
+
   Listener443:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Condition: HasALB
@@ -385,6 +471,21 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
+
+  ChatWsListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasALBAndChatWs
+    Properties:
+      ListenerArn: !Ref Listener443
+      Priority: 10
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ChatWsTargetGroup
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - "/ws"
+            - "/ws/*"
 
   AppDnsRecord:
     Type: AWS::Route53::RecordSet
@@ -695,6 +796,64 @@ Resources:
               awslogs-region: eu-west-1
               awslogs-stream-prefix: ecs
 
+  ChatWsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Condition: UseChatWs
+    Properties:
+      Family: orya-chat-ws
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: orya-chat-ws
+          Image: !Ref ChatWsImage
+          PortMappings:
+            - ContainerPort: 4001
+              Protocol: tcp
+          Environment:
+            - Name: NODE_ENV
+              Value: production
+            - Name: CHAT_WS_PORT
+              Value: "4001"
+            - Name: CHAT_WS_HOST
+              Value: "0.0.0.0"
+            - Name: CHAT_WS_HEALTH_PATH
+              Value: !Ref ChatWsHealthCheckPath
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:DATABASE_URL::"
+            - Name: REDIS_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:REDIS_URL::"
+            - Name: SUPABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_URL::"
+            - Name: NEXT_PUBLIC_SUPABASE_URL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:NEXT_PUBLIC_SUPABASE_URL::"
+            - Name: SUPABASE_ANON_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:SUPABASE_ANON_KEY::"
+            - Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/supabase:NEXT_PUBLIC_SUPABASE_ANON_KEY::"
+            - Name: MIN_SUPPORTED_MOBILE_VERSION
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MIN_SUPPORTED_MOBILE_VERSION::"
+            - Name: MIN_SUPPORTED_MOBILE_VERSION_IOS
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MIN_SUPPORTED_MOBILE_VERSION_IOS::"
+            - Name: MIN_SUPPORTED_MOBILE_VERSION_ANDROID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MIN_SUPPORTED_MOBILE_VERSION_ANDROID::"
+            - Name: MOBILE_KILL_SWITCH_ALL
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MOBILE_KILL_SWITCH_ALL::"
+            - Name: MOBILE_KILL_SWITCH_IOS
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MOBILE_KILL_SWITCH_IOS::"
+            - Name: MOBILE_KILL_SWITCH_ANDROID
+              ValueFrom: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretsPrefix}/app:MOBILE_KILL_SWITCH_ANDROID::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroupChatWs
+              awslogs-region: eu-west-1
+              awslogs-stream-prefix: ecs
+
   WebServiceAlb:
     Type: AWS::ECS::Service
     DependsOn:
@@ -717,6 +876,37 @@ Resources:
             ContainerPort: 3000
             TargetGroupArn: !Ref TargetGroup
         - !Ref AWS::NoValue
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+      Tags:
+        - Key: Project
+          Value: ORYA
+        - Key: Env
+          Value: !Ref EnvironmentName
+
+  ChatWsService:
+    Type: AWS::ECS::Service
+    Condition: HasALBAndChatWs
+    DependsOn:
+      - Listener443
+      - ChatWsListenerRule
+    Properties:
+      ServiceName: !Sub "orya-${EnvironmentName}-chat-ws"
+      Cluster: !Ref ECSCluster
+      DesiredCount: !Ref ChatWsDesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref ChatWsTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIp
+          Subnets: !Ref ServiceSubnets
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+      LoadBalancers:
+        - ContainerName: orya-chat-ws
+          ContainerPort: 4001
+          TargetGroupArn: !Ref ChatWsTargetGroup
       DeploymentConfiguration:
         MinimumHealthyPercent: 50
         MaximumPercent: 200
@@ -802,6 +992,8 @@ Outputs:
     Value: !Ref ECSCluster
   WebServiceName:
     Value: !Ref WebServiceAlb
+  ChatWsServiceName:
+    Value: !If [HasALBAndChatWs, !Ref ChatWsService, ""]
   WorkerServiceName:
     Value: !If [UseWorker, !Ref WorkerService, ""]
   LoadBalancerDNS:
@@ -811,6 +1003,11 @@ Outputs:
     Value: !If
       - HasALB
       - !Sub "https://${LoadBalancer.DNSName}"
+      - ""
+  ChatWsURL:
+    Value: !If
+      - HasALBAndChatWs
+      - !Sub "wss://${LoadBalancer.DNSName}/ws"
       - ""
   TaskRoleArn:
     Value: !GetAtt ECSTaskRole.Arn

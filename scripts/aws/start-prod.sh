@@ -51,16 +51,20 @@ keys = [
     "AssignPublicIp",
     "WebImage",
     "WorkerImage",
+    "ChatWsImage",
     "EnableWorker",
     "EnableOutboxSchedule",
+    "EnableChatWs",
     "WebDesiredCount",
     "WorkerDesiredCount",
+    "ChatWsDesiredCount",
     "CreateALB",
     "CreateDnsRecords",
     "HostedZoneId",
     "AppDomain",
     "AdminDomain",
     "AlbCertificateArn",
+    "ChatWsHealthCheckPath",
 ]
 
 for key in keys:
@@ -69,6 +73,7 @@ for key in keys:
 ecs = state.get("ecs", {})
 emit("STATE_WEB_DESIRED", ecs.get("web_desired", 0))
 emit("STATE_WORKER_DESIRED", ecs.get("worker_desired", 0))
+emit("STATE_CHAT_WS_DESIRED", ecs.get("chat_ws_desired", 0))
 PY
 )
 
@@ -405,8 +410,11 @@ args+=("--create-dns" "$CREATE_DNS_VALUE")
 
 export ENABLE_WORKER="${EnableWorker:-true}"
 export ENABLE_OUTBOX_SCHEDULE="${EnableOutboxSchedule:-false}"
+export ENABLE_CHAT_WS="${EnableChatWs:-true}"
 export WEB_IMAGE="${WebImage:-}"
 export WORKER_IMAGE="${WorkerImage:-}"
+export CHAT_WS_IMAGE="${ChatWsImage:-}"
+export CHAT_WS_HEALTH_CHECK_PATH="${ChatWsHealthCheckPath:-/healthz}"
 
 if [[ -n "${STATE_WEB_DESIRED:-}" && "${STATE_WEB_DESIRED:-}" != "None" ]]; then
   export WEB_DESIRED_COUNT="$STATE_WEB_DESIRED"
@@ -418,6 +426,12 @@ if [[ -n "${STATE_WORKER_DESIRED:-}" && "${STATE_WORKER_DESIRED:-}" != "None" ]]
   export WORKER_DESIRED_COUNT="$STATE_WORKER_DESIRED"
 else
   export WORKER_DESIRED_COUNT="${WorkerDesiredCount:-1}"
+fi
+
+if [[ -n "${STATE_CHAT_WS_DESIRED:-}" && "${STATE_CHAT_WS_DESIRED:-}" != "None" ]]; then
+  export CHAT_WS_DESIRED_COUNT="$STATE_CHAT_WS_DESIRED"
+else
+  export CHAT_WS_DESIRED_COUNT="${ChatWsDesiredCount:-1}"
 fi
 
 ensure_resume_redis

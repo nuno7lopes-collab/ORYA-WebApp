@@ -12,7 +12,9 @@ WITH_ALB=${WITH_ALB:-false}
 WITH_ACM=${WITH_ACM:-false}
 ENABLE_WORKER=${ENABLE_WORKER:-true}
 ENABLE_OUTBOX_SCHEDULE=${ENABLE_OUTBOX_SCHEDULE:-false}
+ENABLE_CHAT_WS=${ENABLE_CHAT_WS:-true}
 HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/internal/ops/health}
+CHAT_WS_HEALTH_CHECK_PATH=${CHAT_WS_HEALTH_CHECK_PATH:-/healthz}
 PAUSE=false
 RESUME=false
 HARD_PAUSE=false
@@ -24,6 +26,7 @@ ADMIN_DOMAIN=${ADMIN_DOMAIN:-}
 
 WEB_DESIRED_COUNT=${WEB_DESIRED_COUNT:-1}
 WORKER_DESIRED_COUNT=${WORKER_DESIRED_COUNT:-1}
+CHAT_WS_DESIRED_COUNT=${CHAT_WS_DESIRED_COUNT:-1}
 
 function usage() {
   echo "Usage: deploy-cf.sh [--with-alb true|false] [--with-acm true|false] [--pause|--resume|--hard-pause] [--force-public] [--hosted-zone-id Z] [--app-domain app.example.com] [--admin-domain admin.example.com] [--create-dns true|false]" >&2
@@ -195,6 +198,7 @@ fi
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 WEB_IMAGE=${WEB_IMAGE:-$REGISTRY/orya-web:latest}
 WORKER_IMAGE=${WORKER_IMAGE:-$REGISTRY/orya-worker:latest}
+CHAT_WS_IMAGE=${CHAT_WS_IMAGE:-$REGISTRY/orya-chat-ws:latest}
 
 aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
   --stack-name "$STACK_NAME" \
@@ -209,12 +213,16 @@ aws cloudformation deploy --profile "$PROFILE" --region "$REGION" \
     AssignPublicIp="$ASSIGN_PUBLIC_IP" \
     WebImage="$WEB_IMAGE" \
     WorkerImage="$WORKER_IMAGE" \
+    ChatWsImage="$CHAT_WS_IMAGE" \
     WebDesiredCount="$WEB_DESIRED_COUNT" \
     WorkerDesiredCount="$WORKER_DESIRED_COUNT" \
+    ChatWsDesiredCount="$CHAT_WS_DESIRED_COUNT" \
     HealthCheckPath="$HEALTH_CHECK_PATH" \
+    ChatWsHealthCheckPath="$CHAT_WS_HEALTH_CHECK_PATH" \
     CreateALB="$WITH_ALB" \
     EnableWorker="$ENABLE_WORKER" \
     EnableOutboxSchedule="$ENABLE_OUTBOX_SCHEDULE" \
+    EnableChatWs="$ENABLE_CHAT_WS" \
     AlbCertificateArn="${ALB_CERT_ARN:-}" \
     HostedZoneId="${HOSTED_ZONE_ID:-}" \
     AppDomain="${APP_DOMAIN:-}" \
@@ -228,11 +236,15 @@ if [[ "$PAUSE" == "true" || "$RESUME" == "true" ]]; then
   cluster=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
   web_service=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='WebServiceName'].OutputValue" --output text)
   worker_service=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='WorkerServiceName'].OutputValue" --output text)
+  chat_ws_service=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ChatWsServiceName'].OutputValue | [0]" --output text)
 
   if [[ "$PAUSE" == "true" ]]; then
     aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$web_service" --desired-count 0 >/dev/null
     if [[ "$worker_service" != "None" && -n "$worker_service" ]]; then
       aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$worker_service" --desired-count 0 >/dev/null
+    fi
+    if [[ "$chat_ws_service" != "None" && -n "$chat_ws_service" ]]; then
+      aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$chat_ws_service" --desired-count 0 >/dev/null
     fi
   fi
 
@@ -241,12 +253,19 @@ if [[ "$PAUSE" == "true" || "$RESUME" == "true" ]]; then
     if [[ "$worker_service" != "None" && -n "$worker_service" ]]; then
       aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$worker_service" --desired-count "$WORKER_DESIRED_COUNT" >/dev/null
     fi
+    if [[ "$chat_ws_service" != "None" && -n "$chat_ws_service" ]]; then
+      aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$chat_ws_service" --desired-count "$CHAT_WS_DESIRED_COUNT" >/dev/null
+    fi
   fi
 fi
 
 cluster=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ClusterName'].OutputValue" --output text)
 web_service=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='WebServiceName'].OutputValue" --output text)
+chat_ws_service=$(aws cloudformation describe-stacks --profile "$PROFILE" --region "$REGION" --stack-name "$STACK_NAME" --query "Stacks[0].Outputs[?OutputKey=='ChatWsServiceName'].OutputValue | [0]" --output text)
 aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$web_service" --force-new-deployment >/dev/null
+if [[ "${chat_ws_service:-}" != "None" && -n "${chat_ws_service:-}" ]]; then
+  aws ecs update-service --profile "$PROFILE" --region "$REGION" --cluster "$cluster" --service "$chat_ws_service" --force-new-deployment >/dev/null
+fi
 
 echo "STACK=$STACK_NAME"
 echo "VPC_ID=$VPC_ID"

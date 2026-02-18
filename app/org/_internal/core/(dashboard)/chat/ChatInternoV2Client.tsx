@@ -550,8 +550,10 @@ export default function ChatInternoV2Client() {
     if (typeof window === "undefined") return "";
     const envUrl = process.env.NEXT_PUBLIC_CHAT_WS_URL?.trim();
     if (envUrl) return envUrl;
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${window.location.hostname}:4001`;
+    if (window.location.protocol === "https:") {
+      return `wss://${window.location.host}/ws`;
+    }
+    return `ws://${window.location.hostname}:4001`;
   }, []);
 
   const orderedMessages = useMemo(() => sortMessages(messages), [messages]);

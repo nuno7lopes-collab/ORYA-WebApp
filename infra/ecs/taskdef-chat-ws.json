@@ -1,0 +1,48 @@
+{
+  "family": "orya-chat-ws",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::495219734037:role/orya-ecs-exec-role",
+  "taskRoleArn": "arn:aws:iam::495219734037:role/orya-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "orya-chat-ws",
+      "image": "{{ECR_URI}}/orya-chat-ws:latest",
+      "portMappings": [{"containerPort": 4001, "protocol": "tcp"}],
+      "environment": [
+        {"name": "NODE_ENV", "value": "production"},
+        {"name": "CHAT_WS_PORT", "value": "4001"},
+        {"name": "CHAT_WS_HOST", "value": "0.0.0.0"},
+        {"name": "CHAT_WS_HEALTH_PATH", "value": "/healthz"}
+      ],
+      "secrets": [
+        {"name": "DATABASE_URL", "valueFrom": "{{orya/prod/app:DATABASE_URL}}"},
+        {"name": "REDIS_URL", "valueFrom": "{{orya/prod/app:REDIS_URL}}"},
+        {"name": "SUPABASE_URL", "valueFrom": "{{orya/prod/supabase:SUPABASE_URL}}"},
+        {"name": "NEXT_PUBLIC_SUPABASE_URL", "valueFrom": "{{orya/prod/supabase:NEXT_PUBLIC_SUPABASE_URL}}"},
+        {"name": "SUPABASE_ANON_KEY", "valueFrom": "{{orya/prod/supabase:SUPABASE_ANON_KEY}}"},
+        {"name": "NEXT_PUBLIC_SUPABASE_ANON_KEY", "valueFrom": "{{orya/prod/supabase:NEXT_PUBLIC_SUPABASE_ANON_KEY}}"},
+        {"name": "MIN_SUPPORTED_MOBILE_VERSION", "valueFrom": "{{orya/prod/app:MIN_SUPPORTED_MOBILE_VERSION}}"},
+        {"name": "MIN_SUPPORTED_MOBILE_VERSION_IOS", "valueFrom": "{{orya/prod/app:MIN_SUPPORTED_MOBILE_VERSION_IOS}}"},
+        {"name": "MIN_SUPPORTED_MOBILE_VERSION_ANDROID", "valueFrom": "{{orya/prod/app:MIN_SUPPORTED_MOBILE_VERSION_ANDROID}}"},
+        {"name": "MOBILE_KILL_SWITCH_ALL", "valueFrom": "{{orya/prod/app:MOBILE_KILL_SWITCH_ALL}}"},
+        {"name": "MOBILE_KILL_SWITCH_IOS", "valueFrom": "{{orya/prod/app:MOBILE_KILL_SWITCH_IOS}}"},
+        {"name": "MOBILE_KILL_SWITCH_ANDROID", "valueFrom": "{{orya/prod/app:MOBILE_KILL_SWITCH_ANDROID}}"}
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/orya/prod/chat-ws",
+          "awslogs-region": "eu-west-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

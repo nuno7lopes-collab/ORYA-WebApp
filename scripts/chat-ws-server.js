@@ -578,9 +578,22 @@ if (redisConfigured) {
 
 const port = Number(process.env.CHAT_WS_PORT || 4001);
 const host = process.env.CHAT_WS_HOST || "127.0.0.1";
+const healthPath = process.env.CHAT_WS_HEALTH_PATH || "/healthz";
+
+const server = http.createServer((req, res) => {
+  const method = req.method || "GET";
+  const url = req.url || "/";
+  if (url === healthPath && (method === "GET" || method === "HEAD")) {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("ok");
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
 const wss = new WebSocketServer({
-  port,
-  host,
+  server,
   handleProtocols: (protocols) => {
     if (!protocols || protocols.size === 0) return false;
     if (protocols.has(WS_PROTOCOL_BASE)) return WS_PROTOCOL_BASE;
@@ -1018,7 +1031,10 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-console.log(`[chat-ws] WebSocket gateway a correr na porta ${port}`);
+server.listen(port, host, () => {
+  console.log(`[chat-ws] WebSocket gateway a correr em ${host}:${port}`);
+  console.log(`[chat-ws] Health check em ${healthPath}`);
+});
 
 const shutdownSignals = ["SIGINT", "SIGTERM"];
 for (const signal of shutdownSignals) {

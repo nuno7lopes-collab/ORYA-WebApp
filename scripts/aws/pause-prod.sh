@@ -49,6 +49,10 @@ WORKER_SERVICE=$(aws_cmd cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --query "Stacks[0].Outputs[?OutputKey=='WorkerServiceName'].OutputValue | [0]" \
   --output text)
+CHAT_WS_SERVICE=$(aws_cmd cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --query "Stacks[0].Outputs[?OutputKey=='ChatWsServiceName'].OutputValue | [0]" \
+  --output text)
 
 if [[ -z "$CLUSTER" || "$CLUSTER" == "None" ]]; then
   echo "Unable to resolve ECS cluster from stack outputs." >&2
@@ -73,14 +77,26 @@ if [[ -n "$WORKER_SERVICE" && "$WORKER_SERVICE" != "None" ]]; then
     --output text 2>/dev/null || echo 0)
 fi
 
+CHAT_WS_DESIRED=0
+if [[ -n "$CHAT_WS_SERVICE" && "$CHAT_WS_SERVICE" != "None" ]]; then
+  CHAT_WS_DESIRED=$(aws_cmd ecs describe-services \
+    --cluster "$CLUSTER" \
+    --services "$CHAT_WS_SERVICE" \
+    --query "services[0].desiredCount" \
+    --output text 2>/dev/null || echo 0)
+fi
+
 if [[ "$WEB_DESIRED" == "None" || -z "$WEB_DESIRED" ]]; then
   WEB_DESIRED=0
 fi
 if [[ "$WORKER_DESIRED" == "None" || -z "$WORKER_DESIRED" ]]; then
   WORKER_DESIRED=0
 fi
+if [[ "$CHAT_WS_DESIRED" == "None" || -z "$CHAT_WS_DESIRED" ]]; then
+  CHAT_WS_DESIRED=0
+fi
 
-export STACK_PARAMS_JSON STATE_FILE REGION PROFILE STACK_NAME CLUSTER WEB_SERVICE WORKER_SERVICE WEB_DESIRED WORKER_DESIRED
+export STACK_PARAMS_JSON STATE_FILE REGION PROFILE STACK_NAME CLUSTER WEB_SERVICE WORKER_SERVICE CHAT_WS_SERVICE WEB_DESIRED WORKER_DESIRED CHAT_WS_DESIRED
 
 python3 - <<'PY'
 import json, os
@@ -106,8 +122,10 @@ state = {
         "cluster": os.environ["CLUSTER"],
         "web_service": os.environ["WEB_SERVICE"],
         "worker_service": os.environ["WORKER_SERVICE"],
+        "chat_ws_service": os.environ.get("CHAT_WS_SERVICE", ""),
         "web_desired": int(os.environ["WEB_DESIRED"]),
         "worker_desired": int(os.environ["WORKER_DESIRED"]),
+        "chat_ws_desired": int(os.environ.get("CHAT_WS_DESIRED", 0)),
     },
 }
 
@@ -142,10 +160,14 @@ keys = [
     "AssignPublicIp",
     "WebImage",
     "WorkerImage",
+    "ChatWsImage",
     "EnableWorker",
     "EnableOutboxSchedule",
+    "EnableChatWs",
     "WebDesiredCount",
     "WorkerDesiredCount",
+    "ChatWsDesiredCount",
+    "ChatWsHealthCheckPath",
 ]
 
 for key in keys:
@@ -166,10 +188,14 @@ if [[ -n "${AssignPublicIp:-}" ]]; then args+=("--assign-public-ip" "$AssignPubl
 
 export ENABLE_WORKER="${EnableWorker:-true}"
 export ENABLE_OUTBOX_SCHEDULE="${EnableOutboxSchedule:-false}"
+export ENABLE_CHAT_WS="${EnableChatWs:-true}"
 export WEB_IMAGE="${WebImage:-}"
 export WORKER_IMAGE="${WorkerImage:-}"
+export CHAT_WS_IMAGE="${ChatWsImage:-}"
+export CHAT_WS_HEALTH_CHECK_PATH="${ChatWsHealthCheckPath:-/healthz}"
 export WEB_DESIRED_COUNT="${WebDesiredCount:-$WEB_DESIRED}"
 export WORKER_DESIRED_COUNT="${WorkerDesiredCount:-$WORKER_DESIRED}"
+export CHAT_WS_DESIRED_COUNT="${ChatWsDesiredCount:-$CHAT_WS_DESIRED}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "DRY_RUN=true"
