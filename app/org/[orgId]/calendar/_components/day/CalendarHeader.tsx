@@ -2,14 +2,19 @@
 
 import { DatePickerTwoMonths } from "./DatePickerTwoMonths";
 import { SearchableEntitySelect, type SearchableEntityOption } from "./SearchableEntitySelect";
+import type { CalendarTimezoneOption } from "../timezones";
 
 type CalendarHeaderProps = {
   date: Date;
   timezone: string;
+  timezoneOptions: CalendarTimezoneOption[];
+  onTimezoneChange: (timezone: string) => void;
   datePickerOpen: boolean;
   onDatePickerOpenChange: (open: boolean) => void;
   onSelectDate: (date: Date) => void;
   onToday: () => void;
+  onPreviousDay: () => void;
+  onNextDay: () => void;
   professionalOptions: SearchableEntityOption[];
   resourceOptions: SearchableEntityOption[];
   selectedProfessionalIds: string[];
@@ -25,10 +30,14 @@ type CalendarHeaderProps = {
 export function CalendarHeader({
   date,
   timezone,
+  timezoneOptions,
+  onTimezoneChange,
   datePickerOpen,
   onDatePickerOpenChange,
   onSelectDate,
   onToday,
+  onPreviousDay,
+  onNextDay,
   professionalOptions,
   resourceOptions,
   selectedProfessionalIds,
@@ -45,10 +54,28 @@ export function CalendarHeader({
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
+          onClick={onPreviousDay}
+          className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-3 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
+          aria-label="Dia anterior"
+        >
+          ←
+        </button>
+
+        <button
+          type="button"
           onClick={onToday}
           className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-4 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
         >
           Hoje
+        </button>
+
+        <button
+          type="button"
+          onClick={onNextDay}
+          className="inline-flex h-10 items-center rounded-full border border-white/20 bg-white/5 px-3 text-sm text-white/85 transition hover:border-white/40 hover:text-white"
+          aria-label="Dia seguinte"
+        >
+          →
         </button>
 
         <DatePickerTwoMonths
@@ -58,6 +85,22 @@ export function CalendarHeader({
           onOpenChange={onDatePickerOpenChange}
           onSelectDate={onSelectDate}
         />
+
+        <label className="inline-flex h-10 items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 text-xs text-white/80">
+          <span className="text-[10px] uppercase tracking-[0.16em] text-white/55">Fuso</span>
+          <select
+            value={timezone}
+            onChange={(event) => onTimezoneChange(event.target.value)}
+            className="bg-transparent text-xs text-white/90 outline-none"
+            aria-label="Selecionar fuso horário"
+          >
+            {timezoneOptions.map((option) => (
+              <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <SearchableEntitySelect
           label="Equipa ou profissional"

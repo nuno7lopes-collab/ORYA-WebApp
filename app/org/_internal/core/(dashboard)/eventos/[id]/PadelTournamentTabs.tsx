@@ -66,6 +66,36 @@ type AuditItem = {
   metadata?: Record<string, unknown>;
 };
 
+type GenerationPlanAlternative = {
+  type?: string;
+  summary?: string;
+};
+
+type GenerationPlanCategory = {
+  key?: string;
+  label?: string;
+  format?: string;
+  teams?: number;
+  minTeams?: number;
+  matchesNeeded?: number;
+  allocatedSlots?: number;
+  recommendedMaxTeams?: number;
+  hardCapMax?: number | null;
+  queueEstimatedRounds?: number | null;
+  feasible?: boolean;
+};
+
+type GenerationPlanDetails = {
+  feasible?: boolean;
+  totalSlots?: number;
+  matchesNeeded?: number;
+  unscheduledMatches?: number;
+  blockingReasons?: string[];
+  warnings?: string[];
+  alternatives?: GenerationPlanAlternative[];
+  categories?: GenerationPlanCategory[];
+};
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 type ScoreRulesPreset = {
@@ -196,6 +226,12 @@ const summarizeAuditMeta = (metadata?: Record<string, unknown>) => {
   return parts.join(" · ");
 };
 
+const toPositiveInt = (value: unknown): number | null => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+};
+
 export default function PadelTournamentTabs({
   eventId,
   eventSlug,
@@ -227,6 +263,7 @@ export default function PadelTournamentTabs({
   const [seedingBusy, setSeedingBusy] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationPlanDetails, setGenerationPlanDetails] = useState<GenerationPlanDetails | null>(null);
   const [koEdits, setKoEdits] = useState<Record<number, { pairingAId: number | null; pairingBId: number | null }>>({});
   const [koSaving, setKoSaving] = useState<Record<number, boolean>>({});
   const [disputeBusy, setDisputeBusy] = useState<Record<number, boolean>>({});
@@ -271,6 +308,7 @@ export default function PadelTournamentTabs({
   useEffect(() => {
     setGenerationMessage(null);
     setGenerationError(null);
+    setGenerationPlanDetails(null);
     setGenerationPhase(null);
   }, [selectedCategoryId]);
   const emptyMatches = useMemo<Match[]>(() => [], []);
@@ -399,6 +437,10 @@ export default function PadelTournamentTabs({
   const supportsKnockout = ["GRUPOS_ELIMINATORIAS", "QUADRO_ELIMINATORIO", "QUADRO_AB", "DUPLA_ELIMINACAO"].includes(
     generationFormat,
   );
+  const isKnockoutOnlyFormat = ["QUADRO_ELIMINATORIO", "QUADRO_AB", "DUPLA_ELIMINACAO"].includes(generationFormat);
+  const isLeagueFormat = ["TODOS_CONTRA_TODOS", "CAMPEONATO_LIGA"].includes(generationFormat);
+  const isNonStopFormat = generationFormat === "NON_STOP";
+  const isAmMxFormat = generationFormat === "AMERICANO" || generationFormat === "MEXICANO";
   const scheduledMatchesCount = matches.filter((match) => Boolean(match.plannedStartAt || match.startTime)).length;
   const unscheduledMatchesCount = Math.max(0, matches.length - scheduledMatchesCount);
   const autoScheduleBaseHref =
@@ -410,23 +452,183 @@ export default function PadelTournamentTabs({
         })
       : `/org/padel/tournaments?section=padel-tournaments&padel=calendar&eventId=${eventId}`;
   const autoScheduleHref = `${autoScheduleBaseHref}#auto-schedule`;
+  const roundOpsHref = `${autoScheduleBaseHref}#round-ops`;
   const phaseSupportLabel = supportsGroups
     ? "Fases: grupos + eliminatórias"
     : supportsKnockout
       ? "Fases: eliminatórias"
-      : "Fases: rondas/liga";
+      : isNonStopFormat
+        ? "Fases: non-stop por ronda"
+        : isAmMxFormat
+          ? "Fases: rotação por ronda"
+          : "Fases: rondas/liga";
   const scheduleCoverage = matches.length > 0 ? Math.round((scheduledMatchesCount / matches.length) * 100) : 0;
   const formatExecutionHint = supportsGroups
-    ? "Fluxo recomendado: gerar grupos, gerar eliminatórias, depois auto-agendar no calendário."
+    ? "Fluxo recomendado: gerar grupos, gerar eliminatórias e depois auto-agendar no calendário."
     : supportsKnockout
       ? "Fluxo recomendado: gerar quadro eliminatório e depois auto-agendar no calendário."
-      : "Fluxo recomendado: gerar rondas e depois auto-agendar no calendário.";
+      : isNonStopFormat
+        ? "Fluxo recomendado: gerar ronda inicial NON_STOP, operar avanço de ronda e auto-agendar no calendário."
+        : isAmMxFormat
+          ? "Fluxo recomendado: gerar ronda inicial, avançar ronda a ronda e auto-agendar no calendário."
+          : "Fluxo recomendado: gerar rondas e depois auto-agendar no calendário.";
   const calendarReadinessHint =
     matches.length === 0
       ? "Sem jogos gerados."
       : unscheduledMatchesCount === 0
         ? `Calendário completo: ${scheduledMatchesCount}/${matches.length} com horário.`
         : `Calendário pendente: ${unscheduledMatchesCount}/${matches.length} sem horário.`;
+  const groupsTabLabel = supportsGroups
+    ? "Grupos"
+    : isNonStopFormat
+      ? "Non-stop"
+      : isAmMxFormat
+        ? "Rondas AM/MX"
+        : "Rondas";
+  const showGroupsTab = !isKnockoutOnlyFormat;
+  const showKnockoutTab = supportsKnockout;
+  const primaryRoundMatches = useMemo(() => matches.filter((match) => match.roundType === "GROUPS"), [matches]);
+  const selectedCategoryLabel = selectedCategoryId
+    ? categoryOptions.find((item) => item.id === selectedCategoryId)?.label ?? `Categoria #${selectedCategoryId}`
+    : "Global";
+  const runtimeCategoryKey = selectedCategoryId ? String(selectedCategoryId) : "global";
+  const formatProfilesByCategory =
+    advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
+      ? (advanced.formatProfilesByCategory as Record<string, unknown>)
+      : {};
+  const selectedCategoryProfile =
+    formatProfilesByCategory[runtimeCategoryKey] && typeof formatProfilesByCategory[runtimeCategoryKey] === "object"
+      ? (formatProfilesByCategory[runtimeCategoryKey] as Record<string, unknown>)
+      : formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
+        ? (formatProfilesByCategory.global as Record<string, unknown>)
+        : null;
+  const nonStopRuntimeByCategory =
+    advanced.nonStopRuntimeByCategory && typeof advanced.nonStopRuntimeByCategory === "object"
+      ? (advanced.nonStopRuntimeByCategory as Record<string, unknown>)
+      : {};
+  const amMxRuntimeByCategory =
+    advanced.amMxRuntimeByCategory && typeof advanced.amMxRuntimeByCategory === "object"
+      ? (advanced.amMxRuntimeByCategory as Record<string, unknown>)
+      : {};
+  const selectedNonStopRuntime =
+    nonStopRuntimeByCategory[runtimeCategoryKey] && typeof nonStopRuntimeByCategory[runtimeCategoryKey] === "object"
+      ? (nonStopRuntimeByCategory[runtimeCategoryKey] as Record<string, unknown>)
+      : nonStopRuntimeByCategory.global && typeof nonStopRuntimeByCategory.global === "object"
+        ? (nonStopRuntimeByCategory.global as Record<string, unknown>)
+        : null;
+  const selectedAmMxRuntime =
+    amMxRuntimeByCategory[runtimeCategoryKey] && typeof amMxRuntimeByCategory[runtimeCategoryKey] === "object"
+      ? (amMxRuntimeByCategory[runtimeCategoryKey] as Record<string, unknown>)
+      : amMxRuntimeByCategory.global && typeof amMxRuntimeByCategory.global === "object"
+        ? (amMxRuntimeByCategory.global as Record<string, unknown>)
+        : null;
+  const nonStopRuntimeQueue = useMemo(() => {
+    if (!selectedNonStopRuntime || !Array.isArray(selectedNonStopRuntime.queue)) return [];
+    return selectedNonStopRuntime.queue
+      .map((value) => toPositiveInt(value))
+      .filter((value): value is number => Boolean(value));
+  }, [selectedNonStopRuntime]);
+  const nonStopRuntimeActivePairs = useMemo(() => {
+    if (!selectedNonStopRuntime || !Array.isArray(selectedNonStopRuntime.activePairs)) return [];
+    return selectedNonStopRuntime.activePairs
+      .map((entry, idx) => {
+        if (!Array.isArray(entry)) return null;
+        return {
+          court: idx + 1,
+          pairingAId: toPositiveInt(entry[0]),
+          pairingBId: toPositiveInt(entry[1]),
+        };
+      })
+      .filter(
+        (entry): entry is { court: number; pairingAId: number | null; pairingBId: number | null } => Boolean(entry),
+      );
+  }, [selectedNonStopRuntime]);
+  const nonStopRoundCurrent = toPositiveInt(selectedNonStopRuntime?.round);
+  const nonStopRoundTotal = toPositiveInt(selectedNonStopRuntime?.roundsTotal);
+  const amMxRoundsGenerated = toPositiveInt(selectedAmMxRuntime?.roundsGenerated);
+  const amMxRoundsTotal = toPositiveInt(selectedAmMxRuntime?.roundsTotal);
+  const amMxProgressionMode =
+    selectedCategoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : null;
+  const roundRuntimeHint = isNonStopFormat
+    ? nonStopRoundCurrent
+      ? `Ronda ${nonStopRoundCurrent}${nonStopRoundTotal ? ` / ${nonStopRoundTotal}` : ""} em execução.`
+      : "Runtime NON_STOP ainda não iniciado."
+    : isAmMxFormat
+      ? amMxRoundsGenerated
+        ? `Rondas geradas ${amMxRoundsGenerated}${amMxRoundsTotal ? ` / ${amMxRoundsTotal}` : ""}.`
+        : "Runtime AM/MX ainda não iniciado."
+      : null;
+  const pendingWorkflowCount = matches.filter((match) =>
+    ["RESULT_SUBMITTED", "PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"].includes(match.status),
+  ).length;
+  const actionItems = useMemo(() => {
+    const actions: Array<{ key: string; level: "critical" | "warn" | "info"; label: string; hint: string }> = [];
+    if (matches.length === 0) {
+      actions.push({
+        key: "generate",
+        level: "critical",
+        label: "Gerar jogos",
+        hint: supportsGroups
+          ? "Gera grupos primeiro para iniciar operação."
+          : "Gera a primeira ronda para iniciar operação.",
+      });
+    }
+    if (pendingWorkflowCount > 0) {
+      actions.push({
+        key: "workflow",
+        level: "warn",
+        label: "Rever resultados pendentes",
+        hint: `${pendingWorkflowCount} jogo(s) com confirmação/revisão em falta.`,
+      });
+    }
+    if (unscheduledMatchesCount > 0) {
+      actions.push({
+        key: "schedule",
+        level: "warn",
+        label: "Fechar calendário",
+        hint: `${unscheduledMatchesCount} jogo(s) ainda sem slot/campo.`,
+      });
+    }
+    if ((isNonStopFormat || isAmMxFormat) && matches.length > 0) {
+      actions.push({
+        key: "round-runtime",
+        level: "info",
+        label: "Operar avanço de ronda",
+        hint: "Usa o painel de calendário operacional para avançar ronda e auto-agendar.",
+      });
+    }
+    if (matches.length > 0 && pendingWorkflowCount === 0 && unscheduledMatchesCount === 0) {
+      actions.push({
+        key: "healthy",
+        level: "info",
+        label: "Operação estável",
+        hint: "Resultados e calendário estão consistentes.",
+      });
+    }
+    return actions;
+  }, [isAmMxFormat, isNonStopFormat, matches.length, pendingWorkflowCount, supportsGroups, unscheduledMatchesCount]);
+  const publicSurfaceLinks = [
+    { key: "public", label: "Página pública", href: `/eventos/${eventSlug}` },
+    { key: "calendar", label: "Calendário público", href: `/eventos/${eventSlug}/calendario` },
+    { key: "ranking", label: "Ranking público", href: `/eventos/${eventSlug}/ranking` },
+    { key: "monitor", label: "TV mode", href: `/eventos/${eventSlug}/monitor` },
+  ];
+  const generationPlanAlternatives = useMemo(() => {
+    if (!generationPlanDetails?.alternatives || generationPlanDetails.alternatives.length === 0) return [];
+    return generationPlanDetails.alternatives
+      .map((alternative) => alternative?.summary?.trim())
+      .filter((value): value is string => Boolean(value));
+  }, [generationPlanDetails]);
+
+  useEffect(() => {
+    if (tab === "grupos" && !showGroupsTab) {
+      setTab(showKnockoutTab ? "eliminatorias" : "duplas");
+      return;
+    }
+    if (tab === "eliminatorias" && !showKnockoutTab) {
+      setTab(showGroupsTab ? "grupos" : "duplas");
+    }
+  }, [showGroupsTab, showKnockoutTab, tab]);
 
   useEffect(() => {
     setTvFooterText(tvMonitor.footerText ?? "");
@@ -586,6 +788,7 @@ export default function PadelTournamentTabs({
   ).length;
   const groupMissing = Math.max(0, groupMatchesCount - groupMatchesDone);
   const canGenerateGroups = isAdminRole && supportsGroups;
+  const canGeneratePrimaryRound = isAdminRole && (supportsGroups || isLeagueFormat || isNonStopFormat || isAmMxFormat);
   const canGenerateKnockout = isAdminRole && supportsKnockout && (groupMissing === 0 || isOwnerRole);
 
   const [resultDrafts, setResultDrafts] = useState<
@@ -701,6 +904,10 @@ export default function PadelTournamentTabs({
         return "Dupla eliminação";
       case "NON_STOP":
         return "Non-stop";
+      case "AMERICANO":
+        return "Americano";
+      case "MEXICANO":
+        return "Mexicano";
       default:
         return value;
     }
@@ -821,6 +1028,16 @@ export default function PadelTournamentTabs({
         return "Torneio inválido.";
       case "INVALID_BODY":
         return "Pedido inválido para gerar jogos.";
+      case "GENERATION_PLAN_INFEASIBLE":
+        return "Inscrições confirmadas não cabem no plano atual de formato/calendário.";
+      case "NON_STOP_REQUIRES_EVEN_TEAMS":
+        return "Modo NON_STOP com hard cap exige número par de duplas ativas.";
+      case "NON_STOP_MAX_TEAMS_EXCEEDED":
+        return "NON_STOP hard cap: reduz duplas ativas ou muda para fila ativa.";
+      case "NEED_PLAYERS_FOR_INDIVIDUAL_FORMAT":
+        return "Formato individual requer pelo menos 4 jogadores válidos na categoria.";
+      case "NO_COURTS_AVAILABLE":
+        return "Sem campos ativos para gerar jogos.";
       case "GENERATION_FAILED":
         return "Falha ao gerar jogos. Verifica inscrições e configuração.";
       default:
@@ -965,14 +1182,15 @@ export default function PadelTournamentTabs({
 
   async function generateMatches(phase: "GROUPS" | "KNOCKOUT") {
     if (!eventId) return;
+    setGenerationPlanDetails(null);
     if (!isAdminRole) {
       setGenerationPhase(phase);
       setGenerationError("Sem permissões para gerar jogos.");
       return;
     }
-    if (phase === "GROUPS" && !supportsGroups) {
+    if (phase === "GROUPS" && !canGeneratePrimaryRound) {
       setGenerationPhase(phase);
-      setGenerationError(`Formato atual: ${formatLabel(generationFormat)}. Não usa grupos.`);
+      setGenerationError(`Formato atual: ${formatLabel(generationFormat)}. Usa outro fluxo de geração.`);
       return;
     }
     if (phase === "KNOCKOUT" && !supportsKnockout) {
@@ -1006,6 +1224,7 @@ export default function PadelTournamentTabs({
     setGenerationBusy(phase);
     setGenerationMessage(null);
     setGenerationError(null);
+    setGenerationPlanDetails(null);
     try {
       const res = await fetch("/api/padel/matches/generate", {
         method: "POST",
@@ -1014,9 +1233,14 @@ export default function PadelTournamentTabs({
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || json?.ok === false) {
+        const plan = json?.plan;
+        if (plan && typeof plan === "object" && !Array.isArray(plan)) {
+          setGenerationPlanDetails(plan as GenerationPlanDetails);
+        }
         setGenerationError(resolveGenerationError(json?.error));
         return;
       }
+      setGenerationPlanDetails(null);
       if (json?.stage === "GROUPS") {
         const count = Number.isFinite(json?.matches) ? json.matches : null;
         setGenerationMessage(`Gerados ${count ?? 0} jogos de grupos.`);
@@ -2065,6 +2289,56 @@ export default function PadelTournamentTabs({
     );
   };
 
+  const renderGenerationPlanPanel = () => {
+    if (!generationPlanDetails) return null;
+    const categories = Array.isArray(generationPlanDetails.categories)
+      ? generationPlanDetails.categories
+      : [];
+    const blockingReasons = Array.isArray(generationPlanDetails.blockingReasons)
+      ? generationPlanDetails.blockingReasons
+      : [];
+    const warnings = Array.isArray(generationPlanDetails.warnings) ? generationPlanDetails.warnings : [];
+    const totalSlots = Number(generationPlanDetails.totalSlots ?? 0);
+    const matchesNeeded = Number(generationPlanDetails.matchesNeeded ?? 0);
+    const unscheduledMatches = Number(generationPlanDetails.unscheduledMatches ?? 0);
+
+    return (
+      <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3 text-[12px] text-amber-100 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold">Diagnóstico de capacidade</p>
+          <span className="text-[11px] text-amber-200/85">
+            Slots {totalSlots} · Jogos {matchesNeeded} · Em falta {Math.max(0, unscheduledMatches)}
+          </span>
+        </div>
+        {categories.length > 0 && (
+          <div className="space-y-1 text-[11px] text-amber-100/90">
+            {categories.slice(0, 4).map((category) => (
+              <p key={`plan-${category.key ?? category.label ?? "cat"}`}>
+                • {category.label || "Categoria"}: {category.teams ?? 0} equipas · mínimo {category.minTeams ?? 0} ·
+                jogos {category.matchesNeeded ?? 0}/{category.allocatedSlots ?? 0} slots
+                {typeof category.recommendedMaxTeams === "number" ? ` · recomendado ${category.recommendedMaxTeams}` : ""}
+                {typeof category.hardCapMax === "number" ? ` · hard cap ${category.hardCapMax}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
+        {blockingReasons.length > 0 && (
+          <p className="text-[11px] text-amber-100/90">Bloqueios: {blockingReasons.join(" · ")}</p>
+        )}
+        {warnings.length > 0 && (
+          <p className="text-[11px] text-amber-100/90">Avisos: {warnings.slice(0, 2).join(" · ")}</p>
+        )}
+        {generationPlanAlternatives.length > 0 && (
+          <div className="space-y-1 text-[11px] text-amber-50">
+            {generationPlanAlternatives.slice(0, 3).map((alternative, idx) => (
+              <p key={`plan-alt-${idx}`}>• {alternative}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-4 mt-6">
       {categoryOptions.length > 1 && (
@@ -2115,6 +2389,48 @@ export default function PadelTournamentTabs({
                 </div>
               );
             })}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Centro de ação</p>
+            <span className="text-[11px] text-white/55">{actionItems.length} prioridade(s)</span>
+          </div>
+          <div className="space-y-2">
+            {actionItems.map((item) => (
+              <div
+                key={item.key}
+                className={`rounded-lg border px-3 py-2 ${
+                  item.level === "critical"
+                    ? "border-rose-300/40 bg-rose-500/10 text-rose-100"
+                    : item.level === "warn"
+                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
+                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+                }`}
+              >
+                <p className="font-semibold">{item.label}</p>
+                <p className="text-[11px] opacity-90">{item.hint}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Perspetiva jogador</p>
+          <p className="text-white/70">Acede rapidamente às superfícies públicas para validar a experiência final.</p>
+          <div className="flex flex-wrap gap-2">
+            {publicSurfaceLinks.map((item) => (
+              <a
+                key={`surface-${item.key}`}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              >
+                {item.label}
+              </a>
+            ))}
           </div>
         </div>
       </div>
@@ -2298,10 +2614,10 @@ export default function PadelTournamentTabs({
         </div>
       )}
 
-      {(generationVersion || groupMissing > 0) && (
+      {(generationVersion || (supportsGroups && groupMissing > 0)) && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 flex items-center justify-between gap-3 flex-wrap">
           <span>Motor: {generationVersion ?? "v1-groups-ko"}</span>
-          {groupMissing > 0 && (
+          {supportsGroups && groupMissing > 0 && (
             <span className="rounded-full bg-amber-500/15 px-3 py-1 text-amber-100">
               Faltam {groupMissing} jogo{groupMissing === 1 ? "" : "s"} para fechar classificação.
             </span>
@@ -2325,20 +2641,30 @@ export default function PadelTournamentTabs({
               </span>
             </div>
           </div>
-          <a
-            href={autoScheduleHref}
-            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
-          >
-            Abrir calendário automático
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={autoScheduleHref}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+            >
+              Abrir calendário automático
+            </a>
+            {(isNonStopFormat || isAmMxFormat) && (
+              <a
+                href={roundOpsHref}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Operar rondas
+              </a>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2 text-[12px]">
         {[
           { key: "duplas", label: "Duplas" },
-          { key: "grupos", label: "Grupos" },
-          { key: "eliminatorias", label: "Eliminatórias" },
+          ...(showGroupsTab ? [{ key: "grupos", label: groupsTabLabel }] : []),
+          ...(showKnockoutTab ? [{ key: "eliminatorias", label: "Eliminatórias" }] : []),
         ].map((t) => (
           <button
             key={t.key}
@@ -2352,55 +2678,115 @@ export default function PadelTournamentTabs({
 
       {tab === "grupos" && (
         <div className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Configuração de grupos</p>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
+            {supportsGroups ? "Configuração de grupos" : `Configuração de ${groupsTabLabel.toLowerCase()}`}
+          </p>
           {configMessage && <p className="text-[12px] text-white/70">{configMessage}</p>}
           <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Gerar jogos</p>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
+                {supportsGroups ? "Gerar jogos de grupos" : "Gerar ronda inicial"}
+              </p>
               <p className="text-[12px] text-white/70">
                 {supportsGroups
                   ? "Cria automaticamente os jogos de grupos para a categoria selecionada."
-                  : `Formato atual: ${formatLabel(generationFormat)}. Não usa grupos.`}
+                  : isNonStopFormat
+                    ? "Cria a ronda inicial NON_STOP e ativa a fila operacional."
+                    : isAmMxFormat
+                      ? "Cria apenas a primeira ronda; as seguintes avançam por classificação."
+                      : "Cria as rondas iniciais para este formato."}
               </p>
             </div>
             <button
               type="button"
               onClick={() => generateMatches("GROUPS")}
-              disabled={!canGenerateGroups || generationBusy !== null}
+              disabled={!canGeneratePrimaryRound || generationBusy !== null}
               title={!isAdminRole ? "Sem permissões para gerar jogos." : undefined}
               className="rounded-full border border-white/20 px-3 py-1 text-[12px] text-white/80 hover:bg-white/10 disabled:opacity-60"
             >
-              {generationBusy === "GROUPS" ? "A gerar..." : "Gerar jogos"}
+              {generationBusy === "GROUPS"
+                ? "A gerar..."
+                : supportsGroups
+                  ? "Gerar jogos"
+                  : "Gerar ronda"}
             </button>
           </div>
           {generationPhase === "GROUPS" && generationError && (
             <p className="text-[12px] text-red-200">{generationError}</p>
           )}
+          {generationPhase === "GROUPS" && generationError && renderGenerationPlanPanel()}
           {generationPhase === "GROUPS" && generationMessage && (
             <p className="text-[12px] text-emerald-200">{generationMessage}</p>
           )}
-          <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Modelos rápidos</p>
-              <p className="text-[12px] text-white/70">Modelos para grupos + playoffs.</p>
+          {(isNonStopFormat || isAmMxFormat) && (
+            <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Runtime por ronda</p>
+                <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
+                  {selectedCategoryLabel}
+                </span>
+              </div>
+              {roundRuntimeHint && <p className="text-[12px] text-white/70">{roundRuntimeHint}</p>}
+              {isNonStopFormat && (
+                <>
+                  <p className="text-[11px] text-white/65">
+                    Modo:{" "}
+                    {selectedCategoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+                      ? "Hard cap + waitlist"
+                      : "Fila ativa (King of Court)"}
+                    {nonStopRuntimeQueue.length > 0 ? ` · fila ${nonStopRuntimeQueue.length}` : ""}
+                  </p>
+                  {nonStopRuntimeActivePairs.length > 0 && (
+                    <div className="space-y-1 text-[11px] text-white/70">
+                      {nonStopRuntimeActivePairs.slice(0, 6).map((entry) => (
+                        <p key={`runtime-court-${entry.court}`}>
+                          Campo {entry.court}: {entry.pairingAId ? `#${entry.pairingAId}` : "—"} vs{" "}
+                          {entry.pairingBId ? `#${entry.pairingBId}` : "—"}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              {isAmMxFormat && (
+                <p className="text-[11px] text-white/65">
+                  Progressão:{" "}
+                  {amMxProgressionMode === "ROUND_BY_ROUND" ? "Dinâmica ronda a ronda" : "Ronda fixa"}
+                  {selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? " · pares fixos" : " · rotação individual"}
+                </p>
+              )}
+              <a
+                href={roundOpsHref}
+                className="inline-flex rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Abrir painel de avanço
+              </a>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "T8", label: "8 equipas", groupCount: 2, groupSize: 4, qualifyPerGroup: 2 },
-                { id: "T16", label: "16 equipas", groupCount: 4, groupSize: 4, qualifyPerGroup: 2 },
-                { id: "T32", label: "32 equipas", groupCount: 8, groupSize: 4, qualifyPerGroup: 2 },
-              ].map((tpl) => (
-                <button
-                  key={tpl.id}
-                  type="button"
-                  onClick={() => applyTemplate(tpl)}
-                  className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 hover:border-white/40"
-                >
-                  {tpl.label}
-                </button>
-              ))}
+          )}
+          {supportsGroups && (
+            <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Modelos rápidos</p>
+                <p className="text-[12px] text-white/70">Modelos para grupos + playoffs.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "T8", label: "8 equipas", groupCount: 2, groupSize: 4, qualifyPerGroup: 2 },
+                  { id: "T16", label: "16 equipas", groupCount: 4, groupSize: 4, qualifyPerGroup: 2 },
+                  { id: "T32", label: "32 equipas", groupCount: 8, groupSize: 4, qualifyPerGroup: 2 },
+                ].map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => applyTemplate(tpl)}
+                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 hover:border-white/40"
+                  >
+                    {tpl.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80">
             <div>
               <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Estado da competição</p>
@@ -2475,77 +2861,81 @@ export default function PadelTournamentTabs({
               <p className="text-[11px] text-white/70">Preset custom ativo.</p>
             )}
           </div>
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Modo de grupos</p>
-              <p className="text-[12px] text-white/70">Auto distribui; Manual define grupos.</p>
-            </div>
-            <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-              {[
-                { key: "AUTO", label: "Auto" },
-                { key: "MANUAL", label: "Manual" },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => saveGroupsConfig({ mode: opt.key as "AUTO" | "MANUAL" })}
-                  className={`rounded-full px-3 py-1 transition ${
-                    groupMode === opt.key
-                      ? "bg-white text-black font-semibold shadow"
-                      : "text-white/75 hover:bg-white/5"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          {groupMode === "MANUAL" && (
-            <p className="text-[11px] text-white/60">Manual: escolhe grupo no separador Duplas.</p>
+          {supportsGroups && (
+            <>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Modo de grupos</p>
+                  <p className="text-[12px] text-white/70">Auto distribui; Manual define grupos.</p>
+                </div>
+                <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
+                  {[
+                    { key: "AUTO", label: "Auto" },
+                    { key: "MANUAL", label: "Manual" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => saveGroupsConfig({ mode: opt.key as "AUTO" | "MANUAL" })}
+                      className={`rounded-full px-3 py-1 transition ${
+                        groupMode === opt.key
+                          ? "bg-white text-black font-semibold shadow"
+                          : "text-white/75 hover:bg-white/5"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {groupMode === "MANUAL" && (
+                <p className="text-[11px] text-white/60">Manual: escolhe grupo no separador Duplas.</p>
+              )}
+              <div className="grid gap-2 sm:grid-cols-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-white/60">Nº de grupos</span>
+                  <input
+                    type="number"
+                    min={1}
+                    defaultValue={groupsConfig.groupCount ?? ""}
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    onBlur={(e) => handleNumberConfig(e, "groupCount")}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-white/60">Passam por grupo</span>
+                  <input
+                    type="number"
+                    min={1}
+                    defaultValue={groupsConfig.qualifyPerGroup ?? 2}
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    onBlur={(e) => handleNumberConfig(e, "qualifyPerGroup")}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-white/60">Melhores extra</span>
+                  <input
+                    type="number"
+                    min={0}
+                    defaultValue={groupsConfig.extraQualifiers ?? ""}
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    onBlur={(e) => handleNumberConfig(e, "extraQualifiers")}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-white/60">Seeding</span>
+                  <select
+                    defaultValue={groupsConfig.seeding ?? "SNAKE"}
+                    className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
+                    onChange={(e) => saveGroupsConfig({ seeding: e.target.value as any })}
+                  >
+                    <option value="SNAKE">Snake (equilibrado)</option>
+                    <option value="NONE">Aleatório</option>
+                  </select>
+                </label>
+              </div>
+            </>
           )}
-          <div className="grid gap-2 sm:grid-cols-3">
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-white/60">Nº de grupos</span>
-              <input
-                type="number"
-                min={1}
-                defaultValue={groupsConfig.groupCount ?? ""}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onBlur={(e) => handleNumberConfig(e, "groupCount")}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-white/60">Passam por grupo</span>
-              <input
-                type="number"
-                min={1}
-                defaultValue={groupsConfig.qualifyPerGroup ?? 2}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onBlur={(e) => handleNumberConfig(e, "qualifyPerGroup")}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-white/60">Melhores extra</span>
-              <input
-                type="number"
-                min={0}
-                defaultValue={groupsConfig.extraQualifiers ?? ""}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onBlur={(e) => handleNumberConfig(e, "extraQualifiers")}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-white/60">Seeding</span>
-              <select
-                defaultValue={groupsConfig.seeding ?? "SNAKE"}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onChange={(e) => saveGroupsConfig({ seeding: e.target.value as any })}
-              >
-                <option value="SNAKE">Snake (equilibrado)</option>
-                <option value="NONE">Aleatório</option>
-              </select>
-            </label>
-          </div>
           <div className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
             <span>Lista de espera</span>
             <button
@@ -3007,9 +3397,11 @@ export default function PadelTournamentTabs({
                 <div key={`standings-${groupLabel}`} className="rounded-xl border border-white/12 bg-white/5 p-3 text-sm space-y-2">
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">
-                      Classificações · Grupo {groupLabel || "?"}
+                      {supportsGroups
+                        ? `Classificações · Grupo ${groupLabel || "?"}`
+                        : `Classificações · ${groupLabel || "Geral"}`}
                     </p>
-                    <span className="text-[11px] text-white/50">{rows.length} duplas</span>
+                    <span className="text-[11px] text-white/50">{rows.length} entradas</span>
                   </div>
                   <div className="space-y-2">
                     {rows.map((row, index) => {
@@ -3038,18 +3430,18 @@ export default function PadelTournamentTabs({
             </div>
           ) : (
             <div className="rounded-xl border border-white/12 bg-white/5 p-3 text-[12px] text-white/70">
-              Sem classificações calculadas ainda.
+              Sem classificações calculadas ainda para {groupsTabLabel.toLowerCase()}.
             </div>
           )}
-          {matches.filter((m) => m.roundType === "GROUPS").length === 0 && <p className="text-sm text-white/70">Sem jogos.</p>}
-          {matches
-            .filter((m) => m.roundType === "GROUPS")
-            .map((m) => (
+          {primaryRoundMatches.length === 0 && <p className="text-sm text-white/70">Sem jogos nesta fase.</p>}
+          {primaryRoundMatches.map((m) => (
               <div key={m.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full border border-white/20 px-2.5 py-0.5 text-[11px] text-white/70">
-                      Grupo {m.groupLabel || "?"}
+                      {supportsGroups
+                        ? `Grupo ${m.groupLabel || "?"}`
+                        : m.roundLabel || (isNonStopFormat ? `Ronda ${m.groupLabel || "NS"}` : `Ronda ${m.groupLabel || "A"}`)}
                     </span>
                     <p className="font-semibold">{nameFromSlots(m.pairingA as Pairing, locale)} vs {nameFromSlots(m.pairingB as Pairing, locale)}</p>
                   </div>
@@ -3091,6 +3483,7 @@ export default function PadelTournamentTabs({
           {generationPhase === "KNOCKOUT" && generationError && (
             <p className="text-[12px] text-red-200">{generationError}</p>
           )}
+          {generationPhase === "KNOCKOUT" && generationError && renderGenerationPlanPanel()}
           {generationPhase === "KNOCKOUT" && generationMessage && (
             <p className="text-[12px] text-emerald-200">{generationMessage}</p>
           )}

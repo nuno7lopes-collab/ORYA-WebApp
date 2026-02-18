@@ -59,6 +59,7 @@ export function DatePickerTwoMonths({
 
   const nextMonth = useMemo(() => addMonthsToParts(baseMonth, 1), [baseMonth]);
   const todayParts = getDateParts(new Date(), timezone);
+  const selectedMonthLabel = useMemo(() => formatMonthLabel(baseMonth), [baseMonth]);
 
   return (
     <div ref={rootRef} className="relative">
@@ -93,6 +94,10 @@ export function DatePickerTwoMonths({
           )}
         >
           <div className="mb-3 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Navegação</p>
+              <p className="text-sm font-semibold capitalize text-white">{selectedMonthLabel}</p>
+            </div>
             <button
               type="button"
               onClick={() => setBaseMonth((current) => addMonthsToParts(current, -1))}
@@ -109,6 +114,21 @@ export function DatePickerTwoMonths({
             >
               →
             </button>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBaseMonth({ year: todayParts.year, month: todayParts.month });
+                onSelectDate(buildZonedDate(todayParts, timezone, 12, 0));
+                onOpenChange(false);
+              }}
+              className="rounded-full border border-cyan-300/45 bg-cyan-300/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/75"
+            >
+              Hoje
+            </button>
+            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">{timezone}</span>
           </div>
 
           <div className="flex gap-4 overflow-x-auto pb-1">

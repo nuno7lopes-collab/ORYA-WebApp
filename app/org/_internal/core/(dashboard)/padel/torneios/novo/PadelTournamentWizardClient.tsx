@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import { trackEvent } from "@/lib/analytics";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
-import { computeMatchSlots, estimateMaxTeamsForSlots } from "@/lib/padel/capacityRecommendation";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import type { Prisma } from "@prisma/client";
 import { CTA_GHOST, CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
@@ -80,6 +79,36 @@ type CategoryDraft = {
   price: string;
   capacityTeams: string;
   format: string;
+};
+
+type PlannerCategoryResult = {
+  key: string;
+  categoryId: number | null;
+  label: string;
+  format: string;
+  teams: number;
+  minTeams: number;
+  matchesNeeded: number;
+  allocatedSlots: number;
+  recommendedMaxTeams: number;
+  hardCapMax: number | null;
+  queueEstimatedRounds: number | null;
+  feasible: boolean;
+  warnings: string[];
+};
+
+type PlannerResult = {
+  feasible: boolean;
+  windowMinutes: number;
+  courtsUsed: number;
+  slotMinutes: number;
+  totalSlots: number;
+  matchesNeeded: number;
+  unscheduledMatches: number;
+  categories: PlannerCategoryResult[];
+  warnings: string[];
+  blockingReasons: string[];
+  alternatives: Array<{ type: string; summary: string }>;
 };
 
 const PADEL_FORMATS = [
@@ -200,6 +229,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [savingMode, setSavingMode] = useState<"DRAFT" | "PUBLISH" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftEventId, setDraftEventId] = useState<number | null>(null);
+  const [capacityPlan, setCapacityPlan] = useState<PlannerResult | null>(null);
+  const [capacityPlanLoading, setCapacityPlanLoading] = useState(false);
+  const [capacityPlanError, setCapacityPlanError] = useState<string | null>(null);
   const saving = savingMode !== null;
 
   const { data: clubsRes } = useSWR<{ ok?: boolean; items?: PadelClub[] }>(
@@ -399,57 +431,108 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     return warnings;
   }, [scheduleWindowStart, scheduleWindowEnd, startsAt, endsAt]);
 
-  const capacityWarnings = useMemo(() => {
-    const windowStart = parseDateTimeLocal(scheduleWindowStart || startsAt);
-    const windowEnd = parseDateTimeLocal(scheduleWindowEnd || endsAt || startsAt);
-    if (!windowStart || !windowEnd || windowEnd <= windowStart) return null;
+  useEffect(() => {
+    const windowStart = toIsoFromLocalInput(scheduleWindowStart || startsAt);
+    const windowEnd = toIsoFromLocalInput(scheduleWindowEnd || endsAt || startsAt);
+    const selectedCourtIds = (resolvedCourts.length > 0 ? resolvedCourts : activeCourts).map((court) => court.id);
     const duration = asNumber(durationMinutes) ?? 60;
     const buffer = asNumber(bufferMinutes) ?? 5;
-    const courts = Math.max(1, courtsCount || 1);
-    const totalSlots = computeMatchSlots({
-      start: windowStart,
-      end: windowEnd,
-      courts,
-      durationMinutes: duration,
-      bufferMinutes: buffer,
-    });
-    if (!totalSlots || selectedCategories.length === 0) {
-      return null;
+
+    if (
+      !organizationId ||
+      !windowStart ||
+      !windowEnd ||
+      new Date(windowEnd) <= new Date(windowStart) ||
+      selectedCategories.length === 0 ||
+      selectedCourtIds.length === 0
+    ) {
+      setCapacityPlan(null);
+      setCapacityPlanError(null);
+      setCapacityPlanLoading(false);
+      return;
     }
-    const slotsPerCategory = Math.max(1, Math.floor(totalSlots / selectedCategories.length));
-    const warnings = selectedCategories
-      .map((category) => {
+
+    const payload = {
+      organizationId,
+      format,
+      windowStart,
+      windowEnd,
+      durationMinutes: Math.max(1, Math.round(duration)),
+      bufferMinutes: Math.max(0, Math.round(buffer)),
+      courtIds: selectedCourtIds,
+      courtPriorityOrder: selectedCourtIds,
+      categoryWeights: selectedCategories.reduce<Record<string, number>>((acc, category) => {
+        acc[String(category.id)] = 1;
+        return acc;
+      }, {}),
+      categories: selectedCategories.map((category) => {
         const draft = categoryDrafts[category.id];
-        const capacity = asNumber(draft?.capacityTeams ?? "") ?? null;
-        if (!capacity || capacity <= 0) return null;
         const formatValue = draft?.format || format;
-        const recommended = estimateMaxTeamsForSlots({
+        const teams = asNumber(draft?.capacityTeams ?? "");
+        const defaultTeams = formatValue === "GRUPOS_ELIMINATORIAS" ? 4 : 2;
+        return {
+          categoryId: category.id,
+          label: category.label,
+          teams: teams && teams > 0 ? Math.max(defaultTeams, Math.floor(teams)) : defaultTeams,
           format: formatValue,
-          totalSlots: slotsPerCategory,
+          amMxMode: formatValue === "AMERICANO" || formatValue === "MEXICANO" ? "INDIVIDUAL_ROTATION" : undefined,
+          amMxProgressionMode:
+            formatValue === "AMERICANO" || formatValue === "MEXICANO" ? "ROUND_BY_ROUND" : undefined,
+          nonStopMode: formatValue === "NON_STOP" ? "ACTIVE_QUEUE" : undefined,
+        };
+      }),
+    };
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setCapacityPlanLoading(true);
+      setCapacityPlanError(null);
+      try {
+        const res = await fetch("/api/padel/formats/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
         });
-        if (recommended && capacity > recommended) {
-          return {
-            categoryId: category.id,
-            label: category.label,
-            capacity,
-            recommended,
-          };
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          setCapacityPlan(null);
+          const message = sanitizeUiErrorMessage(json?.error, "Planner de capacidade indisponível.");
+          setCapacityPlanError(message);
+          return;
         }
-        return null;
-      })
-      .filter(Boolean) as Array<{ categoryId: number; label: string; capacity: number; recommended: number }>;
-    return { totalSlots, slotsPerCategory, warnings, courts };
+        const plan = json?.plan;
+        if (plan && typeof plan === "object") {
+          setCapacityPlan(plan as PlannerResult);
+          return;
+        }
+        setCapacityPlan(null);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setCapacityPlan(null);
+        setCapacityPlanError("Erro ao calcular capacidade por formato.");
+      } finally {
+        if (!controller.signal.aborted) setCapacityPlanLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [
-    scheduleWindowStart,
-    scheduleWindowEnd,
-    startsAt,
-    endsAt,
-    durationMinutes,
+    activeCourts,
     bufferMinutes,
-    courtsCount,
-    selectedCategories,
     categoryDrafts,
+    durationMinutes,
+    endsAt,
     format,
+    organizationId,
+    resolvedCourts,
+    scheduleWindowEnd,
+    scheduleWindowStart,
+    selectedCategories,
+    startsAt,
   ]);
 
   const toggleCategory = (id: number) => {
@@ -651,13 +734,20 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
       },
     };
 
-    if (mode === "PUBLISH" && capacityWarnings?.warnings?.length) {
+    const capacityPlanIssues =
+      (capacityPlan?.warnings?.length ?? 0) +
+      (capacityPlan?.blockingReasons?.length ?? 0) +
+      (capacityPlan?.feasible === false ? 1 : 0);
+    if (mode === "PUBLISH" && capacityPlan && capacityPlanIssues > 0) {
       trackEvent("padel_capacity_warning", {
         title: trimmedTitle,
-        totalSlots: capacityWarnings.totalSlots,
-        slotsPerCategory: capacityWarnings.slotsPerCategory,
-        courts: capacityWarnings.courts,
-        warnings: capacityWarnings.warnings,
+        totalSlots: capacityPlan.totalSlots,
+        matchesNeeded: capacityPlan.matchesNeeded,
+        unscheduledMatches: capacityPlan.unscheduledMatches,
+        courts: capacityPlan.courtsUsed,
+        warnings: capacityPlan.warnings,
+        blockingReasons: capacityPlan.blockingReasons,
+        alternatives: capacityPlan.alternatives?.map((item) => item.summary) ?? [],
       });
     }
 
@@ -768,7 +858,11 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   };
   const readinessDone = readinessItems.filter((item) => item.done).length;
   const readinessPercent = readinessItems.length > 0 ? Math.round((readinessDone / readinessItems.length) * 100) : 0;
-  const blockingWarningsCount = registrationWarnings.length + scheduleWarnings.length;
+  const capacityPlanWarningsCount =
+    (capacityPlan?.warnings?.length ?? 0) +
+    (capacityPlan?.blockingReasons?.length ?? 0) +
+    (capacityPlan?.feasible === false ? 1 : 0);
+  const blockingWarningsCount = registrationWarnings.length + scheduleWarnings.length + capacityPlanWarningsCount;
   const identityIssues = useMemo(() => {
     const issues: string[] = [];
     if (!title.trim()) issues.push("Título em falta.");
@@ -791,8 +885,16 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
     if (!scheduleWindowStart || !scheduleWindowEnd) {
       issues.push("Janela de calendário incompleta.");
     }
+    if (capacityPlan && !capacityPlan.feasible) {
+      issues.push("Capacidade por formato insuficiente para a janela/campos atuais.");
+    }
+    if (capacityPlanError) {
+      issues.push("Planner de capacidade indisponível.");
+    }
     return [...issues, ...registrationWarnings, ...scheduleWarnings];
   }, [
+    capacityPlan,
+    capacityPlanError,
     registrationStartsAt,
     registrationEndsAt,
     scheduleWindowStart,
@@ -861,7 +963,9 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Publicação</p>
           <p className="mt-1 text-lg font-semibold text-white">{savingMode === "PUBLISH" ? "A validar" : "Guardrails ativos"}</p>
           <p className="text-[11px] text-white/60">
-            {blockingWarningsCount > 0
+            {capacityPlanLoading
+              ? "Planner por formato a calcular capacidade..."
+              : blockingWarningsCount > 0
               ? `${blockingWarningsCount} alerta(s) para rever antes de publicar.`
               : "Lifecycle valida antes de publicar."}
           </p>
@@ -1118,25 +1222,62 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             </div>
           )}
 
-          {capacityWarnings && (
+          {capacityPlanLoading && (
+            <div className="rounded-2xl border border-white/15 bg-black/25 px-4 py-3 text-[12px] text-white/70">
+              A calcular viabilidade por formato/campos…
+            </div>
+          )}
+          {capacityPlanError && (
             <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-[12px] text-amber-100">
-              <p className="font-semibold">Capacidade recomendada (estimativa)</p>
+              {capacityPlanError}
+            </div>
+          )}
+          {capacityPlan && (
+            <div
+              className={`rounded-2xl border px-4 py-3 text-[12px] ${
+                capacityPlan.feasible
+                  ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+                  : "border-amber-300/40 bg-amber-500/10 text-amber-100"
+              }`}
+            >
+              <p className="font-semibold">Planeador por formato</p>
               <p>
-                Com {capacityWarnings.courts} campos cabem ~{capacityWarnings.totalSlots} jogos na janela. Isso dá ~
-                {capacityWarnings.slotsPerCategory} jogos por categoria.
+                Slots {capacityPlan.totalSlots} · Jogos necessários {capacityPlan.matchesNeeded} · Em falta{" "}
+                {Math.max(0, capacityPlan.unscheduledMatches)} · Campos {capacityPlan.courtsUsed}.
               </p>
-              {capacityWarnings.warnings.length > 0 ? (
-                <div className="mt-2 space-y-1">
-                  {capacityWarnings.warnings.map((warning) => (
-                    <p key={`cap-warning-${warning.categoryId}`}>
-                      • {warning.label}: capacidade {warning.capacity} &gt; recomendado {warning.recommended}
-                    </p>
+              <div className="mt-2 space-y-1 text-[11px]">
+                {capacityPlan.categories.slice(0, 6).map((category) => (
+                  <p key={`planner-cat-${category.key}`}>
+                    • {category.label}: {category.teams} equipas · mínimo {category.minTeams} · jogos{" "}
+                    {category.matchesNeeded}/{category.allocatedSlots}
+                    {typeof category.recommendedMaxTeams === "number"
+                      ? ` · recomendado ${category.recommendedMaxTeams}`
+                      : ""}
+                    {typeof category.hardCapMax === "number" ? ` · hard cap ${category.hardCapMax}` : ""}
+                    {typeof category.queueEstimatedRounds === "number"
+                      ? ` · fila ~${category.queueEstimatedRounds} ronda(s)`
+                      : ""}
+                  </p>
+                ))}
+              </div>
+              {capacityPlan.alternatives.length > 0 && (
+                <div className="mt-2 space-y-1 text-[11px]">
+                  {capacityPlan.alternatives.slice(0, 3).map((alternative, idx) => (
+                    <p key={`planner-alt-${idx}`}>• {alternative.summary}</p>
                   ))}
-                  <p className="mt-2 text-[11px] text-amber-200/80">Aviso apenas, não bloqueia publicação.</p>
                 </div>
-              ) : (
-                <p className="mt-2 text-emerald-200/80">Capacidades dentro da recomendação.</p>
               )}
+              {(capacityPlan.warnings.length > 0 || capacityPlan.blockingReasons.length > 0) && (
+                <p className="mt-2 text-[11px] opacity-90">
+                  {capacityPlan.warnings.length > 0
+                    ? `Avisos: ${capacityPlan.warnings.slice(0, 2).join(" · ")}. `
+                    : ""}
+                  {capacityPlan.blockingReasons.length > 0
+                    ? `Bloqueios técnicos: ${capacityPlan.blockingReasons.join(" · ")}.`
+                    : ""}
+                </p>
+              )}
+              <p className="mt-2 text-[11px] opacity-80">Publicação mantém warn-only; bloqueio duro é na geração/agendamento.</p>
             </div>
           )}
           {renderSectionIssues(registrationIssues)}

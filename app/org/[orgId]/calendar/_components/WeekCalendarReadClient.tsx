@@ -19,6 +19,7 @@ import {
   normalizeIntervals,
   resolveIntervalsForDate,
 } from "@/lib/reservas/availability";
+import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "./timezones";
 
 type AgendaItem = {
   kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
@@ -450,6 +451,13 @@ function formatHourMinute(date: Date, timezone: string) {
   }).format(date);
 }
 
+function isTypingTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  const tag = element.tagName;
+  return element.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 export default function WeekCalendarReadClient() {
   const params = useParams();
   const router = useRouter();
@@ -459,7 +467,10 @@ export default function WeekCalendarReadClient() {
   const [selectedAggregateKey, setSelectedAggregateKey] = useState<string | null>(null);
   const [hoveredAggregateKey, setHoveredAggregateKey] = useState<string | null>(null);
   const hourHeight = DEFAULT_HOUR_HEIGHT;
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
+  const timezone = useMemo(
+    () => normalizeCalendarTimezone(searchParams.get("tz")),
+    [searchParams],
+  );
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
 
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
@@ -478,13 +489,21 @@ export default function WeekCalendarReadClient() {
     nextResources?: number[];
     nextCourts?: number[];
     nextProfessionals?: number[];
+    nextTimezone?: string;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
-    nextParams.set("date", formatDateParam(input.nextDate ?? anchorDate, timezone));
+    const nextTimezone = normalizeCalendarTimezone(input.nextTimezone ?? timezone);
+    nextParams.set("tz", nextTimezone);
+    const nextDate =
+      input.nextDate ??
+      (input.nextTimezone
+        ? buildZonedDate(getDateParts(anchorDate, timezone), nextTimezone, 12, 0)
+        : anchorDate);
+    nextParams.set("date", formatDateParam(nextDate, nextTimezone));
     nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar");
     const search = nextParams.toString();
@@ -604,6 +623,31 @@ export default function WeekCalendarReadClient() {
   );
   const hasActiveSelection =
     selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+  const selectedScopesCount =
+    selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length;
+  const selectedScopesLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (selectedProfessionalIds.length > 0) {
+      parts.push(`${selectedProfessionalIds.length} profissional${selectedProfessionalIds.length > 1 ? "s" : ""}`);
+    }
+    if (selectedResourceIds.length > 0) {
+      parts.push(`${selectedResourceIds.length} recurso${selectedResourceIds.length > 1 ? "s" : ""}`);
+    }
+    if (selectedCourtIds.length > 0) {
+      parts.push(`${selectedCourtIds.length} campo${selectedCourtIds.length > 1 ? "s" : ""}`);
+    }
+    return parts.join(" · ");
+  }, [selectedCourtIds.length, selectedProfessionalIds.length, selectedResourceIds.length]);
+  const dayViewHref = useMemo(() => {
+    if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("date", formatDateParam(anchorDate, timezone));
+    nextParams.set("tz", timezone);
+    nextParams.delete("scopeMode");
+    const nextPath = buildOrgHref(organizationId, "/calendar/day");
+    const search = nextParams.toString();
+    return search ? `${nextPath}?${search}` : nextPath;
+  }, [anchorDate, organizationId, searchParams, timezone]);
 
   const items = data?.items ?? [];
   const filteredItems = useMemo(() => {
@@ -768,6 +812,13 @@ export default function WeekCalendarReadClient() {
   const nowTop = (nowTimeParts.hour * 60 + nowTimeParts.minute) * minuteHeight;
   const dateInputValue = formatDateParam(anchorDate, timezone);
   const visibleCountLabel = `${filteredItems.length} ${filteredItems.length === 1 ? "item visível" : "itens visíveis"}`;
+  const scrollWeekToMinute = (minute: number) => {
+    const node = gridScrollRef.current;
+    if (!node) return;
+    const top = Math.max(0, minute * minuteHeight - hourHeight * 2);
+    node.scrollTo({ top, behavior: "smooth" });
+  };
+  const jumpTimes = [8, 12, 16, 20];
 
   useEffect(() => {
     setSelectedAggregateKey(null);
@@ -796,6 +847,35 @@ export default function WeekCalendarReadClient() {
     node.scrollTo({ top, behavior: "auto" });
   }, [dateInputValue, hourHeight, isTodayInRange, minuteHeight, timezone]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === "arrowleft") {
+        event.preventDefault();
+        shiftRange(-1);
+        return;
+      }
+      if (key === "arrowright") {
+        event.preventDefault();
+        shiftRange(1);
+        return;
+      }
+      if (key === "t") {
+        event.preventDefault();
+        setToday();
+        return;
+      }
+      if (key === "d" && dayViewHref !== "#") {
+        event.preventDefault();
+        router.push(dayViewHref, { scroll: false });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dayViewHref, router, setToday, shiftRange]);
+
   if (!range) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
   }
@@ -812,6 +892,14 @@ export default function WeekCalendarReadClient() {
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 p-1">
+            <button type="button" className={cn(CHIP_BASE, CHIP_ACTIVE)} aria-current="page">
+              Semana
+            </button>
+            <Link href={dayViewHref} className={CHIP_BASE}>
+              Dia
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -846,7 +934,21 @@ export default function WeekCalendarReadClient() {
               aria-label="Selecionar data"
             />
             <span className="text-sm font-medium text-white">{range.label}</span>
-            <span className="text-[10px] uppercase tracking-[0.22em] text-white/45">Fuso: {timezone}</span>
+            <label className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/80">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-white/55">Fuso</span>
+              <select
+                value={timezone}
+                onChange={(event) => replaceState({ nextTimezone: event.target.value })}
+                className="bg-transparent text-xs text-white/90 outline-none"
+                aria-label="Selecionar fuso horário"
+              >
+                {CALENDAR_TIMEZONE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
         </div>
@@ -874,6 +976,26 @@ export default function WeekCalendarReadClient() {
             Geral
           </button>
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-white/58">
+            {hasActiveSelection
+              ? `Seleção ativa (${selectedScopesCount}): ${selectedScopesLabel}.`
+              : "Sem seleção ativa: modo geral consolidado."}
+          </p>
+          <div className="flex items-center gap-2">
+            {hasActiveSelection ? (
+              <button
+                type="button"
+                onClick={() => replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] })}
+                className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+              >
+                Limpar seleção
+              </button>
+            ) : null}
+            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Atalhos: ← → · T · D</span>
+          </div>
+        </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
@@ -883,12 +1005,41 @@ export default function WeekCalendarReadClient() {
               <h2 className="text-sm font-semibold text-white">Agenda em grelha</h2>
               <p className="text-xs text-white/55">{visibleCountLabel}</p>
             </div>
-            <Link
-              href={buildOrgHref(organizationId, "/bookings/availability")}
-              className="rounded-full border border-cyan-300/40 px-3 py-1 text-xs text-cyan-100 transition hover:border-cyan-300/75"
-            >
-              Gerir disponibilidade em Bookings
-            </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {jumpTimes.map((hour) => (
+                <button
+                  key={`week-jump-${hour}`}
+                  type="button"
+                  onClick={() => scrollWeekToMinute(hour * 60)}
+                  className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:text-white"
+                >
+                  {pad2(hour)}:00
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  const parts = getTimeParts(new Date(), timezone);
+                  scrollWeekToMinute(parts.hour * 60 + parts.minute);
+                }}
+                className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+              >
+                Ir para agora
+              </button>
+              <Link
+                href={buildOrgHref(organizationId, "/bookings/availability")}
+                className="rounded-full border border-cyan-300/40 px-3 py-1 text-xs text-cyan-100 transition hover:border-cyan-300/75"
+              >
+                Gerir disponibilidade em Bookings
+              </Link>
+            </div>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2 px-1 text-[10px] text-white/65">
+            <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">Confirmado</span>
+            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
+            <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
+            <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
+            <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(5,10,22,0.82)]">
@@ -1069,8 +1220,16 @@ export default function WeekCalendarReadClient() {
               </div>
             </div>
           </div>
-          {isLoading && <p className="mt-3 text-sm text-white/70">A carregar agenda...</p>}
-          {error && <p className="mt-3 text-sm text-red-200">Falha ao carregar agenda: {error.message}</p>}
+          {isLoading && (
+            <p role="status" className="mt-3 text-sm text-white/70">
+              A carregar agenda...
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-red-200">
+              Falha ao carregar agenda: {error.message}
+            </p>
+          )}
           {!isLoading && !error && filteredItems.length === 0 && (
             <p className="mt-3 text-sm text-white/55">Sem ocupação para os filtros e intervalo selecionados.</p>
           )}

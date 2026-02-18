@@ -78,6 +78,8 @@ export function AggregateEventBlock({
         }
       }}
       role="button"
+      aria-pressed={isSelected}
+      aria-label={`${formatTime(aggregate.start, timezone)}-${formatTime(aggregate.end, timezone)} ${aggregate.items.length} ocupações`}
       tabIndex={0}
     >
       <p className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-white/90">

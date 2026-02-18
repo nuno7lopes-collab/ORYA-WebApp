@@ -445,18 +445,48 @@ export function buildActiveFilterChips(params: {
   serviceLabels: Map<number, string>;
   professionalLabels: Map<number, string>;
 }): ActiveFilterChip[] {
+  const statusLabel: Record<string, string> = {
+    CONFIRMED: "Confirmado",
+    PENDING_CONFIRMATION: "Pendente confirmação",
+    PENDING: "Pendente",
+    COMPLETED: "Concluído",
+    CANCELLED: "Cancelado",
+    CANCELLED_BY_CLIENT: "Cancelado pelo cliente",
+    CANCELLED_BY_ORG: "Cancelado pela organização",
+    NO_SHOW: "No-show",
+    DISPUTED: "Disputa",
+  };
+  const typeLabel: Record<string, string> = {
+    INDIVIDUAL: "Individual",
+    GROUP: "Grupo",
+    BLOCK: "Bloqueio",
+  };
+  const channelLabel: Record<string, string> = {
+    ONLINE: "Online",
+    PRESENTIAL: "Presencial",
+    BACKOFFICE: "Backoffice",
+    UNKNOWN: "Indefinido",
+  };
+  const paymentLabel: Record<string, string> = {
+    PAID: "Pago",
+    PARTIAL: "Parcial",
+    PROCESSING: "Em processamento",
+    PENDING: "Pendente",
+    UNKNOWN: "Indefinido",
+  };
+
   const chips: ActiveFilterChip[] = [];
   params.filters.statuses.forEach((status) => {
-    chips.push({ id: `status-${status}`, label: `Estado: ${status}` });
+    chips.push({ id: `status-${status}`, label: `Estado: ${statusLabel[status] ?? status}` });
   });
   params.filters.bookingTypes.forEach((type) => {
-    chips.push({ id: `type-${type}`, label: `Tipo: ${type}` });
+    chips.push({ id: `type-${type}`, label: `Tipo: ${typeLabel[type] ?? type}` });
   });
   params.filters.channels.forEach((channel) => {
-    chips.push({ id: `channel-${channel}`, label: `Canal: ${channel}` });
+    chips.push({ id: `channel-${channel}`, label: `Canal: ${channelLabel[channel] ?? channel}` });
   });
   params.filters.paymentStatuses.forEach((status) => {
-    chips.push({ id: `payment-${status}`, label: `Pagamento: ${status}` });
+    chips.push({ id: `payment-${status}`, label: `Pagamento: ${paymentLabel[status] ?? status}` });
   });
   params.filters.serviceIds.forEach((serviceId) => {
     chips.push({

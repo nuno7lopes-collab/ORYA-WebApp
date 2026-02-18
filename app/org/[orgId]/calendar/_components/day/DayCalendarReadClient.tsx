@@ -27,6 +27,7 @@ import { emptyFilters, cloneFilters } from "./filterConfig";
 import { CalendarHeader } from "./CalendarHeader";
 import { FiltersDrawer } from "./FiltersDrawer";
 import { DayGrid } from "./DayGrid";
+import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "../timezones";
 import type {
   AvailabilityResponse,
   AgendaResponse,
@@ -54,6 +55,13 @@ function decodePrefixedIds(values: string[], prefix: string) {
     .filter((value) => Number.isFinite(value) && value > 0)
     .forEach((value) => deduped.add(value));
   return [...deduped].sort((a, b) => a - b);
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  const tag = element.tagName;
+  return element.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 function formatDateTime(value: string, timezone: string) {
@@ -170,7 +178,10 @@ export default function DayCalendarReadClient() {
   const searchParams = useSearchParams();
   const orgIdRaw = Array.isArray(params?.orgId) ? params.orgId[0] : params?.orgId;
   const organizationId = Number(orgIdRaw);
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
+  const timezone = useMemo(
+    () => normalizeCalendarTimezone(searchParams.get("tz")),
+    [searchParams],
+  );
 
   const selectedProfessionalIds = useMemo(() => parseIdList(searchParams.get("professionals")), [searchParams]);
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
@@ -193,18 +204,42 @@ export default function DayCalendarReadClient() {
     nextProfessionals?: number[];
     nextResources?: number[];
     nextCourts?: number[];
+    nextTimezone?: string;
   }) => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return;
     const nextParams = new URLSearchParams(searchParams.toString());
     setIdListParam(nextParams, "professionals", input.nextProfessionals ?? selectedProfessionalIds);
     setIdListParam(nextParams, "resources", input.nextResources ?? selectedResourceIds);
     setIdListParam(nextParams, "courts", input.nextCourts ?? selectedCourtIds);
-    nextParams.set("date", formatDateParam(input.nextDate ?? selectedDate, timezone));
+    const nextTimezone = normalizeCalendarTimezone(input.nextTimezone ?? timezone);
+    nextParams.set("tz", nextTimezone);
+    const nextDate =
+      input.nextDate ??
+      (input.nextTimezone
+        ? buildZonedDate(getDateParts(selectedDate, timezone), nextTimezone, 12, 0)
+        : selectedDate);
+    nextParams.set("date", formatDateParam(nextDate, nextTimezone));
     nextParams.delete("scopeMode");
     const nextPath = buildOrgHref(organizationId, "/calendar/day");
     const search = nextParams.toString();
     router.replace(search ? `${nextPath}?${search}` : nextPath, { scroll: false });
   };
+  const shiftDay = (direction: -1 | 1) => {
+    replaceState({ nextDate: addDays(selectedDate, direction, timezone) });
+  };
+  const setToday = () => {
+    replaceState({ nextDate: new Date() });
+  };
+  const weekViewHref = useMemo(() => {
+    if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("date", formatDateParam(selectedDate, timezone));
+    nextParams.set("tz", timezone);
+    nextParams.delete("scopeMode");
+    const nextPath = buildOrgHref(organizationId, "/calendar");
+    const search = nextParams.toString();
+    return search ? `${nextPath}?${search}` : nextPath;
+  }, [organizationId, searchParams, selectedDate, timezone]);
 
   const dayStart = useMemo(
     () => buildZonedDate(getDateParts(selectedDate, timezone), timezone, 0, 0),
@@ -430,8 +465,64 @@ export default function DayCalendarReadClient() {
       }),
     [appliedFilters, professionalLabels, serviceLabels],
   );
+  const removeAppliedFilterChip = (chipId: string) => {
+    setAppliedFilters((current) => {
+      const next = cloneFilters(current);
+      if (chipId.startsWith("status-")) {
+        const value = chipId.slice("status-".length);
+        next.statuses = next.statuses.filter((item) => item !== value);
+        return next;
+      }
+      if (chipId.startsWith("type-")) {
+        const value = chipId.slice("type-".length);
+        next.bookingTypes = next.bookingTypes.filter((item) => item !== value);
+        return next;
+      }
+      if (chipId.startsWith("channel-")) {
+        const value = chipId.slice("channel-".length);
+        next.channels = next.channels.filter((item) => item !== value);
+        return next;
+      }
+      if (chipId.startsWith("payment-")) {
+        const value = chipId.slice("payment-".length);
+        next.paymentStatuses = next.paymentStatuses.filter((item) => item !== value);
+        return next;
+      }
+      if (chipId.startsWith("service-")) {
+        const value = Number(chipId.slice("service-".length));
+        next.serviceIds = next.serviceIds.filter((item) => item !== value);
+        return next;
+      }
+      if (chipId === "created") {
+        next.createdFrom = null;
+        next.createdTo = null;
+        return next;
+      }
+      if (chipId.startsWith("requested-")) {
+        const value = Number(chipId.slice("requested-".length));
+        next.requestedProfessionalIds = next.requestedProfessionalIds.filter((item) => item !== value);
+        return next;
+      }
+      return next;
+    });
+  };
   const hasActiveSelection =
     selectedProfessionalIds.length > 0 || selectedResourceIds.length > 0 || selectedCourtIds.length > 0;
+  const selectedScopesCount =
+    selectedProfessionalIds.length + selectedResourceIds.length + selectedCourtIds.length;
+  const selectedScopesLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (selectedProfessionalIds.length > 0) {
+      parts.push(`${selectedProfessionalIds.length} profissional${selectedProfessionalIds.length > 1 ? "s" : ""}`);
+    }
+    if (selectedResourceIds.length > 0) {
+      parts.push(`${selectedResourceIds.length} recurso${selectedResourceIds.length > 1 ? "s" : ""}`);
+    }
+    if (selectedCourtIds.length > 0) {
+      parts.push(`${selectedCourtIds.length} campo${selectedCourtIds.length > 1 ? "s" : ""}`);
+    }
+    return parts.join(" · ");
+  }, [selectedCourtIds.length, selectedProfessionalIds.length, selectedResourceIds.length]);
   const selectedEvent = selectedEventId ? filteredEventsById.get(selectedEventId) ?? null : null;
   const hoveredEvent = hoveredEventId ? filteredEventsById.get(hoveredEventId) ?? null : null;
   const focusedEvent = selectedEvent ?? hoveredEvent;
@@ -444,19 +535,91 @@ export default function DayCalendarReadClient() {
     }
   }, [filteredEventsById, selectedEventId]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTypingTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      if (key === "arrowleft") {
+        event.preventDefault();
+        shiftDay(-1);
+        return;
+      }
+      if (key === "arrowright") {
+        event.preventDefault();
+        shiftDay(1);
+        return;
+      }
+      if (key === "t") {
+        event.preventDefault();
+        setToday();
+        return;
+      }
+      if (key === "w" && weekViewHref !== "#") {
+        event.preventDefault();
+        router.push(weekViewHref, { scroll: false });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router, setToday, shiftDay, weekViewHref]);
+
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
   }
 
   return (
     <div className="space-y-4 p-4 md:p-6">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 p-1">
+            <Link href={weekViewHref} className="rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-[12px] text-white/70 transition hover:border-white/25 hover:bg-white/10 hover:text-white">
+              Semana
+            </Link>
+            <button
+              type="button"
+              className="rounded-full border border-white/40 bg-white/18 px-3 py-1 text-[12px] text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]"
+              aria-current="page"
+            >
+              Dia
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/45">
+            <span>Atalhos:</span>
+            <span>← →</span>
+            <span>T</span>
+            <span>W</span>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-white/58">
+            {hasActiveSelection
+              ? `Seleção ativa (${selectedScopesCount}): ${selectedScopesLabel}.`
+              : "Sem seleção ativa: vista geral consolidada."}
+          </p>
+          {hasActiveSelection ? (
+            <button
+              type="button"
+              onClick={() => replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] })}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+            >
+              Limpar seleção
+            </button>
+          ) : null}
+        </div>
+      </section>
+
       <CalendarHeader
         date={selectedDate}
         timezone={timezone}
+        timezoneOptions={CALENDAR_TIMEZONE_OPTIONS}
+        onTimezoneChange={(nextTimezone) => replaceState({ nextTimezone })}
         datePickerOpen={datePickerOpen}
         onDatePickerOpenChange={setDatePickerOpen}
         onSelectDate={(date) => replaceState({ nextDate: date })}
-        onToday={() => replaceState({ nextDate: new Date() })}
+        onToday={setToday}
+        onPreviousDay={() => shiftDay(-1)}
+        onNextDay={() => shiftDay(1)}
         professionalOptions={professionalOptions}
         resourceOptions={resourceOptions}
         selectedProfessionalIds={selectedProfessionalOptionIds}
@@ -482,13 +645,24 @@ export default function DayCalendarReadClient() {
       {activeFilterChips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
           {activeFilterChips.map((chip) => (
-            <span
+            <button
               key={chip.id}
-              className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80"
+              type="button"
+              onClick={() => removeAppliedFilterChip(chip.id)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/30 hover:text-white"
+              aria-label={`Remover filtro ${chip.label}`}
             >
               {chip.label}
-            </span>
+              <span className="text-[11px] text-white/55">×</span>
+            </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setAppliedFilters(emptyFilters())}
+            className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/75 transition hover:border-white/35 hover:text-white"
+          >
+            Limpar filtros
+          </button>
         </div>
       ) : null}
 
@@ -507,8 +681,16 @@ export default function DayCalendarReadClient() {
             }}
           />
 
-          {agendaLoading ? <p className="mt-3 text-sm text-white/65">A carregar agenda...</p> : null}
-          {agendaError ? <p className="mt-3 text-sm text-rose-200">Falha ao carregar agenda: {agendaError.message}</p> : null}
+          {agendaLoading ? (
+            <p role="status" className="mt-3 text-sm text-white/65">
+              A carregar agenda...
+            </p>
+          ) : null}
+          {agendaError ? (
+            <p role="alert" className="mt-3 text-sm text-rose-200">
+              Falha ao carregar agenda: {agendaError.message}
+            </p>
+          ) : null}
           {!agendaLoading && !agendaError && filteredEvents.length === 0 ? (
             <p className="mt-3 text-sm text-white/55">Sem reservas para os filtros e data selecionados.</p>
           ) : null}

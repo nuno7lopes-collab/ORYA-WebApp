@@ -221,6 +221,8 @@ export async function confirmPendingBooking({
   const dayParts = getDateParts(booking.startsAt, timezone);
   const dayStart = makeUtcDateFromLocal({ ...dayParts, hour: 0, minute: 0 }, timezone);
   const dayEnd = makeUtcDateFromLocal({ ...dayParts, hour: 23, minute: 59 }, timezone);
+  const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+  const bookingEndsAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
 
   const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
   let candidateScopes: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = [];
@@ -345,7 +347,7 @@ export async function confirmPendingBooking({
     tx.booking.findMany({
       where: {
         organizationId: booking.organizationId,
-        startsAt: { lt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000) },
+        startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
         NOT: { id: booking.id },
         OR: [
           { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
@@ -354,15 +356,18 @@ export async function confirmPendingBooking({
       },
       select: { startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
     }),
-    tx.classSession.findMany({
-      where: {
-        organizationId: booking.organizationId,
-        status: "SCHEDULED",
-        startsAt: { lt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000) },
-        endsAt: { gt: booking.startsAt },
-      },
-      select: { startsAt: true, endsAt: true, professionalId: true },
-    }),
+    assignmentMode === "PROFESSIONAL"
+      ? tx.classSession.findMany({
+          where: {
+            organizationId: booking.organizationId,
+            status: "SCHEDULED",
+            startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
+            endsAt: { gt: bookingWindowStart },
+            ...(candidateScopes.length > 0 ? { professionalId: { in: candidateScopes.map((scope) => scope.scopeId) } } : {}),
+          },
+          select: { startsAt: true, endsAt: true, professionalId: true },
+        })
+      : Promise.resolve([]),
   ]);
 
   const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);

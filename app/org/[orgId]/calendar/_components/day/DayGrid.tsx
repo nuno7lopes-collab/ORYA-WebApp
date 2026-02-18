@@ -171,11 +171,50 @@ export function DayGrid({
     );
   }
 
+  const scrollToMinute = (minute: number) => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const top = Math.max(0, minute * minuteHeight - hourHeight * 2);
+    node.scrollTo({ top, behavior: "smooth" });
+  };
+  const jumpTimes = [8, 12, 16, 20];
+
   return (
     <section className="rounded-2xl border border-white/10 bg-[rgba(6,10,20,0.88)] p-3 shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
       <div className="mb-2 px-1">
         <h2 className="text-sm font-semibold text-white">Agenda diária</h2>
         <p className="text-xs text-white/55">Slots de 15 minutos, altura proporcional por duração real e colunas por entidade.</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-white/65">
+          <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">Confirmado</span>
+          <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">Pendente</span>
+          <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">Cancelado/No-show</span>
+          <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
+          <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {jumpTimes.map((hour) => (
+              <button
+                key={`jump-hour-${hour}`}
+                type="button"
+                onClick={() => scrollToMinute(hour * 60)}
+                className="rounded-full border border-white/15 px-2 py-1 text-[10px] text-white/70 transition hover:border-white/30 hover:text-white"
+              >
+                {pad2(hour)}:00
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                const parts = getTimeParts(new Date(), timezone);
+                scrollToMinute(parts.hour * 60 + parts.minute);
+              }}
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+            >
+              Ir para agora
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10" data-virtual-ready="true">

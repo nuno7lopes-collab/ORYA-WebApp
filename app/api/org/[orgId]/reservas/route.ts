@@ -798,6 +798,7 @@ async function _POST(req: NextRequest) {
     const dateParts = getDateParts(startsAt, timezone);
     const dayStart = makeUtcDateFromLocal({ ...dateParts, hour: 0, minute: 0 }, timezone);
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
+    const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
 
     if (scopeIds.length === 0) {
       return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
@@ -839,7 +840,7 @@ async function _POST(req: NextRequest) {
       prisma.booking.findMany({
         where: {
           organizationId: service.organizationId,
-          startsAt: { lt: bookingEndsAt },
+          startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
@@ -847,15 +848,18 @@ async function _POST(req: NextRequest) {
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
-      prisma.classSession.findMany({
-        where: {
-          organizationId: service.organizationId,
-          status: "SCHEDULED",
-          startsAt: { lt: bookingEndsAt },
-          endsAt: { gt: startsAt },
-        },
-        select: { id: true, startsAt: true, endsAt: true, professionalId: true },
-      }),
+      assignmentMode === "PROFESSIONAL"
+        ? prisma.classSession.findMany({
+            where: {
+              organizationId: service.organizationId,
+              status: "SCHEDULED",
+              startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
+              endsAt: { gt: bookingWindowStart },
+              ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
+            },
+            select: { id: true, startsAt: true, endsAt: true, professionalId: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);

@@ -170,6 +170,21 @@ function formatLocalISODate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function formatIsoDateInTimezone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  const year = map.get("year");
+  const month = map.get("month");
+  const day = map.get("day");
+  if (!year || !month || !day) return formatLocalISODate(date);
+  return `${year}-${month}-${day}`;
+}
+
 function resolveServiceCover(coverImageUrl: string | null | undefined, seed: string | number) {
   return getEventCoverUrl(coverImageUrl, { seed, width: 900, quality: 72 });
 }
@@ -422,6 +437,12 @@ export default function ReservasBookingClient({
   const monthLabel = getMonthLabel(calendarMonth);
   const { days: calendarDays } = buildMonthDays(calendarMonth);
   const calendarMonthParam = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}`;
+  const todayIso = useMemo(() => formatIsoDateInTimezone(new Date(), timezone), [timezone]);
+  const tomorrowIso = useMemo(() => {
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    return formatIsoDateInTimezone(next, timezone);
+  }, [timezone]);
   const selectedStartsAt = bookingPending?.startsAt ?? selectedSlot?.startsAt ?? null;
   const selectedDate =
     selectedStartsAt && !Number.isNaN(new Date(selectedStartsAt).getTime())
@@ -765,6 +786,17 @@ export default function ReservasBookingClient({
     availabilityDays.forEach((day) => map.set(day.date, day));
     return map;
   }, [availabilityDays]);
+  const availableDays = useMemo(
+    () => availabilityDays.filter((day) => day.hasAvailability),
+    [availabilityDays],
+  );
+  const firstAvailableDayIso = availableDays[0]?.date ?? null;
+  const availableDaysCount = availableDays.length;
+  const availableSlotsCount = useMemo(
+    () => availableDays.reduce((total, day) => total + Math.max(0, day.slots ?? 0), 0),
+    [availableDays],
+  );
+  const selectedDayAvailability = selectedDay ? availabilityMap.get(selectedDay) ?? null : null;
 
   const loadDaySlots = (iso: string, options?: { force?: boolean }) => {
     if (!selectedServiceId) return;
@@ -821,6 +853,28 @@ export default function ReservasBookingClient({
           setSlotsLoading(false);
         }
       });
+  };
+
+  const jumpToDay = (iso: string) => {
+    const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return;
+    const next = new Date(year, month - 1, day);
+    if (Number.isNaN(next.getTime())) return;
+    setCalendarMonth(startOfMonth(next));
+    loadDaySlots(iso, { force: true });
+  };
+
+  const clearDaySelection = () => {
+    setSelectedDay(null);
+    setDaySlots([]);
+    setSlotsError(null);
+    if (!bookingPending) {
+      setSelectedSlot(null);
+    }
   };
 
   const startBookingCheckout = async (bookingId: number, method?: PaymentMethod) => {
@@ -1085,6 +1139,19 @@ export default function ReservasBookingClient({
     if (stepId === 4) return canAccessStep4;
     return false;
   };
+  const currentStepIndex = Math.max(0, stepItems.findIndex((step) => step.id === activeStep));
+  const progressPercent = Math.max(8, Math.round(((currentStepIndex + 1) / stepItems.length) * 100));
+  const currentStepLabel = stepItems[currentStepIndex]?.title ?? "Fluxo";
+  const currentStepGuidance =
+    activeStep === 1
+      ? "Escolhe o serviço para iniciar a reserva."
+      : activeStep === 2
+        ? requiresResource
+          ? "Define capacidade para mostrar horários válidos."
+          : "Escolhe o profissional ideal."
+        : activeStep === 3
+          ? "Seleciona dia e hora para criar a pré-reserva."
+          : "Confirma os dados e finaliza o pagamento.";
   const selectedCapacityLabel =
     selectedPartySize != null
       ? capacityOptions.find((opt) => opt.value === selectedPartySize)?.label ?? null
@@ -1307,6 +1374,20 @@ export default function ReservasBookingClient({
                   </button>
                 );
               })}
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-white/12 bg-white/5 p-3">
+              <div className="flex items-center justify-between gap-2 text-[11px] text-white/65">
+                <span>Progresso: {currentStepLabel}</span>
+                <span>{progressPercent}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#6BFFFF,#8AB4FF)] transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <p className="text-[12px] text-white/60">{currentStepGuidance}</p>
             </div>
           </div>
 
@@ -1569,6 +1650,47 @@ export default function ReservasBookingClient({
                   </div>
                 </div>
 
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className={ghostButtonClass}
+                      onClick={() => jumpToDay(todayIso)}
+                    >
+                      Hoje
+                    </button>
+                    <button
+                      type="button"
+                      className={ghostButtonClass}
+                      onClick={() => jumpToDay(tomorrowIso)}
+                    >
+                      Amanhã
+                    </button>
+                    <button
+                      type="button"
+                      className={ghostButtonClass}
+                      onClick={() => firstAvailableDayIso && jumpToDay(firstAvailableDayIso)}
+                      disabled={!firstAvailableDayIso}
+                    >
+                      Primeiro disponível
+                    </button>
+                    {selectedDay ? (
+                      <button
+                        type="button"
+                        className={ghostButtonClass}
+                        onClick={clearDaySelection}
+                      >
+                        Limpar dia
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="text-[11px] text-white/60">
+                    {selectedDay
+                      ? `${formatDayLabel(selectedDay, timezone)} · ${selectedDayAvailability?.slots ?? 0} horários`
+                      : `${availableDaysCount} dias com disponibilidade · ${availableSlotsCount} horários`}
+                  </p>
+                </div>
+
                 <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                   <div>
                     <div className="grid grid-cols-7 gap-2 text-[10px] text-white/50">
@@ -1623,6 +1745,18 @@ export default function ReservasBookingClient({
                           ? formatDayLabel(selectedDay, timezone)
                           : "Escolhe um dia"}
                       </h4>
+                      {selectedDay && daySlots.length > 0 && !slotsLoading ? (
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] text-white/60">{daySlots.length} horários carregados.</p>
+                          <button
+                            type="button"
+                            className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
+                            onClick={() => reserveSlot(daySlots[0])}
+                          >
+                            Escolher primeiro horário
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
 
                     {selectedService?.locationMode === "CHOOSE_AT_BOOKING" && (
@@ -1635,8 +1769,16 @@ export default function ReservasBookingClient({
                     )}
 
                     <div className="space-y-3">
-                      {slotsLoading && <p className="text-[12px] text-white/60">A carregar horários...</p>}
-                      {slotsError && <p className="text-[12px] text-red-200">{slotsError}</p>}
+                      {slotsLoading && (
+                        <p role="status" className="text-[12px] text-white/60">
+                          A carregar horários...
+                        </p>
+                      )}
+                      {slotsError && (
+                        <p role="alert" className="text-[12px] text-red-200">
+                          {slotsError}
+                        </p>
+                      )}
                       {!slotsLoading && !selectedDay && (
                         <p className="text-[12px] text-white/60">Escolhe um dia para ver horários.</p>
                       )}

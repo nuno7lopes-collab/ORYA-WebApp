@@ -487,7 +487,7 @@ async function _POST(
             where: {
               organizationId: service.organizationId,
               status: "SCHEDULED",
-              startsAt: { lt: bookingEndsAt },
+              startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
               endsAt: { gt: bookingWindowStart },
               ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
             },

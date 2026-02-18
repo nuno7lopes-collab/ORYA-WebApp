@@ -9,7 +9,6 @@ import { trackEvent } from "@/lib/analytics";
 import { formatCurrency } from "@/lib/i18n";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import type { GeoDetailsItem } from "@/lib/geo/types";
-import { computeMatchSlots } from "@/lib/padel/capacityRecommendation";
 import { Avatar } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ContextDrawer } from "@/components/ui/context-drawer";
@@ -259,6 +258,9 @@ type PadelPartnershipsResponse = {
 type PadelEventCategoryLink = {
   id: number;
   padelCategoryId: number | null;
+  format?: string | null;
+  capacityTeams?: number | null;
+  isEnabled?: boolean;
   category?: { id: number; label: string } | null;
 };
 
@@ -291,6 +293,33 @@ type PadelRoundsAdvanceResponse = {
     updatedAt?: string | null;
   } | null;
   error?: string;
+};
+
+type PadelFormatPlanCategoryResult = {
+  key: string;
+  categoryId: number | null;
+  label: string;
+  format: string;
+  teams: number;
+  minTeams: number;
+  matchesNeeded: number;
+  allocatedSlots: number;
+  recommendedMaxTeams: number;
+  hardCapMax: number | null;
+  queueEstimatedRounds: number | null;
+  feasible: boolean;
+};
+
+type PadelFormatPlanResult = {
+  feasible: boolean;
+  totalSlots: number;
+  matchesNeeded: number;
+  unscheduledMatches: number;
+  courtsUsed: number;
+  warnings: string[];
+  blockingReasons: string[];
+  alternatives: Array<{ type: string; summary: string }>;
+  categories: PadelFormatPlanCategoryResult[];
 };
 
 type CalendarBlock = {
@@ -1200,6 +1229,9 @@ export default function PadelHubClient({
   const [autoSchedulePreview, setAutoSchedulePreview] = useState<
     Array<{ matchId: number; courtId: number; start: string; end: string }> | null
   >(null);
+  const [autoSchedulePlan, setAutoSchedulePlan] = useState<PadelFormatPlanResult | null>(null);
+  const [autoSchedulePlanLoading, setAutoSchedulePlanLoading] = useState(false);
+  const [autoSchedulePlanError, setAutoSchedulePlanError] = useState<string | null>(null);
   const [roundOpsCategoryKey, setRoundOpsCategoryKey] = useState("global");
   const [roundOpsBusy, setRoundOpsBusy] = useState(false);
   const [roundOpsMessage, setRoundOpsMessage] = useState<string | null>(null);
@@ -3283,53 +3315,159 @@ export default function PadelHubClient({
     setRoundOpsError(null);
   }, [eventId, roundOpsCategoryKey]);
 
-  const autoScheduleCapacity = useMemo(() => {
+  useEffect(() => {
     const parseDate = (value: string | Date | null | undefined) => {
       if (!value) return null;
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? null : date;
     };
-    const windowStart = parseDate(autoScheduleForm.start) ?? parseDate(calendarEventStart);
-    const windowEnd = parseDate(autoScheduleForm.end) ?? parseDate(calendarEventEnd);
-    if (!windowStart || !windowEnd || windowEnd <= windowStart) return null;
-
+    const windowStartDate = parseDate(autoScheduleForm.start) ?? parseDate(calendarEventStart);
+    const windowEndDate = parseDate(autoScheduleForm.end) ?? parseDate(calendarEventEnd);
     const duration = Number(autoScheduleForm.duration);
     const buffer = Number(autoScheduleForm.buffer);
     const durationMinutes = Number.isFinite(duration) && duration > 0 ? duration : 60;
     const bufferMinutes = Number.isFinite(buffer) && buffer >= 0 ? buffer : calendarBuffer;
-
     const effectiveCourtIds =
       autoScheduleCourtIds.length > 0 ? autoScheduleCourtIds : autoScheduleCourtOptions.map((court) => court.id);
-    const courtsCount = effectiveCourtIds.length || padelConfig?.numberOfCourts || 0;
-    if (!courtsCount) return null;
+    const selectedCourtSet = new Set(effectiveCourtIds);
+    const orderedPriorities = autoScheduleCourtPriorityOrder.filter((courtId) => selectedCourtSet.has(courtId));
+    const normalizedPriorityOrder = [
+      ...orderedPriorities,
+      ...effectiveCourtIds.filter((courtId) => !orderedPriorities.includes(courtId)),
+    ];
 
-    const totalSlots = computeMatchSlots({
-      start: windowStart,
-      end: windowEnd,
-      courts: courtsCount,
+    if (
+      !eventId ||
+      !windowStartDate ||
+      !windowEndDate ||
+      windowEndDate <= windowStartDate ||
+      effectiveCourtIds.length === 0
+    ) {
+      setAutoSchedulePlan(null);
+      setAutoSchedulePlanError(null);
+      setAutoSchedulePlanLoading(false);
+      return;
+    }
+
+    const categoriesPayload = eventCategories
+      .filter((link) => link.isEnabled !== false)
+      .map((link) => {
+        const categoryId =
+          typeof link.padelCategoryId === "number"
+            ? link.padelCategoryId
+            : typeof link.category?.id === "number"
+              ? link.category.id
+              : null;
+        const teamsRaw = typeof link.capacityTeams === "number" ? link.capacityTeams : Number(link.capacityTeams);
+        const teams = Number.isFinite(teamsRaw) && teamsRaw > 0 ? Math.floor(teamsRaw) : 0;
+        if (!categoryId || teams <= 0) return null;
+        return {
+          categoryId,
+          label: link.category?.label ?? `Categoria #${categoryId}`,
+          teams,
+          format: typeof link.format === "string" ? link.format : tournamentFormatRaw ?? undefined,
+        };
+      })
+      .filter(
+        (entry): entry is { categoryId: number; label: string; teams: number; format: string | undefined } =>
+          Boolean(entry),
+      );
+    const confirmedPairingsRaw = Number(opsSummaryRes?.summary?.confirmedCount ?? 0);
+    const confirmedPairings = Number.isFinite(confirmedPairingsRaw) && confirmedPairingsRaw > 0
+      ? Math.floor(confirmedPairingsRaw)
+      : null;
+
+    const payload: Record<string, unknown> = {
+      eventId,
+      windowStart: windowStartDate.toISOString(),
+      windowEnd: windowEndDate.toISOString(),
       durationMinutes,
       bufferMinutes,
-    });
-    if (!totalSlots) return null;
-    return {
-      totalSlots,
-      matchesNeeded: calendarMatchesRaw.length,
-      courts: courtsCount,
+      courtIds: effectiveCourtIds,
+      courtPriorityOrder: normalizedPriorityOrder,
+    };
+    if (categoriesPayload.length > 0) {
+      payload.categories = categoriesPayload;
+    } else if (confirmedPairings) {
+      payload.teams = confirmedPairings;
+      payload.format = tournamentFormatRaw ?? undefined;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setAutoSchedulePlanLoading(true);
+      setAutoSchedulePlanError(null);
+      try {
+        const res = await fetch("/api/padel/formats/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          if (!controller.signal.aborted) {
+            setAutoSchedulePlan(null);
+            setAutoSchedulePlanError(sanitizeUiErrorMessage(json?.error, "Planner de capacidade indisponível."));
+          }
+          return;
+        }
+        const plan = json?.plan;
+        if (!controller.signal.aborted) {
+          setAutoSchedulePlan(plan && typeof plan === "object" ? (plan as PadelFormatPlanResult) : null);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setAutoSchedulePlan(null);
+        setAutoSchedulePlanError("Erro ao calcular capacidade por formato.");
+      } finally {
+        if (!controller.signal.aborted) setAutoSchedulePlanLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [
-    autoScheduleForm.start,
-    autoScheduleForm.end,
-    autoScheduleForm.duration,
-    autoScheduleForm.buffer,
-    calendarEventStart,
-    calendarEventEnd,
-    calendarBuffer,
-    calendarMatchesRaw.length,
-    padelConfig?.advancedSettings,
-    padelConfig?.numberOfCourts,
     autoScheduleCourtIds,
     autoScheduleCourtOptions,
+    autoScheduleCourtPriorityOrder,
+    autoScheduleForm.buffer,
+    autoScheduleForm.duration,
+    autoScheduleForm.end,
+    autoScheduleForm.start,
+    calendarBuffer,
+    calendarEventEnd,
+    calendarEventStart,
+    eventCategories,
+    eventId,
+    opsSummaryRes?.summary?.confirmedCount,
+    tournamentFormatRaw,
   ]);
+
+  const autoScheduleCapacity = useMemo(() => {
+    if (!autoSchedulePlan) return null;
+    return {
+      totalSlots: autoSchedulePlan.totalSlots,
+      matchesNeeded: autoSchedulePlan.matchesNeeded,
+      courts: autoSchedulePlan.courtsUsed,
+      unscheduledMatches: autoSchedulePlan.unscheduledMatches,
+    };
+  }, [autoSchedulePlan]);
+
+  const autoSchedulePlanAlternatives = useMemo(() => {
+    if (!autoSchedulePlan || !Array.isArray(autoSchedulePlan.alternatives)) return [];
+    return autoSchedulePlan.alternatives
+      .map((item) => item?.summary)
+      .filter((summary): summary is string => typeof summary === "string" && summary.trim().length > 0);
+  }, [autoSchedulePlan]);
+
+  const autoSchedulePlanBlocking = useMemo(() => {
+    if (!autoSchedulePlan || !Array.isArray(autoSchedulePlan.blockingReasons)) return [];
+    return autoSchedulePlan.blockingReasons;
+  }, [autoSchedulePlan]);
+
   const [selectedDay, setSelectedDay] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -3798,10 +3936,19 @@ export default function PadelHubClient({
 
       const scheduledCount = Number(json?.scheduledCount ?? 0);
       const skippedCount = Number(json?.skippedCount ?? 0);
+      const unscheduledByReason =
+        json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
+          ? (json.unscheduledByReason as Record<string, unknown>)
+          : null;
+      const unscheduledSummary = unscheduledByReason
+        ? Object.entries(unscheduledByReason)
+            .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
+            .join(" · ")
+        : "";
       const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       if (skippedCount > 0) {
-        setCalendarWarning(summary);
+        setCalendarWarning(unscheduledSummary ? `${summary} ${unscheduledSummary}` : summary);
         toast("Auto-agendamento parcial", "warn");
       } else {
         setCalendarMessage(summary);
@@ -3874,11 +4021,20 @@ export default function PadelHubClient({
       }
       const scheduledCount = Number(json?.scheduledCount ?? 0);
       const skippedCount = Number(json?.skippedCount ?? 0);
+      const unscheduledByReason =
+        json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
+          ? (json.unscheduledByReason as Record<string, unknown>)
+          : null;
+      const unscheduledSummary = unscheduledByReason
+        ? Object.entries(unscheduledByReason)
+            .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
+            .join(" · ")
+        : "";
       const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       setAutoSchedulePreview(Array.isArray(json?.scheduled) ? json.scheduled : []);
       if (skippedCount > 0) {
-        setCalendarWarning(summary);
+        setCalendarWarning(unscheduledSummary ? `${summary} ${unscheduledSummary}` : summary);
         toast("Simulação parcial", "warn");
       } else {
         setCalendarMessage(summary);
@@ -4451,7 +4607,7 @@ export default function PadelHubClient({
               <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
                 {[
                   { key: "complete", label: "Completo" },
-                  { key: "games", label: "Jogos" },
+                  { key: "games", label: "Jogos do torneio" },
                 ].map((opt) => (
                   <button
                     key={opt.key}
@@ -5184,11 +5340,39 @@ export default function PadelHubClient({
                   Este formato não usa eliminatórias; a prioridade de eliminatórias pode não ter efeito.
                 </p>
               )}
-              {autoScheduleCapacity && autoScheduleCapacity.matchesNeeded > autoScheduleCapacity.totalSlots && (
+              {autoSchedulePlanLoading && (
+                <p className="text-[11px] text-white/60">A calcular viabilidade por formato...</p>
+              )}
+              {autoSchedulePlanError && (
                 <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                  Capacidade recomendada (estimativa): {autoScheduleCapacity.matchesNeeded} jogos para ~
-                  {autoScheduleCapacity.totalSlots} slots ({autoScheduleCapacity.courts} campos). Ajusta janela,
-                  duração ou campos se quiseres mais folga. Este aviso não bloqueia.
+                  {autoSchedulePlanError}
+                </div>
+              )}
+              {autoScheduleCapacity && (
+                <div
+                  className={`rounded-lg border px-3 py-2 text-[12px] ${
+                    autoScheduleCapacity.unscheduledMatches > 0
+                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
+                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+                  }`}
+                >
+                  Slots {autoScheduleCapacity.totalSlots} · Jogos necessários {autoScheduleCapacity.matchesNeeded} ·
+                  Em falta {Math.max(0, autoScheduleCapacity.unscheduledMatches)} · Campos {autoScheduleCapacity.courts}.
+                  {autoScheduleCapacity.unscheduledMatches > 0 && (
+                    <span className="block mt-1 text-[11px] opacity-90">
+                      Ajusta janela/campos ou reduz carga por formato.
+                    </span>
+                  )}
+                  {autoSchedulePlanBlocking.length > 0 && (
+                    <span className="block mt-1 text-[11px] opacity-90">
+                      Bloqueios técnicos: {autoSchedulePlanBlocking.join(" · ")}.
+                    </span>
+                  )}
+                  {autoSchedulePlanAlternatives.length > 0 && (
+                    <span className="block mt-1 text-[11px] opacity-90">
+                      Alternativas: {autoSchedulePlanAlternatives.slice(0, 2).join(" · ")}.
+                    </span>
+                  )}
                 </div>
               )}
               {calendarEventStart && calendarEventEnd && (
@@ -5237,7 +5421,10 @@ export default function PadelHubClient({
               )}
               {!eventId && <p className="text-[12px] text-white/55">Falta eventId no URL.</p>}
             </div>
-            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0d1a33]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
+            <div
+              id="round-ops"
+              className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0d1a33]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]"
+            >
               <p className="text-sm font-semibold text-white">Operação por rondas</p>
               <p className="text-[12px] text-white/65">
                 Avança rondas com geração incremental e auto-agendamento imediato.

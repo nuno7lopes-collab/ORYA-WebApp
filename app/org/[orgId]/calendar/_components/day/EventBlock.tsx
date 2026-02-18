@@ -80,6 +80,8 @@ export function EventBlock({ positioned, timezone, selected = false, onHoverEven
         }
       }}
       role="button"
+      aria-pressed={selected}
+      aria-label={`${positioned.event.title} ${formatTime(start, timezone)}-${formatTime(end, timezone)} ${status}`}
       tabIndex={0}
     >
       <p className="truncate font-semibold leading-tight">{positioned.event.title}</p>
