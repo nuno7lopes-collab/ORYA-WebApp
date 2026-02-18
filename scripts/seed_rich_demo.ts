@@ -13,6 +13,19 @@ const RNG_SEED = "orya-rich-demo-v1";
 const rng = seedrandom(RNG_SEED);
 
 const now = new Date();
+const FAST_MODE = process.env.SEED_FAST === "1";
+const SEED_VOLUME = {
+  standardEvents: FAST_MODE ? 12 : 20,
+  tournaments: FAST_MODE ? 12 : 20,
+  storeOrders: FAST_MODE ? 12 : 20,
+  bookingDays: FAST_MODE ? 18 : 30,
+  bookingsPerDay: FAST_MODE ? 3 : 4,
+  followMin: FAST_MODE ? 12 : 18,
+  followMax: FAST_MODE ? 22 : 32,
+  orgFollowMin: FAST_MODE ? 2 : 2,
+  orgFollowMax: FAST_MODE ? 3 : 4,
+  chatBaseMessages: FAST_MODE ? 7 : 9,
+};
 
 const maleFirstNames = [
   "Joao",
@@ -398,7 +411,7 @@ async function runSeedAnalyticsRollup(params: {
   const toIso = toDate.toISOString().slice(0, 10);
 
   type RollupRow = {
-    bucket_date: string;
+    bucket_date: string | Date;
     source_type: SourceType;
     currency: string;
     gross: number;
@@ -430,7 +443,11 @@ async function runSeedAnalyticsRollup(params: {
 
   let rollups = 0;
   for (const row of rows) {
-    const bucketDate = new Date(`${row.bucket_date}T00:00:00.000Z`);
+    const bucketDate =
+      row.bucket_date instanceof Date
+        ? new Date(Date.UTC(row.bucket_date.getUTCFullYear(), row.bucket_date.getUTCMonth(), row.bucket_date.getUTCDate()))
+        : new Date(`${row.bucket_date}T00:00:00.000Z`);
+    if (Number.isNaN(bucketDate.getTime())) continue;
     const metrics: Array<[AnalyticsMetricKey, number]> = [
       [AnalyticsMetricKey.GROSS, Number(row.gross || 0)],
       [AnalyticsMetricKey.PLATFORM_FEES, Number(row.platform_fees || 0)],
@@ -534,6 +551,24 @@ function buildSeedUsers(targetCount: number): SeedUser[] {
     });
   }
   return users;
+}
+
+function buildDemoFriendUser(): SeedUser {
+  const fallbackEmail = "Rodrigomagalhaesferreira@gmail.com";
+  const rawEmail = (process.env.SEED_DEMO_FRIEND_EMAIL ?? fallbackEmail).trim().toLowerCase();
+  const rawUsername = slugify(process.env.SEED_DEMO_FRIEND_USERNAME ?? "rodri");
+  const rawFullName = (process.env.SEED_DEMO_FRIEND_FULL_NAME ?? "Rodrigo Magalhaes Ferreira").trim();
+  const rawPassword = process.env.SEED_DEMO_FRIEND_PASSWORD ?? "rodri";
+
+  return {
+    email: rawEmail.length > 0 ? rawEmail : fallbackEmail.toLowerCase(),
+    username: rawUsername.length > 0 ? rawUsername : "rodri",
+    fullName: rawFullName.length > 0 ? rawFullName : "Rodrigo Magalhaes Ferreira",
+    password: rawPassword.length > 0 ? rawPassword : "rodri",
+    gender: "MALE",
+    avatarUrl: null,
+    isStaff: false,
+  };
 }
 
 async function ensureOrganization(
@@ -686,7 +721,9 @@ async function main() {
       throw new Error("Missing required base profiles @nuno and/or @migueloryatest");
     }
 
+    const demoFriendUser = buildDemoFriendUser();
     const generatedUsers = buildSeedUsers(98);
+    generatedUsers[0] = demoFriendUser;
     const seedAuthBootstrap = process.env.SEED_CREATE_AUTH === "1";
     let seededUserIds: string[] = [];
 
@@ -700,8 +737,10 @@ async function main() {
 
       for (const user of generatedUsers) {
         const existingId = authByEmail.get(user.email.toLowerCase());
+        const shouldSyncAuth =
+          process.env.SEED_SYNC_AUTH === "1" || user.email.toLowerCase() === demoFriendUser.email.toLowerCase();
         if (existingId) {
-          if (process.env.SEED_SYNC_AUTH === "1") {
+          if (shouldSyncAuth) {
             await supabase.auth.admin.updateUserById(existingId, {
               email_confirm: true,
               password: user.password,
@@ -769,6 +808,19 @@ async function main() {
         );
       }
 
+      const demoProfile = await prisma.profile.findUnique({
+        where: { username: demoFriendUser.username },
+        select: { id: true, username: true },
+      });
+      if (!demoProfile) {
+        throw new Error(
+          `Missing demo profile @${demoFriendUser.username}. Run with SEED_CREATE_AUTH=1 once to bootstrap auth+profiles.`,
+        );
+      }
+      if (!existingSeedProfiles.some((profile) => profile.id === demoProfile.id)) {
+        existingSeedProfiles.push(demoProfile);
+      }
+
       seededUserIds = existingSeedProfiles.map((profile) => profile.id);
       for (const profile of existingSeedProfiles) {
         if (profile.username) {
@@ -791,6 +843,12 @@ async function main() {
       gender: (p.gender as SeedGender | null) ?? "MALE",
       avatarUrl: p.avatarUrl,
     }));
+    const rodriUser =
+      allUsers.find((u) => u.id === demoFriendUser.id) ??
+      allUsers.find((u) => u.username.toLowerCase() === demoFriendUser.username.toLowerCase());
+    if (!rodriUser) {
+      throw new Error(`Missing demo friend user @${demoFriendUser.username} in seed user pool.`);
+    }
 
     const topPadelOrg = await ensureOrganization(prisma, {
       username: "top_padel",
@@ -835,7 +893,24 @@ async function main() {
       await prisma.profile.update({ where: { id: profile.id }, data: { activeOrganizationId: topPadelOrg.id } });
     }
 
-    const staffUsers = allUsers.filter((u) => u.id !== miguelProfile.id).slice(0, 10);
+    await prisma.organizationGroupMember.upsert({
+      where: {
+        groupId_userId: {
+          groupId: topPadelOrg.groupId,
+          userId: rodriUser.id,
+        },
+      },
+      update: { role: "CO_OWNER", scopeAllOrgs: true, scopeOrgIds: [] },
+      create: {
+        groupId: topPadelOrg.groupId,
+        userId: rodriUser.id,
+        role: "CO_OWNER",
+        scopeAllOrgs: true,
+        scopeOrgIds: [],
+      },
+    });
+
+    const staffUsers = allUsers.filter((u) => u.id !== miguelProfile.id && u.id !== rodriUser.id).slice(0, 10);
     await prisma.organizationGroupMember.createMany({
       data: staffUsers.map((u) => ({
         groupId: topPadelOrg.groupId,
@@ -911,6 +986,13 @@ async function main() {
         {
           padelClubId: topClub.id,
           userId: miguelProfile.id,
+          role: "ADMIN_CLUBE",
+          inheritToEvents: true,
+          isActive: true,
+        },
+        {
+          padelClubId: topClub.id,
+          userId: rodriUser.id,
           role: "ADMIN_CLUBE",
           inheritToEvents: true,
           isActive: true,
@@ -1099,15 +1181,16 @@ async function main() {
     const standardEventSoldTargets = [25, 20, 18, 12, 10, 8, 7, 6, 5, 4, 3, 3, 2, 2, 1, 1, 0, 0, 4, 5];
     const forcedSoldOutEventIndexes = new Set([0, 2, 4]);
     const standardEvents = [] as Array<{ id: number; organizationId: number; startsAt: Date }>;
+    const topPadelStandardEventCount = Math.min(12, SEED_VOLUME.standardEvents);
     console.log("[seed] building standard events...");
 
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < SEED_VOLUME.standardEvents; i += 1) {
       if (i % 5 === 0) {
-        console.log(`[seed] standard events progress ${i + 1}/20`);
+        console.log(`[seed] standard events progress ${i + 1}/${SEED_VOLUME.standardEvents}`);
       }
       const city = cityPool[i % cityPool.length];
       const address = await upsertAddress(prisma, `${city.address}, Portugal`, city.lat, city.lng);
-      const org = i < 12 ? topPadelOrg : extraOrgs[i % extraOrgs.length];
+      const org = i < topPadelStandardEventCount ? topPadelOrg : extraOrgs[i % extraOrgs.length];
       const ownerUserId = org.ownerUserId;
       const startsAt = i < 5 ? plusDays(now, -40 + i * 7) : plusDays(now, 4 + (i - 5) * 5);
       const endsAt = plusMinutes(startsAt, 240 + randInt(0, 180));
@@ -1480,11 +1563,12 @@ async function main() {
       winnerSide: "A" | "B";
       participantBySide: { A: number[]; B: number[] };
     }> = [];
+    const topPadelTournamentSeedCount = Math.min(10, SEED_VOLUME.tournaments);
 
     console.log("[seed] building tournaments and pairings...");
-    for (let i = 0; i < 20; i += 1) {
-      console.log(`[seed] tournament progress ${i + 1}/20`);
-      const org = i < 10 ? topPadelOrg : extraOrgs[i % extraOrgs.length];
+    for (let i = 0; i < SEED_VOLUME.tournaments; i += 1) {
+      console.log(`[seed] tournament progress ${i + 1}/${SEED_VOLUME.tournaments}`);
+      const org = i < topPadelTournamentSeedCount ? topPadelOrg : extraOrgs[i % extraOrgs.length];
       const categories = await ensureCategoriesForOrg(org.id);
       const category = categories[i % categories.length];
       const city = cityPool[(i + 4) % cityPool.length];
@@ -2038,8 +2122,8 @@ async function main() {
       });
     }
 
-    const bookingDays = 30;
-    const bookingsPerDay = 4;
+    const bookingDays = SEED_VOLUME.bookingDays;
+    const bookingsPerDay = SEED_VOLUME.bookingsPerDay;
     const services = [serviceCourt, serviceClass, serviceHybrid];
 
     for (let day = -7; day <= bookingDays; day += 1) {
@@ -2166,7 +2250,7 @@ async function main() {
       "Fecho financeiro parcial atualizado no CRM.",
     ];
 
-    const staffAndOwner = [miguelProfile.id, ...staffUsers.map((s) => s.id)];
+    const staffAndOwner = [miguelProfile.id, rodriUser.id, ...staffUsers.map((s) => s.id)];
 
     for (let groupIndex = 0; groupIndex < chatGroups.length; groupIndex += 1) {
       const convo = await prisma.chatConversation.create({
@@ -2191,11 +2275,11 @@ async function main() {
       ];
 
       await prisma.chatConversationMember.createMany({
-        data: members.map((memberId, index) => ({
+        data: members.map((memberId) => ({
           conversationId: convo.id,
           organizationId: topPadelOrg.id,
           userId: memberId,
-          role: index === 0 ? "ADMIN" : "MEMBER",
+          role: memberId === miguelProfile.id || memberId === rodriUser.id ? "ADMIN" : "MEMBER",
           displayAs: "ORGANIZATION",
         })),
         skipDuplicates: true,
@@ -2204,7 +2288,7 @@ async function main() {
       let lastMessageId: string | null = null;
       let lastMessageAt: Date | null = null;
 
-      const msgCount = 9 + (groupIndex % 3);
+      const msgCount = SEED_VOLUME.chatBaseMessages + (groupIndex % 3);
       for (let m = 0; m < msgCount; m += 1) {
         const senderId = members[(m + groupIndex) % members.length];
         const createdAt = plusMinutes(plusDays(now, -12 + groupIndex), m * 23 + groupIndex * 7);
@@ -2232,6 +2316,77 @@ async function main() {
         },
       });
     }
+
+    const leadershipDm = await prisma.chatConversation.create({
+      data: {
+        organizationId: topPadelOrg.id,
+        type: "DIRECT",
+        contextType: "ORG_CONTACT",
+        contextId: `seed_org_contact_${[miguelProfile.id, rodriUser.id].sort().join("_")}`,
+        title: "Direcao Top Padel",
+        description: "Conversa privada entre owner e co-owner",
+        createdByUserId: miguelProfile.id,
+        openAt: plusDays(now, -8),
+      },
+    });
+
+    await prisma.chatConversationMember.createMany({
+      data: [
+        {
+          conversationId: leadershipDm.id,
+          organizationId: topPadelOrg.id,
+          userId: miguelProfile.id,
+          role: "ADMIN",
+          displayAs: "ORGANIZATION",
+        },
+        {
+          conversationId: leadershipDm.id,
+          organizationId: topPadelOrg.id,
+          userId: rodriUser.id,
+          role: "ADMIN",
+          displayAs: "ORGANIZATION",
+        },
+      ],
+      skipDuplicates: true,
+    });
+
+    const leadershipMessages = [
+      { senderId: miguelProfile.id, body: "Bem-vindo a co-gestao da Top Padel, vamos alinhar agenda semanal." },
+      { senderId: rodriUser.id, body: "Perfeito. Ja revi o calendario de reservas e canais internos." },
+      { senderId: miguelProfile.id, body: "Prioridade de hoje: experiencia mobile e resposta rapida no chat." },
+      { senderId: rodriUser.id, body: "Feito. Vou acompanhar suporte e feedback dos jogadores em tempo real." },
+      { senderId: miguelProfile.id, body: "Tambem valida os highlights do torneio para publicar ainda hoje." },
+      { senderId: rodriUser.id, body: "Combinado. Envio um resumo de operacao no final do dia." },
+    ];
+
+    let leadershipLastMessageId: string | null = null;
+    let leadershipLastMessageAt: Date | null = null;
+    for (let index = 0; index < leadershipMessages.length; index += 1) {
+      const message = leadershipMessages[index]!;
+      const createdAt = plusMinutes(plusDays(now, -6), index * 38);
+      const created = await prisma.chatConversationMessage.create({
+        data: {
+          conversationId: leadershipDm.id,
+          organizationId: topPadelOrg.id,
+          senderId: message.senderId,
+          body: message.body,
+          clientMessageId: `seed_lead_dm_${index + 1}_${message.senderId.slice(0, 6)}`,
+          kind: "TEXT",
+          metadata: { seed: true, thread: "leadership" },
+          createdAt,
+        },
+      });
+      leadershipLastMessageId = created.id;
+      leadershipLastMessageAt = createdAt;
+    }
+
+    await prisma.chatConversation.update({
+      where: { id: leadershipDm.id },
+      data: {
+        lastMessageId: leadershipLastMessageId,
+        lastMessageAt: leadershipLastMessageAt,
+      },
+    });
 
     await prisma.store.deleteMany({ where: { ownerOrganizationId: topPadelOrg.id } });
     const store = await prisma.store.create({
@@ -2377,7 +2532,7 @@ async function main() {
       { product: racket, variant: racketVariant },
     ];
 
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < SEED_VOLUME.storeOrders; i += 1) {
       const buyer = allUsers[(i * 7 + 11) % allUsers.length];
       const item = storeProducts[i % storeProducts.length];
       const quantity = i % 4 === 0 ? 2 : 1;
@@ -2907,19 +3062,32 @@ async function main() {
 
     const followRows: Array<{ follower_id: string; following_id: string }> = [];
     const followSet = new Set<string>();
+    const addFollow = (followerId: string, followingId: string) => {
+      if (followerId === followingId) return;
+      const key = `${followerId}:${followingId}`;
+      if (followSet.has(key)) return;
+      followSet.add(key);
+      followRows.push({ follower_id: followerId, following_id: followingId });
+    };
+
     for (const user of allUsers) {
-      const targetCount = randInt(18, 32);
+      const targetCount = randInt(SEED_VOLUME.followMin, SEED_VOLUME.followMax);
       let attempts = 0;
       while (attempts < targetCount * 4) {
         attempts += 1;
         const candidate = pick(allUsers);
-        if (candidate.id === user.id) continue;
-        const key = `${user.id}:${candidate.id}`;
-        if (followSet.has(key)) continue;
-        followSet.add(key);
-        followRows.push({ follower_id: user.id, following_id: candidate.id });
+        addFollow(user.id, candidate.id);
         if (followRows.length % 50 === 0 && followRows.length >= targetCount) break;
       }
+    }
+
+    const nonRodriUsers = allUsers.filter((u) => u.id !== rodriUser.id);
+    const rodriTargetCap = Math.min(42, nonRodriUsers.length);
+    for (const target of nonRodriUsers.slice(0, rodriTargetCap)) {
+      addFollow(rodriUser.id, target.id);
+    }
+    for (const follower of nonRodriUsers.slice(Math.max(0, rodriTargetCap - 24), rodriTargetCap + 12)) {
+      addFollow(follower.id, rodriUser.id);
     }
 
     await prisma.follows.createMany({ data: followRows, skipDuplicates: true });
@@ -2927,7 +3095,7 @@ async function main() {
     const orgFollowRows: Array<{ follower_id: string; organization_id: number }> = [];
     for (const user of allUsers) {
       const followed = new Set<number>();
-      const followsCount = randInt(2, 4);
+      const followsCount = randInt(SEED_VOLUME.orgFollowMin, SEED_VOLUME.orgFollowMax);
       for (let i = 0; i < followsCount; i += 1) {
         const org = pick(organizations);
         followed.add(org.id);
@@ -2936,6 +3104,9 @@ async function main() {
       for (const orgId of followed) {
         orgFollowRows.push({ follower_id: user.id, organization_id: orgId });
       }
+    }
+    for (const org of organizations) {
+      orgFollowRows.push({ follower_id: rodriUser.id, organization_id: org.id });
     }
 
     await prisma.organization_follows.createMany({ data: orgFollowRows, skipDuplicates: true });
@@ -2959,7 +3130,7 @@ async function main() {
       const totalSpent = userPurchases.reduce((sum, row) => sum + row.amountCents, 0);
       const totalStoreOrders = userPurchases.filter((p) => p.sourceType === "STORE_ORDER").length;
       const totalEventOrders = userPurchases.filter((p) => p.sourceType === "EVENT_TICKET").length;
-      const isStaffContact = staffUsers.some((s) => s.id === user.id) || user.id === miguelProfile.id;
+      const isStaffContact = staffUsers.some((s) => s.id === user.id) || user.id === miguelProfile.id || user.id === rodriUser.id;
       const marketingEmailOptIn = maybe(0.84);
       const marketingPushOptIn = maybe(0.78);
       const contactPhone = `+35191${String(2000000 + userIndex).padStart(7, "0")}`;
@@ -3445,8 +3616,15 @@ async function main() {
 
     console.log("\\nSeed rich demo completed.");
     console.table(counts);
+    console.log("Seed mode:", FAST_MODE ? "FAST" : "FULL");
     console.log("Top Padel organization id:", topPadelOrg.id);
+    console.log("Top Padel leadership:", { owner: "migueloryatest", coOwner: rodriUser.username });
     console.log("RNG seed:", RNG_SEED);
+    console.log("Demo login:", {
+      email: demoFriendUser.email,
+      username: demoFriendUser.username,
+      password: demoFriendUser.password,
+    });
   } finally {
     await prisma.$disconnect();
     await pool.end();

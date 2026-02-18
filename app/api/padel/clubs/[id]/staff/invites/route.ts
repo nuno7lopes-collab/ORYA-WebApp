@@ -168,21 +168,32 @@ async function _GET(req: NextRequest) {
 
   const viewerEmail = normalizeEmail(ctx.user.email ?? null);
   const viewerUsername = ctx.profile?.username?.trim().toLowerCase() ?? null;
+  const viewerInviteClauses: Prisma.PadelClubStaffInviteWhereInput[] = [
+    { targetUserId: ctx.user.id },
+    ...(viewerEmail
+      ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+      : []),
+    ...(viewerUsername
+      ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+      : []),
+  ];
+
+  if (!ctx.canManage && !ctx.canView) {
+    const inviteForViewer = await prisma.padelClubStaffInvite.findFirst({
+      where: { padelClubId: ctx.club.id, OR: viewerInviteClauses },
+      select: { id: true },
+    });
+    if (!inviteForViewer) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+  }
 
   const where: Prisma.PadelClubStaffInviteWhereInput = {
     padelClubId: ctx.club.id,
     ...(ctx.canManage
       ? {}
       : {
-          OR: [
-            { targetUserId: ctx.user.id },
-            ...(viewerEmail
-              ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
-              : []),
-            ...(viewerUsername
-              ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
-              : []),
-          ],
+          OR: viewerInviteClauses,
         }),
   };
 

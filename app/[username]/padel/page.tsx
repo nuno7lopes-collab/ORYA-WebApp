@@ -52,6 +52,30 @@ function formatDateTimeLabel(date?: Date | null) {
   }).format(date);
 }
 
+function formatRemainingTime(ms?: number | null) {
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
+  if (ms <= 0) return "expirado";
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${Math.max(1, totalMinutes)} min`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+function resolvePlayerAttentionLabel(params: {
+  reason: "SUBMIT_RESULT" | "AWAITING_CONFIRMATION" | "CONFIRMATION_EXPIRED" | "REVIEW_EXPIRED" | "DISPUTED" | "MATCH_LIVE";
+  pendingConfirmationMsRemaining?: number | null;
+}) {
+  if (params.reason === "SUBMIT_RESULT") return "Submeter resultado";
+  if (params.reason === "MATCH_LIVE") return "Jogo ao vivo";
+  if (params.reason === "DISPUTED") return "Disputa aberta";
+  if (params.reason === "REVIEW_EXPIRED") return "Revisão pendente";
+  if (params.reason === "CONFIRMATION_EXPIRED") return "Confirmação expirada";
+  const remaining = formatRemainingTime(params.pendingConfirmationMsRemaining);
+  return remaining ? `Aguardar confirmação (${remaining})` : "Aguardar confirmação";
+}
+
 function resolveMatchDate(match: {
   startTime?: Date | null;
   plannedStartAt?: Date | null;
@@ -557,6 +581,87 @@ export default async function PadelProfilePage({ params }: PageProps) {
   } catch {
     // ignore
   }
+  const padelOperationalSummary = padelMatches.reduce(
+    (acc, match) => {
+      acc.total += 1;
+      if (match.status === "IN_PROGRESS") acc.liveNow += 1;
+      if (match.status === "PENDING_CONFIRMATION") acc.pendingConfirmation += 1;
+      if (match.status === "PENDING_REVIEW_EXPIRED") acc.pendingReviewExpired += 1;
+      if (match.status === "DISPUTED") acc.disputed += 1;
+      const canSubmit =
+        match.event.playerResultSubmissionEnabled &&
+        !["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED", "OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"].includes(
+          match.status,
+        );
+      if (canSubmit) acc.actionable += 1;
+      return acc;
+    },
+    {
+      total: 0,
+      liveNow: 0,
+      pendingConfirmation: 0,
+      pendingReviewExpired: 0,
+      disputed: 0,
+      actionable: 0,
+    },
+  );
+  const padelAttentionMatches = padelMatches
+    .map((match) => {
+      const workflow =
+        match.score?.liveWorkflow && typeof match.score.liveWorkflow === "object" && !Array.isArray(match.score.liveWorkflow)
+          ? (match.score.liveWorkflow as Record<string, unknown>)
+          : null;
+      const pendingConfirmationExpiresAtRaw =
+        workflow && typeof workflow.pendingConfirmationExpiresAt === "string" ? workflow.pendingConfirmationExpiresAt : null;
+      const pendingConfirmationExpiresAt = pendingConfirmationExpiresAtRaw ? new Date(pendingConfirmationExpiresAtRaw) : null;
+      const pendingConfirmationMsRemaining =
+        pendingConfirmationExpiresAt && Number.isFinite(pendingConfirmationExpiresAt.getTime())
+          ? pendingConfirmationExpiresAt.getTime() - Date.now()
+          : null;
+      const canSubmit =
+        match.event.playerResultSubmissionEnabled &&
+        !["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED", "OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"].includes(match.status);
+      const attentionReason = canSubmit
+        ? "SUBMIT_RESULT"
+        : match.status === "PENDING_CONFIRMATION"
+          ? pendingConfirmationMsRemaining != null && pendingConfirmationMsRemaining <= 0
+            ? "CONFIRMATION_EXPIRED"
+            : "AWAITING_CONFIRMATION"
+          : match.status === "PENDING_REVIEW_EXPIRED"
+            ? "REVIEW_EXPIRED"
+            : match.status === "DISPUTED"
+              ? "DISPUTED"
+              : match.status === "IN_PROGRESS"
+                ? "MATCH_LIVE"
+                : null;
+      if (!attentionReason) return null;
+      const priority =
+        attentionReason === "CONFIRMATION_EXPIRED" || attentionReason === "REVIEW_EXPIRED"
+          ? 1
+          : attentionReason === "DISPUTED"
+            ? 2
+            : attentionReason === "AWAITING_CONFIRMATION"
+              ? 3
+              : attentionReason === "MATCH_LIVE"
+                ? 4
+                : 5;
+      return {
+        id: match.id,
+        eventTitle: match.event.title,
+        eventSlug: match.event.slug,
+        status: match.status,
+        startAt: match.startAt,
+        attentionReason,
+        pendingConfirmationMsRemaining,
+        priority,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return (a.startAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (b.startAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
+    })
+    .slice(0, 6);
 
   const padelStats: PadelStats = {
     matches: 0,
@@ -1183,6 +1288,67 @@ export default async function PadelProfilePage({ params }: PageProps) {
                   <p className="text-[12px] text-white/70">Próximos jogos e últimos resultados.</p>
                 </div>
               </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-50">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-100/85">Live</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.liveNow}</p>
+                </div>
+                <div className="rounded-xl border border-sky-300/30 bg-sky-500/10 px-3 py-2 text-[12px] text-sky-50">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-sky-100/85">Pend. conf.</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.pendingConfirmation}</p>
+                </div>
+                <div className="rounded-xl border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-50">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-rose-100/85">Pend. exp.</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.pendingReviewExpired}</p>
+                </div>
+                <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-50">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-amber-100/85">Disputa</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.disputed}</p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-[12px] text-white">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-white/70">Ação jogador</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.actionable}</p>
+                </div>
+                <div className="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-[12px] text-white/85">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-white/60">Total analisado</p>
+                  <p className="mt-1 text-xl font-semibold">{padelOperationalSummary.total}</p>
+                </div>
+              </div>
+              {isOwner && (
+                <div className="mt-4 rounded-2xl border border-amber-300/25 bg-amber-500/10 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-amber-100/85">Fila de atenção (jogador)</p>
+                    <p className="text-[11px] text-amber-100/75">{padelAttentionMatches.length} item(ns)</p>
+                  </div>
+                  {padelAttentionMatches.length === 0 && (
+                    <p className="mt-2 text-[12px] text-amber-100/70">Sem ações pendentes para já.</p>
+                  )}
+                  {padelAttentionMatches.length > 0 && (
+                    <div className="mt-3 grid gap-2">
+                      {padelAttentionMatches.map((item) => (
+                        <Link
+                          key={`attention-${item.id}`}
+                          href={item.eventSlug ? `/eventos/${item.eventSlug}/calendario` : `/${profileHandle}/padel`}
+                          className="rounded-xl border border-amber-100/20 bg-black/30 px-3 py-2 text-[12px] text-amber-50/95 hover:bg-black/40"
+                        >
+                          <p className="font-semibold text-amber-50">{item.eventTitle || "Torneio"}</p>
+                          <p className="text-[11px] text-amber-100/80">
+                            {resolvePlayerAttentionLabel({
+                              reason: item.attentionReason,
+                              pendingConfirmationMsRemaining: item.pendingConfirmationMsRemaining,
+                            })}
+                            {" · "}
+                            {formatMatchStatusLabel(item.status)}
+                          </p>
+                          <p className="text-[11px] text-amber-100/70">
+                            {formatDate(item.startAt)} · jogo #{item.id}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div className="space-y-3">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">Próximos</p>

@@ -312,6 +312,18 @@ type PadelFormatPlanCategoryResult = {
   hardCapMax: number | null;
   queueEstimatedRounds: number | null;
   feasible: boolean;
+  warnings?: string[];
+};
+
+type PadelFormatPlanCategoryPayload = {
+  categoryId: number;
+  label: string;
+  teams: number;
+  format: string;
+  amMxMode?: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+  amMxProgressionMode?: "ROUND_BY_ROUND";
+  nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+  nonStopRounds?: number;
 };
 
 type PadelFormatPlanResult = {
@@ -385,6 +397,60 @@ type CalendarResponse = {
   eventEndsAt?: string | Date | null;
   eventTimezone?: string | null;
   bufferMinutes?: number | null;
+};
+
+type LiveOpsMatchItem = {
+  id: number;
+  categoryId?: number | null;
+  status?: string | null;
+  startTime?: string | Date | null;
+  plannedStartAt?: string | Date | null;
+  roundLabel?: string | null;
+  groupLabel?: string | null;
+  score?: Record<string, unknown> | null;
+  pairingA?: {
+    slots?: Array<{
+      playerProfile?: {
+        displayName?: string | null;
+        fullName?: string | null;
+      } | null;
+    } | null> | null;
+  } | null;
+  pairingB?: {
+    slots?: Array<{
+      playerProfile?: {
+        displayName?: string | null;
+        fullName?: string | null;
+      } | null;
+    } | null> | null;
+  } | null;
+};
+
+type LiveIncidentStatusFilter =
+  | "ALL"
+  | "RESULT_SUBMITTED"
+  | "PENDING_CONFIRMATION"
+  | "PENDING_REVIEW_EXPIRED"
+  | "DISPUTED"
+  | "IN_PROGRESS";
+
+type LiveIncidentAction = "confirm" | "reject" | "reset_to_submitted" | "resolve_dispute";
+type LiveIncidentDisputeResolution = "CONFIRMED" | "CORRECTED" | "VOIDED";
+
+type LiveIncidentItem = {
+  matchId: number;
+  status: string;
+  categoryId: number | null;
+  categoryLabel: string;
+  formatKey: string | null;
+  formatLabel: string;
+  pairingLabel: string;
+  phaseLabel: string;
+  startAt: string | Date | null;
+  startMs: number;
+  priority: number;
+  pendingConfirmationExpiresAt: string | null;
+  pendingConfirmationRemainingMs: number | null;
 };
 
 const PADEL_TABS = [
@@ -563,6 +629,27 @@ const TOURNAMENT_STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Arquivado",
 };
 
+const LIVE_INCIDENT_STATUS_OPTIONS: Array<{ value: LiveIncidentStatusFilter; label: string }> = [
+  { value: "ALL", label: "Todos" },
+  { value: "RESULT_SUBMITTED", label: "Submetidos" },
+  { value: "PENDING_CONFIRMATION", label: "Pend. confirmação" },
+  { value: "PENDING_REVIEW_EXPIRED", label: "Pend. expirado" },
+  { value: "DISPUTED", label: "Disputa" },
+  { value: "IN_PROGRESS", label: "Em jogo" },
+];
+
+const LIVE_INCIDENT_STATUSES = new Set([
+  "RESULT_SUBMITTED",
+  "PENDING_CONFIRMATION",
+  "PENDING_REVIEW_EXPIRED",
+  "DISPUTED",
+  "IN_PROGRESS",
+]);
+const LIVE_INCIDENT_DISPUTE_RESOLUTIONS: LiveIncidentDisputeResolution[] = ["CONFIRMED", "CORRECTED", "VOIDED"];
+const LIVE_INCIDENT_DEFAULT_REJECT_REASON = "Resultado rejeitado pela organização após triagem live.";
+const LIVE_INCIDENT_DEFAULT_RESET_REASON = "Reaberto para nova submissão após validação operacional.";
+const LIVE_INCIDENT_DEFAULT_RESET_CODE = "ORGANIZER_REVIEW";
+
 const TERMINAL_TOURNAMENT_STATUSES = new Set(["DRAFT", "CANCELLED", "FINISHED", "COMPLETED", "ARCHIVED"]);
 
 function resolveEventTimestamp(value?: string | Date | null) {
@@ -659,6 +746,159 @@ const formatShortDate = (value?: string | Date | null) => {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("pt-PT", { day: "2-digit", month: "2-digit" });
+};
+
+const formatMatchStatusLabel = (status?: string | null) => {
+  switch (status) {
+    case "PENDING":
+      return "Pendente";
+    case "IN_PROGRESS":
+      return "Em curso";
+    case "RESULT_SUBMITTED":
+      return "Resultado submetido";
+    case "PENDING_CONFIRMATION":
+      return "Pendente confirmação";
+    case "PENDING_REVIEW_EXPIRED":
+      return "Pendente expirado";
+    case "DISPUTED":
+      return "Em disputa";
+    case "OFFICIAL":
+      return "Oficial";
+    case "WALKOVER":
+      return "WO";
+    case "RETIRED":
+      return "Desistência";
+    case "CANCELLED":
+      return "Cancelado";
+    default:
+      return status || "—";
+  }
+};
+
+const statusToneClass = (status?: string | null) => {
+  if (status === "PENDING_REVIEW_EXPIRED") return "border-rose-300/45 bg-rose-500/12 text-rose-100";
+  if (status === "DISPUTED") return "border-amber-300/45 bg-amber-500/12 text-amber-100";
+  if (status === "PENDING_CONFIRMATION") return "border-sky-300/45 bg-sky-500/12 text-sky-100";
+  if (status === "RESULT_SUBMITTED") return "border-cyan-300/45 bg-cyan-500/12 text-cyan-100";
+  if (status === "IN_PROGRESS") return "border-emerald-300/45 bg-emerald-500/12 text-emerald-100";
+  return "border-white/20 bg-white/10 text-white/75";
+};
+
+const resolvePairingLabel = (
+  pairing?:
+    | {
+        slots?: Array<{
+          playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
+        } | null> | null;
+      }
+    | null,
+) => {
+  if (!pairing?.slots || !Array.isArray(pairing.slots)) return "Dupla";
+  const names = pairing.slots
+    .map((slot) => {
+      if (!slot || typeof slot !== "object") return null;
+      const profile = slot.playerProfile;
+      if (!profile || typeof profile !== "object") return null;
+      return profile.displayName || profile.fullName || null;
+    })
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return names.length > 0 ? names.join(" / ") : "Dupla";
+};
+
+const resolvePendingConfirmationMeta = (score: unknown) => {
+  const scoreObj = score && typeof score === "object" && !Array.isArray(score) ? (score as Record<string, unknown>) : null;
+  const workflow =
+    scoreObj?.liveWorkflow && typeof scoreObj.liveWorkflow === "object" && !Array.isArray(scoreObj.liveWorkflow)
+      ? (scoreObj.liveWorkflow as Record<string, unknown>)
+      : null;
+  const expiresAt = workflow && typeof workflow.pendingConfirmationExpiresAt === "string" ? workflow.pendingConfirmationExpiresAt : null;
+  if (!expiresAt) {
+    return { expiresAt: null, remainingMs: null as number | null };
+  }
+  const parsed = new Date(expiresAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return { expiresAt, remainingMs: null as number | null };
+  }
+  return { expiresAt, remainingMs: parsed.getTime() - Date.now() };
+};
+
+const formatRemainingMsLabel = (remainingMs: number | null) => {
+  if (typeof remainingMs !== "number" || !Number.isFinite(remainingMs)) return null;
+  if (remainingMs <= 0) return "expirado";
+  const totalMinutes = Math.floor(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${Math.max(1, totalMinutes)} min`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+};
+
+const incidentPriority = (status: string) => {
+  switch (status) {
+    case "PENDING_REVIEW_EXPIRED":
+      return 0;
+    case "DISPUTED":
+      return 1;
+    case "PENDING_CONFIRMATION":
+      return 2;
+    case "RESULT_SUBMITTED":
+      return 3;
+    case "IN_PROGRESS":
+      return 4;
+    default:
+      return 99;
+  }
+};
+
+const createClientRequestId = (prefix = "padel_ops") => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const extractApiErrorCode = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const json = payload as Record<string, unknown>;
+  if (typeof json.errorCode === "string" && json.errorCode.trim().length > 0) return json.errorCode.trim();
+  if (typeof json.code === "string" && json.code.trim().length > 0) return json.code.trim();
+  if (typeof json.error === "string" && json.error.trim().length > 0) return json.error.trim();
+  if (typeof json.message === "string" && json.message.trim().length > 0) return json.message.trim();
+  if (json.data && typeof json.data === "object") {
+    const data = json.data as Record<string, unknown>;
+    if (typeof data.error === "string" && data.error.trim().length > 0) return data.error.trim();
+    if (typeof data.errorCode === "string" && data.errorCode.trim().length > 0) return data.errorCode.trim();
+  }
+  return null;
+};
+
+const liveIncidentActionErrorMessage = (errorCode: string | null, fallback: string) => {
+  switch (errorCode) {
+    case "UNAUTHENTICATED":
+      return "Sessão expirada. Volta a autenticar para continuar.";
+    case "FORBIDDEN":
+      return "Sem permissões para esta ação no torneio.";
+    case "INVALID_MATCH":
+    case "MATCH_NOT_FOUND":
+      return "O jogo já não existe ou foi removido.";
+    case "MISSING_CLIENT_REQUEST_ID":
+      return "Falha de idempotência. Tenta novamente.";
+    case "INVALID_REASON_TEXT":
+      return "A ação exige um motivo válido.";
+    case "MISSING_REASON_CODE":
+    case "INVALID_TARGET_STATE":
+      return "Parâmetros de reset pendente inválidos.";
+    case "DISPUTE_NOT_OPEN":
+      return "A disputa já foi resolvida por outro operador.";
+    case "MISSING_RESOLUTION_STATUS":
+    case "INVALID_RESOLUTION_STATUS":
+      return "Estado de resolução da disputa inválido.";
+    case "MISSING_CONFIRMATION_SOURCE":
+    case "INVALID_CONFIRMATION_SOURCE":
+      return "Fonte de confirmação inválida para esta ação.";
+    default:
+      return sanitizeUiErrorMessage(errorCode, fallback);
+  }
 };
 
 const getDelayInfo = (match: CalendarMatch) => {
@@ -1294,6 +1534,12 @@ export default function PadelHubClient({
   const [roundOpsPlanLoading, setRoundOpsPlanLoading] = useState(false);
   const [roundOpsPlanError, setRoundOpsPlanError] = useState<string | null>(null);
   const [roundOpsNonStopRoundsDraft, setRoundOpsNonStopRoundsDraft] = useState(String(DEFAULT_NON_STOP_ROUNDS));
+  const [incidentStatusFilter, setIncidentStatusFilter] = useState<LiveIncidentStatusFilter>("ALL");
+  const [incidentCategoryFilter, setIncidentCategoryFilter] = useState<string>("ALL");
+  const [incidentFormatFilter, setIncidentFormatFilter] = useState<string>("ALL");
+  const [incidentActionBusyKey, setIncidentActionBusyKey] = useState<string | null>(null);
+  const [incidentActionMessage, setIncidentActionMessage] = useState<string | null>(null);
+  const [incidentActionError, setIncidentActionError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<{
     type: "block" | "availability" | "match";
     id: number;
@@ -1476,6 +1722,12 @@ export default function PadelHubClient({
     fetcher,
     { revalidateOnFocus: false },
   );
+  const { data: liveOpsMatchesRes, isLoading: liveOpsMatchesLoading, mutate: mutateLiveOpsMatches } = useSWR<{
+    ok?: boolean;
+    data?: { items?: LiveOpsMatchItem[]; error?: string };
+    items?: LiveOpsMatchItem[];
+    error?: string;
+  }>(eventId ? `/api/padel/matches?eventId=${eventId}` : null, fetcher, { revalidateOnFocus: false });
   const padelConfig = padelConfigRes?.config ?? null;
   const scheduleDefaults = (padelConfig?.advancedSettings?.scheduleDefaults ?? {}) as {
     windowStart?: string | null;
@@ -3296,6 +3548,22 @@ export default function PadelHubClient({
     }
     return entries;
   }, [eventCategories]);
+  const eventCategoryFormatById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const link of eventCategories) {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (!categoryId || map.has(categoryId)) continue;
+      const formatRaw = typeof link.format === "string" ? link.format.trim().toUpperCase() : "";
+      if (!formatRaw) continue;
+      map.set(categoryId, formatRaw);
+    }
+    return map;
+  }, [eventCategories]);
   const runtimeCategoryKeys = useMemo(() => {
     const keys = new Set<string>();
     keys.add("global");
@@ -3390,6 +3658,107 @@ export default function PadelHubClient({
     if (!roundOpsCategoryId) return `Categoria ${roundOpsCategoryKey}`;
     return eventCategoryLabelById.get(roundOpsCategoryId) ?? `Categoria #${roundOpsCategoryId}`;
   })();
+  const liveOpsMatchesPayload = useMemo(() => {
+    if (!liveOpsMatchesRes || typeof liveOpsMatchesRes !== "object") {
+      return { ok: false, items: [] as LiveOpsMatchItem[], error: null as string | null };
+    }
+    const envelopeData =
+      liveOpsMatchesRes.data && typeof liveOpsMatchesRes.data === "object" ? liveOpsMatchesRes.data : liveOpsMatchesRes;
+    const payload = envelopeData as Record<string, unknown>;
+    const items = Array.isArray(payload.items) ? (payload.items as LiveOpsMatchItem[]) : [];
+    const ok = liveOpsMatchesRes.ok === true || Array.isArray(payload.items);
+    const error =
+      typeof liveOpsMatchesRes.error === "string"
+        ? liveOpsMatchesRes.error
+        : typeof payload.error === "string"
+          ? payload.error
+          : null;
+    return { ok, items, error };
+  }, [liveOpsMatchesRes]);
+  const liveOpsMatchesError = !liveOpsMatchesPayload.ok
+    ? sanitizeUiErrorMessage(liveOpsMatchesPayload.error, "Erro ao carregar incidentes live.")
+    : null;
+  const liveIncidentItems = useMemo(() => {
+    if (!Array.isArray(liveOpsMatchesPayload.items) || liveOpsMatchesPayload.items.length === 0) return [];
+    return liveOpsMatchesPayload.items
+      .map((match): LiveIncidentItem | null => {
+        const statusRaw = typeof match?.status === "string" ? match.status.trim().toUpperCase() : "";
+        if (!statusRaw || !LIVE_INCIDENT_STATUSES.has(statusRaw)) return null;
+        const categoryId = parsePositiveInt(match?.categoryId);
+        const categoryLabel = categoryId ? eventCategoryLabelById.get(categoryId) ?? `Categoria #${categoryId}` : "Sem categoria";
+        const categoryProfile =
+          categoryId && formatProfilesByCategory[String(categoryId)] && typeof formatProfilesByCategory[String(categoryId)] === "object"
+            ? (formatProfilesByCategory[String(categoryId)] as Record<string, unknown>)
+            : null;
+        const globalProfile =
+          formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
+            ? (formatProfilesByCategory.global as Record<string, unknown>)
+            : null;
+        const profileFormatRaw =
+          typeof categoryProfile?.format === "string"
+            ? categoryProfile.format.trim().toUpperCase()
+            : typeof globalProfile?.format === "string"
+              ? globalProfile.format.trim().toUpperCase()
+              : null;
+        const formatKey = eventCategoryFormatById.get(categoryId ?? -1) ?? profileFormatRaw ?? tournamentFormatRaw ?? null;
+        const formatLabel = formatKey ? PADEL_FORMAT_LABELS[formatKey] ?? formatKey : "Formato por definir";
+        const pairingLabel = `${resolvePairingLabel(match.pairingA)} vs ${resolvePairingLabel(match.pairingB)}`;
+        const phaseLabel = [match.groupLabel ? `Grupo ${match.groupLabel}` : null, match.roundLabel || null]
+          .filter((value) => typeof value === "string" && value.trim().length > 0)
+          .join(" · ") || "Fase";
+        const startAt = match.startTime ?? match.plannedStartAt ?? null;
+        const startMs = startAt ? new Date(startAt).getTime() : Number.MAX_SAFE_INTEGER;
+        const pendingMeta = resolvePendingConfirmationMeta(match.score);
+        return {
+          matchId: match.id,
+          status: statusRaw,
+          categoryId: categoryId ?? null,
+          categoryLabel,
+          formatKey: formatKey ?? null,
+          formatLabel,
+          pairingLabel,
+          phaseLabel,
+          startAt,
+          startMs: Number.isFinite(startMs) ? startMs : Number.MAX_SAFE_INTEGER,
+          priority: incidentPriority(statusRaw),
+          pendingConfirmationExpiresAt: pendingMeta.expiresAt,
+          pendingConfirmationRemainingMs: pendingMeta.remainingMs,
+        };
+      })
+      .filter((item): item is LiveIncidentItem => Boolean(item))
+      .sort((a, b) => a.priority - b.priority || a.startMs - b.startMs || a.matchId - b.matchId);
+  }, [eventCategoryFormatById, eventCategoryLabelById, formatProfilesByCategory, liveOpsMatchesPayload.items, tournamentFormatRaw]);
+  const liveIncidentCategoryOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    liveIncidentItems.forEach((item) => {
+      if (!item.categoryId || map.has(item.categoryId)) return;
+      map.set(item.categoryId, item.categoryLabel);
+    });
+    return Array.from(map.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [liveIncidentItems]);
+  const liveIncidentFormatOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    liveIncidentItems.forEach((item) => {
+      if (!item.formatKey || map.has(item.formatKey)) return;
+      map.set(item.formatKey, item.formatLabel);
+    });
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [liveIncidentItems]);
+  const filteredLiveIncidentItems = useMemo(() => {
+    return liveIncidentItems.filter((item) => {
+      if (incidentStatusFilter !== "ALL" && item.status !== incidentStatusFilter) return false;
+      if (incidentCategoryFilter !== "ALL") {
+        const parsed = parsePositiveInt(incidentCategoryFilter);
+        if (!parsed || parsed !== item.categoryId) return false;
+      }
+      if (incidentFormatFilter !== "ALL" && incidentFormatFilter !== item.formatKey) return false;
+      return true;
+    });
+  }, [incidentCategoryFilter, incidentFormatFilter, incidentStatusFilter, liveIncidentItems]);
   const nonStopActivePairs = useMemo(() => {
     if (!selectedNonStopRuntime || !Array.isArray(selectedNonStopRuntime.activePairs)) return [];
     return selectedNonStopRuntime.activePairs
@@ -3452,6 +3821,15 @@ export default function PadelHubClient({
 
   useEffect(() => {
     setOpsLiveFeed([]);
+  }, [eventId]);
+
+  useEffect(() => {
+    setIncidentStatusFilter("ALL");
+    setIncidentCategoryFilter("ALL");
+    setIncidentFormatFilter("ALL");
+    setIncidentActionBusyKey(null);
+    setIncidentActionMessage(null);
+    setIncidentActionError(null);
   }, [eventId]);
 
   useEffect(() => {
@@ -3685,8 +4063,8 @@ export default function PadelHubClient({
                 nonStopMode,
                 nonStopRounds: nonStopRoundsRaw ?? undefined,
               };
-            })
-            .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+      })
+      .filter((entry): entry is PadelFormatPlanCategoryPayload => Boolean(entry));
 
     if (roundOpsCategoryId !== null && categoriesPayload.length === 0) {
       setRoundOpsPlan(null);
@@ -4760,6 +5138,110 @@ export default function PadelHubClient({
       pushOpsLive("err", "Erro no avanço de ronda", message);
     } finally {
       setRoundOpsBusy(false);
+    }
+  };
+
+  const buildIncidentBusyKey = (
+    action: LiveIncidentAction,
+    matchId: number,
+    resolutionStatus?: LiveIncidentDisputeResolution,
+  ) => `${action}:${matchId}${resolutionStatus ? `:${resolutionStatus}` : ""}`;
+
+  const runLiveIncidentAction = async (
+    item: LiveIncidentItem,
+    action: LiveIncidentAction,
+    resolutionStatus?: LiveIncidentDisputeResolution,
+  ) => {
+    if (!eventId) {
+      setIncidentActionError("Seleciona um torneio para executar ações live.");
+      return;
+    }
+
+    let endpoint = "";
+    let method: "POST" | "PATCH" = "POST";
+    const requestId = createClientRequestId("incident");
+    let body: Record<string, unknown> = {
+      clientRequestId: requestId,
+      confirmationSource: "WEB_ORGANIZATION",
+    };
+    let successMessage = "";
+    let successToast = "";
+    let feedTitle = "";
+    let errorFallback = "Não foi possível executar a ação live.";
+
+    if (action === "confirm") {
+      endpoint = `/api/padel/matches/${item.matchId}/result/confirm`;
+      successMessage = `Resultado confirmado no jogo #${item.matchId}.`;
+      successToast = "Resultado confirmado";
+      feedTitle = "Resultado confirmado";
+      errorFallback = "Não foi possível confirmar o resultado.";
+    } else if (action === "reject") {
+      endpoint = `/api/padel/matches/${item.matchId}/result/reject`;
+      body = { ...body, reasonText: LIVE_INCIDENT_DEFAULT_REJECT_REASON };
+      successMessage = `Resultado rejeitado no jogo #${item.matchId}.`;
+      successToast = "Resultado rejeitado";
+      feedTitle = "Resultado rejeitado";
+      errorFallback = "Não foi possível rejeitar o resultado.";
+    } else if (action === "reset_to_submitted") {
+      endpoint = `/api/padel/matches/${item.matchId}/result/reset-pending`;
+      body = {
+        ...body,
+        reasonCode: LIVE_INCIDENT_DEFAULT_RESET_CODE,
+        reasonText: LIVE_INCIDENT_DEFAULT_RESET_REASON,
+        targetState: "RESULT_SUBMITTED",
+      };
+      successMessage = `Resultado reaberto para validação no jogo #${item.matchId}.`;
+      successToast = "Resultado reaberto";
+      feedTitle = "Resultado reaberto";
+      errorFallback = "Não foi possível reabrir o resultado.";
+    } else {
+      if (!resolutionStatus) {
+        setIncidentActionError("Seleciona um estado de resolução para fechar a disputa.");
+        return;
+      }
+      endpoint = `/api/padel/matches/${item.matchId}/dispute`;
+      method = "PATCH";
+      body = {
+        ...body,
+        resolutionStatus,
+      };
+      successMessage = `Disputa resolvida (${resolutionStatus}) no jogo #${item.matchId}.`;
+      successToast = "Disputa resolvida";
+      feedTitle = "Disputa resolvida";
+      errorFallback = "Não foi possível resolver a disputa.";
+    }
+
+    const busyKey = buildIncidentBusyKey(action, item.matchId, resolutionStatus);
+    setIncidentActionBusyKey(busyKey);
+    setIncidentActionMessage(null);
+    setIncidentActionError(null);
+    try {
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const errorCode = extractApiErrorCode(json);
+        const message = liveIncidentActionErrorMessage(errorCode, errorFallback);
+        setIncidentActionError(message);
+        toast(message, "err");
+        pushOpsLive("err", feedTitle || "Falha em incidente live", message);
+        return;
+      }
+
+      setIncidentActionMessage(successMessage);
+      toast(successToast, "ok");
+      pushOpsLive("ok", feedTitle, `${item.categoryLabel} · ${item.pairingLabel}`);
+      await Promise.all([mutateLiveOpsMatches(), mutateCalendar(), mutatePadelConfig()]);
+    } catch (err) {
+      console.error("[padel/live-incidents] action", err);
+      setIncidentActionError(errorFallback);
+      toast(errorFallback, "err");
+      pushOpsLive("err", feedTitle || "Erro em incidente live", errorFallback);
+    } finally {
+      setIncidentActionBusyKey(null);
     }
   };
 
@@ -8638,6 +9120,217 @@ export default function PadelHubClient({
                           {alert.label}
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {eventId && toolMode === "TOURNAMENTS" && (
+                <div className="rounded-2xl border border-white/12 bg-white/5 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">Fila de incidentes live</p>
+                    <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] text-white/70">
+                      {filteredLiveIncidentItems.length}/{liveIncidentItems.length}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Estado</span>
+                      <select
+                        value={incidentStatusFilter}
+                        onChange={(e) => setIncidentStatusFilter(e.target.value as LiveIncidentStatusFilter)}
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                      >
+                        {LIVE_INCIDENT_STATUS_OPTIONS.map((opt) => (
+                          <option key={`incident-status-${opt.value}`} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Categoria</span>
+                      <select
+                        value={incidentCategoryFilter}
+                        onChange={(e) => setIncidentCategoryFilter(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                      >
+                        <option value="ALL">Todas</option>
+                        {liveIncidentCategoryOptions.map((opt) => (
+                          <option key={`incident-category-${opt.id}`} value={String(opt.id)}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Formato</span>
+                      <select
+                        value={incidentFormatFilter}
+                        onChange={(e) => setIncidentFormatFilter(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-black/35 px-2 py-1.5 text-[12px] text-white outline-none focus:border-[#6BFFFF]"
+                      >
+                        <option value="ALL">Todos</option>
+                        {liveIncidentFormatOptions.map((opt) => (
+                          <option key={`incident-format-${opt.key}`} value={opt.key}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  {incidentActionMessage && (
+                    <div className="mt-2 rounded-lg border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
+                      {incidentActionMessage}
+                    </div>
+                  )}
+                  {incidentActionError && (
+                    <div className="mt-2 rounded-lg border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                      {incidentActionError}
+                    </div>
+                  )}
+                  {liveOpsMatchesError && (
+                    <div className="mt-2 rounded-lg border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
+                      {liveOpsMatchesError}
+                    </div>
+                  )}
+                  {liveOpsMatchesLoading && (
+                    <p className="mt-2 text-[12px] text-white/65">A carregar incidentes live...</p>
+                  )}
+                  {!liveOpsMatchesLoading && !liveOpsMatchesError && liveIncidentItems.length === 0 && (
+                    <p className="mt-2 text-[12px] text-white/65">Sem incidentes live neste momento.</p>
+                  )}
+                  {!liveOpsMatchesLoading &&
+                    !liveOpsMatchesError &&
+                    liveIncidentItems.length > 0 &&
+                    filteredLiveIncidentItems.length === 0 && (
+                      <p className="mt-2 text-[12px] text-white/65">Sem resultados para os filtros selecionados.</p>
+                    )}
+                  {!liveOpsMatchesLoading && !liveOpsMatchesError && filteredLiveIncidentItems.length > 0 && (
+                    <div className="mt-2 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                      {filteredLiveIncidentItems.slice(0, 14).map((item) => {
+                        const pendingRemainingLabel = item.pendingConfirmationExpiresAt
+                          ? formatRemainingMsLabel(new Date(item.pendingConfirmationExpiresAt).getTime() - Date.now())
+                          : formatRemainingMsLabel(item.pendingConfirmationRemainingMs);
+                        const canConfirm =
+                          item.status === "RESULT_SUBMITTED" ||
+                          item.status === "PENDING_CONFIRMATION" ||
+                          item.status === "PENDING_REVIEW_EXPIRED";
+                        const canReject =
+                          item.status === "RESULT_SUBMITTED" ||
+                          item.status === "PENDING_CONFIRMATION" ||
+                          item.status === "PENDING_REVIEW_EXPIRED";
+                        const canReset = item.status === "PENDING_CONFIRMATION" || item.status === "PENDING_REVIEW_EXPIRED";
+                        const canResolveDispute = item.status === "DISPUTED";
+                        const confirmBusy = incidentActionBusyKey === buildIncidentBusyKey("confirm", item.matchId);
+                        const rejectBusy = incidentActionBusyKey === buildIncidentBusyKey("reject", item.matchId);
+                        const resetBusy =
+                          incidentActionBusyKey === buildIncidentBusyKey("reset_to_submitted", item.matchId);
+                        return (
+                          <article
+                            key={`incident-${item.matchId}`}
+                            className="rounded-xl border border-white/12 bg-black/35 px-3 py-2 text-[12px] text-white/80"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] ${statusToneClass(item.status)}`}>
+                                {formatMatchStatusLabel(item.status)}
+                              </span>
+                              <span className="text-[10px] text-white/60">{item.startAt ? formatZoned(item.startAt, calendarTimezone) : "Sem hora"}</span>
+                            </div>
+                            <p className="mt-1 font-semibold text-white">{item.pairingLabel}</p>
+                            <p className="text-[11px] text-white/60">
+                              {item.categoryLabel} · {item.formatLabel} · {item.phaseLabel}
+                            </p>
+                            {pendingRemainingLabel && (item.status === "PENDING_CONFIRMATION" || item.status === "PENDING_REVIEW_EXPIRED") && (
+                              <p className="mt-1 text-[11px] text-amber-100">Confirmação: {pendingRemainingLabel}</p>
+                            )}
+
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              {canConfirm && (
+                                <button
+                                  type="button"
+                                  onClick={() => runLiveIncidentAction(item, "confirm")}
+                                  disabled={Boolean(incidentActionBusyKey)}
+                                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                                    confirmBusy
+                                      ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100/70"
+                                      : "border-emerald-300/45 bg-emerald-500/15 text-emerald-100 hover:border-emerald-200/70"
+                                  } disabled:opacity-60`}
+                                >
+                                  {confirmBusy ? "A confirmar..." : "Confirmar"}
+                                </button>
+                              )}
+                              {canReject && (
+                                <button
+                                  type="button"
+                                  onClick={() => runLiveIncidentAction(item, "reject")}
+                                  disabled={Boolean(incidentActionBusyKey)}
+                                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                                    rejectBusy
+                                      ? "border-rose-300/20 bg-rose-500/10 text-rose-100/70"
+                                      : "border-rose-300/45 bg-rose-500/15 text-rose-100 hover:border-rose-200/70"
+                                  } disabled:opacity-60`}
+                                >
+                                  {rejectBusy ? "A rejeitar..." : "Rejeitar"}
+                                </button>
+                              )}
+                              {canReset && (
+                                <button
+                                  type="button"
+                                  onClick={() => runLiveIncidentAction(item, "reset_to_submitted")}
+                                  disabled={Boolean(incidentActionBusyKey)}
+                                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                                    resetBusy
+                                      ? "border-amber-300/20 bg-amber-500/10 text-amber-100/70"
+                                      : "border-amber-300/45 bg-amber-500/15 text-amber-100 hover:border-amber-200/70"
+                                  } disabled:opacity-60`}
+                                >
+                                  {resetBusy ? "A reabrir..." : "Reabrir"}
+                                </button>
+                              )}
+                              {canResolveDispute &&
+                                LIVE_INCIDENT_DISPUTE_RESOLUTIONS.map((resolution) => {
+                                  const busy =
+                                    incidentActionBusyKey === buildIncidentBusyKey("resolve_dispute", item.matchId, resolution);
+                                  return (
+                                    <button
+                                      key={`incident-resolve-${item.matchId}-${resolution}`}
+                                      type="button"
+                                      onClick={() => runLiveIncidentAction(item, "resolve_dispute", resolution)}
+                                      disabled={Boolean(incidentActionBusyKey)}
+                                      className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${
+                                        busy
+                                          ? "border-cyan-300/20 bg-cyan-500/10 text-cyan-100/70"
+                                          : "border-cyan-300/45 bg-cyan-500/15 text-cyan-100 hover:border-cyan-200/70"
+                                      } disabled:opacity-60`}
+                                    >
+                                      {busy
+                                        ? "A resolver..."
+                                        : resolution === "CONFIRMED"
+                                          ? "Fechar: confirmado"
+                                          : resolution === "CORRECTED"
+                                            ? "Fechar: corrigido"
+                                            : "Fechar: anulado"}
+                                    </button>
+                                  );
+                                })}
+                              {item.status === "IN_PROGRESS" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPadelSection("calendar");
+                                    setCalendarDataView("games");
+                                    setShowOpsDrawer(false);
+                                  }}
+                                  className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/85 hover:border-white/45"
+                                >
+                                  Ir para calendário
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

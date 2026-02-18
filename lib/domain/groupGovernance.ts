@@ -846,8 +846,9 @@ export async function verifyMembershipRequestCodes(input: {
   requestId: string;
   kind: "JOIN" | "EXIT";
   codes: CodePayload;
+  userId: string;
 }) {
-  const { requestId, kind, codes } = input;
+  const { requestId, kind, codes, userId } = input;
   const request = await prisma.groupMembershipRequest.findUnique({
     where: { id: requestId },
     include: { group: true },
@@ -866,6 +867,15 @@ export async function verifyMembershipRequestCodes(input: {
     request.type !== GroupMembershipRequestType.EXIT_KEEP_OWNER
   ) {
     throw new Error("REQUEST_TYPE_MISMATCH");
+  }
+
+  const allowedUsers = new Set<string>([
+    request.group.ownerUserId,
+    request.currentOrgOwnerUserId,
+    ...(request.targetOwnerUserId ? [request.targetOwnerUserId] : []),
+  ]);
+  if (!allowedUsers.has(userId)) {
+    throw new Error("FORBIDDEN");
   }
 
   if (request.type === GroupMembershipRequestType.EXIT_KEEP_OWNER) {

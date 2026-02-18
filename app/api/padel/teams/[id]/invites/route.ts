@@ -140,6 +140,25 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
   const viewerEmail = normalizeEmail(ctx.user.email ?? null);
   const viewerUsername = ctx.profile?.username?.trim().toLowerCase() ?? null;
+  const viewerInviteClauses: Prisma.PadelTeamMemberInviteWhereInput[] = [
+    { targetUserId: ctx.user.id },
+    ...(viewerEmail
+      ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
+      : []),
+    ...(viewerUsername
+      ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
+      : []),
+  ];
+
+  if (!ctx.canManage && !ctx.canView) {
+    const inviteForViewer = await prisma.padelTeamMemberInvite.findFirst({
+      where: { teamId, OR: viewerInviteClauses },
+      select: { id: true },
+    });
+    if (!inviteForViewer) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+  }
 
   const items = await prisma.padelTeamMemberInvite.findMany({
     where: {
@@ -147,15 +166,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
       ...(ctx.canManage
         ? {}
         : {
-            OR: [
-              { targetUserId: ctx.user.id },
-              ...(viewerEmail
-                ? [{ targetIdentifier: { equals: viewerEmail, mode: Prisma.QueryMode.insensitive } }]
-                : []),
-              ...(viewerUsername
-                ? [{ targetIdentifier: { equals: viewerUsername, mode: Prisma.QueryMode.insensitive } }]
-                : []),
-            ],
+            OR: viewerInviteClauses,
           }),
     },
     include: {

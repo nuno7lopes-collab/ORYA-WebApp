@@ -11,6 +11,31 @@ import useSWR from "swr";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { buildOrgHref, getOrganizationIdFromBrowser } from "@/lib/organizationIdUtils";
 
+type PadelMatchStatusFilter =
+  | "ALL"
+  | "IN_PROGRESS"
+  | "RESULT_SUBMITTED"
+  | "PENDING_CONFIRMATION"
+  | "PENDING_REVIEW_EXPIRED"
+  | "DISPUTED";
+
+type PadelAttentionReason =
+  | "SUBMIT_RESULT"
+  | "AWAITING_CONFIRMATION"
+  | "CONFIRMATION_EXPIRED"
+  | "REVIEW_EXPIRED"
+  | "DISPUTED"
+  | "MATCH_LIVE";
+
+const PADEL_STATUS_FILTER_OPTIONS: Array<{ value: PadelMatchStatusFilter; label: string }> = [
+  { value: "ALL", label: "Todos" },
+  { value: "IN_PROGRESS", label: "Em curso" },
+  { value: "RESULT_SUBMITTED", label: "Submetidos" },
+  { value: "PENDING_CONFIRMATION", label: "Pend. confirmação" },
+  { value: "PENDING_REVIEW_EXPIRED", label: "Pend. expirado" },
+  { value: "DISPUTED", label: "Disputa" },
+];
+
 function parseDate(value?: string | null): Date | null {
   if (!value) return null;
   const d = new Date(value);
@@ -27,6 +52,31 @@ function formatAgendaDate(value?: string | null) {
   return parsed.toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
 }
 
+function formatRemainingLabel(ms?: number | null) {
+  if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
+  if (ms <= 0) return "expirado";
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${Math.max(1, totalMinutes)} min`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
+}
+
+function resolveAttentionLabel(reason?: string | null, msRemaining?: number | null) {
+  if (!reason) return null;
+  if (reason === "SUBMIT_RESULT") return "Ação: submeter resultado";
+  if (reason === "MATCH_LIVE") return "Ação: jogo ao vivo";
+  if (reason === "DISPUTED") return "Atenção: jogo em disputa";
+  if (reason === "REVIEW_EXPIRED") return "Atenção: pendente expirado";
+  if (reason === "CONFIRMATION_EXPIRED") return "Confirmação expirada";
+  if (reason === "AWAITING_CONFIRMATION") {
+    const remaining = formatRemainingLabel(msRemaining);
+    return remaining ? `A aguardar confirmação (${remaining})` : "A aguardar confirmação";
+  }
+  return null;
+}
+
 export default function MePage() {
   const { user, profile, isLoading: meLoading } = useUser();
   const router = useRouter();
@@ -34,6 +84,10 @@ export default function MePage() {
   const orgId = getOrganizationIdFromBrowser();
   const orgDashboardHref = orgId ? buildOrgHref(orgId, "/overview") : "/org-hub/organizations";
   const [padelStatus, setPadelStatus] = useState<{ complete: boolean; missingCount: number } | null>(null);
+  const [padelMatchStatusFilter, setPadelMatchStatusFilter] = useState<PadelMatchStatusFilter>("ALL");
+  const [padelMatchCategoryFilter, setPadelMatchCategoryFilter] = useState<string>("ALL");
+  const [padelMatchEventFilter, setPadelMatchEventFilter] = useState<string>("ALL");
+  const [padelAttentionOnly, setPadelAttentionOnly] = useState<boolean>(false);
   const {
     items: tickets,
     loading: ticketsLoading,
@@ -73,16 +127,46 @@ export default function MePage() {
       sourcePlayerProfileId?: number | null;
     };
   }>(user ? "/api/padel/me/summary" : null, fetcher);
+  const padelMatchesUrl = useMemo(() => {
+    if (!user) return null;
+    const params = new URLSearchParams({ scope: "upcoming", limit: "6" });
+    if (padelMatchStatusFilter !== "ALL") {
+      params.set("status", padelMatchStatusFilter);
+    }
+    if (padelMatchCategoryFilter !== "ALL") {
+      params.set("categoryId", padelMatchCategoryFilter);
+    }
+    if (padelMatchEventFilter !== "ALL") {
+      params.set("eventId", padelMatchEventFilter);
+    }
+    if (padelAttentionOnly) {
+      params.set("attentionOnly", "1");
+    }
+    return `/api/padel/me/matches?${params.toString()}`;
+  }, [padelAttentionOnly, padelMatchCategoryFilter, padelMatchEventFilter, padelMatchStatusFilter, user]);
   const { data: padelMatchesData } = useSWR<{
     ok: boolean;
+    summary?: {
+      total?: number;
+      actionable?: number;
+      liveNow?: number;
+      pendingConfirmation?: number;
+      pendingReviewExpired?: number;
+      disputed?: number;
+      official?: number;
+      requiresAttention?: number;
+      awaitingConfirmation?: number;
+      reviewExpired?: number;
+      byStatus?: Record<string, number>;
+    };
     items?: Array<{
       id: number;
       status: string | null;
       statusLabel?: string | null;
       startTime?: string | null;
       plannedStartAt?: string | null;
-      event?: { title?: string | null; slug?: string | null } | null;
-      category?: { label?: string | null } | null;
+      event?: { id?: number | null; title?: string | null; slug?: string | null } | null;
+      category?: { id?: number | null; label?: string | null } | null;
       courtName?: string | null;
       winnerSide?: "A" | "B" | null;
       pairingSide?: "A" | "B" | null;
@@ -92,8 +176,12 @@ export default function MePage() {
       playerSubmissionEnabled?: boolean;
       resultValidationMode?: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | string | null;
       pendingConfirmationExpiresAt?: string | null;
+      pendingConfirmationMsRemaining?: number | null;
+      isLiveNow?: boolean;
+      requiresAttention?: boolean;
+      attentionReason?: PadelAttentionReason | string | null;
     }>;
-  }>(user ? "/api/padel/me/matches?scope=upcoming&limit=6" : null, fetcher);
+  }>(padelMatchesUrl, fetcher);
   const { data: padelHistoryData } = useSWR<{
     ok: boolean;
     titles?: Array<{ id: number; event?: { title?: string | null } | null; category?: { label?: string | null } | null }>;
@@ -165,11 +253,51 @@ export default function MePage() {
     .filter((item) => item.type === "JOGO" || item.type === "INSCRICAO")
     .slice(0, 3);
   const padelUpcomingMatches = padelMatchesData?.items ?? [];
+  const padelMatchesSummary = padelMatchesData?.summary ?? null;
+  const padelAdditionalMatches = padelUpcomingMatches.slice(1, 4);
+  const padelCategoryOptions = useMemo(() => {
+    const byId = new Map<number, string>();
+    padelUpcomingMatches.forEach((item) => {
+      const categoryId = typeof item.category?.id === "number" ? item.category.id : null;
+      if (!categoryId || byId.has(categoryId)) return;
+      byId.set(categoryId, item.category?.label || `Categoria ${categoryId}`);
+    });
+    return Array.from(byId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [padelUpcomingMatches]);
+  const padelEventOptions = useMemo(() => {
+    const byId = new Map<number, string>();
+    padelUpcomingMatches.forEach((item) => {
+      const eventId = typeof item.event?.id === "number" ? item.event.id : null;
+      if (!eventId || byId.has(eventId)) return;
+      byId.set(eventId, item.event?.title || `Torneio ${eventId}`);
+    });
+    return Array.from(byId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [padelUpcomingMatches]);
   const nextPadelMatch = padelUpcomingMatches[0] ?? null;
   const padelStats = padelSummaryData?.stats ?? null;
   const padelRanking = padelSummaryData?.ranking ?? null;
   const latestPadelTitle = (padelHistoryData?.titles ?? [])[0] ?? null;
   const organizations = orgsData?.items ?? [];
+
+  useEffect(() => {
+    if (padelMatchCategoryFilter === "ALL") return;
+    const selected = Number(padelMatchCategoryFilter);
+    if (!Number.isFinite(selected) || !padelCategoryOptions.some((item) => item.id === selected)) {
+      setPadelMatchCategoryFilter("ALL");
+    }
+  }, [padelCategoryOptions, padelMatchCategoryFilter]);
+
+  useEffect(() => {
+    if (padelMatchEventFilter === "ALL") return;
+    const selected = Number(padelMatchEventFilter);
+    if (!Number.isFinite(selected) || !padelEventOptions.some((item) => item.id === selected)) {
+      setPadelMatchEventFilter("ALL");
+    }
+  }, [padelEventOptions, padelMatchEventFilter]);
 
   const upcomingTickets = tickets.filter((t) => {
     const d = parseDate(t.snapshot.startAt);
@@ -417,6 +545,64 @@ export default function MePage() {
           <div className="rounded-2xl border border-white/12 bg-white/5 p-4">
             <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Padel</p>
             <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/75 space-y-2">
+                <p className="text-white/65">Filtros de jogos</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-white/55">Estado</span>
+                    <select
+                      value={padelMatchStatusFilter}
+                      onChange={(e) => setPadelMatchStatusFilter(e.target.value as PadelMatchStatusFilter)}
+                      className="rounded-lg border border-white/15 bg-black/35 px-2 py-1 text-[12px] text-white"
+                    >
+                      {PADEL_STATUS_FILTER_OPTIONS.map((option) => (
+                        <option key={`padel-status-${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-white/55">Categoria</span>
+                    <select
+                      value={padelMatchCategoryFilter}
+                      onChange={(e) => setPadelMatchCategoryFilter(e.target.value)}
+                      className="rounded-lg border border-white/15 bg-black/35 px-2 py-1 text-[12px] text-white"
+                    >
+                      <option value="ALL">Todas</option>
+                      {padelCategoryOptions.map((option) => (
+                        <option key={`padel-category-${option.id}`} value={String(option.id)}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-white/55">Torneio</span>
+                    <select
+                      value={padelMatchEventFilter}
+                      onChange={(e) => setPadelMatchEventFilter(e.target.value)}
+                      className="rounded-lg border border-white/15 bg-black/35 px-2 py-1 text-[12px] text-white"
+                    >
+                      <option value="ALL">Todos</option>
+                      {padelEventOptions.map((option) => (
+                        <option key={`padel-event-${option.id}`} value={String(option.id)}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 text-[11px] text-white/75">
+                  <input
+                    type="checkbox"
+                    checked={padelAttentionOnly}
+                    onChange={(e) => setPadelAttentionOnly(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-black/35 text-cyan-400"
+                  />
+                  Mostrar só jogos com atenção operacional
+                </label>
+              </div>
               {nextPadelMatch && (
                 <Link
                   href={nextPadelMatch.event?.slug ? `/eventos/${nextPadelMatch.event.slug}/calendario` : padelProfileHref}
@@ -432,6 +618,11 @@ export default function MePage() {
                     {nextPadelMatch.statusLabel || nextPadelMatch.status || "Estado por definir"}
                     {nextPadelMatch.courtName ? ` · ${nextPadelMatch.courtName}` : ""}
                   </p>
+                  {resolveAttentionLabel(nextPadelMatch.attentionReason, nextPadelMatch.pendingConfirmationMsRemaining) && (
+                    <p className="text-[11px] text-amber-100">
+                      {resolveAttentionLabel(nextPadelMatch.attentionReason, nextPadelMatch.pendingConfirmationMsRemaining)}
+                    </p>
+                  )}
                   {nextPadelMatch.playerCanSubmitResult && (
                     <p className="text-[11px] text-cyan-100/80">Podes submeter resultado como jogador.</p>
                   )}
@@ -440,8 +631,43 @@ export default function MePage() {
                   )}
                 </Link>
               )}
+              {!nextPadelMatch && (
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/60">
+                  Sem jogos para o filtro atual.
+                </div>
+              )}
+              {padelAdditionalMatches.map((match) => (
+                <Link
+                  key={`padel-next-${match.id}`}
+                  href={match.event?.slug ? `/eventos/${match.event.slug}/calendario` : padelProfileHref}
+                  className="block rounded-xl border border-white/10 bg-black/30 px-3 py-2 hover:bg-white/10"
+                >
+                  <p className="text-sm font-semibold text-white">{match.event?.title || "Torneio Padel"}</p>
+                  <p className="text-[12px] text-white/70">
+                    {formatAgendaDate(match.plannedStartAt || match.startTime || null) || "Data por definir"}
+                    {match.category?.label ? ` · ${match.category.label}` : ""}
+                  </p>
+                  <p className="text-[12px] text-white/65">
+                    {match.statusLabel || match.status || "Estado por definir"}
+                    {match.courtName ? ` · ${match.courtName}` : ""}
+                  </p>
+                  {resolveAttentionLabel(match.attentionReason, match.pendingConfirmationMsRemaining) && (
+                    <p className="text-[11px] text-amber-100">
+                      {resolveAttentionLabel(match.attentionReason, match.pendingConfirmationMsRemaining)}
+                    </p>
+                  )}
+                </Link>
+              ))}
               {(padelStats || latestPadelTitle || padelRanking) && (
                 <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70 space-y-1">
+                  {padelMatchesSummary && (
+                    <p>
+                      Live {padelMatchesSummary.liveNow ?? 0} · Ação {padelMatchesSummary.actionable ?? 0} · Atenção{" "}
+                      {padelMatchesSummary.requiresAttention ?? 0}
+                      {" · "}
+                      Disputa {padelMatchesSummary.disputed ?? 0}
+                    </p>
+                  )}
                   {padelStats && (
                     <p>
                       {padelStats.matchesPlayed ?? 0} jogos · {padelStats.wins ?? 0}V-{padelStats.losses ?? 0}D · WR{" "}
@@ -472,7 +698,9 @@ export default function MePage() {
                   )}
                 </div>
               )}
-              {padelItems.length === 0 && <p className="text-[12px] text-white/60">Sem jogos pendentes.</p>}
+              {padelItems.length === 0 && !nextPadelMatch && (
+                <p className="text-[12px] text-white/60">Sem jogos pendentes.</p>
+              )}
               {padelItems.map((item) => (
                 <Link
                   key={item.id}

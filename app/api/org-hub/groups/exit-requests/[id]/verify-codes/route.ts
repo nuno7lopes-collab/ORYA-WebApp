@@ -9,13 +9,14 @@ import { failFromMessage } from "@/app/api/org-hub/groups/_shared";
 async function _POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
   try {
-    await requireUser();
+    const user = await requireUser();
     const { id } = await context.params;
     const body = await req.json().catch(() => null);
 
     const result = await verifyMembershipRequestCodes({
       requestId: id,
       kind: "EXIT",
+      userId: user.id,
       codes: {
         orgOwnerCode: typeof body?.orgOwnerCode === "string" ? body.orgOwnerCode.trim() : undefined,
         targetOwnerCode: typeof body?.targetOwnerCode === "string" ? body.targetOwnerCode.trim() : undefined,

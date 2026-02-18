@@ -681,8 +681,6 @@ async function _PATCH(req: NextRequest) {
       invite.targetUserId === user.id ||
       (viewerEmail && normalizedTarget === viewerEmail) ||
       (viewerUsername && normalizedTarget === viewerUsername.toLowerCase());
-    const matchesToken = tokenFromBody ? invite.token === tokenFromBody : false;
-
     const isPending = !invite.acceptedAt && !invite.declinedAt && !invite.cancelledAt;
     const isExpired = invite.expiresAt && invite.expiresAt.getTime() < Date.now();
 
@@ -691,6 +689,14 @@ async function _PATCH(req: NextRequest) {
     const updated = await prisma.$transaction(async (tx) => {
       if (action === "CANCEL") {
         if (!isManager) {
+          throw new Error("FORBIDDEN");
+        }
+        const canManageInvite = canManageMembers(
+          membership?.role ?? null,
+          invite.role as OrganizationMemberRole,
+          invite.role as OrganizationMemberRole,
+        );
+        if (!canManageInvite) {
           throw new Error("FORBIDDEN");
         }
         if (invite.role === "OWNER" && !isOwnerManager) {
@@ -814,7 +820,8 @@ async function _PATCH(req: NextRequest) {
           }
         }
       } else if (action === "DECLINE") {
-        if (!isTargetUser && !matchesToken && !isManager) {
+        // Token serves as invite locator only; decline still requires identity match.
+        if (!isTargetUser) {
           throw new Error("FORBIDDEN");
         }
         if (!isPending) {

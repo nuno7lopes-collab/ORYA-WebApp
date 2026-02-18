@@ -144,9 +144,10 @@ export default function OrganizationInvitesClient({
     setActionLoading((prev) => ({ ...prev, [invite.id]: true }));
     try {
       const endpoint = resolveInviteActionEndpoint(invite);
+      const scopedToken = tokenParam && focusedInviteId === invite.id ? tokenParam : null;
       const baseBody = {
         inviteId: invite.id,
-        token: tokenParam ?? null,
+        token: scopedToken,
         action,
       } as Record<string, unknown>;
       if ((invite.inviteType ?? "ORGANIZATION_MEMBER") === "ORGANIZATION_MEMBER") {
