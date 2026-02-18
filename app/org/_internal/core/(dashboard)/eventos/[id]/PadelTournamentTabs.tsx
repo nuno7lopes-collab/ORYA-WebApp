@@ -379,6 +379,10 @@ export default function PadelTournamentTabs({
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const { data: eventCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
+    eventId ? `/api/padel/event-categories?eventId=${eventId}` : null,
+    fetcher,
+  );
   const eventCategoryLinks = useMemo(() => {
     if (!eventCategoriesRes?.ok || !Array.isArray(eventCategoriesRes.items)) return [];
     return eventCategoriesRes.items;
@@ -449,10 +453,6 @@ export default function PadelTournamentTabs({
   );
   const { data: waitlistRes, mutate: mutateWaitlist } = useSWR(
     eventId ? orgApi(`/padel/waitlist?eventId=${eventId}${categoryParam}`) : null,
-    fetcher,
-  );
-  const { data: eventCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
-    eventId ? `/api/padel/event-categories?eventId=${eventId}` : null,
     fetcher,
   );
   const { data: standingsRes } = useSWR(
@@ -788,18 +788,6 @@ export default function PadelTournamentTabs({
             : liveOpsFilter === "UNSCHEDULED"
               ? "sem horário"
               : "todos";
-  const koVisibleMatchesCount = useMemo(() => {
-    if (liveOpsFilter === "ALL") {
-      return koRounds.reduce((total, [, games]) => total + games.length, 0);
-    }
-    return koRounds.reduce((total, [, games]) => {
-      const visible = games.filter((game) => {
-        const fullMatch = matchById.get(game.id);
-        return fullMatch ? doesMatchPassLiveOpsFilter(fullMatch, liveOpsFilter) : false;
-      });
-      return total + visible.length;
-    }, 0);
-  }, [koRounds, liveOpsFilter, matchById]);
   const actionItems = useMemo(() => {
     const actions: Array<{ key: string; level: "critical" | "warn" | "info"; label: string; hint: string }> = [];
     if (matches.length === 0) {
@@ -934,7 +922,7 @@ export default function PadelTournamentTabs({
           nonStopRounds: isNonStopFormatValue(formatValue) ? nonStopRounds : undefined,
         };
       })
-      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
     if (categoriesPayload.length === 0) {
       setPlanningPreview(null);
@@ -1133,6 +1121,19 @@ export default function PadelTournamentTabs({
       return aMeta.base.localeCompare(bMeta.base);
     });
   }, [matches, pairingNameById]);
+
+  const koVisibleMatchesCount = useMemo(() => {
+    if (liveOpsFilter === "ALL") {
+      return koRounds.reduce((total, [, games]) => total + games.length, 0);
+    }
+    return koRounds.reduce((total, [, games]) => {
+      const visible = games.filter((game) => {
+        const fullMatch = matchById.get(game.id);
+        return fullMatch ? doesMatchPassLiveOpsFilter(fullMatch, liveOpsFilter) : false;
+      });
+      return total + visible.length;
+    }, 0);
+  }, [koRounds, liveOpsFilter, matchById]);
 
   const categoryStats = useMemo(() => {
     const metaMap = new Map<number | null, CategoryMeta>();

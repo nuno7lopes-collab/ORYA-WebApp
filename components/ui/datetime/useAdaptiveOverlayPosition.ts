@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { CSSProperties, RefObject } from "react";
 
 export type OverlayPlacement = "top" | "bottom";
 
 export type AdaptiveOverlayPosition = {
-  style: React.CSSProperties | null;
+  style: CSSProperties | null;
   placement: OverlayPlacement;
 };
 
 type Params = {
   open: boolean;
-  anchorRef: React.RefObject<HTMLElement | null>;
-  overlayRef: React.RefObject<HTMLElement | null>;
+  anchorRef: RefObject<HTMLElement | null>;
+  overlayRef: RefObject<HTMLElement | null>;
   preferredWidth?: number;
   minWidth?: number;
   minHeight?: number;

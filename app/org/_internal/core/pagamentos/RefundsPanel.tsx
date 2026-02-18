@@ -3,6 +3,7 @@
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { OryaDateField } from "@/components/ui/datetime";
 import { cn } from "@/lib/utils";
 import { CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 
@@ -188,21 +189,11 @@ export default function RefundsPanel() {
         />
         <label className="flex flex-col gap-1 text-white/60">
           Desde
-          <input
-            type="date"
-            value={from}
-            onChange={(event) => setFrom(event.target.value)}
-            className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white"
-          />
+          <OryaDateField value={from} onChange={setFrom} buttonClassName="h-10 w-full rounded-xl bg-black/40 px-3 py-2 text-white" />
         </label>
         <label className="flex flex-col gap-1 text-white/60">
           Até
-          <input
-            type="date"
-            value={to}
-            onChange={(event) => setTo(event.target.value)}
-            className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white"
-          />
+          <OryaDateField value={to} onChange={setTo} buttonClassName="h-10 w-full rounded-xl bg-black/40 px-3 py-2 text-white" />
         </label>
       </div>
 

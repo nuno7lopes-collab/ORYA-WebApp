@@ -320,10 +320,10 @@ type PadelFormatPlanCategoryPayload = {
   label: string;
   teams: number;
   format: string;
-  amMxMode?: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
-  amMxProgressionMode?: "ROUND_BY_ROUND";
-  nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
-  nonStopRounds?: number;
+  amMxMode: "INDIVIDUAL_ROTATION" | "FIXED_PAIR" | undefined;
+  amMxProgressionMode: "ROUND_BY_ROUND" | undefined;
+  nonStopMode: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST" | undefined;
+  nonStopRounds: number | undefined;
 };
 
 type PadelFormatPlanResult = {

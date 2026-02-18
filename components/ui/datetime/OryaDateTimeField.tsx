@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   compareLocalDate,
   compareLocalTime,
+  isoToLocalInput,
   isValidLocalDate,
   isValidLocalDateTime,
   isValidLocalTime,
@@ -50,9 +51,13 @@ export function OryaDateTimeField({
   timePlaceholder = "Hora",
   onOpenChange,
 }: OryaDateTimeFieldProps) {
-  const current = splitLocalDateTime(value);
-  const minParts = splitLocalDateTime(minDateTime);
-  const maxParts = splitLocalDateTime(maxDateTime);
+  const normalizedValue = isValidLocalDateTime(value) ? value : isoToLocalInput(value);
+  const normalizedMinDateTime = isValidLocalDateTime(minDateTime) ? (minDateTime as string) : isoToLocalInput(minDateTime);
+  const normalizedMaxDateTime = isValidLocalDateTime(maxDateTime) ? (maxDateTime as string) : isoToLocalInput(maxDateTime);
+
+  const current = splitLocalDateTime(normalizedValue);
+  const minParts = splitLocalDateTime(normalizedMinDateTime);
+  const maxParts = splitLocalDateTime(normalizedMaxDateTime);
 
   const minDate = isValidLocalDate(minParts.date) ? minParts.date : undefined;
   const maxDate = isValidLocalDate(maxParts.date) ? maxParts.date : undefined;
@@ -69,8 +74,8 @@ export function OryaDateTimeField({
     if (!isValidLocalDate(nextDate) || !isValidLocalTime(nextTime)) return "";
     const next = `${nextDate}T${nextTime}`;
 
-    if (isValidLocalDateTime(minDateTime) && next < (minDateTime as string)) return minDateTime as string;
-    if (isValidLocalDateTime(maxDateTime) && next > (maxDateTime as string)) return maxDateTime as string;
+    if (isValidLocalDateTime(normalizedMinDateTime) && next < normalizedMinDateTime) return normalizedMinDateTime;
+    if (isValidLocalDateTime(normalizedMaxDateTime) && next > normalizedMaxDateTime) return normalizedMaxDateTime;
     return next;
   };
 

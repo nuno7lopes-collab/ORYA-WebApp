@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ContextDrawer } from "@/components/ui/context-drawer";
+import { OryaDateRangeField } from "@/components/ui/datetime";
 import { cn } from "@/lib/utils";
 import {
   areFiltersEqual,
@@ -453,35 +454,23 @@ export function FiltersDrawer({
             )}
 
             {section === "createdAt" && (
-              <div className="grid grid-cols-2 gap-2">
-                <label className="text-xs text-white/65">
-                  <span>De</span>
-                  <input
-                    type="date"
-                    value={draftFilters.createdFrom ?? ""}
-                    onChange={(event) =>
-                      onDraftFiltersChange({
-                        ...draftFilters,
-                        createdFrom: event.target.value || null,
-                      })
-                    }
-                    className="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-sm text-white outline-none focus:border-cyan-300/60"
-                  />
-                </label>
-                <label className="text-xs text-white/65">
-                  <span>Até</span>
-                  <input
-                    type="date"
-                    value={draftFilters.createdTo ?? ""}
-                    onChange={(event) =>
-                      onDraftFiltersChange({
-                        ...draftFilters,
-                        createdTo: event.target.value || null,
-                      })
-                    }
-                    className="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-sm text-white outline-none focus:border-cyan-300/60"
-                  />
-                </label>
+              <div className="pt-1">
+                <OryaDateRangeField
+                  from={draftFilters.createdFrom ?? ""}
+                  to={draftFilters.createdTo ?? ""}
+                  onFromChange={(nextFrom) =>
+                    onDraftFiltersChange({
+                      ...draftFilters,
+                      createdFrom: nextFrom || null,
+                    })
+                  }
+                  onToChange={(nextTo) =>
+                    onDraftFiltersChange({
+                      ...draftFilters,
+                      createdTo: nextTo || null,
+                    })
+                  }
+                />
               </div>
             )}
 

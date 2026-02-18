@@ -390,6 +390,7 @@ async function _PATCH(req: NextRequest) {
 
   if (action === "CANCEL") {
     if (!ctx.canManage) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!isPending) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
     await prisma.padelClubStaffInvite.update({
       where: { id: invite.id },
       data: { cancelledAt: new Date() },

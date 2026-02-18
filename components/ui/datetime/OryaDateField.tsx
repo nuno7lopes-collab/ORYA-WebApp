@@ -34,6 +34,7 @@ type OryaDateFieldProps = {
   disabled?: boolean;
   label?: string;
   todayLabel?: string;
+  open?: boolean;
   onOpenChange?: (open: boolean) => void;
 };
 
@@ -100,6 +101,7 @@ export function OryaDateField({
   disabled,
   label,
   todayLabel = "Hoje",
+  open: controlledOpen,
   onOpenChange,
 }: OryaDateFieldProps) {
   const dialogId = useId();
@@ -108,10 +110,20 @@ export function OryaDateField({
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
   const [mounted, setMounted] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [monthStart, setMonthStart] = useState<string>(() => monthStartFromDate(value));
   const [activeDate, setActiveDate] = useState<string>(() => (isValidLocalDate(value) ? value : getTodayLocalDate()));
+
+  const isControlled = typeof controlledOpen === "boolean";
+  const open = isControlled ? (controlledOpen as boolean) : uncontrolledOpen;
+
+  const setOpen = (next: boolean) => {
+    if (!isControlled) {
+      setUncontrolledOpen(next);
+    }
+    onOpenChange?.(next);
+  };
 
   const today = useMemo(() => getTodayLocalDate(), []);
   const displayValue = isValidLocalDate(value) ? formatLocalDateLabel(value) : placeholder;
@@ -148,10 +160,6 @@ export function OryaDateField({
     setMonthStart(monthStartFromDate(value));
     setActiveDate(value);
   }, [value]);
-
-  useEffect(() => {
-    onOpenChange?.(open);
-  }, [onOpenChange, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -358,7 +366,7 @@ export function OryaDateField({
         aria-expanded={open}
         aria-controls={open ? dialogId : undefined}
         disabled={disabled}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
             event.preventDefault();

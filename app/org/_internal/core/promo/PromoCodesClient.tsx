@@ -12,6 +12,7 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import { CTA_DANGER, CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
 import { buildOrgHref, buildOrgHubHref, getOrganizationIdFromBrowser, parseOrganizationId } from "@/lib/organizationIdUtils";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 
 type PromoCodeDto = {
   id: number;
@@ -899,20 +900,23 @@ export default function PromoCodesClient() {
                   </label>
                   <label className={labelBase}>
                     <span>Válido de</span>
-                    <input
-                      type="datetime-local"
+                    <OryaDateTimeField
                       value={form.validFrom}
-                      onChange={(e) => setForm((p) => ({ ...p, validFrom: e.target.value }))}
-                      className={inputBase}
+                      onChange={(next) => setForm((p) => ({ ...p, validFrom: next }))}
+                      className="w-full"
+                      dateButtonClassName="h-10 flex-1"
+                      timeButtonClassName="h-10"
                     />
                   </label>
                   <label className={labelBase}>
                     <span>Válido até</span>
-                    <input
-                      type="datetime-local"
+                    <OryaDateTimeField
                       value={form.validUntil}
-                      onChange={(e) => setForm((p) => ({ ...p, validUntil: e.target.value }))}
-                      className={inputBase}
+                      onChange={(next) => setForm((p) => ({ ...p, validUntil: next }))}
+                      minDateTime={form.validFrom || undefined}
+                      className="w-full"
+                      dateButtonClassName="h-10 flex-1"
+                      timeButtonClassName="h-10"
                     />
                   </label>
                 </div>

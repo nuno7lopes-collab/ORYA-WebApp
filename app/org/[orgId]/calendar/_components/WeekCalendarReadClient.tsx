@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { OryaDateField } from "@/components/ui/datetime";
 import { SearchableEntitySelect, type SearchableEntityOption } from "./day/SearchableEntitySelect";
 import {
   buildAggregateAgendaItems,
@@ -980,16 +981,14 @@ export default function WeekCalendarReadClient() {
             >
               →
             </button>
-            <input
-              type="date"
+            <OryaDateField
               value={dateInputValue}
-              onChange={(event) => {
-                const nextDate = parseDateParam(event.target.value, timezone);
+              onChange={(nextDateRaw) => {
+                const nextDate = parseDateParam(nextDateRaw, timezone);
                 if (!nextDate) return;
                 replaceState({ nextDate });
               }}
-              className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/85 outline-none transition focus:border-cyan-300/70"
-              aria-label="Selecionar data"
+              buttonClassName="rounded-full px-3 py-1 text-xs"
             />
             <span className="text-sm font-medium text-white">{range.label}</span>
             <label className="flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-white/80">

@@ -19,6 +19,7 @@ import {
 import InvoicesClient from "@/app/org/_internal/core/pagamentos/invoices/invoices-client";
 import PayoutsPanel from "@/app/org/_internal/core/pagamentos/PayoutsPanel";
 import RefundsPanel from "@/app/org/_internal/core/pagamentos/RefundsPanel";
+import { OryaDateField } from "@/components/ui/datetime";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isFinanceAllowedView, type FinanceAllowedView } from "@/lib/domainBoundaries";
 import { cn } from "@/lib/utils";
@@ -714,12 +715,7 @@ function FilterDate({ label, value, onChange }: { label: string; value: string; 
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</span>
-      <input
-        type="date"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-xl border border-white/20 bg-[#141414] px-3 text-sm text-white outline-none transition focus:border-cyan-300/80"
-      />
+      <OryaDateField value={value} onChange={onChange} buttonClassName="h-10 w-full rounded-xl bg-[#141414] text-sm" />
     </label>
   );
 }

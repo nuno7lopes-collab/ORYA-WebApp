@@ -134,4 +134,21 @@ describe("org-hub members invites PATCH hardening", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("blocks cancel when invite is already accepted", async () => {
+    organizationMemberInviteFindFirst.mockResolvedValue(
+      buildPendingInvite({ acceptedAt: new Date(), targetUserId: "accepted-user" }),
+    );
+
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/org-hub/organizations/members/invites", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId: 1, inviteId: "inv-1", action: "CANCEL" }),
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(organizationMemberInviteUpdate).not.toHaveBeenCalled();
+  });
 });

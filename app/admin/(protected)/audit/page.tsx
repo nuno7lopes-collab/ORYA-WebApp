@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
+import { OryaDateField } from "@/components/ui/datetime";
 
 type AuditItem = {
   id: string;
@@ -228,21 +229,11 @@ export default function AdminAuditPage() {
             </div>
             <div className="md:col-span-2">
               <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">De</label>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="admin-input mt-2"
-              />
+              <OryaDateField value={fromDate} onChange={setFromDate} buttonClassName="admin-input mt-2 h-10 w-full rounded-xl" />
             </div>
             <div className="md:col-span-2">
               <label className="text-[11px] uppercase tracking-[0.2em] text-white/50">Até</label>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="admin-input mt-2"
-              />
+              <OryaDateField value={toDate} onChange={setToDate} buttonClassName="admin-input mt-2 h-10 w-full rounded-xl" />
             </div>
             <div className="md:col-span-2 flex items-end gap-2">
               <button className="admin-button" onClick={handleApply} disabled={loading}>

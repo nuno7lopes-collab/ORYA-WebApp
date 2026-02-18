@@ -63,8 +63,16 @@ function formatRemainingTime(ms?: number | null) {
   return `${hours}h ${minutes}m`;
 }
 
+type PlayerAttentionReason =
+  | "SUBMIT_RESULT"
+  | "AWAITING_CONFIRMATION"
+  | "CONFIRMATION_EXPIRED"
+  | "REVIEW_EXPIRED"
+  | "DISPUTED"
+  | "MATCH_LIVE";
+
 function resolvePlayerAttentionLabel(params: {
-  reason: "SUBMIT_RESULT" | "AWAITING_CONFIRMATION" | "CONFIRMATION_EXPIRED" | "REVIEW_EXPIRED" | "DISPUTED" | "MATCH_LIVE";
+  reason: PlayerAttentionReason;
   pendingConfirmationMsRemaining?: number | null;
 }) {
   if (params.reason === "SUBMIT_RESULT") return "Submeter resultado";
@@ -621,7 +629,7 @@ export default async function PadelProfilePage({ params }: PageProps) {
       const canSubmit =
         match.event.playerResultSubmissionEnabled &&
         !["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED", "OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"].includes(match.status);
-      const attentionReason = canSubmit
+      const attentionReason: PlayerAttentionReason | null = canSubmit
         ? "SUBMIT_RESULT"
         : match.status === "PENDING_CONFIRMATION"
           ? pendingConfirmationMsRemaining != null && pendingConfirmationMsRemaining <= 0

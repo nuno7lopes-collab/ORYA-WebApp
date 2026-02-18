@@ -3093,6 +3093,13 @@ async function main() {
     await prisma.follows.createMany({ data: followRows, skipDuplicates: true });
 
     const orgFollowRows: Array<{ follower_id: string; organization_id: number }> = [];
+    const orgFollowSet = new Set<string>();
+    const addOrgFollow = (followerId: string, organizationId: number) => {
+      const key = `${followerId}:${organizationId}`;
+      if (orgFollowSet.has(key)) return;
+      orgFollowSet.add(key);
+      orgFollowRows.push({ follower_id: followerId, organization_id: organizationId });
+    };
     for (const user of allUsers) {
       const followed = new Set<number>();
       const followsCount = randInt(SEED_VOLUME.orgFollowMin, SEED_VOLUME.orgFollowMax);
@@ -3102,11 +3109,11 @@ async function main() {
       }
       followed.add(topPadelOrg.id);
       for (const orgId of followed) {
-        orgFollowRows.push({ follower_id: user.id, organization_id: orgId });
+        addOrgFollow(user.id, orgId);
       }
     }
     for (const org of organizations) {
-      orgFollowRows.push({ follower_id: rodriUser.id, organization_id: org.id });
+      addOrgFollow(rodriUser.id, org.id);
     }
 
     await prisma.organization_follows.createMany({ data: orgFollowRows, skipDuplicates: true });

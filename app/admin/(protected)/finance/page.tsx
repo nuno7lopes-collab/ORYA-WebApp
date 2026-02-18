@@ -8,6 +8,7 @@ import { AdminLayout } from "@/app/admin/components/AdminLayout";
 import { AdminPageHeader } from "@/app/admin/components/AdminPageHeader";
 import { AdminTopActions } from "@/app/admin/components/AdminTopActions";
 import PaymentTools from "@/app/admin/components/PaymentTools";
+import { OryaDateField } from "@/components/ui/datetime";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -310,21 +311,11 @@ function PaymentsSection({ initialQuery }: { initialQuery?: string }) {
           </div>
           <div>
             <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">De</label>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="admin-input"
-            />
+            <OryaDateField value={from} onChange={setFrom} buttonClassName="h-10 w-full rounded-xl admin-input" />
           </div>
           <div>
             <label className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-white/45">Até</label>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="admin-input"
-            />
+            <OryaDateField value={to} onChange={setTo} buttonClassName="h-10 w-full rounded-xl admin-input" />
           </div>
         </div>
       </div>

@@ -31,6 +31,7 @@ describe("calendar ux guardrails", () => {
     const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
     const datePicker = readLocal("app/org/[orgId]/calendar/_components/day/DatePickerTwoMonths.tsx");
+    const sharedDateField = readLocal("components/ui/datetime/OryaDateField.tsx");
 
     expect(dayClient).toContain('key === "f"');
     expect(dayClient).toContain('key === "g"');
@@ -39,14 +40,15 @@ describe("calendar ux guardrails", () => {
     expect(weekClient).toContain('key === "g"');
     expect(weekClient).toContain("Atalhos: ← → · T · D · G");
 
-    expect(datePicker).toContain("Atalhos: setas, Home/End, PgUp/PgDn, Enter.");
-    expect(datePicker).toContain('event.key === "ArrowLeft"');
-    expect(datePicker).toContain('event.key === "ArrowRight"');
-    expect(datePicker).toContain('event.key === "ArrowUp"');
-    expect(datePicker).toContain('event.key === "ArrowDown"');
-    expect(datePicker).toContain('event.key === "PageUp"');
-    expect(datePicker).toContain('event.key === "PageDown"');
-    expect(datePicker).toContain('event.key === "Enter" || event.key === " "');
+    expect(datePicker).toContain("OryaDateField");
+    expect(sharedDateField).toContain("Atalhos: setas, Home/End, PgUp/PgDn, Enter, Esc.");
+    expect(sharedDateField).toContain('event.key === "ArrowLeft"');
+    expect(sharedDateField).toContain('event.key === "ArrowRight"');
+    expect(sharedDateField).toContain('event.key === "ArrowUp"');
+    expect(sharedDateField).toContain('event.key === "ArrowDown"');
+    expect(sharedDateField).toContain('event.key === "PageUp"');
+    expect(sharedDateField).toContain('event.key === "PageDown"');
+    expect(sharedDateField).toContain('event.key === "Enter" || event.key === " "');
   });
 
   it("keeps booking flow accessibility and mobile continuity cues", () => {

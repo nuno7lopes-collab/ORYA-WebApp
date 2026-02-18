@@ -691,6 +691,9 @@ async function _PATCH(req: NextRequest) {
         if (!isManager) {
           throw new Error("FORBIDDEN");
         }
+        if (!isPending) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
         const canManageInvite = canManageMembers(
           membership?.role ?? null,
           invite.role as OrganizationMemberRole,

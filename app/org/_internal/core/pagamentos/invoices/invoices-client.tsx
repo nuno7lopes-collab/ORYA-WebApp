@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useMemo, useEffect } from "react";
 import { formatEuro } from "@/lib/money";
+import { OryaDateField } from "@/components/ui/datetime";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 
 type InvoiceLine = { quantity: number };
@@ -236,17 +237,15 @@ export default function InvoicesClient({
                 {preset.label}
               </button>
             ))}
-            <input
-              type="date"
+            <OryaDateField
               value={from}
-              onChange={(e) => handleDateChange("from", e.target.value)}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/50"
+              onChange={(next) => handleDateChange("from", next)}
+              buttonClassName="h-10 rounded-xl bg-black/40 px-3 py-2 text-sm"
             />
-            <input
-              type="date"
+            <OryaDateField
               value={to}
-              onChange={(e) => handleDateChange("to", e.target.value)}
-              className="rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/50"
+              onChange={(next) => handleDateChange("to", next)}
+              buttonClassName="h-10 rounded-xl bg-black/40 px-3 py-2 text-sm"
             />
             <button
               type="button"

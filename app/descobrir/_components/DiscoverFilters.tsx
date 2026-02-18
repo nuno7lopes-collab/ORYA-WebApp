@@ -6,6 +6,7 @@ import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import DoubleRange from "@/app/components/mobile/DoubleRange";
 import { cn } from "@/lib/utils";
 import { AddressCombobox } from "@/components/ui/address-combobox";
+import { OryaDateField } from "@/components/ui/datetime";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import type { DiscoverDateFilter, DiscoverWorld } from "@/app/descobrir/_lib/discoverFeed";
 
@@ -354,11 +355,10 @@ export default function DiscoverFilters({
           />
         ))}
         {date === "day" && (
-          <input
-            type="date"
+          <OryaDateField
             value={day}
-            onChange={(e) => handleDayChange(e.target.value)}
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/80"
+            onChange={(next) => handleDayChange(next)}
+            buttonClassName="h-8 rounded-xl px-3 py-1.5 text-[11px]"
           />
         )}
       </div>

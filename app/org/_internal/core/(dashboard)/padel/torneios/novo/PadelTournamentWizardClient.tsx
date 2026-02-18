@@ -304,16 +304,6 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   }, [selectedClubId]);
 
   useEffect(() => {
-    const activeIds = activeCourts.map((court) => court.id);
-    setSelectedCourtIds((prev) => prev.filter((courtId) => activeIds.includes(courtId)));
-    setCourtPriorityOrder((prev) => {
-      const filtered = prev.filter((courtId) => activeIds.includes(courtId));
-      const missing = activeIds.filter((courtId) => !filtered.includes(courtId));
-      return [...filtered, ...missing];
-    });
-  }, [activeCourts]);
-
-  useEffect(() => {
     const activeStaffIds = new Set(staffMembers.map((staff) => staff.id));
     const inherited = staffMembers.filter((staff) => staff.inheritToEvents).map((staff) => staff.id);
     setSelectedStaffIds((prev) => {
@@ -471,6 +461,15 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         }),
     [courts],
   );
+  useEffect(() => {
+    const activeIds = activeCourts.map((court) => court.id);
+    setSelectedCourtIds((prev) => prev.filter((courtId) => activeIds.includes(courtId)));
+    setCourtPriorityOrder((prev) => {
+      const filtered = prev.filter((courtId) => activeIds.includes(courtId));
+      const missing = activeIds.filter((courtId) => !filtered.includes(courtId));
+      return [...filtered, ...missing];
+    });
+  }, [activeCourts]);
   const effectiveCourtIds = useMemo(() => {
     const activeIds = activeCourts.map((court) => court.id);
     if (useAllCourts) return activeIds;
