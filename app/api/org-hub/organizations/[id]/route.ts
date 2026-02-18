@@ -171,6 +171,7 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
           organizationId,
           userId: currentMember.userId,
           client: tx,
+          allowGovernanceBypass: true,
         });
       }
     });

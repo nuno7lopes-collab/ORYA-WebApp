@@ -1,10 +1,14 @@
-import { buildSlotsForRange } from "@/lib/reservas/availability";
+import {
+  buildSlotsForRangeWithSchedules,
+  type AvailabilitySchedule,
+  type ScheduleOverride,
+  type ScheduleTemplate,
+} from "@/lib/reservas/availability";
 
 export type AvailabilityScopeType = "ORGANIZATION" | "PROFESSIONAL" | "RESOURCE";
 
 export type ScopedTemplate = {
-  scopeType: AvailabilityScopeType;
-  scopeId: number;
+  availabilityId: number;
   dayOfWeek: number;
   intervals: unknown;
 };
@@ -17,6 +21,11 @@ export type ScopedOverride = {
   intervals: unknown;
 };
 
+export type ScopedSchedule = AvailabilitySchedule & {
+  scopeType: AvailabilityScopeType;
+  scopeId: number;
+};
+
 export type ScopedSlotParams = {
   rangeStart: Date;
   rangeEnd: Date;
@@ -26,9 +35,10 @@ export type ScopedSlotParams = {
   now?: Date;
   scopeType: AvailabilityScopeType;
   scopeId: number;
-  orgTemplates: ScopedTemplate[];
+  orgSchedules: ScopedSchedule[];
+  templates: ScopedTemplate[];
   orgOverrides: ScopedOverride[];
-  templatesByScope: Map<string, ScopedTemplate[]>;
+  schedulesByScope: Map<string, ScopedSchedule[]>;
   overridesByScope: Map<string, ScopedOverride[]>;
 };
 
@@ -50,20 +60,19 @@ export function groupByScope<T extends { scopeType: AvailabilityScopeType; scope
 export function resolveScopeData(params: {
   scopeType: AvailabilityScopeType;
   scopeId: number;
-  orgTemplates: ScopedTemplate[];
+  orgSchedules: ScopedSchedule[];
   orgOverrides: ScopedOverride[];
-  templatesByScope: Map<string, ScopedTemplate[]>;
+  schedulesByScope: Map<string, ScopedSchedule[]>;
   overridesByScope: Map<string, ScopedOverride[]>;
 }) {
   const key = buildScopeKey(params.scopeType, params.scopeId);
-  const scopedTemplates = params.templatesByScope.get(key) ?? [];
+  const scopedSchedules = params.schedulesByScope.get(key) ?? [];
   const scopedOverrides = params.overridesByScope.get(key) ?? [];
-  // Any persisted template row means this scope is explicitly configured.
-  const hasCustomTemplates = scopedTemplates.length > 0;
+  const overrides = [...params.orgOverrides, ...scopedOverrides];
   return {
-    templates: hasCustomTemplates ? scopedTemplates : params.orgTemplates,
-    overrides: hasCustomTemplates ? scopedOverrides : params.orgOverrides,
-    hasCustomTemplates,
+    schedules: scopedSchedules,
+    overrides,
+    fallbackSchedules: params.orgSchedules,
   };
 }
 
@@ -71,18 +80,23 @@ export function buildScopedSlotsForRange(params: ScopedSlotParams) {
   const resolved = resolveScopeData({
     scopeType: params.scopeType,
     scopeId: params.scopeId,
-    orgTemplates: params.orgTemplates,
+    orgSchedules: params.orgSchedules,
     orgOverrides: params.orgOverrides,
-    templatesByScope: params.templatesByScope,
+    schedulesByScope: params.schedulesByScope,
     overridesByScope: params.overridesByScope,
   });
 
-  return buildSlotsForRange({
+  const templates: ScheduleTemplate[] = params.templates;
+  const overrides: ScheduleOverride[] = resolved.overrides;
+
+  return buildSlotsForRangeWithSchedules({
     rangeStart: params.rangeStart,
     rangeEnd: params.rangeEnd,
     timezone: params.timezone,
-    templates: resolved.templates,
-    overrides: resolved.overrides,
+    primarySchedules: resolved.schedules,
+    fallbackSchedules: resolved.fallbackSchedules,
+    templates,
+    overrides,
     durationMinutes: params.durationMinutes,
     stepMinutes: params.stepMinutes,
     now: params.now,

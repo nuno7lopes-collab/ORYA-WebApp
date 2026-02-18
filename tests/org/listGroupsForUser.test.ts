@@ -12,6 +12,7 @@ const prisma = vi.hoisted(() => ({
   organizationGroup: { findMany: vi.fn() },
   groupMembershipRequest: { findMany: vi.fn() },
   organizationGroupOwnerTransfer: { findMany: vi.fn() },
+  organizationGroupMember: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/organizationMembers", () => ({
@@ -73,6 +74,7 @@ describe("listOrgHubGroupsForUser", () => {
       .mockResolvedValueOnce([
         {
           id: 10,
+          name: "Grupo Norte",
           ownerUserId: "u1",
           _count: { organizations: 2 },
           organizations: [
@@ -96,6 +98,7 @@ describe("listOrgHubGroupsForUser", () => {
         },
         {
           id: 20,
+          name: null,
           ownerUserId: "u9",
           _count: { organizations: 2 },
           organizations: [
@@ -153,6 +156,8 @@ describe("listOrgHubGroupsForUser", () => {
         createdAt: new Date("2026-02-20T10:00:00.000Z"),
       },
     ]);
+
+    prisma.organizationGroupMember.findMany.mockResolvedValue([]);
 
     const result = await listOrgHubGroupsForUser({ userId: "u1" });
     const byGroupId = new Map(result.map((group) => [group.groupId, group]));

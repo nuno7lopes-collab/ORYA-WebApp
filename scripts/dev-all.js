@@ -62,6 +62,7 @@ loadSecretsJson();
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 const stripeCmd = process.platform === "win32" ? "stripe.exe" : "stripe";
 const redisCmd = process.platform === "win32" ? "redis-server.exe" : "redis-server";
+const dockerCmd = process.platform === "win32" ? "docker.exe" : "docker";
 
 function hashFile(filePath) {
   const content = fs.readFileSync(filePath);
@@ -512,26 +513,56 @@ function startDeferredServices() {
   const redisPort = process.env.REDIS_PORT || "6379";
   const localRedisUrl = `redis://127.0.0.1:${redisPort}`;
   const hasRedisBinary = commandExists(redisCmd);
+  const hasDocker = commandExists(dockerCmd);
+  const dockerRedisName = process.env.DEV_ALL_REDIS_DOCKER_NAME || "orya-dev-redis";
   const hasExplicitRedisUrl = Boolean(process.env.REDIS_URL);
   let canLaunchLocalRedis = false;
+  let canLaunchDockerRedis = false;
 
   if (startRedis && !hasExplicitRedisUrl) {
     if (hasRedisBinary) {
       process.env.REDIS_URL = localRedisUrl;
       canLaunchLocalRedis = true;
+    } else if (hasDocker) {
+      process.env.REDIS_URL = localRedisUrl;
+      canLaunchDockerRedis = true;
+      console.log("[dev-all] redis-server not found. Using Docker Redis.");
     } else {
       console.log("[dev-all] redis-server not found. Chat WS will run without Redis pub/sub.");
     }
   } else if (startRedis && process.env.REDIS_URL === localRedisUrl) {
     canLaunchLocalRedis = hasRedisBinary;
     if (!canLaunchLocalRedis) {
-      console.log("[dev-all] REDIS_URL points to local redis, but redis-server binary is missing.");
-      delete process.env.REDIS_URL;
+      if (hasDocker) {
+        canLaunchDockerRedis = true;
+        console.log("[dev-all] REDIS_URL points to local redis. Using Docker Redis.");
+      } else {
+        console.log("[dev-all] REDIS_URL points to local redis, but redis-server binary is missing.");
+        delete process.env.REDIS_URL;
+      }
     }
   }
 
   if (canLaunchLocalRedis) {
     children.push(run("redis", redisCmd, ["--port", redisPort]));
+  }
+  if (canLaunchDockerRedis) {
+    const existing = runCmd(`${dockerCmd} ps -q --filter name=${dockerRedisName}`);
+    if (existing) {
+      console.log(`[dev-all] Redis Docker container already running (${dockerRedisName}).`);
+    } else {
+      children.push(
+        run("redis-docker", dockerCmd, [
+          "run",
+          "--rm",
+          "--name",
+          dockerRedisName,
+          "-p",
+          `${redisPort}:6379`,
+          "redis:7-alpine",
+        ]),
+      );
+    }
   }
 
   if (startChatWs) {

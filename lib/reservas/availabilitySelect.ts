@@ -1,4 +1,10 @@
-import { buildScopedSlotsForRange, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import {
+  buildScopedSlotsForRange,
+  type AvailabilityScopeType,
+  type ScopedOverride,
+  type ScopedSchedule,
+  type ScopedTemplate,
+} from "@/lib/reservas/scopedAvailability";
 
 export type BookingBlock = {
   start: Date;
@@ -16,9 +22,10 @@ export type ScopedAvailabilityParams = {
   now?: Date;
   scopeType: AvailabilityScopeType;
   scopeId: number;
-  orgTemplates: ScopedTemplate[];
+  orgSchedules: ScopedSchedule[];
+  templates: ScopedTemplate[];
   orgOverrides: ScopedOverride[];
-  templatesByScope: Map<string, ScopedTemplate[]>;
+  schedulesByScope: Map<string, ScopedSchedule[]>;
   overridesByScope: Map<string, ScopedOverride[]>;
   blocks: BookingBlock[];
 };
@@ -51,9 +58,10 @@ export function getAvailableSlotsForScope(params: ScopedAvailabilityParams) {
     now: params.now,
     scopeType: params.scopeType,
     scopeId: params.scopeId,
-    orgTemplates: params.orgTemplates,
+    orgSchedules: params.orgSchedules,
+    templates: params.templates,
     orgOverrides: params.orgOverrides,
-    templatesByScope: params.templatesByScope,
+    schedulesByScope: params.schedulesByScope,
     overridesByScope: params.overridesByScope,
   });
 

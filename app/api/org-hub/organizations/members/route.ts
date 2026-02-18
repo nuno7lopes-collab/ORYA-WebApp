@@ -219,6 +219,22 @@ async function _PATCH(req: NextRequest) {
       return fail(403, "FORBIDDEN");
     }
     const callerRole = callerMembership.role as OrganizationMemberRole | null;
+
+    const group = await prisma.organizationGroup.findUnique({
+      where: { id: callerMembership.groupId },
+      select: { ownerUserId: true },
+    });
+    if (!group) {
+      return fail(404, "GROUP_NOT_FOUND");
+    }
+
+    const group = await prisma.organizationGroup.findUnique({
+      where: { id: callerMembership.groupId },
+      select: { ownerUserId: true },
+    });
+    if (!group) {
+      return fail(404, "GROUP_NOT_FOUND");
+    }
     const staffAccess = await ensureMemberModuleAccess({
       organizationId,
       userId: user.id,
@@ -237,6 +253,38 @@ async function _PATCH(req: NextRequest) {
     });
     if (!targetMembership) {
       return fail(404, "NOT_MEMBER");
+    }
+
+    const targetIsGovernance = await prisma.organizationGroupMember.findFirst({
+      where: { groupId: callerMembership.groupId, userId: targetUserId, isGovernance: true },
+      select: { id: true },
+    });
+    if (targetIsGovernance) {
+      return fail(409, "GROUP_GOVERNANCE_LOCKED");
+    }
+    if (targetUserId === group.ownerUserId) {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
+
+    const targetIsGovernance = await prisma.organizationGroupMember.findFirst({
+      where: { groupId: callerMembership.groupId, userId: targetUserId, isGovernance: true },
+      select: { id: true },
+    });
+
+    if (targetIsGovernance) {
+      const attemptedRoleChange = targetMembership.role !== (role as OrganizationMemberRole);
+      const attemptedRolePackChange = (targetMembership.rolePack ?? null) !== normalizedRolePack;
+      if (attemptedRoleChange || attemptedRolePackChange) {
+        return fail(409, "GROUP_GOVERNANCE_LOCKED");
+      }
+    }
+
+    // Strong invariant: within a group, only the group owner can be OWNER of member orgs.
+    if (role === "OWNER" && targetUserId !== group.ownerUserId) {
+      return fail(409, "GROUP_OWNER_INVARIANT");
+    }
+    if (role !== "OWNER" && targetUserId === group.ownerUserId) {
+      return fail(409, "GROUP_OWNER_INVARIANT");
     }
 
     const manageAllowed = canManageMembers(callerRole, targetMembership.role, role as OrganizationMemberRole);
@@ -337,6 +385,10 @@ async function _PATCH(req: NextRequest) {
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/members][PATCH]", err);
+    const message = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (message === "GROUP_GOVERNANCE_LOCKED") {
+      return fail(409, "GROUP_GOVERNANCE_LOCKED");
+    }
     return fail(500, "INTERNAL_ERROR");
   }
 }
@@ -477,6 +529,10 @@ async function _DELETE(req: NextRequest) {
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/members][DELETE]", err);
+    const message = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (message === "GROUP_GOVERNANCE_LOCKED") {
+      return fail(409, "GROUP_GOVERNANCE_LOCKED");
+    }
     return fail(500, "INTERNAL_ERROR");
   }
 }

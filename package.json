@@ -26,6 +26,7 @@
     "worker": "node scripts/operations-loop.js",
     "cron:local": "node scripts/cron-loop.js",
     "chat:ws": "node scripts/chat-ws-server.js",
+    "chat:doctor": "node scripts/chat-realtime-doctor.js",
     "messages:purge-attachments:dry": "node scripts/run-ts.cjs scripts/messages_purge_attachments_oneoff.ts",
     "messages:purge-attachments:execute": "node scripts/run-ts.cjs scripts/messages_purge_attachments_oneoff.ts --execute",
     "postinstall": "prisma generate",

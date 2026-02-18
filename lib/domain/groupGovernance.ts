@@ -18,6 +18,7 @@ import { resolveUserIdentifier } from "@/lib/userResolver";
 import { sendEmail } from "@/lib/emailClient";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
+import { enforceGroupGovernanceInvariants } from "@/lib/domain/groupGovernanceInvariants";
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
@@ -268,6 +269,7 @@ async function commitMembershipRequest(tx: TxLike, requestId: string) {
     }
 
     await enforceGroupOwnerInvariant(tx, group.id, group.ownerUserId);
+    await enforceGroupGovernanceInvariants(tx, group.id);
   } else {
     const nextOwnerUserId =
       request.type === GroupMembershipRequestType.EXIT_TRANSFER_OWNER
@@ -277,9 +279,14 @@ async function commitMembershipRequest(tx: TxLike, requestId: string) {
       throw new Error("TARGET_OWNER_REQUIRED");
     }
 
+    const newGroupName =
+      organization.publicName?.trim() ||
+      organization.businessName?.trim() ||
+      `Grupo #${request.organizationId}`;
     const newGroup = await tx.organizationGroup.create({
       data: {
         ownerUserId: nextOwnerUserId,
+        name: newGroupName,
       },
       select: { id: true },
     });
@@ -291,6 +298,8 @@ async function commitMembershipRequest(tx: TxLike, requestId: string) {
 
     await setSoleOwner(tx, request.organizationId, nextOwnerUserId, request.currentOrgOwnerUserId);
     await enforceGroupOwnerInvariant(tx, newGroup.id, nextOwnerUserId);
+    await enforceGroupGovernanceInvariants(tx, newGroup.id);
+    await enforceGroupGovernanceInvariants(tx, request.groupId);
   }
 
   const updated = await tx.groupMembershipRequest.update({
@@ -551,6 +560,7 @@ export async function createOrganizationAtomic(input: {
       const group = await tx.organizationGroup.create({
         data: {
           ownerUserId: user.id,
+          name: publicName,
         },
       });
       targetGroupId = group.id;
@@ -620,6 +630,8 @@ export async function createOrganizationAtomic(input: {
       },
       tx,
     );
+
+    await enforceGroupGovernanceInvariants(tx, targetGroupId);
 
     return organization;
   });
@@ -1279,6 +1291,7 @@ export async function confirmGroupOwnerTransfer(input: {
     });
 
     await enforceGroupOwnerInvariant(tx, transfer.groupId, transfer.toUserId);
+    await enforceGroupGovernanceInvariants(tx, transfer.groupId);
 
     return confirmed;
   });

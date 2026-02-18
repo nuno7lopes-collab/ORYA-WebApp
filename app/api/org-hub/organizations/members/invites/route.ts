@@ -790,6 +790,13 @@ async function _PATCH(req: NextRequest) {
           await ensureUserIsOrganization(tx, user.id);
         } else {
           if (role === "OWNER") {
+            const orgGroup = await tx.organization.findUnique({
+              where: { id: organizationId },
+              select: { group: { select: { ownerUserId: true } } },
+            });
+            if (orgGroup?.group?.ownerUserId && orgGroup.group.ownerUserId !== user.id) {
+              throw new Error("GROUP_OWNER_INVARIANT");
+            }
             await setSoleOwner(tx, organizationId, user.id, invite.invitedByUserId);
           } else {
             await setGroupMemberRoleForOrg({
@@ -993,6 +1000,9 @@ async function _PATCH(req: NextRequest) {
       return fail(400, "Não podes remover o último Owner. Adiciona outro Owner antes.");
     }
     if (err instanceof Error) {
+      if (err.message === "GROUP_OWNER_INVARIANT") {
+        return fail(409, "GROUP_OWNER_INVARIANT");
+      }
       if (err.message === "FORBIDDEN") {
         return fail(403, "FORBIDDEN");
       }

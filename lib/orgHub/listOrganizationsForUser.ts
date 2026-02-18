@@ -23,6 +23,7 @@ export type OrgHubOrganizationPayload = {
   };
   group: {
     id: number;
+    name: string | null;
     ownerUserId: string | null;
     viewerIsGroupOwner: boolean;
     organizationCount: number;
@@ -53,6 +54,7 @@ export async function listOrgHubOrganizationsForUser(params: {
       where: { id: { in: groupIds } },
       select: {
         id: true,
+        name: true,
         ownerUserId: true,
         _count: { select: { organizations: true } },
       },
@@ -155,6 +157,7 @@ export async function listOrgHubOrganizationsForUser(params: {
       },
       group: {
         id: membership.groupId,
+        name: group?.name?.trim() ? group.name.trim() : null,
         ownerUserId: group?.ownerUserId ?? null,
         viewerIsGroupOwner: (group?.ownerUserId ?? null) === params.userId,
         organizationCount: group?._count.organizations ?? 1,

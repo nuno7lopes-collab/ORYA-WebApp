@@ -179,6 +179,7 @@ export const ENV_MODELS = new Set([
   'UserActivity',
   'UserConsent',
   'UserIdentity',
+  'AvailabilitySchedule',
   'WeeklyAvailabilityTemplate',
   'follow_requests',
   'follows',

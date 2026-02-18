@@ -6,6 +6,7 @@ import type { AvailabilitySlot } from "@/lib/reservas/availability";
 import type {
   AvailabilityScopeType,
   ScopedOverride,
+  ScopedSchedule,
   ScopedTemplate,
 } from "@/lib/reservas/scopedAvailability";
 
@@ -30,9 +31,10 @@ export type HybridSlotInputs = {
   now: Date;
   professionals: HybridProfessionalScope[];
   resources: HybridResourceScope[];
-  orgTemplates: ScopedTemplate[];
+  orgSchedules: ScopedSchedule[];
+  templates: ScopedTemplate[];
   orgOverrides: ScopedOverride[];
-  templatesByScope: Map<string, ScopedTemplate[]>;
+  schedulesByScope: Map<string, ScopedSchedule[]>;
   overridesByScope: Map<string, ScopedOverride[]>;
   blocks: BookingBlock[];
 };
@@ -69,9 +71,10 @@ function buildScopeSlotSet(params: {
     now: params.input.now,
     scopeType: params.scopeType,
     scopeId: params.scopeId,
-    orgTemplates: params.input.orgTemplates,
+    orgSchedules: params.input.orgSchedules,
+    templates: params.input.templates,
     orgOverrides: params.input.orgOverrides,
-    templatesByScope: params.input.templatesByScope,
+    schedulesByScope: params.input.schedulesByScope,
     overridesByScope: params.input.overridesByScope,
     blocks: params.input.blocks,
   });

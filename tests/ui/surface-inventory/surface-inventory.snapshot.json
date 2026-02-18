@@ -76,6 +76,7 @@
     "app/onboarding/padel/page.tsx",
     "app/onboarding/perfil/page.tsx",
     "app/org-hub/create/page.tsx",
+    "app/org-hub/groups/[groupId]/page.tsx",
     "app/org-hub/groups/owner-transfer/confirm/page.tsx",
     "app/org-hub/groups/page.tsx",
     "app/org-hub/groups/requests/confirm/page.tsx",
@@ -446,6 +447,7 @@
       "app/logo/page.tsx",
       "app/loja/seguimento/page.tsx",
       "app/org-hub/create/page.tsx",
+      "app/org-hub/groups/[groupId]/page.tsx",
       "app/org-hub/groups/owner-transfer/confirm/page.tsx",
       "app/org-hub/groups/page.tsx",
       "app/org-hub/groups/requests/confirm/page.tsx",
@@ -531,12 +533,12 @@
     ]
   },
   "counts": {
-    "webTotal": 236,
+    "webTotal": 237,
     "mobileTotal": 42,
     "org": 78,
     "admin": 17,
     "user": 21,
-    "public": 63,
+    "public": 64,
     "legacyCompat": 57
   }
 }

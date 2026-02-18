@@ -27,6 +27,7 @@ type OrgItem = {
   };
   group?: {
     id: number;
+    name: string | null;
     ownerUserId: string | null;
     viewerIsGroupOwner: boolean;
     organizationCount: number;
@@ -38,6 +39,7 @@ type OrgItem = {
 
 type GroupBucket = {
   id: number;
+  name: string | null;
   ownerUserId: string | null;
   viewerIsGroupOwner: boolean;
   organizationCount: number;
@@ -135,6 +137,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
 
       grouped.set(groupId, {
         id: groupId,
+        name: item.group?.name ?? null,
         ownerUserId: item.group?.ownerUserId ?? null,
         viewerIsGroupOwner: Boolean(item.group?.viewerIsGroupOwner),
         organizationCount: item.group?.organizationCount ?? 1,
@@ -173,6 +176,11 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
       actionable,
     };
   }, [sortedOrgs.length, groupBuckets]);
+
+  const preferredGroupHref = useMemo(() => {
+    if (groupBuckets.length !== 1) return null;
+    return buildOrgHubHref(`/groups/${groupBuckets[0].id}`);
+  }, [groupBuckets]);
 
   const handleSwitch = async (organizationId: number, redirectToDashboard = false) => {
     if (loadingSwitch) return;
@@ -229,6 +237,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     const statusMeta = getStatusMeta(item.organization.status);
     const typeLine = item.organization.entityType || "Tipo não definido";
     const handle = item.organization.username ? `@${item.organization.username}` : "Sem username";
+    const groupLabel = item.group?.name ?? `Grupo #${item.groupId}`;
+    const groupHref = buildOrgHubHref(`/groups/${item.groupId}`);
 
     const handleCardClick = () => {
       if (isActive) {
@@ -286,22 +296,37 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/78">
               Org #{item.organizationId}
             </span>
+            <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/70">
+              {groupLabel}
+            </span>
           </div>
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <p className="text-[12px] text-white/60">{isActive ? "Organização ativa" : "Selecionar para entrar"}</p>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleCardClick();
-            }}
-            disabled={loadingSwitch}
-            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-60"
-          >
-            {isActive ? "Entrar" : "Ativar e entrar"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleCardClick();
+              }}
+              disabled={loadingSwitch}
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-60"
+            >
+              {isActive ? "Entrar" : "Ativar e entrar"}
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                router.push(groupHref);
+              }}
+              className="rounded-full border border-white/20 bg-white/8 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/80 transition hover:bg-white/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            >
+              Abrir grupo
+            </button>
+          </div>
         </div>
       </article>
     );
@@ -316,7 +341,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     >
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
-          <OrgHubTopNav />
+          <OrgHubTopNav groupDashboardHref={preferredGroupHref} />
           <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/75">Organizações</p>
@@ -372,6 +397,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             {groupBuckets.map((group) => {
               const openRequests = group.pendingJoinCount + group.pendingExitCount;
               const createInGroupHref = `${buildOrgHubHref("/create")}?groupMode=EXISTING_GROUP&groupId=${group.id}`;
+              const groupLabel = group.name ?? `Grupo #${group.id}`;
+              const groupDashboardHref = buildOrgHubHref(`/groups/${group.id}`);
 
               return (
                 <article
@@ -381,7 +408,8 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-[11px] uppercase tracking-[0.24em] text-white/58">Grupo mãe</p>
-                      <h2 className="text-xl font-semibold text-white">Grupo #{group.id}</h2>
+                      <h2 className="text-xl font-semibold text-white">{groupLabel}</h2>
+                      <p className="text-[11px] text-white/55">ID #{group.id}</p>
                       <p className="text-[12px] text-white/70">
                         {group.organizationCount} subsidiária{group.organizationCount === 1 ? "" : "s"}
                         {openRequests > 0 ? ` · ${openRequests} operação(ões) pendente(s)` : " · Sem operações pendentes"}
@@ -402,19 +430,26 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
                           {group.actionableCount} requer ação
                         </span>
                       )}
-	                      <button
-	                        type="button"
-	                        onClick={() => router.push(createInGroupHref)}
-	                        disabled={!group.viewerIsGroupOwner}
-	                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
-	                      >
-	                        Nova org neste grupo
-	                      </button>
-	                      <button
-	                        type="button"
-	                        onClick={() => router.push(buildOrgHubHref("/groups"))}
-	                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
-	                      >
+                      <button
+                        type="button"
+                        onClick={() => router.push(createInGroupHref)}
+                        disabled={!group.viewerIsGroupOwner}
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Nova org neste grupo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push(groupDashboardHref)}
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                      >
+                        Dashboard do grupo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.push(buildOrgHubHref("/groups"))}
+                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                      >
 	                        Governança
 	                      </button>
                     </div>

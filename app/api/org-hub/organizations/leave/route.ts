@@ -80,6 +80,10 @@ async function _POST(req: NextRequest) {
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
     console.error("[organização/organizations/leave]", err);
+    const message = err instanceof Error ? err.message : "INTERNAL_ERROR";
+    if (message === "GROUP_GOVERNANCE_LOCKED") {
+      return fail(409, "GROUP_GOVERNANCE_LOCKED");
+    }
     return fail(500, "INTERNAL_ERROR");
   }
 }

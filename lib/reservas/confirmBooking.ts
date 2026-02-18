@@ -470,7 +470,7 @@ export async function confirmPendingBooking({
       ];
     })(),
   };
-  const templateScopeFilters =
+  const scopeFilters =
     availabilityMode === "HYBRID"
       ? [
           { scopeType: "ORGANIZATION" as const, scopeId: 0 },
@@ -481,17 +481,15 @@ export async function confirmPendingBooking({
           { scopeType: "ORGANIZATION" as const, scopeId: 0 },
           { scopeType, scopeId: { in: conflictScopeIds } },
         ];
-  const [templates, overrides, blocking, classSessions] = await Promise.all([
-    tx.weeklyAvailabilityTemplate.findMany({
+  const [schedules, overrides, blocking, classSessions] = await Promise.all([
+    tx.availabilitySchedule.findMany({
       where: {
         organizationId: booking.organizationId,
         ...(shouldUseOrgOnly
           ? { scopeType: "ORGANIZATION", scopeId: 0 }
-          : {
-              OR: templateScopeFilters,
-            }),
+          : { OR: scopeFilters }),
       },
-      select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
+      select: { id: true, scopeType: true, scopeId: true, startDate: true, endDate: true, createdAt: true },
     }),
     tx.availabilityOverride.findMany({
       where: {
@@ -499,7 +497,7 @@ export async function confirmPendingBooking({
         ...(shouldUseOrgOnly
           ? { scopeType: "ORGANIZATION", scopeId: 0 }
           : {
-              OR: templateScopeFilters,
+              OR: scopeFilters,
             }),
         date: new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)),
       },
@@ -529,9 +527,16 @@ export async function confirmPendingBooking({
         }),
   ]);
 
-  const orgTemplates = templates.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
+  const scheduleIds = schedules.map((schedule) => schedule.id);
+  const templates = scheduleIds.length
+    ? await tx.weeklyAvailabilityTemplate.findMany({
+        where: { availabilityId: { in: scheduleIds } },
+        select: { availabilityId: true, dayOfWeek: true, intervals: true },
+      })
+    : [];
+  const orgSchedules = schedules.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
   const orgOverrides = overrides.filter((row) => row.scopeType === "ORGANIZATION" && row.scopeId === 0);
-  const templatesByScope = groupByScope(templates);
+  const schedulesByScope = groupByScope(schedules);
   const overridesByScope = groupByScope(overrides);
   const blocks = [...buildBlocks(blocking), ...buildSessionBlocks(classSessions)];
   const slotKey = booking.startsAt.toISOString();
@@ -548,9 +553,10 @@ export async function confirmPendingBooking({
       now,
       professionals: professionalScopes,
       resources: resourceScopes,
-      orgTemplates: orgTemplates as ScopedTemplate[],
+      orgSchedules: orgSchedules as ScopedSchedule[],
+      templates: templates as ScopedTemplate[],
       orgOverrides: orgOverrides as ScopedOverride[],
-      templatesByScope,
+      schedulesByScope,
       overridesByScope,
       blocks,
     });
@@ -623,9 +629,10 @@ export async function confirmPendingBooking({
         now,
         scopeType: scope.scopeType,
         scopeId: scope.scopeId,
-        orgTemplates: orgTemplates as ScopedTemplate[],
+        orgSchedules: orgSchedules as ScopedSchedule[],
+        templates: templates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
-        templatesByScope,
+        schedulesByScope,
         overridesByScope,
         blocks,
       });

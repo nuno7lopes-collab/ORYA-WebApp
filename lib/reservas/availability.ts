@@ -139,14 +139,76 @@ export function getDateParts(date: Date, timeZone: string) {
   };
 }
 
+export type AvailabilitySchedule = {
+  id: number;
+  scopeType?: string;
+  scopeId?: number;
+  startDate: Date;
+  endDate?: Date | null;
+  createdAt?: Date;
+};
+
+export type ScheduleTemplate = {
+  availabilityId: number;
+  dayOfWeek: number;
+  intervals: unknown;
+};
+
+export type ScheduleOverride = {
+  date: Date;
+  kind: string;
+  intervals: unknown;
+};
+
+function scheduleStartKey(schedule: AvailabilitySchedule, timeZone: string) {
+  const parts = getDateParts(schedule.startDate, timeZone);
+  return getDateKey(parts.year, parts.month, parts.day);
+}
+
+function scheduleEndKey(schedule: AvailabilitySchedule, timeZone: string) {
+  if (!schedule.endDate) return null;
+  const parts = getDateParts(schedule.endDate, timeZone);
+  return getDateKey(parts.year, parts.month, parts.day);
+}
+
+export function resolveScheduleForDate(
+  schedules: AvailabilitySchedule[],
+  date: Date,
+  timeZone: string,
+) {
+  if (!schedules.length) return null;
+  const dateParts = getDateParts(date, timeZone);
+  const targetKey = getDateKey(dateParts.year, dateParts.month, dateParts.day);
+  let selected: AvailabilitySchedule | null = null;
+  let selectedKey: string | null = null;
+  let selectedCreatedAt = 0;
+  for (const schedule of schedules) {
+    const startKey = scheduleStartKey(schedule, timeZone);
+    if (targetKey < startKey) continue;
+    const endKey = scheduleEndKey(schedule, timeZone);
+    if (endKey && targetKey > endKey) continue;
+    const createdAt = schedule.createdAt ? schedule.createdAt.getTime() : 0;
+    if (!selected || startKey > (selectedKey ?? "") || (startKey === selectedKey && createdAt > selectedCreatedAt)) {
+      selected = schedule;
+      selectedKey = startKey;
+      selectedCreatedAt = createdAt;
+    }
+  }
+  return selected;
+}
+
 export function resolveIntervalsForDate(params: {
   dayOfWeek: number;
   templatesByDay: Map<number, Interval[]>;
   overrides: Array<{ kind: string; intervals: Interval[] }>;
+  fallbackToDefault?: boolean;
 }) {
+  const fallbackToDefault = params.fallbackToDefault !== false;
   let intervals = params.templatesByDay.has(params.dayOfWeek)
     ? params.templatesByDay.get(params.dayOfWeek) ?? []
-    : getDefaultTemplateIntervals(params.dayOfWeek);
+    : fallbackToDefault
+      ? getDefaultTemplateIntervals(params.dayOfWeek)
+      : [];
   if (!params.overrides.length) return intervals;
   for (const override of params.overrides) {
     if (override.kind === "CLOSED") {
@@ -218,7 +280,90 @@ export function buildSlotsForRange(params: {
     const key = getDateKey(current.year, current.month, current.day);
     const dayOfWeek = cursor.getUTCDay();
     const overrides = overridesByDate.get(key) ?? [];
-    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides });
+    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides, fallbackToDefault: true });
+    if (intervals.length) {
+      for (const interval of intervals) {
+        for (let minute = interval.startMinute; minute + params.durationMinutes <= interval.endMinute; minute += stepMinutes) {
+          const hour = Math.floor(minute / 60);
+          const minuteOfHour = minute % 60;
+          const slotDate = makeUtcDateFromLocal(
+            { year: current.year, month: current.month, day: current.day, hour, minute: minuteOfHour },
+            params.timezone,
+          );
+          if (slotDate < params.rangeStart || slotDate > params.rangeEnd) continue;
+          if (slotDate <= now) continue;
+          slots.push({ startsAt: slotDate, durationMinutes: params.durationMinutes });
+        }
+      }
+    }
+  }
+
+  return slots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+export function buildSlotsForRangeWithSchedules(params: {
+  rangeStart: Date;
+  rangeEnd: Date;
+  timezone: string;
+  primarySchedules: AvailabilitySchedule[];
+  fallbackSchedules?: AvailabilitySchedule[];
+  templates: ScheduleTemplate[];
+  overrides: ScheduleOverride[];
+  durationMinutes: number;
+  stepMinutes?: number;
+  now?: Date;
+}) {
+  const stepMinutes = params.stepMinutes ?? DEFAULT_SLOT_STEP_MINUTES;
+  const now = params.now ?? new Date();
+  const templatesBySchedule = new Map<number, Map<number, Interval[]>>();
+  params.templates.forEach((template) => {
+    if (!Number.isFinite(template.availabilityId)) return;
+    const byDay = templatesBySchedule.get(template.availabilityId) ?? new Map<number, Interval[]>();
+    byDay.set(template.dayOfWeek, normalizeIntervals(template.intervals));
+    templatesBySchedule.set(template.availabilityId, byDay);
+  });
+
+  const overridesByDate = new Map<string, Array<{ kind: string; intervals: Interval[] }>>();
+  params.overrides.forEach((override) => {
+    const keyParts = getDateParts(override.date, params.timezone);
+    const key = getDateKey(keyParts.year, keyParts.month, keyParts.day);
+    const existing = overridesByDate.get(key) ?? [];
+    existing.push({ kind: override.kind, intervals: normalizeIntervals(override.intervals) });
+    overridesByDate.set(key, existing);
+  });
+
+  const startParts = getDateParts(params.rangeStart, params.timezone);
+  const endParts = getDateParts(params.rangeEnd, params.timezone);
+  const startDayUtc = Date.UTC(startParts.year, startParts.month - 1, startParts.day);
+  const endDayUtc = Date.UTC(endParts.year, endParts.month - 1, endParts.day);
+  if (!Number.isFinite(startDayUtc) || !Number.isFinite(endDayUtc) || endDayUtc < startDayUtc) {
+    return [];
+  }
+
+  const slots: AvailabilitySlot[] = [];
+  const fallbackSchedules = params.fallbackSchedules ?? [];
+  for (let currentDayUtc = startDayUtc; currentDayUtc <= endDayUtc; currentDayUtc += 24 * 60 * 60 * 1000) {
+    const cursor = new Date(currentDayUtc);
+    const current = {
+      year: cursor.getUTCFullYear(),
+      month: cursor.getUTCMonth() + 1,
+      day: cursor.getUTCDate(),
+    };
+    const key = getDateKey(current.year, current.month, current.day);
+    const dayOfWeek = cursor.getUTCDay();
+
+    const schedule =
+      resolveScheduleForDate(params.primarySchedules, cursor, params.timezone) ??
+      resolveScheduleForDate(fallbackSchedules, cursor, params.timezone);
+    const templatesByDay = schedule ? templatesBySchedule.get(schedule.id) ?? new Map() : new Map();
+    const overrides = overridesByDate.get(key) ?? [];
+    const intervals = resolveIntervalsForDate({
+      dayOfWeek,
+      templatesByDay,
+      overrides,
+      fallbackToDefault: !schedule,
+    });
+
     if (intervals.length) {
       for (const interval of intervals) {
         for (let minute = interval.startMinute; minute + params.durationMinutes <= interval.endMinute; minute += stepMinutes) {

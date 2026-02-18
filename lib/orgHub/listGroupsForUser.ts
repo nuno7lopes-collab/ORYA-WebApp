@@ -56,10 +56,25 @@ export type OrgHubGroupOwnerTransfer = {
   isActionable: boolean;
 };
 
+export type OrgHubGroupGovernanceMember = {
+  userId: string;
+  role: OrganizationMemberRole;
+  fullName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+};
+
 export type OrgHubGroupPayload = {
   groupId: number;
+  groupName: string | null;
   ownerUserId: string | null;
   viewerIsGroupOwner: boolean;
+  viewerIsGovernance: boolean;
+  governance: {
+    coOwnerCount: number;
+    adminCount: number;
+  };
+  governanceMembers: OrgHubGroupGovernanceMember[];
   organizationCount: number;
   organizations: OrgHubGroupOrganization[];
   joinCandidates: OrgHubGroupJoinCandidate[];
@@ -182,29 +197,75 @@ export async function listOrgHubGroupsForUser(params: {
     return [];
   }
 
-  const groups = await prisma.organizationGroup.findMany({
-    where: { id: { in: Array.from(allGroupIds) } },
-    select: {
-      id: true,
-      ownerUserId: true,
-      _count: { select: { organizations: true } },
-      organizations: {
-        where: { status: { in: GROUP_ALLOWED_STATUSES } },
-        select: {
-          id: true,
-          publicName: true,
-          businessName: true,
-          username: true,
-          status: true,
-          entityType: true,
+  const [groups, governanceMembers] = await Promise.all([
+    prisma.organizationGroup.findMany({
+      where: { id: { in: Array.from(allGroupIds) } },
+      select: {
+        id: true,
+        name: true,
+        ownerUserId: true,
+        _count: { select: { organizations: true } },
+        organizations: {
+          where: { status: { in: GROUP_ALLOWED_STATUSES } },
+          select: {
+            id: true,
+            publicName: true,
+            businessName: true,
+            username: true,
+            status: true,
+            entityType: true,
+          },
+          orderBy: { id: "asc" },
         },
-        orderBy: { id: "asc" },
       },
-    },
-    orderBy: { id: "asc" },
-  });
+      orderBy: { id: "asc" },
+    }),
+    prisma.organizationGroupMember.findMany({
+      where: {
+        groupId: { in: Array.from(allGroupIds) },
+        isGovernance: true,
+        role: {
+          in: [OrganizationMemberRole.OWNER, OrganizationMemberRole.CO_OWNER, OrganizationMemberRole.ADMIN],
+        },
+      },
+      select: {
+        groupId: true,
+        userId: true,
+        role: true,
+        user: {
+          select: {
+            fullName: true,
+            username: true,
+            avatarUrl: true,
+            isDeleted: true,
+          },
+        },
+      },
+    }),
+  ]);
 
   const groupById = new Map(groups.map((group) => [group.id, group]));
+  const viewerGovernanceGroupIds = new Set(
+    governanceMembers.filter((member) => member.userId === params.userId).map((member) => member.groupId),
+  );
+  const governanceCountsByGroupId = new Map<number, { coOwnerCount: number; adminCount: number }>();
+  const governanceMembersByGroupId = new Map<number, OrgHubGroupGovernanceMember[]>();
+  for (const member of governanceMembers) {
+    const current = governanceCountsByGroupId.get(member.groupId) ?? { coOwnerCount: 0, adminCount: 0 };
+    if (member.role === OrganizationMemberRole.CO_OWNER) current.coOwnerCount += 1;
+    if (member.role === OrganizationMemberRole.ADMIN) current.adminCount += 1;
+    governanceCountsByGroupId.set(member.groupId, current);
+
+    const list = governanceMembersByGroupId.get(member.groupId) ?? [];
+    list.push({
+      userId: member.userId,
+      role: member.role,
+      fullName: member.user?.isDeleted ? null : member.user?.fullName ?? null,
+      username: member.user?.isDeleted ? null : member.user?.username ?? null,
+      avatarUrl: member.user?.isDeleted ? null : member.user?.avatarUrl ?? null,
+    });
+    governanceMembersByGroupId.set(member.groupId, list);
+  }
   const openJoinRequestKey = new Set(
     openRequests
       .filter((request) => request.type === GroupMembershipRequestType.JOIN)
@@ -213,6 +274,9 @@ export async function listOrgHubGroupsForUser(params: {
 
   const result: OrgHubGroupPayload[] = groups.map((group) => {
     const viewerIsGroupOwner = group.ownerUserId === params.userId;
+    const viewerIsGovernance = viewerIsGroupOwner || viewerGovernanceGroupIds.has(group.id);
+    const governance = governanceCountsByGroupId.get(group.id) ?? { coOwnerCount: 0, adminCount: 0 };
+    const governanceMembersList = governanceMembersByGroupId.get(group.id) ?? [];
 
     const organizations = group.organizations
       .filter((organization) => {
@@ -304,8 +368,18 @@ export async function listOrgHubGroupsForUser(params: {
 
     return {
       groupId: group.id,
+      groupName: group.name?.trim() ? group.name.trim() : null,
       ownerUserId: group.ownerUserId,
       viewerIsGroupOwner,
+      viewerIsGovernance,
+      governance,
+      governanceMembers: governanceMembersList.sort((a, b) => {
+        const order: Record<string, number> = { OWNER: 0, CO_OWNER: 1, ADMIN: 2 };
+        const aOrder = order[String(a.role).toUpperCase()] ?? 9;
+        const bOrder = order[String(b.role).toUpperCase()] ?? 9;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return a.userId.localeCompare(b.userId);
+      }),
       organizationCount: group._count.organizations,
       organizations,
       joinCandidates,
@@ -322,8 +396,12 @@ export async function listOrgHubGroupsForUser(params: {
     const canActAsTargetOwner = request.targetOwnerUserId === params.userId;
     result.push({
       groupId: request.groupId,
+      groupName: null,
       ownerUserId: request.group.ownerUserId,
       viewerIsGroupOwner: canActAsGroupOwner,
+      viewerIsGovernance: canActAsGroupOwner,
+      governance: { coOwnerCount: 0, adminCount: 0 },
+      governanceMembers: [],
       organizationCount: 0,
       organizations: [],
       joinCandidates: [],

@@ -211,9 +211,10 @@ export async function setGroupMemberRoleForOrg(params: {
 export async function revokeGroupMemberForOrg(params: {
   organizationId: number;
   userId: string;
+  allowGovernanceBypass?: boolean;
   client?: Prisma.TransactionClient;
 }) {
-  const { organizationId, userId, client } = params;
+  const { organizationId, userId, allowGovernanceBypass = false, client } = params;
   const db = client ?? prisma;
   const org = await db.organization.findUnique({
     where: { id: organizationId },
@@ -230,7 +231,27 @@ export async function revokeGroupMemberForOrg(params: {
   if (!targetGroup) return;
 
   if (targetGroup.isGovernance) {
-    throw new Error("GROUP_GOVERNANCE_LOCKED");
+    if (!allowGovernanceBypass) {
+      throw new Error("GROUP_GOVERNANCE_LOCKED");
+    }
+    const revokedAt = new Date();
+    const updated = await db.organizationGroupMemberOrganizationOverride.updateMany({
+      where: { groupMemberId: targetGroup.id, organizationId },
+      data: { revokedAt },
+    });
+    if (updated.count === 0) {
+      await db.organizationGroupMemberOrganizationOverride.createMany({
+        data: [
+          {
+            groupMemberId: targetGroup.id,
+            organizationId,
+            revokedAt,
+          },
+        ],
+        skipDuplicates: true,
+      });
+    }
+    return;
   }
 
   if (targetGroup.scopeAllOrgs) {

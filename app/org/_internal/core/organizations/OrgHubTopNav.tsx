@@ -29,15 +29,27 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export default function OrgHubTopNav() {
+type Props = {
+  groupDashboardHref?: string | null;
+};
+
+export default function OrgHubTopNav({ groupDashboardHref }: Props = {}) {
   const pathname = usePathname() || "";
+  const navItems = [...NAV_ITEMS];
+  if (groupDashboardHref) {
+    navItems.splice(2, 0, {
+      href: groupDashboardHref,
+      label: "Dashboard do grupo",
+      match: (path) => path.startsWith(groupDashboardHref),
+    });
+  }
 
   return (
     <nav
       aria-label="Navegação do hub de organizações"
       className="inline-flex flex-wrap items-center gap-2 rounded-full border border-white/16 bg-black/28 p-1"
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const active = item.match(pathname);
         return (
           <Link

@@ -138,6 +138,10 @@ export default function GroupsHubClient({ initialGroups }: Props) {
   const [participantByRequest, setParticipantByRequest] = useState<Record<string, string>>({});
   const [codesByRequest, setCodesByRequest] = useState<Record<string, CodesState>>({});
   const [tokenByRequest, setTokenByRequest] = useState<Record<string, string>>({});
+  const [groupNameById, setGroupNameById] = useState<Record<number, string>>({});
+  const [governanceInviteByGroup, setGovernanceInviteByGroup] = useState<Record<number, string>>({});
+  const [governanceRoleByGroup, setGovernanceRoleByGroup] = useState<Record<number, string>>({});
+  const [governanceRoleByMember, setGovernanceRoleByMember] = useState<Record<string, string>>({});
 
   const summary = useMemo(() => {
     const groups = initialGroups.length;
@@ -149,6 +153,11 @@ export default function GroupsHubClient({ initialGroups }: Props) {
     );
     const ownedGroups = initialGroups.filter((group) => group.viewerIsGroupOwner).length;
     return { groups, organizations, openRequests, actionable, ownedGroups };
+  }, [initialGroups]);
+
+  const preferredGroupHref = useMemo(() => {
+    if (initialGroups.length !== 1) return null;
+    return buildOrgHubHref(`/groups/${initialGroups[0].groupId}`);
   }, [initialGroups]);
 
   const visibleGroups = useMemo(() => {
@@ -165,9 +174,9 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 
   const isBusy = (key: string) => busyKey === key;
 
-  const submitJson = async (path: string, body?: unknown) => {
+  const submitJson = async (path: string, body?: unknown, method: "POST" | "PATCH" | "DELETE" = "POST") => {
     const response = await fetch(resolveCanonicalOrgApiPath(path), {
-      method: "POST",
+      method,
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -340,11 +349,60 @@ export default function GroupsHubClient({ initialGroups }: Props) {
 
   const formatParticipantLabel = (raw: string) => PARTICIPANT_LABELS[raw] ?? raw;
 
+  const renameGroup = (groupId: number, currentName: string | null) => {
+    const name = (groupNameById[groupId] ?? currentName ?? "").trim();
+    if (!name) {
+      setFeedback({ text: "Indica um nome para o grupo.", tone: "error" });
+      return;
+    }
+    void runAction(`group:rename:${groupId}`, async () => {
+      await submitJson(`/api/org-hub/groups/${groupId}/governance`, { name }, "PATCH");
+      return "Nome do grupo atualizado.";
+    });
+  };
+
+  const addGovernanceMember = (groupId: number) => {
+    const userIdentifier = (governanceInviteByGroup[groupId] ?? "").trim();
+    const role = (governanceRoleByGroup[groupId] ?? "CO_OWNER").toUpperCase();
+    if (!userIdentifier) {
+      setFeedback({ text: "Indica o utilizador ou email.", tone: "error" });
+      return;
+    }
+    if (!["CO_OWNER", "ADMIN"].includes(role)) {
+      setFeedback({ text: "Seleciona um papel válido.", tone: "error" });
+      return;
+    }
+    void runAction(`group:gov:add:${groupId}`, async () => {
+      await submitJson(`/api/org-hub/groups/${groupId}/governance/members`, { userIdentifier, role }, "POST");
+      return "Governança atualizada.";
+    });
+  };
+
+  const updateGovernanceMember = (groupId: number, userId: string, currentRole: string) => {
+    const key = `${groupId}:${userId}`;
+    const role = (governanceRoleByMember[key] ?? currentRole).toUpperCase();
+    if (!["CO_OWNER", "ADMIN"].includes(role)) {
+      setFeedback({ text: "Seleciona um papel válido.", tone: "error" });
+      return;
+    }
+    void runAction(`group:gov:update:${groupId}:${userId}`, async () => {
+      await submitJson(`/api/org-hub/groups/${groupId}/governance/members`, { userId, role }, "PATCH");
+      return "Papel atualizado.";
+    });
+  };
+
+  const removeGovernanceMember = (groupId: number, userId: string) => {
+    void runAction(`group:gov:remove:${groupId}:${userId}`, async () => {
+      await submitJson(`/api/org-hub/groups/${groupId}/governance/members`, { userId }, "DELETE");
+      return "Membro removido.";
+    });
+  };
+
   if (initialGroups.length === 0) {
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-12 text-white md:px-6 lg:px-8">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          <OrgHubTopNav />
+          <OrgHubTopNav groupDashboardHref={preferredGroupHref} />
           <h1 className="mt-4 text-2xl font-semibold">Gestão de grupos</h1>
           <p className="mt-2 text-sm text-white/70">
             Ainda não tens grupos ativos para gerir. Cria ou entra numa organização para começar.
@@ -365,7 +423,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
     <div aria-busy={Boolean(busyKey)} className="mx-auto w-full max-w-6xl px-4 py-10 text-white md:px-6 md:py-12 lg:px-8">
       <div className="space-y-6">
         <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
-          <OrgHubTopNav />
+          <OrgHubTopNav groupDashboardHref={preferredGroupHref} />
 
           <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -476,13 +534,19 @@ export default function GroupsHubClient({ initialGroups }: Props) {
           const defaultGroupOrgHref = group.organizations[0]
             ? buildOrgHref(group.organizations[0].organizationId, "/staff")
             : null;
+          const groupDisplayName = group.groupName ?? `Grupo #${group.groupId}`;
+          const groupNameValue = groupNameById[group.groupId] ?? group.groupName ?? "";
+          const groupDashboardHref = buildOrgHubHref(`/groups/${group.groupId}`);
+          const governanceMembers = group.governanceMembers ?? [];
+          const ownerMember = governanceMembers.find((member) => member.role === "OWNER") ?? null;
 
           return (
                 <article key={group.groupId} className="rounded-3xl border border-white/15 bg-[linear-gradient(145deg,rgba(12,21,38,0.74),rgba(6,11,24,0.84))] p-4 shadow-[0_18px_66px_rgba(0,0,0,0.47)] sm:p-5">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/58">Grupo mãe</p>
-                  <h2 className="text-xl font-semibold text-white">Grupo #{group.groupId}</h2>
+                  <h2 className="text-xl font-semibold text-white">{groupDisplayName}</h2>
+                  <p className="text-[11px] text-white/55">ID #{group.groupId}</p>
                       <p className="text-[12px] text-white/72">
                         {group.organizationCount} subsidiária{group.organizationCount === 1 ? "" : "s"} · {group.openRequests.length} pedido(s)
                       </p>
@@ -507,6 +571,13 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                       Abrir staff
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => router.push(groupDashboardHref)}
+                    className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                  >
+                    Dashboard do grupo
+                  </button>
                   {group.viewerIsGroupOwner && (
                     <button
                       type="button"
@@ -518,6 +589,155 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                       Nova org no grupo
                     </button>
                   )}
+                </div>
+              </div>
+              <div className="mb-4 rounded-2xl border border-white/12 bg-white/6 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-white/55">Governança do grupo</p>
+                    <p className="mt-1 text-sm text-white/78">
+                      Owner, co-owners e admins com visão consolidada das organizações do grupo.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em]">
+                    <span className="rounded-full border border-cyan-300/45 bg-cyan-300/12 px-2.5 py-1 text-cyan-100">
+                      Owner {ownerMember ? 1 : 0}
+                    </span>
+                    <span className="rounded-full border border-sky-300/45 bg-sky-300/12 px-2.5 py-1 text-sky-100">
+                      Co-owners {group.governance.coOwnerCount}
+                    </span>
+                    <span className="rounded-full border border-indigo-300/45 bg-indigo-300/12 px-2.5 py-1 text-indigo-100">
+                      Admins {group.governance.adminCount}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr),320px]">
+                  <div className="rounded-2xl border border-white/10 bg-white/4 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Equipa de governança</p>
+                    {governanceMembers.length === 0 ? (
+                      <p className="mt-2 text-sm text-white/60">Sem membros de governança registados.</p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {governanceMembers.map((member) => {
+                          const memberKey = `${group.groupId}:${member.userId}`;
+                          const roleLabel = member.role === "OWNER" ? "Owner" : member.role === "CO_OWNER" ? "Co-owner" : "Admin";
+                          return (
+                            <div
+                              key={memberKey}
+                              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/6 px-3 py-2"
+                            >
+                              <div>
+                                <p className="text-sm font-semibold text-white">
+                                  {member.fullName || member.username || member.userId}
+                                </p>
+                                <p className="text-[11px] text-white/60">
+                                  {member.username ? `@${member.username}` : "Sem username"}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]", toneForRole(member.role))}>
+                                  {roleLabel}
+                                </span>
+                                {group.viewerIsGroupOwner && member.role !== "OWNER" && (
+                                  <>
+                                    <select
+                                      value={governanceRoleByMember[memberKey] ?? member.role}
+                                      onChange={(event) =>
+                                        setGovernanceRoleByMember((prev) => ({ ...prev, [memberKey]: event.target.value }))
+                                      }
+                                      className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-[11px] text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                                    >
+                                      <option value="CO_OWNER">Co-owner</option>
+                                      <option value="ADMIN">Admin</option>
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateGovernanceMember(group.groupId, member.userId, member.role)}
+                                      className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+                                    >
+                                      Atualizar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeGovernanceMember(group.groupId, member.userId)}
+                                      className="rounded-full border border-red-300/40 bg-red-300/10 px-2.5 py-1 text-[11px] font-semibold text-red-100 transition hover:bg-red-300/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/55"
+                                    >
+                                      Remover
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {!group.viewerIsGroupOwner && group.viewerIsGovernance && (
+                      <p className="mt-3 text-[12px] text-white/60">
+                        Apenas o owner do grupo pode alterar governança.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/4 p-3">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Ações do owner</p>
+                    <div className="space-y-2">
+                      <label className="text-[11px] text-white/60">Nome do grupo</label>
+                      <input
+                        type="text"
+                        value={groupNameValue}
+                        onChange={(event) =>
+                          setGroupNameById((prev) => ({ ...prev, [group.groupId]: event.target.value }))
+                        }
+                        placeholder="Ex: Grupo Norte"
+                        disabled={!group.viewerIsGroupOwner}
+                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => renameGroup(group.groupId, group.groupName)}
+                        disabled={!group.viewerIsGroupOwner}
+                        className="w-full rounded-full border border-white/20 bg-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Guardar nome
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[11px] text-white/60">Adicionar co-owner/admin</label>
+                      <input
+                        type="text"
+                        value={governanceInviteByGroup[group.groupId] ?? ""}
+                        onChange={(event) =>
+                          setGovernanceInviteByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
+                        }
+                        placeholder="email ou username"
+                        disabled={!group.viewerIsGroupOwner}
+                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      <div className="flex gap-2">
+                        <select
+                          value={governanceRoleByGroup[group.groupId] ?? "CO_OWNER"}
+                          onChange={(event) =>
+                            setGovernanceRoleByGroup((prev) => ({ ...prev, [group.groupId]: event.target.value }))
+                          }
+                          disabled={!group.viewerIsGroupOwner}
+                          className="flex-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="CO_OWNER">Co-owner</option>
+                          <option value="ADMIN">Admin</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => addGovernanceMember(group.groupId)}
+                          disabled={!group.viewerIsGroupOwner}
+                          className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Adicionar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 

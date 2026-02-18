@@ -288,7 +288,7 @@ model Organization {
   chatConversations                                                        ChatConversation[]
   classSeries                                                              ClassSeries[]
   classSessions                                                            ClassSession[]
-  weeklyAvailabilityTemplates                                              WeeklyAvailabilityTemplate[]
+  availabilitySchedules                                                    AvailabilitySchedule[]
   analyticsRollups                                                         AnalyticsRollup[]
   availabilityOverrides                                                    AvailabilityOverride[]
   serviceReviews                                                           ServiceReview[]
@@ -4669,21 +4669,38 @@ model ServiceCreditLedger {
   @@schema("app_v3")
 }
 
-model WeeklyAvailabilityTemplate {
+model AvailabilitySchedule {
   env            String                @default("prod")
   id             Int                   @id @default(autoincrement())
   organizationId Int                   @map("organization_id")
   scopeType      AvailabilityScopeType @default(ORGANIZATION) @map("scope_type")
   scopeId        Int                   @default(0) @map("scope_id")
-  dayOfWeek      Int                   @map("day_of_week")
-  intervals      Json                  @default("[]")
+  startDate      DateTime              @map("start_date") @db.Date
+  endDate        DateTime?             @map("end_date") @db.Date
   createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templates      WeeklyAvailabilityTemplate[]
 
-  @@unique([organizationId, scopeType, scopeId, dayOfWeek], map: "weekly_availability_scope_day_unique")
   @@index([organizationId])
   @@index([organizationId, scopeType, scopeId])
+  @@index([organizationId, startDate])
+  @@map("availability_schedules")
+  @@schema("app_v3")
+}
+
+model WeeklyAvailabilityTemplate {
+  env            String               @default("prod")
+  id             Int                  @id @default(autoincrement())
+  availabilityId Int                  @map("availability_id")
+  dayOfWeek      Int                  @map("day_of_week")
+  intervals      Json                 @default("[]")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  availability   AvailabilitySchedule @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+
+  @@unique([availabilityId, dayOfWeek], map: "availability_template_day_unique")
+  @@index([availabilityId])
   @@map("weekly_availability_templates")
   @@schema("app_v3")
 }
