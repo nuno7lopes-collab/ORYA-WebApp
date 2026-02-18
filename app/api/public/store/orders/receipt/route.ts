@@ -36,8 +36,8 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Encomenda nao encontrada." }, { status: 404 });
     }
 
-    if (!order.paymentIntentId) {
-      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 400 });
+    if (!order.paymentIntentId || !order.paymentIntentId.startsWith("pi_")) {
+      return jsonWrap({ ok: false, error: "Recibo indisponivel." }, { status: 404 });
     }
 
     const intent = await retrievePaymentIntent(order.paymentIntentId, { expand: ["latest_charge"] });

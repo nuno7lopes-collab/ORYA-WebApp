@@ -1,25 +1,19 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
-
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { sanitizeUsername, validateUsername, USERNAME_RULES_HINT } from "@/lib/username";
-import {
-  DEFAULT_PRIMARY_MODULE,
-  getDefaultOrganizationModules,
-} from "@/lib/organizationCategories";
 import { Avatar } from "@/components/ui/avatar";
 import { CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
 import { cn } from "@/lib/utils";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
-import { AddressCombobox } from "@/components/ui/address-combobox";
-import type { GeoDetailsItem } from "@/lib/geo/types";
+import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
 
 const ORG_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
 type OrgItem = {
   organizationId: number;
+  groupId: number;
   role: string;
   lastUsedAt: string | null;
   organization: {
@@ -31,6 +25,26 @@ type OrgItem = {
     status: string | null;
     brandingAvatarUrl?: string | null;
   };
+  group?: {
+    id: number;
+    ownerUserId: string | null;
+    viewerIsGroupOwner: boolean;
+    organizationCount: number;
+    pendingJoinCount: number;
+    pendingExitCount: number;
+    actionableCount: number;
+  };
+};
+
+type GroupBucket = {
+  id: number;
+  ownerUserId: string | null;
+  viewerIsGroupOwner: boolean;
+  organizationCount: number;
+  pendingJoinCount: number;
+  pendingExitCount: number;
+  actionableCount: number;
+  organizations: OrgItem[];
 };
 
 type Props = {
@@ -38,70 +52,127 @@ type Props = {
   activeId: number | null;
 };
 
+const ROLE_META: Record<string, { label: string; badge: string }> = {
+  OWNER: {
+    label: "Owner",
+    badge: "border-cyan-300/60 bg-cyan-300/15 text-cyan-50",
+  },
+  CO_OWNER: {
+    label: "Co-owner",
+    badge: "border-sky-300/60 bg-sky-300/15 text-sky-50",
+  },
+  ADMIN: {
+    label: "Admin",
+    badge: "border-indigo-300/60 bg-indigo-300/15 text-indigo-50",
+  },
+  STAFF: {
+    label: "Staff",
+    badge: "border-violet-300/55 bg-violet-300/15 text-violet-50",
+  },
+};
+
+const STATUS_META: Record<string, { label: string; badge: string }> = {
+  ACTIVE: {
+    label: "Ativa",
+    badge: "border-emerald-400/50 bg-emerald-400/16 text-emerald-50",
+  },
+  SUSPENDED: {
+    label: "Suspensa",
+    badge: "border-red-400/55 bg-red-400/16 text-red-50",
+  },
+  PENDING: {
+    label: "Pendente",
+    badge: "border-amber-400/55 bg-amber-400/16 text-amber-50",
+  },
+};
+
+function getRoleMeta(rawRole: string) {
+  const normalized = rawRole.toUpperCase();
+  return ROLE_META[normalized] ?? {
+    label: normalized,
+    badge: "border-white/22 bg-white/10 text-white/75",
+  };
+}
+
+function getStatusMeta(rawStatus: string | null) {
+  const normalized = (rawStatus ?? "").toUpperCase();
+  return STATUS_META[normalized] ?? {
+    label: normalized || "Sem estado",
+    badge: "border-white/22 bg-white/10 text-white/75",
+  };
+}
+
+function getOrganizationDisplayName(item: OrgItem) {
+  return item.organization.publicName || item.organization.businessName || "Organização";
+}
+
 export default function OrganizationsHubClient({ initialOrgs, activeId }: Props) {
   const router = useRouter();
-
   const [orgs, setOrgs] = useState<OrgItem[]>(initialOrgs);
   const [currentActive, setCurrentActive] = useState<number | null>(activeId);
-  const [businessName, setBusinessName] = useState("");
-  const [entityType, setEntityType] = useState("");
-  const [orgUsername, setOrgUsername] = useState("");
-  const [addressQuery, setAddressQuery] = useState("");
-  const [addressId, setAddressId] = useState<string | null>(null);
-  const [addressLabel, setAddressLabel] = useState<string | null>(null);
-  const [usernameHint, setUsernameHint] = useState<string | null>(null);
-  const [checkingUsername, setCheckingUsername] = useState(false);
-  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "reserved" | "error">("idle");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [loadingSwitch, setLoadingSwitch] = useState(false);
-  const [showForm, setShowForm] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const checkUsernameAvailability = async (value: string) => {
-    const cleaned = sanitizeUsername(value);
-    if (!cleaned) {
-      setUsernameHint(USERNAME_RULES_HINT);
-      setUsernameStatus("idle");
-      return false;
-    }
-    const validation = validateUsername(cleaned);
-    if (!validation.valid) {
-      setUsernameHint(validation.error);
-      setUsernameStatus("error");
-      return false;
-    }
-    setUsernameHint(null);
-    setUsernameStatus("checking");
-    setCheckingUsername(true);
-    try {
-      const res = await fetch(
-        `/api/username/check?username=${encodeURIComponent(cleaned)}&ownerType=organization`,
-      );
-      if (!res.ok) {
-        setUsernameHint("Não foi possível verificar o @ agora.");
-        setUsernameStatus("error");
-        return false;
+  const sortedOrgs = useMemo(() => {
+    return [...orgs].sort((a, b) => {
+      const aIsActive = a.organizationId === currentActive ? 1 : 0;
+      const bIsActive = b.organizationId === currentActive ? 1 : 0;
+      if (aIsActive !== bIsActive) return bIsActive - aIsActive;
+      return getOrganizationDisplayName(a).localeCompare(getOrganizationDisplayName(b), "pt");
+    });
+  }, [orgs, currentActive]);
+
+  const groupBuckets = useMemo<GroupBucket[]>(() => {
+    const grouped = new Map<number, GroupBucket>();
+
+    for (const item of sortedOrgs) {
+      const groupId = item.group?.id ?? item.groupId;
+      const current = grouped.get(groupId);
+      if (current) {
+        current.organizations.push(item);
+        continue;
       }
-      const data = (await res.json().catch(() => null)) as { available?: boolean; reason?: string } | null;
-      const available = Boolean(data?.available);
-      if (!available && data?.reason === "reserved") {
-        setUsernameHint("Este username está reservado.");
-        setUsernameStatus("reserved");
-        return false;
-      }
-      if (!available) setUsernameHint("Este @ já está a ser usado — escolhe outro.");
-      setUsernameStatus(available ? "available" : "taken");
-      return available;
-    } catch (err) {
-      console.error("[org hub] check username error", err);
-      setUsernameHint("Erro ao verificar o @.");
-      setUsernameStatus("error");
-      return false;
-    } finally {
-      setCheckingUsername(false);
+
+      grouped.set(groupId, {
+        id: groupId,
+        ownerUserId: item.group?.ownerUserId ?? null,
+        viewerIsGroupOwner: Boolean(item.group?.viewerIsGroupOwner),
+        organizationCount: item.group?.organizationCount ?? 1,
+        pendingJoinCount: item.group?.pendingJoinCount ?? 0,
+        pendingExitCount: item.group?.pendingExitCount ?? 0,
+        actionableCount: item.group?.actionableCount ?? 0,
+        organizations: [item],
+      });
     }
-  };
+
+    return Array.from(grouped.values())
+      .map((bucket) => ({
+        ...bucket,
+        organizations: [...bucket.organizations].sort((a, b) =>
+          getOrganizationDisplayName(a).localeCompare(getOrganizationDisplayName(b), "pt"),
+        ),
+      }))
+      .sort((a, b) => {
+        const aHasActive = a.organizations.some((item) => item.organizationId === currentActive) ? 1 : 0;
+        const bHasActive = b.organizations.some((item) => item.organizationId === currentActive) ? 1 : 0;
+        if (aHasActive !== bHasActive) return bHasActive - aHasActive;
+        return a.id - b.id;
+      });
+  }, [sortedOrgs, currentActive]);
+
+  const summary = useMemo(() => {
+    const pendingJoin = groupBuckets.reduce((sum, bucket) => sum + bucket.pendingJoinCount, 0);
+    const pendingExit = groupBuckets.reduce((sum, bucket) => sum + bucket.pendingExitCount, 0);
+    const actionable = groupBuckets.reduce((sum, bucket) => sum + bucket.actionableCount, 0);
+
+    return {
+      organizations: sortedOrgs.length,
+      groups: groupBuckets.length,
+      pendingJoin,
+      pendingExit,
+      actionable,
+    };
+  }, [sortedOrgs.length, groupBuckets]);
 
   const handleSwitch = async (organizationId: number, redirectToDashboard = false) => {
     if (loadingSwitch) return;
@@ -118,17 +189,22 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
         setActionMessage(json?.error || "Não foi possível mudar de organização.");
         return;
       }
+
       setCurrentActive(organizationId);
+      setOrgs((prev) =>
+        prev.map((item) =>
+          item.organizationId === organizationId ? { ...item, lastUsedAt: new Date().toISOString() } : item,
+        ),
+      );
+
       if (redirectToDashboard) {
         const targetHref = buildOrgHref(organizationId, "/overview");
-        // força cookie no browser e navegação direta com org na query
         try {
           const secureSuffix = window.location.protocol === "https:" ? "; Secure" : "";
           document.cookie = `orya_organization=${organizationId}; path=/; Max-Age=${ORG_COOKIE_MAX_AGE}; SameSite=Lax${secureSuffix}`;
         } catch (err) {
           console.warn("[org switch] não foi possível escrever cookie no browser", err);
         }
-        // usa router para evitar cache, depois fallback para reload completo
         router.replace(targetHref);
         setTimeout(() => {
           const expectedPrefix = `/org/${organizationId}/`;
@@ -147,118 +223,23 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
     }
   };
 
-  const handleCreate = async () => {
-    if (!businessName.trim() || !entityType.trim() || !addressId) {
-      setError("Preenche nome, tipo de entidade e morada (Apple Maps).");
-      return;
-    }
-    const usernameValid = validateUsername(orgUsername);
-    if (!usernameValid.valid) {
-      setError(usernameValid.error);
-      return;
-    }
-    const available = await checkUsernameAvailability(orgUsername);
-    if (!available) {
-      setError("Este @ já está a ser usado — escolhe outro.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    setActionMessage(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org-hub/organizations"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          businessName: businessName.trim(),
-          entityType: entityType.trim(),
-          addressId,
-          publicName: businessName.trim(),
-          username: usernameValid.normalized,
-          primaryModule: DEFAULT_PRIMARY_MODULE,
-          modules: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setError(json?.error || "Não foi possível criar a organização.");
-      } else {
-        const newId = json?.organization?.id as number | undefined;
-        setBusinessName("");
-        setEntityType("");
-        setOrgUsername("");
-        setAddressQuery("");
-        setAddressId(null);
-        setAddressLabel(null);
-        setUsernameStatus("idle");
-        setUsernameHint(null);
-        if (newId) {
-          // Atualiza lista localmente para evitar refetch
-          setOrgs((prev) => [
-            ...prev,
-            {
-              organizationId: newId,
-              role: "OWNER",
-              lastUsedAt: null,
-              organization: {
-                id: newId,
-                username: usernameValid.normalized,
-                publicName: json.organization.publicName ?? json.organization.businessName ?? "Organização",
-                businessName: json.organization.businessName ?? null,
-                entityType: json.organization.entityType ?? null,
-                status: "ACTIVE",
-              },
-            },
-          ]);
-          await handleSwitch(newId, true);
-        } else {
-          router.push(currentActive ? buildOrgHref(currentActive, "/overview") : "/org-hub/organizations");
-        }
-      }
-    } catch (err) {
-      console.error("[org hub] create error", err);
-      setError("Erro inesperado ao criar organização.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const renderOrgCard = (item: OrgItem) => {
     const isActive = currentActive === item.organizationId;
-    const normalizedRole = item.role.toUpperCase();
+    const roleMeta = getRoleMeta(item.role);
+    const statusMeta = getStatusMeta(item.organization.status);
     const typeLine = item.organization.entityType || "Tipo não definido";
     const handle = item.organization.username ? `@${item.organization.username}` : "Sem username";
-    const roleLabel = normalizedRole;
-    const statusLabel = (item.organization.status || "—").toUpperCase();
+
     const handleCardClick = () => {
       if (isActive) {
         router.push(buildOrgHref(item.organizationId, "/overview"));
         return;
       }
-      handleSwitch(item.organizationId, true);
-    };
-
-    const badgeClass = (kind: "status" | "role", value: string) => {
-      if (kind === "status" && value === "ACTIVE") {
-        return "border-emerald-400/50 bg-emerald-400/15 text-emerald-50";
-      }
-      if (kind === "status" && value === "PENDING") {
-        return "border-amber-400/50 bg-amber-400/15 text-amber-50";
-      }
-      if (kind === "status" && value === "SUSPENDED") {
-        return "border-red-400/50 bg-red-400/15 text-red-50";
-      }
-      if (kind === "role" && value === "OWNER") {
-        return "border-cyan-300/60 bg-cyan-300/15 text-cyan-50";
-      }
-      if (kind === "role" && value === "ADMIN") {
-        return "border-sky-300/60 bg-sky-300/15 text-sky-50";
-      }
-      return "border-white/20 bg-white/10 text-white/70";
+      void handleSwitch(item.organizationId, true);
     };
 
     return (
-      <div
+      <article
         key={item.organizationId}
         role="button"
         tabIndex={0}
@@ -269,101 +250,215 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             handleCardClick();
           }
         }}
-        className={`cursor-pointer rounded-2xl border p-5 shadow-[0_16px_50px_rgba(0,0,0,0.45)] transition hover:-translate-y-[3px] hover:border-[#6BFFFF]/50 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/60 ${
-          isActive ? "border-[#6BFFFF]/60 bg-[#0b152d]/50" : "border-white/10 bg-white/5"
+        className={`group flex min-h-[214px] cursor-pointer flex-col justify-between rounded-3xl border p-5 shadow-[0_16px_52px_rgba(0,0,0,0.42)] transition hover:-translate-y-[2px] hover:border-[#6BFFFF]/45 hover:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/65 ${
+          isActive
+            ? "border-[#6BFFFF]/60 bg-[linear-gradient(160deg,rgba(23,52,88,0.45),rgba(8,16,34,0.65))]"
+            : "border-white/14 bg-[linear-gradient(160deg,rgba(12,20,36,0.52),rgba(7,11,21,0.45))]"
         }`}
       >
-        <div className="flex flex-col items-center text-center gap-3">
-          <Avatar
-            src={item.organization.brandingAvatarUrl ?? null}
-            name={item.organization.publicName || item.organization.businessName || "Organização"}
-            className="h-12 w-12 border border-white/15"
-            textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/80"
-            fallbackText="OR"
-          />
-          <div className="space-y-1">
-            <h3 className="text-lg font-semibold">
-              {item.organization.publicName || item.organization.businessName || "Organização"}
-            </h3>
-            <p className="text-[12px] text-white/60">
-              {handle} · {typeLine}
-            </p>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Avatar
+                src={item.organization.brandingAvatarUrl ?? null}
+                name={getOrganizationDisplayName(item)}
+                className="h-12 w-12 border border-white/20"
+                textClassName="text-sm font-semibold uppercase tracking-[0.16em] text-white/85"
+                fallbackText="OR"
+              />
+              <div>
+                <h3 className="text-lg font-semibold text-white">{getOrganizationDisplayName(item)}</h3>
+                <p className="text-[12px] text-white/68">
+                  {handle} · {typeLine}
+                </p>
+              </div>
+            </div>
+            {isActive && (
+              <span className="rounded-full border border-[#6BFFFF]/65 bg-[#6BFFFF]/16 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#CCFCFF]">
+                Ativa
+              </span>
+            )}
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
-            <span className={`rounded-full border px-3 py-[5px] ${badgeClass("status", statusLabel)}`}>
-              {statusLabel}
-            </span>
-            <span className={`rounded-full border px-3 py-[5px] ${badgeClass("role", roleLabel)}`}>
-              {roleLabel}
+
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em]">
+            <span className={`rounded-full border px-2.5 py-1 ${statusMeta.badge}`}>{statusMeta.label}</span>
+            <span className={`rounded-full border px-2.5 py-1 ${roleMeta.badge}`}>{roleMeta.label}</span>
+            <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/78">
+              Org #{item.organizationId}
             </span>
           </div>
         </div>
-      </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-[12px] text-white/60">{isActive ? "Organização ativa" : "Selecionar para entrar"}</p>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleCardClick();
+            }}
+            disabled={loadingSwitch}
+            className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:opacity-60"
+          >
+            {isActive ? "Entrar" : "Ativar e entrar"}
+          </button>
+        </div>
+      </article>
     );
   };
 
-  const loading = false; // server já enviou dados; não repetir fetch
-  const emptyState = orgs.length === 0;
-  const hasError = false; // como não há fetch client, não há erro aqui
+  const emptyState = sortedOrgs.length === 0;
 
   return (
-    <div className={cn("w-full py-8 text-white")}>
-      <div className="space-y-8">
-        {hasError && (
-          <div className="rounded-2xl border border-red-400/40 bg-red-900/30 p-4 text-sm text-red-100">
-            Não foi possível carregar as organizações neste momento.
+    <div
+      aria-busy={loadingSwitch}
+      className={cn("mx-auto w-full max-w-6xl px-4 py-10 text-white md:px-6 md:py-12 lg:px-8")}
+    >
+      <div className="space-y-6">
+        <section className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-6">
+          <OrgHubTopNav />
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/75">Organizações</p>
+              <h1 className="text-[30px] font-semibold leading-tight">As tuas organizações</h1>
+              <p className="mt-1 text-sm text-white/75">
+                Estruturadas por grupo-mãe para gerir subsidiárias, entradas, saídas e crescimento sem fricção.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(buildOrgHubHref("/groups"))}
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+            >
+              Gestão de grupos
+            </button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Orgs</p>
+              <p className="mt-1 text-xl font-semibold">{summary.organizations}</p>
+            </div>
+            <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Grupos</p>
+              <p className="mt-1 text-xl font-semibold">{summary.groups}</p>
+            </div>
+            <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Join pendente</p>
+              <p className="mt-1 text-xl font-semibold">{summary.pendingJoin}</p>
+            </div>
+            <div className="rounded-2xl border border-white/14 bg-white/6 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/55">Exit pendente</p>
+              <p className="mt-1 text-xl font-semibold">{summary.pendingExit}</p>
+            </div>
+            <div className="rounded-2xl border border-[#6BFFFF]/32 bg-[#6BFFFF]/10 p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-[#B5F9FF]">Ação tua</p>
+              <p className="mt-1 text-xl font-semibold text-[#DEFDFF]">{summary.actionable}</p>
+            </div>
+          </div>
+        </section>
+
+        {actionMessage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-2xl border border-emerald-300/45 bg-emerald-400/15 px-4 py-2 text-sm text-emerald-50"
+          >
+            {actionMessage}
           </div>
         )}
 
-        {loading && (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="h-40 rounded-2xl border border-white/10 bg-white/5 animate-pulse"
-              />
-            ))}
-          </div>
-        )}
-
-        {!loading && !hasError && !emptyState && (
+        {!emptyState && (
           <section className="space-y-4">
-            <div className="rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-white/70">Organizações</p>
-              <h2 className="text-2xl font-semibold">As tuas organizações</h2>
-              <p className="text-[12px] text-white/65">Escolhe onde queres entrar.</p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {orgs.map(renderOrgCard)}
-              <button
-                type="button"
-                onClick={() => router.push(buildOrgHubHref("/create"))}
-                className="flex flex-col justify-between rounded-2xl border border-dashed border-white/20 bg-white/5 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.35)] hover:-translate-y-[3px] hover:border-white/30 transition text-left"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-bold">
-                      +
+            {groupBuckets.map((group) => {
+              const openRequests = group.pendingJoinCount + group.pendingExitCount;
+              const createInGroupHref = `${buildOrgHubHref("/create")}?groupMode=EXISTING_GROUP&groupId=${group.id}`;
+
+              return (
+                <article
+                  key={`group-${group.id}`}
+                  className="rounded-3xl border border-white/15 bg-[linear-gradient(145deg,rgba(12,21,38,0.74),rgba(6,11,24,0.84))] p-4 shadow-[0_18px_66px_rgba(0,0,0,0.47)] sm:p-5"
+                >
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/58">Grupo mãe</p>
+                      <h2 className="text-xl font-semibold text-white">Grupo #{group.id}</h2>
+                      <p className="text-[12px] text-white/70">
+                        {group.organizationCount} subsidiária{group.organizationCount === 1 ? "" : "s"}
+                        {openRequests > 0 ? ` · ${openRequests} operação(ões) pendente(s)` : " · Sem operações pendentes"}
+                      </p>
                     </div>
-                    <h3 className="text-lg font-semibold">Nova organização</h3>
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.16em]">
+                      {group.viewerIsGroupOwner ? (
+                        <span className="rounded-full border border-[#6BFFFF]/55 bg-[#6BFFFF]/14 px-2.5 py-1 text-[#CCFCFF]">
+                          Gestão tua
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-white/20 bg-white/8 px-2.5 py-1 text-white/70">
+                          Gestão externa
+                        </span>
+                      )}
+                      {group.actionableCount > 0 && (
+                        <span className="rounded-full border border-amber-300/55 bg-amber-300/14 px-2.5 py-1 text-amber-100">
+                          {group.actionableCount} requer ação
+                        </span>
+                      )}
+	                      <button
+	                        type="button"
+	                        onClick={() => router.push(createInGroupHref)}
+	                        disabled={!group.viewerIsGroupOwner}
+	                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55 disabled:cursor-not-allowed disabled:opacity-50"
+	                      >
+	                        Nova org neste grupo
+	                      </button>
+	                      <button
+	                        type="button"
+	                        onClick={() => router.push(buildOrgHubHref("/groups"))}
+	                        className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
+	                      >
+	                        Governança
+	                      </button>
+                    </div>
                   </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{group.organizations.map(renderOrgCard)}</div>
+                </article>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => router.push(buildOrgHubHref("/create"))}
+              className="flex min-h-[190px] w-full flex-col justify-between rounded-3xl border border-dashed border-white/24 bg-white/6 p-5 text-left shadow-[0_16px_50px_rgba(0,0,0,0.35)] transition hover:-translate-y-[2px] hover:border-[#6BFFFF]/45 hover:bg-white/10"
+            >
+              <div className="space-y-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-2xl font-bold">
+                  +
                 </div>
-              </button>
-            </div>
+                <div>
+                  <h3 className="text-xl font-semibold">Nova organização</h3>
+                  <p className="text-sm text-white/68">
+                    Cria em novo grupo (default) ou adiciona a um grupo que já geres.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[12px] font-semibold uppercase tracking-[0.18em] text-[#BFFBFF]">
+                Iniciar onboarding
+              </span>
+            </button>
           </section>
         )}
 
-        {emptyState && !hasError && (
-          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.5)] space-y-4">
+        {emptyState && (
+          <section className="space-y-4 rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold">Ainda não tens nenhuma organização</h2>
-              <p className="text-sm text-white/65">
-                Cria a primeira para vender bilhetes e gerir equipa.
+              <p className="text-sm text-white/70">
+                Cria a primeira organização para começar a gerir equipa, grupos e operações.
               </p>
               <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
-                <li>Cria o teu clube, bar, espaço ou marca.</li>
-                <li>Vende bilhetes e recebe pagamentos.</li>
-                <li>Adiciona equipa e controla acessos.</li>
+                <li>Cria o teu clube, marca ou espaço.</li>
+                <li>Define se queres um novo grupo ou anexar a um grupo existente.</li>
+                <li>Ativa módulos e entra no dashboard.</li>
               </ul>
             </div>
             <button
@@ -373,141 +468,7 @@ export default function OrganizationsHubClient({ initialOrgs, activeId }: Props)
             >
               Criar primeira organização
             </button>
-          </div>
-        )}
-        {showForm && (
-          <div
-            className={`${
-              emptyState ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur"
-            }`}
-          >
-            <section className="w-full max-w-4xl rounded-2xl border border-white/10 bg-white/5 p-5 space-y-3 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Criar nova organização</h3>
-                  <p className="text-[12px] text-white/65">Nome, tipo e morada base (Apple).</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  {actionMessage && <p className="text-[12px] text-emerald-200">{actionMessage}</p>}
-                  {!emptyState && (
-                    <button
-                      type="button"
-                      onClick={() => setShowForm(false)}
-                      className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white hover:bg-white/10"
-                    >
-                      Fechar
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-1 md:col-span-1">
-                  <label className="text-[12px] text-white/70">Nome da organização</label>
-                  <input
-                    value={businessName}
-                    onChange={(e) => setBusinessName(e.target.value)}
-                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    placeholder="Ex.: ORYA TEAM, Casa Guedes"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Tipo de entidade</label>
-                  <select
-                    value={entityType}
-                    onChange={(e) => setEntityType(e.target.value)}
-                    className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  >
-                    <option value="">Seleciona</option>
-                    <option value="PESSOA_SINGULAR">Pessoa singular</option>
-                    <option value="EMPRESA">Empresa</option>
-                    <option value="ASSOCIACAO">Associação</option>
-                  </select>
-                </div>
-                <div className="space-y-1 md:col-span-2">
-                  <AddressCombobox
-                    label="Morada base (Apple Maps)"
-                    value={addressQuery}
-                    onValueChange={(next) => {
-                      setAddressQuery(next);
-                      if (!next.trim()) {
-                        setAddressLabel(null);
-                      }
-                    }}
-                    addressId={addressId}
-                    onAddressIdChange={(next) => {
-                      setAddressId(next);
-                      if (!next) {
-                        setAddressLabel(null);
-                      }
-                    }}
-                    onDetailsResolved={(details: GeoDetailsItem | null) => {
-                      if (!details?.addressId) {
-                        setAddressLabel(null);
-                        return;
-                      }
-                      setAddressLabel(details.formattedAddress?.trim() || details.address?.trim() || null);
-                    }}
-                    minChars={2}
-                    maxItems={10}
-                    enableRecents
-                    enableGeolocationCta
-                  />
-                  {addressId && (
-                    <div className="mt-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/70">
-                      Morada confirmada: {addressLabel || addressQuery}
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[12px] text-white/70">Username ORYA</label>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/50 text-sm">@</span>
-                    <input
-                      value={orgUsername}
-                      onChange={(e) => {
-                        const cleaned = sanitizeUsername(e.target.value);
-                        setOrgUsername(cleaned);
-                        const validation = validateUsername(cleaned);
-                        setUsernameHint(validation.valid ? null : validation.error);
-                        setUsernameStatus("idle");
-                      }}
-                      onBlur={(e) => checkUsernameAvailability(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 pl-7 text-sm outline-none focus:border-[#6BFFFF]"
-                      maxLength={30}
-                      placeholder="casaguedes"
-                    />
-                  </div>
-                  <p className="text-[11px] text-white/55">@ é único (3-30 chars).</p>
-                  {usernameHint && <p className="text-[11px] text-amber-300">{usernameHint}</p>}
-                  {checkingUsername && <p className="text-[11px] text-white/60">A verificar disponibilidade…</p>}
-                  {usernameStatus === "taken" && !checkingUsername && (
-                    <p className="text-[11px] text-red-300">Este @ já está a ser usado.</p>
-                  )}
-                  {usernameStatus === "reserved" && !checkingUsername && (
-                    <p className="text-[11px] text-red-300">Este username está reservado.</p>
-                  )}
-                  {usernameStatus === "available" && !checkingUsername && (
-                    <p className="text-[11px] text-emerald-300">Disponível ✔</p>
-                  )}
-                </div>
-              </div>
-              {error && <p className="text-sm text-red-300">{error}</p>}
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={
-                  saving ||
-                  !businessName.trim() ||
-                  !entityType.trim() ||
-                  !addressId ||
-                  !validateUsername(sanitizeUsername(orgUsername)).valid
-                }
-                className={`${CTA_PRIMARY} self-start px-5 py-2 text-sm disabled:opacity-60`}
-              >
-                {saving ? "A criar…" : "Criar organização"}
-              </button>
-            </section>
-          </div>
+          </section>
         )}
       </div>
     </div>

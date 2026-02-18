@@ -343,7 +343,7 @@ async function _POST(req: NextRequest) {
           name,
           price: priceRaw,
           totalQuantity,
-          publicAccess: t.publicAccess === true,
+          publicAccess: t.publicAccess !== false,
           participantAccess: t.participantAccess === true,
         };
       })
@@ -517,6 +517,8 @@ async function _POST(req: NextRequest) {
           eventId: event.id,
           name: ticket.name,
           price: Math.round(ticket.price * 100),
+          publicAccess: ticket.publicAccess,
+          participantAccess: ticket.participantAccess,
           totalQuantity: ticket.totalQuantity ?? null,
           currency: "EUR",
           padelEventCategoryLinkId: null,

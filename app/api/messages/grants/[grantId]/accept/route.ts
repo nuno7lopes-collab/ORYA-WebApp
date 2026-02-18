@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { Prisma } from "@prisma/client";
+import { OrganizationMemberRole, Prisma } from "@prisma/client";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -19,6 +19,22 @@ function asRecord(value: Prisma.JsonValue | null | undefined): Record<string, un
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+const ORG_GRANT_KINDS = new Set<string>([
+  "ORG_CONTACT_REQUEST",
+  "SERVICE_REQUEST",
+  "CHANNEL_CREATE_REQUEST",
+]);
+
+const ORG_GRANT_ADMIN_ROLES = new Set<OrganizationMemberRole>([
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+]);
+
+function canResolveOrgGrant(role: OrganizationMemberRole | null | undefined) {
+  return Boolean(role && ORG_GRANT_ADMIN_ROLES.has(role));
 }
 
 async function ensureDmConversation(userA: string, userB: string, createdByUserId: string) {
@@ -292,6 +308,10 @@ export async function POST(
 
     if (!grant) {
       return jsonWrap({ ok: false, error: "GRANT_NOT_FOUND" }, { status: 404 });
+    }
+
+    if (ORG_GRANT_KINDS.has(grant.kind) && !canResolveOrgGrant(orgContext?.membership?.role)) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     if (grant.status === "ACCEPTED") {

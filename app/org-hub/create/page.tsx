@@ -5,8 +5,31 @@ import BecomeOrganizationForm from "@/components/organization/BecomeOrganization
 import BackLink from "@/components/BackLink";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { prisma } from "@/lib/prisma";
+import OrgHubTopNav from "@/app/org/_internal/core/organizations/OrgHubTopNav";
 
-export default async function OrgHubCreatePage() {
+type SearchParamsInput =
+  | Promise<Record<string, string | string[] | undefined>>
+  | Record<string, string | string[] | undefined>;
+
+function pickParamValue(raw: string | string[] | undefined): string | null {
+  if (typeof raw === "string") return raw;
+  if (Array.isArray(raw)) return typeof raw[0] === "string" ? raw[0] : null;
+  return null;
+}
+
+function parsePositiveInt(raw: string | null): number | null {
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
+
+export default async function OrgHubCreatePage({
+  searchParams,
+}: {
+  searchParams?: SearchParamsInput;
+}) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
@@ -16,11 +39,60 @@ export default async function OrgHubCreatePage() {
     return <AuthGate />;
   }
 
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const groupModeParam = pickParamValue(resolvedSearchParams.groupMode)?.toUpperCase();
+  const groupIdParam = parsePositiveInt(pickParamValue(resolvedSearchParams.groupId));
+
+  const ownedGroupsRows = await prisma.organizationGroup.findMany({
+    where: { ownerUserId: user.id },
+    select: {
+      id: true,
+      _count: { select: { organizations: true } },
+      organizations: {
+        select: { id: true, publicName: true, businessName: true },
+        orderBy: { id: "asc" },
+        take: 3,
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 25,
+  });
+
+  const existingGroups = ownedGroupsRows.map((group) => ({
+    id: group.id,
+    organizationCount: group._count.organizations,
+    sampleOrganizations: group.organizations.map(
+      (organization) =>
+        organization.publicName?.trim() ||
+        organization.businessName?.trim() ||
+        `Organização #${organization.id}`,
+    ),
+  }));
+
+  const hasRequestedExistingGroup =
+    groupModeParam === "EXISTING_GROUP" && typeof groupIdParam === "number";
+  const hasOwnedRequestedGroup =
+    hasRequestedExistingGroup && existingGroups.some((group) => group.id === groupIdParam);
+  const initialGroupMode =
+    hasOwnedRequestedGroup || (groupModeParam === "EXISTING_GROUP" && existingGroups.length > 0)
+      ? "EXISTING_GROUP"
+      : "NEW_GROUP";
+  const initialGroupId =
+    hasOwnedRequestedGroup
+      ? groupIdParam
+      : initialGroupMode === "EXISTING_GROUP"
+        ? existingGroups[0]?.id ?? null
+        : null;
+
   return (
     <div className="min-h-screen px-4 pb-12 pt-16 text-white">
       <div className="mx-auto max-w-[1160px] space-y-10">
         <div className="flex items-center justify-start">
           <BackLink hrefFallback="/descobrir" label="Voltar" />
+        </div>
+
+        <div className="flex justify-center">
+          <OrgHubTopNav />
         </div>
 
         <header className="space-y-2.5 text-center md:space-y-3">
@@ -33,7 +105,11 @@ export default async function OrgHubCreatePage() {
           </p>
         </header>
 
-        <BecomeOrganizationForm />
+        <BecomeOrganizationForm
+          existingGroups={existingGroups}
+          initialGroupMode={initialGroupMode}
+          initialGroupId={initialGroupId}
+        />
 
         <footer className="pt-4 text-center text-[12px] text-white/60">
           Ao continuar, confirmas que representas esta entidade e aceitas os{" "}

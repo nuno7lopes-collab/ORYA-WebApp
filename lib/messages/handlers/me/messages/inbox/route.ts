@@ -17,6 +17,11 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.BOOKING,
   ChatConversationContextType.SERVICE,
 ];
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 type ConversationMember = {
   userId: string;
@@ -157,6 +162,7 @@ async function _GET(req: NextRequest) {
     const membershipsPromise = prisma.chatConversationMember.findMany({
       where: {
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
       include: {
@@ -179,6 +185,7 @@ async function _GET(req: NextRequest) {
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
             },
             members: {
+              where: ACTIVE_MEMBER_FILTER,
               select: {
                 userId: true,
                 displayAs: true,
@@ -310,6 +317,7 @@ async function _GET(req: NextRequest) {
           where: {
             userId: user.id,
             conversationId: { in: eventConversationIds },
+            ...ACTIVE_MEMBER_FILTER,
           },
           select: {
             conversationId: true,

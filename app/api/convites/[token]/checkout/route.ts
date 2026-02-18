@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
@@ -369,59 +369,88 @@ async function _POST(
       },
     };
 
-    const ensured = await ensurePaymentIntent({
-      purchaseId,
-      orgId: booking.organizationId,
-      sourceType: SourceType.BOOKING,
-      sourceId,
-      amountCents: totalCents,
-      currency,
-      intentParams: {
-        payment_method_types: ["card"],
-        description: `Reserva serviço ${booking.serviceId} (split)`,
-      },
-      metadata: {
-        serviceBooking: "1",
-        bookingSplit: "1",
-        bookingSplitId: String(split.id),
-        bookingSplitParticipantId: String(participant.id),
-        bookingId: String(booking.id),
-        serviceId: String(booking.serviceId),
-        orgId: String(booking.organizationId),
-        userId: participant.userId ?? "",
-        inviteId: String(invite.id),
-        bookingSplitShareAttemptId: String(shareAttempt.id),
-        bookingSplitShareAttemptNo: String(shareAttempt.attemptNo),
-        baseShareCents: String(baseShareCents),
-        shareCents: String(totalCents),
-        platformFeeCents: String(platformFeeCents),
-        cardPlatformFeeCents: String(cardPlatformFeeCents),
-        cardPlatformFeeBps: paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
-        feeMode: pricing.feeMode,
-        grossAmountCents: String(totalCents),
-        payoutAmountCents: String(payoutAmountCents),
-        recipientConnectAccountId: isPlatformOrg ? "" : booking.organization?.stripeAccountId ?? "",
+    let ensured;
+    try {
+      ensured = await ensurePaymentIntent({
+        purchaseId,
+        orgId: booking.organizationId,
         sourceType: SourceType.BOOKING,
         sourceId,
-        currency,
-        paymentMethod,
-      },
-      orgContext: {
-        stripeAccountId: booking.organization?.stripeAccountId ?? null,
-        stripeChargesEnabled: booking.organization?.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: booking.organization?.stripePayoutsEnabled ?? false,
-        orgType: booking.organization?.orgType ?? null,
-      },
-      requireStripe: !isPlatformOrg,
-      resolvedSnapshot,
-      customerIdentityId: participant.userId ?? null,
-      inviteToken: token,
-      paymentEvent: {
-        userId: participant.userId ?? null,
         amountCents: totalCents,
-        platformFeeCents,
-      },
-    });
+        currency,
+        intentParams: {
+          payment_method_types: ["card"],
+          description: `Reserva serviço ${booking.serviceId} (split)`,
+        },
+        metadata: {
+          serviceBooking: "1",
+          bookingSplit: "1",
+          bookingSplitId: String(split.id),
+          bookingSplitParticipantId: String(participant.id),
+          bookingId: String(booking.id),
+          serviceId: String(booking.serviceId),
+          orgId: String(booking.organizationId),
+          userId: participant.userId ?? "",
+          inviteId: String(invite.id),
+          bookingSplitShareAttemptId: String(shareAttempt.id),
+          bookingSplitShareAttemptNo: String(shareAttempt.attemptNo),
+          baseShareCents: String(baseShareCents),
+          shareCents: String(totalCents),
+          platformFeeCents: String(platformFeeCents),
+          cardPlatformFeeCents: String(cardPlatformFeeCents),
+          cardPlatformFeeBps: paymentMethod === "card" ? String(ORYA_CARD_FEE_BPS) : "0",
+          feeMode: pricing.feeMode,
+          grossAmountCents: String(totalCents),
+          payoutAmountCents: String(payoutAmountCents),
+          recipientConnectAccountId: isPlatformOrg ? "" : booking.organization?.stripeAccountId ?? "",
+          sourceType: SourceType.BOOKING,
+          sourceId,
+          currency,
+          paymentMethod,
+        },
+        orgContext: {
+          stripeAccountId: booking.organization?.stripeAccountId ?? null,
+          stripeChargesEnabled: booking.organization?.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: booking.organization?.stripePayoutsEnabled ?? false,
+          orgType: booking.organization?.orgType ?? null,
+        },
+        requireStripe: !isPlatformOrg,
+        resolvedSnapshot,
+        customerIdentityId: participant.userId ?? null,
+        inviteToken: token,
+        paymentEvent: {
+          userId: participant.userId ?? null,
+          amountCents: totalCents,
+          platformFeeCents,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+        return fail(
+          ctx,
+          409,
+          "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
+          "Chave de idempotência reutilizada com uma reserva diferente.",
+          false,
+        );
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+        return fail(ctx, 409, "PAYMENT_INTENT_TERMINAL", "Sessão de pagamento expirada. Tenta novamente.", true);
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+        return fail(ctx, 503, "PAYMENT_INTENT_RETRIEVE_FAILED", "Não foi possível retomar o pagamento. Tenta novamente.", true);
+      }
+      if (isFinanceConnectNotReadyError(err)) {
+        return fail(
+          ctx,
+          409,
+          "PAYMENTS_NOT_READY",
+          "Pagamentos indisponíveis: conta Stripe Connect inválida ou inexistente.",
+          false,
+        );
+      }
+      throw err;
+    }
 
     const intent = ensured.paymentIntent;
     const shareAttemptStatus = classifyShareAttemptStatus(intent.status);

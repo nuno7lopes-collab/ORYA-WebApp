@@ -5,10 +5,25 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { requireUser } from "@/lib/auth/requireUser";
 import { confirmGroupOwnerTransfer } from "@/lib/domain/groupGovernance";
 import { failFromMessage, requirePositiveInt } from "@/app/api/org-hub/groups/_shared";
+import { NextResponse } from "next/server";
 
 async function handleConfirm(req: NextRequest, context: { params: Promise<{ groupId: string }> }) {
   const ctx = getRequestContext(req);
   try {
+    if (req.method === "GET") {
+      const accept = req.headers.get("accept") ?? "";
+      if (accept.includes("text/html")) {
+        const url = new URL(req.url);
+        const token = url.searchParams.get("token");
+        const { groupId: groupIdRaw } = await context.params;
+        const groupId = requirePositiveInt(groupIdRaw);
+        const redirectUrl = new URL("/org-hub/groups/owner-transfer/confirm", url.origin);
+        if (groupId) redirectUrl.searchParams.set("groupId", String(groupId));
+        if (token) redirectUrl.searchParams.set("token", token);
+        return NextResponse.redirect(redirectUrl);
+      }
+    }
+
     const user = await requireUser();
     const { groupId: groupIdRaw } = await context.params;
     const groupId = requirePositiveInt(groupIdRaw);

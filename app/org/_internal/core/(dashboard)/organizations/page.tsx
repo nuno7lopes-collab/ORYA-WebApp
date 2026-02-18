@@ -5,25 +5,11 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import OrganizationsHubClient from "../../organizations/OrganizationsHubClient";
 import { cookies } from "next/headers";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
-import { OrganizationStatus, Prisma } from "@prisma/client";
-import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
+import { Prisma } from "@prisma/client";
+import { listOrgHubOrganizationsForUser, type OrgHubOrganizationPayload } from "@/lib/orgHub/listOrganizationsForUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type OrgPayload = {
-  organizationId: number;
-  role: string;
-  lastUsedAt: string | null;
-  organization: {
-    id: number;
-    username: string | null;
-    publicName: string | null;
-    businessName: string | null;
-    entityType: string | null;
-    status: string | null;
-  };
-};
 
 export default async function OrganizationsHubPage() {
   const supabase = await createSupabaseServer();
@@ -35,26 +21,9 @@ export default async function OrganizationsHubPage() {
     return <AuthGate />;
   }
 
-  let orgs: OrgPayload[] = [];
-
-  const memberships = await listEffectiveOrganizationMembershipsForUser({
+  const orgs: OrgHubOrganizationPayload[] = await listOrgHubOrganizationsForUser({
     userId: user.id,
-    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
-
-  orgs = memberships.map((m) => ({
-    organizationId: m.organizationId,
-    role: m.role,
-    lastUsedAt: null,
-    organization: {
-      id: m.organization.id,
-      username: m.organization.username,
-      publicName: m.organization.publicName,
-      businessName: m.organization.businessName,
-      entityType: m.organization.entityType,
-      status: m.organization.status,
-    },
-  }));
 
   // Se não houver nenhuma organização, envia para o onboarding
   if (orgs.length === 0) {

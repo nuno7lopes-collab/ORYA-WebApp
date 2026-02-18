@@ -8,6 +8,11 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const LEVELS = new Set(["ALL", "MENTIONS_ONLY", "OFF"]);
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 async function _PATCH(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
@@ -39,6 +44,7 @@ async function _PATCH(req: NextRequest, context: { params: { conversationId: str
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { organizationId: organization.id },
       },
       select: { conversationId: true, userId: true },

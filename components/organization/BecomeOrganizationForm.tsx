@@ -69,6 +69,19 @@ const OPERATION_OPTIONS = [
 
 const OPTIONAL_MODULES = ["INSCRICOES", "MENSAGENS", "LOJA"] as const;
 type OptionalModule = (typeof OPTIONAL_MODULES)[number];
+type GroupMode = "NEW_GROUP" | "EXISTING_GROUP";
+
+type ExistingGroupOption = {
+  id: number;
+  organizationCount: number;
+  sampleOrganizations: string[];
+};
+
+type BecomeOrganizationFormProps = {
+  existingGroups?: ExistingGroupOption[];
+  initialGroupMode?: GroupMode;
+  initialGroupId?: number | null;
+};
 
 const MODULE_META: Record<OptionalModule, { label: string; description: string }> = {
   INSCRICOES: {
@@ -160,7 +173,11 @@ function buildUsernameSuggestions(base: string) {
   return unique.slice(0, 3);
 }
 
-export default function BecomeOrganizationForm() {
+export default function BecomeOrganizationForm({
+  existingGroups = [],
+  initialGroupMode = "NEW_GROUP",
+  initialGroupId = null,
+}: BecomeOrganizationFormProps) {
   const router = useRouter();
   const [usernameHelper, setUsernameHelper] = useState(USERNAME_HELPER);
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
@@ -176,6 +193,18 @@ export default function BecomeOrganizationForm() {
   const [showBuildScreen, setShowBuildScreen] = useState(false);
   const [selectedOperations, setSelectedOperations] = useState<OperationModule[]>([]);
   const [optionalSelection, setOptionalSelection] = useState<OptionalModule[]>([]);
+  const hasOwnedGroups = existingGroups.length > 0;
+  const firstOwnedGroupId = existingGroups[0]?.id ?? null;
+  const initialExistingGroupId =
+    typeof initialGroupId === "number" && existingGroups.some((group) => group.id === initialGroupId)
+      ? initialGroupId
+      : firstOwnedGroupId;
+  const [groupMode, setGroupMode] = useState<GroupMode>(
+    initialGroupMode === "EXISTING_GROUP" && hasOwnedGroups ? "EXISTING_GROUP" : "NEW_GROUP",
+  );
+  const [selectedExistingGroupId, setSelectedExistingGroupId] = useState<number | null>(
+    initialGroupMode === "EXISTING_GROUP" && hasOwnedGroups ? initialExistingGroupId : null,
+  );
   const buildTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdOrganizationIdRef = useRef<number | null>(null);
   const isRestoringRef = useRef(true);
@@ -188,6 +217,8 @@ export default function BecomeOrganizationForm() {
       modules: getDefaultOrganizationModules(DEFAULT_PRIMARY_MODULE),
       businessName: "",
       username: "",
+      groupMode: initialGroupMode === "EXISTING_GROUP" && hasOwnedGroups ? "EXISTING_GROUP" : "NEW_GROUP",
+      existingGroupId: initialGroupMode === "EXISTING_GROUP" && hasOwnedGroups ? initialExistingGroupId : null,
     },
   });
 
@@ -214,6 +245,8 @@ export default function BecomeOrganizationForm() {
         businessName?: string;
         username?: string;
         usernameTouched?: boolean;
+        groupMode?: string;
+        selectedExistingGroupId?: number | null;
       };
       const step =
         typeof parsed.step === "number" && Number.isFinite(parsed.step)
@@ -244,12 +277,21 @@ export default function BecomeOrganizationForm() {
           setUsernameTouched(true);
         }
       }
+      if (parsed.groupMode === "EXISTING_GROUP" && hasOwnedGroups) {
+        setGroupMode("EXISTING_GROUP");
+      }
+      if (
+        typeof parsed.selectedExistingGroupId === "number" &&
+        existingGroups.some((group) => group.id === parsed.selectedExistingGroupId)
+      ) {
+        setSelectedExistingGroupId(parsed.selectedExistingGroupId);
+      }
     } catch {
       // Ignorar estado inválido
     } finally {
       isRestoringRef.current = false;
     }
-  }, [form]);
+  }, [form, existingGroups, hasOwnedGroups]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -261,9 +303,20 @@ export default function BecomeOrganizationForm() {
       businessName: watchBusinessName,
       username: watchUsername,
       usernameTouched,
+      groupMode,
+      selectedExistingGroupId,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }, [activeStep, selectedOperations, optionalSelection, watchBusinessName, watchUsername, usernameTouched]);
+  }, [
+    activeStep,
+    selectedOperations,
+    optionalSelection,
+    watchBusinessName,
+    watchUsername,
+    usernameTouched,
+    groupMode,
+    selectedExistingGroupId,
+  ]);
 
   useEffect(() => {
     if (isRestoringRef.current) return;
@@ -317,6 +370,24 @@ export default function BecomeOrganizationForm() {
     );
     form.setValue("modules", nextModules, { shouldValidate: true, shouldDirty: true });
   }, [form, derivedPrimaryModule, selectedOperations, optionalSelection]);
+
+  useEffect(() => {
+    if (!hasOwnedGroups && groupMode === "EXISTING_GROUP") {
+      setGroupMode("NEW_GROUP");
+      setSelectedExistingGroupId(null);
+      return;
+    }
+    if (groupMode === "EXISTING_GROUP" && !selectedExistingGroupId) {
+      setSelectedExistingGroupId(firstOwnedGroupId);
+    }
+  }, [groupMode, selectedExistingGroupId, hasOwnedGroups, firstOwnedGroupId]);
+
+  useEffect(() => {
+    form.setValue("groupMode", groupMode, { shouldValidate: true });
+    form.setValue("existingGroupId", groupMode === "EXISTING_GROUP" ? selectedExistingGroupId : null, {
+      shouldValidate: true,
+    });
+  }, [form, groupMode, selectedExistingGroupId]);
 
   const usernameClean = sanitizeUsername(watchUsername);
   const nextStepLabel = activeStep === 0 ? "Começar" : "Continuar";
@@ -420,6 +491,10 @@ export default function BecomeOrganizationForm() {
       setError("Escolhe pelo menos um foco para a tua organização.");
       return;
     }
+    if (groupMode === "EXISTING_GROUP" && !selectedExistingGroupId) {
+      setError("Seleciona o grupo onde queres adicionar esta organização.");
+      return;
+    }
     const modulesPayload = Array.from(
       new Set<OrganizationModule>([
         ...getDefaultOrganizationModules(derivedPrimaryModule),
@@ -439,6 +514,8 @@ export default function BecomeOrganizationForm() {
           businessName: values.businessName.trim(),
           publicName: values.businessName.trim(),
           username: cleanedUsername,
+          groupMode,
+          existingGroupId: groupMode === "EXISTING_GROUP" ? selectedExistingGroupId : null,
         }),
       });
       const data = await res.json().catch(() => null);
@@ -734,29 +811,110 @@ export default function BecomeOrganizationForm() {
             <div className="space-y-6">
               <TypingText
                 key={`identity-${activeStep}`}
-                text="Qual é o nome da tua organização?"
+                text="Identidade e grupo da organização"
                 className="text-2xl font-semibold text-white md:text-3xl"
               />
               <div className="space-y-5">
+                <div className="space-y-3 rounded-2xl border border-white/12 bg-white/[0.03] p-4">
+                  <p className="text-[12px] uppercase tracking-[0.2em] text-white/55">Estrutura de grupo</p>
+                  <p className="text-sm text-white/75">
+                    O grupo funciona como entidade-mãe. Para a maioria dos casos, cria um novo grupo e mantém a organização autónoma.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupMode("NEW_GROUP");
+                        setSelectedExistingGroupId(null);
+                      }}
+                      aria-pressed={groupMode === "NEW_GROUP"}
+                      className={`rounded-xl border px-3 py-3 text-left text-sm transition ${
+                        groupMode === "NEW_GROUP"
+                          ? "border-[#6BFFFF]/65 bg-[#6BFFFF]/12 text-white"
+                          : "border-white/14 bg-white/5 text-white/80 hover:border-white/28"
+                      }`}
+                    >
+                      <p className="font-semibold">Criar novo grupo</p>
+                      <p className="text-[12px] text-white/65">Recomendado para organizações independentes.</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!hasOwnedGroups) return;
+                        setGroupMode("EXISTING_GROUP");
+                        setSelectedExistingGroupId((prev) => prev ?? firstOwnedGroupId);
+                      }}
+                      aria-pressed={groupMode === "EXISTING_GROUP"}
+                      disabled={!hasOwnedGroups}
+                      className={`rounded-xl border px-3 py-3 text-left text-sm transition ${
+                        groupMode === "EXISTING_GROUP"
+                          ? "border-[#6BFFFF]/65 bg-[#6BFFFF]/12 text-white"
+                          : "border-white/14 bg-white/5 text-white/80 hover:border-white/28"
+                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      <p className="font-semibold">Adicionar a grupo existente</p>
+                      <p className="text-[12px] text-white/65">
+                        {hasOwnedGroups
+                          ? "Usa um grupo onde já és responsável."
+                          : "Ainda não tens grupos elegíveis para anexar."}
+                      </p>
+                    </button>
+                  </div>
+                  {groupMode === "EXISTING_GROUP" && hasOwnedGroups && (
+                    <div className="space-y-2">
+                      <label htmlFor="existingGroupId" className="text-[12px] text-white/70">
+                        Grupo existente *
+                      </label>
+                      <select
+                        id="existingGroupId"
+                        value={selectedExistingGroupId ?? ""}
+                        onChange={(event) => {
+                          const nextValue = Number(event.target.value);
+                          setSelectedExistingGroupId(Number.isInteger(nextValue) ? nextValue : null);
+                        }}
+                        className="w-full rounded-xl border border-white/14 bg-black/45 px-3 py-2 text-sm text-white outline-none transition focus:border-[#6BFFFF]"
+                      >
+                        <option value="" disabled>
+                          Seleciona um grupo
+                        </option>
+                        {existingGroups.map((group) => (
+                          <option key={group.id} value={group.id}>
+                            Grupo #{group.id} · {group.organizationCount} org
+                            {group.organizationCount === 1 ? "" : "s"}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedExistingGroupId && (
+                        <p className="text-[12px] text-white/65">
+                          {existingGroups
+                            .find((group) => group.id === selectedExistingGroupId)
+                            ?.sampleOrganizations.slice(0, 2)
+                            .join(" • ") || "Grupo selecionado"}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-[12px] text-white/70">Nome da organização *</label>
                   <Controller
                     name="businessName"
                     control={form.control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
-                        showBusinessNameError ? "border-red-400/60" : "border-white/15"
-                      }`}
-                      placeholder="Nome da organização"
-                    />
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        className={`w-full rounded-xl border bg-black/40 px-3 py-2 text-sm outline-none transition focus:border-[#6BFFFF] ${
+                          showBusinessNameError ? "border-red-400/60" : "border-white/15"
+                        }`}
+                        placeholder="Nome da organização"
+                      />
+                    )}
+                  />
+                  {showBusinessNameError && (
+                    <p className="text-[12px] text-red-300">{form.formState.errors.businessName?.message}</p>
                   )}
-                />
-                {showBusinessNameError && (
-                  <p className="text-[12px] text-red-300">{form.formState.errors.businessName?.message}</p>
-                )}
-              </div>
+                </div>
 
                 <div className="space-y-2">
                   <div className="flex items-center gap-1 text-[12px] text-white/75">
@@ -810,10 +968,10 @@ export default function BecomeOrganizationForm() {
                       ))}
                     </div>
                   )}
-                {showUsernameError && (
-                  <p className="text-[12px] text-red-300">{form.formState.errors.username?.message}</p>
-                )}
-              </div>
+                  {showUsernameError && (
+                    <p className="text-[12px] text-red-300">{form.formState.errors.username?.message}</p>
+                  )}
+                </div>
               </div>
             </div>
           )}

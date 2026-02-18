@@ -13,10 +13,21 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-vi.mock("@/lib/reservas/serviceAssignment", () => ({
-  resolveServiceAssignmentMode: () => ({ mode: "PROFESSIONAL", isCourtService: true }),
-  getResourceModeBlockedPayload: () => ({ ok: false, error: "RESOURCE_MODE_NOT_ALLOWED", message: "Mode not allowed." }),
-}));
+vi.mock("@/lib/reservas/serviceAssignment", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reservas/serviceAssignment")>();
+  return {
+    ...actual,
+    resolveServiceAssignmentMode: () => ({
+      availabilityMode: "PROFESSIONAL",
+      mode: "PROFESSIONAL",
+      assignmentMode: "PROFESSIONAL_ONLY",
+      requiresProfessional: true,
+      requiresResource: false,
+      isCourtService: true,
+      isHybrid: false,
+    }),
+  };
+});
 
 vi.mock("@/lib/reservas/serviceAddons", () => ({
   applyAddonTotals: (value: any) => value,
@@ -54,6 +65,11 @@ describe("service calendar window", () => {
     mocks.serviceFindFirst.mockResolvedValue({
       id: 1,
       kind: "COURT",
+      assignmentMode: "PROFESSIONAL_ONLY",
+      partySizeRequired: false,
+      partySizeMin: 1,
+      partySizeMax: 1,
+      partySizeStep: 1,
       durationMinutes: 60,
       organizationId: 10,
       unitPriceCents: 0,

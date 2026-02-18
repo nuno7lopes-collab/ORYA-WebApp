@@ -35,6 +35,11 @@
     "db:status": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate status --schema=prisma/schema.prisma",
     "db:deploy": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js migrate deploy --schema=prisma/schema.prisma",
     "db:generate": "npm run db:env && npm run db:preflight && node ./scripts/db/prisma-retry.js generate --schema=prisma/schema.prisma",
+    "db:local:up": "docker compose -f infra/dev/docker-compose.db.yml up -d",
+    "db:local:down": "docker compose -f infra/dev/docker-compose.db.yml down -v",
+    "db:local:deploy": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:54322/orya_local DIRECT_URL=postgresql://postgres:postgres@localhost:54322/orya_local npm run db:deploy",
+    "seed:local:rich-demo": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:54322/orya_local DIRECT_URL=postgresql://postgres:postgres@localhost:54322/orya_local npm run seed:rich-demo",
+    "smoke:local:reservas:hybrid": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:54322/orya_local DIRECT_URL=postgresql://postgres:postgres@localhost:54322/orya_local npm run smoke:reservas:hybrid",
     "db:address:renormalize": "npm run db:env && npm run db:preflight && prisma db execute --file scripts/db/address_renormalize.sql",
     "db:gates": "node ./scripts/db/gates.js",
     "db:gates:offline": "DB_GATES_MODE=offline npm run db:gates",
@@ -63,6 +68,8 @@
     "admin:totp-key": "node scripts/generate-admin-totp-key.mjs",
     "logo:build": "node scripts/regenerate-logo-assets.mjs",
     "seed:rich-demo": "node scripts/run-ts.cjs scripts/seed_rich_demo.ts"
+    ,
+    "smoke:reservas:hybrid": "node scripts/run-ts.cjs scripts/smoke_reservas_hybrid.ts"
   },
   "dependencies": {
     "@aws-sdk/client-budgets": "^3.980.0",

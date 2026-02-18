@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
+import { OrganizationMemberRole } from "@prisma/client";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -8,6 +9,22 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+
+const ORG_GRANT_KINDS = new Set<string>([
+  "ORG_CONTACT_REQUEST",
+  "SERVICE_REQUEST",
+  "CHANNEL_CREATE_REQUEST",
+]);
+
+const ORG_GRANT_ADMIN_ROLES = new Set<OrganizationMemberRole>([
+  OrganizationMemberRole.OWNER,
+  OrganizationMemberRole.CO_OWNER,
+  OrganizationMemberRole.ADMIN,
+]);
+
+function canResolveOrgGrant(role: OrganizationMemberRole | null | undefined) {
+  return Boolean(role && ORG_GRANT_ADMIN_ROLES.has(role));
+}
 
 async function canAccessEventGrant(params: {
   userId: string;
@@ -74,6 +91,9 @@ export async function POST(
 
     if (!grant) {
       return jsonWrap({ ok: false, error: "GRANT_NOT_FOUND" }, { status: 404 });
+    }
+    if (ORG_GRANT_KINDS.has(grant.kind) && !canResolveOrgGrant(orgContext?.membership?.role)) {
+      return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
     if (grant.status !== "PENDING") {
       return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 409 });

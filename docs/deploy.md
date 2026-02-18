@@ -1,0 +1,1 @@
+o comando git push origin developer ativa o deploy

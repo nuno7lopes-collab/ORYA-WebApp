@@ -84,6 +84,16 @@ export const becomeOrganizationSchema = z.object({
     .min(1, "O username é obrigatório.")
     .min(3, "Mínimo 3 caracteres.")
     .max(15, "Máximo 15 caracteres."),
+  groupMode: z.enum(["NEW_GROUP", "EXISTING_GROUP"]).default("NEW_GROUP"),
+  existingGroupId: z.number().int().positive().nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.groupMode === "EXISTING_GROUP" && !value.existingGroupId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["existingGroupId"],
+      message: "Seleciona um grupo existente.",
+    });
+  }
 });
 
 export type BecomeOrganizationSchema = typeof becomeOrganizationSchema;

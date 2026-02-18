@@ -321,10 +321,12 @@
         "undoExpired": "Já não é possível anular esta mensagem.",
         "undoFailed": "Não foi possível anular.",
         "muteFailed": "Não foi possível silenciar.",
-        "muteUpdateFailed": "Não foi possível atualizar.",
-        "readOnly": "Este chat está em modo leitura.",
-        "participantsOnly": "Chat disponível apenas para participantes.",
-        "signInRequired": "Inicia sessão para aceder ao chat."
+      "muteUpdateFailed": "Não foi possível atualizar.",
+      "readOnly": "Este chat está em modo leitura.",
+      "blocked": "Esta conversa está bloqueada.",
+      "banned": "Acesso bloqueado a esta conversa.",
+      "participantsOnly": "Chat disponível apenas para participantes.",
+      "signInRequired": "Inicia sessão para aceder ao chat."
       },
       "mute": {
         "title": "Silenciar conversa",

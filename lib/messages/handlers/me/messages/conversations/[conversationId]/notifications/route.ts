@@ -17,6 +17,11 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.SERVICE,
 ];
 const LEVELS = new Set(["ALL", "MENTIONS_ONLY", "OFF"]);
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 async function _PATCH(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
@@ -42,13 +47,44 @@ async function _PATCH(req: NextRequest, context: { params: { conversationId: str
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
-      select: { conversationId: true, userId: true },
+      select: {
+        conversationId: true,
+        userId: true,
+        conversation: {
+          select: {
+            contextType: true,
+            members: {
+              where: ACTIVE_MEMBER_FILTER,
+              select: { userId: true },
+            },
+          },
+        },
+      },
     });
 
     if (!member) {
       return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    if (member.conversation.contextType === ChatConversationContextType.USER_DM) {
+      const peerId = member.conversation.members.find((entry) => entry.userId !== user.id)?.userId ?? null;
+      if (peerId) {
+        const block = await prisma.chatUserBlock.findFirst({
+          where: {
+            OR: [
+              { blockerId: user.id, blockedId: peerId },
+              { blockerId: peerId, blockedId: user.id },
+            ],
+          },
+          select: { id: true },
+        });
+        if (block) {
+          return jsonWrap({ error: "CHAT_BLOCKED" }, { status: 403 });
+        }
+      }
     }
 
     const updated = await prisma.chatConversationMember.update({

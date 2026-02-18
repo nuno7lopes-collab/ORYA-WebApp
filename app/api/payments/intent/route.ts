@@ -9,7 +9,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import type Stripe from "stripe";
 import { createPaymentIntent, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { computeFeePolicyVersion, createCheckout } from "@/domain/finance/checkout";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
@@ -684,67 +684,106 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
     });
   }
 
-  const { paymentIntent } = await ensurePaymentIntent({
-    purchaseId,
-    orgId: pairing.organizationId,
-    sourceType: SourceType.PADEL_REGISTRATION,
-    sourceId: registration.id,
-    amountCents: pricing.totalCents,
-    currency,
-    intentParams: {
-      payment_method_types: paymentMethod === "card" ? ["card"] : ["mb_way"],
-    },
-    metadata: {
-      pairingId: String(pairing.id),
-      slotId: String(targetSlot.id),
-      eventId: String(pairing.eventId),
-      paymentScenario: scenario,
-      categoryLinkId: String(categoryLink.id),
-      paymentMethod,
-      ...(ownerResolved.ownerUserId ? { ownerUserId: ownerResolved.ownerUserId } : {}),
-      ...(buyerIdentityId ? { ownerIdentityId: buyerIdentityId } : {}),
-      ...(ownerResolved.emailNormalized ? { emailNormalized: ownerResolved.emailNormalized } : {}),
-    },
-    orgContext: {
-      stripeAccountId: pairing.event.organization?.stripeAccountId ?? null,
-      stripeChargesEnabled: pairing.event.organization?.stripeChargesEnabled ?? null,
-      stripePayoutsEnabled: pairing.event.organization?.stripePayoutsEnabled ?? null,
-      orgType: pairing.event.organization?.orgType ?? null,
-    },
-    requireStripe: true,
-    clientIdempotencyKey: clientIdempotencyKey ?? undefined,
-    customerIdentityId: buyerIdentityId ?? null,
-    resolvedSnapshot: {
+  let paymentIntent;
+  try {
+    const ensured = await ensurePaymentIntent({
+      purchaseId,
       orgId: pairing.organizationId,
-      customerIdentityId: buyerIdentityId ?? null,
-      eventId: pairing.eventId,
-      snapshot: {
-        currency,
-        gross: pricing.totalCents,
-        discounts: 0,
-        taxes: 0,
-        platformFee: pricing.platformFeeCents,
-        total: pricing.totalCents,
-        netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
-        processorFeesStatus: ProcessorFeesStatus.PENDING,
-        processorFeesActual: null,
-        feeMode: pricing.feeMode,
-        feeBps: pricing.feeBpsApplied,
-        feeFixed: pricing.feeFixedApplied,
-        feePolicyVersion,
-        promoPolicyVersion: null,
-        sourceType: SourceType.PADEL_REGISTRATION,
-        sourceId: registration.id,
-        lineItems: snapshotLines,
-      },
-    },
-    paymentEvent: {
-      eventId: pairing.eventId,
-      userId,
+      sourceType: SourceType.PADEL_REGISTRATION,
+      sourceId: registration.id,
       amountCents: pricing.totalCents,
-      platformFeeCents: pricing.platformFeeCents,
-    },
-  });
+      currency,
+      intentParams: {
+        payment_method_types: paymentMethod === "card" ? ["card"] : ["mb_way"],
+      },
+      metadata: {
+        pairingId: String(pairing.id),
+        slotId: String(targetSlot.id),
+        eventId: String(pairing.eventId),
+        paymentScenario: scenario,
+        categoryLinkId: String(categoryLink.id),
+        paymentMethod,
+        ...(ownerResolved.ownerUserId ? { ownerUserId: ownerResolved.ownerUserId } : {}),
+        ...(buyerIdentityId ? { ownerIdentityId: buyerIdentityId } : {}),
+        ...(ownerResolved.emailNormalized ? { emailNormalized: ownerResolved.emailNormalized } : {}),
+      },
+      orgContext: {
+        stripeAccountId: pairing.event.organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: pairing.event.organization?.stripeChargesEnabled ?? null,
+        stripePayoutsEnabled: pairing.event.organization?.stripePayoutsEnabled ?? null,
+        orgType: pairing.event.organization?.orgType ?? null,
+      },
+      requireStripe: true,
+      clientIdempotencyKey: clientIdempotencyKey ?? undefined,
+      customerIdentityId: buyerIdentityId ?? null,
+      resolvedSnapshot: {
+        orgId: pairing.organizationId,
+        customerIdentityId: buyerIdentityId ?? null,
+        eventId: pairing.eventId,
+        snapshot: {
+          currency,
+          gross: pricing.totalCents,
+          discounts: 0,
+          taxes: 0,
+          platformFee: pricing.platformFeeCents,
+          total: pricing.totalCents,
+          netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
+          processorFeesStatus: ProcessorFeesStatus.PENDING,
+          processorFeesActual: null,
+          feeMode: pricing.feeMode,
+          feeBps: pricing.feeBpsApplied,
+          feeFixed: pricing.feeFixedApplied,
+          feePolicyVersion,
+          promoPolicyVersion: null,
+          sourceType: SourceType.PADEL_REGISTRATION,
+          sourceId: registration.id,
+          lineItems: snapshotLines,
+        },
+      },
+      paymentEvent: {
+        eventId: pairing.eventId,
+        userId,
+        amountCents: pricing.totalCents,
+        platformFeeCents: pricing.platformFeeCents,
+      },
+    });
+    paymentIntent = ensured.paymentIntent;
+  } catch (err) {
+    if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+      return intentError("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "Chave de idempotência reutilizada com um checkout diferente.", {
+        httpStatus: 409,
+        status: "FAILED",
+        retryable: false,
+        nextAction: "NONE",
+      });
+    }
+    if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+      return intentError("PAYMENT_INTENT_TERMINAL", "Sessão de pagamento expirada. Tenta novamente.", {
+        httpStatus: 409,
+        status: "FAILED",
+        retryable: true,
+        nextAction: "PAY_NOW",
+      });
+    }
+    if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+      return intentError("PAYMENT_INTENT_RETRIEVE_FAILED", "Não foi possível retomar o pagamento. Tenta novamente.", {
+        httpStatus: 503,
+        status: "FAILED",
+        retryable: true,
+        nextAction: "PAY_NOW",
+      });
+    }
+    if (isFinanceConnectNotReadyError(err)) {
+      return intentError("ORGANIZATION_STRIPE_NOT_CONNECTED", "Pagamentos desativados para este evento. Para ativar, liga a tua conta Stripe.", {
+        httpStatus: 409,
+        status: "FAILED",
+        retryable: false,
+        nextAction: "CONNECT_STRIPE",
+        extra: { missingEmail: false, missingStripe: true },
+      });
+    }
+    throw err;
+  }
 
   if (!paymentIntent.client_secret) {
     return intentError("MISSING_CLIENT_SECRET", "Não foi possível preparar o pagamento.", {
@@ -1255,6 +1294,7 @@ async function _POST(req: NextRequest) {
         name: true,
         price: true,
         currency: true,
+        publicAccess: true,
         totalQuantity: true,
         soldQuantity: true,
         padelEventCategoryLinkId: true,
@@ -1284,9 +1324,10 @@ async function _POST(req: NextRequest) {
     const hasExistingFreeEntry =
       isFreeOnlyEvent && userId ? await hasExistingFreeEntryForUser({ eventId: event.id, userId }) : false;
 
-    const requiresInviteToken = inviteRestricted;
+    const hasPrivateTicketSelection = ticketTypes.some((ticketType) => ticketType.publicAccess === false);
+    const requiresInviteAccess = inviteRestricted || hasPrivateTicketSelection;
 
-    if (requiresInviteToken && !isAdmin) {
+    if (requiresInviteAccess && !isAdmin) {
       if (!userId) {
         return intentError("INVITE_REQUIRED", "Este bilhete é apenas por convite.", {
           httpStatus: 403,

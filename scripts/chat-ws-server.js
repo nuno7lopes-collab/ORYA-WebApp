@@ -455,7 +455,13 @@ async function getConversationIds(userId, organizationId, scope) {
       ? { contextType: { in: Array.from(B2C_CONTEXT_TYPES) } }
       : { organizationId };
   const rows = await prisma.chatConversationMember.findMany({
-    where: { userId, conversation: conversationWhere },
+    where: {
+      userId,
+      leftAt: null,
+      accessRevokedAt: null,
+      bannedAt: null,
+      conversation: conversationWhere,
+    },
     select: { conversationId: true },
   });
   return rows.map((row) => row.conversationId);

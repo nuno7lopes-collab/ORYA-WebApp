@@ -176,6 +176,14 @@ type ConversationsResponse = {
   error?: string;
 };
 
+type CreateConversationResponse = {
+  ok: boolean;
+  conversation?: ConversationItem;
+  pending?: boolean;
+  requestId?: string;
+  error?: string;
+};
+
 type SearchResult = {
   messageId: string;
   conversationId: string;
@@ -276,6 +284,38 @@ const fetcher = async <T,>(url: string, options?: RequestInit): Promise<T> => {
   }
   return json as T;
 };
+
+function mapChatErrorMessage(input: string | null | undefined) {
+  const code = input?.trim().toUpperCase() ?? "";
+  if (code === "CHAT_BLOCKED") return "Conversa bloqueada.";
+  if (code === "BANNED") return "Acesso bloqueado a esta conversa.";
+  if (code === "READ_ONLY") return "Conversa em modo leitura.";
+  if (code === "EVENT_NOT_OPEN") return "A conversa ainda nao esta aberta.";
+  if (code === "EVENT_NOT_FOUND") return "Conversa nao encontrada.";
+  if (code === "BOOKING_INACTIVE") return "Conversa indisponivel para esta reserva.";
+  if (code === "BOOKING_NOT_FOUND") return "Conversa nao encontrada.";
+  if (code === "INVALID_MESSAGE") return "Mensagem invalida.";
+  if (code === "MESSAGE_NOT_FOUND") return "Mensagem nao encontrada.";
+  if (code === "UNDO_EXPIRED") return "Ja nao e possivel anular esta mensagem.";
+  if (code === "EMPTY_MESSAGE") return "Mensagem vazia.";
+  if (code === "MESSAGE_TOO_LONG") return "Mensagem demasiado longa.";
+  if (code === "INVALID_REPLY") return "Resposta invalida.";
+  if (code === "INVALID_LEVEL") return "Configuracao invalida.";
+  if (code === "INVALID_MUTE") return "Configuracao invalida.";
+  if (code === "INVALID_PAYLOAD") return "Pedido invalido.";
+  if (code === "DUPLICATE_MESSAGE") return "Mensagem duplicada.";
+  if (code === "MESSAGE_NOT_CREATED") return "Nao foi possivel criar a mensagem.";
+  if (code === "ONLY_CHANNELS") return "O chat interno permite apenas canais.";
+  if (code === "INVALID_TITLE") return "Indica um titulo com pelo menos 2 caracteres.";
+  if (code === "NOT_IN_ORGANIZATION") return "So podes adicionar membros da organizacao.";
+  if (code === "FORBIDDEN") return "Sem permissoes para esta acao.";
+  if (code === "MODULE_DISABLED") return "O modulo de mensagens esta desativado.";
+  if (code === "RATE_LIMITED") return "Muitas tentativas. Tenta novamente em instantes.";
+  if (code === "ORG_CONTEXT_REQUIRED") return "Falta contexto da organizacao. Atualiza a pagina.";
+  if (code === "UNAUTHENTICATED") return "Sessao expirada. Volta a autenticar-te.";
+  if (code === "INTERNAL_ERROR") return "Erro interno. Tenta novamente.";
+  return input?.trim() || "Erro inesperado.";
+}
 
 function formatMessageTime(value: string) {
   const date = new Date(value);
@@ -430,8 +470,6 @@ export default function ChatInternoV2Client() {
 
   const [messageBody, setMessageBody] = useState("");
 
-  const [directUserId, setDirectUserId] = useState("");
-  const [groupTitle, setGroupTitle] = useState("");
   const [channelTitle, setChannelTitle] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [directory, setDirectory] = useState<MemberDirectoryItem[]>([]);
@@ -439,7 +477,9 @@ export default function ChatInternoV2Client() {
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<number | null>(null);
   const [newConversationOpen, setNewConversationOpen] = useState(false);
-  const [newConversationStep, setNewConversationStep] = useState<"DIRECT" | "GROUP" | "CHANNEL">("DIRECT");
+  const [newConversationError, setNewConversationError] = useState<string | null>(null);
+  const [newConversationNotice, setNewConversationNotice] = useState<string | null>(null);
+  const [newConversationSubmitting, setNewConversationSubmitting] = useState(false);
 
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
@@ -681,7 +721,9 @@ export default function ChatInternoV2Client() {
 
         lastConversationSyncRef.current = new Date().toISOString();
       } catch (err) {
-        setConversationsError(err instanceof Error ? err.message : "Erro ao carregar conversas.");
+        setConversationsError(
+          mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao carregar conversas."),
+        );
       } finally {
         setConversationsLoading(false);
       }
@@ -1295,7 +1337,12 @@ export default function ChatInternoV2Client() {
             setWsError(detail || "UPGRADE_REQUIRED");
           } else if (code === "RATE_LIMITED") {
             setWsError("RATE_LIMITED");
-          } else if (code === "FORBIDDEN" || code === "UNAUTHORIZED" || code === "MOBILE_APP_REQUIRED") {
+          } else if (
+            code === "FORBIDDEN" ||
+            code === "UNAUTHORIZED" ||
+            code === "MOBILE_APP_REQUIRED" ||
+            code === "ORG_CONTEXT_REQUIRED"
+          ) {
             setWsError(code);
           }
           return;
@@ -1911,26 +1958,22 @@ export default function ChatInternoV2Client() {
   };
 
   const handleCreateConversation = async () => {
-    if (newConversationStep === "DIRECT" && !directUserId) return;
-    if (newConversationStep === "GROUP" && (groupTitle.trim().length < 2 || selectedMemberIds.length === 0)) return;
-    if (newConversationStep === "CHANNEL" && channelTitle.trim().length < 2) return;
+    const title = channelTitle.trim();
+    if (title.length < 2) {
+      setNewConversationError("Indica um titulo com pelo menos 2 caracteres.");
+      return;
+    }
 
+    setNewConversationSubmitting(true);
+    setNewConversationError(null);
+    setNewConversationNotice(null);
     try {
       const payload: Record<string, unknown> = {
-        type: newConversationStep,
+        type: "CHANNEL",
+        title,
+        memberIds: selectedMemberIds,
       };
-      if (newConversationStep === "DIRECT") {
-        payload.userId = directUserId;
-      }
-      if (newConversationStep === "GROUP") {
-        payload.title = groupTitle.trim();
-        payload.memberIds = selectedMemberIds;
-      }
-      if (newConversationStep === "CHANNEL") {
-        payload.title = channelTitle.trim();
-        payload.memberIds = selectedMemberIds;
-      }
-      const res = await fetchChat<{ ok: boolean; conversation: ConversationItem }>("/api/messages/conversations", {
+      const res = await fetchChat<CreateConversationResponse>("/api/messages/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1939,16 +1982,29 @@ export default function ChatInternoV2Client() {
         setActiveConversationId(res.conversation.id);
         loadConversations();
         sendWsMessage({ type: "conversation:sync" });
+        setNewConversationNotice("Canal criado com sucesso.");
+      } else if (res?.pending) {
+        setNewConversationNotice("Pedido de canal enviado para aprovacao.");
+      } else {
+        throw new Error("INTERNAL_ERROR");
       }
-      setDirectUserId("");
-      setGroupTitle("");
       setChannelTitle("");
       setSelectedMemberIds([]);
       setNewConversationOpen(false);
     } catch (err) {
-      setConversationsError(err instanceof Error ? err.message : "Erro ao criar conversa.");
+      setNewConversationError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao criar conversa."));
+    } finally {
+      setNewConversationSubmitting(false);
     }
   };
+
+  const openNewConversationDialog = useCallback(() => {
+    setChannelTitle("");
+    setSelectedMemberIds([]);
+    setNewConversationError(null);
+    setNewConversationNotice(null);
+    setNewConversationOpen(true);
+  }, []);
 
   const handleDeleteMessage = async (messageId: string) => {
     const confirmed = window.confirm("Remover esta mensagem?");
@@ -2107,7 +2163,9 @@ export default function ChatInternoV2Client() {
 
   const connectionLabel = useMemo(() => {
     if (isOffline) return "Offline";
-    if (wsError) return "Indisponível";
+    if (wsError === "RATE_LIMITED") return "Limite de ligacao";
+    if (wsError === "ORG_CONTEXT_REQUIRED") return "Sem contexto";
+    if (wsError) return "Indisponivel";
     if (wsStatus !== "open") return "A reconectar";
     return "";
   }, [isOffline, wsError, wsStatus]);
@@ -2231,7 +2289,7 @@ export default function ChatInternoV2Client() {
             <button
               type="button"
               className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition hover:border-white/20 hover:bg-white/10"
-              onClick={() => setNewConversationOpen(true)}
+              onClick={openNewConversationDialog}
               aria-label="Nova conversa"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -2257,6 +2315,10 @@ export default function ChatInternoV2Client() {
         {contactRequestsLoading ? (
           <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-[11px] text-white/60">
             A carregar pedidos...
+          </div>
+        ) : newConversationNotice ? (
+          <div className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-100">
+            {newConversationNotice}
           </div>
         ) : contactRequestsError ? (
           <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100">
@@ -2335,7 +2397,7 @@ export default function ChatInternoV2Client() {
             <button
               type="button"
               className={cn(CTA_NEUTRAL, "mt-3 text-[11px]")}
-              onClick={() => setNewConversationOpen(true)}
+              onClick={openNewConversationDialog}
             >
               Nova conversa
             </button>
@@ -3025,7 +3087,10 @@ export default function ChatInternoV2Client() {
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setNewConversationOpen(false);
+            if (event.target === event.currentTarget) {
+              setNewConversationOpen(false);
+              setNewConversationError(null);
+            }
           }}
         >
           <div
@@ -3050,29 +3115,14 @@ export default function ChatInternoV2Client() {
               <button
                 type="button"
                 className={cn(CTA_GHOST, "text-[11px]")}
-                onClick={() => setNewConversationOpen(false)}
+                onClick={() => {
+                  setNewConversationOpen(false);
+                  setNewConversationError(null);
+                }}
               >
                 Fechar
               </button>
             </header>
-
-            <div className="mt-4 flex gap-2 text-[11px]">
-              {(["DIRECT", "GROUP", "CHANNEL"] as const).map((step) => (
-                <button
-                  key={step}
-                  type="button"
-                  className={cn(
-                    "rounded-full border px-3 py-1",
-                    newConversationStep === step
-                      ? "border-white/30 bg-white/15 text-white"
-                      : "border-white/10 text-white/60",
-                  )}
-                  onClick={() => setNewConversationStep(step)}
-                >
-                  {step === "DIRECT" ? "Direta" : step === "GROUP" ? "Grupo" : "Canal"}
-                </button>
-              ))}
-            </div>
 
             <div className="mt-4 space-y-3">
               {directoryLoading ? (
@@ -3080,93 +3130,69 @@ export default function ChatInternoV2Client() {
               ) : directoryError ? (
                 <p className="text-[12px] text-rose-200">{directoryError}</p>
               ) : null}
-              {newConversationStep === "DIRECT" ? (
-                <label className="text-[12px] text-white/70">
-                  Direta
-                  <select
-                    value={directUserId}
-                    onChange={(event) => setDirectUserId(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  >
-                    <option value="">Seleciona um membro</option>
-                    {directory
-                      .filter((member) => member.userId !== user?.id)
-                      .map((member) => {
-                        const label =
-                          member.fullName?.trim() || (member.username ? `@${member.username}` : "Membro");
-                        return (
-                          <option key={member.userId} value={member.userId}>
-                            {label}
-                          </option>
-                        );
-                      })}
-                  </select>
-                </label>
-              ) : null}
+              <label className="text-[12px] text-white/70">
+                Titulo do canal
+                <input
+                  value={channelTitle}
+                  onChange={(event) => setChannelTitle(event.target.value)}
+                  disabled={newConversationSubmitting}
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40 disabled:opacity-60"
+                  placeholder="Nome do canal"
+                />
+              </label>
 
-              {newConversationStep === "GROUP" ? (
-                <label className="text-[12px] text-white/70">
-                  Titulo do grupo
-                  <input
-                    value={groupTitle}
-                    onChange={(event) => setGroupTitle(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                    placeholder="Nome do grupo"
-                  />
-                </label>
+              <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2 text-[11px] text-white/70">
+                {directory
+                  .filter((member) => member.userId !== user?.id)
+                  .map((member) => {
+                    const label =
+                      member.fullName?.trim() || (member.username ? `@${member.username}` : "Membro");
+                    const checked = selectedMemberIds.includes(member.userId);
+                    return (
+                      <label key={member.userId} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={newConversationSubmitting}
+                          onChange={() => {
+                            setSelectedMemberIds((prev) =>
+                              checked
+                                ? prev.filter((id) => id !== member.userId)
+                                : [...prev, member.userId],
+                            );
+                          }}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+              </div>
+              {newConversationError ? (
+                <p className="rounded-xl border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-100">
+                  {newConversationError}
+                </p>
               ) : null}
-
-              {newConversationStep === "CHANNEL" ? (
-                <label className="text-[12px] text-white/70">
-                  Titulo do canal
-                  <input
-                    value={channelTitle}
-                    onChange={(event) => setChannelTitle(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                    placeholder="Nome do canal"
-                  />
-                </label>
-              ) : null}
-
-              {(newConversationStep === "GROUP" || newConversationStep === "CHANNEL") && (
-                <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2 text-[11px] text-white/70">
-                  {directory
-                    .filter((member) => member.userId !== user?.id)
-                    .map((member) => {
-                      const label =
-                        member.fullName?.trim() || (member.username ? `@${member.username}` : "Membro");
-                      const checked = selectedMemberIds.includes(member.userId);
-                      return (
-                        <label key={member.userId} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setSelectedMemberIds((prev) =>
-                                checked
-                                  ? prev.filter((id) => id !== member.userId)
-                                  : [...prev, member.userId],
-                              );
-                            }}
-                          />
-                          <span>{label}</span>
-                        </label>
-                      );
-                    })}
-                </div>
-              )}
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className={cn(CTA_GHOST, "text-[12px]")} onClick={() => setNewConversationOpen(false)}>
+              <button
+                type="button"
+                className={cn(CTA_GHOST, "text-[12px]")}
+                onClick={() => {
+                  setNewConversationOpen(false);
+                  setNewConversationError(null);
+                }}
+                disabled={newConversationSubmitting}
+              >
                 Cancelar
               </button>
               <button
                 type="button"
                 className={cn(CTA_PRIMARY, "text-[12px]")}
                 onClick={handleCreateConversation}
+                disabled={newConversationSubmitting || channelTitle.trim().length < 2}
               >
-                Criar
+                {newConversationSubmitting ? "A criar..." : "Criar"}
               </button>
             </div>
           </div>

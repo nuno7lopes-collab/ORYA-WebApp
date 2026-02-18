@@ -7,7 +7,11 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
-import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  normalizeReservationAssignmentMode,
+  requiresPartySizeForAssignmentMode,
+} from "@/lib/reservas/serviceAssignment";
+import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -115,6 +119,10 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         policyId: true,
         kind: true,
         assignmentMode: true,
+        partySizeRequired: true,
+        partySizeMin: true,
+        partySizeMax: true,
+        partySizeStep: true,
         instructorId: true,
         title: true,
         description: true,
@@ -206,6 +214,10 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         instructorId: true,
         kind: true,
         assignmentMode: true,
+        partySizeRequired: true,
+        partySizeMin: true,
+        partySizeMax: true,
+        partySizeStep: true,
         professionalLinks: { select: { professionalId: true } },
       },
     });
@@ -258,6 +270,36 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     );
     if (resolvedKind === ServiceKind.CLASS && resolvedAssignmentMode === "RESOURCE_ONLY") {
       return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
+    }
+    const hasPartySizeRequired = Object.prototype.hasOwnProperty.call(payload, "partySizeRequired");
+    const hasPartySizeMin = Object.prototype.hasOwnProperty.call(payload, "partySizeMin");
+    const hasPartySizeMax = Object.prototype.hasOwnProperty.call(payload, "partySizeMax");
+    const hasPartySizeStep = Object.prototype.hasOwnProperty.call(payload, "partySizeStep");
+    const hasAssignmentMode = Object.prototype.hasOwnProperty.call(updates, "assignmentMode");
+    const hasKind = Object.prototype.hasOwnProperty.call(updates, "kind");
+    const partySizeRules = resolveServicePartySizeRules({
+      assignmentMode: resolvedAssignmentMode,
+      serviceKind: resolvedKind,
+      partySizeRequired: hasPartySizeRequired ? payload?.partySizeRequired : existing.partySizeRequired,
+      partySizeMin: hasPartySizeMin ? payload?.partySizeMin : existing.partySizeMin,
+      partySizeMax: hasPartySizeMax ? payload?.partySizeMax : existing.partySizeMax,
+      partySizeStep: hasPartySizeStep ? payload?.partySizeStep : existing.partySizeStep,
+    });
+    if (requiresPartySizeForAssignmentMode(resolvedAssignmentMode) && !partySizeRules.partySizeRequired) {
+      return fail(400, "partySizeRequired é obrigatório para serviços com recurso.");
+    }
+    if (
+      hasPartySizeRequired ||
+      hasPartySizeMin ||
+      hasPartySizeMax ||
+      hasPartySizeStep ||
+      hasAssignmentMode ||
+      hasKind
+    ) {
+      updates.partySizeRequired = partySizeRules.partySizeRequired;
+      updates.partySizeMin = partySizeRules.partySizeMin;
+      updates.partySizeMax = partySizeRules.partySizeMax;
+      updates.partySizeStep = partySizeRules.partySizeStep;
     }
     if (payload?.instructorId === null) {
       updates.instructorId = null;
@@ -442,6 +484,10 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           policyId: true,
           kind: true,
           assignmentMode: true,
+          partySizeRequired: true,
+          partySizeMin: true,
+          partySizeMax: true,
+          partySizeStep: true,
           instructorId: true,
           title: true,
           description: true,

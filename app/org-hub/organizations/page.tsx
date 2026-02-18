@@ -1,29 +1,15 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { OrganizationStatus, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { AuthGate } from "@/app/components/autenticação/AuthGate";
 import OrganizationsHubClient from "@/app/org/_internal/core/organizations/OrganizationsHubClient";
+import { listOrgHubOrganizationsForUser, type OrgHubOrganizationPayload } from "@/lib/orgHub/listOrganizationsForUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-type OrgPayload = {
-  organizationId: number;
-  role: string;
-  lastUsedAt: string | null;
-  organization: {
-    id: number;
-    username: string | null;
-    publicName: string | null;
-    businessName: string | null;
-    entityType: string | null;
-    status: string | null;
-  };
-};
 
 export default async function OrgHubOrganizationsPage() {
   const supabase = await createSupabaseServer();
@@ -35,24 +21,9 @@ export default async function OrgHubOrganizationsPage() {
     return <AuthGate />;
   }
 
-  const memberships = await listEffectiveOrganizationMembershipsForUser({
+  const orgs: OrgHubOrganizationPayload[] = await listOrgHubOrganizationsForUser({
     userId: user.id,
-    allowedStatuses: [OrganizationStatus.ACTIVE, OrganizationStatus.SUSPENDED],
   });
-
-  const orgs: OrgPayload[] = memberships.map((m) => ({
-    organizationId: m.organizationId,
-    role: m.role,
-    lastUsedAt: null,
-    organization: {
-      id: m.organization.id,
-      username: m.organization.username,
-      publicName: m.organization.publicName,
-      businessName: m.organization.businessName,
-      entityType: m.organization.entityType,
-      status: m.organization.status,
-    },
-  }));
 
   if (orgs.length === 0) {
     const profile = await prisma.profile.findUnique({

@@ -6,9 +6,15 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
+import { isValidStripeAccountId } from "@/domain/finance/stripeConnectStatus";
 import { auditAdminAction } from "@/lib/admin/audit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+
+function isStripeResourceMissing(err: unknown) {
+  const anyErr = err as { code?: string; statusCode?: number };
+  return anyErr?.code === "resource_missing" || anyErr?.statusCode === 404;
+}
 
 type RefreshPayload = {
   organizationId?: number;
@@ -47,7 +53,19 @@ async function _POST(req: NextRequest) {
       });
     }
 
-    if (!organization.stripeAccountId) {
+    const stripeAccountId =
+      typeof organization.stripeAccountId === "string"
+        ? organization.stripeAccountId.trim()
+        : "";
+    if (stripeAccountId && !isValidStripeAccountId(stripeAccountId)) {
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
       return jsonWrap({
         ok: true,
         status: "NOT_CONNECTED",
@@ -58,7 +76,57 @@ async function _POST(req: NextRequest) {
       });
     }
 
-    const account = await retrieveStripeAccount(organization.stripeAccountId);
+    if (!stripeAccountId) {
+      return jsonWrap({
+        ok: true,
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+        accountId: null,
+      });
+    }
+
+    let account;
+    try {
+      account = await retrieveStripeAccount(stripeAccountId);
+    } catch (err) {
+      if (!isStripeResourceMissing(err)) throw err;
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      return jsonWrap({
+        ok: true,
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+        accountId: null,
+      });
+    }
+    if ("deleted" in account && account.deleted) {
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      return jsonWrap({
+        ok: true,
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+        accountId: null,
+      });
+    }
     const charges_enabled = account.charges_enabled ?? false;
     const payouts_enabled = account.payouts_enabled ?? false;
     const requirements_due = account.requirements?.currently_due ?? [];

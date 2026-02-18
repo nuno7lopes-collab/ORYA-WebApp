@@ -94,4 +94,18 @@ describe("evaluateEventAccess", () => {
     expect(result.allowed).toBe(false);
     expect(result.reasonCode).toBe("INVITE_ONLY");
   });
+
+  it("permite validação de invite token sem sessão quando policy aceita token", async () => {
+    getLatestPolicyForEvent.mockResolvedValue({
+      inviteTokenAllowed: true,
+      inviteIdentityMatch: "EMAIL",
+      inviteTokenTtlSeconds: 3600,
+      requiresEntitlementForEntry: false,
+      mode: "INVITE_ONLY",
+    });
+
+    const result = await evaluateEventAccess({ eventId: 1, userId: null, intent: "INVITE_TOKEN" });
+    expect(result.allowed).toBe(true);
+    expect(result.reasonCode).toBe("ALLOWED");
+  });
 });

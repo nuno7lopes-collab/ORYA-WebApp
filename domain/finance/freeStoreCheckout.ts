@@ -5,6 +5,8 @@ type FinalizeFreeStoreCheckoutParams = {
   orderId: number;
   storeId: number;
   purchaseId: string;
+  cartId?: string | null;
+  promoCodeId?: number | null;
   userId?: string | null;
   customerEmail?: string | null;
   currency?: string | null;
@@ -22,8 +24,10 @@ function buildFreeIntent(params: FinalizeFreeStoreCheckoutParams): Stripe.Paymen
       storeOrderId: String(params.orderId),
       storeId: String(params.storeId),
       purchaseId: params.purchaseId,
+      cartId: params.cartId ?? "",
       userId: params.userId ?? "",
       customerEmail: params.customerEmail ?? "",
+      promoCodeId: params.promoCodeId ? String(params.promoCodeId) : "",
       paymentScenario: "FREE_CHECKOUT",
       grossAmountCents: "0",
       platformFeeCents: "0",

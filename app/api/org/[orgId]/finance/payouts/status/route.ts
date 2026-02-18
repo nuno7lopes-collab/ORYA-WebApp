@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { retrieveStripeAccount } from "@/domain/finance/gateway/stripeGateway";
+import { isValidStripeAccountId } from "@/domain/finance/stripeConnectStatus";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { createNotification, shouldNotify } from "@/lib/notifications";
@@ -15,6 +16,11 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError, logInfo } from "@/lib/observability/logger";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+function isStripeResourceMissing(err: unknown) {
+  const anyErr = err as { code?: string; statusCode?: number };
+  return anyErr?.code === "resource_missing" || anyErr?.statusCode === 404;
+}
 
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -55,7 +61,33 @@ async function _GET(req: NextRequest) {
       });
     }
 
-    if (!organization.stripeAccountId) {
+    const stripeAccountId =
+      typeof organization.stripeAccountId === "string"
+        ? organization.stripeAccountId.trim()
+        : "";
+    if (stripeAccountId && !isValidStripeAccountId(stripeAccountId)) {
+      logInfo("stripe.status.invalid_account_id", {
+        requestId: ctx.requestId,
+        organizationId: organization.id,
+        stripeAccountId,
+      });
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      return respondOk(ctx, {
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+      });
+    }
+
+    if (!stripeAccountId) {
       logInfo("stripe.status.no_account", { requestId: ctx.requestId, organizationId: organization.id });
       return respondOk(ctx, {
         status: "NOT_CONNECTED",
@@ -65,7 +97,43 @@ async function _GET(req: NextRequest) {
       });
     }
 
-    const account = await retrieveStripeAccount(organization.stripeAccountId);
+    let account;
+    try {
+      account = await retrieveStripeAccount(stripeAccountId);
+    } catch (err) {
+      if (!isStripeResourceMissing(err)) throw err;
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      return respondOk(ctx, {
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+      });
+    }
+
+    if ("deleted" in account && account.deleted) {
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      return respondOk(ctx, {
+        status: "NOT_CONNECTED",
+        charges_enabled: false,
+        payouts_enabled: false,
+        requirements_due: [],
+      });
+    }
 
     const charges_enabled = account.charges_enabled ?? false;
     const payouts_enabled = account.payouts_enabled ?? false;

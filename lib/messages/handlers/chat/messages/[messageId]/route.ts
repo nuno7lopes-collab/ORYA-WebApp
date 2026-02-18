@@ -10,6 +10,12 @@ import { OrganizationMemberRole } from "@prisma/client";
 import { isChatRedisUnavailableError, publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
+
 function isAdminRole(role: OrganizationMemberRole) {
   return (
     role === OrganizationMemberRole.OWNER ||
@@ -35,7 +41,10 @@ async function _PATCH(req: NextRequest, context: { params: { messageId: string }
         id: messageId,
         senderId: user.id,
         deletedAt: null,
-        conversation: { organizationId: organization.id, members: { some: { userId: user.id } } },
+        conversation: {
+          organizationId: organization.id,
+          members: { some: { userId: user.id, ...ACTIVE_MEMBER_FILTER } },
+        },
       },
       select: { id: true },
     });
@@ -100,7 +109,10 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
       where: {
         id: messageId,
         deletedAt: null,
-        conversation: { organizationId: organization.id, members: { some: { userId: user.id } } },
+        conversation: {
+          organizationId: organization.id,
+          members: { some: { userId: user.id, ...ACTIVE_MEMBER_FILTER } },
+        },
       },
       select: { id: true, senderId: true, conversationId: true },
     });

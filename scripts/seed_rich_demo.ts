@@ -1042,15 +1042,32 @@ async function main() {
       ),
     );
 
+    const publicPolicy = await prisma.organizationPolicy.create({
+      data: {
+        organizationId: topPadelOrg.id,
+        name: "Demo Public Booking",
+        policyType: "FLEXIBLE",
+        guestBookingAllowed: true,
+        cancellationWindowMinutes: 24 * 60,
+        rescheduleWindowMinutes: 24 * 60,
+      },
+    });
+
     const serviceCourt = await prisma.service.create({
       data: {
         organizationId: topPadelOrg.id,
+        policyId: publicPolicy.id,
+        kind: "COURT",
         title: "Aluguer de Campo 60m",
         description: "Reserva rapida de campo para jogo livre.",
         durationMinutes: 60,
         unitPriceCents: 2200,
         currency: "EUR",
         assignmentMode: "RESOURCE_ONLY",
+        partySizeRequired: true,
+        partySizeMin: 2,
+        partySizeMax: 4,
+        partySizeStep: 1,
         locationMode: "FIXED",
         addressId: topPadelAddress.id,
       },
@@ -1059,12 +1076,18 @@ async function main() {
     const serviceClass = await prisma.service.create({
       data: {
         organizationId: topPadelOrg.id,
+        policyId: publicPolicy.id,
+        kind: "CLASS",
         title: "Aula Particular 60m",
         description: "Sessao one-to-one com treinador.",
         durationMinutes: 60,
         unitPriceCents: 3500,
         currency: "EUR",
         assignmentMode: "PROFESSIONAL_ONLY",
+        partySizeRequired: false,
+        partySizeMin: 1,
+        partySizeMax: 1,
+        partySizeStep: 1,
         locationMode: "FIXED",
         addressId: topPadelAddress.id,
       },
@@ -1073,12 +1096,18 @@ async function main() {
     const serviceHybrid = await prisma.service.create({
       data: {
         organizationId: topPadelOrg.id,
+        policyId: publicPolicy.id,
+        kind: "COURT",
         title: "Treino Premium 90m",
         description: "Treino intensivo em campo reservado com treinador.",
         durationMinutes: 90,
         unitPriceCents: 5200,
         currency: "EUR",
         assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+        partySizeRequired: true,
+        partySizeMin: 2,
+        partySizeMax: 4,
+        partySizeStep: 1,
         locationMode: "FIXED",
         addressId: topPadelAddress.id,
       },
@@ -1103,6 +1132,117 @@ async function main() {
       data: resources.slice(0, 6).map((r) => ({ serviceId: serviceHybrid.id, resourceId: r.id })),
       skipDuplicates: true,
     });
+
+    const toUtcDateOnly = (date: Date) =>
+      new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+
+    await prisma.weeklyAvailabilityTemplate.deleteMany({
+      where: {
+        organizationId: topPadelOrg.id,
+        scopeType: { in: ["PROFESSIONAL", "RESOURCE"] },
+      },
+    });
+    await prisma.availabilityOverride.deleteMany({
+      where: {
+        organizationId: topPadelOrg.id,
+        scopeType: { in: ["PROFESSIONAL", "RESOURCE"] },
+      },
+    });
+
+    const professionalTemplates = professionals.flatMap((professional, index) => {
+      const firstShiftStart = 8 * 60 + (index % 3) * 30;
+      const secondShiftStart = 14 * 60 + (index % 2) * 15;
+      const secondShiftEnd = 19 * 60 - (index % 2) * 15;
+      return [1, 2, 3, 4, 5].map((dayOfWeek) => ({
+        organizationId: topPadelOrg.id,
+        scopeType: "PROFESSIONAL" as const,
+        scopeId: professional.id,
+        dayOfWeek,
+        intervals: [
+          { startMinute: firstShiftStart, endMinute: 12 * 60 + 30 },
+          { startMinute: secondShiftStart, endMinute: secondShiftEnd },
+        ],
+      }));
+    });
+    await prisma.weeklyAvailabilityTemplate.createMany({
+      data: professionalTemplates,
+      skipDuplicates: true,
+    });
+
+    const resourceTemplates = resources.flatMap((resource, index) => {
+      const startMinute = 7 * 60 + (index % 2) * 30;
+      const endMinute = 23 * 60 - (index % 3) * 15;
+      return [1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+        organizationId: topPadelOrg.id,
+        scopeType: "RESOURCE" as const,
+        scopeId: resource.id,
+        dayOfWeek,
+        intervals: [{ startMinute, endMinute }],
+      }));
+    });
+    await prisma.weeklyAvailabilityTemplate.createMany({
+      data: resourceTemplates,
+      skipDuplicates: true,
+    });
+
+    const overrideRows = [] as Array<{
+      organizationId: number;
+      scopeType: "PROFESSIONAL" | "RESOURCE";
+      scopeId: number;
+      date: Date;
+      kind: "BLOCK" | "CLOSED";
+      intervals: Array<{ startMinute: number; endMinute: number }>;
+    }>;
+
+    professionals.forEach((professional, index) => {
+      const offDay = toUtcDateOnly(plusDays(now, 3 + index));
+      overrideRows.push({
+        organizationId: topPadelOrg.id,
+        scopeType: "PROFESSIONAL",
+        scopeId: professional.id,
+        date: offDay,
+        kind: "CLOSED",
+        intervals: [],
+      });
+      const blockDay = toUtcDateOnly(plusDays(now, 10 + index));
+      overrideRows.push({
+        organizationId: topPadelOrg.id,
+        scopeType: "PROFESSIONAL",
+        scopeId: professional.id,
+        date: blockDay,
+        kind: "BLOCK",
+        intervals: [{ startMinute: 16 * 60, endMinute: 18 * 60 }],
+      });
+    });
+
+    resources.forEach((resource, index) => {
+      const maintenanceDay = toUtcDateOnly(plusDays(now, 5 + index));
+      overrideRows.push({
+        organizationId: topPadelOrg.id,
+        scopeType: "RESOURCE",
+        scopeId: resource.id,
+        date: maintenanceDay,
+        kind: "BLOCK",
+        intervals: [{ startMinute: 12 * 60, endMinute: 14 * 60 }],
+      });
+      if (index % 3 === 0) {
+        const closedDay = toUtcDateOnly(plusDays(now, 16 + index));
+        overrideRows.push({
+          organizationId: topPadelOrg.id,
+          scopeType: "RESOURCE",
+          scopeId: resource.id,
+          date: closedDay,
+          kind: "CLOSED",
+          intervals: [],
+        });
+      }
+    });
+
+    if (overrideRows.length > 0) {
+      await prisma.availabilityOverride.createMany({
+        data: overrideRows,
+      });
+    }
 
     await prisma.promoCode.deleteMany({ where: { code: { startsWith: "SEEDTP" } } });
     await prisma.ledgerEntry.deleteMany({
@@ -2145,6 +2285,10 @@ async function main() {
           service.assignmentMode === "RESOURCE_ONLY" || service.assignmentMode === "PROFESSIONAL_AND_RESOURCE"
             ? resources[(day + slot + resources.length * 4) % resources.length]
             : null;
+        const seededPartySize =
+          service.assignmentMode === "PROFESSIONAL_ONLY"
+            ? service.partySizeMin ?? 1
+            : randInt(service.partySizeMin ?? 2, service.partySizeMax ?? 4);
 
         const availability = await prisma.availability.create({
           data: {
@@ -2152,7 +2296,7 @@ async function main() {
             courtId: resource?.courtId ?? null,
             startsAt,
             durationMinutes: duration,
-            capacity: service.id === serviceCourt.id ? 4 : 1,
+            capacity: service.partySizeMax ?? (service.id === serviceCourt.id ? 4 : 1),
             status: "OPEN",
           },
         });
@@ -2170,7 +2314,7 @@ async function main() {
             assignmentMode: service.assignmentMode,
             professionalId: professional?.id ?? null,
             resourceId: resource?.id ?? null,
-            partySize: service.id === serviceCourt.id ? randInt(2, 4) : 1,
+            partySize: seededPartySize,
             startsAt,
             durationMinutes: duration,
             price: service.unitPriceCents,

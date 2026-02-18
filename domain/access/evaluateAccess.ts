@@ -58,7 +58,7 @@ export async function evaluateEventAccess(input: AccessInput): Promise<AccessDec
     }
   }
 
-  if (policy.mode === "INVITE_ONLY" && !userId) {
+  if (policy.mode === "INVITE_ONLY" && !userId && intent !== "INVITE_TOKEN") {
     return { allowed: false, reasonCode: "INVITE_ONLY" };
   }
 

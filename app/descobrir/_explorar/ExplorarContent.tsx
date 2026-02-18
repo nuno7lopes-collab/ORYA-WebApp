@@ -44,13 +44,6 @@ import {
 import { DoubleRange } from "./DoubleRange";
 import { sendDiscoverEventSignal } from "./eventSignals";
 
-const DATE_FILTER_OPTIONS = [
-  { value: "all", label: "Todas as datas" },
-  { value: "today", label: "Hoje" },
-  { value: "weekend", label: "Este fim de semana" },
-  { value: "upcoming", label: "Próximos dias" },
-] as const;
-
 const WORLD_OPTIONS: { value: ExploreWorld; label: string; accent: string }[] = [
   { value: "EVENTOS", label: "Eventos", accent: "from-[#FF00C8] via-[#9B8CFF] to-[#1646F5]" },
   { value: "PADEL", label: "Torneios", accent: "from-[#6BFFFF] via-[#4ADE80] to-[#1E40AF]" },
@@ -129,10 +122,6 @@ const panelActionClass =
 const panelActionLinkClass = "text-[11px] text-white/60 hover:text-white/90 transition-colors duration-150 ease-out";
 const panelInputClass =
   "w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white placeholder:text-white/40 focus:border-white/45 focus:outline-none transition-all duration-200 ease-out";
-const panelChipClass =
-  "rounded-full border border-white/18 bg-white/5 px-2.5 py-1 text-[11px] text-white/75 hover:bg-white/10 transition-all duration-150 ease-out";
-const panelChipActiveClass =
-  "rounded-full border border-[#6BFFFF]/70 bg-[#6BFFFF]/20 text-[#E5FFFF] shadow-[0_0_14px_rgba(107,255,255,0.35)]";
 const panelListItemClass =
   "flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-[12px] transition-all duration-150 ease-out";
 const panelListItemActiveClass =
@@ -197,7 +186,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [isPriceOpen, setIsPriceOpen] = useState(false);
   const cityRef = useRef<HTMLDivElement | null>(null);
-  const dateRef = useRef<HTMLDivElement | null>(null);
   const priceRef = useRef<HTMLDivElement | null>(null);
 
   const [likedItems, setLikedItems] = useState<number[]>([]);
@@ -357,76 +345,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       </div>
     </>
   );
-
-  const DatePanel = () => {
-    return (
-      <>
-        <div className={panelHeaderClass}>
-          <div className={panelTitleClass}>
-            <CalendarIcon className="h-4 w-4" />
-            <span>Data</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setCustomDate("");
-              setDateFilter("today");
-            }}
-            className={panelActionClass}
-          >
-            Hoje
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {DATE_FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => {
-                setCustomDate("");
-                setDateFilter(opt.value as DateFilter);
-              }}
-              className={
-                dateFilter === opt.value && !customDate ? panelChipActiveClass : panelChipClass
-              }
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <div className={`${panelShellClass} mt-3 space-y-2`}>
-          <p className="text-[10px] text-white/45">Sem input livre.</p>
-          <OryaDateField
-            value={customDate}
-            onChange={(next) => {
-              setCustomDate(next);
-              setDateFilter("custom");
-              setIsDateOpen(false);
-            }}
-            placeholder="Escolher data"
-            className="w-full"
-            buttonClassName="h-10 w-full rounded-xl"
-          />
-        </div>
-        <div className="flex items-center justify-between pt-1">
-          <button type="button" onClick={() => setIsDateOpen(false)} className={panelActionLinkClass}>
-            Fechar
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCustomDate("");
-              setDateFilter("all");
-              setIsDateOpen(false);
-            }}
-            className={panelActionClass}
-          >
-            Limpar
-          </button>
-        </div>
-      </>
-    );
-  };
 
   const PricePanel = () => (
     <>
@@ -936,9 +854,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       const maxVal = Math.max(0, Number(priceMaxQ));
       setPriceMax(Number.isFinite(maxVal) ? maxVal : 100);
     }
-    if (dateQ === "today" || dateQ === "weekend" || dateQ === "upcoming") {
-      setDateFilter(dateQ);
-    } else if (dateQ === "day" && dayQ) {
+    if (dateQ === "day" && dayQ) {
       setDateFilter("custom");
       setCustomDate(dayQ);
     }
@@ -970,9 +886,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
       if (isCityOpen && cityRef.current && !cityRef.current.contains(target)) {
         setIsCityOpen(false);
       }
-      if (isDateOpen && dateRef.current && !dateRef.current.contains(target)) {
-        setIsDateOpen(false);
-      }
       if (isPriceOpen && priceRef.current && !priceRef.current.contains(target)) {
         setIsPriceOpen(false);
       }
@@ -989,7 +902,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const dateLabel =
     dateFilter === "custom" && customDate
       ? new Date(customDate).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" })
-      : DATE_FILTER_OPTIONS.find((d) => d.value === dateFilter)?.label;
+      : "Todas as datas";
   const visibleEventItems = useMemo(
     () =>
       items.filter((item) => {
@@ -1196,35 +1109,41 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
             </div>
 
             {/* Data */}
-            <div className="relative" ref={dateRef}>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsDateOpen((v) => !v);
-                  setIsCityOpen(false);
-                  setIsPriceOpen(false);
+            <div className="relative flex items-center gap-2">
+              <div className="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center">
+                <CalendarIcon className="h-4 w-4 text-white/80" />
+              </div>
+              <OryaDateField
+                value={customDate}
+                onChange={(next) => {
+                  setCustomDate(next);
+                  setDateFilter(next ? "custom" : "all");
                 }}
-                className={`${filterPillClass} ${isDateOpen ? filterPillActiveClass : ""}`}
-              >
-                <CalendarIcon className="h-4 w-4" />
-                <span className="font-medium">{dateLabel}</span>
-              </button>
-              {isDateOpen && (
-                <>
-                  {isMobile && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex justify-center p-4">
-                      <div className={panelModalClass}>
-                        <DatePanel />
-                      </div>
-                    </div>
-                  )}
-                  {!isMobile && (
-                    <div className={`${panelPopoverBaseClass} md:absolute md:w-72 md:z-50`}>
-                      <DatePanel />
-                    </div>
-                  )}
-                </>
-              )}
+                placeholder={dateLabel}
+                open={isDateOpen}
+                onOpenChange={(next) => {
+                  setIsDateOpen(next);
+                  if (next) {
+                    setIsCityOpen(false);
+                    setIsPriceOpen(false);
+                  }
+                }}
+                className="w-full"
+                buttonClassName={`${filterPillClass} ${isDateOpen ? filterPillActiveClass : ""} h-[38px] min-w-[168px] pl-9`}
+              />
+              {customDate ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomDate("");
+                    setDateFilter("all");
+                    setIsDateOpen(false);
+                  }}
+                  className="inline-flex h-[38px] items-center rounded-full border border-white/18 bg-white/6 px-3 text-[11px] text-white/75 hover:border-white/35 hover:bg-white/10"
+                >
+                  Limpar
+                </button>
+              ) : null}
             </div>
 
             {/* Preço */}

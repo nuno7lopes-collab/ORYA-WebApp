@@ -167,8 +167,10 @@ export default function InviteGateClient({
   const freeInviteMatches = inviteMatchesAccount && isGratis && hasUsername;
   const restrictedTickets =
     inviteTicketTypeId && Number.isFinite(inviteTicketTypeId)
-      ? uiTickets.filter((ticket) => Number(ticket.id) === inviteTicketTypeId)
-      : uiTickets;
+      ? uiTickets
+          .filter((ticket) => Number(ticket.id) === inviteTicketTypeId)
+          .map((ticket) => ({ ...ticket, isVisible: true }))
+      : uiTickets.map((ticket) => ({ ...ticket, isVisible: true }));
 
   const gateMessage = (() => {
     if (!validated) return null;

@@ -11,7 +11,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { updateBooking } from "@/domain/bookings/commands";
 import { buildBookingConfirmationSnapshot, BOOKING_CONFIRMATION_SNAPSHOT_VERSION } from "@/lib/reservas/confirmationSnapshot";
 import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { getPlatformFees } from "@/lib/platformSettings";
@@ -270,44 +270,64 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         },
       };
 
-      const ensured = await ensurePaymentIntent({
-        purchaseId,
-        orgId: booking.organizationId,
-        sourceType: SourceType.BOOKING,
-        sourceId,
-        amountCents: totalCents,
-        currency,
-        intentParams: {
-          payment_method_types: paymentMethod === "mbway" ? (["mb_way"] as const) : (["card"] as const),
-          description: `Reagendamento reserva ${booking.id}`,
-        },
-        metadata: {
-          paymentScenario: "BOOKING_CHANGE",
-          bookingChangeRequestId: String(request.id),
-          bookingId: String(booking.id),
-          orgId: String(booking.organizationId),
-          userId: booking.userId ?? "",
-          guestEmail: booking.guestEmail ?? "",
-          priceDeltaCents: String(priceDeltaCents),
-          currency,
+      let ensured;
+      try {
+        ensured = await ensurePaymentIntent({
+          purchaseId,
+          orgId: booking.organizationId,
           sourceType: SourceType.BOOKING,
           sourceId,
-        },
-        orgContext: {
-          stripeAccountId: booking.service?.organization?.stripeAccountId ?? null,
-          stripeChargesEnabled: booking.service?.organization?.stripeChargesEnabled ?? false,
-          stripePayoutsEnabled: booking.service?.organization?.stripePayoutsEnabled ?? false,
-          orgType: booking.service?.organization?.orgType ?? null,
-        },
-        requireStripe: !isPlatformOrg,
-        resolvedSnapshot,
-        customerIdentityId: booking.userId ?? null,
-        paymentEvent: {
-          userId: booking.userId ?? null,
           amountCents: totalCents,
-          platformFeeCents,
-        },
-      });
+          currency,
+          intentParams: {
+            payment_method_types: paymentMethod === "mbway" ? (["mb_way"] as const) : (["card"] as const),
+            description: `Reagendamento reserva ${booking.id}`,
+          },
+          metadata: {
+            paymentScenario: "BOOKING_CHANGE",
+            bookingChangeRequestId: String(request.id),
+            bookingId: String(booking.id),
+            orgId: String(booking.organizationId),
+            userId: booking.userId ?? "",
+            guestEmail: booking.guestEmail ?? "",
+            priceDeltaCents: String(priceDeltaCents),
+            currency,
+            sourceType: SourceType.BOOKING,
+            sourceId,
+          },
+          orgContext: {
+            stripeAccountId: booking.service?.organization?.stripeAccountId ?? null,
+            stripeChargesEnabled: booking.service?.organization?.stripeChargesEnabled ?? false,
+            stripePayoutsEnabled: booking.service?.organization?.stripePayoutsEnabled ?? false,
+            orgType: booking.service?.organization?.orgType ?? null,
+          },
+          requireStripe: !isPlatformOrg,
+          resolvedSnapshot,
+          customerIdentityId: booking.userId ?? null,
+          paymentEvent: {
+            userId: booking.userId ?? null,
+            amountCents: totalCents,
+            platformFeeCents,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+          return fail(409, "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", "Chave de idempotência reutilizada com uma reserva diferente.");
+        }
+        if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+          return fail(409, "PAYMENT_INTENT_TERMINAL", "Sessão de pagamento expirada. Tenta novamente.");
+        }
+        if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+          return fail(503, "PAYMENT_INTENT_RETRIEVE_FAILED", "Não foi possível retomar o pagamento. Tenta novamente.");
+        }
+        if (isFinanceConnectNotReadyError(err)) {
+          return fail(409, "PAYMENTS_NOT_READY", "Pagamentos indisponíveis: conta Stripe Connect inválida ou inexistente.", {
+            missingEmail: false,
+            missingStripe: true,
+          });
+        }
+        throw err;
+      }
 
       return respondOk(ctx, {
         request: { id: request.id, status: request.status },

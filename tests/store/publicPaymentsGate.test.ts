@@ -27,4 +27,17 @@ describe("public store payments gate", () => {
     expect(gate.ok).toBe(true);
     expect(gate.requireStripe).toBe(false);
   });
+
+  it("blocks EXTERNAL organization when platform alias is used", () => {
+    const gate = getPublicStorePaymentsGate({
+      orgType: "EXTERNAL",
+      officialEmail: "team@example.com",
+      officialEmailVerifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+      stripeAccountId: "acct_platform_orya_shared",
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.missingStripe).toBe(true);
+  });
 });

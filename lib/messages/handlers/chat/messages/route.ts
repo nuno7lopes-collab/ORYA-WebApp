@@ -29,6 +29,11 @@ import {
 const PREVIEW_MAX = 180;
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
 const B2C_CONTEXT_TYPES = new Set(["ORG_CONTACT", "BOOKING", "SERVICE"]);
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 function isExternalAttachmentUrl(value: string) {
   const normalized = value.trim().toLowerCase();
@@ -340,6 +345,7 @@ async function _POST(req: NextRequest) {
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { organizationId: organization.id },
       },
       select: {
@@ -536,6 +542,7 @@ async function _POST(req: NextRequest) {
       where: {
         conversationId,
         userId: { not: user.id },
+        ...ACTIVE_MEMBER_FILTER,
       },
       select: { userId: true, mutedUntil: true },
     });

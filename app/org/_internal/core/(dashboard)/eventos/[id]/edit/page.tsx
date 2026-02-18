@@ -103,6 +103,7 @@ export default async function OrganizationEventEditPage({ params }: PageProps) {
     name: t.name,
     description: t.description,
     price: t.price,
+    publicAccess: t.publicAccess,
     currency: t.currency,
     totalQuantity: t.totalQuantity,
     soldQuantity: t.soldQuantity,

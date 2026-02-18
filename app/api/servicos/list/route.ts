@@ -6,6 +6,7 @@ import { findNextSlot } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildCacheKey, getCache, setCache } from "@/lib/geo/cache";
 import { PORTUGAL_CITIES } from "@/config/cities";
@@ -217,9 +218,15 @@ async function _GET(req: NextRequest) {
         currency: true,
         kind: true,
         assignmentMode: true,
+        partySizeRequired: true,
+        partySizeMin: true,
+        partySizeMax: true,
+        partySizeStep: true,
         categoryTag: true,
         addressId: true,
         addressRef: { select: { formattedAddress: true, canonical: true } },
+        professionalLinks: { select: { professionalId: true, professional: { select: { isActive: true } } } },
+        resourceLinks: { select: { resourceId: true, resource: { select: { isActive: true } } } },
         instructor: {
           select: { id: true, fullName: true, username: true, avatarUrl: true },
         },
@@ -261,10 +268,21 @@ async function _GET(req: NextRequest) {
       prisma.booking.findMany({
         where: {
           organizationId: { in: organizationIds },
-          status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] },
+          OR: [
+            { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+            { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+          ],
           startsAt: { lt: endBoundary, gte: new Date(startBoundary.getTime() - 24 * 60 * 60 * 1000) },
         },
-        select: { organizationId: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
+        select: {
+          organizationId: true,
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+          status: true,
+          pendingExpiresAt: true,
+        },
       }),
       prisma.reservationProfessional.findMany({
         where: { organizationId: { in: organizationIds }, isActive: true },
@@ -273,7 +291,7 @@ async function _GET(req: NextRequest) {
       }),
       prisma.reservationResource.findMany({
         where: { organizationId: { in: organizationIds }, isActive: true },
-        select: { id: true, organizationId: true, capacity: true, priority: true },
+        select: { id: true, organizationId: true, capacity: true, priority: true, courtId: true },
         orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
       }),
     ]);
@@ -311,10 +329,10 @@ async function _GET(req: NextRequest) {
       professionalsByOrg.set(professional.organizationId, list);
     });
 
-    const resourcesByOrg = new Map<number, Array<{ id: number; capacity: number; priority: number }>>();
+    const resourcesByOrg = new Map<number, Array<{ id: number; capacity: number; priority: number; courtId: number | null }>>();
     resources.forEach((resource) => {
       const list = resourcesByOrg.get(resource.organizationId) ?? [];
-      list.push({ id: resource.id, capacity: resource.capacity, priority: resource.priority });
+      list.push({ id: resource.id, capacity: resource.capacity, priority: resource.priority, courtId: resource.courtId ?? null });
       resourcesByOrg.set(resource.organizationId, list);
     });
 
@@ -328,48 +346,150 @@ async function _GET(req: NextRequest) {
       const templatesByScope = groupByScope(orgTemplatesAll);
       const overridesByScope = groupByScope(orgOverridesAll);
 
-      const assignmentMode = resolveServiceAssignmentMode({
+      const assignmentConfig = resolveServiceAssignmentMode({
         organizationMode: service.organization.reservationAssignmentMode ?? null,
         serviceMode: service.assignmentMode ?? null,
         serviceKind: service.kind ?? null,
-      }).mode;
-      let scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = [];
+      });
+      const availabilityMode = assignmentConfig.availabilityMode;
+      const partySizeRules = resolveServicePartySizeRules({
+        assignmentMode: assignmentConfig.assignmentMode,
+        serviceKind: service.kind ?? null,
+        partySizeRequired: service.partySizeRequired,
+        partySizeMin: service.partySizeMin,
+        partySizeMax: service.partySizeMax,
+        partySizeStep: service.partySizeStep,
+      });
+      const minPartySize = partySizeRules.partySizeRequired ? partySizeRules.partySizeMin : null;
+      const allowedProfessionalIds = service.professionalLinks?.length
+        ? service.professionalLinks.filter((link) => link.professional?.isActive).map((link) => link.professionalId)
+        : null;
+      const allowedResourceIds = service.resourceLinks?.length
+        ? service.resourceLinks.filter((link) => link.resource?.isActive).map((link) => link.resourceId)
+        : null;
 
-      if (assignmentMode === "RESOURCE") {
-        const orgResources = resourcesByOrg.get(orgId) ?? [];
+      const timezone = service.organization.timezone || "Europe/Lisbon";
+      const orgProfessionalsAll = professionalsByOrg.get(orgId) ?? [];
+      const orgResourcesAll = resourcesByOrg.get(orgId) ?? [];
+      const orgProfessionals = allowedProfessionalIds
+        ? orgProfessionalsAll.filter((professional) => allowedProfessionalIds.includes(professional.id))
+        : orgProfessionalsAll;
+      let orgResources = allowedResourceIds
+        ? orgResourcesAll.filter((resource) => allowedResourceIds.includes(resource.id))
+        : orgResourcesAll;
+      if (assignmentConfig.isCourtService) {
+        orgResources = orgResources.filter((resource) => (resource.courtId ?? null) != null);
+      }
+      if (minPartySize != null) {
+        orgResources = orgResources.filter((resource) => resource.capacity >= minPartySize);
+      }
+
+      const slotByKey = new Map<string, { startsAt: Date; durationMinutes: number }>();
+      let availableSlots: Array<{ startsAt: Date; durationMinutes: number }> = [];
+
+      if (availabilityMode === "RESOURCE") {
         if (orgResources.length === 0) {
           return { ...service, nextAvailability: null };
         }
-        scopesToCheck = orgResources.map((resource) => ({ scopeType: "RESOURCE", scopeId: resource.id }));
-      } else {
-        const orgProfessionals = professionalsByOrg.get(orgId) ?? [];
-        scopesToCheck = orgProfessionals.length
+        orgResources.forEach((resource) => {
+          const slots = getAvailableSlotsForScope({
+            rangeStart: startBoundary,
+            rangeEnd: endBoundary,
+            timezone,
+            durationMinutes: service.durationMinutes,
+            now,
+            scopeType: "RESOURCE",
+            scopeId: resource.id,
+            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgOverrides: orgOverrides as ScopedOverride[],
+            templatesByScope,
+            overridesByScope,
+            blocks,
+          });
+          slots.forEach((slot) => {
+            slotByKey.set(slot.startsAt.toISOString(), slot);
+          });
+        });
+        availableSlots = Array.from(slotByKey.values());
+      } else if (availabilityMode === "PROFESSIONAL") {
+        const scopesToCheck: Array<{ scopeType: AvailabilityScopeType; scopeId: number }> = orgProfessionals.length
           ? orgProfessionals.map((professional) => ({ scopeType: "PROFESSIONAL", scopeId: professional.id }))
           : [{ scopeType: "ORGANIZATION", scopeId: 0 }];
+        scopesToCheck.forEach((scope) => {
+          const slots = getAvailableSlotsForScope({
+            rangeStart: startBoundary,
+            rangeEnd: endBoundary,
+            timezone,
+            durationMinutes: service.durationMinutes,
+            now,
+            scopeType: scope.scopeType,
+            scopeId: scope.scopeId,
+            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgOverrides: orgOverrides as ScopedOverride[],
+            templatesByScope,
+            overridesByScope,
+            blocks,
+          });
+          slots.forEach((slot) => {
+            slotByKey.set(slot.startsAt.toISOString(), slot);
+          });
+        });
+        availableSlots = Array.from(slotByKey.values());
+      } else {
+        if (orgProfessionals.length === 0 || orgResources.length === 0) {
+          return { ...service, nextAvailability: null };
+        }
+        const proKeys = new Set<string>();
+        const resKeys = new Set<string>();
+        orgProfessionals.forEach((professional) => {
+          const slots = getAvailableSlotsForScope({
+            rangeStart: startBoundary,
+            rangeEnd: endBoundary,
+            timezone,
+            durationMinutes: service.durationMinutes,
+            now,
+            scopeType: "PROFESSIONAL",
+            scopeId: professional.id,
+            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgOverrides: orgOverrides as ScopedOverride[],
+            templatesByScope,
+            overridesByScope,
+            blocks,
+          });
+          slots.forEach((slot) => {
+            const key = slot.startsAt.toISOString();
+            proKeys.add(key);
+            slotByKey.set(key, slot);
+          });
+        });
+        orgResources.forEach((resource) => {
+          const slots = getAvailableSlotsForScope({
+            rangeStart: startBoundary,
+            rangeEnd: endBoundary,
+            timezone,
+            durationMinutes: service.durationMinutes,
+            now,
+            scopeType: "RESOURCE",
+            scopeId: resource.id,
+            orgTemplates: orgTemplates as ScopedTemplate[],
+            orgOverrides: orgOverrides as ScopedOverride[],
+            templatesByScope,
+            overridesByScope,
+            blocks,
+          });
+          slots.forEach((slot) => {
+            const key = slot.startsAt.toISOString();
+            resKeys.add(key);
+            slotByKey.set(key, slot);
+          });
+        });
+        availableSlots = Array.from(proKeys)
+          .filter((key) => resKeys.has(key))
+          .map((key) => slotByKey.get(key))
+          .filter((slot): slot is { startsAt: Date; durationMinutes: number } => Boolean(slot));
       }
 
-      const slotMap = new Map<string, { startsAt: Date; durationMinutes: number }>();
-      scopesToCheck.forEach((scope) => {
-        const slots = getAvailableSlotsForScope({
-          rangeStart: startBoundary,
-          rangeEnd: endBoundary,
-          timezone: service.organization.timezone || "Europe/Lisbon",
-          durationMinutes: service.durationMinutes,
-          now,
-          scopeType: scope.scopeType,
-          scopeId: scope.scopeId,
-          orgTemplates: orgTemplates as ScopedTemplate[],
-          orgOverrides: orgOverrides as ScopedOverride[],
-          templatesByScope,
-          overridesByScope,
-          blocks,
-        });
-        slots.forEach((slot) => {
-          slotMap.set(slot.startsAt.toISOString(), slot);
-        });
-      });
-
-      const availableSlots = Array.from(slotMap.values()).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+      availableSlots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
       const nextSlot = findNextSlot(availableSlots);
       return {
         ...service,

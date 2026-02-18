@@ -6,7 +6,7 @@ import {
   retrievePaymentIntent,
   cancelPaymentIntent,
 } from "@/domain/finance/gateway/stripeGateway";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isUnauthenticatedError } from "@/lib/security";
@@ -545,6 +545,15 @@ async function _POST(
           "Não foi possível retomar o pagamento. Tenta novamente.",
           503,
           true,
+        );
+      }
+      if (isFinanceConnectNotReadyError(err)) {
+        return fail(
+          "PAYMENTS_NOT_READY",
+          "Pagamentos indisponíveis: conta Stripe Connect inválida ou inexistente.",
+          409,
+          false,
+          { missingEmail: false, missingStripe: true },
         );
       }
       throw err;

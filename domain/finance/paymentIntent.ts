@@ -8,12 +8,14 @@ import {
 import {
   createPaymentIntent,
   retrievePaymentIntent,
+  retrieveStripeAccount,
   type StripeOrgContext,
 } from "@/domain/finance/gateway/stripeGateway";
 import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
 import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { PaymentEventSource, PaymentStatus } from "@prisma/client";
 import { type FinanceSourceType } from "@/domain/sourceType";
+import { isValidStripeAccountId } from "@/domain/finance/stripeConnectStatus";
 import { logError } from "@/lib/observability/logger";
 
 const TERMINAL_INTENT_STATUSES = new Set([
@@ -21,6 +23,8 @@ const TERMINAL_INTENT_STATUSES = new Set([
   "canceled",
   "requires_capture",
 ]);
+const CONNECT_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+const connectAccountCache = new Map<string, number>();
 
 function isTerminalIntentStatus(status?: string | null) {
   return Boolean(status && TERMINAL_INTENT_STATUSES.has(status));
@@ -32,6 +36,60 @@ function normalizePurchaseId(purchaseId: string) {
     throw new Error("PURCHASE_ID_REQUIRED");
   }
   return normalized;
+}
+
+function parseStripeDestinationError(err: unknown) {
+  const anyErr = err as {
+    code?: string;
+    param?: string;
+    statusCode?: number;
+    message?: string;
+  };
+  if (anyErr?.code === "resource_missing") {
+    const missingDestination = anyErr.param === "transfer_data[destination]";
+    if (missingDestination || anyErr.statusCode === 404) {
+      return "FINANCE_CONNECT_DESTINATION_NOT_FOUND";
+    }
+  }
+  return null;
+}
+
+async function resolveStripeDestination(
+  requireStripe: boolean,
+  orgContext: StripeOrgContext | null | undefined,
+) {
+  if (!requireStripe) return null;
+  const destination = orgContext?.stripeAccountId?.trim() ?? "";
+  if (!destination) {
+    throw new Error("FINANCE_CONNECT_NOT_READY");
+  }
+  if (!isValidStripeAccountId(destination)) {
+    throw new Error("FINANCE_CONNECT_DESTINATION_INVALID");
+  }
+
+  const cachedUntil = connectAccountCache.get(destination) ?? 0;
+  if (cachedUntil > Date.now()) {
+    return destination;
+  }
+
+  try {
+    const account = await retrieveStripeAccount(destination);
+    if ("deleted" in account && account.deleted) {
+      throw new Error("FINANCE_CONNECT_DESTINATION_NOT_FOUND");
+    }
+    connectAccountCache.set(destination, Date.now() + CONNECT_ACCOUNT_CACHE_TTL_MS);
+  } catch (err) {
+    const mapped = parseStripeDestinationError(err);
+    if (mapped) {
+      throw new Error(mapped);
+    }
+    if (err instanceof Error && err.message === "FINANCE_CONNECT_DESTINATION_NOT_FOUND") {
+      throw err;
+    }
+    throw err;
+  }
+
+  return destination;
 }
 
 export type EnsurePaymentIntentInput = {
@@ -66,6 +124,15 @@ export type EnsurePaymentIntentResult = {
   reused: boolean;
 };
 
+export function isFinanceConnectNotReadyError(err: unknown) {
+  return (
+    err instanceof Error &&
+    (err.message === "FINANCE_CONNECT_NOT_READY" ||
+      err.message === "FINANCE_CONNECT_DESTINATION_INVALID" ||
+      err.message === "FINANCE_CONNECT_DESTINATION_NOT_FOUND")
+  );
+}
+
 export async function ensurePaymentIntent(
   input: EnsurePaymentIntentInput,
 ): Promise<EnsurePaymentIntentResult> {
@@ -75,6 +142,7 @@ export async function ensurePaymentIntent(
   const purchaseId = normalizePurchaseId(input.purchaseId);
   const checkoutIdempotencyKey = checkoutKey(purchaseId);
   const requestedAmount = Math.max(0, input.amountCents);
+  const stripeDestination = await resolveStripeDestination(input.requireStripe, input.orgContext ?? null);
 
   // Materialize the financial SSOT (Payment + Ledger) before touching Stripe.
   await createCheckout({
@@ -212,10 +280,6 @@ export async function ensurePaymentIntent(
     metadata.clientIdempotencyKey = input.clientIdempotencyKey.trim();
   }
 
-  const stripeDestination =
-    input.requireStripe && typeof input.orgContext?.stripeAccountId === "string"
-      ? input.orgContext.stripeAccountId.trim()
-      : null;
   const snapshotPlatformFee =
     typeof snapshot?.platformFee === "number" ? Math.max(0, snapshot.platformFee) : null;
   const applicationFeeAmount =
@@ -255,6 +319,10 @@ export async function ensurePaymentIntent(
     paymentIntent = await createPi(stripeIdempotencyKey);
   } catch (err: unknown) {
     const anyErr = err as { type?: string; code?: string; message?: string };
+    const destinationError = parseStripeDestinationError(err);
+    if (destinationError) {
+      throw new Error(destinationError);
+    }
     const isIdem =
       anyErr?.type === "StripeIdempotencyError" ||
       anyErr?.code === "idempotency_error" ||

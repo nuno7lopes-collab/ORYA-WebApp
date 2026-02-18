@@ -160,6 +160,8 @@ async function _POST(req: NextRequest) {
   const stripePublishableKey = resolveCheckoutStripePublishableKey();
   const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
     respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
+  let lockedCartId: string | null = null;
+  let createdOrderId: number | null = null;
   try {
     if (!isStoreFeatureEnabled()) {
       return fail("STORE_DISABLED", "Loja desativada.", 403);
@@ -346,6 +348,15 @@ async function _POST(req: NextRequest) {
     let bundleDiscountCents = 0;
     let requiresShipping = false;
     const requestedQtyMap = new Map<string, number>();
+    const pricedItems = new Map<
+      number,
+      {
+        product: (typeof products)[number];
+        variant: (typeof variants)[number] | null;
+        unitPriceCents: number;
+        personalization: unknown;
+      }
+    >();
     let totalQuantity = 0;
 
     for (const item of cart.cart.items) {
@@ -379,6 +390,22 @@ async function _POST(req: NextRequest) {
           return fail("INSUFFICIENT_STOCK", "Stock insuficiente.", 409);
         }
       }
+
+      const personalizationDelta = await validateStorePersonalization({
+        productId: product.id,
+        personalization: item.personalization,
+      });
+      if (!personalizationDelta.ok) {
+        return fail("INVALID_PERSONALIZATION", personalizationDelta.error, 400);
+      }
+
+      const unitPriceCents = (variant?.priceCents ?? product.priceCents) + personalizationDelta.deltaCents;
+      pricedItems.set(item.id, {
+        product,
+        variant,
+        unitPriceCents,
+        personalization: personalizationDelta.normalized ?? {},
+      });
     }
 
     const bundleGroups = bundleItems.reduce((map, item) => {
@@ -431,7 +458,13 @@ async function _POST(req: NextRequest) {
         }
       }
 
-      const baseCents = groupItems.reduce((sum, item) => sum + item.unitPriceCents * item.quantity, 0);
+      const baseCents = groupItems.reduce((sum, item) => {
+        const priced = pricedItems.get(item.id);
+        if (!priced) {
+          throw new Error("CHECKOUT_PRICING_ITEM_MISSING");
+        }
+        return sum + priced.unitPriceCents * item.quantity;
+      }, 0);
       const totals = computeBundleTotals({
         pricingMode: bundle.pricingMode,
         priceCents: bundle.priceCents,
@@ -480,20 +513,14 @@ async function _POST(req: NextRequest) {
       let remainingDiscount = totals.discountCents;
       for (let index = 0; index < groupItems.length; index += 1) {
         const item = groupItems[index];
-        const product = productMap.get(item.productId);
-        if (!product) {
-          return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
+        const priced = pricedItems.get(item.id);
+        if (!priced) {
+          throw new Error("CHECKOUT_PRICING_ITEM_MISSING");
         }
-        const variant = item.variantId ? variantMap.get(item.variantId) : null;
-        const personalizationDelta = await validateStorePersonalization({
-          productId: product.id,
-          personalization: item.personalization,
-        });
-        if (!personalizationDelta.ok) {
-          throw new Error(personalizationDelta.error);
-        }
+        const product = priced.product;
+        const variant = priced.variant;
 
-        const baseLineTotal = item.unitPriceCents * item.quantity;
+        const baseLineTotal = priced.unitPriceCents * item.quantity;
         const discountShare =
           totals.discountCents > 0
             ? index === groupItems.length - 1
@@ -511,11 +538,11 @@ async function _POST(req: NextRequest) {
           nameSnapshot: variant ? `${product.name} - ${variant.label}` : product.name,
           skuSnapshot: variant?.sku ?? product.sku ?? null,
           quantity: item.quantity,
-          unitPriceCents: item.unitPriceCents,
+          unitPriceCents: priced.unitPriceCents,
           discountCents: discountShare,
           totalCents: lineTotal,
           requiresShipping: product.requiresShipping,
-          personalization: personalizationDelta.normalized ?? {},
+          personalization: priced.personalization,
           bundleKey,
         });
         totalQuantity += item.quantity;
@@ -523,29 +550,14 @@ async function _POST(req: NextRequest) {
     }
 
     for (const item of standaloneItems) {
-      const product = productMap.get(item.productId);
-      if (!product) {
-        return fail("PRODUCT_UNAVAILABLE", "Produto indisponivel.", 409);
+      const priced = pricedItems.get(item.id);
+      if (!priced) {
+        throw new Error("CHECKOUT_PRICING_ITEM_MISSING");
       }
+      const product = priced.product;
+      const variant = priced.variant;
 
-      let variant: typeof variants[number] | null = null;
-      if (item.variantId) {
-        const found = variantMap.get(item.variantId);
-        if (!found || found.productId !== product.id || !found.isActive) {
-          return fail("INVALID_VARIANT", "Variante invalida.", 400);
-        }
-        variant = found;
-      }
-
-      const personalizationDelta = await validateStorePersonalization({
-        productId: product.id,
-        personalization: item.personalization,
-      });
-      if (!personalizationDelta.ok) {
-        return fail("INVALID_PERSONALIZATION", personalizationDelta.error, 400);
-      }
-
-      const unitPriceCents = item.unitPriceCents;
+      const unitPriceCents = priced.unitPriceCents;
       const totalCents = unitPriceCents * item.quantity;
       baseSubtotalCents += totalCents;
       requiresShipping = requiresShipping || product.requiresShipping;
@@ -560,7 +572,7 @@ async function _POST(req: NextRequest) {
         discountCents: 0,
         totalCents,
         requiresShipping: product.requiresShipping,
-        personalization: personalizationDelta.normalized ?? {},
+        personalization: priced.personalization,
       });
       totalQuantity += item.quantity;
     }
@@ -841,6 +853,8 @@ async function _POST(req: NextRequest) {
 
       return created;
     });
+    createdOrderId = order.id;
+    lockedCartId = cart.cart.id;
     const purchaseId = providedPurchaseId ?? `store_order_${order.id}`;
 
     const feePolicyVersion = computeFeePolicyVersion({
@@ -886,6 +900,8 @@ async function _POST(req: NextRequest) {
         orderId: order.id,
         storeId: store.id,
         purchaseId,
+        cartId: cart.cart.id,
+        promoCodeId,
         userId,
         customerEmail: payload.customer.email ?? null,
         currency: store.currency,
@@ -927,10 +943,10 @@ async function _POST(req: NextRequest) {
         amountCents: totalCents,
         currency: store.currency,
         intentParams: {
-        payment_method_types: ["card"],
-        receipt_email: payload.customer.email ?? undefined,
-        description: order.orderNumber ? `Loja ${order.orderNumber}` : `Loja ${order.id}`,
-      },
+          payment_method_types: ["card"],
+          receipt_email: payload.customer.email ?? undefined,
+          description: order.orderNumber ? `Loja ${order.orderNumber}` : `Loja ${order.id}`,
+        },
         metadata: {
           storeOrderId: String(order.id),
           storeId: String(store.id),
@@ -970,10 +986,18 @@ async function _POST(req: NextRequest) {
       });
       intent = ensured.paymentIntent;
     } catch (err) {
-      await prisma.storeOrder.update({
-        where: { id: order.id },
-        data: { status: StoreOrderStatus.CANCELLED },
-      });
+      await prisma.$transaction([
+        prisma.storeOrder.update({
+          where: { id: order.id },
+          data: { status: StoreOrderStatus.CANCELLED },
+        }),
+        prisma.storeCart.updateMany({
+          where: { id: cart.cart.id, status: "CHECKOUT_LOCKED" },
+          data: { status: "ACTIVE" },
+        }),
+      ]);
+      createdOrderId = null;
+      lockedCartId = null;
       if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
         return fail(
           "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH",
@@ -995,6 +1019,20 @@ async function _POST(req: NextRequest) {
           "Não foi possível retomar o pagamento. Tenta novamente.",
           503,
           true,
+        );
+      }
+      if (
+        err instanceof Error &&
+        (err.message === "FINANCE_CONNECT_NOT_READY" ||
+          err.message === "FINANCE_CONNECT_DESTINATION_INVALID" ||
+          err.message === "FINANCE_CONNECT_DESTINATION_NOT_FOUND")
+      ) {
+        return fail(
+          "PAYMENTS_NOT_READY",
+          "Pagamentos indisponiveis: conta Stripe Connect invalida ou inexistente.",
+          403,
+          false,
+          { missingEmail: false, missingStripe: true },
         );
       }
       throw err;
@@ -1023,6 +1061,26 @@ async function _POST(req: NextRequest) {
       ...(stripePublishableKey ? { stripePublishableKey } : {}),
     });
   } catch (err) {
+    if (createdOrderId) {
+      try {
+        await prisma.storeOrder.updateMany({
+          where: { id: createdOrderId, status: StoreOrderStatus.PENDING },
+          data: { status: StoreOrderStatus.CANCELLED },
+        });
+      } catch (cleanupErr) {
+        console.error("POST /api/public/store/checkout cleanup order error:", cleanupErr);
+      }
+    }
+    if (lockedCartId) {
+      try {
+        await prisma.storeCart.updateMany({
+          where: { id: lockedCartId, status: "CHECKOUT_LOCKED" },
+          data: { status: "ACTIVE" },
+        });
+      } catch (cleanupErr) {
+        console.error("POST /api/public/store/checkout cleanup cart error:", cleanupErr);
+      }
+    }
     console.error("POST /api/public/store/checkout error:", err);
     return fail("CHECKOUT_FAILED", "Erro ao iniciar checkout.", 500, true);
   }

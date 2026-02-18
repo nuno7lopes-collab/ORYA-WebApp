@@ -36,6 +36,7 @@ type TicketTypeUI = {
   description: string | null;
   price: number;
   currency: string;
+  publicAccess: boolean;
   totalQuantity: number | null;
   soldQuantity: number;
   status: TicketTypeStatus;
@@ -134,6 +135,8 @@ type EventEditClientProps = {
   eventHasTickets?: boolean;
 };
 
+type EventAccessPolicyUI = NonNullable<EventEditClientProps["event"]["accessPolicy"]>;
+
 type EventInvite = {
   id: number;
   targetIdentifier: string;
@@ -216,10 +219,28 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
         format: "webp",
       })
     : null;
+  const [currentAccessPolicy, setCurrentAccessPolicy] = useState<EventAccessPolicyUI | null>(event.accessPolicy ?? null);
+  const normalizedInviteIdentityMatch =
+    typeof currentAccessPolicy?.inviteIdentityMatch === "string"
+      ? currentAccessPolicy.inviteIdentityMatch.trim().toUpperCase()
+      : "BOTH";
+  const inviteIdentityMatch =
+    normalizedInviteIdentityMatch === "EMAIL" ||
+    normalizedInviteIdentityMatch === "USERNAME" ||
+    normalizedInviteIdentityMatch === "BOTH"
+      ? normalizedInviteIdentityMatch
+      : "BOTH";
+  const checkinMethods = Array.isArray(currentAccessPolicy?.checkinMethods)
+    ? currentAccessPolicy.checkinMethods
+        .map((method) => String(method).trim().toUpperCase())
+        .filter((method): method is "QR_TICKET" | "QR_REGISTRATION" => method === "QR_TICKET" || method === "QR_REGISTRATION")
+    : [];
+  const resolvedCheckinMethods = checkinMethods.length > 0 ? checkinMethods : [isPadel ? "QR_REGISTRATION" : "QR_TICKET"];
   const accessMode =
-    typeof event.accessPolicy?.mode === "string"
-      ? event.accessPolicy.mode.trim().toUpperCase()
-      : "INVITE_ONLY";
+    typeof currentAccessPolicy?.mode === "string"
+      ? currentAccessPolicy.mode.trim().toUpperCase()
+      : "PUBLIC";
+  const inviteTokenAllowed = currentAccessPolicy?.inviteTokenAllowed === true;
   const isInviteRestricted = accessMode === "INVITE_ONLY";
   const { data: padelEventCategories, mutate: mutatePadelEventCategories } = useSWR<{ ok?: boolean; items?: PadelCategoryLink[] }>(
     isPadel ? `/api/padel/event-categories?eventId=${event.id}` : null,
@@ -247,6 +268,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
   const [publicInviteError, setPublicInviteError] = useState<string | null>(null);
   const [publicInviteSaving, setPublicInviteSaving] = useState(false);
   const [inviteRemovingId, setInviteRemovingId] = useState<number | null>(null);
+  const [visibilityUpdates, setVisibilityUpdates] = useState<Record<number, boolean>>({});
   const { data: publicInvitesData, mutate: mutatePublicInvites, isLoading: publicInvitesLoading } = useSWR<{
     ok?: boolean;
     items?: EventInvite[];
@@ -285,6 +307,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
     name: "",
     description: "",
     priceEuro: "",
+    publicAccess: true,
     totalQuantity: "",
     startsAt: "",
     endsAt: "",
@@ -450,19 +473,52 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
 
   const accessWarnings = useMemo(() => {
     const warnings: string[] = [];
-    if (isInviteRestricted) {
+    const hasPrivateTickets = ticketList.some(
+      (ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) === false,
+    );
+    const hasPublicTickets = ticketList.some(
+      (ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) !== false,
+    );
+    const shouldBeInviteRestricted = hasPrivateTickets && !hasPublicTickets;
+    const hasInviteAccess = shouldBeInviteRestricted || inviteTokenAllowed || hasPrivateTickets;
+    const policyOutOfSync = isInviteRestricted !== shouldBeInviteRestricted || (hasPrivateTickets && !inviteTokenAllowed);
+
+    if (shouldBeInviteRestricted) {
       warnings.push(`${primaryLabelTitle} apenas por convite.`);
     }
-    if (isInviteRestricted && !publicInvitesLoading && publicInvites.length === 0) {
+    if (!shouldBeInviteRestricted && hasPrivateTickets && hasPublicTickets) {
+      warnings.push(`Acesso misto: ${ticketLabelPlural} públicos e por convite.`);
+    } else if (!shouldBeInviteRestricted && hasPrivateTickets) {
+      warnings.push(`${ticketLabelPluralCap} disponíveis apenas por convite.`);
+    }
+    if (policyOutOfSync) {
+      warnings.push("A política de acesso está desalinhada com os bilhetes. Guarda para sincronizar.");
+    }
+    if (hasInviteAccess && !publicInvitesLoading && publicInvites.length === 0) {
       warnings.push("Sem convites de público.");
     }
     return warnings;
-  }, [isInviteRestricted, primaryLabelTitle, publicInvites.length, publicInvitesLoading]);
+  }, [
+    inviteTokenAllowed,
+    isInviteRestricted,
+    primaryLabelTitle,
+    publicInvites.length,
+    publicInvitesLoading,
+    ticketLabelPlural,
+    ticketLabelPluralCap,
+    ticketList,
+    visibilityUpdates,
+  ]);
+
+  const hasInviteFlows =
+    ticketList.some((ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) === false) ||
+    inviteTokenAllowed ||
+    isInviteRestricted;
 
   const inviteGroups = [
     {
       scope: "PUBLIC" as const,
-      enabled: isInviteRestricted,
+      enabled: hasInviteFlows,
       title: "Convites do público",
       description: `Quem pode ver ${ticketLabelPlural} por convite.`,
       footer: `Convites por email permitem checkout como convidado. ${primaryLabelPlural} grátis continuam a exigir conta e username.`,
@@ -472,7 +528,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       isSaving: publicInviteSaving,
       invites: publicInvites,
       isLoading: publicInvitesLoading,
-    },
+    }
   ].filter((group) => group.enabled);
   const FormAlert = ({
     variant,
@@ -755,10 +811,20 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
 
     setIsSaving(true);
     try {
-      const ticketTypeUpdates = endingIds.map((id) => ({
-        id,
-        status: TicketTypeStatus.CLOSED,
-      }));
+      const ticketUpdateMap = new Map<number, { id: number; status?: TicketTypeStatus; publicAccess?: boolean }>();
+      endingIds.forEach((id) => {
+        const existing = ticketUpdateMap.get(id) ?? { id };
+        ticketUpdateMap.set(id, { ...existing, id, status: TicketTypeStatus.CLOSED });
+      });
+      Object.entries(visibilityUpdates).forEach(([ticketIdRaw, nextPublicAccess]) => {
+        const ticketId = Number(ticketIdRaw);
+        if (!Number.isFinite(ticketId)) return;
+        const current = ticketList.find((ticket) => ticket.id === ticketId);
+        if (!current || current.publicAccess === nextPublicAccess) return;
+        const existing = ticketUpdateMap.get(ticketId) ?? { id: ticketId };
+        ticketUpdateMap.set(ticketId, { ...existing, id: ticketId, publicAccess: nextPublicAccess });
+      });
+      const ticketTypeUpdates = Array.from(ticketUpdateMap.values());
 
       const newTicketTotalQuantityRaw = Number(newTicket.totalQuantity);
       const newTicketTotalQuantity =
@@ -772,6 +838,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 name: newTicket.name.trim(),
                 description: newTicket.description?.trim() || null,
                 price: Math.round(Number(newTicket.priceEuro.replace(",", ".")) * 100) || 0,
+                publicAccess: newTicket.publicAccess,
                 totalQuantity: newTicketTotalQuantity,
                 startsAt: newTicket.startsAt || null,
                 endsAt: newTicket.endsAt || null,
@@ -781,6 +848,40 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
               },
             ]
           : [];
+      const effectiveTicketVisibility = [
+        ...ticketList.map((ticket) => (visibilityUpdates[ticket.id] ?? ticket.publicAccess) !== false),
+        ...newTicketsPayload.map((ticket) => ticket.publicAccess !== false),
+      ];
+      const hasPrivateTickets = effectiveTicketVisibility.some((isPublic) => !isPublic);
+      const hasPublicTickets =
+        effectiveTicketVisibility.length === 0 || effectiveTicketVisibility.some((isPublic) => isPublic);
+      const nextMode = hasPrivateTickets && !hasPublicTickets ? "INVITE_ONLY" : "PUBLIC";
+      const nextAccessPolicy = {
+        mode: nextMode,
+        guestCheckoutAllowed: currentAccessPolicy?.guestCheckoutAllowed === true,
+        inviteTokenAllowed: hasPrivateTickets,
+        inviteIdentityMatch,
+        inviteTokenTtlSeconds: hasPrivateTickets
+          ? typeof currentAccessPolicy?.inviteTokenTtlSeconds === "number" &&
+            Number.isFinite(currentAccessPolicy.inviteTokenTtlSeconds) &&
+            currentAccessPolicy.inviteTokenTtlSeconds > 0
+            ? currentAccessPolicy.inviteTokenTtlSeconds
+            : 60 * 60 * 24 * 7
+          : null,
+        requiresEntitlementForEntry: currentAccessPolicy?.requiresEntitlementForEntry === true,
+        checkinMethods: resolvedCheckinMethods,
+      };
+      const previousCheckins = [...resolvedCheckinMethods].sort().join("|");
+      const nextCheckins = [...nextAccessPolicy.checkinMethods].sort().join("|");
+      const policyChanged =
+        !currentAccessPolicy ||
+        accessMode !== nextAccessPolicy.mode ||
+        (currentAccessPolicy?.guestCheckoutAllowed === true) !== nextAccessPolicy.guestCheckoutAllowed ||
+        (currentAccessPolicy?.inviteTokenAllowed === true) !== nextAccessPolicy.inviteTokenAllowed ||
+        inviteIdentityMatch !== nextAccessPolicy.inviteIdentityMatch ||
+        (currentAccessPolicy?.inviteTokenTtlSeconds ?? null) !== nextAccessPolicy.inviteTokenTtlSeconds ||
+        (currentAccessPolicy?.requiresEntitlementForEntry === true) !== nextAccessPolicy.requiresEntitlementForEntry ||
+        previousCheckins !== nextCheckins;
 
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/events/update"), {
         method: "POST",
@@ -798,6 +899,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           coverImageUrl: coverUrl,
           ticketTypeUpdates,
           newTicketTypes: newTicketsPayload,
+          ...(policyChanged ? { accessPolicy: nextAccessPolicy } : {}),
         }),
       });
 
@@ -809,11 +911,18 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
       setMessage(`${primaryLabelTitle} atualizado com sucesso.`);
       pushToast(`${primaryLabelTitle} atualizado com sucesso.`, "success");
       setEndingIds([]);
+      setVisibilityUpdates({});
       if (ticketTypeUpdates.length > 0) {
         setTicketList((prev) =>
-          prev.map((t) =>
-            endingIds.includes(t.id) ? { ...t, status: TicketTypeStatus.CLOSED } : t
-          )
+          prev.map((ticket) => {
+            const update = ticketUpdateMap.get(ticket.id);
+            if (!update) return ticket;
+            return {
+              ...ticket,
+              ...(update.status ? { status: update.status } : {}),
+              ...(typeof update.publicAccess === "boolean" ? { publicAccess: update.publicAccess } : {}),
+            };
+          }),
         );
       }
       if (newTicketsPayload.length > 0) {
@@ -829,6 +938,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             name: newTicketsPayload[0].name,
             description: newTicketsPayload[0].description ?? null,
             price: newTicketsPayload[0].price,
+            publicAccess: newTicketsPayload[0].publicAccess !== false,
             currency: "EUR",
             totalQuantity: newTicketsPayload[0].totalQuantity ?? null,
             soldQuantity: 0,
@@ -840,10 +950,14 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
           },
         ]);
       }
+      if (policyChanged) {
+        setCurrentAccessPolicy(nextAccessPolicy);
+      }
       setNewTicket({
         name: "",
         description: "",
         priceEuro: "",
+        publicAccess: true,
         totalQuantity: "",
         startsAt: "",
         endsAt: "",
@@ -1010,12 +1124,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             <AddressCombobox
               label="Local / Morada"
               value={locationQuery}
-              onValueChange={(next) => {
-                setLocationQuery(next);
-                setLocationFormattedAddress(null);
-                setLocationLat(null);
-                setLocationLng(null);
-              }}
+              onValueChange={setLocationQuery}
               addressId={locationAddressId}
               onAddressIdChange={setLocationAddressId}
               onDetailsResolved={applyGeoDetails}
@@ -1348,6 +1457,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                 ? t.totalQuantity - t.soldQuantity
                 : null;
             const isEnding = endingIds.includes(t.id) || t.status === TicketTypeStatus.CLOSED;
+            const effectivePublicAccess = visibilityUpdates[t.id] ?? t.publicAccess;
 
             return (
               <div
@@ -1361,6 +1471,7 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                       {price} € • Vendidos: {t.soldQuantity}
                       {remaining !== null ? ` • Stock restante: ${remaining}` : ""}
                       {isPadel && t.padelCategoryLabel ? ` • Categoria: ${t.padelCategoryLabel}` : ""}
+                      {` • Visibilidade: ${effectivePublicAccess !== false ? "Público" : "Convite"}`}
                   </p>
                 </div>
                   <span className="text-[10px] rounded-full border border-white/20 px-2 py-0.5 text-white/75">
@@ -1379,6 +1490,23 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
                     }`}
                   >
                     Terminar venda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisibilityUpdates((prev) => ({
+                        ...prev,
+                        [t.id]: !(prev[t.id] ?? t.publicAccess),
+                      }))
+                    }
+                    disabled={isEnding}
+                    className={`rounded-full px-3 py-1 border ${
+                      isEnding
+                        ? "border-white/15 text-white/40 cursor-not-allowed"
+                        : "border-cyan-300/60 text-cyan-100 hover:bg-cyan-500/10"
+                    }`}
+                  >
+                    {effectivePublicAccess ? "Tornar por convite" : "Tornar público"}
                   </button>
                 </div>
               </div>
@@ -1406,6 +1534,29 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
               onChange={(e) => setNewTicket((p) => ({ ...p, priceEuro: e.target.value }))}
               className="rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
             />
+            <div className="rounded-md border border-white/15 bg-black/30 px-3 py-2">
+              <p className="text-[11px] text-white/70">Visibilidade</p>
+              <div className="mt-2 inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setNewTicket((p) => ({ ...p, publicAccess: true }))}
+                  className={`rounded-full px-3 py-1 font-semibold transition ${
+                    newTicket.publicAccess ? "bg-white text-black shadow" : "text-white/70"
+                  }`}
+                >
+                  Público
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewTicket((p) => ({ ...p, publicAccess: false }))}
+                  className={`rounded-full px-3 py-1 font-semibold transition ${
+                    !newTicket.publicAccess ? "bg-white text-black shadow" : "text-white/70"
+                  }`}
+                >
+                  Por convite
+                </button>
+              </div>
+            </div>
             {isPadel && activePadelCategoryLinks.length > 0 && (
               <label className="text-[11px] text-white/70">
                 Categoria Padel

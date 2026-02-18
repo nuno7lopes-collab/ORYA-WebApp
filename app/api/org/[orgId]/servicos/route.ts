@@ -8,7 +8,11 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
-import { normalizeReservationAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  normalizeReservationAssignmentMode,
+  requiresPartySizeForAssignmentMode,
+} from "@/lib/reservas/serviceAssignment";
+import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -203,6 +207,17 @@ async function _POST(req: NextRequest) {
       assignmentModeRaw,
       normalizeReservationAssignmentMode((organization as { reservationAssignmentMode?: string | null }).reservationAssignmentMode ?? null),
     );
+    const partySizeRules = resolveServicePartySizeRules({
+      assignmentMode,
+      serviceKind: kindRaw,
+      partySizeRequired: payload?.partySizeRequired,
+      partySizeMin: payload?.partySizeMin,
+      partySizeMax: payload?.partySizeMax,
+      partySizeStep: payload?.partySizeStep,
+    });
+    if (requiresPartySizeForAssignmentMode(assignmentMode) && !partySizeRules.partySizeRequired) {
+      return fail(400, "partySizeRequired é obrigatório para serviços com recurso.");
+    }
     const { ids: professionalIds, error: professionalIdsError } = normalizeIdList(
       payload?.professionalIds,
       "Profissionais",
@@ -336,6 +351,10 @@ async function _POST(req: NextRequest) {
           unitPriceCents: Math.round(unitPriceCents),
           currency: currency || "EUR",
           assignmentMode,
+          partySizeRequired: partySizeRules.partySizeRequired,
+          partySizeMin: partySizeRules.partySizeMin,
+          partySizeMax: partySizeRules.partySizeMax,
+          partySizeStep: partySizeRules.partySizeStep,
           categoryTag: categoryTag || null,
           coverImageUrl: coverImageUrl || null,
           locationMode: locationModeRaw as "FIXED" | "CHOOSE_AT_BOOKING",
@@ -373,6 +392,7 @@ async function _POST(req: NextRequest) {
         unitPriceCents: Math.round(unitPriceCents),
         currency: currency || "EUR",
         assignmentMode,
+        partySizeRules,
         categoryTag: categoryTag || null,
         coverImageUrl: coverImageUrl || null,
         locationMode: locationModeRaw,

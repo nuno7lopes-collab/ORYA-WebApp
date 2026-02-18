@@ -2036,13 +2036,15 @@ export function NewOrganizationEventPage({
       const hasTicketsPayload = preparedTickets.length > 0;
       const hasInviteRestrictedTickets =
         hasTicketsPayload && preparedTickets.some((ticket) => ticket.publicAccess === false);
-      const accessMode = hasInviteRestrictedTickets ? "INVITE_ONLY" : "PUBLIC";
+      const hasPublicTicketsPayload =
+        !hasTicketsPayload || preparedTickets.some((ticket) => ticket.publicAccess !== false);
+      const accessMode = hasInviteRestrictedTickets && !hasPublicTicketsPayload ? "INVITE_ONLY" : "PUBLIC";
       const accessPolicy = {
         mode: accessMode,
         guestCheckoutAllowed: false,
-        inviteTokenAllowed: accessMode === "INVITE_ONLY",
+        inviteTokenAllowed: hasInviteRestrictedTickets,
         inviteIdentityMatch: "BOTH",
-        inviteTokenTtlSeconds: accessMode === "INVITE_ONLY" ? 60 * 60 * 24 * 7 : null,
+        inviteTokenTtlSeconds: hasInviteRestrictedTickets ? 60 * 60 * 24 * 7 : null,
         requiresEntitlementForEntry: false,
         checkinMethods: selectedPreset === "padel" ? ["QR_REGISTRATION"] : ["QR_TICKET"],
       };
@@ -2189,17 +2191,12 @@ export function NewOrganizationEventPage({
   const resetForm = () => {
     setSelectedPreset(null);
     setShowTicketsModal(false);
-    setSchedulePopover(null);
     setShowDescriptionModal(false);
     setShowCoverModal(false);
     setTitle("");
     setDescription("");
     setStartsAt("");
     setEndsAt("");
-    setStartDateInput("");
-    setStartTimeInput("");
-    setEndDateInput("");
-    setEndTimeInput("");
     setLocationQuery("");
     setLocationAddressId(null);
     setLocationFormattedAddress(null);
@@ -2687,12 +2684,7 @@ export function NewOrganizationEventPage({
           <AddressCombobox
             label="Local / Morada"
             value={locationQuery}
-            onValueChange={(next) => {
-              setLocationQuery(next);
-              setLocationFormattedAddress(null);
-              setLocationLat(null);
-              setLocationLng(null);
-            }}
+            onValueChange={setLocationQuery}
             addressId={locationAddressId}
             onAddressIdChange={setLocationAddressId}
             onDetailsResolved={applyGeoDetails}

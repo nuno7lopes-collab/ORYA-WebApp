@@ -18,6 +18,8 @@ const BUSINESS_ERROR_COPY: Record<string, string> = {
   PAYMENT_CONFIGURATION_MISSING:
     "Pagamentos indisponíveis neste momento. Tenta novamente mais tarde.",
   UNAUTHENTICATED: "Inicia sessão para continuar.",
+  CHAT_BLOCKED: "Esta conversa está bloqueada.",
+  BANNED: "Acesso bloqueado a esta conversa.",
 };
 
 const API_PREFIX_PATTERN = /^API\s+(\d{3})\s*:\s*(.+)$/is;

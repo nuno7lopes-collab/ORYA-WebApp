@@ -64,9 +64,13 @@ const resolveChatError = (err: unknown, fallback: string, t: (key: string) => st
     if (err.status === 426) return "Atualiza a app para continuar.";
     if (err.status === 429) return "Muitas tentativas. Tenta novamente em instantes.";
     if (err.status === 410) return t("messages:thread.errors.readOnly");
+    if (err.code === "CHAT_BLOCKED") return t("messages:thread.errors.blocked");
+    if (err.code === "BANNED") return t("messages:thread.errors.banned");
     if (err.status === 403) return t("messages:thread.errors.participantsOnly");
   }
   const message = err instanceof Error ? err.message : String(err ?? "");
+  if (message.includes("CHAT_BLOCKED")) return t("messages:thread.errors.blocked");
+  if (message.includes("BANNED")) return t("messages:thread.errors.banned");
   if (message.includes("READ_ONLY")) return t("messages:thread.errors.readOnly");
   if (message.includes("FORBIDDEN")) return t("messages:thread.errors.participantsOnly");
   if (message.includes("UNAUTHENTICATED")) return t("messages:thread.errors.signInRequired");

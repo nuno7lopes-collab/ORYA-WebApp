@@ -11,6 +11,11 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 function canExposeAttachment(metadata: Record<string, unknown>) {
   const scanStatusRaw =
@@ -120,6 +125,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { organizationId: organization.id },
       },
       select: { conversationId: true },

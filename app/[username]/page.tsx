@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import Image from "next/image";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import ProfileHeader from "@/app/components/profile/ProfileHeader";
@@ -154,14 +153,6 @@ function formatTimeLabel(date: Date | null, timezone: string) {
     minute: "2-digit",
     timeZone: timezone,
   }).format(date);
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("pt-PT", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(cents / 100);
 }
 
 type OrganizationEvent = {
@@ -535,6 +526,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               title: true,
               description: true,
               kind: true,
+              assignmentMode: true,
+              partySizeRequired: true,
+              partySizeMin: true,
+              partySizeMax: true,
+              partySizeStep: true,
               durationMinutes: true,
               unitPriceCents: true,
             currency: true,
@@ -591,6 +587,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             title: string;
             description: string | null;
             kind: string;
+            assignmentMode: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE" | null;
+            partySizeRequired: boolean;
+            partySizeMin: number;
+            partySizeMax: number;
+            partySizeStep: number;
             durationMinutes: number;
             unitPriceCents: number;
             currency: string;
@@ -669,32 +670,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     });
     const storeEnabled = isStoreFeatureEnabled();
     const storeId = store?.id ?? null;
-    const [storeProducts, storeProductsCount] = storeId !== null
-      ? await Promise.all([
-          prisma.storeProduct.findMany({
-            where: { storeId, visibility: "PUBLIC" },
-            orderBy: [{ createdAt: "desc" }],
-            take: 8,
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              priceCents: true,
-              compareAtPriceCents: true,
-              currency: true,
-              createdAt: true,
-              images: {
-                select: { url: true, altText: true, isPrimary: true, sortOrder: true },
-                orderBy: [{ isPrimary: "desc" }, { sortOrder: "asc" }],
-                take: 1,
-              },
-            },
-          }),
-          prisma.storeProduct.count({
-            where: { storeId, visibility: "PUBLIC" },
-          }),
-        ])
-      : [[], 0];
+    const storeProductsCount = storeId !== null
+      ? await prisma.storeProduct.count({
+          where: { storeId, visibility: "PUBLIC" },
+        })
+      : 0;
 
     const professionalsList = professionals.map((pro) => ({
       id: pro.id,
@@ -744,30 +724,41 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const publicForms = forms.filter((form) => form.status !== "ARCHIVED");
     const featuredForm =
       publicForms.find((form) => /guarda[-\s]?redes/i.test(form.title)) ?? publicForms[0] ?? null;
-    const spotlightCtaLabel = spotlightEvent
-      ? spotlightEvent.templateType === "PADEL"
-        ? "Inscrever agora"
-        : spotlightEvent.isGratis
-          ? "Garantir lugar"
-          : "Comprar bilhete"
-      : "Comprar bilhete";
-    const spotlightCtaHref = spotlightEvent ? buildTicketHref(spotlightEvent.slug) : null;
+    const agendaPreviewGroups = agendaGroups
+      .slice(0, 1)
+      .map((group) => ({ ...group, items: group.items.slice(0, 1) }));
+    const agendaPreviewCount = agendaPreviewGroups.reduce((acc, group) => acc + group.items.length, 0);
+    const remainingAgendaCount = Math.max(0, agendaTotal - agendaPreviewCount);
+    const agendaDiscoverHref = `${
+      primaryOperation === "TORNEIOS" ? "/descobrir/torneios" : "/descobrir/eventos"
+    }?query=${encodeURIComponent(orgDisplayName)}`;
+    const agendaLeadEvent = spotlightEvent ?? agendaEvents[0] ?? null;
+    const spotlightCtaLabel = agendaLeadEvent
+      ? pastEventIds.has(agendaLeadEvent.id)
+        ? "Ver resumo"
+        : agendaLeadEvent.templateType === "PADEL"
+          ? "Inscrever agora"
+          : agendaLeadEvent.isGratis
+            ? "Garantir lugar"
+            : "Comprar bilhete"
+      : "Ver evento";
+    const spotlightCtaHref = agendaLeadEvent
+      ? pastEventIds.has(agendaLeadEvent.id)
+        ? `/eventos/${agendaLeadEvent.slug}`
+        : buildTicketHref(agendaLeadEvent.slug)
+      : null;
     const featuredFormDateLabel = featuredForm
       ? formatFormDateRange(featuredForm.startAt, featuredForm.endAt)
       : null;
     const featuredFormCapacityLabel = featuredForm?.capacity
       ? `${featuredForm.capacity} vagas`
       : null;
-    const showAgendaSection = showAgenda;
-    const showReservasSection = hasReservasModule;
-    const showFormsSection = hasInscricoes;
+    const showAgendaSection = showAgenda && agendaTotal > 0;
+    const showReservasSection = hasReservasModule && services.length > 0;
+    const showFormsSection = hasInscricoes && publicForms.length > 0;
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
     const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
-    const storePreviewLimit = 8;
-    const storePreviewItems = storeProducts.slice(0, storePreviewLimit);
-    const storeHasMore = storeProductsCount > storePreviewLimit;
-    const storeCompactGrid = storeProductsCount > 0 && storeProductsCount <= 4;
     const showStoreSection =
       storeEnabled &&
       shouldShowStoreOnPublicProfile({
@@ -776,12 +767,42 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         publicProductCount: storeProductsCount,
       });
 
+    const quickActionCards = [
+      showAgendaSection
+        ? {
+            id: "quick-agenda",
+            title: "Agenda pública",
+            subtitle: `${agendaTotal} ${agendaTotal === 1 ? "item" : "itens"} publicados`,
+            href: agendaDiscoverHref,
+            cta: "Ver agenda",
+          }
+        : null,
+      showReservasSection
+        ? {
+            id: "quick-reservas",
+            title: "Reservas",
+            subtitle: `${services.length} ${services.length === 1 ? "serviço" : "serviços"} disponíveis`,
+            href: "#reservar",
+            cta: "Reservar agora",
+          }
+        : null,
+      showFormsSection && featuredForm
+        ? {
+            id: "quick-formularios",
+            title: "Formulários",
+            subtitle: `${publicForms.length} ${publicForms.length === 1 ? "ativo" : "ativos"}`,
+            href: `/inscricoes/${featuredForm.id}`,
+            cta: "Ver formulários ativos",
+          }
+        : null,
+    ].filter(Boolean) as Array<{ id: string; title: string; subtitle: string; href: string; cta: string }>;
+
     const fixedSections = [
       showAgendaSection
         ? {
             id: "agenda-publica",
             content: (
-              <section className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
+              <section id="agenda-publica" className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-xl font-semibold text-white">Agenda pública</h2>
@@ -790,61 +811,62 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </span>
                   </div>
                   <EventSpotlightCard
-                    event={spotlightEvent}
+                    event={agendaLeadEvent}
                     label={`Próximo ${operationMeta.noun}`}
                     emptyLabel={`Sem ${operationMeta.noun} anunciado`}
                     ctaLabel={spotlightCtaLabel}
                     ctaHref={spotlightCtaHref}
                     variant="embedded"
                   />
-                  {agendaGroups.length === 0 ? (
-                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-[12px] text-white/70">
-                      Agenda em preparação. Os eventos e torneios aparecem aqui por ordem do mais recente para o mais antigo.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {agendaGroups.map((group) => (
-                        <div key={group.key} className="space-y-2">
-                          <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
-                          <div className="space-y-2">
-                            {group.items.map((item) => {
-                              const href = item.isPast
-                                ? `/eventos/${item.slug}`
-                                : `/eventos/${item.slug}?checkout=1#bilhetes`;
-                              return (
-                                <Link
-                                  key={item.id}
-                                  href={href}
-                                  className="group flex items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                  <div className="space-y-3">
+                    {agendaPreviewGroups.map((group) => (
+                      <div key={group.key} className="space-y-2">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/60">{group.label}</p>
+                        <div className="space-y-2">
+                          {group.items.map((item) => {
+                            const href = item.isPast
+                              ? `/eventos/${item.slug}`
+                              : `/eventos/${item.slug}?checkout=1#bilhetes`;
+                            return (
+                              <Link
+                                key={item.id}
+                                href={href}
+                                className="group flex items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80 transition hover:border-white/30 hover:bg-white/10"
+                              >
+                                <div>
+                                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
+                                  <p className="text-sm font-semibold text-white">{item.title}</p>
+                                  <p className="text-[12px] text-white/60">{item.locationLabel}</p>
+                                </div>
+                                <span
+                                  className={`rounded-full border px-3 py-1 text-[11px] ${
+                                    item.isPast
+                                      ? "border-white/15 bg-white/5 text-white/60"
+                                      : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
+                                  }`}
                                 >
-                                  <div>
-                                    <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{item.timeLabel}</p>
-                                    <p className="text-sm font-semibold text-white">{item.title}</p>
-                                    <p className="text-[12px] text-white/60">{item.locationLabel}</p>
-                                  </div>
-                                  <span
-                                    className={`rounded-full border px-3 py-1 text-[11px] ${
-                                      item.isPast
-                                        ? "border-white/15 bg-white/5 text-white/60"
-                                        : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
-                                    }`}
-                                  >
-                                    {item.isPast
-                                      ? "Ver resumo"
-                                      : item.templateType === "PADEL"
-                                        ? "Inscrever agora"
-                                        : item.isGratis
-                                          ? "Garantir lugar"
-                                          : "Comprar bilhete"}
-                                  </span>
-                                </Link>
-                              );
-                            })}
-                          </div>
+                                  {item.isPast
+                                    ? "Ver resumo"
+                                    : item.templateType === "PADEL"
+                                      ? "Inscrever agora"
+                                      : item.isGratis
+                                        ? "Garantir lugar"
+                                        : "Comprar bilhete"}
+                                </span>
+                              </Link>
+                            );
+                          })}
                         </div>
-                      ))}
+                      </div>
+                    ))}
+                  </div>
+                  {remainingAgendaCount > 0 ? (
+                    <div className="flex justify-end">
+                      <Link href={agendaDiscoverHref} className="text-[11px] text-white/65 hover:text-white/90">
+                        Ver mais {remainingAgendaCount}
+                      </Link>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </section>
             ),
@@ -872,37 +894,31 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </a>
                   </div>
                 </div>
-                {services.length > 0 ? (
-                  <div id="reservar">
-                    <ReservasBookingSection
-                      organization={{
-                        id: organizationProfile.id,
-                        publicName: organizationProfile.publicName,
-                        businessName: organizationProfile.businessName,
-                        city: organizationCity,
-                        username: organizationProfile.username ?? null,
-                        timezone: organizationProfile.timezone ?? "Europe/Lisbon",
-                        address: organizationAddress,
-                        reservationAssignmentMode:
-                          organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL_ONLY",
-                      }}
-                      services={services.map((service) => ({
-                        ...service,
-                        coverImageUrl: service.coverImageUrl ?? null,
-                        locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
-                      }))}
-                      professionals={professionalsList}
-                      resources={resourcesList}
-                      initialServiceId={initialServiceId}
-                      featuredServiceIds={[]}
-                      servicesLayout="grid"
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-3xl border border-white/12 bg-white/5 p-4 text-sm text-white/70 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-                    Sem serviços públicos disponíveis de momento.
-                  </div>
-                )}
+                <div id="reservar">
+                  <ReservasBookingSection
+                    organization={{
+                      id: organizationProfile.id,
+                      publicName: organizationProfile.publicName,
+                      businessName: organizationProfile.businessName,
+                      city: organizationCity,
+                      username: organizationProfile.username ?? null,
+                      timezone: organizationProfile.timezone ?? "Europe/Lisbon",
+                      address: organizationAddress,
+                      reservationAssignmentMode:
+                        organizationProfile.reservationAssignmentMode ?? "PROFESSIONAL_ONLY",
+                    }}
+                    services={services.map((service) => ({
+                      ...service,
+                      coverImageUrl: service.coverImageUrl ?? null,
+                      locationMode: (service.locationMode ?? "FIXED") as "FIXED" | "CHOOSE_AT_BOOKING",
+                    }))}
+                    professionals={professionalsList}
+                    resources={resourcesList}
+                    initialServiceId={initialServiceId}
+                    featuredServiceIds={[]}
+                    servicesLayout="grid"
+                  />
+                </div>
               </section>
             ),
           }
@@ -914,9 +930,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               <section className="rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
                 <div className="space-y-2">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
-                  <h3 className="text-lg font-semibold text-white">
-                    {featuredForm?.title || "Formulários em preparação"}
-                  </h3>
+                  <h3 className="text-lg font-semibold text-white">{featuredForm!.title}</h3>
                   {featuredFormDateLabel || featuredFormCapacityLabel ? (
                     <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/70">
                       {featuredFormDateLabel && (
@@ -932,122 +946,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                     </div>
                   ) : null}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
-                    {featuredForm ? (
-                      <Link
-                        href={`/inscricoes/${featuredForm.id}`}
-                        className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
-                      >
-                        Abrir formulário
-                      </Link>
-                    ) : (
-                      <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-[12px] font-semibold text-white/70">
-                        Sem formulários públicos
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </section>
-            ),
-          }
-        : null,
-      showStoreSection
-        ? {
-            id: "loja",
-            content: (
-              <section className="relative overflow-hidden rounded-3xl border border-white/12 bg-gradient-to-br from-[#0b1226]/85 via-[#121a33]/75 to-[#060b14]/95 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:p-5">
-                <div className="relative space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-semibold text-white">Produtos oficiais</h3>
-                        <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-emerald-100">
-                          Loja ativa
-                        </span>
-                      </div>
-                    </div>
                     <Link
-                      href={storeBaseHref}
+                      href={`/inscricoes/${featuredForm!.id}`}
                       className="rounded-full bg-white px-4 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
                     >
-                      Visitar loja
+                      {publicForms.length > 1 ? "Ver formulários ativos" : "Abrir formulário ativo"}
                     </Link>
                   </div>
-                  <div
-                    className={
-                      storeCompactGrid
-                        ? "flex flex-wrap gap-3"
-                        : "grid auto-cols-[150px] grid-flow-col gap-3 overflow-x-auto pb-2 sm:auto-cols-[170px]"
-                    }
-                  >
-                    {storePreviewItems.map((product) => {
-                      const image = product.images[0];
-                      const compareAt = product.compareAtPriceCents ?? null;
-                      const hasDiscount =
-                        typeof compareAt === "number" && compareAt > product.priceCents;
-                      const discount = hasDiscount
-                        ? Math.round(((compareAt - product.priceCents) / compareAt) * 100)
-                        : null;
-                      const isNew =
-                        now.getTime() - product.createdAt.getTime() <= 1000 * 60 * 60 * 24 * 30;
-                      return (
-                        <Link
-                          key={product.id}
-                          href={`${storeBaseHref}/produto/${product.slug}`}
-                          className={`group rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:border-white/30 hover:bg-black/30 ${
-                            storeCompactGrid ? "w-[150px] sm:w-[170px]" : "w-full"
-                          }`}
-                        >
-                          <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-white/10 bg-black/60">
-                            {image ? (
-                              <Image
-                                src={image.url}
-                                alt={image.altText || product.name}
-                                fill
-                                sizes="(max-width: 640px) 150px, (max-width: 1024px) 180px, 200px"
-                                className="object-cover transition group-hover:scale-[1.02]"
-                              />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
-                                Sem imagem
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                            <div className="absolute left-3 top-3 flex gap-2">
-                              {isNew ? (
-                                <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-emerald-100">
-                                  Novo
-                                </span>
-                              ) : null}
-                              {discount ? (
-                                <span className="rounded-full border border-white/20 bg-black/60 px-2 py-1 text-[9px] uppercase tracking-[0.2em] text-white/80">
-                                  -{discount}%
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="mt-3 space-y-1">
-                            <p className="line-clamp-2 text-sm font-semibold text-white">{product.name}</p>
-                            <div className="flex items-center gap-2 text-[11px] text-white/70">
-                              <span className="text-white">{formatMoney(product.priceCents, product.currency)}</span>
-                              {hasDiscount ? (
-                                <span className="text-white/40 line-through">
-                                  {formatMoney(compareAt, product.currency)}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                  {storeHasMore ? (
-                    <div className="flex justify-end">
-                      <Link href={storeBaseHref} className="text-[11px] text-white/60 hover:text-white/90">
-                        Ver todos · {storeProductsCount}+
-                      </Link>
-                    </div>
-                  ) : null}
                 </div>
               </section>
             ),
@@ -1107,12 +1012,48 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-8">
+              {showStoreSection ? (
+                <section className="mx-auto w-full max-w-3xl rounded-3xl border border-white/12 bg-gradient-to-br from-[#0c1736]/88 via-[#101a37]/78 to-[#060b14]/95 p-5 text-center shadow-[0_20px_64px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:p-6">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
+                  <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">Produtos oficiais da organização</h2>
+                  <p className="mt-2 text-sm text-white/70">
+                    {storeProductsCount > 0
+                      ? `${storeProductsCount} ${storeProductsCount === 1 ? "produto público disponível" : "produtos públicos disponíveis"}`
+                      : "Loja pública pronta para receber produtos."}
+                  </p>
+                  <div className="mt-5 flex items-center justify-center">
+                    <Link
+                      href={storeBaseHref}
+                      className="inline-flex rounded-full bg-white px-6 py-2 text-[12px] font-semibold text-black shadow-[0_10px_30px_rgba(255,255,255,0.25)]"
+                    >
+                      Abrir loja
+                    </Link>
+                  </div>
+                </section>
+              ) : null}
+
+              {quickActionCards.length > 0 ? (
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {quickActionCards.map((card) => (
+                    <Link
+                      key={card.id}
+                      href={card.href}
+                      className="rounded-2xl border border-white/12 bg-white/6 px-4 py-4 shadow-[0_16px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl transition hover:border-white/25 hover:bg-white/10"
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">{card.title}</p>
+                      <p className="mt-1 text-sm font-semibold text-white">{card.subtitle}</p>
+                      <p className="mt-3 text-[12px] text-white/75">{card.cta} →</p>
+                    </Link>
+                  ))}
+                </section>
+              ) : null}
+
               {fixedSections.length > 0 ? (
                 <div className="grid gap-6 md:grid-cols-2">
-                  {fixedSections.map((section, index) => (
+                  {fixedSections.map((section) => (
                     <div
                       key={section.id}
-                      className={index === 0 || section.id === "reservas" ? "md:col-span-2" : ""}
+                      className={section.id === "agenda-publica" || section.id === "reservas" ? "md:col-span-2" : ""}
                     >
                       {section.content}
                     </div>

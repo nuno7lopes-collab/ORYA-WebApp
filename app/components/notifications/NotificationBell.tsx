@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import useSWR from "swr";
 import { useUser } from "@/app/hooks/useUser";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
-import { enUS, es, pt } from "date-fns/locale";
 import PairingInviteCard from "@/app/components/notifications/PairingInviteCard";
 import { useSearchParams } from "next/navigation";
 import { resolveLocale, t } from "@/lib/i18n";
@@ -42,7 +40,10 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   const { user } = useUser();
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang"));
-  const distanceLocale = locale === "en-US" ? enUS : locale === "es-ES" ? es : pt;
+  const relativeTimeFormatter = useMemo(
+    () => new Intl.RelativeTimeFormat(locale, { numeric: "auto" }),
+    [locale],
+  );
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "invites">("all");
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -235,7 +236,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
                         )}
                       </div>
                       <span className="text-[11px] text-white/45">
-                        {formatDistanceToNow(new Date(n.createdAt), { locale: distanceLocale, addSuffix: true })}
+                        {formatRelativeTime(n.createdAt, relativeTimeFormatter)}
                       </span>
                     </div>
                       );
@@ -275,6 +276,30 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       )}
     </div>
   );
+}
+
+function formatRelativeTime(createdAt: string, formatter: Intl.RelativeTimeFormat): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const elapsedSeconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 31536000],
+    ["month", 2592000],
+    ["week", 604800],
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+    ["second", 1],
+  ];
+
+  for (const [unit, unitSeconds] of units) {
+    if (Math.abs(elapsedSeconds) >= unitSeconds || unit === "second") {
+      return formatter.format(Math.round(elapsedSeconds / unitSeconds), unit);
+    }
+  }
+
+  return "";
 }
 
 type IconProps = SVGProps<SVGSVGElement>;

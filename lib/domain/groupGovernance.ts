@@ -45,6 +45,10 @@ const EMAIL_RESEND_WINDOW_MS = 60 * 60 * 1000;
 const EMAIL_RESEND_MAX_PER_WINDOW = 3;
 const EMAIL_RESEND_MAX_TOTAL = 6;
 const OWNER_TRANSFER_TTL_MS = 30 * 60 * 1000;
+const GROUP_MEMBERSHIP_ALLOWED_ORG_STATUSES = new Set<OrganizationStatus>([
+  OrganizationStatus.ACTIVE,
+  OrganizationStatus.SUSPENDED,
+]);
 
 function hashSecret(secret: string) {
   return createHash("sha256").update(secret).digest("hex");
@@ -415,7 +419,12 @@ async function issueRequestEmailTokens(params: {
   const baseUrl = getAppBaseUrl();
   await Promise.all(
     deliveries.map(async (delivery) => {
-      const link = `${baseUrl}/api/org-hub/groups/${request.type === GroupMembershipRequestType.JOIN ? "join-requests" : "exit-requests"}/${request.id}/email/confirm?token=${encodeURIComponent(delivery.token)}`;
+      const base =
+        request.type === GroupMembershipRequestType.JOIN ? "join-requests" : "exit-requests";
+      // Use a UI confirmation page so the email link works even if the user needs to login first.
+      const link = `${baseUrl}/org-hub/groups/requests/confirm?base=${encodeURIComponent(base)}&id=${encodeURIComponent(
+        request.id,
+      )}&token=${encodeURIComponent(delivery.token)}`;
       const subject = `[ORYA] Confirmacao de operacao de grupo (${request.type})`;
       await sendEmail({
         to: delivery.email,
@@ -455,6 +464,7 @@ export async function createOrganizationAtomic(input: {
   primaryModule: string;
   modules: string[];
   publicWebsite?: string | null;
+  existingGroupId?: number | null;
 }) {
   const user = await requireUser();
   const emailVerified = Boolean((user as { email_confirmed_at?: string | null }).email_confirmed_at);
@@ -524,18 +534,34 @@ export async function createOrganizationAtomic(input: {
   }
 
   return prisma.$transaction(async (tx) => {
-    const group = await tx.organizationGroup.create({
-      data: {
-        ownerUserId: user.id,
-      },
-    });
+    let targetGroupId: number;
+    if (typeof input.existingGroupId === "number" && Number.isFinite(input.existingGroupId)) {
+      const targetGroup = await tx.organizationGroup.findUnique({
+        where: { id: input.existingGroupId },
+        select: { id: true, ownerUserId: true },
+      });
+      if (!targetGroup) {
+        throw new Error("GROUP_NOT_FOUND");
+      }
+      if (targetGroup.ownerUserId !== user.id) {
+        throw new Error("GROUP_ACCESS_DENIED");
+      }
+      targetGroupId = targetGroup.id;
+    } else {
+      const group = await tx.organizationGroup.create({
+        data: {
+          ownerUserId: user.id,
+        },
+      });
+      targetGroupId = group.id;
+    }
 
     const confirmedAtRaw = typeof user.email_confirmed_at === "string" ? new Date(user.email_confirmed_at) : now();
     const officialEmailVerifiedAt = Number.isFinite(confirmedAtRaw.getTime()) ? confirmedAtRaw : now();
 
     const organization = await tx.organization.create({
       data: {
-        groupId: group.id,
+        groupId: targetGroupId,
         publicName,
         businessName,
         entityType: input.entityType?.trim() || null,
@@ -587,7 +613,7 @@ export async function createOrganizationAtomic(input: {
         dedupeKey: `organization.created:${organization.id}`,
         payload: {
           organizationId: organization.id,
-          groupId: group.id,
+          groupId: targetGroupId,
           ownerUserId: user.id,
         },
         correlationId: String(organization.id),
@@ -611,10 +637,13 @@ export async function startJoinRequest(input: { groupId: number; organizationId:
 
   const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
-    select: { id: true, groupId: true },
+    select: { id: true, groupId: true, status: true },
   });
   if (!organization) {
     throw new Error("ORGANIZATION_NOT_FOUND");
+  }
+  if (!GROUP_MEMBERSHIP_ALLOWED_ORG_STATUSES.has(organization.status)) {
+    throw new Error("ORGANIZATION_INACTIVE");
   }
   if (organization.groupId === group.id) {
     throw new Error("ORGANIZATION_ALREADY_IN_GROUP");
@@ -693,10 +722,13 @@ export async function startExitRequest(input: {
 
   const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
-    select: { id: true, groupId: true },
+    select: { id: true, groupId: true, status: true },
   });
   if (!organization) {
     throw new Error("ORGANIZATION_NOT_FOUND");
+  }
+  if (!GROUP_MEMBERSHIP_ALLOWED_ORG_STATUSES.has(organization.status)) {
+    throw new Error("ORGANIZATION_INACTIVE");
   }
   if (organization.groupId !== groupId) {
     throw new Error("ORGANIZATION_NOT_IN_GROUP");
@@ -1168,7 +1200,10 @@ export async function startGroupOwnerTransfer(input: {
   const targetEmail = await getUserEmail(targetUserId);
   if (targetEmail) {
     const baseUrl = getAppBaseUrl();
-    const link = `${baseUrl}/api/org-hub/groups/${groupId}/owner/transfer/confirm?token=${encodeURIComponent(token)}`;
+    // Use a UI confirmation page so the email link works even if the user needs to login first.
+    const link = `${baseUrl}/org-hub/groups/owner-transfer/confirm?groupId=${encodeURIComponent(
+      String(groupId),
+    )}&token=${encodeURIComponent(token)}`;
     await sendEmail({
       to: targetEmail,
       subject: "[ORYA] Confirmação de transferência de owner do Group",

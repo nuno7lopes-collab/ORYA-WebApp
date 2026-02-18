@@ -87,6 +87,15 @@ vi.mock("@/lib/prisma", () => {
   const emailIdentity = {
     findUnique: vi.fn(() => null),
   };
+  const ticketType = {
+    findMany: vi.fn(() => []),
+  };
+  const eventInvite = {
+    findFirst: vi.fn(() => null),
+  };
+  const profile = {
+    findUnique: vi.fn(() => null),
+  };
   const payment = {
     findUnique: vi.fn(() => null),
     create: vi.fn(({ data }: any) => {
@@ -115,6 +124,9 @@ vi.mock("@/lib/prisma", () => {
     organization,
     eventAccessPolicy,
     emailIdentity,
+    ticketType,
+    eventInvite,
+    profile,
     payment,
     ledgerEntry,
     eventLog,
@@ -208,6 +220,9 @@ describe("createCheckout", () => {
     prismaMock.payment.findUnique.mockReturnValue(null as any);
     prismaMock.eventAccessPolicy.findFirst.mockResolvedValue(null as any);
     prismaMock.emailIdentity.findUnique.mockResolvedValue(null as any);
+    prismaMock.ticketType.findMany.mockResolvedValue([] as any);
+    prismaMock.eventInvite.findFirst.mockResolvedValue(null as any);
+    prismaMock.profile.findUnique.mockResolvedValue(null as any);
     computePricingMock.mockReturnValue({
       subtotalCents: 1000,
       discountCents: 0,
@@ -326,6 +341,60 @@ describe("createCheckout", () => {
         idempotencyKey: "idem-guest",
       }),
     ).rejects.toThrow("GUEST_CHECKOUT_NOT_ALLOWED");
+  });
+
+  it("bloqueia bilhete privado sem convite", async () => {
+    prismaMock.eventAccessPolicy.findFirst.mockResolvedValue({
+      mode: "PUBLIC",
+      inviteTokenAllowed: true,
+      guestCheckoutAllowed: true,
+      inviteIdentityMatch: "EMAIL",
+      inviteTokenTtlSeconds: 3600,
+      requiresEntitlementForEntry: false,
+    } as any);
+    prismaMock.ticketType.findMany.mockResolvedValue([{ id: 1, publicAccess: false }] as any);
+    prismaMock.emailIdentity.findUnique.mockResolvedValue({
+      emailNormalized: "user@example.com",
+      userId: "user-1",
+    } as any);
+    prismaMock.eventInvite.findFirst.mockResolvedValue(null as any);
+
+    await expect(
+      createCheckout({
+        orgId: 10,
+        sourceType: SourceType.TICKET_ORDER,
+        sourceId: ORDER_ID,
+        customerIdentityId: "identity-user",
+        idempotencyKey: "idem-private-block",
+      }),
+    ).rejects.toThrow("INVITE_REQUIRED");
+  });
+
+  it("permite bilhete privado quando identidade está convidada", async () => {
+    prismaMock.eventAccessPolicy.findFirst.mockResolvedValue({
+      mode: "PUBLIC",
+      inviteTokenAllowed: true,
+      guestCheckoutAllowed: true,
+      inviteIdentityMatch: "EMAIL",
+      inviteTokenTtlSeconds: 3600,
+      requiresEntitlementForEntry: false,
+    } as any);
+    prismaMock.ticketType.findMany.mockResolvedValue([{ id: 1, publicAccess: false }] as any);
+    prismaMock.emailIdentity.findUnique.mockResolvedValue({
+      emailNormalized: "user@example.com",
+      userId: "user-1",
+    } as any);
+    prismaMock.eventInvite.findFirst.mockResolvedValue({ id: 99 } as any);
+
+    const output = await createCheckout({
+      orgId: 10,
+      sourceType: SourceType.TICKET_ORDER,
+      sourceId: ORDER_ID,
+      customerIdentityId: "identity-user",
+      idempotencyKey: "idem-private-allow",
+    });
+
+    expect(output.status).toBe("CREATED");
   });
 
   it("usa access engine e bloqueia quando nega", async () => {

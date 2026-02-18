@@ -1935,6 +1935,8 @@ model TicketType {
   description              String?
   price                    Int
   currency                 String                  @default("EUR")
+  publicAccess             Boolean                 @default(true) @map("public_access")
+  participantAccess        Boolean                 @default(false) @map("participant_access")
   totalQuantity            Int?                    @map("total_quantity")
   soldQuantity             Int                     @default(0) @map("sold_quantity")
   status                   TicketTypeStatus        @default(ON_SALE)
@@ -4516,6 +4518,10 @@ model Service {
   unitPriceCents    Int                       @map("price")
   currency          String                    @default("EUR")
   assignmentMode    ReservationAssignmentMode @default(PROFESSIONAL_ONLY) @map("assignment_mode")
+  partySizeRequired Boolean                   @default(false) @map("party_size_required")
+  partySizeMin      Int                       @default(1) @map("party_size_min")
+  partySizeMax      Int                       @default(1) @map("party_size_max")
+  partySizeStep     Int                       @default(1) @map("party_size_step")
   isActive          Boolean                   @default(true) @map("is_active")
   categoryTag       String?                   @map("category_tag")
   coverImageUrl     String?                   @map("cover_image_url")

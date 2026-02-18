@@ -6,6 +6,10 @@ import Link from "next/link";
 import { useUser } from "@/app/hooks/useUser";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import {
+  getServicePartySizeOptions,
+  resolveServicePartySizeRules,
+} from "@/lib/reservas/servicePartySize";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { Avatar } from "@/components/ui/avatar";
 import { OryaDateField } from "@/components/ui/datetime";
@@ -34,6 +38,10 @@ type Service = {
   isActive: boolean;
   kind?: string | null;
   assignmentMode?: ReservationAssignmentMode | null;
+  partySizeRequired?: boolean;
+  partySizeMin?: number;
+  partySizeMax?: number;
+  partySizeStep?: number;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";
@@ -152,12 +160,6 @@ const primaryButtonClass =
 const ghostButtonClass =
   "rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-60 sm:px-4";
 
-const capacityOptions = [
-  { label: "1-2", value: 2 },
-  { label: "3-4", value: 4 },
-  { label: "5-6", value: 6 },
-  { label: "7+", value: 8 },
-];
 const CARD_FEE_BPS = 100;
 
 function formatMoney(cents: number, currency: string) {
@@ -399,10 +401,32 @@ export default function ReservasBookingClient({
       }),
     [organization.reservationAssignmentMode, selectedService?.assignmentMode, selectedService?.kind],
   );
-  const assignmentMode = assignmentConfig.mode;
   const requiresProfessional = assignmentConfig.requiresProfessional;
   const requiresResource = assignmentConfig.requiresResource;
   const isHybridAssignment = assignmentConfig.isHybrid;
+  const partySizeRules = useMemo(
+    () =>
+      resolveServicePartySizeRules({
+        assignmentMode: assignmentConfig.assignmentMode,
+        serviceKind: selectedService?.kind ?? null,
+        partySizeRequired: selectedService?.partySizeRequired,
+        partySizeMin: selectedService?.partySizeMin,
+        partySizeMax: selectedService?.partySizeMax,
+        partySizeStep: selectedService?.partySizeStep,
+      }),
+    [
+      assignmentConfig.assignmentMode,
+      selectedService?.kind,
+      selectedService?.partySizeRequired,
+      selectedService?.partySizeMin,
+      selectedService?.partySizeMax,
+      selectedService?.partySizeStep,
+    ],
+  );
+  const partySizeOptions = useMemo(
+    () => getServicePartySizeOptions(partySizeRules),
+    [partySizeRules],
+  );
   const timezone = organization.timezone || "Europe/Lisbon";
   const minCalendarMonth = useMemo(() => {
     const now = new Date();
@@ -519,7 +543,11 @@ export default function ReservasBookingClient({
   const totalPriceLabel = selectedService ? formatMoney(totalEstimateCents, priceCurrency) : null;
   const cardFeeLabel = cardFeeBps ? `+${(cardFeeBps / 100).toFixed(0)}%` : "";
   const canAccessStep2 = Boolean(selectedService);
-  const canAccessStep3 = Boolean(selectedService) && (!requiresResource || Boolean(selectedPartySize));
+  const canAccessStep3 =
+    Boolean(selectedService) &&
+    (!requiresResource ||
+      !partySizeRules.partySizeRequired ||
+      Boolean(selectedPartySize));
   const canAccessStep4 = Boolean(
     bookingPending ||
       checkout ||
@@ -668,13 +696,24 @@ export default function ReservasBookingClient({
     setBookingError(null);
     setBookingSuccess(null);
     setPendingSlot(null);
-  }, [assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam]);
+  }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam]);
 
   useEffect(() => {
     if (requiresResource && !selectedPartySize && activeStep > 2) {
       setActiveStep(2);
     }
   }, [requiresResource, selectedPartySize, activeStep]);
+
+  useEffect(() => {
+    if (selectedPartySize == null) return;
+    const inRange =
+      selectedPartySize >= partySizeRules.partySizeMin &&
+      selectedPartySize <= partySizeRules.partySizeMax &&
+      (selectedPartySize - partySizeRules.partySizeMin) % partySizeRules.partySizeStep === 0;
+    if (!inRange) {
+      setSelectedPartySize(null);
+    }
+  }, [selectedPartySize, partySizeRules]);
 
   useEffect(() => {
     if (activeStep === 4 && !canAccessStep4) {
@@ -699,7 +738,7 @@ export default function ReservasBookingClient({
     if (requiresProfessional && selectedProfessionalId) {
       params.set("professionalId", String(selectedProfessionalId));
     }
-    if (requiresResource && selectedPartySize) {
+    if (requiresResource && selectedPartySize != null) {
       params.set("partySize", String(selectedPartySize));
     }
     if (selectedPackageId) {
@@ -791,7 +830,7 @@ export default function ReservasBookingClient({
     if (requiresProfessional && selectedProfessionalId) {
       params.set("professionalId", String(selectedProfessionalId));
     }
-    if (requiresResource && selectedPartySize) {
+    if (requiresResource && selectedPartySize != null) {
       params.set("partySize", String(selectedPartySize));
     }
     if (selectedPackageId) {
@@ -1135,7 +1174,7 @@ export default function ReservasBookingClient({
       : "Nenhum dia selecionado.";
   const selectedCapacityLabel =
     selectedPartySize != null
-      ? capacityOptions.find((opt) => opt.value === selectedPartySize)?.label ?? null
+      ? `${selectedPartySize}`
       : null;
   const locationLabel = resolvedAddressLabel ?? "Local por definir";
   const professionalLabel =
@@ -1565,20 +1604,22 @@ export default function ReservasBookingClient({
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {capacityOptions.map((opt) => (
+                  {partySizeOptions.map((value) => (
                     <button
-                      key={opt.value}
+                      key={value}
                       type="button"
-                      className={`${selectableCardBase} ${selectedPartySize === opt.value ? selectableCardActive : ""}`}
-                      onClick={() => setSelectedPartySize(opt.value)}
+                      className={`${selectableCardBase} ${selectedPartySize === value ? selectableCardActive : ""}`}
+                      onClick={() => setSelectedPartySize(value)}
                     >
-                      <p className="text-sm font-semibold text-white">{opt.label} pessoas</p>
+                      <p className="text-sm font-semibold text-white">{value} pessoas</p>
                       <p className="mt-1 text-[12px] text-white/60">Capacidade sugerida.</p>
                     </button>
                   ))}
                 </div>
-                {!selectedPartySize && (
-                  <p className="mt-3 text-[12px] text-white/60">Escolhe a capacidade para ver horários.</p>
+                {partySizeRules.partySizeRequired && !selectedPartySize && (
+                  <p className="mt-3 text-[12px] text-white/60">
+                    Escolhe a capacidade ({partySizeRules.partySizeMin}-{partySizeRules.partySizeMax}) para ver horários.
+                  </p>
                 )}
                 {hasServiceResourceLinks && availableResources.length === 0 && (
                   <p className="mt-3 text-[12px] text-white/60">Sem recursos disponíveis para este serviço.</p>
@@ -1597,7 +1638,7 @@ export default function ReservasBookingClient({
                     type="button"
                     className={primaryButtonClass}
                     onClick={() => goToStep(3)}
-                    disabled={!selectedPartySize}
+                    disabled={partySizeRules.partySizeRequired && !selectedPartySize}
                   >
                     Continuar
                   </button>
@@ -1740,7 +1781,7 @@ export default function ReservasBookingClient({
                       {!slotsLoading && !selectedDay && (
                         <p className="text-[12px] text-white/60">Escolhe um dia para ver horários.</p>
                       )}
-                      {!slotsLoading && selectedDay && slotGroups.length === 0 && (
+                      {!slotsLoading && !slotsError && selectedDay && slotGroups.length === 0 && (
                         <p className="text-[12px] text-white/60">Sem horários disponíveis.</p>
                       )}
                       {slotGroups.map((group) => (

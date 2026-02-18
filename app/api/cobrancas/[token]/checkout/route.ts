@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { BookingChargeStatus, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { getPlatformFees } from "@/lib/platformSettings";
 import { computePricing } from "@/lib/pricing";
@@ -182,47 +182,64 @@ async function _POST(
       },
     };
 
-    const ensured = await ensurePaymentIntent({
-      purchaseId,
-      orgId: charge.booking.organization.id,
-      sourceType: SourceType.BOOKING,
-      sourceId,
-      amountCents: totalCents,
-      currency,
-      intentParams: {
-        automatic_payment_methods: { enabled: true },
-        description: charge.label || `Cobrança extra reserva ${charge.booking.id}`,
-      },
-      metadata: {
-        bookingChargeId: String(charge.id),
-        bookingId: String(charge.booking.id),
-        orgId: String(charge.booking.organization.id),
-        userId: charge.booking.userId ?? "",
-        platformFeeCents: String(platformFeeCents),
-        feeMode: pricing.feeMode,
-        grossAmountCents: String(totalCents),
-        payoutAmountCents: String(payoutAmountCents),
-        recipientConnectAccountId: isPlatformOrg ? "" : organization.stripeAccountId ?? "",
+    let ensured;
+    try {
+      ensured = await ensurePaymentIntent({
+        purchaseId,
+        orgId: charge.booking.organization.id,
         sourceType: SourceType.BOOKING,
         sourceId,
-        currency,
-        bookingChargeKind: charge.kind,
-      },
-      orgContext: {
-        stripeAccountId: organization.stripeAccountId ?? null,
-        stripeChargesEnabled: organization.stripeChargesEnabled ?? false,
-        stripePayoutsEnabled: organization.stripePayoutsEnabled ?? false,
-        orgType: organization.orgType ?? null,
-      },
-      requireStripe: !isPlatformOrg,
-      resolvedSnapshot,
-      customerIdentityId: charge.booking.userId ?? null,
-      paymentEvent: {
-        userId: charge.booking.userId ?? null,
         amountCents: totalCents,
-        platformFeeCents,
-      },
-    });
+        currency,
+        intentParams: {
+          automatic_payment_methods: { enabled: true },
+          description: charge.label || `Cobrança extra reserva ${charge.booking.id}`,
+        },
+        metadata: {
+          bookingChargeId: String(charge.id),
+          bookingId: String(charge.booking.id),
+          orgId: String(charge.booking.organization.id),
+          userId: charge.booking.userId ?? "",
+          platformFeeCents: String(platformFeeCents),
+          feeMode: pricing.feeMode,
+          grossAmountCents: String(totalCents),
+          payoutAmountCents: String(payoutAmountCents),
+          recipientConnectAccountId: isPlatformOrg ? "" : organization.stripeAccountId ?? "",
+          sourceType: SourceType.BOOKING,
+          sourceId,
+          currency,
+          bookingChargeKind: charge.kind,
+        },
+        orgContext: {
+          stripeAccountId: organization.stripeAccountId ?? null,
+          stripeChargesEnabled: organization.stripeChargesEnabled ?? false,
+          stripePayoutsEnabled: organization.stripePayoutsEnabled ?? false,
+          orgType: organization.orgType ?? null,
+        },
+        requireStripe: !isPlatformOrg,
+        resolvedSnapshot,
+        customerIdentityId: charge.booking.userId ?? null,
+        paymentEvent: {
+          userId: charge.booking.userId ?? null,
+          amountCents: totalCents,
+          platformFeeCents,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH") {
+        return fail(409, "Chave de idempotência reutilizada com um pagamento diferente.", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH", false);
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_TERMINAL") {
+        return fail(409, "Sessão de pagamento expirada. Tenta novamente.", "PAYMENT_INTENT_TERMINAL", true);
+      }
+      if (err instanceof Error && err.message === "PAYMENT_INTENT_RETRIEVE_FAILED") {
+        return fail(503, "Não foi possível retomar o pagamento. Tenta novamente.", "PAYMENT_INTENT_RETRIEVE_FAILED", true);
+      }
+      if (isFinanceConnectNotReadyError(err)) {
+        return fail(409, "Pagamentos indisponíveis: conta Stripe Connect inválida ou inexistente.", "PAYMENTS_NOT_READY", false);
+      }
+      throw err;
+    }
 
     if (!charge.paymentId || !charge.paymentIntentId) {
       await prisma.bookingCharge.update({

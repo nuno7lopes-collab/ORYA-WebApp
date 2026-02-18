@@ -61,12 +61,15 @@ const hashPayload = (payload: Record<string, unknown>) =>
 type TicketTypeUpdate = {
   id: number;
   status?: TicketTypeStatus;
+  publicAccess?: boolean;
 };
 
 type NewTicketType = {
   name: string;
   description?: string | null;
   price: number; // cents
+  publicAccess?: boolean;
+  participantAccess?: boolean;
   totalQuantity?: number | null;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -648,7 +651,7 @@ async function _POST(req: NextRequest) {
     }
 
     const hasDataUpdate = Object.keys(dataUpdate).length > 0;
-    const hasTicketStatusUpdates = ticketTypeUpdates.length > 0;
+    const hasTicketUpdates = ticketTypeUpdates.length > 0;
     const hasNewTickets = newTicketTypes.length > 0;
     const agendaRelevantUpdate =
       dataUpdate.title !== undefined ||
@@ -660,27 +663,29 @@ async function _POST(req: NextRequest) {
     const searchIndexRelevantUpdate = shouldEmitSearchIndexUpdate({
       agendaRelevantUpdate,
       hasNewTickets,
-      hasTicketStatusUpdates,
+      hasTicketStatusUpdates: hasTicketUpdates,
     });
     const eventLogId = searchIndexRelevantUpdate && event.organizationId ? crypto.randomUUID() : null;
 
-    const ticketStatusOps: Array<{ ids: number[]; status: TicketTypeStatus }> = [];
-    if (hasTicketStatusUpdates) {
-      const updatesByStatus = new Map<TicketTypeStatus, number[]>();
+    const ticketUpdateOps: Array<{ id: number; data: Prisma.TicketTypeUpdateInput }> = [];
+    if (hasTicketUpdates) {
+      const updatesById = new Map<number, { status?: TicketTypeStatus; publicAccess?: boolean }>();
       for (const upd of ticketTypeUpdates) {
         const tt = event.ticketTypes.find((t) => t.id === upd.id);
         if (!tt) continue;
+        const current = updatesById.get(tt.id) ?? {};
         const status =
           upd.status && Object.values(TicketTypeStatus).includes(upd.status)
             ? upd.status
             : null;
-        if (!status) continue;
-        const list = updatesByStatus.get(status) ?? [];
-        list.push(tt.id);
-        updatesByStatus.set(status, list);
+        if (status) current.status = status;
+        if (typeof upd.publicAccess === "boolean") current.publicAccess = upd.publicAccess;
+        if (current.status !== undefined || current.publicAccess !== undefined) {
+          updatesById.set(tt.id, current);
+        }
       }
-      updatesByStatus.forEach((ids, status) => {
-        ticketStatusOps.push({ ids, status });
+      updatesById.forEach((data, id) => {
+        ticketUpdateOps.push({ id, data });
       });
     }
 
@@ -707,6 +712,8 @@ async function _POST(req: NextRequest) {
           name: nt.name?.trim() || "Bilhete",
           description: nt.description ?? null,
           price,
+          publicAccess: nt.publicAccess !== false,
+          participantAccess: nt.participantAccess === true,
           totalQuantity,
           status: TicketTypeStatus.ON_SALE,
           startsAt: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt : null,
@@ -729,7 +736,7 @@ async function _POST(req: NextRequest) {
       return fail(400, guard.error);
     }
 
-    if (!hasDataUpdate && !hasTicketStatusUpdates && !hasNewTickets) {
+    if (!hasDataUpdate && !hasTicketUpdates && !hasNewTickets) {
       return fail(400, "Nada para atualizar.");
     }
 
@@ -743,12 +750,12 @@ async function _POST(req: NextRequest) {
           }),
         );
       }
-      if (hasTicketStatusUpdates) {
-        ticketStatusOps.forEach((op) => {
+      if (hasTicketUpdates) {
+        ticketUpdateOps.forEach((op) => {
           txOps.push(
-            tx.ticketType.updateMany({
-              where: { id: { in: op.ids } },
-              data: { status: op.status },
+            tx.ticketType.update({
+              where: { id: op.id },
+              data: op.data,
             }),
           );
         });

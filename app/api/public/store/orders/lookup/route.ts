@@ -75,6 +75,14 @@ function mapCheckoutStatus(status: CheckoutStatus) {
   }
 }
 
+function mapStoreOrderStatusToPaymentStatus(orderStatus: string | null | undefined) {
+  const normalized = String(orderStatus ?? "").toUpperCase();
+  if (normalized === "PAID" || normalized === "FULFILLED") return "PAID";
+  if (normalized === "REFUNDED" || normalized === "PARTIAL_REFUND") return "REFUNDED";
+  if (normalized === "CANCELLED") return "FAILED";
+  return "PROCESSING";
+}
+
 async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
@@ -231,7 +239,7 @@ async function _POST(req: NextRequest) {
     }));
     const statusMap = await resolvePaymentStatusMap(order.purchaseId ? [order.purchaseId] : []);
     const resolved = order.purchaseId ? statusMap.get(order.purchaseId) : null;
-    const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : "PROCESSING";
+    const paymentStatus = resolved ? mapCheckoutStatus(resolved.status) : mapStoreOrderStatusToPaymentStatus(order.status);
 
     const shipments = order.shipments.map((shipment) => ({
       id: shipment.id,

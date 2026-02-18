@@ -7,6 +7,12 @@ import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
+
 async function _POST(req: NextRequest, context: { params: { messageId: string } }) {
   try {
 
@@ -18,7 +24,7 @@ async function _POST(req: NextRequest, context: { params: { messageId: string } 
         id: messageId,
         conversation: {
           organizationId: organization.id,
-          members: { some: { userId: user.id } },
+          members: { some: { userId: user.id, ...ACTIVE_MEMBER_FILTER } },
         },
       },
       select: { id: true },

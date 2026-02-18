@@ -21,6 +21,10 @@ type Service = {
   isActive: boolean;
   kind?: string | null;
   assignmentMode?: ReservationAssignmentMode | null;
+  partySizeRequired?: boolean;
+  partySizeMin?: number;
+  partySizeMax?: number;
+  partySizeStep?: number;
   categoryTag?: string | null;
   coverImageUrl?: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING";

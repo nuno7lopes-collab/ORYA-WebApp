@@ -11,6 +11,11 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 function canExposeAttachment(metadata: Record<string, unknown>) {
   const scanStatusRaw =
@@ -117,6 +122,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { organizationId: organization.id },
       },
       include: {
@@ -300,7 +306,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
 
     const members = includeMembers
       ? await prisma.chatConversationMember.findMany({
-          where: { conversationId },
+          where: { conversationId, ...ACTIVE_MEMBER_FILTER },
           include: {
             user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
             lastReadMessage: { select: { id: true, createdAt: true } },

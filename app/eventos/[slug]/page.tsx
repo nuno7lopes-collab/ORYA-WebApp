@@ -27,6 +27,7 @@ import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { deriveIsFreeEvent } from "@/domain/events/derivedIsFree";
 import { EventAccessMode } from "@prisma/client";
+import { resolveInviteTokenGrant } from "@/lib/invites/inviteTokens";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { resolveLocale, t } from "@/lib/i18n";
 import CrmEngagementTracker from "@/app/components/crm/CrmEngagementTracker";
@@ -248,6 +249,7 @@ export default async function EventPage({
         name: true,
         price: true,
         currency: true,
+        publicAccess: true,
         totalQuantity: true,
         soldQuantity: true,
         startsAt: true,
@@ -320,7 +322,7 @@ export default async function EventPage({
   });
   const visibleTicketTypes = event.ticketTypes;
   const accessPolicy = event.accessPolicies?.[0] ?? null;
-  const accessMode = resolveEventAccessMode(accessPolicy);
+  const accessMode = resolveEventAccessMode(accessPolicy, EventAccessMode.PUBLIC);
   const isInviteRestricted = accessMode === EventAccessMode.INVITE_ONLY;
   const isPublicEvent =
     isPublicAccessMode(accessMode) &&
@@ -328,24 +330,42 @@ export default async function EventPage({
   const userEmailNormalized = user ? normalizeEmail(user.email ?? null) : null;
   const usernameNormalized = profile?.username ? sanitizeUsername(profile.username) : null;
   const hasUsername = Boolean(usernameNormalized);
-  const needsInviteCheck = isInviteRestricted;
-  let isInvited = !needsInviteCheck;
-  if (needsInviteCheck && !isAdmin && user) {
-    const identifiers: string[] = [];
-    if (userEmailNormalized) identifiers.push(userEmailNormalized);
-    if (usernameNormalized) identifiers.push(usernameNormalized);
-    if (identifiers.length > 0) {
-      const invite = await prisma.eventInvite.findFirst({
-        where: { eventId: event.id, targetIdentifier: { in: identifiers }, scope: "PUBLIC" },
-        select: { id: true },
-      });
-      if (invite) {
-        isInvited = true;
-      }
+  const inviteTokenParam =
+    typeof resolvedSearchParams?.inviteToken === "string"
+      ? resolvedSearchParams.inviteToken.trim()
+      : Array.isArray(resolvedSearchParams?.inviteToken)
+        ? String(resolvedSearchParams?.inviteToken[0] ?? "").trim()
+        : "";
+  const inviteIdentifiers: string[] = [];
+  if (userEmailNormalized) inviteIdentifiers.push(userEmailNormalized);
+  if (usernameNormalized) inviteIdentifiers.push(usernameNormalized);
+  const accountInvite =
+    !isAdmin && inviteIdentifiers.length > 0
+      ? await prisma.eventInvite.findFirst({
+          where: { eventId: event.id, targetIdentifier: { in: inviteIdentifiers }, scope: "PUBLIC" },
+          select: { id: true },
+        })
+      : null;
+  const hasAccountInvite = Boolean(accountInvite) || isAdmin;
+  let inviteTokenTicketTypeId: number | null = null;
+  let hasInviteTokenAccess = false;
+  if (inviteTokenParam) {
+    const grant = await resolveInviteTokenGrant(
+      {
+        eventId: event.id,
+        token: inviteTokenParam,
+        emailNormalized: userEmailNormalized ?? undefined,
+      },
+      prisma,
+    );
+    if (grant.ok) {
+      hasInviteTokenAccess = true;
+      inviteTokenTicketTypeId = grant.grant.ticketTypeId ?? null;
     }
-  } else if (needsInviteCheck && isAdmin) {
-    isInvited = true;
   }
+  const hasInviteAccess = hasAccountInvite || hasInviteTokenAccess;
+  const needsInviteCheck = isInviteRestricted;
+  const isInvited = !needsInviteCheck || hasInviteAccess;
   const showInviteGate = isInviteRestricted && !isInvited;
   const canFreeCheckout = Boolean(user) && hasUsername && (!isInviteRestricted || isInvited);
   const allowCheckoutBase = !showInviteGate && (isGratis ? canFreeCheckout : true);
@@ -567,6 +587,11 @@ export default async function EventPage({
               soldQuantity: t.soldQuantity,
             });
 
+    const isPrivateTicket = t.publicAccess === false;
+    const tokenGrantsTicket =
+      hasInviteTokenAccess && (inviteTokenTicketTypeId == null || inviteTokenTicketTypeId === t.id);
+    const canSeePrivateTicket = hasAccountInvite || tokenGrantsTicket;
+
     return {
       id: String(t.id),
       name: t.name?.trim() || `Wave ${index + 1}`,
@@ -584,26 +609,29 @@ export default async function EventPage({
             ? true
             : remaining > 0 && !eventEnded
           : false,
-      isVisible: true,
+      isVisible: !isPrivateTicket || canSeePrivateTicket,
       padelCategoryId: t.padelEventCategoryLink?.padelCategoryId ?? null,
       padelCategoryLabel: t.padelEventCategoryLink?.category?.label ?? null,
       padelCategoryLinkId: t.padelEventCategoryLinkId ?? null,
     };
   });
 
+  const marketTickets = uiTickets.filter((ticket) => ticket.isVisible);
+  const hiddenPrivateTickets = uiTickets.filter((ticket) => !ticket.isVisible);
+
   const minTicketPrice =
-    uiTickets.length > 0
-      ? uiTickets.reduce(
+    marketTickets.length > 0
+      ? marketTickets.reduce(
           (min, t) => (t.price < min ? t.price : min),
-          uiTickets[0].price,
+          marketTickets[0].price,
         )
       : null;
 
   const displayPriceFrom = minTicketPrice;
-  const anyOnSale = uiTickets.some((t) => t.status === "on_sale");
-  const anyUpcoming = uiTickets.some((t) => t.status === "upcoming");
-  const allClosed = uiTickets.length > 0 && uiTickets.every((t) => t.status === "closed");
-  const allSoldOut = uiTickets.length > 0 && uiTickets.every((t) => t.status === "sold_out");
+  const anyOnSale = marketTickets.some((t) => t.status === "on_sale");
+  const anyUpcoming = marketTickets.some((t) => t.status === "upcoming");
+  const allClosed = marketTickets.length > 0 && marketTickets.every((t) => t.status === "closed");
+  const allSoldOut = marketTickets.length > 0 && marketTickets.every((t) => t.status === "sold_out");
   const availabilityLabel = eventEnded
     ? t("availabilityEventEnded", locale)
     : allSoldOut
@@ -1147,10 +1175,21 @@ export default async function EventPage({
                                     <p className="text-[11px] text-amber-100/85">{padelRegistrationMessage}</p>
                                   </div>
                                 </div>
-                              ) : uiTickets.length === 0 ? (
-                                <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
-                                  {t("noTicketWaves", locale)}
-                                </div>
+                              ) : marketTickets.length === 0 ? (
+                                hiddenPrivateTickets.length > 0 ? (
+                                  <div className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-sm text-amber-100">
+                                    <div>
+                                      <p className="font-semibold">{t("inviteAccessLabel", locale)}</p>
+                                      <p className="text-[11px] text-amber-100/85">
+                                        Existem {ticketCopy.plural} privados para convidados.
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="rounded-xl border border-white/12 bg-black/45 px-3.5 py-2.5 text-sm text-white/80">
+                                    {t("noTicketWaves", locale)}
+                                  </div>
+                                )
                               ) : allSoldOut ? (
                                 <div className="rounded-xl border border-orange-400/40 bg-orange-500/15 px-3.5 py-2.5 text-sm text-orange-100">
                                   <div>
@@ -1181,7 +1220,7 @@ export default async function EventPage({
                               ) : (
                                 <WavesSectionClient
                                   slug={event.slug}
-                                  tickets={uiTickets}
+                                  tickets={marketTickets}
                                   isGratisEvent={isGratis}
                                   checkoutUiVariant={checkoutVariant}
                                   locale={locale}
@@ -1359,7 +1398,7 @@ export default async function EventPage({
 
         <EventPageClient
           slug={event.slug}
-          uiTickets={uiTickets}
+          uiTickets={marketTickets}
           checkoutUiVariant={checkoutVariant === "PADEL" ? "PADEL" : "DEFAULT"}
           locale={locale}
           eventIsActive={eventIsActive}

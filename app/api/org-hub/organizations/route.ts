@@ -117,6 +117,8 @@ async function _POST(req: NextRequest) {
     }
 
     const normalizedBody = body as Record<string, unknown>;
+    const existingGroupId =
+      parsed.data.groupMode === "EXISTING_GROUP" ? parsed.data.existingGroupId ?? null : null;
     const organization = await createOrganizationAtomic({
       businessName: parsed.data.businessName,
       publicName: typeof normalizedBody.publicName === "string" ? normalizedBody.publicName : parsed.data.businessName,
@@ -126,6 +128,7 @@ async function _POST(req: NextRequest) {
       primaryModule: parsed.data.primaryModule,
       modules: parsed.data.modules,
       publicWebsite: typeof normalizedBody.publicWebsite === "string" ? normalizedBody.publicWebsite : null,
+      existingGroupId,
     });
 
     return respondOk(
@@ -169,6 +172,12 @@ async function _POST(req: NextRequest) {
       }
       if (message === "PROFILE_NOT_FOUND") {
         return fail(ctx, 404, message);
+      }
+      if (message === "GROUP_NOT_FOUND") {
+        return fail(ctx, 404, message);
+      }
+      if (message === "GROUP_ACCESS_DENIED") {
+        return fail(ctx, 403, message);
       }
       if (message === "AUTH_REQUIRED") {
         return fail(ctx, 401, "UNAUTHENTICATED");

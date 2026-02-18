@@ -18,6 +18,11 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.SERVICE,
 ];
 const UNDO_WINDOW_MS = 2 * 60 * 1000;
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 async function _DELETE(req: NextRequest, context: { params: { conversationId: string; messageId: string } }) {
   try {
@@ -31,13 +36,43 @@ async function _DELETE(req: NextRequest, context: { params: { conversationId: st
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
-      select: { conversationId: true },
+      select: {
+        conversationId: true,
+        conversation: {
+          select: {
+            contextType: true,
+            members: {
+              where: ACTIVE_MEMBER_FILTER,
+              select: { userId: true },
+            },
+          },
+        },
+      },
     });
 
     if (!membership) {
       return jsonWrap({ error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    if (membership.conversation.contextType === ChatConversationContextType.USER_DM) {
+      const peerId = membership.conversation.members.find((entry) => entry.userId !== user.id)?.userId ?? null;
+      if (peerId) {
+        const block = await prisma.chatUserBlock.findFirst({
+          where: {
+            OR: [
+              { blockerId: user.id, blockedId: peerId },
+              { blockerId: peerId, blockedId: user.id },
+            ],
+          },
+          select: { id: true },
+        });
+        if (block) {
+          return jsonWrap({ error: "CHAT_BLOCKED" }, { status: 403 });
+        }
+      }
     }
 
     const message = await prisma.chatConversationMessage.findFirst({

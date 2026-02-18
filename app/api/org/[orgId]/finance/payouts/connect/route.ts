@@ -7,7 +7,9 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import {
   createAccountLink,
   createStripeAccount,
+  retrieveStripeAccount,
 } from "@/domain/finance/gateway/stripeGateway";
+import { isValidStripeAccountId } from "@/domain/finance/stripeConnectStatus";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
@@ -17,6 +19,11 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+
+function isStripeResourceMissing(err: unknown) {
+  const anyErr = err as { code?: string; statusCode?: number };
+  return anyErr?.code === "resource_missing" || anyErr?.statusCode === 404;
+}
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
@@ -105,7 +112,49 @@ async function _POST(req: NextRequest) {
       );
     }
 
-    let accountId = organization.stripeAccountId;
+    let accountId = typeof organization.stripeAccountId === "string" ? organization.stripeAccountId.trim() : "";
+    if (accountId && !isValidStripeAccountId(accountId)) {
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: null,
+          stripeChargesEnabled: false,
+          stripePayoutsEnabled: false,
+        },
+      });
+      accountId = "";
+    }
+
+    if (accountId) {
+      try {
+        const account = await retrieveStripeAccount(accountId);
+        if ("deleted" in account && account.deleted) {
+          await prisma.organization.update({
+            where: { id: organization.id },
+            data: {
+              stripeAccountId: null,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+            },
+          });
+          accountId = "";
+        }
+      } catch (err) {
+        if (isStripeResourceMissing(err)) {
+          await prisma.organization.update({
+            where: { id: organization.id },
+            data: {
+              stripeAccountId: null,
+              stripeChargesEnabled: false,
+              stripePayoutsEnabled: false,
+            },
+          });
+          accountId = "";
+        } else {
+          throw err;
+        }
+      }
+    }
 
     if (!accountId) {
       const account = await createStripeAccount({
@@ -138,12 +187,47 @@ async function _POST(req: NextRequest) {
     const baseUrl = getAppBaseUrl();
     const refreshPath = buildOrgHref(organization.id, "/finance", { onboarding: "refresh" });
     const returnPath = buildOrgHref(organization.id, "/finance", { onboarding: "done" });
-    const link = await createAccountLink({
-      account: accountId,
-      refresh_url: `${baseUrl}${refreshPath}`,
-      return_url: `${baseUrl}${returnPath}`,
-      type: "account_onboarding",
-    });
+    let link;
+    try {
+      link = await createAccountLink({
+        account: accountId,
+        refresh_url: `${baseUrl}${refreshPath}`,
+        return_url: `${baseUrl}${returnPath}`,
+        type: "account_onboarding",
+      });
+    } catch (err) {
+      // Conta inválida/stale (ex.: apagada) não deve rebentar com 500.
+      if (!isStripeResourceMissing(err)) throw err;
+      const account = await createStripeAccount({
+        type: "express",
+        country: "PT",
+        email: user.email ?? undefined,
+        business_type: "individual",
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
+        metadata: {
+          organizationId: String(organization.id),
+          userId: profile.id,
+        },
+      });
+      accountId = account.id;
+      await prisma.organization.update({
+        where: { id: organization.id },
+        data: {
+          stripeAccountId: accountId,
+          stripeChargesEnabled: account.charges_enabled ?? false,
+          stripePayoutsEnabled: account.payouts_enabled ?? false,
+        },
+      });
+      link = await createAccountLink({
+        account: accountId,
+        refresh_url: `${baseUrl}${refreshPath}`,
+        return_url: `${baseUrl}${returnPath}`,
+        type: "account_onboarding",
+      });
+    }
 
     return respondOk(
       ctx,

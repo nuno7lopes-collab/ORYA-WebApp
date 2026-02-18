@@ -321,10 +321,12 @@
         "undoExpired": "Ya no es posible deshacer este mensaje.",
         "undoFailed": "No se pudo deshacer el mensaje.",
         "muteFailed": "No se pudo silenciar el chat.",
-        "muteUpdateFailed": "No se pudo actualizar la configuración.",
-        "readOnly": "Este chat está en modo solo lectura.",
-        "participantsOnly": "El chat solo está disponible para participantes.",
-        "signInRequired": "Inicia sesión para acceder al chat."
+      "muteUpdateFailed": "No se pudo actualizar la configuración.",
+      "readOnly": "Este chat está en modo solo lectura.",
+      "blocked": "Esta conversación está bloqueada.",
+      "banned": "Acceso bloqueado a esta conversación.",
+      "participantsOnly": "El chat solo está disponible para participantes.",
+      "signInRequired": "Inicia sesión para acceder al chat."
       },
       "mute": {
         "title": "Silenciar conversación",

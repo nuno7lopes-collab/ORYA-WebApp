@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: orya-postgres-local
+    environment:
+      POSTGRES_DB: orya_local
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - orya_postgres_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orya_local"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  orya_postgres_local:

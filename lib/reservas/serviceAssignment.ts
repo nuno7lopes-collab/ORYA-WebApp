@@ -3,7 +3,7 @@ export type ReservationAssignmentMode =
   | "RESOURCE_ONLY"
   | "PROFESSIONAL_AND_RESOURCE";
 
-export type ReservationAssignmentAvailabilityMode = "PROFESSIONAL" | "RESOURCE";
+export type ReservationAssignmentAvailabilityMode = "PROFESSIONAL" | "RESOURCE" | "HYBRID";
 
 export function normalizeReservationAssignmentMode(
   value?: string | null,
@@ -26,6 +26,11 @@ export function requiresResourceForAssignmentMode(mode?: string | null) {
   return normalized === "RESOURCE_ONLY" || normalized === "PROFESSIONAL_AND_RESOURCE";
 }
 
+export function requiresPartySizeForAssignmentMode(mode?: string | null) {
+  const normalized = normalizeReservationAssignmentMode(mode);
+  return normalized === "RESOURCE_ONLY" || normalized === "PROFESSIONAL_AND_RESOURCE";
+}
+
 export function resolveServiceAssignmentMode(params: {
   organizationMode?: string | null;
   serviceMode?: string | null;
@@ -37,8 +42,17 @@ export function resolveServiceAssignmentMode(params: {
   const requiresResource = requiresResourceForAssignmentMode(assignmentMode);
   const serviceKind = typeof params.serviceKind === "string" ? params.serviceKind.trim().toUpperCase() : "";
   const isCourtService = serviceKind === "COURT";
-  const mode: ReservationAssignmentAvailabilityMode = requiresResource ? "RESOURCE" : "PROFESSIONAL";
+  const availabilityMode: ReservationAssignmentAvailabilityMode =
+    requiresProfessional && requiresResource
+      ? "HYBRID"
+      : requiresResource
+        ? "RESOURCE"
+        : "PROFESSIONAL";
+  // Backward-compatibility alias for legacy callers that still expect binary mode.
+  const mode: Exclude<ReservationAssignmentAvailabilityMode, "HYBRID"> =
+    availabilityMode === "PROFESSIONAL" ? "PROFESSIONAL" : "RESOURCE";
   return {
+    availabilityMode,
     mode,
     assignmentMode,
     organizationMode,

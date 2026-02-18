@@ -10,7 +10,14 @@ import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type Sco
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
-import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
+import { resolveServicePartySizeRules, validateRequestedPartySize } from "@/lib/reservas/servicePartySize";
+import {
+  buildHybridSlotMatrix,
+  selectBestHybridPairForSlot,
+  type HybridProfessionalScope,
+  type HybridResourceScope,
+} from "@/lib/reservas/hybridAssignment";
 import {
   AddressSourceProvider,
   OrganizationMemberRole,
@@ -565,6 +572,10 @@ async function _POST(req: NextRequest) {
         title: true,
         kind: true,
         assignmentMode: true,
+        partySizeRequired: true,
+        partySizeMin: true,
+        partySizeMax: true,
+        partySizeStep: true,
         durationMinutes: true,
         unitPriceCents: true,
         currency: true,
@@ -609,8 +620,16 @@ async function _POST(req: NextRequest) {
       serviceMode: service.assignmentMode ?? null,
       serviceKind: service.kind ?? null,
     });
-    const assignmentMode = assignmentConfig.mode;
+    const availabilityMode = assignmentConfig.availabilityMode;
     const bookingAssignmentMode = assignmentConfig.assignmentMode;
+    const partySizeRules = resolveServicePartySizeRules({
+      assignmentMode: bookingAssignmentMode,
+      serviceKind: service.kind ?? null,
+      partySizeRequired: service.partySizeRequired,
+      partySizeMin: service.partySizeMin,
+      partySizeMax: service.partySizeMax,
+      partySizeStep: service.partySizeStep,
+    });
     const allowedProfessionalIds = service.professionalLinks.length
       ? service.professionalLinks
           .filter((link) => link.professional?.isActive)
@@ -621,39 +640,28 @@ async function _POST(req: NextRequest) {
           .filter((link) => link.resource?.isActive)
           .map((link) => link.resourceId)
       : null;
-    const allowedCourtIdsFromService = service.resourceLinks.length
-      ? service.resourceLinks
-          .filter((link) => link.resource?.isActive && (link.resource?.courtId ?? null) != null)
-          .map((link) => link.resource?.courtId)
-          .filter((value): value is number => typeof value === "number" && value > 0)
-      : null;
     let professionalId: number | null = null;
     let resourceId: number | null = null;
     let bookingCourtId: number | null = null;
-    let partySize: number | null = null;
-    const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
+    const partySizeValidation = validateRequestedPartySize({
+      requested: partySizeRaw,
+      rules: partySizeRules,
+    });
+    if (!partySizeValidation.ok) {
+      return fail(ctx, 400, partySizeValidation.errorCode, partySizeValidation.message, { partySizeRules });
+    }
+    const partySize: number | null = partySizeValidation.partySize;
+
+    const scopeType: AvailabilityScopeType = availabilityMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
     let scopeIds: number[] = [];
     const resourceCourtById = new Map<number, number | null>();
-    const enforceServiceResourceLinks = !assignmentConfig.isCourtService;
+    let professionalScopes: HybridProfessionalScope[] = [];
+    let resourceScopes: HybridResourceScope[] = [];
 
-    if (!assignmentConfig.isCourtService && (partySizeRaw || resourceIdRaw || courtIdRaw)) {
-      const blocked = getResourceModeBlockedPayload();
-      return fail(
-        ctx,
-        409,
-        blocked.error ?? "RESOURCE_MODE_NOT_ALLOWED",
-        blocked.message ?? "Este serviço não permite reservas por recurso.",
-      );
-    }
-
-    if (assignmentMode === "RESOURCE") {
-      if (!partySizeRaw) {
-        return fail(ctx, 400, "CAPACITY_REQUIRED", "Capacidade obrigatória.");
-      }
-      if (enforceServiceResourceLinks && allowedResourceIds && allowedResourceIds.length === 0) {
+    if (availabilityMode === "RESOURCE") {
+      if (allowedResourceIds && allowedResourceIds.length === 0) {
         return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para este serviço.");
       }
-      partySize = partySizeRaw;
 
       if (resourceIdRaw || (assignmentConfig.isCourtService && courtIdRaw)) {
         const selectedResource = await prisma.reservationResource.findFirst({
@@ -661,8 +669,10 @@ async function _POST(req: NextRequest) {
             organizationId: service.organizationId,
             isActive: true,
             ...(resourceIdRaw ? { id: resourceIdRaw } : { courtId: courtIdRaw }),
+            ...(partySize != null ? { capacity: { gte: partySize } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
           },
-          select: { id: true, capacity: true, courtId: true },
+          select: { id: true, capacity: true, priority: true, courtId: true },
         });
         if (!selectedResource) {
           if (assignmentConfig.isCourtService && courtIdRaw) {
@@ -678,16 +688,6 @@ async function _POST(req: NextRequest) {
           if (courtIdRaw && selectedResource.courtId !== courtIdRaw) {
             return fail(ctx, 409, "COURT_RESOURCE_MISMATCH", "Recurso não corresponde ao campo selecionado.");
           }
-          if (
-            allowedCourtIdsFromService &&
-            allowedCourtIdsFromService.length > 0 &&
-            !allowedCourtIdsFromService.includes(selectedResource.courtId) &&
-            !(allowedResourceIds?.includes(selectedResource.id) ?? false)
-          ) {
-            return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
-          }
-        } else if (enforceServiceResourceLinks && allowedResourceIds && !allowedResourceIds.includes(selectedResource.id)) {
-          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
         }
 
         if (isStaff) {
@@ -700,7 +700,7 @@ async function _POST(req: NextRequest) {
           }
         }
 
-        if (selectedResource.capacity < partySize) {
+        if (partySize != null && selectedResource.capacity < partySize) {
           return fail(ctx, 400, "RESOURCE_CAPACITY_EXCEEDED", "Capacidade acima do recurso.");
         }
 
@@ -718,13 +718,13 @@ async function _POST(req: NextRequest) {
           where: {
             organizationId: service.organizationId,
             isActive: true,
-            capacity: { gte: partySize },
+            ...(partySize != null ? { capacity: { gte: partySize } } : {}),
             ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
-            ...(enforceServiceResourceLinks && allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
             ...(scopeIds.length ? { id: { in: scopeIds } } : {}),
           },
           orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
-          select: { id: true, courtId: true },
+          select: { id: true, capacity: true, priority: true, courtId: true },
         });
         resources.forEach((resource) => {
           resourceCourtById.set(resource.id, resource.courtId ?? null);
@@ -734,7 +734,10 @@ async function _POST(req: NextRequest) {
           return fail(ctx, 409, "RESOURCES_UNAVAILABLE", "Sem recursos disponíveis para esta capacidade.");
         }
       }
-    } else {
+    } else if (availabilityMode === "PROFESSIONAL") {
+      if (resourceIdRaw || courtIdRaw || partySizeRaw) {
+        return fail(ctx, 400, "RESOURCE_NOT_ALLOWED", "Este serviço não aceita recurso/capacidade neste fluxo.");
+      }
       if (professionalIdRaw) {
         if (memberScopes?.professionalIds?.length) {
           if (!memberScopes.professionalIds.includes(professionalIdRaw)) {
@@ -756,12 +759,13 @@ async function _POST(req: NextRequest) {
         }
         const professional = await prisma.reservationProfessional.findFirst({
           where: { id: professionalIdRaw, organizationId: service.organizationId, isActive: true },
-          select: { id: true },
+          select: { id: true, priority: true },
         });
         if (!professional) {
           return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
         }
         professionalId = professional.id;
+        professionalScopes = [{ id: professional.id, priority: professional.priority }];
         scopeIds = [professional.id];
       } else {
         if (memberScopes?.professionalIds?.length) {
@@ -782,17 +786,142 @@ async function _POST(req: NextRequest) {
             ...(scopeIds.length ? { id: { in: scopeIds } } : {}),
           },
           orderBy: [{ priority: "asc" }, { id: "asc" }],
-          select: { id: true },
+          select: { id: true, priority: true },
         });
+        professionalScopes = professionals.map((professional) => ({ id: professional.id, priority: professional.priority }));
         scopeIds = professionals.map((professional) => professional.id);
+      }
+    } else {
+      if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
+        return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Serviço híbrido sem profissionais disponíveis.");
+      }
+      if (allowedResourceIds && allowedResourceIds.length === 0) {
+        return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Serviço híbrido sem recursos disponíveis.");
+      }
+
+      if (professionalIdRaw) {
+        if (memberScopes?.professionalIds?.length) {
+          if (!memberScopes.professionalIds.includes(professionalIdRaw)) {
+            return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+          }
+        } else if (isStaff) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+        if (isCoach) {
+          const allowedTrainers = memberScopes?.professionalIds?.length
+            ? intersectIds(trainerProfessionalIds, memberScopes.professionalIds)
+            : trainerProfessionalIds;
+          if (!allowedTrainers.includes(professionalIdRaw)) {
+            return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+          }
+        }
+        if (allowedProfessionalIds && !allowedProfessionalIds.includes(professionalIdRaw)) {
+          return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
+        }
+        const professional = await prisma.reservationProfessional.findFirst({
+          where: { id: professionalIdRaw, organizationId: service.organizationId, isActive: true },
+          select: { id: true, priority: true },
+        });
+        if (!professional) {
+          return fail(ctx, 404, "PROFESSIONAL_INVALID", "Profissional inválido.");
+        }
+        professionalScopes = [{ id: professional.id, priority: professional.priority }];
+      } else {
+        let scopedProfessionalIds: number[] = [];
+        if (memberScopes?.professionalIds?.length) {
+          scopedProfessionalIds = memberScopes.professionalIds;
+        } else if (isCoach) {
+          scopedProfessionalIds = trainerProfessionalIds;
+        } else if (isStaff) {
+          return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+        }
+        const professionals = await prisma.reservationProfessional.findMany({
+          where: {
+            organizationId: service.organizationId,
+            isActive: true,
+            ...(allowedProfessionalIds ? { id: { in: allowedProfessionalIds } } : {}),
+            ...(scopedProfessionalIds.length ? { id: { in: scopedProfessionalIds } } : {}),
+          },
+          orderBy: [{ priority: "asc" }, { id: "asc" }],
+          select: { id: true, priority: true },
+        });
+        professionalScopes = professionals.map((professional) => ({ id: professional.id, priority: professional.priority }));
+      }
+
+      if (professionalScopes.length === 0) {
+        return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Serviço híbrido sem profissionais configurados.");
+      }
+
+      const scopedResourceIds: number[] = memberScopes?.resourceIds?.length ? memberScopes.resourceIds : [];
+      if (isStaff && scopedResourceIds.length === 0) {
+        return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
+      }
+
+      if (resourceIdRaw || (assignmentConfig.isCourtService && courtIdRaw)) {
+        const selectedResource = await prisma.reservationResource.findFirst({
+          where: {
+            organizationId: service.organizationId,
+            isActive: true,
+            ...(resourceIdRaw ? { id: resourceIdRaw } : { courtId: courtIdRaw }),
+            ...(partySize != null ? { capacity: { gte: partySize } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(scopedResourceIds.length ? { id: { in: scopedResourceIds } } : {}),
+          },
+          orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
+          select: { id: true, capacity: true, priority: true, courtId: true },
+        });
+        if (!selectedResource) {
+          if (assignmentConfig.isCourtService && courtIdRaw) {
+            return fail(ctx, 404, "COURT_INVALID", "Campo inválido.");
+          }
+          return fail(ctx, 404, "RESOURCE_INVALID", "Recurso inválido.");
+        }
+        if (assignmentConfig.isCourtService && !selectedResource.courtId) {
+          return fail(ctx, 409, "COURT_RESOURCE_INVALID", "Recurso sem ligação canónica a campo.");
+        }
+        resourceScopes = [
+          {
+            id: selectedResource.id,
+            capacity: selectedResource.capacity,
+            priority: selectedResource.priority,
+            courtId: selectedResource.courtId ?? null,
+          },
+        ];
+        resourceCourtById.set(selectedResource.id, selectedResource.courtId ?? null);
+      } else {
+        const resources = await prisma.reservationResource.findMany({
+          where: {
+            organizationId: service.organizationId,
+            isActive: true,
+            ...(partySize != null ? { capacity: { gte: partySize } } : {}),
+            ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+            ...(allowedResourceIds ? { id: { in: allowedResourceIds } } : {}),
+            ...(scopedResourceIds.length ? { id: { in: scopedResourceIds } } : {}),
+          },
+          orderBy: [{ capacity: "asc" }, { priority: "asc" }, { id: "asc" }],
+          select: { id: true, capacity: true, priority: true, courtId: true },
+        });
+        resourceScopes = resources.map((resource) => ({
+          id: resource.id,
+          capacity: resource.capacity,
+          priority: resource.priority,
+          courtId: resource.courtId ?? null,
+        }));
+        resources.forEach((resource) => {
+          resourceCourtById.set(resource.id, resource.courtId ?? null);
+        });
+      }
+
+      if (resourceScopes.length === 0) {
+        return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Serviço híbrido sem recursos configurados.");
       }
     }
 
-    if (assignmentMode === "PROFESSIONAL" && scopeIds.length === 0) {
+    if (availabilityMode === "PROFESSIONAL" && scopeIds.length === 0) {
       return fail(ctx, 409, "PROFESSIONALS_MISSING", "Sem profissionais configurados.");
     }
 
-    if (assignmentMode === "RESOURCE" && scopeIds.length === 0) {
+    if (availabilityMode === "RESOURCE" && scopeIds.length === 0) {
       return fail(ctx, 409, "RESOURCES_MISSING", "Sem recursos configurados.");
     }
 
@@ -801,14 +930,35 @@ async function _POST(req: NextRequest) {
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
     const conflictWindowStart = getConflictWindowStart(dayStart);
 
-    if (scopeIds.length === 0) {
+    if (availabilityMode !== "HYBRID" && scopeIds.length === 0) {
       return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
     }
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
+    const professionalScopeIds =
+      availabilityMode === "HYBRID"
+        ? professionalScopes.map((scope) => scope.id)
+        : availabilityMode === "PROFESSIONAL"
+          ? scopeIds
+          : [];
+    const resourceScopeIds =
+      availabilityMode === "HYBRID"
+        ? resourceScopes.map((scope) => scope.id)
+        : availabilityMode === "RESOURCE"
+          ? scopeIds
+          : [];
     const scopedConflictFilter =
-      assignmentMode === "RESOURCE" ? { resourceId: { in: scopeIds } } : { professionalId: { in: scopeIds } };
+      availabilityMode === "RESOURCE"
+        ? { resourceId: { in: resourceScopeIds } }
+        : availabilityMode === "PROFESSIONAL"
+          ? { professionalId: { in: professionalScopeIds } }
+          : {
+              OR: [
+                { professionalId: { in: professionalScopeIds } },
+                { resourceId: { in: resourceScopeIds } },
+              ],
+            };
     const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
@@ -816,10 +966,17 @@ async function _POST(req: NextRequest) {
           ...(shouldUseOrgOnly
             ? { scopeType: "ORGANIZATION", scopeId: 0 }
             : {
-                OR: [
-                  { scopeType: "ORGANIZATION", scopeId: 0 },
-                  { scopeType, scopeId: { in: scopeIds } },
-                ],
+                OR:
+                  availabilityMode === "HYBRID"
+                    ? [
+                        { scopeType: "ORGANIZATION", scopeId: 0 },
+                        { scopeType: "PROFESSIONAL", scopeId: { in: professionalScopeIds } },
+                        { scopeType: "RESOURCE", scopeId: { in: resourceScopeIds } },
+                      ]
+                    : [
+                        { scopeType: "ORGANIZATION", scopeId: 0 },
+                        { scopeType, scopeId: { in: scopeIds } },
+                      ],
               }),
         },
         select: { scopeType: true, scopeId: true, dayOfWeek: true, intervals: true },
@@ -830,10 +987,17 @@ async function _POST(req: NextRequest) {
           ...(shouldUseOrgOnly
             ? { scopeType: "ORGANIZATION", scopeId: 0 }
             : {
-                OR: [
-                  { scopeType: "ORGANIZATION", scopeId: 0 },
-                  { scopeType, scopeId: { in: scopeIds } },
-                ],
+                OR:
+                  availabilityMode === "HYBRID"
+                    ? [
+                        { scopeType: "ORGANIZATION", scopeId: 0 },
+                        { scopeType: "PROFESSIONAL", scopeId: { in: professionalScopeIds } },
+                        { scopeType: "RESOURCE", scopeId: { in: resourceScopeIds } },
+                      ]
+                    : [
+                        { scopeType: "ORGANIZATION", scopeId: 0 },
+                        { scopeType, scopeId: { in: scopeIds } },
+                      ],
               }),
           date: new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day)),
         },
@@ -852,14 +1016,14 @@ async function _POST(req: NextRequest) {
         },
         select: { id: true, startsAt: true, durationMinutes: true, professionalId: true, resourceId: true },
       }),
-      assignmentMode === "PROFESSIONAL"
+      availabilityMode === "PROFESSIONAL" || availabilityMode === "HYBRID"
         ? prisma.classSession.findMany({
             where: {
               organizationId: service.organizationId,
               status: "SCHEDULED",
               startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
               endsAt: { gt: conflictWindowStart },
-              ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
+              ...(professionalScopeIds.length > 0 ? { professionalId: { in: professionalScopeIds } } : {}),
             },
             select: { id: true, startsAt: true, endsAt: true, professionalId: true },
           })
@@ -873,34 +1037,70 @@ async function _POST(req: NextRequest) {
     const blocks = [...buildBlocks(blockingBookings), ...buildSessionBlocks(classSessions)];
 
     const slotKey = startsAt.toISOString();
-    const scopesToCheck = shouldUseOrgOnly
-      ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0, assignable: false }]
-      : scopeIds.map((id) => ({ scopeType, scopeId: id, assignable: true }));
     let slotIsAvailable = false;
     let assignedScopeId: number | null = null;
 
-    for (const scope of scopesToCheck) {
-      const slots = getAvailableSlotsForScope({
+    if (availabilityMode === "HYBRID") {
+      const matrix = buildHybridSlotMatrix({
         rangeStart: dayStart,
         rangeEnd: dayEnd,
         timezone,
         durationMinutes: service.durationMinutes,
         stepMinutes: SLOT_STEP_MINUTES,
         now,
-        scopeType: scope.scopeType,
-        scopeId: scope.scopeId,
+        professionals: professionalScopes,
+        resources: resourceScopes,
         orgTemplates: orgTemplates as ScopedTemplate[],
         orgOverrides: orgOverrides as ScopedOverride[],
         templatesByScope,
         overridesByScope,
         blocks,
       });
-      if (slots.some((slot) => slot.startsAt.toISOString() === slotKey)) {
-        slotIsAvailable = true;
-        if (scope.assignable) {
-          assignedScopeId = scope.scopeId;
+      const pair = selectBestHybridPairForSlot({
+        slotKey,
+        professionals: professionalScopes,
+        resources: resourceScopes,
+        professionalSlotKeysById: matrix.professionalSlotKeysById,
+        resourceSlotKeysById: matrix.resourceSlotKeysById,
+      });
+      if (!pair) {
+        return fail(ctx, 409, "SLOT_UNAVAILABLE", "Horário indisponível.");
+      }
+      slotIsAvailable = true;
+      professionalId = pair.professionalId;
+      resourceId = pair.resourceId;
+      bookingCourtId = assignmentConfig.isCourtService ? pair.courtId : null;
+      if (assignmentConfig.isCourtService && !bookingCourtId) {
+        return fail(ctx, 409, "SERVICE_CONFIG_INVALID", "Par híbrido sem ligação a campo.");
+      }
+    } else {
+      const scopesToCheck = shouldUseOrgOnly
+        ? [{ scopeType: "ORGANIZATION" as const, scopeId: 0, assignable: false }]
+        : scopeIds.map((id) => ({ scopeType, scopeId: id, assignable: true }));
+
+      for (const scope of scopesToCheck) {
+        const slots = getAvailableSlotsForScope({
+          rangeStart: dayStart,
+          rangeEnd: dayEnd,
+          timezone,
+          durationMinutes: service.durationMinutes,
+          stepMinutes: SLOT_STEP_MINUTES,
+          now,
+          scopeType: scope.scopeType,
+          scopeId: scope.scopeId,
+          orgTemplates: orgTemplates as ScopedTemplate[],
+          orgOverrides: orgOverrides as ScopedOverride[],
+          templatesByScope,
+          overridesByScope,
+          blocks,
+        });
+        if (slots.some((slot) => slot.startsAt.toISOString() === slotKey)) {
+          slotIsAvailable = true;
+          if (scope.assignable) {
+            assignedScopeId = scope.scopeId;
+          }
+          break;
         }
-        break;
       }
     }
 
@@ -908,13 +1108,13 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 409, "SLOT_UNAVAILABLE", "Horário indisponível.");
     }
 
-    if (assignmentMode === "RESOURCE" && !resourceId && assignedScopeId) {
+    if (availabilityMode === "RESOURCE" && !resourceId && assignedScopeId) {
       resourceId = assignedScopeId;
     }
-    if (assignmentMode === "PROFESSIONAL" && !professionalId && assignedScopeId) {
+    if (availabilityMode === "PROFESSIONAL" && !professionalId && assignedScopeId) {
       professionalId = assignedScopeId;
     }
-    if (assignmentMode === "RESOURCE" && resourceId) {
+    if ((availabilityMode === "RESOURCE" || availabilityMode === "HYBRID") && resourceId && bookingCourtId == null) {
       let linkedCourtId = resourceCourtById.get(resourceId) ?? null;
       if (linkedCourtId == null) {
         const resource = await prisma.reservationResource.findUnique({
@@ -929,42 +1129,84 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const scopeIdForConflict = assignmentMode === "RESOURCE" ? resourceId : professionalId;
-    if (!scopeIdForConflict) {
-      const conflict = agendaConflictResponse();
-      return fail(ctx, 503, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
-    }
-
     const candidate: AgendaCandidate = {
       type: "BOOKING",
       sourceId: `booking:new:${service.id}:${startsAt.toISOString()}`,
       startsAt,
       endsAt: bookingEndsAt,
     };
-    const existing: AgendaCandidate[] = blockingBookings
-      .filter((booking) =>
-        assignmentMode === "RESOURCE" ? booking.resourceId === scopeIdForConflict : booking.professionalId === scopeIdForConflict,
-      )
-      .map((booking) => ({
-        type: "BOOKING" as const,
-        sourceId: String(booking.id),
-        startsAt: booking.startsAt,
-        endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
-      }));
-    classSessions.forEach((session) => {
-      if (assignmentMode === "RESOURCE") return;
-      if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
-      existing.push({
-        type: "BOOKING",
-        sourceId: `class:${session.id}`,
-        startsAt: session.startsAt,
-        endsAt: session.endsAt,
+    if (availabilityMode === "HYBRID") {
+      if (!professionalId || !resourceId) {
+        const conflict = agendaConflictResponse();
+        return fail(ctx, 503, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      }
+      const existingProfessional: AgendaCandidate[] = blockingBookings
+        .filter((booking) => booking.professionalId === professionalId)
+        .map((booking) => ({
+          type: "BOOKING" as const,
+          sourceId: String(booking.id),
+          startsAt: booking.startsAt,
+          endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+        }));
+      classSessions.forEach((session) => {
+        if (!session.professionalId || session.professionalId !== professionalId) return;
+        existingProfessional.push({
+          type: "BOOKING",
+          sourceId: `class:${session.id}`,
+          startsAt: session.startsAt,
+          endsAt: session.endsAt,
+        });
       });
-    });
-    const decision = evaluateCandidate({ candidate, existing });
-    if (!decision.allowed) {
-      const conflict = agendaConflictResponse(decision);
-      return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      const professionalDecision = evaluateCandidate({ candidate, existing: existingProfessional });
+      if (!professionalDecision.allowed) {
+        const conflict = agendaConflictResponse(professionalDecision);
+        return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      }
+
+      const existingResource: AgendaCandidate[] = blockingBookings
+        .filter((booking) => booking.resourceId === resourceId)
+        .map((booking) => ({
+          type: "BOOKING" as const,
+          sourceId: String(booking.id),
+          startsAt: booking.startsAt,
+          endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+        }));
+      const resourceDecision = evaluateCandidate({ candidate, existing: existingResource });
+      if (!resourceDecision.allowed) {
+        const conflict = agendaConflictResponse(resourceDecision);
+        return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      }
+    } else {
+      const scopeIdForConflict = availabilityMode === "RESOURCE" ? resourceId : professionalId;
+      if (!scopeIdForConflict) {
+        const conflict = agendaConflictResponse();
+        return fail(ctx, 503, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      }
+      const existing: AgendaCandidate[] = blockingBookings
+        .filter((booking) =>
+          availabilityMode === "RESOURCE" ? booking.resourceId === scopeIdForConflict : booking.professionalId === scopeIdForConflict,
+        )
+        .map((booking) => ({
+          type: "BOOKING" as const,
+          sourceId: String(booking.id),
+          startsAt: booking.startsAt,
+          endsAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+        }));
+      classSessions.forEach((session) => {
+        if (availabilityMode === "RESOURCE") return;
+        if (!session.professionalId || session.professionalId !== scopeIdForConflict) return;
+        existing.push({
+          type: "BOOKING",
+          sourceId: `class:${session.id}`,
+          startsAt: session.startsAt,
+          endsAt: session.endsAt,
+        });
+      });
+      const decision = evaluateCandidate({ candidate, existing });
+      if (!decision.allowed) {
+        const conflict = agendaConflictResponse(decision);
+        return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
+      }
     }
 
     const pendingExpiresAt = new Date(now.getTime() + PENDING_HOLD_MINUTES * 60 * 1000);

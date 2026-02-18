@@ -1045,8 +1045,26 @@ function AuthModalContent({
     void handlePrimarySubmit();
   };
 
+  const fieldLabelClass =
+    "mb-1 block text-[11px] font-medium uppercase tracking-[0.14em] text-white/82";
+  const fieldInputClass =
+    "w-full rounded-2xl border border-white/28 bg-black/35 px-3.5 py-2.5 text-base text-white placeholder:text-white/52 outline-none transition focus:border-[#6BFFFF]/80 focus:bg-[#6BFFFF]/[0.1] focus:ring-2 focus:ring-[#6BFFFF]/35 md:text-sm";
+  const fieldInputRowClass =
+    "flex items-center rounded-2xl border border-white/28 bg-black/35 px-3.5 py-2.5 transition focus-within:border-[#6BFFFF]/80 focus-within:bg-[#6BFFFF]/[0.1] focus-within:ring-2 focus-within:ring-[#6BFFFF]/35";
+  const buttonGhostClass =
+    "rounded-full border border-white/16 bg-white/[0.04] px-3 py-2 text-[12px] text-white/80 transition hover:bg-white/[0.1] disabled:opacity-50";
+  const oauthButtonClass =
+    "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white shadow transition-colors hover:border-white/35 hover:bg-white/[0.1] disabled:opacity-50";
+  const modalWidth = mode === "onboarding" ? "min(94vw, 470px)" : "min(94vw, 430px)";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xl">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/88 px-3 py-3 backdrop-blur-[8px] sm:px-6 sm:py-6"
+      style={{
+        paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+        paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+      }}
+    >
       <div
         ref={modalRef}
         role="dialog"
@@ -1054,37 +1072,44 @@ function AuthModalContent({
         aria-labelledby={titleId}
         aria-describedby={subtitleId}
         tabIndex={-1}
-        className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-white/15 bg-black/80 p-6 shadow-xl"
+        className="relative mx-auto w-full max-w-none overflow-y-auto rounded-[26px] border border-white/30 bg-[linear-gradient(170deg,rgba(11,16,28,0.94),rgba(5,8,14,0.96))] p-5 backdrop-blur-2xl shadow-[0_38px_120px_rgba(0,0,0,0.76),inset_0_1px_0_rgba(255,255,255,0.1)] motion-safe:animate-[subtle-fade-slide_0.24s_ease] sm:rounded-[28px] sm:p-6"
+        style={{
+          width: modalWidth,
+          maxHeight: "calc(100dvh - 1.5rem)",
+        }}
       >
         {canClose && (
           <button
             type="button"
             onClick={handleClose}
             aria-label="Fechar"
-            className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-sm text-white/65 transition hover:border-white/30 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#6BFFFF]/60"
+            className="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/[0.08] text-sm text-white/75 transition hover:border-white/35 hover:bg-white/[0.14] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/60"
           >
-            X
+            ×
           </button>
         )}
-        <div className="mb-4 space-y-2 pr-10">
-          <div className="space-y-1">
-            <h2 id={titleId} className="text-2xl font-semibold leading-tight text-white">
+        <div className="mb-5 space-y-3 pr-10">
+          <span className="inline-flex w-fit items-center rounded-full border border-[#6BFFFF]/35 bg-[#6BFFFF]/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#BFFEFF]">
+            ORYA ACCESS
+          </span>
+          <div className="space-y-1.5">
+            <h2 id={titleId} className="text-[29px] font-semibold leading-[1.12] text-white">
               {title}
             </h2>
-            <p id={subtitleId} className="text-sm text-white/75">
+            <p id={subtitleId} className="text-sm leading-relaxed text-white/86">
               {subtitle}
             </p>
           </div>
 
           {(isLogin || isSignup) && (
-            <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-white/5 p-1 text-sm text-white/80">
+            <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/12 bg-white/[0.045] p-1 text-sm">
               <button
                 type="button"
                 onClick={() => setMode("login")}
-                className={`rounded-full px-3 py-2 transition ${
+                className={`rounded-xl px-3 py-2 font-semibold transition ${
                   isLogin
-                    ? `${CTA_PRIMARY} px-3 py-2`
-                    : "hover:bg-white/10"
+                    ? "border border-[#22D3EE]/55 bg-[#22D3EE]/18 text-white shadow-[0_12px_30px_rgba(34,211,238,0.26)]"
+                    : "text-white/78 hover:bg-white/[0.1] hover:text-white"
                 }`}
               >
                 Entrar
@@ -1092,10 +1117,10 @@ function AuthModalContent({
               <button
                 type="button"
                 onClick={() => setMode("signup")}
-                className={`rounded-full px-3 py-2 transition ${
+                className={`rounded-xl px-3 py-2 font-semibold transition ${
                   isSignup
-                    ? `${CTA_PRIMARY} px-3 py-2`
-                    : "hover:bg-white/10"
+                    ? "border border-[#22D3EE]/55 bg-[#22D3EE]/18 text-white shadow-[0_12px_30px_rgba(34,211,238,0.26)]"
+                    : "text-white/78 hover:bg-white/[0.1] hover:text-white"
                 }`}
               >
                 Criar conta
@@ -1107,7 +1132,7 @@ function AuthModalContent({
         <form onSubmit={handleFormSubmit}>
           {(mode === "login" || mode === "signup") && (
             <>
-            <label className="block text-xs text-white/70 mb-1">
+            <label className={fieldLabelClass}>
               {mode === "login" ? "Email ou username" : "Email"}
             </label>
             <input
@@ -1123,14 +1148,14 @@ function AuthModalContent({
               autoComplete={mode === "login" ? "username" : "email"}
               autoCapitalize="none"
               inputMode={mode === "login" ? "text" : "email"}
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className={fieldInputClass}
               placeholder={mode === "login" ? "nome@exemplo.com ou @username" : "nome@exemplo.com"}
             />
 
-            <label className="mt-3 block text-xs text-white/70 mb-1">
+            <label className={`mt-3 ${fieldLabelClass}`}>
               Palavra-passe
             </label>
-            <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+            <div className={fieldInputRowClass}>
               <input
                 ref={passwordInputRef}
                 type={showPassword ? "text" : "password"}
@@ -1139,7 +1164,7 @@ function AuthModalContent({
                   setError(null);
                 }}
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
-                className="flex-1 bg-transparent text-base md:text-sm text-white outline-none"
+                className="flex-1 bg-transparent text-base text-white placeholder:text-white/50 outline-none md:text-sm"
                 placeholder="••••••••"
               />
               <button
@@ -1155,7 +1180,7 @@ function AuthModalContent({
                     setPassword(passwordInputRef.current.value || currentValue);
                   }, 0);
                 }}
-                className="text-[12px] text-white/70 hover:text-white"
+                className="text-[12px] font-semibold text-white/78 transition hover:text-white"
               >
                 {showPassword ? "Ocultar" : "Mostrar"}
               </button>
@@ -1168,7 +1193,7 @@ function AuthModalContent({
                     type="button"
                     onClick={() => setMode("reset")}
                     disabled={isAuthEmailSending}
-                    className="text-left text-[12px] text-white/70 hover:text-white disabled:opacity-60"
+                    className="text-left text-[12px] text-white/75 transition hover:text-white disabled:opacity-60"
                   >
                     Esqueceste a palavra-passe?
                   </button>
@@ -1178,10 +1203,10 @@ function AuthModalContent({
 
             {mode === "signup" && (
               <>
-                <label className="mt-3 block text-xs text-white/70 mb-1">
+                <label className={`mt-3 ${fieldLabelClass}`}>
                   Confirmar palavra-passe
                 </label>
-                <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+                <div className={fieldInputRowClass}>
                   <input
                     ref={confirmPasswordInputRef}
                     type={showConfirmPassword ? "text" : "password"}
@@ -1190,7 +1215,7 @@ function AuthModalContent({
                       setError(null);
                     }}
                     autoComplete="new-password"
-                    className="flex-1 bg-transparent text-base md:text-sm text-white outline-none"
+                    className="flex-1 bg-transparent text-base text-white placeholder:text-white/50 outline-none md:text-sm"
                     placeholder="••••••••"
                   />
                   <button
@@ -1206,7 +1231,7 @@ function AuthModalContent({
                         setConfirmPassword(confirmPasswordInputRef.current.value || currentValue);
                       }, 0);
                     }}
-                    className="text-[12px] text-white/70 hover:text-white"
+                    className="text-[12px] font-semibold text-white/78 transition hover:text-white"
                   >
                     {showConfirmPassword ? "Ocultar" : "Mostrar"}
                   </button>
@@ -1216,9 +1241,9 @@ function AuthModalContent({
 
             {(mode === "login" || mode === "signup") && showGoogle && (
               <div className="mt-3 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-white/40">
-                <span className="h-px flex-1 bg-white/10" />
+                <span className="h-px flex-1 bg-white/14" />
                 ou continua com
-                <span className="h-px flex-1 bg-white/10" />
+                <span className="h-px flex-1 bg-white/14" />
               </div>
             )}
 
@@ -1263,7 +1288,7 @@ function AuthModalContent({
                     setLoading(false);
                   }
                 }}
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
+                className={oauthButtonClass}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-[11px] font-bold text-black">
                   G
@@ -1313,7 +1338,7 @@ function AuthModalContent({
                     setLoading(false);
                   }
                 }}
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white shadow hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50"
+                className={oauthButtonClass}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/90 text-[11px] font-bold text-black">
                   
@@ -1326,7 +1351,7 @@ function AuthModalContent({
               <span className="mt-2 block text-emerald-300 text-[12px]">Email enviado.</span>
             )}
 
-            <p className="mt-3 text-[12px] leading-snug text-white/60">
+            <p className="mt-3 text-[12px] leading-snug text-white/70">
               Ao continuar, aceitas os{" "}
               <Link
                 href="/legal/termos"
@@ -1352,7 +1377,7 @@ function AuthModalContent({
               Código enviado para{" "}
               <strong>{isEmailLike(email) ? email : "teu email"}</strong>.
             </p>
-            <label className="block text-xs text-white/70 mb-1">Email</label>
+            <label className={fieldLabelClass}>Email</label>
             <input
               type="email"
               value={email ?? ""}
@@ -1365,10 +1390,10 @@ function AuthModalContent({
               autoComplete="email"
               autoCapitalize="none"
               inputMode="email"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className={fieldInputClass}
               placeholder="nome@exemplo.com"
             />
-            <label className="block text-xs text-white/70 mb-1">Código</label>
+            <label className={fieldLabelClass}>Código</label>
             <input
               type="text"
               maxLength={8}
@@ -1379,7 +1404,7 @@ function AuthModalContent({
               }}
               autoComplete="one-time-code"
               inputMode="numeric"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className={fieldInputClass}
               placeholder="Código de 6 dígitos"
             />
             <div className="mt-2 text-[12px] text-white/65">
@@ -1432,7 +1457,7 @@ function AuthModalContent({
             <p className="mt-3 text-center text-sm text-white/75">
               Indica o teu email para enviarmos o link de recuperação.
             </p>
-            <label className="mt-4 block text-xs text-white/70 mb-1">Email</label>
+            <label className={`mt-4 ${fieldLabelClass}`}>Email</label>
             <input
               type="email"
               value={email ?? ""}
@@ -1443,7 +1468,7 @@ function AuthModalContent({
               autoComplete="email"
               autoCapitalize="none"
               inputMode="email"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className={fieldInputClass}
               placeholder="nome@exemplo.com"
             />
             <button
@@ -1473,7 +1498,7 @@ function AuthModalContent({
               Bem-vindo! Só faltam estes dados para concluíres o teu perfil.
             </p>
 
-            <label className="block text-xs text-white/70 mb-1">
+            <label className={fieldLabelClass}>
               Nome completo
             </label>
             <input
@@ -1481,14 +1506,14 @@ function AuthModalContent({
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoComplete="name"
-              className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white outline-none focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]"
+              className={fieldInputClass}
               placeholder="Ex.: Inês Martins"
             />
 
-            <label className="mt-3 block text-xs text-white/70 mb-1">
+            <label className={`mt-3 ${fieldLabelClass}`}>
               Username público
             </label>
-              <div className="flex items-center rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-base md:text-sm text-white">
+              <div className={fieldInputRowClass}>
                 <span className="text-white/40 mr-1">@</span>
                 <input
                   type="text"
@@ -1582,14 +1607,14 @@ function AuthModalContent({
         )}
 
         {error && (
-          <div className="mt-3 space-y-2">
-            <p className="text-[12px] text-red-300 leading-snug">{error}</p>
+          <div className="mt-3 space-y-2 rounded-2xl border border-red-300/25 bg-red-500/10 p-3">
+            <p className="text-[12px] text-red-200 leading-snug">{error}</p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 onClick={finishAuthAndMaybeOnboard}
                 disabled={loading}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+                className={buttonGhostClass}
               >
                 Tentar novamente
               </button>
@@ -1597,7 +1622,7 @@ function AuthModalContent({
                 type="button"
                 onClick={handleCanonicalLogout}
                 disabled={loading}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 hover:bg-white/10 transition disabled:opacity-50"
+                className={buttonGhostClass}
               >
                 Sair
               </button>
@@ -1607,7 +1632,7 @@ function AuthModalContent({
                 <button
                   type="button"
                   onClick={() => setMode("login")}
-                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition"
+                  className={`${buttonGhostClass} w-full`}
                 >
                   Ir para login
                 </button>
@@ -1615,7 +1640,7 @@ function AuthModalContent({
                   type="button"
                   disabled={isAuthEmailSending}
                   onClick={handleLoginOtp}
-                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
+                  className={`${buttonGhostClass} w-full`}
                 >
                   {loginOtpSending ? "A enviar link de login…" : "Enviar link de login por email"}
                 </button>
@@ -1623,7 +1648,7 @@ function AuthModalContent({
                   type="button"
                   disabled={isAuthEmailSending}
                   onClick={handleResetPassword}
-                  className="w-full rounded-full border border-white/15 bg-white/5 px-3 py-2 text-white hover:bg-white/10 transition disabled:opacity-50"
+                  className={`${buttonGhostClass} w-full`}
                 >
                   {resetPasswordSending ? "A enviar recuperação…" : "Recuperar password"}
                 </button>
@@ -1637,7 +1662,7 @@ function AuthModalContent({
           </div>
         )}
 
-        <div className="mt-5 flex flex-col gap-2">
+        <div className="mt-5 flex flex-col gap-2 border-t border-white/10 pt-4">
           {mode === "login" && (
             <button
               type="submit"

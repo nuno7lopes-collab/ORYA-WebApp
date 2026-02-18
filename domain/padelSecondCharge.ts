@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
+import { ensurePaymentIntent, isFinanceConnectNotReadyError } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import {
   FeeMode,
@@ -175,65 +175,89 @@ export async function attemptPadelSecondChargeForPairing(params: { pairingId: nu
     label: line.label,
   }));
 
-  const { paymentIntent: intent } = await ensurePaymentIntent({
-    purchaseId,
-    orgId: registration.organizationId,
-    sourceType: SourceType.PADEL_REGISTRATION,
-    sourceId: registration.id,
-    amountCents: pricing.totalCents,
-    currency,
-    intentParams: {
-      payment_method: paymentMethodId,
-      off_session: true,
-      confirm: true,
-    },
-    metadata: {
-      pairingId: String(pairing.id),
-      eventId: String(pairing.eventId),
-      paymentScenario: "GROUP_SPLIT_SECOND_CHARGE",
+  let intent;
+  try {
+    const ensured = await ensurePaymentIntent({
+      purchaseId,
+      orgId: registration.organizationId,
       sourceType: SourceType.PADEL_REGISTRATION,
       sourceId: registration.id,
-      ...(ownerUserId ? { ownerUserId } : {}),
-      slotIds: unpaidLines.map((line) => String(line.pairingSlotId ?? "")).join(","),
-    },
-    orgContext: {
-      stripeAccountId: event.organization?.stripeAccountId ?? null,
-      stripeChargesEnabled: event.organization?.stripeChargesEnabled ?? null,
-      stripePayoutsEnabled: event.organization?.stripePayoutsEnabled ?? null,
-      orgType: event.organization?.orgType ?? null,
-    },
-    requireStripe: true,
-    customerIdentityId: registration.buyerIdentityId ?? null,
-    resolvedSnapshot: {
-      orgId: registration.organizationId,
-      customerIdentityId: registration.buyerIdentityId ?? null,
-      eventId: pairing.eventId,
-      snapshot: {
-        currency,
-        gross: pricing.totalCents,
-        discounts: 0,
-        taxes: 0,
-        platformFee: pricing.platformFeeCents,
-        total: pricing.totalCents,
-        netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
-        processorFeesStatus: ProcessorFeesStatus.PENDING,
-        processorFeesActual: null,
-        feeMode: pricing.feeMode,
-        feeBps: pricing.feeBpsApplied,
-        feeFixed: pricing.feeFixedApplied,
-        feePolicyVersion,
-        promoPolicyVersion: null,
+      amountCents: pricing.totalCents,
+      currency,
+      intentParams: {
+        payment_method: paymentMethodId,
+        off_session: true,
+        confirm: true,
+      },
+      metadata: {
+        pairingId: String(pairing.id),
+        eventId: String(pairing.eventId),
+        paymentScenario: "GROUP_SPLIT_SECOND_CHARGE",
         sourceType: SourceType.PADEL_REGISTRATION,
         sourceId: registration.id,
-        lineItems: snapshotLines,
+        ...(ownerUserId ? { ownerUserId } : {}),
+        slotIds: unpaidLines.map((line) => String(line.pairingSlotId ?? "")).join(","),
       },
-    },
-    paymentEvent: {
-      eventId: pairing.eventId,
-      amountCents: pricing.totalCents,
-      platformFeeCents: pricing.platformFeeCents,
-    },
-  });
+      orgContext: {
+        stripeAccountId: event.organization?.stripeAccountId ?? null,
+        stripeChargesEnabled: event.organization?.stripeChargesEnabled ?? null,
+        stripePayoutsEnabled: event.organization?.stripePayoutsEnabled ?? null,
+        orgType: event.organization?.orgType ?? null,
+      },
+      requireStripe: true,
+      customerIdentityId: registration.buyerIdentityId ?? null,
+      resolvedSnapshot: {
+        orgId: registration.organizationId,
+        customerIdentityId: registration.buyerIdentityId ?? null,
+        eventId: pairing.eventId,
+        snapshot: {
+          currency,
+          gross: pricing.totalCents,
+          discounts: 0,
+          taxes: 0,
+          platformFee: pricing.platformFeeCents,
+          total: pricing.totalCents,
+          netToOrgPending: Math.max(0, pricing.totalCents - pricing.platformFeeCents),
+          processorFeesStatus: ProcessorFeesStatus.PENDING,
+          processorFeesActual: null,
+          feeMode: pricing.feeMode,
+          feeBps: pricing.feeBpsApplied,
+          feeFixed: pricing.feeFixedApplied,
+          feePolicyVersion,
+          promoPolicyVersion: null,
+          sourceType: SourceType.PADEL_REGISTRATION,
+          sourceId: registration.id,
+          lineItems: snapshotLines,
+        },
+      },
+      paymentEvent: {
+        eventId: pairing.eventId,
+        amountCents: pricing.totalCents,
+        platformFeeCents: pricing.platformFeeCents,
+      },
+    });
+    intent = ensured.paymentIntent;
+  } catch (err) {
+    if (isFinanceConnectNotReadyError(err)) {
+      await prisma.$transaction(async (tx) => {
+        await tx.padelPairing.update({
+          where: { id: pairing.id },
+          data: {
+            guaranteeStatus: "FAILED",
+            pairingStatus: PadelPairingStatus.CANCELLED,
+            graceUntilAt: null,
+          },
+        });
+        await transitionPadelRegistrationStatus(tx, {
+          pairingId: pairing.id,
+          status: PadelRegistrationStatus.EXPIRED,
+          reason: "SECOND_CHARGE_CONNECT_NOT_READY",
+        });
+      });
+      return { ok: true, code: "CONNECT_NOT_READY" } as const;
+    }
+    throw err;
+  }
 
   if (intent.status === "succeeded") {
     await prisma.padelPairing.update({

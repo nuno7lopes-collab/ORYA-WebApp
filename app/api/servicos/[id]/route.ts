@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
+import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(
@@ -28,6 +29,10 @@ async function _GET(
         policyId: true,
         kind: true,
         assignmentMode: true,
+        partySizeRequired: true,
+        partySizeMin: true,
+        partySizeMax: true,
+        partySizeStep: true,
         instructorId: true,
         title: true,
         description: true,
@@ -175,6 +180,15 @@ async function _GET(
       }),
     ]);
 
+    const selectionRules = resolveServicePartySizeRules({
+      assignmentMode: service.assignmentMode ?? null,
+      serviceKind: service.kind ?? null,
+      partySizeRequired: service.partySizeRequired,
+      partySizeMin: service.partySizeMin,
+      partySizeMax: service.partySizeMax,
+      partySizeStep: service.partySizeStep,
+    });
+
     return jsonWrap({
       ok: true,
       service: {
@@ -194,6 +208,20 @@ async function _GET(
           capacity: resource.capacity,
           priority: resource.priority,
         })),
+        selectionRules: {
+          ...selectionRules,
+          partySizeRange: {
+            min: selectionRules.partySizeMin,
+            max: selectionRules.partySizeMax,
+            step: selectionRules.partySizeStep,
+          },
+          requiresProfessional:
+            service.assignmentMode === "PROFESSIONAL_ONLY" ||
+            service.assignmentMode === "PROFESSIONAL_AND_RESOURCE",
+          requiresResource:
+            service.assignmentMode === "RESOURCE_ONLY" ||
+            service.assignmentMode === "PROFESSIONAL_AND_RESOURCE",
+        },
         packs: [],
         policy: policy
           ? {

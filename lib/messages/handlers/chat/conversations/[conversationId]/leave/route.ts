@@ -8,6 +8,12 @@ import { isUnauthenticatedError } from "@/lib/security";
 import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
+
 async function _POST(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
 
@@ -18,6 +24,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { organizationId: organization.id },
       },
       select: {
@@ -41,7 +48,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       });
 
       const remaining = await tx.chatConversationMember.findMany({
-        where: { conversationId },
+        where: { conversationId, ...ACTIVE_MEMBER_FILTER },
         orderBy: { joinedAt: "asc" },
         select: { userId: true, role: true, joinedAt: true },
       });

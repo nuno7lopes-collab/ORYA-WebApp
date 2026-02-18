@@ -10,6 +10,7 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { FINANCE_SOURCE_TYPE_ALLOWLIST, type FinanceSourceType } from "@/domain/sourceType";
+import { sanitizeUsername } from "@/lib/username";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { logWarn } from "@/lib/observability/logger";
 
@@ -668,9 +669,6 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
       }
       const policy = await getLatestPolicyForEvent(resolved.eventId, tx);
       if (policy) {
-        if (policy.mode === "INVITE_ONLY" && !input.inviteToken) {
-          throw new Error("INVITE_TOKEN_REQUIRED");
-        }
         if (input.inviteToken && !policy.inviteTokenAllowed) {
           throw new Error("INVITE_TOKEN_INVALID");
         }
@@ -686,6 +684,50 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
               select: { emailNormalized: true, userId: true },
             })
           : null;
+        const selectedTicketTypeIds = Array.isArray(resolved.ticketTypeIds) ? resolved.ticketTypeIds : [];
+        const privateTicketRows =
+          selectedTicketTypeIds.length > 0
+            ? await tx.ticketType.findMany({
+                where: { eventId: resolved.eventId, id: { in: selectedTicketTypeIds } },
+                select: { id: true, publicAccess: true },
+              })
+            : [];
+        const hasPrivateTicketSelection = privateTicketRows.some((ticketType) => ticketType.publicAccess === false);
+        const requiresInviteAccess = policy.mode === "INVITE_ONLY" || hasPrivateTicketSelection;
+
+        const hasIdentityInvite = async () => {
+          if (!identity) return false;
+          const identifiers: string[] = [];
+          const identityMatch = policy.inviteIdentityMatch;
+          if ((identityMatch === "EMAIL" || identityMatch === "BOTH") && identity.emailNormalized) {
+            identifiers.push(identity.emailNormalized);
+          }
+          if ((identityMatch === "USERNAME" || identityMatch === "BOTH") && identity.userId) {
+            const profile = await tx.profile.findUnique({
+              where: { id: identity.userId },
+              select: { username: true },
+            });
+            const username = profile?.username ? sanitizeUsername(profile.username) : null;
+            if (username) identifiers.push(username);
+          }
+          if (identifiers.length === 0) return false;
+          const inviteMatch = await tx.eventInvite.findFirst({
+            where: {
+              eventId: resolved.eventId,
+              scope: "PUBLIC",
+              targetIdentifier: { in: identifiers },
+            },
+            select: { id: true },
+          });
+          return Boolean(inviteMatch);
+        };
+
+        const inviteGrantedWithoutToken =
+          requiresInviteAccess && !input.inviteToken ? await hasIdentityInvite() : false;
+        if (requiresInviteAccess && !input.inviteToken && !inviteGrantedWithoutToken) {
+          throw new Error(policy.mode === "INVITE_ONLY" ? "INVITE_TOKEN_REQUIRED" : "INVITE_REQUIRED");
+        }
+
         const accessDecision = await evaluateEventAccess({
           eventId: resolved.eventId,
           userId: identity?.userId ?? null,
@@ -712,7 +754,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
                 eventId: resolved.eventId,
                 token: input.inviteToken,
                 emailNormalized: identity.emailNormalized,
-                ticketTypeIds: resolved.ticketTypeIds ?? [],
+                ticketTypeIds: selectedTicketTypeIds,
                 usedByIdentityId: input.customerIdentityId ?? null,
               },
               tx,

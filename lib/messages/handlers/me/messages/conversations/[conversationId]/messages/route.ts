@@ -34,6 +34,11 @@ const B2C_CONTEXT_TYPES: ChatConversationContextType[] = [
   ChatConversationContextType.SERVICE,
 ];
 const CHAT_ATTACHMENTS_PUBLIC = process.env.CHAT_ATTACHMENTS_PUBLIC === "true";
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
 
 type AttachmentInput = {
   type?: unknown;
@@ -273,6 +278,31 @@ function mapSenderDisplay(params: {
   };
 }
 
+async function isDmBlockedForConversation(params: {
+  viewerId: string;
+  conversation: {
+    contextType: ChatConversationContextType;
+    members: Array<{ userId: string }>;
+  };
+}) {
+  if (params.conversation.contextType !== ChatConversationContextType.USER_DM) {
+    return false;
+  }
+  const peerId =
+    params.conversation.members.find((member) => member.userId !== params.viewerId)?.userId ?? null;
+  if (!peerId) return false;
+  const block = await prisma.chatUserBlock.findFirst({
+    where: {
+      OR: [
+        { blockerId: params.viewerId, blockedId: peerId },
+        { blockerId: peerId, blockedId: params.viewerId },
+      ],
+    },
+    select: { id: true },
+  });
+  return Boolean(block);
+}
+
 async function _GET(req: NextRequest, context: { params: { conversationId: string } }) {
   try {
     const supabase = await createSupabaseServer();
@@ -284,6 +314,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
       include: {
@@ -302,6 +333,7 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
             },
             members: {
+              where: ACTIVE_MEMBER_FILTER,
               select: {
                 userId: true,
                 displayAs: true,
@@ -321,6 +353,9 @@ async function _GET(req: NextRequest, context: { params: { conversationId: strin
     }
 
     const conversation = membership.conversation;
+    if (await isDmBlockedForConversation({ viewerId: user.id, conversation })) {
+      return jsonWrap({ error: "CHAT_BLOCKED" }, { status: 403 });
+    }
     const viewerIsCustomer = conversation.customerId === user.id;
     const allMembers = conversation.members;
     const members = viewerIsCustomer
@@ -483,6 +518,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       where: {
         conversationId,
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: { contextType: { in: B2C_CONTEXT_TYPES } },
       },
       include: {
@@ -499,6 +535,7 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
               select: { id: true, publicName: true, businessName: true, username: true, brandingAvatarUrl: true },
             },
             members: {
+              where: ACTIVE_MEMBER_FILTER,
               select: {
                 userId: true,
                 displayAs: true,
@@ -518,6 +555,9 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     }
 
     const conversation = membership.conversation;
+    if (await isDmBlockedForConversation({ viewerId: user.id, conversation })) {
+      return jsonWrap({ error: "CHAT_BLOCKED" }, { status: 403 });
+    }
 
     const payload = (await req.json().catch(() => null)) as {
       body?: unknown;
@@ -681,7 +721,11 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
     const members = conversation.members;
 
     const recipients = await prisma.chatConversationMember.findMany({
-      where: { conversationId, userId: { not: user.id } },
+      where: {
+        conversationId,
+        userId: { not: user.id },
+        ...ACTIVE_MEMBER_FILTER,
+      },
       select: { userId: true, mutedUntil: true },
     });
 

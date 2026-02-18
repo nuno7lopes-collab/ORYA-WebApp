@@ -321,10 +321,12 @@
         "undoExpired": "You can no longer undo this message.",
         "undoFailed": "Couldn't undo the message.",
         "muteFailed": "Couldn't mute the chat.",
-        "muteUpdateFailed": "Couldn't update settings.",
-        "readOnly": "This chat is read-only.",
-        "participantsOnly": "Chat is available only to participants.",
-        "signInRequired": "Sign in to access the chat."
+      "muteUpdateFailed": "Couldn't update settings.",
+      "readOnly": "This chat is read-only.",
+      "blocked": "This conversation is blocked.",
+      "banned": "Access to this conversation is blocked.",
+      "participantsOnly": "Chat is available only to participants.",
+      "signInRequired": "Sign in to access the chat."
       },
       "mute": {
         "title": "Mute conversation",

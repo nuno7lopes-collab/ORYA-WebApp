@@ -11,6 +11,12 @@ import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis"
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
+const ACTIVE_MEMBER_FILTER = {
+  leftAt: null,
+  accessRevokedAt: null,
+  bannedAt: null,
+} as const;
+
 function parseLimit(value: string | null) {
   const raw = Number(value ?? "30");
   if (!Number.isFinite(raw)) return 30;
@@ -57,6 +63,7 @@ async function _GET(req: NextRequest) {
     const memberships = await prisma.chatConversationMember.findMany({
       where: {
         userId: user.id,
+        ...ACTIVE_MEMBER_FILTER,
         conversation: updatedAfter
           ? {
               organizationId: organization.id,
@@ -91,6 +98,7 @@ async function _GET(req: NextRequest) {
               },
             },
             members: {
+              where: ACTIVE_MEMBER_FILTER,
               select: {
                 userId: true,
                 role: true,
