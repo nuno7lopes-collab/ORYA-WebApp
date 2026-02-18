@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { normalizeIntervals } from "@/lib/reservas/availability";
+import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import {
   CTA_DANGER,
   CTA_PRIMARY,
@@ -17,7 +18,6 @@ import {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"] as const;
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
-const TIME_STEP_SECONDS = 900;
 const SLOT_MINUTES = 15;
 const DAY_MINUTES = 24 * 60;
 const MINI_CHIP =
@@ -693,11 +693,11 @@ export default function AvailabilityEditor({
         <div className="grid gap-3 md:grid-cols-3">
           <div>
             <label className="text-sm text-white/80">Data</label>
-            <input
-              type="date"
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+            <OryaDateField
               value={overrideDate}
-              onChange={(e) => setOverrideDate(e.target.value)}
+              onChange={setOverrideDate}
+              className="mt-1 w-full"
+              buttonClassName="h-10 rounded-xl"
             />
           </div>
           <div>
@@ -732,20 +732,18 @@ export default function AvailabilityEditor({
             )}
             {overrideIntervals.map((interval, idx) => (
               <div key={`override-${idx}`} className="flex flex-wrap items-center gap-2">
-                <input
-                  type="time"
-                  step={TIME_STEP_SECONDS}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                <OryaTimeField
                   value={interval.start}
-                  onChange={(e) => handleOverrideIntervalChange(idx, "start", e.target.value)}
+                  onChange={(next) => handleOverrideIntervalChange(idx, "start", next)}
+                  stepMinutes={15}
+                  buttonClassName="h-10 rounded-xl"
                 />
                 <span className="text-white/60">→</span>
-                <input
-                  type="time"
-                  step={TIME_STEP_SECONDS}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+                <OryaTimeField
                   value={interval.end}
-                  onChange={(e) => handleOverrideIntervalChange(idx, "end", e.target.value)}
+                  onChange={(next) => handleOverrideIntervalChange(idx, "end", next)}
+                  stepMinutes={15}
+                  buttonClassName="h-10 rounded-xl"
                 />
                 <button type="button" className={CTA_DANGER} onClick={() => handleOverrideRemove(idx)}>
                   Remover

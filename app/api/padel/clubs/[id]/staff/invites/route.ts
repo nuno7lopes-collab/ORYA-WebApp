@@ -391,10 +391,16 @@ async function _PATCH(req: NextRequest) {
   if (action === "CANCEL") {
     if (!ctx.canManage) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     if (!isPending) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
-    await prisma.padelClubStaffInvite.update({
-      where: { id: invite.id },
+    const cancelled = await prisma.padelClubStaffInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
       data: { cancelledAt: new Date() },
     });
+    if (cancelled.count === 0) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
     return jsonWrap({ ok: true }, { status: 200 });
   }
 
@@ -405,8 +411,13 @@ async function _PATCH(req: NextRequest) {
   if (isExpired) return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
 
   if (action === "DECLINE") {
-    await prisma.padelClubStaffInvite.update({
-      where: { id: invite.id },
+    const declined = await prisma.padelClubStaffInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
       data: {
         declinedAt: new Date(),
         acceptedAt: null,
@@ -414,10 +425,30 @@ async function _PATCH(req: NextRequest) {
         targetUserId: ctx.user.id,
       },
     });
+    if (declined.count === 0) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
     return jsonWrap({ ok: true }, { status: 200 });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const accepted = await prisma.$transaction(async (tx) => {
+    const acceptedAt = new Date();
+    const claimed = await tx.padelClubStaffInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
+      data: {
+        acceptedAt,
+        declinedAt: null,
+        cancelledAt: null,
+        targetUserId: ctx.user.id,
+      },
+    });
+    if (claimed.count === 0) {
+      return { ok: false as const };
+    }
+
     const existing = await tx.padelClubStaff.findFirst({
       where: {
         padelClubId: invite.padelClubId,
@@ -447,16 +478,6 @@ async function _PATCH(req: NextRequest) {
       });
     }
 
-    await tx.padelClubStaffInvite.update({
-      where: { id: invite.id },
-      data: {
-        acceptedAt: new Date(),
-        declinedAt: null,
-        cancelledAt: null,
-        targetUserId: ctx.user.id,
-      },
-    });
-
     await tx.padelClubStaffInvite.updateMany({
       where: {
         padelClubId: invite.padelClubId,
@@ -477,7 +498,7 @@ async function _PATCH(req: NextRequest) {
       data: { cancelledAt: new Date() },
     });
 
-    return tx.padelClubStaff.findFirst({
+    const staff = await tx.padelClubStaff.findFirst({
       where: { padelClubId: invite.padelClubId, userId: ctx.user.id, deletedAt: null },
       include: {
         user: {
@@ -485,9 +506,12 @@ async function _PATCH(req: NextRequest) {
         },
       },
     });
+    return { ok: true as const, staff };
   });
 
-  return jsonWrap({ ok: true, staff: updated ? serializePadelClubStaff(updated) : null }, { status: 200 });
+  if (!accepted.ok) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
+
+  return jsonWrap({ ok: true, staff: accepted.staff ? serializePadelClubStaff(accepted.staff) : null }, { status: 200 });
 }
 
 export const GET = withApiEnvelope(_GET);

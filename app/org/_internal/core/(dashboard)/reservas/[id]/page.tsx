@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { AddressCombobox } from "@/components/ui/address-combobox";
+import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { EventCoverCropModal } from "@/app/components/forms/EventCoverCropModal";
 import {
@@ -1629,12 +1630,12 @@ export default function ServicoDetalhePage() {
             </label>
             <label className="text-[12px] text-white/70">
               Hora
-              <input
-                type="time"
-                step={900}
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              <OryaTimeField
                 value={seriesStartTime}
-                onChange={(e) => setSeriesStartTime(e.target.value)}
+                onChange={setSeriesStartTime}
+                stepMinutes={15}
+                className="mt-1 w-full"
+                buttonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="text-[12px] text-white/70">
@@ -1666,20 +1667,21 @@ export default function ServicoDetalhePage() {
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <label className="text-[12px] text-white/70">
               Válido desde
-              <input
-                type="date"
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              <OryaDateField
                 value={seriesValidFrom}
-                onChange={(e) => setSeriesValidFrom(e.target.value)}
+                onChange={setSeriesValidFrom}
+                className="mt-1 w-full"
+                buttonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="text-[12px] text-white/70">
               Válido até
-              <input
-                type="date"
-                className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+              <OryaDateField
                 value={seriesValidUntil}
-                onChange={(e) => setSeriesValidUntil(e.target.value)}
+                onChange={setSeriesValidUntil}
+                minDate={seriesValidFrom || undefined}
+                className="mt-1 w-full"
+                buttonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="text-[12px] text-white/70">

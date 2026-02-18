@@ -353,10 +353,16 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   if (action === "CANCEL") {
     if (!ctx.canManage) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     if (!isPending) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
-    await prisma.padelTeamMemberInvite.update({
-      where: { id: invite.id },
+    const cancelled = await prisma.padelTeamMemberInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
       data: { cancelledAt: new Date() },
     });
+    if (cancelled.count === 0) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
     return jsonWrap({ ok: true }, { status: 200 });
   }
 
@@ -365,8 +371,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   if (isExpired) return jsonWrap({ ok: false, error: "INVITE_EXPIRED" }, { status: 410 });
 
   if (action === "DECLINE") {
-    await prisma.padelTeamMemberInvite.update({
-      where: { id: invite.id },
+    const declined = await prisma.padelTeamMemberInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
       data: {
         declinedAt: new Date(),
         acceptedAt: null,
@@ -374,10 +385,30 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         targetUserId: ctx.user.id,
       },
     });
+    if (declined.count === 0) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
     return jsonWrap({ ok: true }, { status: 200 });
   }
 
-  const member = await prisma.$transaction(async (tx) => {
+  const accepted = await prisma.$transaction(async (tx) => {
+    const acceptedAt = new Date();
+    const claimed = await tx.padelTeamMemberInvite.updateMany({
+      where: {
+        id: invite.id,
+        acceptedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      },
+      data: {
+        acceptedAt,
+        declinedAt: null,
+        cancelledAt: null,
+        targetUserId: ctx.user.id,
+      },
+    });
+    if (claimed.count === 0) {
+      return { ok: false as const };
+    }
+
     const upserted = await tx.padelTeamMember.upsert({
       where: { teamId_userId: { teamId, userId: ctx.user.id } },
       update: {
@@ -394,16 +425,6 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       },
       include: {
         user: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      },
-    });
-
-    await tx.padelTeamMemberInvite.update({
-      where: { id: invite.id },
-      data: {
-        acceptedAt: new Date(),
-        declinedAt: null,
-        cancelledAt: null,
-        targetUserId: ctx.user.id,
       },
     });
 
@@ -427,10 +448,12 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       data: { cancelledAt: new Date() },
     });
 
-    return upserted;
+    return { ok: true as const, member: upserted };
   });
 
-  return jsonWrap({ ok: true, member }, { status: 200 });
+  if (!accepted.ok) return jsonWrap({ ok: false, error: "INVITE_NOT_PENDING" }, { status: 409 });
+
+  return jsonWrap({ ok: true, member: accepted.member }, { status: 200 });
 }
 
 export const GET = withApiEnvelope(_GET);

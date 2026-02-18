@@ -1,13 +1,13 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-17T23:00:01.534Z
+Generated: 2026-02-18T14:59:46.597Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
 - API routes total: 530
 - Covered by UI: 385
-- Orphan (no UI): 1
-- Orphan allowlisted: 1
+- Orphan (no UI): 0
+- Orphan allowlisted: 2
 - Exempt (internal/cron/webhook): 143
 - UI endpoints missing API: 0
 
@@ -15,9 +15,10 @@ CSV: reports/api_ui_coverage_v1.csv
 - none
 
 ## API routes without UI usage (excluding internal/cron/webhook)
-- /api/auth/clear (app/api/auth/clear/route.ts)
+- none
 
 ## API orphan allowlist matches
+- /api/auth/clear (app/api/auth/clear/route.ts)
 - /api/messages/attachments/presign (app/api/messages/attachments/presign/route.ts)
 
 ## Exempt routes (internal/cron/webhook)

@@ -9,6 +9,7 @@ import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import type { Prisma } from "@prisma/client";
 import { CTA_GHOST, CTA_PRIMARY } from "@/app/org/_internal/core/dashboardUi";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 import {
   CreateWizardActionBar,
   CreateWizardAlert,
@@ -1202,20 +1203,23 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             </label>
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Início</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={startsAt}
-                onChange={(e) => setStartsAt(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setStartsAt}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Fim (opcional)</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setEndsAt}
+                minDateTime={startsAt || undefined}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
           </div>
@@ -1264,20 +1268,23 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
             </label>
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Inscrições abrem</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={registrationStartsAt}
-                onChange={(e) => setRegistrationStartsAt(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setRegistrationStartsAt}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Inscrições fecham (T-24)</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={registrationEndsAt}
-                onChange={(e) => setRegistrationEndsAt(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setRegistrationEndsAt}
+                minDateTime={registrationStartsAt || undefined}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
           </div>
@@ -1298,20 +1305,23 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Janela calendário início</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={scheduleWindowStart}
-                onChange={(e) => setScheduleWindowStart(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setScheduleWindowStart}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
             <label className="space-y-1 text-sm text-white/70">
               <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Janela calendário fim</span>
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={scheduleWindowEnd}
-                onChange={(e) => setScheduleWindowEnd(e.target.value)}
-                className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
+                onChange={setScheduleWindowEnd}
+                minDateTime={scheduleWindowStart || startsAt || undefined}
+                className="w-full"
+                dateButtonClassName="h-10 flex-1 rounded-xl"
+                timeButtonClassName="h-10 rounded-xl"
               />
             </label>
           </div>

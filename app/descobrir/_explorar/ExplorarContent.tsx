@@ -19,6 +19,7 @@ import {
   PuzzleIcon,
   TicketIcon,
 } from "./WorldIcons";
+import { OryaDateField } from "@/components/ui/datetime";
 import type {
   ApiResponse,
   DateFilter,
@@ -187,11 +188,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
   const [priceMax, setPriceMax] = useState(100); // 100 = "sem limite" (100+)
   const [filtersTick, setFiltersTick] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-  });
 
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -362,32 +358,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     </>
   );
 
-  const calendarDays = useMemo(() => {
-    const firstOfMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
-    const startWeekday = firstOfMonth.getDay(); // domingo = 0
-    const daysInMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
-    const list: Array<{ date: Date | null }> = [];
-    for (let i = 0; i < startWeekday; i++) {
-      list.push({ date: null });
-    }
-    for (let d = 1; d <= daysInMonth; d++) {
-      list.push({ date: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), d) });
-    }
-    return list;
-  }, [calendarMonth]);
-
-  const monthLabel = useMemo(
-    () =>
-      calendarMonth.toLocaleString("pt-PT", {
-        month: "long",
-        year: "numeric",
-      }),
-    [calendarMonth],
-  );
-
   const DatePanel = () => {
-    const todayIso = new Date().toISOString().slice(0, 10);
-
     return (
       <>
         <div className={panelHeaderClass}>
@@ -423,68 +394,19 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
             </button>
           ))}
         </div>
-        <div className={`${panelShellClass} mt-3`}>
-          <div className="mb-2 flex items-center justify-between text-[12px] text-white/80">
-            <button
-              type="button"
-              onClick={() => {
-                const prev = new Date(calendarMonth);
-                prev.setMonth(prev.getMonth() - 1);
-                setCalendarMonth(prev);
-              }}
-              className={panelActionClass}
-            >
-              ←
-            </button>
-            <span className="font-semibold capitalize">{monthLabel}</span>
-            <button
-              type="button"
-              onClick={() => {
-                const next = new Date(calendarMonth);
-                next.setMonth(next.getMonth() + 1);
-                setCalendarMonth(next);
-              }}
-              className={panelActionClass}
-            >
-              →
-            </button>
-          </div>
-          <div className="mb-1 grid grid-cols-7 gap-1 text-[10px] text-white/45">
-            {["D", "S", "T", "Q", "Q", "S", "S"].map((d, idx) => (
-              <span key={`${d}-${idx}`} className="text-center uppercase tracking-wide">
-                {d}
-              </span>
-            ))}
-          </div>
-        <div className="grid grid-cols-7 gap-1 text-[12px]">
-          {calendarDays.map((d, idx) => {
-              if (!d.date) return <span key={`blank-${idx}`} />;
-              const iso = d.date.toISOString().slice(0, 10);
-              const isSelected = customDate ? iso === customDate : false;
-              const isToday = iso === todayIso;
-              const baseClass = "h-9 w-9 rounded-xl transition-all duration-150 ease-out";
-              const selectedClass =
-                "bg-[#6BFFFF] text-black shadow-[0_0_18px_rgba(107,255,255,0.45)]";
-              const todayClass = "border border-white/25 bg-white/10 text-white";
-              const idleClass = "bg-white/5 text-white/80 hover:bg-white/10";
-              return (
-                <button
-                  key={iso}
-                  type="button"
-                  onClick={() => {
-                    setCustomDate(iso);
-                    setDateFilter("custom");
-                  }}
-                  className={`${baseClass} ${
-                    isSelected ? selectedClass : isToday ? todayClass : idleClass
-                  }`}
-                >
-                  {d.date.getDate()}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[10px] text-white/45">Sem input livre.</p>
+        <div className={`${panelShellClass} mt-3 space-y-2`}>
+          <p className="text-[10px] text-white/45">Sem input livre.</p>
+          <OryaDateField
+            value={customDate}
+            onChange={(next) => {
+              setCustomDate(next);
+              setDateFilter("custom");
+              setIsDateOpen(false);
+            }}
+            placeholder="Escolher data"
+            className="w-full"
+            buttonClassName="h-10 w-full rounded-xl"
+          />
         </div>
         <div className="flex items-center justify-between pt-1">
           <button type="button" onClick={() => setIsDateOpen(false)} className={panelActionLinkClass}>
@@ -966,14 +888,6 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
     const handle = setTimeout(() => setSearch(searchInput.trim()), 350);
     return () => clearTimeout(handle);
   }, [searchInput]);
-
-  useEffect(() => {
-    if (!customDate) return;
-    const parsed = new Date(customDate);
-    if (Number.isNaN(parsed.getTime())) return;
-    parsed.setHours(0, 0, 0, 0);
-    setCalendarMonth(parsed);
-  }, [customDate]);
 
   useEffect(() => {
     const updateIsMobile = () => setIsMobile(typeof window !== "undefined" ? window.innerWidth < 640 : false);

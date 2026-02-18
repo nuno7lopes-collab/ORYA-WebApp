@@ -32,6 +32,9 @@ const MISSING_API_ALLOWLIST = new Set([
 ]);
 
 const ORPHAN_API_ALLOWLIST = new Set<string>([
+  // Endpoint utilitário de limpeza de cookies auth em fluxos operacionais/suporte;
+  // pode não ter chamada direta em superfícies UI estáticas.
+  "/api/auth/clear",
   "/api/messages/attachments/presign",
   "/api/messages/blocks",
   "/api/messages/messages",

@@ -18,6 +18,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { AddressCombobox } from "@/components/ui/address-combobox";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 import type { Prisma } from "@prisma/client";
 
 const TicketTypeStatus = {
@@ -1440,20 +1441,23 @@ export function EventEditClient({ event, tickets }: EventEditClientProps) {
             />
             <div className="text-[11px] text-white/70">
               Início vendas
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={newTicket.startsAt}
-                onChange={(e) => setNewTicket((p) => ({ ...p, startsAt: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
+                onChange={(next) => setNewTicket((p) => ({ ...p, startsAt: next }))}
+                className="mt-1 w-full"
+                dateButtonClassName="h-10 flex-1 rounded-md"
+                timeButtonClassName="h-10 rounded-md"
               />
             </div>
             <div className="text-[11px] text-white/70">
               Fim vendas
-              <input
-                type="datetime-local"
+              <OryaDateTimeField
                 value={newTicket.endsAt}
-                onChange={(e) => setNewTicket((p) => ({ ...p, endsAt: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
+                onChange={(next) => setNewTicket((p) => ({ ...p, endsAt: next }))}
+                minDateTime={newTicket.startsAt || undefined}
+                className="mt-1 w-full"
+                dateButtonClassName="h-10 flex-1 rounded-md"
+                timeButtonClassName="h-10 rounded-md"
               />
             </div>
           </div>

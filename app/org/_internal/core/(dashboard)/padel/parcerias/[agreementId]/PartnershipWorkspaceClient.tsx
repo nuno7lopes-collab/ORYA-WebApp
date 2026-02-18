@@ -5,6 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { appendOrganizationIdToHref } from "@/lib/organizationIdUtils";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 
 type Props = {
   agreementId: number | null;
@@ -733,17 +734,20 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   <option value="SCOREKEEPER">SCOREKEEPER</option>
                   <option value="STREAMER">STREAMER</option>
                 </select>
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={grantStartsAt}
-                  onChange={(event) => setGrantStartsAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setGrantStartsAt}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={grantExpiresAt}
-                  onChange={(event) => setGrantExpiresAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setGrantExpiresAt}
+                  minDateTime={grantStartsAt || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
               </div>
               <button
@@ -792,17 +796,20 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   placeholder="ID do campo"
                   className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={overrideStartsAt}
-                  onChange={(event) => setOverrideStartsAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setOverrideStartsAt}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={overrideEndsAt}
-                  onChange={(event) => setOverrideEndsAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setOverrideEndsAt}
+                  minDateTime={overrideStartsAt || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
                 <input
                   value={overrideReasonCode}
@@ -898,17 +905,20 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                     </option>
                   ))}
                 </select>
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={claimStartsAt}
-                  onChange={(event) => setClaimStartsAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setClaimStartsAt}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={claimEndsAt}
-                  onChange={(event) => setClaimEndsAt(event.target.value)}
-                  className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                  onChange={setClaimEndsAt}
+                  minDateTime={claimStartsAt || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-xl"
+                  timeButtonClassName="h-10 rounded-xl"
                 />
                 <button
                   type="button"
@@ -971,17 +981,20 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                   <div className="rounded-lg border border-white/15 bg-black/45 px-3 py-2 text-xs">
                     <p className="mb-2 text-white/75">Editar janela da reivindicação #{editingClaimId}</p>
                     <div className="grid gap-2 md:grid-cols-3">
-                      <input
-                        type="datetime-local"
+                      <OryaDateTimeField
                         value={editingClaimStartsAt}
-                        onChange={(event) => setEditingClaimStartsAt(event.target.value)}
-                        className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                        onChange={setEditingClaimStartsAt}
+                        className="w-full"
+                        dateButtonClassName="h-10 flex-1 rounded-xl"
+                        timeButtonClassName="h-10 rounded-xl"
                       />
-                      <input
-                        type="datetime-local"
+                      <OryaDateTimeField
                         value={editingClaimEndsAt}
-                        onChange={(event) => setEditingClaimEndsAt(event.target.value)}
-                        className="rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
+                        onChange={setEditingClaimEndsAt}
+                        minDateTime={editingClaimStartsAt || undefined}
+                        className="w-full"
+                        dateButtonClassName="h-10 flex-1 rounded-xl"
+                        timeButtonClassName="h-10 rounded-xl"
                       />
                       <div className="flex gap-2">
                         <button

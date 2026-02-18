@@ -705,10 +705,18 @@ async function _PATCH(req: NextRequest) {
         if (invite.role === "OWNER" && !isOwnerManager) {
           throw new Error("ONLY_OWNER_CAN_CANCEL_OWNER_INVITE");
         }
-        await tx.organizationMemberInvite.update({
-          where: { id: invite.id },
+        const cancelled = await tx.organizationMemberInvite.updateMany({
+          where: {
+            id: invite.id,
+            acceptedAt: null,
+            declinedAt: null,
+            cancelledAt: null,
+          },
           data: { cancelledAt: new Date() },
         });
+        if (cancelled.count === 0) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
       } else if (action === "ACCEPT") {
         if (!isPending) {
           throw new Error("INVITE_NOT_PENDING");
@@ -739,8 +747,13 @@ async function _PATCH(req: NextRequest) {
         });
 
         if (currentMember) {
-          await tx.organizationMemberInvite.update({
-            where: { id: invite.id },
+          const accepted = await tx.organizationMemberInvite.updateMany({
+            where: {
+              id: invite.id,
+              acceptedAt: null,
+              declinedAt: null,
+              cancelledAt: null,
+            },
             data: {
               acceptedAt: new Date(),
               declinedAt: null,
@@ -748,6 +761,9 @@ async function _PATCH(req: NextRequest) {
               targetUserId: user.id,
             },
           });
+          if (accepted.count === 0) {
+            throw new Error("INVITE_NOT_PENDING");
+          }
           const normalizedIdentifiers = [
             invite.targetIdentifier.toLowerCase(),
             viewerEmail,
@@ -785,8 +801,13 @@ async function _PATCH(req: NextRequest) {
             });
           }
 
-          await tx.organizationMemberInvite.update({
-            where: { id: invite.id },
+          const accepted = await tx.organizationMemberInvite.updateMany({
+            where: {
+              id: invite.id,
+              acceptedAt: null,
+              declinedAt: null,
+              cancelledAt: null,
+            },
             data: {
               acceptedAt: new Date(),
               declinedAt: null,
@@ -794,6 +815,9 @@ async function _PATCH(req: NextRequest) {
               targetUserId: user.id,
             },
           });
+          if (accepted.count === 0) {
+            throw new Error("INVITE_NOT_PENDING");
+          }
 
           await ensureUserIsOrganization(tx, user.id);
 
@@ -830,10 +854,18 @@ async function _PATCH(req: NextRequest) {
         if (!isPending) {
           throw new Error("INVITE_NOT_PENDING");
         }
-        await tx.organizationMemberInvite.update({
-          where: { id: invite.id },
+        const declined = await tx.organizationMemberInvite.updateMany({
+          where: {
+            id: invite.id,
+            acceptedAt: null,
+            declinedAt: null,
+            cancelledAt: null,
+          },
           data: { declinedAt: new Date(), acceptedAt: null, cancelledAt: null, targetUserId: user.id },
         });
+        if (declined.count === 0) {
+          throw new Error("INVITE_NOT_PENDING");
+        }
       } else {
         throw new Error("UNKNOWN_ACTION");
       }

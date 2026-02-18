@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/i18n";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
@@ -303,11 +304,12 @@ export default function CrmCampanhasPage() {
           </label>
           <label className="text-[12px] text-white/70 md:col-span-2">
             Agendar envio (opcional)
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
+            <OryaDateTimeField
               value={scheduledAt}
-              onChange={(event) => setScheduledAt(event.target.value)}
+              onChange={setScheduledAt}
+              className="mt-1 w-full"
+              dateButtonClassName="h-10 flex-1"
+              timeButtonClassName="h-10"
             />
             <span className="mt-1 block text-[10px] text-white/45">Se vazio, fica em rascunho.</span>
           </label>

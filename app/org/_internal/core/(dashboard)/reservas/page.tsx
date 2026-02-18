@@ -16,6 +16,7 @@ import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 import { cn } from "@/lib/utils";
 import { AddressCombobox } from "@/components/ui/address-combobox";
+import { OryaDateField, OryaDateTimeField, OryaTimeField } from "@/components/ui/datetime";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import {
@@ -2454,16 +2455,17 @@ export default function ReservasDashboardPage() {
 
                         <label className="flex flex-col gap-1 text-[12px] text-white/60">
                           Prazo limite (opcional)
-                          <input
-                            type="datetime-local"
-                            className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
-                                    value={splitState.deadlineAt}
-                                    onChange={(event) => {
-                                      splitDirtyRef.current = true;
-                                      setSplitState((prev) => (prev ? { ...prev, deadlineAt: event.target.value } : prev));
-                                    }}
-                                    disabled={splitState.saving || splitLocked}
-                                  />
+                          <OryaDateTimeField
+                            value={splitState.deadlineAt}
+                            onChange={(next) => {
+                              splitDirtyRef.current = true;
+                              setSplitState((prev) => (prev ? { ...prev, deadlineAt: next } : prev));
+                            }}
+                            className="w-full"
+                            dateButtonClassName="h-10 flex-1 rounded-lg"
+                            timeButtonClassName="h-10 rounded-lg"
+                            disabled={splitState.saving || splitLocked}
+                          />
                                 </label>
 
                         {splitSummary?.diffLabel && (
@@ -2571,23 +2573,21 @@ export default function ReservasDashboardPage() {
                 <div className="grid grid-cols-2 gap-2 text-[12px]">
                   <label className="flex flex-col gap-1 text-white/60">
                     Data
-                    <input
-                      type="date"
+                    <OryaDateField
                       value={rescheduleDate}
-                      onChange={(event) => setRescheduleDate(event.target.value)}
+                      onChange={setRescheduleDate}
                       disabled={drawerBooking.changeRequest?.status === "PENDING"}
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      buttonClassName="h-10 rounded-lg"
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-white/60">
                     Hora
-                    <input
-                      type="time"
-                      step={900}
+                    <OryaTimeField
                       value={rescheduleTime}
-                      onChange={(event) => setRescheduleTime(event.target.value)}
+                      onChange={setRescheduleTime}
+                      stepMinutes={15}
                       disabled={drawerBooking.changeRequest?.status === "PENDING"}
-                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                      buttonClassName="h-10 rounded-lg"
                     />
                   </label>
                 </div>

@@ -8,6 +8,7 @@ import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
 import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { getEventCoverUrl } from "@/lib/eventCover";
 import { Avatar } from "@/components/ui/avatar";
+import { OryaDateField } from "@/components/ui/datetime";
 import { cn } from "@/lib/utils";
 import {
   Elements,
@@ -189,10 +190,6 @@ function resolveServiceCover(coverImageUrl: string | null | undefined, seed: str
   return getEventCoverUrl(coverImageUrl, { seed, width: 900, quality: 72 });
 }
 
-function getMonthLabel(date: Date) {
-  return date.toLocaleString("pt-PT", { month: "long", year: "numeric" });
-}
-
 function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -201,18 +198,6 @@ function addMonths(base: Date, months: number) {
   const next = new Date(base);
   next.setMonth(next.getMonth() + months);
   return startOfMonth(next);
-}
-
-function buildMonthDays(date: Date) {
-  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  const startWeekday = firstOfMonth.getDay();
-  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  const days: Array<{ date: Date | null }> = [];
-  for (let i = 0; i < startWeekday; i += 1) days.push({ date: null });
-  for (let d = 1; d <= daysInMonth; d += 1) {
-    days.push({ date: new Date(date.getFullYear(), date.getMonth(), d) });
-  }
-  return { days, daysInMonth };
 }
 
 function formatDayLabel(iso: string, timezone: string) {
@@ -425,19 +410,16 @@ export default function ReservasBookingClient({
     return startOfMonth(now);
   }, []);
   const maxCalendarMonth = useMemo(() => addMonths(minCalendarMonth, 3), [minCalendarMonth]);
-  const monthTime = calendarMonth.getTime();
-  const minMonthTime = minCalendarMonth.getTime();
-  const maxMonthTime = maxCalendarMonth.getTime();
-  const canGoPrevMonth = monthTime > minMonthTime;
-  const canGoNextMonth = monthTime < maxMonthTime;
   const selectedProfessional =
     selectedProfessionalId != null
       ? availableProfessionals.find((pro) => pro.id === selectedProfessionalId) ?? null
       : null;
-  const monthLabel = getMonthLabel(calendarMonth);
-  const { days: calendarDays } = buildMonthDays(calendarMonth);
   const calendarMonthParam = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}`;
   const todayIso = useMemo(() => formatIsoDateInTimezone(new Date(), timezone), [timezone]);
+  const maxSelectableIso = useMemo(() => {
+    const end = new Date(maxCalendarMonth.getFullYear(), maxCalendarMonth.getMonth() + 1, 0);
+    return formatIsoDateInTimezone(end, timezone);
+  }, [maxCalendarMonth, timezone]);
   const tomorrowIso = useMemo(() => {
     const next = new Date();
     next.setDate(next.getDate() + 1);
@@ -762,18 +744,6 @@ export default function ReservasBookingClient({
     selectedPackageId,
   ]);
 
-  useEffect(() => {
-    if (!selectedDay) return;
-    if (!selectedDay.startsWith(`${calendarMonthParam}-`)) {
-      setSelectedDay(null);
-      setDaySlots([]);
-      setSlotsError(null);
-      if (!bookingPending) {
-        setSelectedSlot(null);
-      }
-    }
-  }, [calendarMonthParam, selectedDay, bookingPending]);
-
   useEffect(
     () => () => {
       slotsAbortRef.current?.abort();
@@ -802,7 +772,7 @@ export default function ReservasBookingClient({
     if (!selectedServiceId) return;
     if (requiresResource && !selectedPartySize) return;
     const availability = availabilityMap.get(iso);
-    if (!options?.force && !availability?.hasAvailability) return;
+    if (!options?.force && availability && !availability.hasAvailability) return;
 
     setSelectedDay(iso);
     if (!bookingPending) {
@@ -1642,25 +1612,7 @@ export default function ReservasBookingClient({
                     <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Agenda</p>
                     <h3 className="text-lg font-semibold text-white">Data e hora</h3>
                   </div>
-                  <div className="flex items-center gap-2 text-[12px] text-white/60">
-                    <button
-                      type="button"
-                      onClick={() => setCalendarMonth((prev) => addMonths(prev, -1))}
-                      disabled={!canGoPrevMonth}
-                      className={ghostButtonClass}
-                    >
-                      ←
-                    </button>
-                    <span className="font-semibold capitalize">{monthLabel}</span>
-                    <button
-                      type="button"
-                      onClick={() => setCalendarMonth((prev) => addMonths(prev, 1))}
-                      disabled={!canGoNextMonth}
-                      className={ghostButtonClass}
-                    >
-                      →
-                    </button>
-                  </div>
+                  <p className="text-[12px] capitalize text-white/60">{calendarMonth.toLocaleDateString("pt-PT", { month: "long", year: "numeric" })}</p>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -1706,39 +1658,29 @@ export default function ReservasBookingClient({
 
                 <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                   <div>
-                    <div className="grid grid-cols-7 gap-2 text-[10px] text-white/50">
-                      {["D", "S", "T", "Q", "Q", "S", "S"].map((d, idx) => (
-                        <span key={`${d}-${idx}`} className="text-center uppercase tracking-wide">
-                          {d}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-2 grid grid-cols-7 gap-2 text-[12px]">
-                      {calendarDays.map((day, idx) => {
-                        if (!day.date) return <span key={`blank-${idx}`} />;
-                        const iso = formatLocalISODate(day.date);
-                        const availability = availabilityMap.get(iso);
-                        const isAvailable = availability?.hasAvailability;
-                        const isSelected = selectedDay === iso;
-                        return (
-                          <button
-                            key={`${iso}-${idx}`}
-                            type="button"
-                            onClick={() => loadDaySlots(iso)}
-                            disabled={!isAvailable}
-                            className={`h-11 w-11 rounded-2xl border text-center text-white/80 transition ${
-                              isSelected
-                                ? "border-white/60 bg-white/15"
-                              : isAvailable
-                                  ? "border-white/20 bg-white/5 hover:bg-white/10"
-                                  : "border-white/5 bg-white/5 opacity-40"
-                            }`}
-                          >
-                            <div className="text-[12px] font-semibold">{day.date.getDate()}</div>
-                            {isAvailable && <div className="mx-auto mt-1 h-1 w-1 rounded-full bg-[#6BFFFF]" />}
-                          </button>
-                        );
-                      })}
+                    <div className={panelSoftClass}>
+                      <OryaDateField
+                        value={selectedDay ?? ""}
+                        onChange={(next) => {
+                          const parsed = new Date(`${next}T00:00:00`);
+                          if (!Number.isNaN(parsed.getTime())) {
+                            setCalendarMonth(startOfMonth(parsed));
+                          }
+                          loadDaySlots(next);
+                        }}
+                        minDate={todayIso}
+                        maxDate={maxSelectableIso}
+                        dayMeta={Object.fromEntries(
+                          availabilityDays.map((day) => [day.date, { available: day.hasAvailability, badge: String(day.slots ?? 0) }]),
+                        )}
+                        disabledDates={(day) => {
+                          const availability = availabilityMap.get(day);
+                          return availability ? !availability.hasAvailability : false;
+                        }}
+                        placeholder="Selecionar dia"
+                        className="w-full"
+                        buttonClassName="h-11 w-full rounded-2xl"
+                      />
                     </div>
 
                     {calendarLoading && <p className="mt-3 text-[12px] text-white/60">A carregar disponibilidade...</p>}

@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { getStripePublishableKey } from "@/lib/stripePublic";
+import { OryaDateField, OryaDateTimeField } from "@/components/ui/datetime";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -1303,13 +1304,14 @@ export default function MinhasReservasPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="text-[12px] text-white/70">
                       Dia
-                      <input
-                        type="date"
-                        className="ml-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                        value={rescheduleState.day}
-                        onChange={(e) => setRescheduleDay(booking, e.target.value)}
-                        disabled={rescheduleState.loading || rescheduleState.saving}
-                      />
+                      <div className="ml-2 mt-1">
+                        <OryaDateField
+                          value={rescheduleState.day}
+                          onChange={(next) => setRescheduleDay(booking, next)}
+                          disabled={rescheduleState.loading || rescheduleState.saving}
+                          buttonClassName="h-10 rounded-xl"
+                        />
+                      </div>
                     </label>
                     <p className="text-[12px] text-white/60">
                       Atual:{" "}
@@ -1771,13 +1773,14 @@ export default function MinhasReservasPage() {
 
                                   <label className="flex flex-col gap-1 text-[11px] text-white/60">
                                     Prazo limite (opcional)
-                                    <input
-                                      type="datetime-local"
-                                      className="rounded-lg border border-white/15 bg-black/30 px-2 py-2 text-white"
+                                    <OryaDateTimeField
                                       value={splitState.deadlineAt}
-                                      onChange={(e) =>
-                                        setSplitState((prev) => (prev ? { ...prev, deadlineAt: e.target.value } : prev))
+                                      onChange={(next) =>
+                                        setSplitState((prev) => (prev ? { ...prev, deadlineAt: next } : prev))
                                       }
+                                      className="w-full"
+                                      dateButtonClassName="h-10 flex-1 rounded-lg"
+                                      timeButtonClassName="h-10 rounded-lg"
                                       disabled={splitState.saving || splitState.paidCents > 0 || splitState.status === "SETTLED"}
                                     />
                                   </label>

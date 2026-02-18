@@ -8,6 +8,7 @@ import { getPublicBaseUrl } from "@/lib/publicBaseUrl";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 import { appendOrganizationIdToHref, parseOrganizationId, parseOrganizationIdFromPathname } from "@/lib/organizationIdUtils";
 
 type FieldType = "TEXT" | "TEXTAREA" | "EMAIL" | "PHONE" | "NUMBER" | "DATE" | "SELECT" | "CHECKBOX";
@@ -1186,11 +1187,12 @@ export default function InscricaoDetailPage() {
                     <div className="space-y-3">
                       <div className="space-y-2">
                         <label className="text-[12px] text-white/70">Início</label>
-                        <input
-                          className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                          type="datetime-local"
+                        <OryaDateTimeField
                           value={startAt}
-                          onChange={(e) => setStartAt(e.target.value)}
+                          onChange={setStartAt}
+                          className="w-full"
+                          dateButtonClassName="h-10 flex-1 rounded-xl"
+                          timeButtonClassName="h-10 rounded-xl"
                         />
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-xl border border-white/12 bg-black/30 px-3 py-2">
@@ -1207,11 +1209,13 @@ export default function InscricaoDetailPage() {
                       {endDateEnabled && (
                         <div className="space-y-2">
                           <label className="text-[12px] text-white/70">Fim</label>
-                          <input
-                            className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                            type="datetime-local"
+                          <OryaDateTimeField
                             value={endAt}
-                            onChange={(e) => setEndAt(e.target.value)}
+                            onChange={setEndAt}
+                            minDateTime={startAt || undefined}
+                            className="w-full"
+                            dateButtonClassName="h-10 flex-1 rounded-xl"
+                            timeButtonClassName="h-10 rounded-xl"
                           />
                         </div>
                       )}

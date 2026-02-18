@@ -345,6 +345,9 @@ export function OryaDateField({
                 )}
               >
                 <span>{cell.date.slice(-2).replace(/^0/, "")}</span>
+                {meta?.badge ? (
+                  <span className="absolute right-1.5 top-1 text-[9px] font-semibold text-white/65">{meta.badge}</span>
+                ) : null}
                 {meta?.available ? <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-cyan-200" /> : null}
               </button>
             );

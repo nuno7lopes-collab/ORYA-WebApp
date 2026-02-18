@@ -8,6 +8,7 @@ import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 
 type Pairing = {
   id: number;
@@ -4123,26 +4124,29 @@ export default function PadelTournamentTabs({
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-white/60">Abertura inscrições</span>
-              <input
-                type="datetime-local"
-                defaultValue={toLocalInputValue(registrationStartsAt)}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onBlur={(e) => {
-                  const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+              <OryaDateTimeField
+                value={toLocalInputValue(registrationStartsAt)}
+                onChange={(next) => {
+                  const value = next ? new Date(next).toISOString() : null;
                   saveRegistrationWindow({ start: value, end: registrationEndsAt });
                 }}
+                className="w-full"
+                dateButtonClassName="h-9 flex-1 rounded-lg"
+                timeButtonClassName="h-9 rounded-lg"
               />
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] text-white/60">Fecho inscrições</span>
-              <input
-                type="datetime-local"
-                defaultValue={toLocalInputValue(registrationEndsAt)}
-                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1"
-                onBlur={(e) => {
-                  const value = e.target.value ? new Date(e.target.value).toISOString() : null;
+              <OryaDateTimeField
+                value={toLocalInputValue(registrationEndsAt)}
+                minDateTime={toLocalInputValue(registrationStartsAt)}
+                onChange={(next) => {
+                  const value = next ? new Date(next).toISOString() : null;
                   saveRegistrationWindow({ start: registrationStartsAt, end: value });
                 }}
+                className="w-full"
+                dateButtonClassName="h-9 flex-1 rounded-lg"
+                timeButtonClassName="h-9 rounded-lg"
               />
             </label>
           </div>

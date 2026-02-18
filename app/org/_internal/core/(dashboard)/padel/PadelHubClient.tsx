@@ -12,6 +12,7 @@ import type { GeoDetailsItem } from "@/lib/geo/types";
 import { Avatar } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ContextDrawer } from "@/components/ui/context-drawer";
+import { OryaDateField, OryaDateTimeField } from "@/components/ui/datetime";
 import { useToast } from "@/components/ui/toast-provider";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import {
@@ -5569,14 +5570,14 @@ export default function PadelHubClient({
                   </button>
                 ))}
               </div>
-              <input
-                type="date"
+              <OryaDateField
                 value={selectedDay}
-                onChange={(e) => {
+                onChange={(next) => {
                   setCalendarDayTouched(true);
-                  setSelectedDay(e.target.value);
+                  setSelectedDay(next);
                 }}
-                className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80 outline-none focus:border-white/60 focus:ring-2 focus:ring-cyan-400/40"
+                className="min-w-[150px]"
+                buttonClassName="h-8 rounded-full text-[12px]"
               />
               <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
                 {[
@@ -6219,20 +6220,21 @@ export default function PadelHubClient({
                 <p className="mt-1 text-white/70">{autoScheduleFormatHint}</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={autoScheduleForm.start}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, start: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Início"
+                  onChange={(next) => setAutoScheduleForm((p) => ({ ...p, start: next }))}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || autoScheduling}
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={autoScheduleForm.end}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, end: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Fim"
+                  onChange={(next) => setAutoScheduleForm((p) => ({ ...p, end: next }))}
+                  minDateTime={autoScheduleForm.start || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || autoScheduling}
                 />
               </div>
@@ -6855,20 +6857,21 @@ export default function PadelHubClient({
             <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Novo bloqueio</p>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={blockForm.start}
-                  onChange={(e) => setBlockForm((p) => ({ ...p, start: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Início"
+                  onChange={(next) => setBlockForm((p) => ({ ...p, start: next }))}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || savingCalendar}
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={blockForm.end}
-                  onChange={(e) => setBlockForm((p) => ({ ...p, end: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Fim"
+                  onChange={(next) => setBlockForm((p) => ({ ...p, end: next }))}
+                  minDateTime={blockForm.start || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || savingCalendar}
                 />
               </div>
@@ -6953,20 +6956,21 @@ export default function PadelHubClient({
             <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#130c24]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
               <p className="text-sm font-semibold text-white">Nova indisponibilidade</p>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={availabilityForm.start}
-                  onChange={(e) => setAvailabilityForm((p) => ({ ...p, start: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Início"
+                  onChange={(next) => setAvailabilityForm((p) => ({ ...p, start: next }))}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || savingCalendar}
                 />
-                <input
-                  type="datetime-local"
+                <OryaDateTimeField
                   value={availabilityForm.end}
-                  onChange={(e) => setAvailabilityForm((p) => ({ ...p, end: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Fim"
+                  onChange={(next) => setAvailabilityForm((p) => ({ ...p, end: next }))}
+                  minDateTime={availabilityForm.start || undefined}
+                  className="w-full"
+                  dateButtonClassName="h-10 flex-1 rounded-lg"
+                  timeButtonClassName="h-10 rounded-lg"
                   disabled={!eventId || savingCalendar}
                 />
               </div>

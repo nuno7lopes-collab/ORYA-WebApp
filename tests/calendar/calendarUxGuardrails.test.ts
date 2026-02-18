@@ -6,6 +6,8 @@ function readLocal(pathname: string) {
   return readFileSync(resolve(process.cwd(), pathname), "utf8");
 }
 
+const NATIVE_DATE_INPUT_RE = /type=["'](?:date|time|datetime-local)["']/;
+
 describe("calendar ux guardrails", () => {
   it("keeps week/day calendar free from legacy mode and zoom toggles", () => {
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
@@ -58,5 +60,39 @@ describe("calendar ux guardrails", () => {
     expect(booking).toContain('aria-live="polite"');
     expect(booking).toContain("Seleção atual");
     expect(booking).toContain("Continuar para pagamento");
+  });
+
+  it("removes native date/time inputs from standardized flows", () => {
+    const migratedFiles = [
+      "app/[username]/_components/ReservasBookingClient.tsx",
+      "app/admin/(protected)/audit/page.tsx",
+      "app/admin/(protected)/finance/page.tsx",
+      "app/descobrir/_components/DiscoverFilters.tsx",
+      "app/descobrir/_explorar/ExplorarContent.tsx",
+      "app/me/reservas/page.tsx",
+      "app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx",
+      "app/org/[orgId]/calendar/_components/day/DatePickerTwoMonths.tsx",
+      "app/org/[orgId]/calendar/_components/day/FiltersDrawer.tsx",
+      "app/org/[orgId]/finance/FinanceToolClient.tsx",
+      "app/org/_internal/core/(dashboard)/crm/campanhas/page.tsx",
+      "app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx",
+      "app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx",
+      "app/org/_internal/core/(dashboard)/eventos/novo/page.tsx",
+      "app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx",
+      "app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx",
+      "app/org/_internal/core/(dashboard)/padel/parcerias/[agreementId]/PartnershipWorkspaceClient.tsx",
+      "app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx",
+      "app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx",
+      "app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx",
+      "app/org/_internal/core/(dashboard)/reservas/page.tsx",
+      "app/org/_internal/core/pagamentos/RefundsPanel.tsx",
+      "app/org/_internal/core/pagamentos/invoices/invoices-client.tsx",
+      "app/org/_internal/core/promo/PromoCodesClient.tsx",
+    ];
+
+    for (const filePath of migratedFiles) {
+      const source = readLocal(filePath);
+      expect(source).not.toMatch(NATIVE_DATE_INPUT_RE);
+    }
   });
 });

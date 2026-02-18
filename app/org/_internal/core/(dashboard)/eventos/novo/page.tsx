@@ -29,6 +29,7 @@ import { INTEREST_OPTIONS, type InterestId } from "@/lib/interests";
 import { FilterChip } from "@/app/components/mobile/MobileFilters";
 import InterestIcon from "@/app/components/interests/InterestIcon";
 import { AddressCombobox } from "@/components/ui/address-combobox";
+import { OryaDateTimeField } from "@/components/ui/datetime";
 
 type TicketTypeRow = {
   name: string;
@@ -4477,20 +4478,23 @@ export function NewOrganizationEventPage({
                           </label>
                           <label className="text-[11px] text-white/70">
                             Abertura
-                            <input
-                              type="datetime-local"
+                            <OryaDateTimeField
                               value={padelRegistrationStartsAt}
-                              onChange={(e) => setPadelRegistrationStartsAt(e.target.value)}
-                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                              onChange={setPadelRegistrationStartsAt}
+                              className="mt-1 w-full"
+                              dateButtonClassName="h-10 flex-1 rounded-lg"
+                              timeButtonClassName="h-10 rounded-lg"
                             />
                           </label>
                           <label className="text-[11px] text-white/70">
                             Fecho
-                            <input
-                              type="datetime-local"
+                            <OryaDateTimeField
                               value={padelRegistrationEndsAt}
-                              onChange={(e) => setPadelRegistrationEndsAt(e.target.value)}
-                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
+                              onChange={setPadelRegistrationEndsAt}
+                              minDateTime={padelRegistrationStartsAt || undefined}
+                              className="mt-1 w-full"
+                              dateButtonClassName="h-10 flex-1 rounded-lg"
+                              timeButtonClassName="h-10 rounded-lg"
                             />
                           </label>
                         </div>
