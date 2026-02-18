@@ -347,6 +347,7 @@ model OrganizationSettings {
 model OrganizationGroup {
   env                String                           @default("prod")
   id                 Int                              @id @default(autoincrement())
+  name               String?                          @map("name")
   ownerUserId        String                           @map("owner_user_id") @db.Uuid
   createdAt          DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime                         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -368,6 +369,7 @@ model OrganizationGroupMember {
   userId       String                 @map("user_id") @db.Uuid
   role         OrganizationMemberRole
   rolePack     OrganizationRolePack?  @map("role_pack")
+  isGovernance Boolean                @default(false) @map("is_governance")
   scopeAllOrgs Boolean                @default(false) @map("scope_all_orgs")
   scopeOrgIds  Int[]                  @default([]) @map("scope_org_ids")
   createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)

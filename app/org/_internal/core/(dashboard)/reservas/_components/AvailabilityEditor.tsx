@@ -9,6 +9,7 @@ import { normalizeIntervals } from "@/lib/reservas/availability";
 import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import {
   CTA_DANGER,
+  CTA_NEUTRAL,
   CTA_PRIMARY,
   CTA_SECONDARY,
   DASHBOARD_CARD,
@@ -144,6 +145,7 @@ export default function AvailabilityEditor({
   const [templateDrafts, setTemplateDrafts] = useState<Record<number, IntervalDraft[]>>({});
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [templateSavingDay, setTemplateSavingDay] = useState<number | null>(null);
+  const [templateSavingAll, setTemplateSavingAll] = useState(false);
   const [overrideDate, setOverrideDate] = useState("");
   const [overrideKind, setOverrideKind] = useState<AvailabilityOverride["kind"]>("CLOSED");
   const [overrideIntervals, setOverrideIntervals] = useState<TimeDraft[]>([]);
@@ -231,6 +233,37 @@ export default function AvailabilityEditor({
       setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
     } finally {
       setTemplateSavingDay(null);
+    }
+  };
+
+  const handleTemplateSaveAll = async () => {
+    setTemplateSavingAll(true);
+    setAvailabilityError(null);
+    try {
+      for (const dayIdx of DAY_ORDER) {
+        const drafts = templateDrafts[dayIdx] ?? [];
+        const parsed = normalizeIntervals(drafts);
+        const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "TEMPLATE",
+            scopeType,
+            scopeId,
+            dayOfWeek: dayIdx,
+            intervals: parsed,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error || `Erro ao guardar ${DAY_LABELS[dayIdx]}.`);
+        }
+      }
+      mutateAvailability();
+    } catch (err) {
+      setAvailabilityError(err instanceof Error ? err.message : "Erro ao guardar disponibilidade.");
+    } finally {
+      setTemplateSavingAll(false);
     }
   };
 
@@ -532,7 +565,17 @@ export default function AvailabilityEditor({
               Arrasta para criar blocos. Visível 09:00–19:00 (scroll para o resto do dia).
             </p>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Grelha {SLOT_MINUTES} min</div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={cn(CTA_NEUTRAL, "text-[11px]")}
+              onClick={handleTemplateSaveAll}
+              disabled={templateSavingAll}
+            >
+              {templateSavingAll ? "A guardar semana..." : "Guardar semana"}
+            </button>
+            <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Grelha {SLOT_MINUTES} min</div>
+          </div>
         </div>
 
         <div className="overflow-x-auto px-4 pb-4">
@@ -559,7 +602,7 @@ export default function AvailabilityEditor({
                             templateSavingDay === dayIdx && MINI_CHIP_ACTIVE,
                           )}
                           onClick={() => handleTemplateSave(dayIdx)}
-                          disabled={templateSavingDay === dayIdx}
+                          disabled={templateSavingDay === dayIdx || templateSavingAll}
                         >
                           {templateSavingDay === dayIdx ? "..." : "Guardar"}
                         </button>

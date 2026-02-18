@@ -6,6 +6,7 @@ export type GroupMemberAccess = {
   groupId: number;
   role: OrganizationMemberRole;
   rolePack: OrganizationRolePack | null;
+  isGovernance: boolean;
 };
 
 type PrismaClientLike = Prisma.TransactionClient | typeof prisma;
@@ -46,6 +47,7 @@ export async function resolveGroupMemberForOrg(params: {
       id: true,
       role: true,
       rolePack: true,
+      isGovernance: true,
       scopeAllOrgs: true,
       scopeOrgIds: true,
     },
@@ -66,6 +68,7 @@ export async function resolveGroupMemberForOrg(params: {
     groupId: org.groupId,
     role: override?.roleOverride ?? member.role,
     rolePack: member.rolePack ?? null,
+    isGovernance: Boolean(member.isGovernance),
   };
 }
 
@@ -143,7 +146,7 @@ export async function setGroupMemberRoleForOrg(params: {
     db,
     groupId: org.groupId,
     userId,
-    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true },
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, role: true, isGovernance: true },
   });
 
   if (!targetGroup) {
@@ -153,6 +156,23 @@ export async function setGroupMemberRoleForOrg(params: {
       role,
       rolePack,
       client,
+    });
+    return;
+  }
+
+  if (targetGroup.isGovernance) {
+    // Governance members are global across all orgs in the group: no per-org overrides/revokes.
+    await db.organizationGroupMember.update({
+      where: { id: targetGroup.id },
+      data: {
+        role,
+        ...(rolePack !== undefined ? { rolePack } : {}),
+        scopeAllOrgs: true,
+        scopeOrgIds: [],
+      },
+    });
+    await db.organizationGroupMemberOrganizationOverride.deleteMany({
+      where: { groupMemberId: targetGroup.id },
     });
     return;
   }
@@ -205,9 +225,13 @@ export async function revokeGroupMemberForOrg(params: {
     db,
     groupId: org.groupId,
     userId,
-    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true },
+    select: { id: true, scopeAllOrgs: true, scopeOrgIds: true, isGovernance: true },
   });
   if (!targetGroup) return;
+
+  if (targetGroup.isGovernance) {
+    throw new Error("GROUP_GOVERNANCE_LOCKED");
+  }
 
   if (targetGroup.scopeAllOrgs) {
     const revokedAt = new Date();

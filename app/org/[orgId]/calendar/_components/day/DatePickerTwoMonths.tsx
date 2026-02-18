@@ -48,7 +48,7 @@ export function DatePickerTwoMonths({ selectedDate, timezone, open, onOpenChange
         onSelectDate(toDate(next, timezone));
       }}
       placeholder="Data"
-      buttonClassName="inline-flex h-10 min-w-[170px] rounded-full"
+      buttonClassName="inline-flex h-9 min-w-[140px] rounded-full"
     />
   );
 }

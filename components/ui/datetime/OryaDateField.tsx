@@ -133,8 +133,8 @@ export function OryaDateField({
     open: open && !isMobile,
     anchorRef: buttonRef,
     overlayRef,
-    preferredWidth: 360,
-    minWidth: 300,
+    preferredWidth: 320,
+    minWidth: 280,
     minHeight: 250,
     maxHeight: 520,
   });
@@ -267,36 +267,36 @@ export function OryaDateField({
       aria-label={label ?? "Selecionar data"}
       onKeyDown={handleDialogKeyDown}
       className={cn(
-        "rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-4",
+        "rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-3",
         "shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl",
       )}
       style={isMobile ? undefined : overlayStyle ?? undefined}
     >
-      <div className="mb-3 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
+      <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/10 pb-2">
         <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Data</p>
         <button
           type="button"
           onClick={() => commitDay(today)}
-          className="rounded-full border border-cyan-300/45 bg-cyan-300/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/70"
+          className="rounded-full border border-cyan-300/45 bg-cyan-300/12 px-2.5 py-0.5 text-[10px] text-cyan-100 transition hover:border-cyan-300/70"
         >
           {todayLabel}
         </button>
       </div>
 
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <button
           type="button"
           onClick={() => setMonthStart(prevMonthStart)}
-          className="h-10 w-10 rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/35 hover:bg-white/10"
+          className="h-9 w-9 rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/35 hover:bg-white/10"
           aria-label="Mês anterior"
         >
           ‹
         </button>
-        <p className="text-3xl font-semibold capitalize text-white">{monthLabel(monthStart)}</p>
+        <p className="text-xl font-semibold capitalize text-white">{monthLabel(monthStart)}</p>
         <button
           type="button"
           onClick={() => setMonthStart(nextMonthStart)}
-          className="h-10 w-10 rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/35 hover:bg-white/10"
+          className="h-9 w-9 rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/35 hover:bg-white/10"
           aria-label="Mês seguinte"
         >
           ›
@@ -304,7 +304,7 @@ export function OryaDateField({
       </div>
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-3">
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] uppercase tracking-[0.16em] text-white/45">
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase tracking-[0.16em] text-white/45">
           {WEEKDAY_LABELS.map((weekday) => (
             <span key={`${dialogId}-weekday-${weekday}`} className="py-1">
               {weekday}
@@ -331,12 +331,11 @@ export function OryaDateField({
                 aria-current={isToday ? "date" : undefined}
                 disabled={disabledDay}
                 onFocus={() => setActiveDate(cell.date)}
-                onMouseEnter={() => setActiveDate(cell.date)}
                 onClick={() => commitDay(cell.date)}
                 className={cn(
-                  "relative h-11 rounded-2xl border text-sm transition",
+                  "relative h-9 rounded-2xl border text-xs transition",
                   selected
-                    ? "border-cyan-300/75 bg-cyan-300 text-black shadow-[0_14px_34px_rgba(107,255,255,0.36)]"
+                    ? "border-cyan-200/90 bg-cyan-200 text-slate-900 shadow-[0_16px_36px_rgba(107,255,255,0.4)]"
                     : "border-transparent text-white/82 hover:border-white/20 hover:bg-white/10",
                   isToday && !selected && "border-white/25",
                   !cell.inMonth && !selected && "text-white/35",
@@ -355,7 +354,7 @@ export function OryaDateField({
         </div>
       </div>
 
-      <p className="mt-3 text-[10px] text-white/50">Atalhos: setas, Home/End, PgUp/PgDn, Enter, Esc.</p>
+      <div className="mt-3" />
       {isValidLocalDate(value) ? <p className="mt-1 text-[11px] text-white/70">{longValue}</p> : null}
     </div>
   );

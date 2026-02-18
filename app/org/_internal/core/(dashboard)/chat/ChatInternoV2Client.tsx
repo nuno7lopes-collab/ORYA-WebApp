@@ -26,6 +26,8 @@ import {
 } from "@/app/org/_internal/core/dashboardUi";
 
 const WS_PING_INTERVAL_MS = 25000;
+const POLL_CONVERSATIONS_MS = 12000;
+const POLL_MESSAGES_MS = 5000;
 const TYPING_IDLE_MS = 1400;
 const TYPING_TTL_MS = 8000;
 const MAX_COMMANDS = 5;
@@ -514,6 +516,10 @@ export default function ChatInternoV2Client() {
   const wsRef = useRef<WebSocket | null>(null);
   const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wsPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<{
+    conversations: ReturnType<typeof setInterval> | null;
+    messages: ReturnType<typeof setInterval> | null;
+  }>({ conversations: null, messages: null });
   const wsBackoffRef = useRef(500);
   const wsConnectingRef = useRef(false);
   const connectWsRef = useRef<(() => void) | null>(null);
@@ -761,7 +767,7 @@ export default function ChatInternoV2Client() {
           })),
       );
     } catch (err) {
-      setContactRequestsError(err instanceof Error ? err.message : "Erro ao carregar pedidos.");
+      setContactRequestsError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao carregar pedidos."));
     } finally {
       setContactRequestsLoading(false);
     }
@@ -773,7 +779,7 @@ export default function ChatInternoV2Client() {
         await fetchChat(`/api/messages/grants/${grantId}/accept`, { method: "POST" });
         await Promise.all([loadContactRequests(), loadConversations()]);
       } catch (err) {
-        setContactRequestsError(err instanceof Error ? err.message : "Erro ao aprovar pedido.");
+        setContactRequestsError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao aprovar pedido."));
       }
     },
     [fetchChat, loadContactRequests, loadConversations],
@@ -785,7 +791,7 @@ export default function ChatInternoV2Client() {
         await fetchChat(`/api/messages/grants/${grantId}/decline`, { method: "POST" });
         await loadContactRequests();
       } catch (err) {
-        setContactRequestsError(err instanceof Error ? err.message : "Erro ao rejeitar pedido.");
+        setContactRequestsError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao rejeitar pedido."));
       }
     },
     [fetchChat, loadContactRequests],
@@ -805,7 +811,7 @@ export default function ChatInternoV2Client() {
       const data = await fetcher<{ ok: boolean; items: MemberDirectoryItem[] }>(url.pathname + url.search);
       setDirectory(data.items ?? []);
     } catch (err) {
-      setDirectoryError(err instanceof Error ? err.message : "Erro ao carregar membros.");
+      setDirectoryError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao carregar membros."));
     } finally {
       setDirectoryLoading(false);
     }
@@ -945,7 +951,7 @@ export default function ChatInternoV2Client() {
           triggerNewMessageToast();
         }
       } catch (err) {
-        setMessagesError(err instanceof Error ? err.message : "Erro ao carregar mensagens.");
+        setMessagesError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao carregar mensagens."));
       } finally {
         setMessagesLoading(false);
         setMessagesLoadingMore(false);
@@ -1010,6 +1016,27 @@ export default function ChatInternoV2Client() {
       sendWsMessage({ type: "ping" });
     }, WS_PING_INTERVAL_MS);
   }, [sendWsMessage, stopWsPing]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current.conversations) clearInterval(pollRef.current.conversations);
+    if (pollRef.current.messages) clearInterval(pollRef.current.messages);
+    pollRef.current.conversations = null;
+    pollRef.current.messages = null;
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current.conversations || pollRef.current.messages) return;
+    pollRef.current.conversations = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadConversations({ incremental: true });
+    }, POLL_CONVERSATIONS_MS);
+    pollRef.current.messages = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      const activeId = activeConversationIdRef.current;
+      if (!activeId) return;
+      loadMessages({ conversationId: activeId, refreshWindow: true, includeMembers: false });
+    }, POLL_MESSAGES_MS);
+  }, [loadConversations, loadMessages]);
 
   const scheduleWsReconnect = useCallback((delayOverrideMs?: number) => {
     if (wsReconnectRef.current || isOfflineRef.current) return;
@@ -1403,13 +1430,23 @@ export default function ChatInternoV2Client() {
   }, [connectWs, isOffline, user?.id]);
 
   useEffect(() => {
+    if (isOffline || wsStatus === "open") {
+      stopPolling();
+      return;
+    }
+    startPolling();
+    return stopPolling;
+  }, [isOffline, startPolling, stopPolling, wsStatus]);
+
+  useEffect(() => {
     return () => {
       if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
       stopWsPing();
+      stopPolling();
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [stopWsPing]);
+  }, [stopPolling, stopWsPing]);
 
   useEffect(() => {
     setTypingUsers([]);
@@ -1857,7 +1894,7 @@ export default function ChatInternoV2Client() {
       }
       return res.message;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Erro ao enviar.";
+      const message = mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao enviar.");
       setMessagesError(message);
       throw err;
     }
@@ -2142,7 +2179,7 @@ export default function ChatInternoV2Client() {
       await loadConversations();
       sendWsMessage({ type: "conversation:sync" });
     } catch (err) {
-      setMessagesError(err instanceof Error ? err.message : "Erro ao sair da conversa.");
+      setMessagesError(mapChatErrorMessage(err instanceof Error ? err.message : "Erro ao sair da conversa."));
     } finally {
       setConversationActionPending(null);
     }
@@ -2165,6 +2202,11 @@ export default function ChatInternoV2Client() {
     if (isOffline) return "Offline";
     if (wsError === "RATE_LIMITED") return "Limite de ligacao";
     if (wsError === "ORG_CONTEXT_REQUIRED") return "Sem contexto";
+    if (wsError === "NO_ORG") return "Sem organizacao";
+    if (wsError === "UNAUTHENTICATED") return "Sessao expirada";
+    if (wsError === "UNAUTHORIZED" || wsError === "FORBIDDEN") return "Sem acesso";
+    if (wsError === "UPGRADE_REQUIRED" || wsError === "APP_VERSION_INVALID") return "Atualiza a app";
+    if (wsError === "MOBILE_APP_REQUIRED") return "Requer app mobile";
     if (wsError) return "Indisponivel";
     if (wsStatus !== "open") return "A reconectar";
     return "";

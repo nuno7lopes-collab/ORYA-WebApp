@@ -25,6 +25,8 @@ import type {
 } from "./chat-preview.types";
 
 const WS_PING_INTERVAL_MS = 25000;
+const POLL_CONVERSATIONS_MS = 12000;
+const POLL_MESSAGES_MS = 5000;
 const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 const WS_PROTOCOL_BASE = "orya-chat.v1";
 const WS_APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION?.trim() || "1.0.0";
@@ -58,6 +60,34 @@ const fetcher = async <T,>(url: string, options?: RequestInit): Promise<T> => {
     throw new Error(json?.error || "Erro ao carregar.");
   }
   return json as T;
+};
+
+const mapChatPreviewError = (err: unknown, fallback: string) => {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  const code = raw.trim().toUpperCase();
+  if (!code) return fallback;
+  if (code === "CHAT_BLOCKED") return "Conversa bloqueada.";
+  if (code === "BANNED") return "Acesso bloqueado a esta conversa.";
+  if (code === "READ_ONLY") return "Conversa em modo leitura.";
+  if (code === "EVENT_NOT_OPEN") return "A conversa ainda nao esta aberta.";
+  if (code === "EVENT_NOT_FOUND") return "Conversa nao encontrada.";
+  if (code === "BOOKING_INACTIVE") return "Conversa indisponivel para esta reserva.";
+  if (code === "BOOKING_NOT_FOUND") return "Conversa nao encontrada.";
+  if (code === "INVALID_MESSAGE") return "Mensagem invalida.";
+  if (code === "MESSAGE_NOT_FOUND") return "Mensagem nao encontrada.";
+  if (code === "UNDO_EXPIRED") return "Ja nao e possivel anular esta mensagem.";
+  if (code === "EMPTY_MESSAGE") return "Mensagem vazia.";
+  if (code === "MESSAGE_TOO_LONG") return "Mensagem demasiado longa.";
+  if (code === "INVALID_REPLY") return "Resposta invalida.";
+  if (code === "INVALID_LEVEL") return "Configuracao invalida.";
+  if (code === "INVALID_MUTE") return "Configuracao invalida.";
+  if (code === "INVALID_PAYLOAD") return "Pedido invalido.";
+  if (code === "DUPLICATE_MESSAGE") return "Mensagem duplicada.";
+  if (code === "MESSAGE_NOT_CREATED") return "Nao foi possivel criar a mensagem.";
+  if (code === "FORBIDDEN") return "Sem permissoes para esta acao.";
+  if (code === "UNAUTHENTICATED") return "Sessao expirada. Volta a autenticar-te.";
+  if (code === "RATE_LIMITED") return "Muitas tentativas. Tenta novamente em instantes.";
+  return raw || fallback;
 };
 
 function formatTimeLabel(value: string | null | undefined) {
@@ -397,6 +427,10 @@ export function useChatPreviewData() {
   const wsRef = useRef<WebSocket | null>(null);
   const wsPingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsReconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRef = useRef<{
+    conversations: ReturnType<typeof setInterval> | null;
+    messages: ReturnType<typeof setInterval> | null;
+  }>({ conversations: null, messages: null });
   const wsBackoffRef = useRef(500);
   const wsConnectingRef = useRef(false);
   const isOfflineRef = useRef(false);
@@ -550,7 +584,7 @@ export function useChatPreviewData() {
         }
         lastConversationSyncRef.current = new Date().toISOString();
       } catch (err) {
-        setConversationsError(err instanceof Error ? err.message : "Erro ao carregar conversas.");
+        setConversationsError(mapChatPreviewError(err, "Erro ao carregar conversas."));
       } finally {
         setLoadingConversations(false);
         conversationsLoadingRef.current = false;
@@ -649,7 +683,7 @@ export function useChatPreviewData() {
       } catch (err) {
         setMessagesErrorByConversation((prev) => ({
           ...prev,
-          [conversationId]: err instanceof Error ? err.message : "Erro ao carregar mensagens.",
+          [conversationId]: mapChatPreviewError(err, "Erro ao carregar mensagens."),
         }));
       } finally {
         if (isInitialLoad) {
@@ -717,6 +751,27 @@ export function useChatPreviewData() {
       sendWsMessage({ type: "ping" });
     }, WS_PING_INTERVAL_MS);
   }, [sendWsMessage, stopWsPing]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current.conversations) clearInterval(pollRef.current.conversations);
+    if (pollRef.current.messages) clearInterval(pollRef.current.messages);
+    pollRef.current.conversations = null;
+    pollRef.current.messages = null;
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current.conversations || pollRef.current.messages) return;
+    pollRef.current.conversations = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadConversations({ incremental: true });
+    }, POLL_CONVERSATIONS_MS);
+    pollRef.current.messages = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      const activeId = activeConversationIdRef.current;
+      if (!activeId) return;
+      loadMessages({ conversationId: activeId, includeMembers: false });
+    }, POLL_MESSAGES_MS);
+  }, [loadConversations, loadMessages]);
 
   const scheduleWsReconnect = useCallback((delayOverrideMs?: number) => {
     if (wsReconnectRef.current || isOfflineRef.current) return;
@@ -1219,7 +1274,7 @@ export function useChatPreviewData() {
         setSendError(null);
         setAttachmentsError(null);
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Erro ao enviar.";
+        const message = mapChatPreviewError(err, "Erro ao enviar.");
         setSendError(message);
         setAttachmentsError(message);
         setPendingByConversation((prev) => ({
@@ -1533,10 +1588,11 @@ export function useChatPreviewData() {
     return () => {
       if (wsPingRef.current) clearInterval(wsPingRef.current);
       if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
+      stopPolling();
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [wsBaseUrl]);
+  }, [stopPolling, wsBaseUrl]);
 
   useEffect(() => {
     const update = () => {
@@ -1558,6 +1614,15 @@ export function useChatPreviewData() {
       window.removeEventListener("offline", update);
     };
   }, []);
+
+  useEffect(() => {
+    if (isOffline || connectionState === "connected") {
+      stopPolling();
+      return;
+    }
+    startPolling();
+    return stopPolling;
+  }, [connectionState, isOffline, startPolling, stopPolling]);
 
   const hasMoreHistoryByConversation = useMemo(() => {
     const map: Record<string, boolean> = {};
