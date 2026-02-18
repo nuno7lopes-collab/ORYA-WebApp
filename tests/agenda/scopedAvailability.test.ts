@@ -1,56 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { buildScopeKey, resolveScopeData, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { buildScopeKey, resolveScopeData, type ScopedOverride, type ScopedSchedule } from "@/lib/reservas/scopedAvailability";
 
 describe("scoped availability resolution", () => {
-  it("falls back to organization templates when scope has no template rows", () => {
-    const orgTemplates: ScopedTemplate[] = [
-      { scopeType: "ORGANIZATION", scopeId: 0, dayOfWeek: 1, intervals: [{ startMinute: 9 * 60, endMinute: 17 * 60 }] },
+  it("falls back to organization schedules when scope has no active schedules", () => {
+    const orgSchedules: ScopedSchedule[] = [
+      { id: 1, scopeType: "ORGANIZATION", scopeId: 0, startDate: new Date("2026-02-18T00:00:00.000Z"), endDate: null },
     ];
-    const orgOverrides: ScopedOverride[] = [];
+    const orgOverrides: ScopedOverride[] = [
+      { scopeType: "ORGANIZATION", scopeId: 0, date: new Date("2026-02-18T00:00:00.000Z"), kind: "OPEN", intervals: [] },
+    ];
 
     const resolved = resolveScopeData({
       scopeType: "PROFESSIONAL",
       scopeId: 7,
-      orgTemplates,
+      orgSchedules,
       orgOverrides,
-      templatesByScope: new Map(),
-      overridesByScope: new Map(),
+      schedulesByScope: new Map(),
+      overridesByScope: new Map([[buildScopeKey("ORGANIZATION", 0), orgOverrides]]),
     });
 
-    expect(resolved.hasCustomTemplates).toBe(false);
-    expect(resolved.templates).toEqual(orgTemplates);
+    expect(resolved.schedules).toEqual([]);
+    expect(resolved.fallbackSchedules).toEqual(orgSchedules);
     expect(resolved.overrides).toEqual(orgOverrides);
   });
 
-  it("treats empty scoped templates as explicit custom configuration", () => {
-    const orgTemplates: ScopedTemplate[] = [
-      { scopeType: "ORGANIZATION", scopeId: 0, dayOfWeek: 1, intervals: [{ startMinute: 9 * 60, endMinute: 17 * 60 }] },
+  it("merges organization and scoped overrides", () => {
+    const orgSchedules: ScopedSchedule[] = [
+      { id: 1, scopeType: "ORGANIZATION", scopeId: 0, startDate: new Date("2026-02-18T00:00:00.000Z"), endDate: null },
     ];
-    const orgOverrides: ScopedOverride[] = [];
-    const scopedTemplates: ScopedTemplate[] = [
-      { scopeType: "PROFESSIONAL", scopeId: 7, dayOfWeek: 1, intervals: [] },
+    const orgOverrides: ScopedOverride[] = [
+      { scopeType: "ORGANIZATION", scopeId: 0, date: new Date("2026-02-18T00:00:00.000Z"), kind: "OPEN", intervals: [] },
     ];
     const scopedOverrides: ScopedOverride[] = [
-      {
-        scopeType: "PROFESSIONAL",
-        scopeId: 7,
-        date: new Date("2026-06-15T00:00:00.000Z"),
-        kind: "CLOSED",
-        intervals: [],
-      },
+      { scopeType: "PROFESSIONAL", scopeId: 7, date: new Date("2026-02-18T00:00:00.000Z"), kind: "BLOCK", intervals: [] },
     ];
 
     const resolved = resolveScopeData({
       scopeType: "PROFESSIONAL",
       scopeId: 7,
-      orgTemplates,
+      orgSchedules,
       orgOverrides,
-      templatesByScope: new Map([[buildScopeKey("PROFESSIONAL", 7), scopedTemplates]]),
-      overridesByScope: new Map([[buildScopeKey("PROFESSIONAL", 7), scopedOverrides]]),
+      schedulesByScope: new Map([[buildScopeKey("PROFESSIONAL", 7), [
+        { id: 2, scopeType: "PROFESSIONAL", scopeId: 7, startDate: new Date("2026-03-01T00:00:00.000Z"), endDate: null },
+      ]]]),
+      overridesByScope: new Map([
+        [buildScopeKey("ORGANIZATION", 0), orgOverrides],
+        [buildScopeKey("PROFESSIONAL", 7), scopedOverrides],
+      ]),
     });
 
-    expect(resolved.hasCustomTemplates).toBe(true);
-    expect(resolved.templates).toEqual(scopedTemplates);
-    expect(resolved.overrides).toEqual(scopedOverrides);
+    expect(resolved.overrides).toEqual([...orgOverrides, ...scopedOverrides]);
   });
 });
