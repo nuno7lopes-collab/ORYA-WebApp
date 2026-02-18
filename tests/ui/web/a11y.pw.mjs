@@ -72,7 +72,12 @@ test("@a11y authenticated user/org/admin routes have no critical axe violations"
 
   const userRoutes = ["/me/settings", "/me/reservas"];
   if (orgId) {
-    userRoutes.push(`/org/${orgId}/overview`, `/org/${orgId}/bookings`);
+    userRoutes.push(
+      `/org/${orgId}/overview`,
+      `/org/${orgId}/bookings`,
+      `/org/${orgId}/calendar`,
+      `/org/${orgId}/calendar/day`,
+    );
   }
   for (const route of userRoutes) {
     const response = await gotoRoute(userPage, route);

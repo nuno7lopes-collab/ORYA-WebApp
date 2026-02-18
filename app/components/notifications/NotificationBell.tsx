@@ -41,7 +41,7 @@ const INVITE_TYPES = new Set([
 export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
   const { user } = useUser();
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const distanceLocale = locale === "en-US" ? enUS : locale === "es-ES" ? es : pt;
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "invites">("all");

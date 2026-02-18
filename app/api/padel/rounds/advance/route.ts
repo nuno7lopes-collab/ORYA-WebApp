@@ -255,6 +255,10 @@ async function tryAutoScheduleGenerated(params: {
     select: { courtId: true, startAt: true, endAt: true },
   });
 
+  const allowPlaceholderMatches =
+    event.padelTournamentConfig?.format === "NON_STOP" ||
+    unscheduledMatchesRaw.some((match) => match.groupLabel === "NS");
+
   const scheduleResult = computeAutoSchedulePlan({
     unscheduledMatches,
     scheduledMatches,
@@ -269,7 +273,7 @@ async function tryAutoScheduleGenerated(params: {
       bufferMinutes,
       minRestMinutes,
       priority,
-      allowPlaceholderMatches: event.padelTournamentConfig?.format === "NON_STOP",
+      allowPlaceholderMatches,
     },
   });
 
@@ -382,14 +386,6 @@ async function _POST(req: NextRequest) {
   const runtimePatch: Record<string, unknown> = {};
 
   if (formatEffective === padel_format.NON_STOP) {
-    const nonStopMode =
-      categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
-        ? categoryProfile.nonStopMode
-        : "HARD_CAP_WAITLIST";
-    if (nonStopMode !== "ACTIVE_QUEUE") {
-      return jsonWrap({ ok: false, error: "ROUND_ADVANCE_NOT_SUPPORTED" }, { status: 409 });
-    }
-
     const nonStopRuntimeByCategory =
       advanced.nonStopRuntimeByCategory && typeof advanced.nonStopRuntimeByCategory === "object"
         ? (advanced.nonStopRuntimeByCategory as Record<string, unknown>)
@@ -401,6 +397,15 @@ async function _POST(req: NextRequest) {
     if (!runtimeRaw) {
       return jsonWrap({ ok: false, error: "ROUND_STATE_NOT_FOUND" }, { status: 409 });
     }
+    const profileNonStopMode =
+      categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+        ? categoryProfile.nonStopMode
+        : null;
+    const runtimeNonStopMode =
+      runtimeRaw.mode === "ACTIVE_QUEUE" || runtimeRaw.mode === "HARD_CAP_WAITLIST"
+        ? (runtimeRaw.mode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST")
+        : null;
+    const nonStopMode = runtimeNonStopMode ?? profileNonStopMode ?? "HARD_CAP_WAITLIST";
 
     const currentRound = Math.max(1, parseNumber(runtimeRaw.round) ?? 1);
     const roundsTotal = Math.max(currentRound, parseNumber(runtimeRaw.roundsTotal) ?? currentRound);
@@ -471,17 +476,23 @@ async function _POST(req: NextRequest) {
       }
       if (loserPairingId) {
         if (court === activeCourtsCount) {
-          queue.push(loserPairingId);
+          if (nonStopMode === "ACTIVE_QUEUE") {
+            queue.push(loserPairingId);
+          } else {
+            nextCourts[activeCourtsCount - 1]?.push(loserPairingId);
+          }
         } else {
           nextCourts[court]?.push(loserPairingId);
         }
       }
     }
 
-    while ((nextCourts[activeCourtsCount - 1]?.length ?? 0) < 2 && queue.length > 0) {
-      const nextFromQueue = queue.shift();
-      if (typeof nextFromQueue === "number") {
-        nextCourts[activeCourtsCount - 1]?.push(nextFromQueue);
+    if (nonStopMode === "ACTIVE_QUEUE") {
+      while ((nextCourts[activeCourtsCount - 1]?.length ?? 0) < 2 && queue.length > 0) {
+        const nextFromQueue = queue.shift();
+        if (typeof nextFromQueue === "number") {
+          nextCourts[activeCourtsCount - 1]?.push(nextFromQueue);
+        }
       }
     }
 
@@ -513,11 +524,11 @@ async function _POST(req: NextRequest) {
           groupLabel: "NS",
           score: {
             mode: "TIMED_GAMES",
-            nonStop: {
-              mode: "ACTIVE_QUEUE",
-              round: nextRound,
-              court: courtIdx + 1,
-              totalCourts: activeCourtsCount,
+              nonStop: {
+                mode: nonStopMode,
+                round: nextRound,
+                court: courtIdx + 1,
+                totalCourts: activeCourtsCount,
               roundsTotal,
             },
           } as Prisma.InputJsonValue,
@@ -529,8 +540,9 @@ async function _POST(req: NextRequest) {
       ...nonStopRuntimeByCategory,
       [categoryKey]: {
         ...runtimeRaw,
+        mode: nonStopMode,
         round: nextRound,
-        queue,
+        queue: nonStopMode === "ACTIVE_QUEUE" ? queue : [],
         activePairs: nextCourts.map((pairings) => [pairings[0] ?? null, pairings[1] ?? null]),
         updatedAt: new Date().toISOString(),
       },
@@ -796,6 +808,7 @@ async function _POST(req: NextRequest) {
         roundState: {
           format: formatEffective,
           categoryId,
+          mode: formatEffective === padel_format.NON_STOP ? (runtimePatch.nonStopRuntimeByCategory as Record<string, any>)?.[categoryKey]?.mode ?? null : null,
           dryRun: true,
         },
       },
@@ -883,6 +896,7 @@ async function _POST(req: NextRequest) {
       roundState: {
         format: formatEffective,
         categoryId,
+        mode: formatEffective === padel_format.NON_STOP ? (runtimePatch.nonStopRuntimeByCategory as Record<string, any>)?.[categoryKey]?.mode ?? null : null,
         updatedAt: new Date().toISOString(),
       },
     },

@@ -28,6 +28,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
 import { computeBookingPriceComponents } from "@/lib/reservas/bookingPricing";
+import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -390,9 +391,11 @@ async function _POST(
     const dateParts = getDateParts(startsAt, timezone);
     const dayStart = makeUtcDateFromLocal({ ...dateParts, hour: 0, minute: 0 }, timezone);
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
-    const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+    const conflictWindowStart = getConflictWindowStart(dayStart);
 
     const bookingEndsAt = new Date(startsAt.getTime() + booking.durationMinutes * 60 * 1000);
+    const scopedConflictFilter =
+      assignmentMode === "RESOURCE" ? { resourceId: { in: scopeIds } } : { professionalId: { in: scopeIds } };
     const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
@@ -420,7 +423,8 @@ async function _POST(
         where: {
           organizationId: booking.service.organizationId,
           id: { not: booking.id },
-          startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          ...scopedConflictFilter,
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
@@ -433,8 +437,8 @@ async function _POST(
             where: {
               organizationId: booking.service.organizationId,
               status: "SCHEDULED",
-              startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
-              endsAt: { gt: bookingWindowStart },
+              startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+              endsAt: { gt: conflictWindowStart },
               ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
             },
             select: { id: true, startsAt: true, endsAt: true, professionalId: true },

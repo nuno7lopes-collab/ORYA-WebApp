@@ -27,7 +27,7 @@ export default function PadelSignupInline({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const [loadingFull, setLoadingFull] = useState(false);
   const [loadingSplit, setLoadingSplit] = useState(false);
 

@@ -26,9 +26,10 @@ Scope: Eliminate duplicated calendar capabilities between `Calendar` and legacy 
 ## UX Contract
 
 1. `Calendar` is the operational board.
-2. `Bookings` is setup + transaction control.
-3. `bookings/availability` is a setup editor, not a second agenda.
-4. Default availability:
+2. `Bookings` is setup for services/catalog.
+3. `bookings/operations` is transaction control.
+4. `bookings/availability` is a setup editor, not a second agenda.
+5. Default availability:
 - Mon-Fri: open by default (08:00-17:00 unless policy changes).
 - Sat/Sun: closed by default.
 - Org default is the baseline; professional/resource can narrow or override.
@@ -63,7 +64,7 @@ Status update:
   - service-management-panel
   - delays-panel
   - upcoming-list
-- Keep `/bookings` as operations hub without timeline.
+- Keep `/bookings` as services hub and `/bookings/operations` as operations hub, both without duplicated timeline.
 
 Acceptance:
 - `reservas/page.tsx` reduced substantially.

@@ -260,6 +260,10 @@ type PadelEventCategoryLink = {
   padelCategoryId: number | null;
   format?: string | null;
   capacityTeams?: number | null;
+  activeTeams?: number | null;
+  completeTeams?: number | null;
+  confirmedTeams?: number | null;
+  pendingTeams?: number | null;
   isEnabled?: boolean;
   category?: { id: number; label: string } | null;
 };
@@ -433,6 +437,9 @@ const PADEL_FORMAT_LABELS: Record<string, string> = {
   AMERICANO: "Americano",
   MEXICANO: "Mexicano",
 };
+const PADEL_FORMAT_KEYS = Object.keys(PADEL_FORMAT_LABELS);
+const AM_MX_FORMAT_SET = new Set(["AMERICANO", "MEXICANO"]);
+const DEFAULT_NON_STOP_ROUNDS = 6;
 const FORMATS_WITH_KNOCKOUT = new Set([
   "GRUPOS_ELIMINATORIAS",
   "QUADRO_ELIMINATORIO",
@@ -575,12 +582,14 @@ function isTournamentInProgress(event: PadelEventSummary, nowTs: number) {
   return true;
 }
 
-const badge = (tone: "green" | "amber" | "slate" = "slate") =>
+const badge = (tone: "green" | "amber" | "blue" | "slate" = "slate") =>
   `rounded-full border px-2 py-[4px] text-[11px] ${
     tone === "green"
       ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
     : tone === "amber"
         ? "border-amber-300/40 bg-amber-400/10 text-amber-100"
+      : tone === "blue"
+          ? "border-sky-300/45 bg-sky-400/12 text-sky-100"
         : "border-white/15 bg-white/10 text-white/70"
   }`;
 
@@ -674,6 +683,39 @@ const mapNumberArray = (value: unknown): number[] => {
   return value
     .map((entry) => parsePositiveInt(entry))
     .filter((entry): entry is number => typeof entry === "number");
+};
+
+const resolveCategoryTeamsForPlanning = (
+  link: PadelEventCategoryLink | null | undefined,
+  strategy: "runtime-first" | "capacity-first" = "runtime-first",
+) => {
+  if (!link) return 0;
+  const toTeams = (value: unknown) => {
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.floor(parsed);
+  };
+  const confirmed = toTeams(link.confirmedTeams);
+  const complete = toTeams(link.completeTeams);
+  const active = toTeams(link.activeTeams);
+  const pending = toTeams(link.pendingTeams);
+  const capacity = toTeams(link.capacityTeams);
+
+  if (strategy === "capacity-first") {
+    if (capacity > 0) return capacity;
+    if (confirmed > 0) return confirmed;
+    if (active > 0) return active;
+    if (complete > 0) return complete;
+    if (pending > 0) return pending;
+    return 0;
+  }
+
+  if (confirmed > 0) return confirmed;
+  if (complete > 0) return complete;
+  if (active > 0) return active;
+  if (capacity > 0) return capacity;
+  if (pending > 0) return pending;
+  return 0;
 };
 
 type TimelineItem = {
@@ -1237,6 +1279,21 @@ export default function PadelHubClient({
   const [roundOpsMessage, setRoundOpsMessage] = useState<string | null>(null);
   const [roundOpsWarning, setRoundOpsWarning] = useState<string | null>(null);
   const [roundOpsError, setRoundOpsError] = useState<string | null>(null);
+  const [opsLiveFeed, setOpsLiveFeed] = useState<
+    Array<{
+      id: string;
+      level: "ok" | "warn" | "err" | "info";
+      title: string;
+      detail?: string | null;
+      at: string;
+    }>
+  >([]);
+  const [roundOpsPlanningMode, setRoundOpsPlanningMode] = useState<"runtime" | "capacity">("runtime");
+  const [roundOpsProfileBusy, setRoundOpsProfileBusy] = useState(false);
+  const [roundOpsPlan, setRoundOpsPlan] = useState<PadelFormatPlanResult | null>(null);
+  const [roundOpsPlanLoading, setRoundOpsPlanLoading] = useState(false);
+  const [roundOpsPlanError, setRoundOpsPlanError] = useState<string | null>(null);
+  const [roundOpsNonStopRoundsDraft, setRoundOpsNonStopRoundsDraft] = useState(String(DEFAULT_NON_STOP_ROUNDS));
   const [lastAction, setLastAction] = useState<{
     type: "block" | "availability" | "match";
     id: number;
@@ -3187,10 +3244,18 @@ export default function PadelHubClient({
         ? "Formato eliminatório: prioriza rondas KO e mantém margem para atrasos entre rondas."
         : "Formato sem eliminatórias: a prioridade aplica-se só às rondas gerais.";
   const advancedSettings = (padelConfig?.advancedSettings ?? {}) as Record<string, unknown>;
-  const formatProfilesByCategory =
+  const formatProfilesByCategoryRaw =
     advancedSettings.formatProfilesByCategory && typeof advancedSettings.formatProfilesByCategory === "object"
       ? (advancedSettings.formatProfilesByCategory as Record<string, unknown>)
       : {};
+  const formatProfilesByCategory = Object.entries(formatProfilesByCategoryRaw).reduce<Record<string, Record<string, unknown>>>(
+    (acc, [key, value]) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+      acc[key] = { ...(value as Record<string, unknown>) };
+      return acc;
+    },
+    {},
+  );
   const nonStopRuntimeByCategory =
     advancedSettings.nonStopRuntimeByCategory && typeof advancedSettings.nonStopRuntimeByCategory === "object"
       ? (advancedSettings.nonStopRuntimeByCategory as Record<string, unknown>)
@@ -3217,11 +3282,35 @@ export default function PadelHubClient({
     }
     return labels;
   }, [eventCategories]);
+  const eventCategoriesById = useMemo(() => {
+    const entries = new Map<number, PadelEventCategoryLink>();
+    for (const link of eventCategories) {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (!categoryId || entries.has(categoryId)) continue;
+      entries.set(categoryId, link);
+    }
+    return entries;
+  }, [eventCategories]);
   const runtimeCategoryKeys = useMemo(() => {
     const keys = new Set<string>();
+    keys.add("global");
+    eventCategories.forEach((link) => {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (categoryId && categoryId > 0) keys.add(String(categoryId));
+    });
+    Object.keys(formatProfilesByCategory).forEach((key) => keys.add(String(key)));
     Object.keys(nonStopRuntimeByCategory).forEach((key) => keys.add(key));
     Object.keys(amMxRuntimeByCategory).forEach((key) => keys.add(key));
-    if (keys.size === 0) keys.add("global");
     return Array.from(keys).sort((a, b) => {
       if (a === "global") return -1;
       if (b === "global") return 1;
@@ -3230,7 +3319,7 @@ export default function PadelHubClient({
       if (numericA !== null && numericB !== null) return numericA - numericB;
       return a.localeCompare(b);
     });
-  }, [amMxRuntimeByCategory, nonStopRuntimeByCategory]);
+  }, [amMxRuntimeByCategory, eventCategories, formatProfilesByCategory, nonStopRuntimeByCategory]);
   const selectedNonStopRuntime =
     nonStopRuntimeByCategory[roundOpsCategoryKey] && typeof nonStopRuntimeByCategory[roundOpsCategoryKey] === "object"
       ? (nonStopRuntimeByCategory[roundOpsCategoryKey] as Record<string, unknown>)
@@ -3239,25 +3328,63 @@ export default function PadelHubClient({
     amMxRuntimeByCategory[roundOpsCategoryKey] && typeof amMxRuntimeByCategory[roundOpsCategoryKey] === "object"
       ? (amMxRuntimeByCategory[roundOpsCategoryKey] as Record<string, unknown>)
       : null;
-  const selectedCategoryProfile =
+  const selectedCategoryProfileOwn =
     formatProfilesByCategory[roundOpsCategoryKey] && typeof formatProfilesByCategory[roundOpsCategoryKey] === "object"
       ? (formatProfilesByCategory[roundOpsCategoryKey] as Record<string, unknown>)
-      : formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
-        ? (formatProfilesByCategory.global as Record<string, unknown>)
-        : null;
+      : null;
+  const globalCategoryProfile =
+    formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
+      ? (formatProfilesByCategory.global as Record<string, unknown>)
+      : null;
+  const selectedCategoryProfile = selectedCategoryProfileOwn ?? globalCategoryProfile;
+  const roundOpsCategoryId = roundOpsCategoryKey === "global" ? null : parsePositiveInt(roundOpsCategoryKey);
+  const selectedRoundOpsCategoryLink =
+    roundOpsCategoryId !== null ? eventCategoriesById.get(roundOpsCategoryId) ?? null : null;
+  const roundOpsPlanningStrategy = roundOpsPlanningMode === "capacity" ? "capacity-first" : "runtime-first";
+  const selectedRoundOpsCategoryTeams = (() => {
+    const teams = resolveCategoryTeamsForPlanning(selectedRoundOpsCategoryLink, roundOpsPlanningStrategy);
+    return teams > 0 ? teams : null;
+  })();
+  const selectedRoundOpsCategoryTeamHint = (() => {
+    if (!selectedRoundOpsCategoryLink) return null;
+    const confirmed = parsePositiveInt(selectedRoundOpsCategoryLink.confirmedTeams) ?? 0;
+    const complete = parsePositiveInt(selectedRoundOpsCategoryLink.completeTeams) ?? 0;
+    const active = parsePositiveInt(selectedRoundOpsCategoryLink.activeTeams) ?? 0;
+    const pending = parsePositiveInt(selectedRoundOpsCategoryLink.pendingTeams) ?? 0;
+    const capacity = parsePositiveInt(selectedRoundOpsCategoryLink.capacityTeams) ?? 0;
+    return `Planeamento ${roundOpsPlanningMode === "capacity" ? "por capacidade" : "por equipas reais"} · confirmadas ${confirmed} · completas ${complete} · ativas ${active} · pendentes ${pending} · capacidade ${capacity}`;
+  })();
   const roundOpsFormatRaw =
     selectedNonStopRuntime
       ? "NON_STOP"
-      : typeof selectedCategoryProfile?.format === "string"
+      : typeof selectedCategoryProfile?.format === "string" && PADEL_FORMAT_KEYS.includes(selectedCategoryProfile.format)
         ? selectedCategoryProfile.format
-        : selectedAmMxRuntime
+        : selectedAmMxRuntime && tournamentFormatRaw && PADEL_FORMAT_KEYS.includes(tournamentFormatRaw)
           ? tournamentFormatRaw
-          : tournamentFormatRaw;
-  const roundOpsFormatLabel = roundOpsFormatRaw
-    ? PADEL_FORMAT_LABELS[roundOpsFormatRaw] ?? roundOpsFormatRaw
-    : "Formato por definir";
+          : tournamentFormatRaw && PADEL_FORMAT_KEYS.includes(tournamentFormatRaw)
+            ? tournamentFormatRaw
+            : "GRUPOS_ELIMINATORIAS";
+  const roundOpsFormatValue = PADEL_FORMAT_KEYS.includes(roundOpsFormatRaw) ? roundOpsFormatRaw : "GRUPOS_ELIMINATORIAS";
+  const roundOpsFormatLabel = PADEL_FORMAT_LABELS[roundOpsFormatRaw] ?? roundOpsFormatRaw;
+  const roundOpsIsAmMxFormat = AM_MX_FORMAT_SET.has(roundOpsFormatRaw);
+  const roundOpsIsNonStopFormat = roundOpsFormatRaw === "NON_STOP";
+  const selectedAmMxMode =
+    selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+  const selectedAmMxProgressionMode =
+    selectedCategoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND";
+  const selectedNonStopMode =
+    selectedNonStopRuntime?.mode === "ACTIVE_QUEUE" || selectedNonStopRuntime?.mode === "HARD_CAP_WAITLIST"
+      ? selectedNonStopRuntime.mode
+      : selectedCategoryProfile?.nonStopMode === "ACTIVE_QUEUE" ||
+          selectedCategoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+        ? selectedCategoryProfile.nonStopMode
+        : "ACTIVE_QUEUE";
+  const selectedNonStopRounds =
+    parsePositiveInt(selectedCategoryProfile?.nonStopRounds) ??
+    parsePositiveInt(selectedCategoryProfile?.roundsHint) ??
+    parsePositiveInt(selectedNonStopRuntime?.roundsTotal) ??
+    DEFAULT_NON_STOP_ROUNDS;
   const roundOpsHasRuntime = Boolean(selectedNonStopRuntime || selectedAmMxRuntime);
-  const roundOpsCategoryId = roundOpsCategoryKey === "global" ? null : parsePositiveInt(roundOpsCategoryKey);
   const roundOpsCategoryLabel = (() => {
     if (roundOpsCategoryKey === "global") return "Global";
     if (!roundOpsCategoryId) return `Categoria ${roundOpsCategoryKey}`;
@@ -3298,6 +3425,14 @@ export default function PadelHubClient({
     if (!categoryId) return `Categoria ${key}`;
     return eventCategoryLabelById.get(categoryId) ?? `Categoria #${categoryId}`;
   };
+  const roundOpsProfileSourceLabel =
+    roundOpsCategoryKey === "global"
+      ? "Perfil global"
+      : selectedCategoryProfileOwn
+        ? "Perfil da categoria"
+        : globalCategoryProfile
+          ? "A usar fallback global"
+        : null;
 
   useEffect(() => {
     if (runtimeCategoryKeys.length === 0) {
@@ -3314,6 +3449,14 @@ export default function PadelHubClient({
     setRoundOpsWarning(null);
     setRoundOpsError(null);
   }, [eventId, roundOpsCategoryKey]);
+
+  useEffect(() => {
+    setOpsLiveFeed([]);
+  }, [eventId]);
+
+  useEffect(() => {
+    setRoundOpsNonStopRoundsDraft(String(selectedNonStopRounds));
+  }, [selectedNonStopRounds]);
 
   useEffect(() => {
     const parseDate = (value: string | Date | null | undefined) => {
@@ -3358,8 +3501,7 @@ export default function PadelHubClient({
             : typeof link.category?.id === "number"
               ? link.category.id
               : null;
-        const teamsRaw = typeof link.capacityTeams === "number" ? link.capacityTeams : Number(link.capacityTeams);
-        const teams = Number.isFinite(teamsRaw) && teamsRaw > 0 ? Math.floor(teamsRaw) : 0;
+        const teams = resolveCategoryTeamsForPlanning(link, "capacity-first");
         if (!categoryId || teams <= 0) return null;
         return {
           categoryId,
@@ -3445,6 +3587,237 @@ export default function PadelHubClient({
     opsSummaryRes?.summary?.confirmedCount,
     tournamentFormatRaw,
   ]);
+
+  useEffect(() => {
+    const parseDate = (value: string | Date | null | undefined) => {
+      if (!value) return null;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    const windowStartDate = parseDate(autoScheduleForm.start) ?? parseDate(calendarEventStart);
+    const windowEndDate = parseDate(autoScheduleForm.end) ?? parseDate(calendarEventEnd);
+    const duration = Number(autoScheduleForm.duration);
+    const buffer = Number(autoScheduleForm.buffer);
+    const durationMinutes = Number.isFinite(duration) && duration > 0 ? duration : 60;
+    const bufferMinutes = Number.isFinite(buffer) && buffer >= 0 ? buffer : calendarBuffer;
+    const effectiveCourtIds =
+      autoScheduleCourtIds.length > 0 ? autoScheduleCourtIds : autoScheduleCourtOptions.map((court) => court.id);
+    const selectedCourtSet = new Set(effectiveCourtIds);
+    const orderedPriorities = autoScheduleCourtPriorityOrder.filter((courtId) => selectedCourtSet.has(courtId));
+    const normalizedPriorityOrder = [
+      ...orderedPriorities,
+      ...effectiveCourtIds.filter((courtId) => !orderedPriorities.includes(courtId)),
+    ];
+
+    if (
+      !eventId ||
+      !windowStartDate ||
+      !windowEndDate ||
+      windowEndDate <= windowStartDate ||
+      effectiveCourtIds.length === 0
+    ) {
+      setRoundOpsPlan(null);
+      setRoundOpsPlanError(null);
+      setRoundOpsPlanLoading(false);
+      return;
+    }
+
+    const confirmedPairingsRaw = Number(opsSummaryRes?.summary?.confirmedCount ?? 0);
+    const confirmedPairings = Number.isFinite(confirmedPairingsRaw) && confirmedPairingsRaw > 0
+      ? Math.floor(confirmedPairingsRaw)
+      : null;
+    const categoriesPayload =
+      roundOpsCategoryId !== null
+        ? (() => {
+            if (!selectedRoundOpsCategoryLink) return [];
+            const teams = selectedRoundOpsCategoryTeams ?? confirmedPairings ?? 0;
+            if (teams <= 0) return [];
+            return [
+              {
+                categoryId: roundOpsCategoryId,
+                label: selectedRoundOpsCategoryLink.category?.label ?? `Categoria #${roundOpsCategoryId}`,
+                teams,
+                format: roundOpsFormatValue,
+                amMxMode: roundOpsIsAmMxFormat ? selectedAmMxMode : undefined,
+                amMxProgressionMode: roundOpsIsAmMxFormat ? selectedAmMxProgressionMode : undefined,
+                nonStopMode: roundOpsIsNonStopFormat ? selectedNonStopMode : undefined,
+                nonStopRounds: roundOpsIsNonStopFormat ? selectedNonStopRounds : undefined,
+              },
+            ];
+          })()
+        : eventCategories
+            .filter((link) => link.isEnabled !== false)
+            .map((link) => {
+              const categoryId =
+                typeof link.padelCategoryId === "number"
+                  ? link.padelCategoryId
+                  : typeof link.category?.id === "number"
+                    ? link.category.id
+                    : null;
+              const teams = resolveCategoryTeamsForPlanning(link, roundOpsPlanningStrategy);
+              if (!categoryId || teams <= 0) return null;
+              const categoryKey = String(categoryId);
+              const profile =
+                formatProfilesByCategory[categoryKey] ?? formatProfilesByCategory.global ?? null;
+              const formatRaw =
+                typeof profile?.format === "string" && PADEL_FORMAT_KEYS.includes(profile.format)
+                  ? profile.format
+                  : typeof link.format === "string" && PADEL_FORMAT_KEYS.includes(link.format)
+                    ? link.format
+                    : roundOpsFormatValue;
+              const amMxMode =
+                profile?.amMxMode === "FIXED_PAIR" || profile?.amMxMode === "INDIVIDUAL_ROTATION"
+                  ? profile.amMxMode
+                  : undefined;
+              const amMxProgressionMode = profile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : undefined;
+              const nonStopMode =
+                profile?.nonStopMode === "ACTIVE_QUEUE" || profile?.nonStopMode === "HARD_CAP_WAITLIST"
+                  ? profile.nonStopMode
+                  : undefined;
+              const nonStopRoundsRaw = parsePositiveInt(profile?.nonStopRounds) ?? parsePositiveInt(profile?.roundsHint);
+              return {
+                categoryId,
+                label: link.category?.label ?? `Categoria #${categoryId}`,
+                teams,
+                format: formatRaw,
+                amMxMode,
+                amMxProgressionMode,
+                nonStopMode,
+                nonStopRounds: nonStopRoundsRaw ?? undefined,
+              };
+            })
+            .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+
+    if (roundOpsCategoryId !== null && categoriesPayload.length === 0) {
+      setRoundOpsPlan(null);
+      setRoundOpsPlanError("Define lotação da categoria para calcular viabilidade desta ronda.");
+      setRoundOpsPlanLoading(false);
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      eventId,
+      windowStart: windowStartDate.toISOString(),
+      windowEnd: windowEndDate.toISOString(),
+      durationMinutes,
+      bufferMinutes,
+      courtIds: effectiveCourtIds,
+      courtPriorityOrder: normalizedPriorityOrder,
+    };
+    if (categoriesPayload.length > 0) {
+      payload.categories = categoriesPayload;
+    } else if (confirmedPairings) {
+      payload.teams = confirmedPairings;
+      payload.format = roundOpsFormatValue;
+      if (roundOpsIsAmMxFormat) {
+        payload.amMxMode = selectedAmMxMode;
+        payload.amMxProgressionMode = selectedAmMxProgressionMode;
+      }
+      if (roundOpsIsNonStopFormat) {
+        payload.nonStopMode = selectedNonStopMode;
+        payload.nonStopRounds = selectedNonStopRounds;
+      }
+    } else {
+      setRoundOpsPlan(null);
+      setRoundOpsPlanError("Sem equipas suficientes para simular capacidade por formato.");
+      setRoundOpsPlanLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setRoundOpsPlanLoading(true);
+      setRoundOpsPlanError(null);
+      try {
+        const res = await fetch("/api/padel/formats/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          if (!controller.signal.aborted) {
+            setRoundOpsPlan(null);
+            setRoundOpsPlanError(sanitizeUiErrorMessage(json?.error, "Planner operacional indisponível."));
+          }
+          return;
+        }
+        const plan = json?.plan;
+        if (!controller.signal.aborted) {
+          setRoundOpsPlan(plan && typeof plan === "object" ? (plan as PadelFormatPlanResult) : null);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setRoundOpsPlan(null);
+        setRoundOpsPlanError("Erro ao calcular viabilidade operacional da ronda.");
+      } finally {
+        if (!controller.signal.aborted) setRoundOpsPlanLoading(false);
+      }
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [
+    autoScheduleCourtIds,
+    autoScheduleCourtOptions,
+    autoScheduleCourtPriorityOrder,
+    autoScheduleForm.buffer,
+    autoScheduleForm.duration,
+    autoScheduleForm.end,
+    autoScheduleForm.start,
+    calendarBuffer,
+    calendarEventEnd,
+    calendarEventStart,
+    eventCategories,
+    eventId,
+    formatProfilesByCategory,
+    opsSummaryRes?.summary?.confirmedCount,
+    roundOpsCategoryId,
+    roundOpsFormatValue,
+    roundOpsIsAmMxFormat,
+    roundOpsIsNonStopFormat,
+    roundOpsPlanningStrategy,
+    selectedAmMxMode,
+    selectedAmMxProgressionMode,
+    selectedNonStopMode,
+    selectedNonStopRounds,
+    selectedRoundOpsCategoryLink,
+    selectedRoundOpsCategoryTeams,
+  ]);
+
+  const roundOpsPlanCategory = useMemo(() => {
+    if (!roundOpsPlan || !Array.isArray(roundOpsPlan.categories) || roundOpsPlan.categories.length === 0) return null;
+    if (roundOpsCategoryId === null) return null;
+    return (
+      roundOpsPlan.categories.find((entry) => entry.categoryId === roundOpsCategoryId || entry.key === String(roundOpsCategoryId)) ??
+      roundOpsPlan.categories[0]
+    );
+  }, [roundOpsCategoryId, roundOpsPlan]);
+
+  const roundOpsPlanAlternatives = useMemo(() => {
+    if (!roundOpsPlan || !Array.isArray(roundOpsPlan.alternatives)) return [];
+    return roundOpsPlan.alternatives
+      .map((item) => item?.summary)
+      .filter((summary): summary is string => typeof summary === "string" && summary.trim().length > 0);
+  }, [roundOpsPlan]);
+
+  const roundOpsPlanWarnings = useMemo(() => {
+    const warnings = new Set<string>();
+    if (roundOpsPlan && Array.isArray(roundOpsPlan.warnings)) {
+      roundOpsPlan.warnings
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .forEach((entry) => warnings.add(entry));
+    }
+    if (roundOpsPlanCategory && Array.isArray(roundOpsPlanCategory.warnings)) {
+      roundOpsPlanCategory.warnings
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .forEach((entry) => warnings.add(entry));
+    }
+    return Array.from(warnings);
+  }, [roundOpsPlan, roundOpsPlanCategory]);
 
   const autoScheduleCapacity = useMemo(() => {
     if (!autoSchedulePlan) return null;
@@ -3784,6 +4157,7 @@ export default function PadelHubClient({
   const delayAndRescheduleMatch = async (match: CalendarMatch) => {
     if (!eventId) {
       setCalendarError("Abre a partir de um torneio para reagendar.");
+      pushOpsLive("warn", "Reagendamento indisponível", "Seleciona um torneio para reagendar jogos.");
       return;
     }
     const reason = window.prompt("Motivo do atraso? (opcional)") ?? "";
@@ -3802,6 +4176,7 @@ export default function PadelHubClient({
         const errMsg = sanitizeUiErrorMessage(delayJson?.error, "Não foi possível marcar atraso.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
+        pushOpsLive("err", "Falha ao marcar atraso", errMsg);
         return;
       }
 
@@ -3809,6 +4184,7 @@ export default function PadelHubClient({
         const msg = "Reagendado automaticamente.";
         setCalendarMessage(msg);
         toast(msg, "ok");
+        pushOpsLive("ok", "Jogo reagendado automaticamente", `Jogo #${match.id}.`);
       } else {
         const errCode = typeof delayJson?.rescheduleError === "string" ? delayJson.rescheduleError : null;
         const msg =
@@ -3821,12 +4197,14 @@ export default function PadelHubClient({
                 : "Atraso marcado, sem slot automático.";
         setCalendarWarning(msg);
         toast(msg, "warn");
+        pushOpsLive("warn", "Jogo marcado como atrasado", `Jogo #${match.id} · ${msg}`);
       }
       mutateCalendar();
     } catch (err) {
       console.error("[padel/calendar] delay", err);
       setCalendarError("Erro inesperado ao reagendar.");
       toast("Erro ao reagendar", "err");
+      pushOpsLive("err", "Erro ao reagendar jogo", `Jogo #${match.id}.`);
     } finally {
       setDelayBusyMatchId(null);
     }
@@ -3871,15 +4249,53 @@ export default function PadelHubClient({
     });
   };
 
+  const UNSCHEDULED_REASON_LABELS: Record<string, string> = {
+    INVALID_WINDOW: "janela inválida",
+    WINDOW_NOT_SET: "janela não definida",
+    NO_COURTS_CONFIGURED: "sem campos configurados",
+    NO_SLOT_IN_WINDOW: "sem slot na janela",
+    COURT_BLOCKED: "campo bloqueado",
+    PLAYER_UNAVAILABLE: "jogador indisponível",
+    REST_CONFLICT: "descanso mínimo",
+    OVERLAP_CONFLICT: "conflito de sobreposição",
+    NO_PARTICIPANTS: "jogo sem participantes",
+  };
+
+  const formatUnscheduledSummary = (value: Record<string, unknown> | null | undefined) => {
+    if (!value || typeof value !== "object") return "";
+    return Object.entries(value)
+      .map(([reason, count]) => {
+        const numeric = Number(count);
+        const safeCount = Number.isFinite(numeric) ? numeric : 0;
+        const label =
+          UNSCHEDULED_REASON_LABELS[reason] ??
+          reason
+            .toLowerCase()
+            .replace(/_/g, " ");
+        return `${label}: ${safeCount}`;
+      })
+      .join(" · ");
+  };
+  const pushOpsLive = (level: "ok" | "warn" | "err" | "info", title: string, detail?: string | null) => {
+    const at = new Date().toISOString();
+    const id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    setOpsLiveFeed((prev) => [{ id, level, title, detail: detail ?? null, at }, ...prev].slice(0, 14));
+  };
+
   const runAutoSchedule = async () => {
     if (!eventId) {
       setCalendarError("Abre a partir de um torneio para auto-agendar.");
+      pushOpsLive("warn", "Auto-agendamento indisponível", "Seleciona um torneio para agendar.");
       return;
     }
     const startIso = toIsoFromLocalInput(autoScheduleForm.start);
     const endIso = toIsoFromLocalInput(autoScheduleForm.end);
     if (startIso && endIso && new Date(endIso) <= new Date(startIso)) {
       setCalendarError("A janela termina antes do início.");
+      pushOpsLive("warn", "Janela inválida", "Fim do auto-agendamento antes do início.");
       return;
     }
     const durationMinutes = Number(autoScheduleForm.duration);
@@ -3917,20 +4333,20 @@ export default function PadelHubClient({
         if (json?.error === "AUTO_SCHEDULE_INFEASIBLE") {
           const reasons =
             json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
-              ? Object.entries(json.unscheduledByReason as Record<string, unknown>)
-                  .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
-                  .join(" · ")
+              ? formatUnscheduledSummary(json.unscheduledByReason as Record<string, unknown>)
               : null;
           const errMsg = reasons
             ? `Auto-agendamento inviável. ${reasons}.`
             : "Auto-agendamento inviável para a janela/campos atuais.";
           setCalendarError(errMsg);
           toast(errMsg, "warn");
+          pushOpsLive("warn", "Auto-agendamento inviável", reasons || "Ajusta janela/campos.");
           return;
         }
         const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível auto-agendar.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
+        pushOpsLive("err", "Falha no auto-agendamento", errMsg);
         return;
       }
 
@@ -3940,19 +4356,17 @@ export default function PadelHubClient({
         json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
           ? (json.unscheduledByReason as Record<string, unknown>)
           : null;
-      const unscheduledSummary = unscheduledByReason
-        ? Object.entries(unscheduledByReason)
-            .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
-            .join(" · ")
-        : "";
+      const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
       const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       if (skippedCount > 0) {
         setCalendarWarning(unscheduledSummary ? `${summary} ${unscheduledSummary}` : summary);
         toast("Auto-agendamento parcial", "warn");
+        pushOpsLive("warn", "Auto-agendamento parcial", unscheduledSummary || summary);
       } else {
         setCalendarMessage(summary);
         toast("Auto-agendamento completo", "ok");
+        pushOpsLive("ok", "Auto-agendamento completo", summary);
       }
       const warnings = Array.isArray(json?.warnings) ? json.warnings : [];
       if (warnings.length > 0) {
@@ -3960,12 +4374,14 @@ export default function PadelHubClient({
         const warnMsg = `Aviso: ${warnings.length} conflito(s) de agenda.${first}`;
         setCalendarWarning(warnMsg);
         toast(warnMsg, "warn");
+        pushOpsLive("warn", "Conflitos de agenda detetados", warnMsg);
       }
       mutateCalendar();
     } catch (err) {
       console.error("[padel/calendar] auto-schedule", err);
       setCalendarError("Erro inesperado ao auto-agendar.");
       toast("Erro ao auto-agendar", "err");
+      pushOpsLive("err", "Erro no auto-agendamento", "Erro inesperado durante execução.");
     } finally {
       setAutoScheduling(false);
     }
@@ -3974,12 +4390,14 @@ export default function PadelHubClient({
   const previewAutoSchedule = async () => {
     if (!eventId) {
       setCalendarError("Abre a partir de um torneio para simular.");
+      pushOpsLive("warn", "Simulação indisponível", "Seleciona um torneio para simular.");
       return;
     }
     const startIso = toIsoFromLocalInput(autoScheduleForm.start);
     const endIso = toIsoFromLocalInput(autoScheduleForm.end);
     if (startIso && endIso && new Date(endIso) <= new Date(startIso)) {
       setCalendarError("A janela termina antes do início.");
+      pushOpsLive("warn", "Janela inválida", "Fim da simulação antes do início.");
       return;
     }
     const durationMinutes = Number(autoScheduleForm.duration);
@@ -4017,6 +4435,7 @@ export default function PadelHubClient({
         const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível simular.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
+        pushOpsLive("err", "Falha na simulação", errMsg);
         return;
       }
       const scheduledCount = Number(json?.scheduledCount ?? 0);
@@ -4025,20 +4444,18 @@ export default function PadelHubClient({
         json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
           ? (json.unscheduledByReason as Record<string, unknown>)
           : null;
-      const unscheduledSummary = unscheduledByReason
-        ? Object.entries(unscheduledByReason)
-            .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
-            .join(" · ")
-        : "";
+      const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
       const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
       setAutoScheduleSummary(summary);
       setAutoSchedulePreview(Array.isArray(json?.scheduled) ? json.scheduled : []);
       if (skippedCount > 0) {
         setCalendarWarning(unscheduledSummary ? `${summary} ${unscheduledSummary}` : summary);
         toast("Simulação parcial", "warn");
+        pushOpsLive("warn", "Simulação parcial", unscheduledSummary || summary);
       } else {
         setCalendarMessage(summary);
         toast("Simulação completa", "ok");
+        pushOpsLive("info", "Simulação concluída", summary);
       }
       const warnings = Array.isArray(json?.warnings) ? json.warnings : [];
       if (warnings.length > 0) {
@@ -4046,11 +4463,13 @@ export default function PadelHubClient({
         const warnMsg = `Aviso: ${warnings.length} conflito(s) de agenda.${first}`;
         setCalendarWarning(warnMsg);
         toast(warnMsg, "warn");
+        pushOpsLive("warn", "Conflitos na simulação", warnMsg);
       }
     } catch (err) {
       console.error("[padel/calendar] preview", err);
       setCalendarError("Erro ao simular.");
       toast("Erro ao simular", "err");
+      pushOpsLive("err", "Erro na simulação", "Erro inesperado durante simulação.");
     } finally {
       setAutoScheduling(false);
     }
@@ -4059,12 +4478,14 @@ export default function PadelHubClient({
   const saveAutoScheduleDefaults = async () => {
     if (!eventId || !padelConfig) {
       setCalendarError("Sem configuração do torneio para gravar preferências.");
+      pushOpsLive("warn", "Sem configuração para guardar", "Define o torneio antes de guardar defaults.");
       return;
     }
     const startIso = toIsoFromLocalInput(autoScheduleForm.start);
     const endIso = toIsoFromLocalInput(autoScheduleForm.end);
     if (startIso && endIso && new Date(endIso) <= new Date(startIso)) {
       setCalendarError("A janela termina antes do início.");
+      pushOpsLive("warn", "Janela inválida", "Não foi possível guardar defaults com janela inválida.");
       return;
     }
 
@@ -4117,27 +4538,146 @@ export default function PadelHubClient({
         const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível guardar preferências.");
         setCalendarError(errMsg);
         toast(errMsg, "err");
+        pushOpsLive("err", "Falha ao guardar defaults", errMsg);
         return;
       }
       setCalendarMessage("Preferências guardadas.");
       toast("Preferências guardadas", "ok");
+      pushOpsLive("ok", "Defaults de agenda guardados", "Prioridade e seleção de campos atualizadas.");
       mutatePadelConfig();
     } catch (err) {
       console.error("[padel/calendar] save defaults", err);
       setCalendarError("Erro ao guardar preferências.");
       toast("Erro ao guardar preferências", "err");
+      pushOpsLive("err", "Erro ao guardar defaults", "Erro inesperado no save de preferências.");
     } finally {
       setAutoScheduling(false);
+    }
+  };
+
+  const saveRoundOpsFormatProfile = async (
+    patch: {
+      format?: string;
+      amMxMode?: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+      amMxProgressionMode?: "ROUND_BY_ROUND";
+      nonStopMode?: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+      nonStopRounds?: number | null;
+    },
+    scope: "selected" | "global" = "selected",
+  ) => {
+    if (!eventId || !padelConfig) {
+      setRoundOpsError("Sem configuração do torneio para guardar perfil.");
+      pushOpsLive("warn", "Perfil não guardado", "Configuração de torneio indisponível.");
+      return;
+    }
+    const targetKey = scope === "global" ? "global" : roundOpsCategoryKey || "global";
+    const nextProfiles = Object.entries(formatProfilesByCategory).reduce<Record<string, Record<string, unknown>>>(
+      (acc, [key, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+        acc[key] = { ...(value as Record<string, unknown>) };
+        return acc;
+      },
+      {},
+    );
+    const currentProfile = { ...(nextProfiles[targetKey] ?? {}) };
+    const nextFormat =
+      typeof patch.format === "string" && PADEL_FORMAT_KEYS.includes(patch.format) ? patch.format : roundOpsFormatValue;
+    const nextProfile: Record<string, unknown> = {
+      ...currentProfile,
+      format: nextFormat,
+    };
+
+    const isAmMx = AM_MX_FORMAT_SET.has(nextFormat);
+    const isNonStop = nextFormat === "NON_STOP";
+    if (isAmMx) {
+      nextProfile.amMxMode =
+        patch.amMxMode === "FIXED_PAIR" || patch.amMxMode === "INDIVIDUAL_ROTATION"
+          ? patch.amMxMode
+          : currentProfile.amMxMode === "FIXED_PAIR"
+            ? "FIXED_PAIR"
+            : "INDIVIDUAL_ROTATION";
+      nextProfile.amMxProgressionMode =
+        patch.amMxProgressionMode === "ROUND_BY_ROUND" || currentProfile.amMxProgressionMode === "ROUND_BY_ROUND"
+          ? "ROUND_BY_ROUND"
+          : "ROUND_BY_ROUND";
+    } else {
+      delete nextProfile.amMxMode;
+      delete nextProfile.amMxProgressionMode;
+    }
+
+    if (isNonStop) {
+      nextProfile.nonStopMode =
+        patch.nonStopMode === "ACTIVE_QUEUE" || patch.nonStopMode === "HARD_CAP_WAITLIST"
+          ? patch.nonStopMode
+          : currentProfile.nonStopMode === "HARD_CAP_WAITLIST"
+            ? "HARD_CAP_WAITLIST"
+            : "ACTIVE_QUEUE";
+      const roundsSource =
+        patch.nonStopRounds !== undefined
+          ? patch.nonStopRounds
+          : parsePositiveInt(currentProfile.nonStopRounds) ?? parsePositiveInt(currentProfile.roundsHint) ?? selectedNonStopRounds;
+      if (typeof roundsSource === "number" && Number.isFinite(roundsSource) && roundsSource > 0) {
+        nextProfile.nonStopRounds = Math.floor(roundsSource);
+      } else {
+        delete nextProfile.nonStopRounds;
+      }
+    } else {
+      delete nextProfile.nonStopMode;
+      delete nextProfile.nonStopRounds;
+    }
+
+    nextProfiles[targetKey] = nextProfile;
+
+    setRoundOpsProfileBusy(true);
+    setRoundOpsMessage(null);
+    setRoundOpsWarning(null);
+    setRoundOpsError(null);
+    try {
+      const res = await fetch("/api/padel/tournaments/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          organizationId: padelConfig.organizationId,
+          format: padelConfig.format,
+          formatProfilesByCategory: nextProfiles,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível guardar perfil de formato.");
+        setRoundOpsError(errMsg);
+        toast(errMsg, "err");
+        pushOpsLive("err", "Falha ao guardar perfil", errMsg);
+        return;
+      }
+      setRoundOpsMessage(
+        scope === "global"
+          ? "Perfil copiado para fallback global."
+          : `Perfil guardado em ${roundOpsCategoryLabel}.`,
+      );
+      toast("Perfil de formato guardado", "ok");
+      pushOpsLive("ok", "Perfil por formato atualizado", scope === "global" ? "Fallback global atualizado." : roundOpsCategoryLabel);
+      mutatePadelConfig();
+    } catch (err) {
+      console.error("[padel/round-ops] save profile", err);
+      setRoundOpsError("Erro ao guardar perfil de formato.");
+      toast("Erro ao guardar perfil", "err");
+      pushOpsLive("err", "Erro ao guardar perfil", "Erro inesperado no update de perfil.");
+    } finally {
+      setRoundOpsProfileBusy(false);
     }
   };
 
   const runRoundsAdvance = async (dryRun = false) => {
     if (!eventId) {
       setRoundOpsError("Seleciona um torneio para avançar rondas.");
+      pushOpsLive("warn", "Avanço indisponível", "Seleciona um torneio para avançar rondas.");
       return;
     }
     if (!roundOpsHasRuntime) {
       setRoundOpsWarning("Gera os jogos primeiro para iniciar runtime de rondas.");
+      pushOpsLive("warn", "Runtime não iniciado", "Gera jogos antes de avançar rondas.");
       return;
     }
 
@@ -4174,9 +4714,11 @@ export default function PadelHubClient({
         if (errorCode && warnErrors.has(errorCode)) {
           setRoundOpsWarning(errorMessage);
           toast(errorMessage, "warn");
+          pushOpsLive("warn", "Avanço de ronda bloqueado", errorMessage);
         } else {
           setRoundOpsError(errorMessage);
           toast(errorMessage, "err");
+          pushOpsLive("err", "Falha no avanço de ronda", errorMessage);
         }
         return;
       }
@@ -4195,14 +4737,14 @@ export default function PadelHubClient({
         : `Ronda avançada (${roundOpsCategoryLabel}): ${generated} jogos gerados, ${scheduled} agendados.`;
       setRoundOpsMessage(baseSummary);
       toast(dryRun ? "Simulação de ronda concluída" : "Ronda avançada", "ok");
+      pushOpsLive(dryRun ? "info" : "ok", dryRun ? "Simulação de ronda concluída" : "Ronda avançada", baseSummary);
 
       if (unscheduledCount > 0) {
-        const reasonsLabel = Object.entries(unscheduledByReason)
-          .map(([reason, count]) => `${reason}: ${Number(count) || 0}`)
-          .join(" · ");
+        const reasonsLabel = formatUnscheduledSummary(unscheduledByReason);
         const warningLabel = `Sem slot para ${unscheduledCount} jogo(s). ${reasonsLabel}`;
         setRoundOpsWarning(warningLabel);
         toast(warningLabel, "warn");
+        pushOpsLive("warn", "Ronda com jogos sem slot", warningLabel);
       }
 
       if (!dryRun) {
@@ -4215,6 +4757,7 @@ export default function PadelHubClient({
       const message = "Erro inesperado ao avançar ronda.";
       setRoundOpsError(message);
       toast(message, "err");
+      pushOpsLive("err", "Erro no avanço de ronda", message);
     } finally {
       setRoundOpsBusy(false);
     }
@@ -5434,7 +5977,7 @@ export default function PadelHubClient({
                   value={roundOpsCategoryKey}
                   onChange={(e) => setRoundOpsCategoryKey(e.target.value)}
                   className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                  disabled={!eventId || roundOpsBusy}
+                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
                 >
                   {runtimeCategoryKeys.map((key) => (
                     <option key={`round-cat-${key}`} value={key}>
@@ -5449,13 +5992,222 @@ export default function PadelHubClient({
                   <p className="mt-1">
                     Ronda atual: <span className="font-semibold text-white">{roundOpsRoundLabel}</span>
                   </p>
+                  {selectedRoundOpsCategoryTeamHint && (
+                    <p className="mt-1 text-white/65">{selectedRoundOpsCategoryTeamHint}</p>
+                  )}
+                  {roundOpsProfileSourceLabel && (
+                    <p className="mt-1">
+                      Perfil: <span className="font-semibold text-white">{roundOpsProfileSourceLabel}</span>
+                    </p>
+                  )}
                 </div>
               </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1 text-[11px] text-white/65">
+                  <span>Modo de planeamento</span>
+                  <select
+                    value={roundOpsPlanningMode}
+                    onChange={(e) => setRoundOpsPlanningMode(e.target.value === "capacity" ? "capacity" : "runtime")}
+                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                    disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                  >
+                    <option value="runtime">Equipas reais (confirmadas/ativas)</option>
+                    <option value="capacity">Capacidade teórica da categoria</option>
+                  </select>
+                </label>
+                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
+                  {roundOpsPlanningMode === "runtime"
+                    ? "Planeia com base no estado real atual da categoria."
+                    : "Planeia no limite da lotação definida para a categoria."}
+                </div>
+              </div>
+              <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3 text-[12px] text-white/80">
+                <p className="font-semibold text-white">Perfil por formato ({roundOpsCategoryLabel})</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="space-y-1 text-[11px] text-white/65">
+                    <span>Formato competitivo</span>
+                    <select
+                      value={roundOpsFormatValue}
+                      onChange={(e) => saveRoundOpsFormatProfile({ format: e.target.value }, "selected")}
+                      className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                      disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                    >
+                      {Object.entries(PADEL_FORMAT_LABELS).map(([value, label]) => (
+                        <option key={`round-profile-format-${value}`} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {roundOpsIsAmMxFormat && (
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Modo AM/MX</span>
+                      <select
+                        value={selectedAmMxMode}
+                        onChange={(e) =>
+                          saveRoundOpsFormatProfile(
+                            { amMxMode: e.target.value === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION" },
+                            "selected",
+                          )
+                        }
+                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                      >
+                        <option value="INDIVIDUAL_ROTATION">Rotação individual</option>
+                        <option value="FIXED_PAIR">Dupla fixa</option>
+                      </select>
+                    </label>
+                  )}
+                  {roundOpsIsAmMxFormat && (
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Progressão</span>
+                      <select
+                        value={selectedAmMxProgressionMode}
+                        onChange={() => saveRoundOpsFormatProfile({ amMxProgressionMode: "ROUND_BY_ROUND" }, "selected")}
+                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                      >
+                        <option value="ROUND_BY_ROUND">Ronda a ronda (dinâmico)</option>
+                      </select>
+                    </label>
+                  )}
+                  {roundOpsIsNonStopFormat && (
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Modo NON_STOP</span>
+                      <select
+                        value={selectedNonStopMode}
+                        onChange={(e) =>
+                          saveRoundOpsFormatProfile(
+                            { nonStopMode: e.target.value === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE" },
+                            "selected",
+                          )
+                        }
+                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                      >
+                        <option value="ACTIVE_QUEUE">Fila ativa</option>
+                        <option value="HARD_CAP_WAITLIST">Hard cap + waitlist</option>
+                      </select>
+                    </label>
+                  )}
+                  {roundOpsIsNonStopFormat && (
+                    <label className="space-y-1 text-[11px] text-white/65">
+                      <span>Rondas NON_STOP</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={roundOpsNonStopRoundsDraft}
+                        onChange={(e) => setRoundOpsNonStopRoundsDraft(e.target.value)}
+                        onBlur={() => {
+                          const parsed = Number(roundOpsNonStopRoundsDraft);
+                          const nextRounds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : selectedNonStopRounds;
+                          setRoundOpsNonStopRoundsDraft(String(nextRounds));
+                          saveRoundOpsFormatProfile({ nonStopRounds: nextRounds }, "selected");
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }
+                        }}
+                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
+                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                      />
+                    </label>
+                  )}
+                </div>
+                {roundOpsCategoryKey !== "global" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      saveRoundOpsFormatProfile(
+                        {
+                          format: roundOpsFormatValue,
+                          amMxMode: roundOpsIsAmMxFormat ? selectedAmMxMode : undefined,
+                          amMxProgressionMode: roundOpsIsAmMxFormat ? "ROUND_BY_ROUND" : undefined,
+                          nonStopMode: roundOpsIsNonStopFormat ? selectedNonStopMode : undefined,
+                          nonStopRounds: roundOpsIsNonStopFormat ? selectedNonStopRounds : null,
+                        },
+                        "global",
+                      )
+                    }
+                    className="inline-flex items-center justify-center rounded-full border border-white/25 px-3 py-1.5 text-[11px] font-semibold text-white hover:border-white/40 disabled:opacity-60"
+                    disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
+                  >
+                    Copiar perfil para fallback global
+                  </button>
+                )}
+              </div>
+              {roundOpsPlanLoading && (
+                <p className="text-[11px] text-white/60">A calcular viabilidade operacional desta ronda...</p>
+              )}
+              {roundOpsPlanError && (
+                <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
+                  {roundOpsPlanError}
+                </div>
+              )}
+              {roundOpsPlan && (
+                <div
+                  className={`rounded-xl border px-3 py-2 text-[12px] ${
+                    roundOpsPlan.unscheduledMatches > 0 || !roundOpsPlan.feasible
+                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
+                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+                  }`}
+                >
+                  <p className="mb-1 text-[11px] opacity-90">
+                    Modo de planeamento:{" "}
+                    {roundOpsPlanningMode === "capacity" ? "capacidade teórica" : "equipas reais"}
+                  </p>
+                  {roundOpsPlanCategory ? (
+                    <>
+                      <p>
+                        {roundOpsPlanCategory.label}: mínimo {roundOpsPlanCategory.minTeams} · equipas {roundOpsPlanCategory.teams} ·
+                        jogos {roundOpsPlanCategory.matchesNeeded} · slots {roundOpsPlanCategory.allocatedSlots}
+                      </p>
+                      <p className="mt-1">
+                        Recomendado máximo {roundOpsPlanCategory.recommendedMaxTeams}
+                        {typeof roundOpsPlanCategory.hardCapMax === "number"
+                          ? ` · hard cap ${roundOpsPlanCategory.hardCapMax}`
+                          : ""}
+                        {typeof roundOpsPlanCategory.queueEstimatedRounds === "number"
+                          ? ` · fila estimada ${roundOpsPlanCategory.queueEstimatedRounds} rondas`
+                          : ""}
+                        .
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        Slots {roundOpsPlan.totalSlots} · jogos necessários {roundOpsPlan.matchesNeeded} · em falta{" "}
+                        {Math.max(0, roundOpsPlan.unscheduledMatches)} · campos {roundOpsPlan.courtsUsed}.
+                      </p>
+                    </>
+                  )}
+                  {roundOpsPlan.blockingReasons.length > 0 && (
+                    <p className="mt-1 text-[11px] opacity-90">
+                      Bloqueios técnicos: {roundOpsPlan.blockingReasons.join(" · ")}.
+                    </p>
+                  )}
+                  {roundOpsPlanWarnings.length > 0 && (
+                    <p className="mt-1 text-[11px] opacity-90">Avisos: {roundOpsPlanWarnings.slice(0, 2).join(" · ")}.</p>
+                  )}
+                  {roundOpsPlanAlternatives.length > 0 && (
+                    <p className="mt-1 text-[11px] opacity-90">
+                      Alternativas: {roundOpsPlanAlternatives.slice(0, 2).join(" · ")}.
+                    </p>
+                  )}
+                </div>
+              )}
               {selectedNonStopRuntime && (
                 <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3 text-[12px] text-white/80">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-white">Fila NON_STOP</p>
-                    <span className={badge("slate")}>Espera: {nonStopQueuePairingIds.length}</span>
+                    <p className="font-semibold text-white">Runtime NON_STOP</p>
+                    <div className="flex items-center gap-2">
+                      <span className={badge(selectedNonStopMode === "ACTIVE_QUEUE" ? "blue" : "amber")}>
+                        {selectedNonStopMode === "ACTIVE_QUEUE" ? "Fila ativa" : "Hard cap"}
+                      </span>
+                      <span className={badge("slate")}>Espera: {nonStopQueuePairingIds.length}</span>
+                    </div>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {nonStopActivePairs.length === 0 && (
@@ -5474,6 +6226,11 @@ export default function PadelHubClient({
                     <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
                       Fila (ordem de entrada):{" "}
                       {nonStopQueuePairingIds.map((pairingId) => `#${pairingId}`).join(" · ")}
+                    </div>
+                  )}
+                  {selectedNonStopMode === "HARD_CAP_WAITLIST" && nonStopQueuePairingIds.length === 0 && (
+                    <div className="rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-[11px] text-white/70">
+                      Hard cap ativo: sem fila operacional. Rotação ocorre apenas entre duplas ativas em campo.
                     </div>
                   )}
                 </div>
@@ -5508,7 +6265,7 @@ export default function PadelHubClient({
                 <button
                   type="button"
                   onClick={() => runRoundsAdvance(true)}
-                  disabled={!eventId || roundOpsBusy || !roundOpsHasRuntime}
+                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy || !roundOpsHasRuntime}
                   className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 disabled:opacity-60"
                 >
                   {roundOpsBusy ? "A processar…" : "Simular avanço"}
@@ -5516,11 +6273,40 @@ export default function PadelHubClient({
                 <button
                   type="button"
                   onClick={() => runRoundsAdvance(false)}
-                  disabled={!eventId || roundOpsBusy || !roundOpsHasRuntime}
+                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy || !roundOpsHasRuntime}
                   className={CTA_PAD_PRIMARY}
                 >
                   {roundOpsBusy ? "A avançar…" : "Avançar ronda"}
                 </button>
+              </div>
+              <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-3 text-[12px] text-white/80 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold text-white">Notificações operacionais</p>
+                  <span className="text-[11px] text-white/55">{opsLiveFeed.length} recente(s)</span>
+                </div>
+                {opsLiveFeed.length === 0 && (
+                  <p className="text-[11px] text-white/60">Sem notificações recentes nesta sessão.</p>
+                )}
+                {opsLiveFeed.slice(0, 8).map((item) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border px-2 py-2 ${
+                      item.level === "ok"
+                        ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+                        : item.level === "warn"
+                          ? "border-amber-300/35 bg-amber-500/10 text-amber-100"
+                          : item.level === "err"
+                            ? "border-rose-300/35 bg-rose-500/10 text-rose-100"
+                            : "border-sky-300/35 bg-sky-500/10 text-sky-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-semibold">{item.title}</p>
+                      <span className="text-[10px] opacity-75">{formatZoned(item.at, calendarTimezone)}</span>
+                    </div>
+                    {item.detail && <p className="mt-1 text-[11px] opacity-90">{item.detail}</p>}
+                  </div>
+                ))}
               </div>
             </div>
             <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">

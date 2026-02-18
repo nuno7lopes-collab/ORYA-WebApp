@@ -26,4 +26,35 @@ describe("calendar ux guardrails", () => {
     expect(dayHeader).toContain("Geral");
     expect(weekClient).toContain("Default quando não configurado: 2ª–6ª, 08:00-17:00");
   });
+
+  it("keeps keyboard-first navigation in calendar day/week and datepicker", () => {
+    const dayClient = readLocal("app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx");
+    const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
+    const datePicker = readLocal("app/org/[orgId]/calendar/_components/day/DatePickerTwoMonths.tsx");
+
+    expect(dayClient).toContain('key === "f"');
+    expect(dayClient).toContain('key === "g"');
+    expect(dayClient).toContain('key === "escape"');
+    expect(dayClient).toContain("Atalhos:");
+    expect(weekClient).toContain('key === "g"');
+    expect(weekClient).toContain("Atalhos: ← → · T · D · G");
+
+    expect(datePicker).toContain("Atalhos: setas, Home/End, PgUp/PgDn, Enter.");
+    expect(datePicker).toContain('event.key === "ArrowLeft"');
+    expect(datePicker).toContain('event.key === "ArrowRight"');
+    expect(datePicker).toContain('event.key === "ArrowUp"');
+    expect(datePicker).toContain('event.key === "ArrowDown"');
+    expect(datePicker).toContain('event.key === "PageUp"');
+    expect(datePicker).toContain('event.key === "PageDown"');
+    expect(datePicker).toContain('event.key === "Enter" || event.key === " "');
+  });
+
+  it("keeps booking flow accessibility and mobile continuity cues", () => {
+    const booking = readLocal("app/[username]/_components/ReservasBookingClient.tsx");
+
+    expect(booking).toContain('aria-current={isActive ? "step" : undefined}');
+    expect(booking).toContain('aria-live="polite"');
+    expect(booking).toContain("Seleção atual");
+    expect(booking).toContain("Continuar para pagamento");
+  });
 });

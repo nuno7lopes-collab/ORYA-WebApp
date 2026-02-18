@@ -28,6 +28,7 @@ import { CalendarHeader } from "./CalendarHeader";
 import { FiltersDrawer } from "./FiltersDrawer";
 import { DayGrid } from "./DayGrid";
 import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "../timezones";
+import { summarizeAgendaItemsByStatus } from "../statusSummary";
 import type {
   AvailabilityResponse,
   AgendaResponse,
@@ -42,6 +43,23 @@ import type {
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
+const DATE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+function getDateTimeFormatter(timezone: string) {
+  const cached = DATE_TIME_FORMATTER_CACHE.get(timezone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  });
+  DATE_TIME_FORMATTER_CACHE.set(timezone, formatter);
+  return formatter;
+}
 
 function encodeOptionId(prefix: string, id: number) {
   return `${prefix}${id}`;
@@ -66,15 +84,7 @@ function isTypingTarget(target: EventTarget | null) {
 
 function formatDateTime(value: string, timezone: string) {
   const date = new Date(value);
-  return new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: timezone,
-  }).format(date);
+  return getDateTimeFormatter(timezone).format(date);
 }
 
 function resolveStatusLabel(status: string) {
@@ -229,6 +239,9 @@ export default function DayCalendarReadClient() {
   };
   const setToday = () => {
     replaceState({ nextDate: new Date() });
+  };
+  const clearSelections = () => {
+    replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] });
   };
   const weekViewHref = useMemo(() => {
     if (!Number.isFinite(organizationId) || organizationId <= 0) return "#";
@@ -401,6 +414,7 @@ export default function DayCalendarReadClient() {
     () => filterEvents(scopedEvents, appliedFilters, timezone),
     [appliedFilters, scopedEvents, timezone],
   );
+  const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredEvents), [filteredEvents]);
   const filteredEventsById = useMemo(() => new Map(filteredEvents.map((event) => [event.id, event])), [filteredEvents]);
 
   const professionalOptions = useMemo(
@@ -555,14 +569,29 @@ export default function DayCalendarReadClient() {
         setToday();
         return;
       }
+      if (key === "f") {
+        event.preventDefault();
+        setDraftFilters(cloneFilters(appliedFilters));
+        setFiltersOpen(true);
+        return;
+      }
+      if (key === "g") {
+        event.preventDefault();
+        replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] });
+        return;
+      }
       if (key === "w" && weekViewHref !== "#") {
         event.preventDefault();
         router.push(weekViewHref, { scroll: false });
+        return;
+      }
+      if (key === "escape") {
+        setSelectedEventId(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [router, setToday, shiftDay, weekViewHref]);
+  }, [appliedFilters, router, setToday, shiftDay, weekViewHref]);
 
   if (!Number.isFinite(organizationId) || organizationId <= 0) {
     return <div className="p-6 text-sm text-white/70">Organização inválida.</div>;
@@ -588,7 +617,10 @@ export default function DayCalendarReadClient() {
             <span>Atalhos:</span>
             <span>← →</span>
             <span>T</span>
+            <span>F</span>
+            <span>G</span>
             <span>W</span>
+            <span>Esc</span>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -600,7 +632,7 @@ export default function DayCalendarReadClient() {
           {hasActiveSelection ? (
             <button
               type="button"
-              onClick={() => replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] })}
+              onClick={clearSelections}
               className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
             >
               Limpar seleção
@@ -633,7 +665,7 @@ export default function DayCalendarReadClient() {
           const nextCourtIds = decodePrefixedIds(optionIds, COURT_OPTION_PREFIX);
           replaceState({ nextResources: nextResourceIds, nextCourts: nextCourtIds });
         }}
-        onResetSelections={() => replaceState({ nextProfessionals: [], nextResources: [], nextCourts: [] })}
+        onResetSelections={clearSelections}
         hasActiveSelection={hasActiveSelection}
         onOpenFilters={() => {
           setDraftFilters(cloneFilters(appliedFilters));
@@ -665,6 +697,33 @@ export default function DayCalendarReadClient() {
           </button>
         </div>
       ) : null}
+      {!agendaLoading && !agendaError ? (
+        <div className="flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/80">
+            {statusSummary.total} {statusSummary.total === 1 ? "ocupação visível" : "ocupações visíveis"}
+          </span>
+          {statusSummary.confirmed > 0 ? (
+            <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-1 text-emerald-100">
+              Confirmado {statusSummary.confirmed}
+            </span>
+          ) : null}
+          {statusSummary.pending > 0 ? (
+            <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-1 text-amber-100">
+              Pendente {statusSummary.pending}
+            </span>
+          ) : null}
+          {statusSummary.cancelled > 0 ? (
+            <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-1 text-rose-100">
+              Cancelado/No-show {statusSummary.cancelled}
+            </span>
+          ) : null}
+          {statusSummary.disputed > 0 ? (
+            <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-1 text-fuchsia-100">
+              Disputa {statusSummary.disputed}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div>
@@ -692,16 +751,46 @@ export default function DayCalendarReadClient() {
             </p>
           ) : null}
           {!agendaLoading && !agendaError && filteredEvents.length === 0 ? (
-            <p className="mt-3 text-sm text-white/55">Sem reservas para os filtros e data selecionados.</p>
+            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/65">
+              <p>Sem reservas para os filtros e data selecionados.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={setToday}
+                  className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                >
+                  Ir para hoje
+                </button>
+                {activeFilterChips.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setAppliedFilters(emptyFilters())}
+                    className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                  >
+                    Limpar filtros
+                  </button>
+                ) : null}
+                {hasActiveSelection ? (
+                  <button
+                    type="button"
+                    onClick={clearSelections}
+                    className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
+                  >
+                    Mostrar geral
+                  </button>
+                ) : null}
+              </div>
+            </div>
           ) : null}
         </div>
 
-        <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
+        <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)] xl:sticky xl:top-24 xl:self-start">
           <h2 className="text-sm font-semibold text-white">Detalhe da ocupação</h2>
           <p className="mt-1 text-xs text-white/60">
             Hover mostra pré-visualização. Click fixa o detalhe.
             {isPreviewingByHover ? " (prévia ativa)" : ""}
           </p>
+          <p className="mt-1 text-[11px] text-white/55">Fuso ativo: {timezone}.</p>
           {!hasActiveSelection ? (
             <p className="mt-1 text-[11px] text-white/55">
               Modo Geral: ocupações sobrepostas aparecem agregadas num único bloco com linhas internas.
@@ -750,6 +839,7 @@ export default function DayCalendarReadClient() {
       <FiltersDrawer
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
+        appliedFilters={appliedFilters}
         draftFilters={draftFilters}
         onDraftFiltersChange={setDraftFilters}
         onApply={() => setAppliedFilters(cloneFilters(draftFilters))}

@@ -25,16 +25,32 @@ describe("padel format surface parity", () => {
       expect(wizardSource).toContain(`"${format}"`);
       expect(hubSource).toContain(`${format}:`);
     }
+    expect(wizardSource).toContain("plannerMode");
   });
 
   it("keeps format-specific runtime branches wired for dynamic formats", () => {
     const roundsAdvanceSource = readLocal("app/api/padel/rounds/advance/route.ts");
     const generateSource = readLocal("domain/padel/autoGenerateMatches.ts");
+    const autoScheduleSource = readLocal("app/api/padel/calendar/auto-schedule/route.ts");
+    const tabsSource = readLocal("app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx");
+    const hubSource = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
 
     expect(roundsAdvanceSource).toContain("padel_format.NON_STOP");
     expect(roundsAdvanceSource).toContain("padel_format.AMERICANO");
     expect(roundsAdvanceSource).toContain("padel_format.MEXICANO");
+    expect(roundsAdvanceSource).toContain("match.groupLabel === \"NS\"");
+    expect(autoScheduleSource).toContain("match.groupLabel === \"NS\"");
     expect(generateSource).toContain("ACTIVE_QUEUE");
     expect(generateSource).toContain("ROUND_BY_ROUND");
+    expect(tabsSource).toContain("saveFormatProfileConfig");
+    expect(tabsSource).toContain("selectedCategoryProfile?.format");
+    expect(tabsSource).toContain("renderPlanningPreviewPanel");
+    expect(tabsSource).toContain("/api/padel/formats/plan");
+    expect(tabsSource).toContain("Fila operacional live");
+    expect(tabsSource).toContain("liveOpsFilter");
+    expect(hubSource).toContain("saveRoundOpsFormatProfile");
+    expect(hubSource).toContain("roundOpsPlanCategory");
+    expect(hubSource).toContain("resolveCategoryTeamsForPlanning");
+    expect(hubSource).toContain("/api/padel/formats/plan");
   });
 });

@@ -15,13 +15,14 @@ import {
   applyPendingExpiryIfNeeded,
   parseResultBody,
   parseResultType,
-  parseResultWinner,
   requireAuthenticatedUser,
   resolveClientRequestId,
+  resolveResultScoreRulesContext,
   resolveResultRouteContext,
 } from "@/app/api/padel/matches/[id]/result/_shared";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { queueMatchResult } from "@/domain/notifications/tournament";
+import { resolveLiveResultScore } from "@/domain/padel/liveResultScore";
 
 const FINAL_STATUSES = new Set<padel_match_status>([
   padel_match_status.OFFICIAL,
@@ -152,12 +153,34 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "SPECIAL_RESULT_REQUIRES_INCIDENT_ENDPOINT" }, { status: 409 });
   }
 
-  const winnerSide = parseResultWinner(scoreInput.winnerSide ?? context.match.score.winnerSide);
+  const { scoreRules, ruleSnapshot } = await resolveResultScoreRulesContext(context.match.eventId);
+  const scoreEvaluation = resolveLiveResultScore({
+    incomingScore: {
+      ...context.match.score,
+      ...scoreInput,
+      resultType,
+    },
+    currentScoreSets: context.match.scoreSets,
+    fallbackWinnerSide: context.match.winnerSide,
+    scoreRules,
+  });
+  if (scoreEvaluation.hasScoreEvidence && !scoreEvaluation.stats) {
+    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+  }
+  const winnerSide = scoreEvaluation.winnerSide;
   const mergedScore = {
     ...context.match.score,
     ...scoreInput,
     resultType,
     ...(winnerSide ? { winnerSide } : {}),
+    ...(scoreEvaluation.stats?.mode === "TIMED_GAMES"
+      ? {
+          mode: "TIMED_GAMES",
+          gamesA: scoreEvaluation.stats.aGames,
+          gamesB: scoreEvaluation.stats.bGames,
+        }
+      : {}),
+    ruleSnapshot,
     resultSubmittedBy: auth.user.id,
     resultSubmittedByActorKind: actorKind,
     resultSubmittedAt: new Date().toISOString(),
@@ -190,13 +213,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     participants: context.match.participants,
   });
 
-  if (FINAL_STATUSES.has(transitionStatus) && (!winnerSide || !winnerParticipantId)) {
+  if (
+    FINAL_STATUSES.has(transitionStatus) &&
+    !scoreEvaluation.isDrawResult &&
+    !scoreEvaluation.isByeNeutral &&
+    (!winnerSide || !winnerParticipantId)
+  ) {
     return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
   }
 
-  const nextScoreSets = Array.isArray(scoreInput.sets)
-    ? (scoreInput.sets as Prisma.InputJsonValue)
-    : (context.match.scoreSets as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined);
+  const nextScoreSets = scoreEvaluation.nextScoreSets;
 
   const { match: updated, outboxEventId } = await updatePadelMatch({
     matchId: context.match.id,
@@ -210,8 +236,14 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       status: transitionStatus,
       score: persistedScore as Prisma.InputJsonValue,
       scoreSets: nextScoreSets,
-      winnerSide: FINAL_STATUSES.has(transitionStatus) ? winnerSide : null,
-      winnerParticipantId: FINAL_STATUSES.has(transitionStatus) ? winnerParticipantId : null,
+      winnerSide:
+        FINAL_STATUSES.has(transitionStatus) && !scoreEvaluation.isDrawResult && !scoreEvaluation.isByeNeutral
+          ? winnerSide
+          : null,
+      winnerParticipantId:
+        FINAL_STATUSES.has(transitionStatus) && !scoreEvaluation.isDrawResult && !scoreEvaluation.isByeNeutral
+          ? winnerParticipantId
+          : null,
     },
   });
 

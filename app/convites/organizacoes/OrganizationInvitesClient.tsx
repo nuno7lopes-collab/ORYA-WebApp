@@ -117,7 +117,7 @@ export default function OrganizationInvitesClient({
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const locale = resolveLocale(searchParams.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams.get("lang"));
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const orgIdFallback = getOrganizationIdFromBrowser();

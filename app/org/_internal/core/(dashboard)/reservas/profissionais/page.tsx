@@ -14,7 +14,6 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-  DASHBOARD_TITLE,
 } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -154,11 +153,11 @@ export default function ProfissionaisPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className={DASHBOARD_LABEL}>Reservas</p>
-          <h1 className={DASHBOARD_TITLE}>Profissionais</h1>
-          <p className={DASHBOARD_MUTED}>Gere equipa e disponibilidade.</p>
+          <h1 className="text-xl font-semibold text-white">Profissionais</h1>
+          <p className={DASHBOARD_MUTED}>Gere equipa associada aos serviços e disponibilidade.</p>
         </div>
-        <Link href={appendOrganizationIdToHref("/org/bookings", canonicalOrganizationId)} className={CTA_SECONDARY}>
-          Voltar
+        <Link href={appendOrganizationIdToHref("/org/bookings/operations", canonicalOrganizationId)} className={CTA_SECONDARY}>
+          Operações
         </Link>
       </div>
 

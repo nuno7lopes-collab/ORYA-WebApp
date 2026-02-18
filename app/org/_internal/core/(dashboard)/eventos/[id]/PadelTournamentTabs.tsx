@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
@@ -52,6 +52,18 @@ type Standings = Record<
   }>
 >;
 type CategoryMeta = { name?: string; categoryId?: number | null; capacity?: number | null; registrationType?: string | null };
+type PadelEventCategoryLink = {
+  id: number;
+  padelCategoryId: number | null;
+  format?: string | null;
+  capacityTeams?: number | null;
+  activeTeams?: number | null;
+  completeTeams?: number | null;
+  confirmedTeams?: number | null;
+  pendingTeams?: number | null;
+  isEnabled?: boolean;
+  category?: { id: number; label: string } | null;
+};
 type PadelRuleSetSummary = { id: number; name: string; tieBreakRules?: string[] | null; pointsTable?: Record<string, number> | null };
 type PadelRuleSetsResponse = { ok: boolean; items?: PadelRuleSetSummary[] };
 type OrganizationMeResponse = { membershipRole?: string | null };
@@ -94,6 +106,41 @@ type GenerationPlanDetails = {
   warnings?: string[];
   alternatives?: GenerationPlanAlternative[];
   categories?: GenerationPlanCategory[];
+};
+
+type LiveOpsFilter =
+  | "ALL"
+  | "ACTION_REQUIRED"
+  | "PENDING_CONFIRMATION"
+  | "PENDING_REVIEW_EXPIRED"
+  | "DISPUTED"
+  | "UNSCHEDULED";
+
+const LIVE_ACTION_STATUSES = new Set(["RESULT_SUBMITTED", "PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"]);
+
+const isMatchDisputeOpen = (match: Match) => {
+  const score = (match.score || {}) as Record<string, unknown>;
+  return score.disputeStatus === "OPEN";
+};
+
+const isMatchUnscheduled = (match: Match) => !match.plannedStartAt && !match.startTime;
+
+const doesMatchPassLiveOpsFilter = (match: Match, filter: LiveOpsFilter) => {
+  switch (filter) {
+    case "ACTION_REQUIRED":
+      return LIVE_ACTION_STATUSES.has(match.status) || isMatchDisputeOpen(match);
+    case "PENDING_CONFIRMATION":
+      return match.status === "PENDING_CONFIRMATION";
+    case "PENDING_REVIEW_EXPIRED":
+      return match.status === "PENDING_REVIEW_EXPIRED";
+    case "DISPUTED":
+      return match.status === "DISPUTED" || isMatchDisputeOpen(match);
+    case "UNSCHEDULED":
+      return isMatchUnscheduled(match);
+    case "ALL":
+    default:
+      return true;
+  }
 };
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -232,6 +279,52 @@ const toPositiveInt = (value: unknown): number | null => {
   return Math.floor(parsed);
 };
 
+const resolveCategoryTeamsForPlanning = (
+  link: PadelEventCategoryLink | null | undefined,
+  fallbackTeams: number,
+  strategy: "runtime-first" | "capacity-first",
+) => {
+  const confirmed = toPositiveInt(link?.confirmedTeams) ?? 0;
+  const complete = toPositiveInt(link?.completeTeams) ?? 0;
+  const active = toPositiveInt(link?.activeTeams) ?? 0;
+  const pending = toPositiveInt(link?.pendingTeams) ?? 0;
+  const capacity = toPositiveInt(link?.capacityTeams) ?? 0;
+  const fallback = Math.max(0, Math.floor(Number.isFinite(fallbackTeams) ? fallbackTeams : 0));
+
+  if (strategy === "capacity-first") {
+    if (capacity > 0) return capacity;
+    if (fallback > 0) return fallback;
+    if (active > 0) return active;
+    if (complete > 0) return complete;
+    if (confirmed > 0) return confirmed;
+    if (pending > 0) return pending;
+    return 0;
+  }
+
+  if (confirmed > 0) return confirmed;
+  if (complete > 0) return complete;
+  if (active > 0) return active;
+  if (fallback > 0) return fallback;
+  if (capacity > 0) return capacity;
+  if (pending > 0) return pending;
+  return 0;
+};
+
+const PADEL_FORMAT_PROFILE_OPTIONS = [
+  "TODOS_CONTRA_TODOS",
+  "GRUPOS_ELIMINATORIAS",
+  "QUADRO_ELIMINATORIO",
+  "QUADRO_AB",
+  "DUPLA_ELIMINACAO",
+  "CAMPEONATO_LIGA",
+  "NON_STOP",
+  "AMERICANO",
+  "MEXICANO",
+] as const;
+
+const isAmMxFormatValue = (format: string | null | undefined) => format === "AMERICANO" || format === "MEXICANO";
+const isNonStopFormatValue = (format: string | null | undefined) => format === "NON_STOP";
+
 export default function PadelTournamentTabs({
   eventId,
   eventSlug,
@@ -264,6 +357,11 @@ export default function PadelTournamentTabs({
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationPlanDetails, setGenerationPlanDetails] = useState<GenerationPlanDetails | null>(null);
+  const [planningMode, setPlanningMode] = useState<"runtime" | "capacity">("runtime");
+  const [planningPreview, setPlanningPreview] = useState<GenerationPlanDetails | null>(null);
+  const [planningPreviewLoading, setPlanningPreviewLoading] = useState(false);
+  const [planningPreviewError, setPlanningPreviewError] = useState<string | null>(null);
+  const [liveOpsFilter, setLiveOpsFilter] = useState<LiveOpsFilter>("ALL");
   const [koEdits, setKoEdits] = useState<Record<number, { pairingAId: number | null; pairingBId: number | null }>>({});
   const [koSaving, setKoSaving] = useState<Record<number, boolean>>({});
   const [disputeBusy, setDisputeBusy] = useState<Record<number, boolean>>({});
@@ -281,35 +379,62 @@ export default function PadelTournamentTabs({
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
-  const categoryOptions = useMemo(
-    () =>
-      (categoriesMeta || [])
-        .filter((c) => Number.isFinite(c.categoryId as number))
-        .map((c) => ({
-          id: c.categoryId as number,
-          label: c.name || `Categoria ${c.categoryId}`,
-        })),
-    [categoriesMeta],
-  );
+  const eventCategoryLinks = useMemo(() => {
+    if (!eventCategoriesRes?.ok || !Array.isArray(eventCategoriesRes.items)) return [];
+    return eventCategoriesRes.items;
+  }, [eventCategoriesRes]);
+  const categoryOptions = useMemo(() => {
+    const byId = new Map<number, { id: number; label: string }>();
+    (categoriesMeta || [])
+      .filter((c) => Number.isFinite(c.categoryId as number))
+      .forEach((c) => {
+        const id = c.categoryId as number;
+        byId.set(id, {
+          id,
+          label: c.name || `Categoria ${id}`,
+        });
+      });
+    eventCategoryLinks.forEach((link) => {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (!categoryId || byId.has(categoryId)) return;
+      byId.set(categoryId, {
+        id: categoryId,
+        label: link.category?.label || `Categoria ${categoryId}`,
+      });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [categoriesMeta, eventCategoryLinks]);
   const categoryLabelById = useMemo(
     () => new Map(categoryOptions.map((opt) => [String(opt.id), opt.label])),
     [categoryOptions],
   );
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [preferGlobalCategory, setPreferGlobalCategory] = useState(false);
 
   useEffect(() => {
     if (categoryOptions.length === 0) {
       if (selectedCategoryId !== null) setSelectedCategoryId(null);
       return;
     }
+    if (preferGlobalCategory) {
+      if (selectedCategoryId !== null) setSelectedCategoryId(null);
+      return;
+    }
     if (selectedCategoryId && categoryOptions.some((c) => c.id === selectedCategoryId)) return;
     setSelectedCategoryId(categoryOptions[0].id ?? null);
-  }, [categoryOptions, selectedCategoryId]);
+  }, [categoryOptions, preferGlobalCategory, selectedCategoryId]);
   useEffect(() => {
     setGenerationMessage(null);
     setGenerationError(null);
     setGenerationPlanDetails(null);
     setGenerationPhase(null);
+    setPlanningPreview(null);
+    setPlanningPreviewError(null);
   }, [selectedCategoryId]);
   const emptyMatches = useMemo<Match[]>(() => [], []);
 
@@ -324,6 +449,10 @@ export default function PadelTournamentTabs({
   );
   const { data: waitlistRes, mutate: mutateWaitlist } = useSWR(
     eventId ? orgApi(`/padel/waitlist?eventId=${eventId}${categoryParam}`) : null,
+    fetcher,
+  );
+  const { data: eventCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
+    eventId ? `/api/padel/event-categories?eventId=${eventId}` : null,
     fetcher,
   );
   const { data: standingsRes } = useSWR(
@@ -358,6 +487,33 @@ export default function PadelTournamentTabs({
   const pairings: Pairing[] = pairingsRes?.pairings ?? [];
   const matches: Match[] = Array.isArray(matchesRes?.items) ? (matchesRes.items as Match[]) : emptyMatches;
   const standings: Standings = standingsRes?.groups ?? standingsRes?.standings ?? {};
+  const eventCategoryById = useMemo(() => {
+    const byId = new Map<number, PadelEventCategoryLink>();
+    eventCategoryLinks.forEach((link) => {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      if (!categoryId || byId.has(categoryId)) return;
+      byId.set(categoryId, link);
+    });
+    return byId;
+  }, [eventCategoryLinks]);
+  const pairingCountByCategory = useMemo(() => {
+    const counts = new Map<number, number>();
+    pairings.forEach((pairing) => {
+      const categoryId =
+        typeof pairing.categoryId === "number" && Number.isFinite(pairing.categoryId)
+          ? pairing.categoryId
+          : null;
+      if (!categoryId) return;
+      counts.set(categoryId, (counts.get(categoryId) ?? 0) + 1);
+    });
+    return counts;
+  }, [pairings]);
+  const planningStrategy = planningMode === "capacity" ? "capacity-first" : "runtime-first";
   const pairingsById = useMemo(() => new Map(pairings.map((pairing) => [pairing.id, pairing])), [pairings]);
   const swapCandidates = useMemo(
     () =>
@@ -428,11 +584,57 @@ export default function PadelTournamentTabs({
     scoreRulesPreset === "CUSTOM"
       ? null
       : SCORE_RULE_PRESETS.find((preset) => preset.id === scoreRulesPreset) ?? null;
+  const resultValidationMode =
+    configRes?.config?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+      ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+      : "IMMEDIATE_OFFICIAL";
+  const pendingConfirmationWindowMinutes =
+    typeof configRes?.config?.pendingConfirmationWindowMinutes === "number" &&
+    Number.isFinite(configRes.config.pendingConfirmationWindowMinutes)
+      ? Math.max(1, Math.floor(configRes.config.pendingConfirmationWindowMinutes))
+      : 15;
+  const playerResultSubmissionEnabled = configRes?.config?.playerResultSubmissionEnabled === true;
   const autoGeneratedMessage =
     autoGeneratedAt && !autoGeneratedBy
       ? `Bracket gerado automaticamente em ${new Date(autoGeneratedAt).toLocaleString("pt-PT")}.`
       : null;
-  const generationFormat = formatRequested || formatEffective || configRes?.config?.format || "GRUPOS_ELIMINATORIAS";
+  const selectedCategoryLabel = selectedCategoryId
+    ? categoryOptions.find((item) => item.id === selectedCategoryId)?.label ?? `Categoria #${selectedCategoryId}`
+    : "Global";
+  const runtimeCategoryKey = selectedCategoryId ? String(selectedCategoryId) : "global";
+  const formatProfilesByCategoryRaw =
+    advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
+      ? (advanced.formatProfilesByCategory as Record<string, unknown>)
+      : {};
+  const formatProfilesByCategory = useMemo(
+    () =>
+      Object.entries(formatProfilesByCategoryRaw).reduce<Record<string, Record<string, unknown>>>((acc, [key, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+        acc[key] = value as Record<string, unknown>;
+        return acc;
+      }, {}),
+    [formatProfilesByCategoryRaw],
+  );
+  const selectedCategoryProfileOwn = formatProfilesByCategory[runtimeCategoryKey] ?? null;
+  const globalCategoryProfile = formatProfilesByCategory.global ?? null;
+  const selectedCategoryProfile = selectedCategoryProfileOwn ?? globalCategoryProfile;
+  const resolveCategoryProfile = useCallback(
+    (categoryId: number | null) => {
+      if (categoryId && formatProfilesByCategory[String(categoryId)]) {
+        return formatProfilesByCategory[String(categoryId)];
+      }
+      return globalCategoryProfile;
+    },
+    [formatProfilesByCategory, globalCategoryProfile],
+  );
+  const generationFormatBase = formatRequested || formatEffective || configRes?.config?.format || "GRUPOS_ELIMINATORIAS";
+  const generationFormat =
+    typeof selectedCategoryProfile?.format === "string" ? selectedCategoryProfile.format : generationFormatBase;
+  const selectedAmMxMode = selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+  const selectedNonStopMode =
+    selectedCategoryProfile?.nonStopMode === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE";
+  const selectedNonStopRounds =
+    toPositiveInt(selectedCategoryProfile?.nonStopRounds) ?? toPositiveInt(selectedCategoryProfile?.roundsHint) ?? 6;
   const supportsGroups = generationFormat === "GRUPOS_ELIMINATORIAS";
   const supportsKnockout = ["GRUPOS_ELIMINATORIAS", "QUADRO_ELIMINATORIO", "QUADRO_AB", "DUPLA_ELIMINACAO"].includes(
     generationFormat,
@@ -488,20 +690,6 @@ export default function PadelTournamentTabs({
   const showGroupsTab = !isKnockoutOnlyFormat;
   const showKnockoutTab = supportsKnockout;
   const primaryRoundMatches = useMemo(() => matches.filter((match) => match.roundType === "GROUPS"), [matches]);
-  const selectedCategoryLabel = selectedCategoryId
-    ? categoryOptions.find((item) => item.id === selectedCategoryId)?.label ?? `Categoria #${selectedCategoryId}`
-    : "Global";
-  const runtimeCategoryKey = selectedCategoryId ? String(selectedCategoryId) : "global";
-  const formatProfilesByCategory =
-    advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
-      ? (advanced.formatProfilesByCategory as Record<string, unknown>)
-      : {};
-  const selectedCategoryProfile =
-    formatProfilesByCategory[runtimeCategoryKey] && typeof formatProfilesByCategory[runtimeCategoryKey] === "object"
-      ? (formatProfilesByCategory[runtimeCategoryKey] as Record<string, unknown>)
-      : formatProfilesByCategory.global && typeof formatProfilesByCategory.global === "object"
-        ? (formatProfilesByCategory.global as Record<string, unknown>)
-        : null;
   const nonStopRuntimeByCategory =
     advanced.nonStopRuntimeByCategory && typeof advanced.nonStopRuntimeByCategory === "object"
       ? (advanced.nonStopRuntimeByCategory as Record<string, unknown>)
@@ -561,6 +749,57 @@ export default function PadelTournamentTabs({
   const pendingWorkflowCount = matches.filter((match) =>
     ["RESULT_SUBMITTED", "PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"].includes(match.status),
   ).length;
+  const filteredPrimaryRoundMatches = useMemo(
+    () => primaryRoundMatches.filter((match) => doesMatchPassLiveOpsFilter(match, liveOpsFilter)),
+    [liveOpsFilter, primaryRoundMatches],
+  );
+  const matchById = useMemo(() => new Map(matches.map((match) => [match.id, match])), [matches]);
+  const liveOpsCounters = useMemo(() => {
+    let actionRequired = 0;
+    let pendingConfirmation = 0;
+    let pendingReviewExpired = 0;
+    let disputed = 0;
+    let unscheduled = 0;
+    matches.forEach((match) => {
+      if (doesMatchPassLiveOpsFilter(match, "ACTION_REQUIRED")) actionRequired += 1;
+      if (doesMatchPassLiveOpsFilter(match, "PENDING_CONFIRMATION")) pendingConfirmation += 1;
+      if (doesMatchPassLiveOpsFilter(match, "PENDING_REVIEW_EXPIRED")) pendingReviewExpired += 1;
+      if (doesMatchPassLiveOpsFilter(match, "DISPUTED")) disputed += 1;
+      if (doesMatchPassLiveOpsFilter(match, "UNSCHEDULED")) unscheduled += 1;
+    });
+    return {
+      all: matches.length,
+      actionRequired,
+      pendingConfirmation,
+      pendingReviewExpired,
+      disputed,
+      unscheduled,
+    };
+  }, [matches]);
+  const liveOpsFilterLabel =
+    liveOpsFilter === "ACTION_REQUIRED"
+      ? "com ação"
+      : liveOpsFilter === "PENDING_CONFIRMATION"
+        ? "pendentes de confirmação"
+        : liveOpsFilter === "PENDING_REVIEW_EXPIRED"
+          ? "pendentes expirados"
+          : liveOpsFilter === "DISPUTED"
+            ? "em disputa"
+            : liveOpsFilter === "UNSCHEDULED"
+              ? "sem horário"
+              : "todos";
+  const koVisibleMatchesCount = useMemo(() => {
+    if (liveOpsFilter === "ALL") {
+      return koRounds.reduce((total, [, games]) => total + games.length, 0);
+    }
+    return koRounds.reduce((total, [, games]) => {
+      const visible = games.filter((game) => {
+        const fullMatch = matchById.get(game.id);
+        return fullMatch ? doesMatchPassLiveOpsFilter(fullMatch, liveOpsFilter) : false;
+      });
+      return total + visible.length;
+    }, 0);
+  }, [koRounds, liveOpsFilter, matchById]);
   const actionItems = useMemo(() => {
     const actions: Array<{ key: string; level: "critical" | "warn" | "info"; label: string; hint: string }> = [];
     if (matches.length === 0) {
@@ -607,6 +846,26 @@ export default function PadelTournamentTabs({
     }
     return actions;
   }, [isAmMxFormat, isNonStopFormat, matches.length, pendingWorkflowCount, supportsGroups, unscheduledMatchesCount]);
+  const runActionItem = (key: string) => {
+    if (key === "workflow") {
+      setLiveOpsFilter("ACTION_REQUIRED");
+      if (showGroupsTab) setTab("grupos");
+      else if (showKnockoutTab) setTab("eliminatorias");
+      return;
+    }
+    if (key === "generate") {
+      if (showGroupsTab) setTab("grupos");
+      else if (showKnockoutTab) setTab("eliminatorias");
+      return;
+    }
+    if (key === "schedule") {
+      window.open(autoScheduleHref, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (key === "round-runtime") {
+      window.open(roundOpsHref, "_blank", "noopener,noreferrer");
+    }
+  };
   const publicSurfaceLinks = [
     { key: "public", label: "Página pública", href: `/eventos/${eventSlug}` },
     { key: "calendar", label: "Calendário público", href: `/eventos/${eventSlug}/calendario` },
@@ -619,6 +878,126 @@ export default function PadelTournamentTabs({
       .map((alternative) => alternative?.summary?.trim())
       .filter((value): value is string => Boolean(value));
   }, [generationPlanDetails]);
+  const planningPreviewAlternatives = useMemo(() => {
+    if (!planningPreview?.alternatives || planningPreview.alternatives.length === 0) return [];
+    return planningPreview.alternatives
+      .map((alternative) => alternative?.summary?.trim())
+      .filter((value): value is string => Boolean(value));
+  }, [planningPreview]);
+
+  useEffect(() => {
+    if (!eventId) {
+      setPlanningPreview(null);
+      setPlanningPreviewError(null);
+      setPlanningPreviewLoading(false);
+      return;
+    }
+
+    const targetCategoryIds = selectedCategoryId ? [selectedCategoryId] : categoryOptions.map((category) => category.id);
+    if (targetCategoryIds.length === 0) {
+      setPlanningPreview(null);
+      setPlanningPreviewError(null);
+      setPlanningPreviewLoading(false);
+      return;
+    }
+
+    const categoriesPayload = targetCategoryIds
+      .map((categoryId) => {
+        const categoryLink = eventCategoryById.get(categoryId) ?? null;
+        const fallbackTeams = pairingCountByCategory.get(categoryId) ?? 0;
+        const teams = resolveCategoryTeamsForPlanning(categoryLink, fallbackTeams, planningStrategy);
+        if (teams <= 0) return null;
+        const profile = resolveCategoryProfile(categoryId);
+        const profileFormat =
+          typeof profile?.format === "string" &&
+          PADEL_FORMAT_PROFILE_OPTIONS.includes(profile.format as (typeof PADEL_FORMAT_PROFILE_OPTIONS)[number])
+            ? profile.format
+            : null;
+        const linkFormat =
+          typeof categoryLink?.format === "string" &&
+          PADEL_FORMAT_PROFILE_OPTIONS.includes(categoryLink.format as (typeof PADEL_FORMAT_PROFILE_OPTIONS)[number])
+            ? categoryLink.format
+            : null;
+        const formatValue = profileFormat ?? linkFormat ?? generationFormatBase;
+        const amMxMode = profile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
+        const amMxProgressionMode = profile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : undefined;
+        const nonStopMode = profile?.nonStopMode === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE";
+        const nonStopRounds = toPositiveInt(profile?.nonStopRounds) ?? toPositiveInt(profile?.roundsHint) ?? 6;
+        return {
+          categoryId,
+          label: categoryLabelById.get(String(categoryId)) ?? categoryLink?.category?.label ?? `Categoria #${categoryId}`,
+          teams,
+          format: formatValue,
+          amMxMode: isAmMxFormatValue(formatValue) ? amMxMode : undefined,
+          amMxProgressionMode: isAmMxFormatValue(formatValue) ? amMxProgressionMode : undefined,
+          nonStopMode: isNonStopFormatValue(formatValue) ? nonStopMode : undefined,
+          nonStopRounds: isNonStopFormatValue(formatValue) ? nonStopRounds : undefined,
+        };
+      })
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+
+    if (categoriesPayload.length === 0) {
+      setPlanningPreview(null);
+      setPlanningPreviewLoading(false);
+      setPlanningPreviewError(
+        planningMode === "runtime"
+          ? "Sem equipas reais para simular capacidade nesta categoria."
+          : "Sem lotação/capacidade para simular capacidade.",
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setPlanningPreviewLoading(true);
+      setPlanningPreviewError(null);
+      try {
+        const res = await fetch("/api/padel/formats/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventId,
+            categories: categoriesPayload,
+          }),
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          if (!controller.signal.aborted) {
+            setPlanningPreview(null);
+            setPlanningPreviewError(sanitizeUiErrorMessage(json?.error, "Planner de formatos indisponível."));
+          }
+          return;
+        }
+        if (!controller.signal.aborted) {
+          const plan = json?.plan;
+          setPlanningPreview(plan && typeof plan === "object" ? (plan as GenerationPlanDetails) : null);
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setPlanningPreview(null);
+        setPlanningPreviewError("Erro ao calcular pré-viabilidade por formato.");
+      } finally {
+        if (!controller.signal.aborted) setPlanningPreviewLoading(false);
+      }
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [
+    categoryLabelById,
+    categoryOptions,
+    eventCategoryById,
+    eventId,
+    generationFormatBase,
+    pairingCountByCategory,
+    planningMode,
+    planningStrategy,
+    resolveCategoryProfile,
+    selectedCategoryId,
+  ]);
 
   useEffect(() => {
     if (tab === "grupos" && !showGroupsTab) {
@@ -755,27 +1134,63 @@ export default function PadelTournamentTabs({
     });
   }, [matches, pairingNameById]);
 
-  const categoryStats = (() => {
+  const categoryStats = useMemo(() => {
     const metaMap = new Map<number | null, CategoryMeta>();
-    (categoriesMeta || []).forEach((m) => {
-      const key = Number.isFinite(m.categoryId as number) ? (m.categoryId as number) : null;
-      metaMap.set(key, m);
+    (categoriesMeta || []).forEach((meta) => {
+      const key = Number.isFinite(meta.categoryId as number) ? (meta.categoryId as number) : null;
+      metaMap.set(key, meta);
     });
-    const counts = new Map<number | null, number>();
-    pairings.forEach((p) => {
-      const key = Number.isFinite(p.categoryId as number) ? (p.categoryId as number) : null;
-      counts.set(key, (counts.get(key) || 0) + 1);
+    const fallbackByCategory = new Map<number | null, number>();
+    pairings.forEach((pairing) => {
+      const key = Number.isFinite(pairing.categoryId as number) ? (pairing.categoryId as number) : null;
+      fallbackByCategory.set(key, (fallbackByCategory.get(key) || 0) + 1);
     });
-    const rows: Array<{ key: number | null; label: string; count: number; capacity: number | null }> = [];
-    const keys = new Set([...counts.keys(), ...metaMap.keys()]);
+
+    const keys = new Set<number | null>([...fallbackByCategory.keys(), ...metaMap.keys()]);
+    eventCategoryLinks.forEach((link) => {
+      const categoryId =
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null;
+      keys.add(categoryId);
+    });
+
+    const rows: Array<{
+      key: number | null;
+      label: string;
+      count: number;
+      capacity: number | null;
+      confirmed: number;
+      complete: number;
+      active: number;
+      pending: number;
+    }> = [];
     keys.forEach((key) => {
+      const link = key ? eventCategoryById.get(key) ?? null : null;
       const meta = metaMap.get(key);
-      const label = meta?.name || (key === null ? "Categoria" : `Categoria ${key}`);
-      const capacity = meta?.capacity ?? null;
-      rows.push({ key, label, count: counts.get(key) || 0, capacity });
+      const fallbackTeams = fallbackByCategory.get(key) ?? 0;
+      const count = resolveCategoryTeamsForPlanning(link, fallbackTeams, planningStrategy);
+      const capacity = toPositiveInt(link?.capacityTeams) ?? meta?.capacity ?? null;
+      const label =
+        meta?.name ||
+        (key ? categoryLabelById.get(String(key)) : null) ||
+        link?.category?.label ||
+        (key === null ? "Categoria" : `Categoria #${key}`);
+      rows.push({
+        key,
+        label,
+        count,
+        capacity,
+        confirmed: toPositiveInt(link?.confirmedTeams) ?? 0,
+        complete: toPositiveInt(link?.completeTeams) ?? 0,
+        active: toPositiveInt(link?.activeTeams) ?? 0,
+        pending: toPositiveInt(link?.pendingTeams) ?? 0,
+      });
     });
-    return rows;
-  })();
+    return rows.sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
+  }, [categoriesMeta, categoryLabelById, eventCategoryById, eventCategoryLinks, pairings, planningStrategy]);
 
   const matchesSummary = {
     pending: matches.filter((m) => m.status === "PENDING").length,
@@ -795,7 +1210,12 @@ export default function PadelTournamentTabs({
     Record<
       number,
       {
+        scoreMode: "SETS" | "TIMED_GAMES";
         scoreText: string;
+        gamesA: string;
+        gamesB: string;
+        allowTimedDraw: boolean;
+        endedByBuzzer: boolean;
         resultType: "NORMAL" | "WALKOVER" | "RETIREMENT" | "INJURY";
         winnerSide: "" | "A" | "B";
         photoUrl: string | null;
@@ -805,9 +1225,32 @@ export default function PadelTournamentTabs({
       }
     >
   >({});
+  const [manualFallbackEnabled, setManualFallbackEnabled] = useState<Record<number, boolean>>({});
 
+  const getScoreMode = (m: Match): "SETS" | "TIMED_GAMES" => {
+    const score = (m.score || {}) as Record<string, unknown>;
+    if (score.mode === "TIMED_GAMES") return "TIMED_GAMES";
+    if (scoreRules?.scoreMode === "TIMED_GAMES") return "TIMED_GAMES";
+    if (isNonStopFormat || isAmMxFormat) return "TIMED_GAMES";
+    return "SETS";
+  };
   const getScoreText = (m: Match) =>
     m.scoreSets?.length ? m.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ") : "";
+  const getTimedGames = (m: Match) => {
+    const score = (m.score || {}) as Record<string, unknown>;
+    const timed =
+      score.timedGames && typeof score.timedGames === "object" && !Array.isArray(score.timedGames)
+        ? (score.timedGames as Record<string, unknown>)
+        : null;
+    const gamesA = score.gamesA ?? timed?.gamesA;
+    const gamesB = score.gamesB ?? timed?.gamesB;
+    return {
+      gamesA: typeof gamesA === "number" || typeof gamesA === "string" ? String(gamesA) : "",
+      gamesB: typeof gamesB === "number" || typeof gamesB === "string" ? String(gamesB) : "",
+      allowTimedDraw: typeof score.allowDraw === "boolean" ? score.allowDraw : true,
+      endedByBuzzer: score.endedByBuzzer === true,
+    };
+  };
   const getResultType = (m: Match) => {
     const score = (m.score || {}) as Record<string, unknown>;
     if (score.resultType === "WALKOVER" || score.resultType === "RETIREMENT" || score.resultType === "INJURY") {
@@ -834,8 +1277,14 @@ export default function PadelTournamentTabs({
         existingIds.add(m.id);
         const shouldRefresh = !next[m.id] || (!next[m.id].saving && !next[m.id].uploading);
         if (shouldRefresh) {
+          const timed = getTimedGames(m);
           next[m.id] = {
+            scoreMode: getScoreMode(m),
             scoreText: getScoreText(m),
+            gamesA: timed.gamesA,
+            gamesB: timed.gamesB,
+            allowTimedDraw: timed.allowTimedDraw,
+            endedByBuzzer: timed.endedByBuzzer,
             resultType: getResultType(m),
             winnerSide: getWinnerSide(m),
             photoUrl: getPhotoUrl(m),
@@ -851,12 +1300,38 @@ export default function PadelTournamentTabs({
       });
       return next;
     });
+  }, [isAmMxFormat, isNonStopFormat, matches, scoreRules?.scoreMode]);
+
+  useEffect(() => {
+    const existingIds = new Set(matches.map((match) => match.id));
+    setManualFallbackEnabled((prev) => {
+      const next: Record<number, boolean> = {};
+      Object.entries(prev).forEach(([key, value]) => {
+        const matchId = Number(key);
+        if (!existingIds.has(matchId) || value !== true) return;
+        next[matchId] = true;
+      });
+      const prevKeys = Object.keys(prev).sort();
+      const nextKeys = Object.keys(next).sort();
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((key, idx) => key === nextKeys[idx] && prev[Number(key)] === next[Number(key)])
+      ) {
+        return prev;
+      }
+      return next;
+    });
   }, [matches]);
 
   const updateResultDraft = (
     matchId: number,
     patch: Partial<{
+      scoreMode: "SETS" | "TIMED_GAMES";
       scoreText: string;
+      gamesA: string;
+      gamesB: string;
+      allowTimedDraw: boolean;
+      endedByBuzzer: boolean;
       resultType: "NORMAL" | "WALKOVER" | "RETIREMENT" | "INJURY";
       winnerSide: "" | "A" | "B";
       photoUrl: string | null;
@@ -986,6 +1461,15 @@ export default function PadelTournamentTabs({
     if (dispute.status === "OPEN") return "Em disputa";
     const score = (match.score || {}) as Record<string, unknown>;
     if (score.delayStatus === "DELAYED") return "Atrasado";
+    const timed =
+      score.timedGames && typeof score.timedGames === "object" && !Array.isArray(score.timedGames)
+        ? (score.timedGames as Record<string, unknown>)
+        : null;
+    const gamesA = Number(score.gamesA ?? timed?.gamesA);
+    const gamesB = Number(score.gamesB ?? timed?.gamesB);
+    if (Number.isFinite(gamesA) && Number.isFinite(gamesB)) {
+      return `${gamesA}-${gamesB}${score.mode === "TIMED_GAMES" ? " (tempo)" : ""}`;
+    }
     if (match.scoreSets?.length) {
       return match.scoreSets.map((s) => `${s.teamA}-${s.teamB}`).join(", ");
     }
@@ -1008,6 +1492,27 @@ export default function PadelTournamentTabs({
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleString("pt-PT");
+  };
+
+  const resolveResultSaveError = (code?: string | null) => {
+    if (!code) return "Erro ao guardar resultado.";
+    const normalized = code.toUpperCase();
+    switch (normalized) {
+      case "MATCH_DISPUTED":
+        return "Jogo em disputa. Apenas ADMIN pode editar.";
+      case "INVALID_SCORE":
+        return "Resultado inválido. Confirma score e regras.";
+      case "RESULT_REVIEW_IN_PROGRESS":
+        return "Resultado bloqueado por revisão/disputa em curso.";
+      case "MATCH_FINALIZED_USE_RESULT_WORKFLOW":
+        return "Jogo já finalizado. Usa o workflow de override/reset.";
+      case "PLAYER_SUBMISSION_DISABLED":
+        return "Submissão por jogadores está desativada neste torneio.";
+      case "SPECIAL_RESULT_REQUIRES_INCIDENT_ENDPOINT":
+        return "WO/Desistência/Lesão devem ser registados no modo de incidente.";
+      default:
+        return sanitizeUiErrorMessage(code, "Erro ao guardar resultado.");
+    }
   };
 
   const resolveGenerationError = (value?: string | null) => {
@@ -1144,6 +1649,139 @@ export default function PadelTournamentTabs({
       setTimeout(() => setConfigMessage(null), 2000);
     } else {
       setConfigMessage("Erro ao guardar regras de score.");
+      setTimeout(() => setConfigMessage(null), 2500);
+    }
+  }
+
+  async function saveLiveWorkflowConfig(
+    patch: Partial<{
+      resultValidationMode: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL";
+      pendingConfirmationWindowMinutes: number;
+      playerResultSubmissionEnabled: boolean;
+    }>,
+  ) {
+    const organizationId = configRes?.config?.organizationId;
+    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    if (!organizationId || !eventId) return;
+    setConfigMessage(null);
+    const res = await fetch(`/api/padel/tournaments/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId,
+        eventId,
+        format,
+        ...patch,
+      }),
+    });
+    if (res.ok) {
+      setConfigMessage("Fluxo live guardado.");
+      mutateConfig();
+      setTimeout(() => setConfigMessage(null), 2000);
+    } else {
+      setConfigMessage("Erro ao guardar fluxo live.");
+      setTimeout(() => setConfigMessage(null), 2500);
+    }
+  }
+
+  async function saveFormatProfileConfig(
+    patch: Partial<{
+      format: string;
+      amMxMode: "INDIVIDUAL_ROTATION" | "FIXED_PAIR";
+      amMxProgressionMode: "ROUND_BY_ROUND";
+      nonStopMode: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
+      nonStopRounds: number | null;
+    }>,
+    scope: "selected" | "global" = "selected",
+  ) {
+    const organizationId = configRes?.config?.organizationId;
+    const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
+    if (!organizationId || !eventId) return;
+    if (!isAdminRole) {
+      setConfigMessage("Sem permissões para editar perfil de formato.");
+      setTimeout(() => setConfigMessage(null), 2500);
+      return;
+    }
+
+    const targetKey = scope === "global" ? "global" : runtimeCategoryKey;
+    const nextProfiles = Object.entries(formatProfilesByCategory).reduce<Record<string, Record<string, unknown>>>(
+      (acc, [key, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
+        acc[key] = { ...(value as Record<string, unknown>) };
+        return acc;
+      },
+      {},
+    );
+    const currentProfile =
+      nextProfiles[targetKey] ??
+      (targetKey !== "global" && nextProfiles.global ? { ...nextProfiles.global } : {});
+    const nextProfile: Record<string, unknown> = { ...currentProfile };
+
+    const requestedFormat = typeof patch.format === "string" ? patch.format : nextProfile.format;
+    const isKnownRequestedFormat =
+      typeof requestedFormat === "string" &&
+      (PADEL_FORMAT_PROFILE_OPTIONS as readonly string[]).includes(requestedFormat);
+    const nextFormat = isKnownRequestedFormat ? requestedFormat : generationFormatBase;
+    nextProfile.format = nextFormat;
+
+    if (isAmMxFormatValue(nextFormat)) {
+      nextProfile.amMxMode =
+        patch.amMxMode === "FIXED_PAIR" || patch.amMxMode === "INDIVIDUAL_ROTATION"
+          ? patch.amMxMode
+          : nextProfile.amMxMode === "FIXED_PAIR"
+            ? "FIXED_PAIR"
+            : "INDIVIDUAL_ROTATION";
+      nextProfile.amMxProgressionMode =
+        patch.amMxProgressionMode === "ROUND_BY_ROUND" ||
+        nextProfile.amMxProgressionMode === "ROUND_BY_ROUND"
+          ? "ROUND_BY_ROUND"
+          : "ROUND_BY_ROUND";
+    } else {
+      delete nextProfile.amMxMode;
+      delete nextProfile.amMxProgressionMode;
+    }
+
+    if (isNonStopFormatValue(nextFormat)) {
+      nextProfile.nonStopMode =
+        patch.nonStopMode === "HARD_CAP_WAITLIST" || patch.nonStopMode === "ACTIVE_QUEUE"
+          ? patch.nonStopMode
+          : nextProfile.nonStopMode === "HARD_CAP_WAITLIST"
+            ? "HARD_CAP_WAITLIST"
+            : "ACTIVE_QUEUE";
+      const roundsSource =
+        patch.nonStopRounds !== undefined
+          ? patch.nonStopRounds
+          : toPositiveInt(nextProfile.nonStopRounds) ?? toPositiveInt(nextProfile.roundsHint) ?? selectedNonStopRounds;
+      if (roundsSource && roundsSource > 0) {
+        nextProfile.nonStopRounds = Math.floor(roundsSource);
+      } else {
+        delete nextProfile.nonStopRounds;
+      }
+    } else {
+      delete nextProfile.nonStopMode;
+      delete nextProfile.nonStopRounds;
+      delete nextProfile.nonStopQueueRules;
+    }
+
+    nextProfiles[targetKey] = nextProfile;
+
+    setConfigMessage(null);
+    const res = await fetch(`/api/padel/tournaments/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        organizationId,
+        eventId,
+        format,
+        formatProfilesByCategory: nextProfiles,
+      }),
+    });
+    if (res.ok) {
+      setConfigMessage(scope === "global" ? "Fallback global guardado." : `Perfil ${selectedCategoryLabel} guardado.`);
+      mutateConfig();
+      setTimeout(() => setConfigMessage(null), 2000);
+    } else {
+      setConfigMessage("Erro ao guardar perfil por formato.");
       setTimeout(() => setConfigMessage(null), 2500);
     }
   }
@@ -1820,13 +2458,26 @@ export default function PadelTournamentTabs({
       .map((s) => s.split("-").map((v) => Number(v.trim())))
       .filter((arr) => arr.length === 2 && Number.isFinite(arr[0]) && Number.isFinite(arr[1]))
       .map(([a, b]) => ({ teamA: a, teamB: b }));
+    const gamesA = Number(draft.gamesA);
+    const gamesB = Number(draft.gamesB);
 
     const resultType = draft.resultType ?? "NORMAL";
-    if (resultType === "NORMAL" && sets.length === 0) {
-      updateResultDraft(matchId, { error: "Indica o resultado (ex: 6-3, 6-4)." });
-      return;
-    }
-    if (resultType !== "NORMAL" && draft.winnerSide !== "A" && draft.winnerSide !== "B") {
+    const timedMode = draft.scoreMode === "TIMED_GAMES";
+    if (resultType === "NORMAL") {
+      if (timedMode) {
+        if (!Number.isFinite(gamesA) || !Number.isFinite(gamesB) || gamesA < 0 || gamesB < 0) {
+          updateResultDraft(matchId, { error: "Indica jogos válidos (ex: 6 vs 4)." });
+          return;
+        }
+        if (!draft.allowTimedDraw && gamesA === gamesB) {
+          updateResultDraft(matchId, { error: "Empate não permitido neste modo." });
+          return;
+        }
+      } else if (sets.length === 0) {
+        updateResultDraft(matchId, { error: "Indica o resultado (ex: 6-3, 6-4)." });
+        return;
+      }
+    } else if (draft.winnerSide !== "A" && draft.winnerSide !== "B") {
       updateResultDraft(matchId, { error: "Seleciona o vencedor (A ou B)." });
       return;
     }
@@ -1837,10 +2488,27 @@ export default function PadelTournamentTabs({
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const timedWinnerSide =
+      Number.isFinite(gamesA) && Number.isFinite(gamesB) && gamesA !== gamesB ? (gamesA > gamesB ? "A" : "B") : null;
     const score: Record<string, unknown> = {
       resultType,
-      ...(sets.length > 0 ? { sets } : {}),
-      ...(draft.winnerSide ? { winnerSide: draft.winnerSide } : {}),
+      ...(resultType === "NORMAL" && timedMode
+        ? {
+            mode: "TIMED_GAMES",
+            gamesA,
+            gamesB,
+            allowDraw: draft.allowTimedDraw,
+            endedByBuzzer: draft.endedByBuzzer,
+            endedAt: new Date().toISOString(),
+          }
+        : sets.length > 0
+          ? { sets }
+          : {}),
+      ...(draft.winnerSide
+        ? { winnerSide: draft.winnerSide }
+        : resultType === "NORMAL" && timedMode && timedWinnerSide
+          ? { winnerSide: timedWinnerSide }
+          : {}),
       ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
     };
 
@@ -1866,16 +2534,12 @@ export default function PadelTournamentTabs({
         });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      const error =
-        data?.error === "MATCH_DISPUTED"
-          ? "Jogo em disputa. Apenas ADMIN pode editar."
-          : data?.error === "INVALID_SCORE"
-            ? "Resultado inválido. Confirma sets e regras."
-            : "Erro ao guardar resultado.";
+      const error = resolveResultSaveError(typeof data?.error === "string" ? data.error : null);
       updateResultDraft(matchId, { saving: false, error });
       return;
     }
     mutateMatches();
+    setManualFallbackEnabled((prev) => ({ ...prev, [matchId]: false }));
     updateResultDraft(matchId, { saving: false });
   }
 
@@ -1962,10 +2626,35 @@ export default function PadelTournamentTabs({
       .map((s) => s.split("-").map((v) => Number(v.trim())))
       .filter((arr) => arr.length === 2 && Number.isFinite(arr[0]) && Number.isFinite(arr[1]))
       .map(([a, b]) => ({ teamA: a, teamB: b }));
+    const gamesA = Number(draft.gamesA);
+    const gamesB = Number(draft.gamesB);
+    const timedMode = draft.scoreMode === "TIMED_GAMES";
+
+    if (timedMode && (!Number.isFinite(gamesA) || !Number.isFinite(gamesB) || gamesA < 0 || gamesB < 0)) {
+      updateResultDraft(matchId, { error: "Indica parcial válido (jogos A/B)." });
+      return;
+    }
+    if (!timedMode && sets.length === 0) {
+      updateResultDraft(matchId, { error: "Indica parcial de sets (ex: 4-3)." });
+      return;
+    }
 
     updateResultDraft(matchId, { saving: true, error: null });
+    const timedWinnerSide =
+      Number.isFinite(gamesA) && Number.isFinite(gamesB) && gamesA !== gamesB ? (gamesA > gamesB ? "A" : "B") : null;
     const score: Record<string, unknown> = {
-      ...(sets.length > 0 ? { sets } : {}),
+      ...(timedMode
+        ? {
+            mode: "TIMED_GAMES",
+            gamesA,
+            gamesB,
+            allowDraw: draft.allowTimedDraw,
+            endedByBuzzer: false,
+            ...(timedWinnerSide ? { winnerSide: timedWinnerSide } : {}),
+          }
+        : sets.length > 0
+          ? { sets }
+          : {}),
       ...(draft.photoUrl ? { photoUrl: draft.photoUrl } : {}),
     };
 
@@ -1976,16 +2665,12 @@ export default function PadelTournamentTabs({
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      const error =
-        data?.error === "MATCH_DISPUTED"
-          ? "Jogo em disputa. Apenas ADMIN pode editar."
-          : data?.error === "INVALID_SCORE"
-            ? "Score inválido. Ajusta o parcial."
-            : "Erro ao guardar score.";
+      const error = resolveResultSaveError(typeof data?.error === "string" ? data.error : null);
       updateResultDraft(matchId, { saving: false, error });
       return;
     }
     mutateMatches();
+    setManualFallbackEnabled((prev) => ({ ...prev, [matchId]: false }));
     updateResultDraft(matchId, { saving: false });
   }
 
@@ -2079,11 +2764,14 @@ export default function PadelTournamentTabs({
         : null;
     const lockedByWorkflow = m.status === "PENDING_CONFIRMATION" || m.status === "PENDING_REVIEW_EXPIRED";
     const lockedByDispute = (disputeOpen || m.status === "DISPUTED") && !isAdminRole;
-    const lockInputs = lockedByWorkflow || lockedByDispute;
+    const fallbackEnabled = manualFallbackEnabled[m.id] === true;
+    const lockInputs = (lockedByWorkflow || lockedByDispute) && !fallbackEnabled;
     const resolving = disputeBusy[m.id] === true;
     const disputeMsg = disputeError[m.id];
     const actionRunning = workflowBusy[m.id] === true;
     const actionError = workflowError[m.id];
+    const showTimedInputs = draft.resultType === "NORMAL" && draft.scoreMode === "TIMED_GAMES";
+    const showSetsInputs = draft.resultType === "NORMAL" && draft.scoreMode === "SETS";
     return (
       <div className="space-y-2 text-[12px]">
         {m.status === "PENDING_CONFIRMATION" && (
@@ -2162,6 +2850,23 @@ export default function PadelTournamentTabs({
             </div>
           </div>
         )}
+        {m.status === "RESULT_SUBMITTED" && (
+          <div className="rounded-lg border border-indigo-300/35 bg-indigo-500/10 px-3 py-2 text-[11px] text-indigo-100 space-y-2">
+            <p className="font-semibold">Resultado submetido</p>
+            <p className="text-indigo-100/80">Confirma para oficial ou ajusta o score antes de fechar.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => confirmResult(m.id)}
+                disabled={!isAdminRole || actionRunning}
+                className="rounded-full border border-indigo-200/45 px-3 py-1 text-[11px] text-indigo-100 hover:bg-indigo-400/10 disabled:opacity-60"
+              >
+                Confirmar resultado
+              </button>
+              {!isAdminRole && <span className="text-indigo-100/70">Apenas ADMIN confirma.</span>}
+            </div>
+          </div>
+        )}
         {m.status === "DISPUTED" && isAdminRole && (
           <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100 space-y-2">
             <p className="font-semibold">Disputa em curso</p>
@@ -2204,15 +2909,32 @@ export default function PadelTournamentTabs({
             {dispute.resolutionNote && <p className="text-emerald-100/80">Nota: {dispute.resolutionNote}</p>}
           </div>
         )}
+        {(lockedByWorkflow || lockedByDispute) && isAdminRole && (
+          <div className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-[11px] text-white/80 space-y-2">
+            <p className="font-semibold text-white">Fallback manual (Admin)</p>
+            <p className="text-white/65">
+              Em incidentes de operação podes desbloquear inputs para corrigir score e voltar a submeter.
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setManualFallbackEnabled((prev) => ({
+                  ...prev,
+                  [m.id]:
+                    prev[m.id] === true
+                      ? false
+                      : window.confirm("Ativar fallback manual para este jogo?")
+                        ? true
+                        : false,
+                }))
+              }
+              className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/90 hover:bg-white/10"
+            >
+              {fallbackEnabled ? "Fechar fallback manual" : "Abrir fallback manual"}
+            </button>
+          </div>
+        )}
         <div className="grid gap-2 sm:grid-cols-2">
-          <input
-            type="text"
-            placeholder="6-3, 6-4"
-            value={draft.scoreText}
-            onChange={(e) => updateResultDraft(m.id, { scoreText: e.target.value })}
-            disabled={lockInputs}
-            className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
-          />
           <select
             value={draft.resultType}
             onChange={(e) =>
@@ -2229,7 +2951,108 @@ export default function PadelTournamentTabs({
             <option value="RETIREMENT">Desistência</option>
             <option value="INJURY">Lesão</option>
           </select>
+          {draft.resultType === "NORMAL" && (
+            <select
+              value={draft.scoreMode}
+              onChange={(e) =>
+                updateResultDraft(m.id, {
+                  scoreMode: e.target.value === "TIMED_GAMES" ? "TIMED_GAMES" : "SETS",
+                })
+              }
+              disabled={lockInputs}
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            >
+              <option value="SETS">Modo sets</option>
+              <option value="TIMED_GAMES">Modo tempo (jogos)</option>
+            </select>
+          )}
         </div>
+        {showSetsInputs && (
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="6-3, 6-4"
+              value={draft.scoreText}
+              onChange={(e) => updateResultDraft(m.id, { scoreText: e.target.value })}
+              disabled={lockInputs}
+              className="w-full rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            />
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+              <span className="text-white/55">Atalhos:</span>
+              {["6-4, 6-4", "6-3, 6-4", "7-6, 6-4"].map((preset) => (
+                <button
+                  key={`sets-preset-${m.id}-${preset}`}
+                  type="button"
+                  onClick={() => updateResultDraft(m.id, { scoreText: preset })}
+                  disabled={lockInputs}
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {showTimedInputs && (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={draft.gamesA}
+              onChange={(e) => updateResultDraft(m.id, { gamesA: e.target.value })}
+              disabled={lockInputs}
+              placeholder={`Jogos A · ${nameFromSlots(m.pairingA, locale)}`}
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            />
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={draft.gamesB}
+              onChange={(e) => updateResultDraft(m.id, { gamesB: e.target.value })}
+              disabled={lockInputs}
+              placeholder={`Jogos B · ${nameFromSlots(m.pairingB, locale)}`}
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 disabled:opacity-60"
+            />
+            <label className="flex items-center gap-2 rounded-lg border border-white/15 bg-black/20 px-2 py-1 text-[11px] text-white/75">
+              <input
+                type="checkbox"
+                checked={draft.allowTimedDraw}
+                onChange={(e) => updateResultDraft(m.id, { allowTimedDraw: e.target.checked })}
+                disabled={lockInputs}
+              />
+              Permitir empate
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-white/15 bg-black/20 px-2 py-1 text-[11px] text-white/75">
+              <input
+                type="checkbox"
+                checked={draft.endedByBuzzer}
+                onChange={(e) => updateResultDraft(m.id, { endedByBuzzer: e.target.checked })}
+                disabled={lockInputs}
+              />
+              Terminou no buzzer
+            </label>
+            <div className="sm:col-span-2 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+              <span className="text-white/55">Atalhos tempo:</span>
+              {[
+                { label: "6-4", gamesA: "6", gamesB: "4" },
+                { label: "6-6", gamesA: "6", gamesB: "6" },
+                { label: "7-5", gamesA: "7", gamesB: "5" },
+              ].map((preset) => (
+                <button
+                  key={`timed-preset-${m.id}-${preset.label}`}
+                  type="button"
+                  onClick={() => updateResultDraft(m.id, { gamesA: preset.gamesA, gamesB: preset.gamesB })}
+                  disabled={lockInputs}
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {draft.resultType !== "NORMAL" && (
           <select
             value={draft.winnerSide}
@@ -2339,6 +3162,77 @@ export default function PadelTournamentTabs({
     );
   };
 
+  const renderPlanningPreviewPanel = () => {
+    if (planningPreviewLoading) {
+      return (
+        <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-[12px] text-white/70">
+          A simular viabilidade por formato...
+        </div>
+      );
+    }
+    if (planningPreviewError) {
+      return (
+        <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 p-3 text-[12px] text-amber-100">
+          {planningPreviewError}
+        </div>
+      );
+    }
+    if (!planningPreview) return null;
+    const categories = Array.isArray(planningPreview.categories) ? planningPreview.categories : [];
+    const blockingReasons = Array.isArray(planningPreview.blockingReasons) ? planningPreview.blockingReasons : [];
+    const warnings = Array.isArray(planningPreview.warnings) ? planningPreview.warnings : [];
+    const totalSlots = Number(planningPreview.totalSlots ?? 0);
+    const matchesNeeded = Number(planningPreview.matchesNeeded ?? 0);
+    const unscheduledMatches = Number(planningPreview.unscheduledMatches ?? 0);
+    return (
+      <div
+        className={`rounded-xl border p-3 text-[12px] space-y-2 ${
+          planningPreview.feasible
+            ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
+            : "border-amber-300/35 bg-amber-500/10 text-amber-100"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold">Pré-viabilidade por formato</p>
+          <span className="text-[11px] opacity-90">
+            Modo: {planningMode === "capacity" ? "capacidade teórica" : "equipas reais"}
+          </span>
+        </div>
+        <p className="text-[11px] opacity-90">
+          Slots {totalSlots} · Jogos {matchesNeeded} · Em falta {Math.max(0, unscheduledMatches)}
+        </p>
+        {categories.length > 0 && (
+          <div className="space-y-1 text-[11px]">
+            {categories.slice(0, 4).map((category) => (
+              <p key={`preview-plan-${category.key ?? category.label ?? "cat"}`}>
+                • {category.label || "Categoria"}: {category.teams ?? 0} equipas · mínimo {category.minTeams ?? 0} ·
+                jogos {category.matchesNeeded ?? 0}/{category.allocatedSlots ?? 0}
+                {typeof category.recommendedMaxTeams === "number" ? ` · recomendado ${category.recommendedMaxTeams}` : ""}
+                {typeof category.hardCapMax === "number" ? ` · hard cap ${category.hardCapMax}` : ""}
+                {typeof category.queueEstimatedRounds === "number"
+                  ? ` · fila ~${category.queueEstimatedRounds} ronda(s)`
+                  : ""}
+              </p>
+            ))}
+          </div>
+        )}
+        {planningPreviewAlternatives.length > 0 && (
+          <div className="space-y-1 text-[11px] opacity-95">
+            {planningPreviewAlternatives.slice(0, 2).map((alternative, idx) => (
+              <p key={`preview-plan-alt-${idx}`}>• {alternative}</p>
+            ))}
+          </div>
+        )}
+        {(warnings.length > 0 || blockingReasons.length > 0) && (
+          <p className="text-[11px] opacity-90">
+            {warnings.length > 0 ? `Avisos: ${warnings.slice(0, 2).join(" · ")}. ` : ""}
+            {blockingReasons.length > 0 ? `Bloqueios técnicos: ${blockingReasons.join(" · ")}.` : ""}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   return (
     <section className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-4 mt-6">
       {categoryOptions.length > 1 && (
@@ -2346,9 +3240,18 @@ export default function PadelTournamentTabs({
           <span className="uppercase tracking-[0.18em] text-[11px] text-white/60">Categoria ativa</span>
           <select
             value={selectedCategoryId ?? ""}
-            onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => {
+              if (e.target.value) {
+                setPreferGlobalCategory(false);
+                setSelectedCategoryId(Number(e.target.value));
+                return;
+              }
+              setPreferGlobalCategory(true);
+              setSelectedCategoryId(null);
+            }}
             className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80"
           >
+            <option value="">Global / todas</option>
             {categoryOptions.map((opt) => (
               <option key={`padel-cat-${opt.id}`} value={String(opt.id)}>
                 {opt.label}
@@ -2357,6 +3260,133 @@ export default function PadelTournamentTabs({
           </select>
         </div>
       )}
+
+      <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Perfil por formato</p>
+            <p className="text-[12px] text-white/70">Configuração efetiva da categoria ativa (com fallback global).</p>
+          </div>
+          <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
+            {selectedCategoryLabel}
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] text-white/60">Formato</span>
+            <select
+              value={generationFormat}
+              disabled={!isAdminRole}
+              onChange={(e) => saveFormatProfileConfig({ format: e.target.value }, "selected")}
+              className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+            >
+              {PADEL_FORMAT_PROFILE_OPTIONS.map((opt) => (
+                <option key={`profile-format-${opt}`} value={opt}>
+                  {formatLabel(opt)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {isAmMxFormat && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-white/60">Modo AM/MX</span>
+                <select
+                  value={selectedAmMxMode}
+                  disabled={!isAdminRole}
+                  onChange={(e) =>
+                    saveFormatProfileConfig(
+                      { amMxMode: e.target.value === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION" },
+                      "selected",
+                    )
+                  }
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                >
+                  <option value="INDIVIDUAL_ROTATION">Rotação individual</option>
+                  <option value="FIXED_PAIR">Dupla fixa</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-white/60">Progressão</span>
+                <select
+                  value={amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : "ROUND_BY_ROUND"}
+                  disabled={!isAdminRole}
+                  onChange={() => saveFormatProfileConfig({ amMxProgressionMode: "ROUND_BY_ROUND" }, "selected")}
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                >
+                  <option value="ROUND_BY_ROUND">Ronda a ronda</option>
+                </select>
+              </label>
+            </>
+          )}
+          {isNonStopFormat && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-white/60">Modo NON_STOP</span>
+                <select
+                  value={selectedNonStopMode}
+                  disabled={!isAdminRole}
+                  onChange={(e) =>
+                    saveFormatProfileConfig(
+                      { nonStopMode: e.target.value === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE" },
+                      "selected",
+                    )
+                  }
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                >
+                  <option value="ACTIVE_QUEUE">Fila ativa</option>
+                  <option value="HARD_CAP_WAITLIST">Hard cap + waitlist</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] text-white/60">Rondas NON_STOP</span>
+                <input
+                  key={`profile-ns-rounds-${runtimeCategoryKey}-${selectedNonStopRounds}`}
+                  type="number"
+                  min={1}
+                  defaultValue={selectedNonStopRounds}
+                  disabled={!isAdminRole}
+                  className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px] disabled:opacity-60"
+                  onBlur={(e) => {
+                    const parsed = Number(e.target.value);
+                    if (!Number.isFinite(parsed) || parsed <= 0) {
+                      e.target.value = String(selectedNonStopRounds);
+                      return;
+                    }
+                    const nextRounds = Math.max(1, Math.floor(parsed));
+                    if (nextRounds === selectedNonStopRounds) return;
+                    saveFormatProfileConfig({ nonStopRounds: nextRounds }, "selected");
+                  }}
+                />
+              </label>
+            </>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
+          <p className="text-[11px] text-white/65">
+            Fallback global aplicado quando a categoria não tiver override.
+          </p>
+          <button
+            type="button"
+            disabled={!isAdminRole}
+            onClick={() =>
+              saveFormatProfileConfig(
+                {
+                  format: generationFormat,
+                  amMxMode: isAmMxFormat ? selectedAmMxMode : undefined,
+                  amMxProgressionMode: isAmMxFormat ? "ROUND_BY_ROUND" : undefined,
+                  nonStopMode: isNonStopFormat ? selectedNonStopMode : undefined,
+                  nonStopRounds: isNonStopFormat ? selectedNonStopRounds : null,
+                },
+                "global",
+              )
+            }
+            className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+          >
+            Copiar perfil para fallback global
+          </button>
+        </div>
+      </div>
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-1">
@@ -2382,9 +3412,17 @@ export default function PadelTournamentTabs({
               const occupancy = c.capacity ? Math.min(100, Math.round((c.count / c.capacity) * 100)) : null;
               return (
                 <div key={`${c.key ?? "default"}`} className="flex items-center justify-between gap-2">
-                  <span className="text-white">{c.label}</span>
-                  <span className="text-white/70">
+                  <div className="space-y-0.5">
+                    <span className="text-white">{c.label}</span>
+                    <p className="text-[10px] text-white/55">
+                      Confirmadas {c.confirmed} · Completas {c.complete} · Ativas {c.active} · Pendentes {c.pending}
+                    </p>
+                  </div>
+                  <span className="text-right text-white/70">
                     {c.count} equipa{c.count === 1 ? "" : "s"} {c.capacity ? `· ${occupancy}%` : ""}
+                    <span className="block text-[10px] text-white/50">
+                      {planningMode === "capacity" ? "base capacidade" : "base runtime"}
+                    </span>
                   </span>
                 </div>
               );
@@ -2410,7 +3448,18 @@ export default function PadelTournamentTabs({
                       : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
                 }`}
               >
-                <p className="font-semibold">{item.label}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">{item.label}</p>
+                  {item.key !== "healthy" && (
+                    <button
+                      type="button"
+                      onClick={() => runActionItem(item.key)}
+                      className="rounded-full border border-current/35 px-2.5 py-0.5 text-[10px] font-semibold hover:bg-white/10"
+                    >
+                      Abrir
+                    </button>
+                  )}
+                </div>
                 <p className="text-[11px] opacity-90">{item.hint}</p>
               </div>
             ))}
@@ -2434,6 +3483,52 @@ export default function PadelTournamentTabs({
           </div>
         </div>
       </div>
+      {matches.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Fila operacional live</p>
+              <p className="text-white/70">
+                Filtra rapidamente jogos críticos para operação em tempo real.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
+              Filtro ativo: {liveOpsFilterLabel}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: "ALL" as LiveOpsFilter, label: "Todos", count: liveOpsCounters.all },
+              { key: "ACTION_REQUIRED" as LiveOpsFilter, label: "Ação", count: liveOpsCounters.actionRequired },
+              {
+                key: "PENDING_CONFIRMATION" as LiveOpsFilter,
+                label: "Pend. confirmação",
+                count: liveOpsCounters.pendingConfirmation,
+              },
+              {
+                key: "PENDING_REVIEW_EXPIRED" as LiveOpsFilter,
+                label: "Pend. expirado",
+                count: liveOpsCounters.pendingReviewExpired,
+              },
+              { key: "DISPUTED" as LiveOpsFilter, label: "Disputa", count: liveOpsCounters.disputed },
+              { key: "UNSCHEDULED" as LiveOpsFilter, label: "Sem horário", count: liveOpsCounters.unscheduled },
+            ].map((item) => (
+              <button
+                key={`live-filter-${item.key}`}
+                type="button"
+                onClick={() => setLiveOpsFilter(item.key)}
+                className={`rounded-full border px-3 py-1 text-[11px] ${
+                  liveOpsFilter === item.key
+                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
+                    : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                }`}
+              >
+                {item.label} ({item.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {analytics && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2632,6 +3727,17 @@ export default function PadelTournamentTabs({
             </p>
             <p className="text-white/70">{formatExecutionHint}</p>
             <p className={unscheduledMatchesCount === 0 ? "text-emerald-200" : "text-amber-200"}>{calendarReadinessHint}</p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-[11px] text-white/60">Planeamento</span>
+              <select
+                value={planningMode}
+                onChange={(e) => setPlanningMode(e.target.value === "capacity" ? "capacity" : "runtime")}
+                className="rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[11px] text-white/80"
+              >
+                <option value="runtime">Equipas reais</option>
+                <option value="capacity">Capacidade teórica</option>
+              </select>
+            </div>
             <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
               <span className="rounded-full border border-white/20 bg-black/30 px-2 py-1 text-white/80">
                 {phaseSupportLabel}
@@ -2659,6 +3765,8 @@ export default function PadelTournamentTabs({
           </div>
         </div>
       </div>
+
+      {renderPlanningPreviewPanel()}
 
       <div className="flex items-center gap-2 text-[12px]">
         {[
@@ -2731,9 +3839,10 @@ export default function PadelTournamentTabs({
                 <>
                   <p className="text-[11px] text-white/65">
                     Modo:{" "}
-                    {selectedCategoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
+                    {selectedNonStopMode === "HARD_CAP_WAITLIST"
                       ? "Hard cap + waitlist"
                       : "Fila ativa (King of Court)"}
+                    {selectedNonStopRounds ? ` · ${selectedNonStopRounds} ronda(s)` : ""}
                     {nonStopRuntimeQueue.length > 0 ? ` · fila ${nonStopRuntimeQueue.length}` : ""}
                   </p>
                   {nonStopRuntimeActivePairs.length > 0 && (
@@ -2752,7 +3861,7 @@ export default function PadelTournamentTabs({
                 <p className="text-[11px] text-white/65">
                   Progressão:{" "}
                   {amMxProgressionMode === "ROUND_BY_ROUND" ? "Dinâmica ronda a ronda" : "Ronda fixa"}
-                  {selectedCategoryProfile?.amMxMode === "FIXED_PAIR" ? " · pares fixos" : " · rotação individual"}
+                  {selectedAmMxMode === "FIXED_PAIR" ? " · pares fixos" : " · rotação individual"}
                 </p>
               )}
               <a
@@ -2860,6 +3969,68 @@ export default function PadelTournamentTabs({
             {scoreRulesPreset === "CUSTOM" && (
               <p className="text-[11px] text-white/70">Preset custom ativo.</p>
             )}
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white/80 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Workflow de resultado live</p>
+                <p className="text-[12px] text-white/70">Define quem submete e quando o resultado fica oficial.</p>
+              </div>
+              <label className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-[11px] text-white/80">
+                <input
+                  type="checkbox"
+                  checked={playerResultSubmissionEnabled}
+                  onChange={(e) =>
+                    saveLiveWorkflowConfig({
+                      playerResultSubmissionEnabled: e.target.checked,
+                    })
+                  }
+                />
+                Jogador pode submeter
+              </label>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select
+                value={resultValidationMode}
+                onChange={(e) =>
+                  saveLiveWorkflowConfig({
+                    resultValidationMode:
+                      e.target.value === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+                        ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+                        : "IMMEDIATE_OFFICIAL",
+                  })
+                }
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+              >
+                <option value="IMMEDIATE_OFFICIAL">Staff: oficial imediato</option>
+                <option value="IMMEDIATE_PENDING_THEN_OFFICIAL">Staff: pendente + confirmação</option>
+              </select>
+              <input
+                key={`pending-window-${pendingConfirmationWindowMinutes}`}
+                type="number"
+                min={1}
+                max={240}
+                defaultValue={pendingConfirmationWindowMinutes}
+                className="rounded-lg border border-white/15 bg-black/30 px-2 py-1 text-[12px]"
+                onBlur={(e) => {
+                  const raw = Number(e.target.value);
+                  if (!Number.isFinite(raw) || raw <= 0) {
+                    e.target.value = String(pendingConfirmationWindowMinutes);
+                    return;
+                  }
+                  const nextValue = Math.max(1, Math.min(240, Math.floor(raw)));
+                  if (nextValue === pendingConfirmationWindowMinutes) return;
+                  saveLiveWorkflowConfig({ pendingConfirmationWindowMinutes: nextValue });
+                }}
+              />
+            </div>
+            <p className="text-[11px] text-white/65">
+              Janela pendente: {pendingConfirmationWindowMinutes} min · modo atual:{" "}
+              {resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+                ? "confirmação obrigatória"
+                : "oficial imediato para staff"}
+              .
+            </p>
           </div>
           {supportsGroups && (
             <>
@@ -3434,7 +4605,15 @@ export default function PadelTournamentTabs({
             </div>
           )}
           {primaryRoundMatches.length === 0 && <p className="text-sm text-white/70">Sem jogos nesta fase.</p>}
-          {primaryRoundMatches.map((m) => (
+          {primaryRoundMatches.length > 0 && filteredPrimaryRoundMatches.length === 0 && (
+            <p className="text-sm text-white/70">Sem jogos para o filtro operacional selecionado.</p>
+          )}
+          {filteredPrimaryRoundMatches.length > 0 && filteredPrimaryRoundMatches.length < primaryRoundMatches.length && (
+            <p className="text-[11px] text-white/60">
+              A mostrar {filteredPrimaryRoundMatches.length} de {primaryRoundMatches.length} jogo(s) em {groupsTabLabel.toLowerCase()}.
+            </p>
+          )}
+          {filteredPrimaryRoundMatches.map((m) => (
               <div key={m.id} className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -3504,6 +4683,9 @@ export default function PadelTournamentTabs({
           )}
           {koEditMessage && <p className="text-[11px] text-white/70">{koEditMessage}</p>}
           {koRounds.length === 0 && <p className="text-sm text-white/70">Sem eliminatórias.</p>}
+          {koRounds.length > 0 && koVisibleMatchesCount === 0 && liveOpsFilter !== "ALL" && (
+            <p className="text-sm text-white/70">Sem jogos de eliminatórias para o filtro operacional selecionado.</p>
+          )}
           {koGeneratedAt && (
             <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-1">
               <p>Quadro: {formatDate(koGeneratedAt)}.</p>
@@ -3536,10 +4718,21 @@ export default function PadelTournamentTabs({
               <span className="text-sm font-semibold">{championName}</span>
             </div>
           )}
+          {koRounds.length > 0 && koVisibleMatchesCount > 0 && liveOpsFilter !== "ALL" && (
+            <p className="text-[11px] text-white/60">A mostrar {koVisibleMatchesCount} jogo(s) de eliminatórias em {liveOpsFilterLabel}.</p>
+          )}
           {koRounds.length > 0 && (
             <div className="overflow-x-auto">
               <div className="flex min-w-full gap-4 pb-2">
                 {koRounds.map(([roundKey, games], roundIdx) => {
+                  const visibleGames =
+                    liveOpsFilter === "ALL"
+                      ? games
+                      : games.filter((game) => {
+                          const fullMatch = matchById.get(game.id);
+                          return fullMatch ? doesMatchPassLiveOpsFilter(fullMatch, liveOpsFilter) : false;
+                        });
+                  if (visibleGames.length === 0 && liveOpsFilter !== "ALL") return null;
                   const isLast = roundIdx === koRounds.length - 1;
                   return (
                   <div
@@ -3550,8 +4743,8 @@ export default function PadelTournamentTabs({
                     <p className="text-[11px] uppercase tracking-[0.18em] text-white/60">
                       {formatRoundLabel(roundKey)}
                     </p>
-                    {games.map((g) => {
-                      const fullMatch = matches.find((m) => m.id === g.id);
+                    {visibleGames.map((g) => {
+                      const fullMatch = matchById.get(g.id);
                       const roundLabel = fullMatch?.roundLabel || roundKey;
                       const used = koUsedByRound.get(roundLabel) ?? new Set();
                       const draft = fullMatch ? getKoDraft(fullMatch) : null;

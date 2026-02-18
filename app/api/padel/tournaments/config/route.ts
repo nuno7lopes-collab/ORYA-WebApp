@@ -6,6 +6,7 @@ import {
   OrganizationMemberRole,
   OrganizationModule,
   PadelEligibilityType,
+  PadelResultValidationMode,
   PadelRegistrationStatus,
   Prisma,
   TournamentFormat,
@@ -49,6 +50,9 @@ const TOURNAMENT_CONFIG_SELECT = {
   cancelledAt: true,
   lifecycleUpdatedAt: true,
   eligibilityType: true,
+  resultValidationMode: true,
+  pendingConfirmationWindowMinutes: true,
+  playerResultSubmissionEnabled: true,
   ruleSet: {
     select: {
       id: true,
@@ -263,6 +267,48 @@ async function _POST(req: NextRequest) {
       : null;
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
   const enabledFormats = hasEnabledFormats ? filterPadelFormats(body.enabledFormats) : null;
+  const hasResultValidationMode = Object.prototype.hasOwnProperty.call(body, "resultValidationMode");
+  const resultValidationMode =
+    hasResultValidationMode &&
+    typeof body.resultValidationMode === "string" &&
+    Object.values(PadelResultValidationMode).includes(body.resultValidationMode as PadelResultValidationMode)
+      ? (body.resultValidationMode as PadelResultValidationMode)
+      : hasResultValidationMode
+        ? null
+        : undefined;
+  if (hasResultValidationMode && !resultValidationMode) {
+    return jsonWrap({ ok: false, error: "INVALID_RESULT_VALIDATION_MODE" }, { status: 400 });
+  }
+  const hasPendingConfirmationWindowMinutes = Object.prototype.hasOwnProperty.call(
+    body,
+    "pendingConfirmationWindowMinutes",
+  );
+  let pendingConfirmationWindowMinutes: number | undefined = undefined;
+  if (hasPendingConfirmationWindowMinutes) {
+    const raw =
+      typeof body.pendingConfirmationWindowMinutes === "number"
+        ? body.pendingConfirmationWindowMinutes
+        : typeof body.pendingConfirmationWindowMinutes === "string"
+          ? Number(body.pendingConfirmationWindowMinutes)
+          : NaN;
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return jsonWrap({ ok: false, error: "INVALID_PENDING_CONFIRMATION_WINDOW" }, { status: 400 });
+    }
+    pendingConfirmationWindowMinutes = Math.max(1, Math.min(240, Math.floor(raw)));
+  }
+  const hasPlayerResultSubmissionEnabled = Object.prototype.hasOwnProperty.call(
+    body,
+    "playerResultSubmissionEnabled",
+  );
+  const playerResultSubmissionEnabled =
+    hasPlayerResultSubmissionEnabled && typeof body.playerResultSubmissionEnabled === "boolean"
+      ? body.playerResultSubmissionEnabled
+      : hasPlayerResultSubmissionEnabled
+        ? null
+        : undefined;
+  if (hasPlayerResultSubmissionEnabled && playerResultSubmissionEnabled === null) {
+    return jsonWrap({ ok: false, error: "INVALID_PLAYER_RESULT_SUBMISSION_ENABLED" }, { status: 400 });
+  }
   const groupsBody = body.groups && typeof body.groups === "object" ? (body.groups as Record<string, unknown>) : null;
   const hasGroupsConfig = Object.prototype.hasOwnProperty.call(body, "groups");
   const hasManualAssignments =
@@ -740,6 +786,9 @@ async function _POST(req: NextRequest) {
           enabledFormats: true,
           isInterclub: true,
           teamSize: true,
+          resultValidationMode: true,
+          pendingConfirmationWindowMinutes: true,
+          playerResultSubmissionEnabled: true,
           lifecycleStatus: true,
         },
       });
@@ -837,6 +886,12 @@ async function _POST(req: NextRequest) {
         enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
         isInterclub: resolvedIsInterclub,
         teamSize: normalizedTeamSize ?? undefined,
+        resultValidationMode:
+          resultValidationMode ?? existing?.resultValidationMode ?? PadelResultValidationMode.IMMEDIATE_OFFICIAL,
+        pendingConfirmationWindowMinutes:
+          pendingConfirmationWindowMinutes ?? existing?.pendingConfirmationWindowMinutes ?? 15,
+        playerResultSubmissionEnabled:
+          playerResultSubmissionEnabled ?? existing?.playerResultSubmissionEnabled ?? false,
         advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
         format: formatEffective,
       };
@@ -849,6 +904,13 @@ async function _POST(req: NextRequest) {
         ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
         ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
         ...((hasIsInterclub || hasTeamSize) ? { isInterclub: resolvedIsInterclub, teamSize: normalizedTeamSize ?? null } : {}),
+        ...(hasResultValidationMode && resultValidationMode ? { resultValidationMode } : {}),
+        ...(hasPendingConfirmationWindowMinutes
+          ? { pendingConfirmationWindowMinutes }
+          : {}),
+        ...(hasPlayerResultSubmissionEnabled && playerResultSubmissionEnabled !== null
+          ? { playerResultSubmissionEnabled }
+          : {}),
         advancedSettings: mergedAdvanced as Prisma.InputJsonValue,
       };
 

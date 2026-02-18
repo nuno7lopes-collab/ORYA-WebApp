@@ -22,7 +22,14 @@ vi.mock("@/lib/prisma", () => ({ prisma }));
 
 let POST: typeof import("@/app/api/padel/tournaments/config/route").POST;
 
-const buildConfig = (advancedSettings: Record<string, unknown>) => ({
+const buildConfig = (
+  advancedSettings: Record<string, unknown>,
+  overrides?: Partial<{
+    resultValidationMode: string;
+    pendingConfirmationWindowMinutes: number;
+    playerResultSubmissionEnabled: boolean;
+  }>,
+) => ({
   id: 99,
   eventId: 1001,
   organizationId: 321,
@@ -32,6 +39,9 @@ const buildConfig = (advancedSettings: Record<string, unknown>) => ({
   ruleSetVersionId: null,
   defaultCategoryId: null,
   eligibilityType: "OPEN",
+  resultValidationMode: overrides?.resultValidationMode ?? "IMMEDIATE_OFFICIAL",
+  pendingConfirmationWindowMinutes: overrides?.pendingConfirmationWindowMinutes ?? 15,
+  playerResultSubmissionEnabled: overrides?.playerResultSubmissionEnabled ?? false,
   splitDeadlineHours: null,
   enabledFormats: ["NON_STOP"],
   isInterclub: false,
@@ -105,7 +115,16 @@ describe("POST /api/padel/tournaments/config ranking weights by category", () =>
 
     const tx = {
       padelTournamentConfig: {
-        findUnique: vi.fn().mockResolvedValueOnce(existingConfig).mockResolvedValueOnce(buildConfig(persistedAdvancedSettings)),
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce(existingConfig)
+          .mockResolvedValueOnce(
+            buildConfig(persistedAdvancedSettings, {
+              resultValidationMode: "IMMEDIATE_PENDING_THEN_OFFICIAL",
+              pendingConfirmationWindowMinutes: 30,
+              playerResultSubmissionEnabled: true,
+            }),
+          ),
         upsert: vi.fn().mockResolvedValue({ id: 99, ruleSetId: null, ruleSetVersionId: null }),
         update: vi.fn(),
       },
@@ -118,6 +137,9 @@ describe("POST /api/padel/tournaments/config ranking weights by category", () =>
       body: JSON.stringify({
         eventId: 1001,
         organizationId: 321,
+        resultValidationMode: "IMMEDIATE_PENDING_THEN_OFFICIAL",
+        pendingConfirmationWindowMinutes: 30,
+        playerResultSubmissionEnabled: true,
         rankingWeights: {
           NON_STOP: 0.7,
           AMERICANO: 0.7,
@@ -143,6 +165,9 @@ describe("POST /api/padel/tournaments/config ranking weights by category", () =>
 
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.config.resultValidationMode).toBe("IMMEDIATE_PENDING_THEN_OFFICIAL");
+    expect(body.config.pendingConfirmationWindowMinutes).toBe(30);
+    expect(body.config.playerResultSubmissionEnabled).toBe(true);
     expect(body.config.advancedSettings.rankingWeights.byCategory["12"].NON_STOP).toBe(0.5);
     expect(body.config.advancedSettings.formatProfilesByCategory["12"].nonStopMode).toBe("ACTIVE_QUEUE");
     expect(body.config.advancedSettings.formatProfilesByCategory["12"].amMxProgressionMode).toBe("ROUND_BY_ROUND");

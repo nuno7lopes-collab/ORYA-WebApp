@@ -9,7 +9,6 @@ import {
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-  DASHBOARD_TITLE,
 } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -38,7 +37,7 @@ export default function ReservasClientesPage() {
     <div className="space-y-5">
       <header className="space-y-2">
         <p className={DASHBOARD_LABEL}>Reservas</p>
-        <h1 className={DASHBOARD_TITLE}>Clientes</h1>
+        <h1 className="text-xl font-semibold text-white">Clientes</h1>
         <p className={DASHBOARD_MUTED}>Pesquisa rápida para marcações e reservas.</p>
       </header>
 

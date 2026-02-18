@@ -9,10 +9,10 @@ import useSWR from "swr";
 import { cn } from "@/lib/utils";
 import {
   CTA_PRIMARY,
+  CTA_SECONDARY,
   DASHBOARD_CARD,
   DASHBOARD_LABEL,
   DASHBOARD_MUTED,
-  DASHBOARD_TITLE,
 } from "@/app/org/_shared/dashboardUi";
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -23,6 +23,7 @@ type ServiceItem = {
   durationMinutes: number;
   unitPriceCents: number;
   currency: string;
+  isActive: boolean;
 };
 
 const formatPrice = (cents: number, currency: string) => `${(cents / 100).toFixed(2)} ${currency}`;
@@ -44,12 +45,17 @@ export default function ReservasServicosPage() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-2">
           <p className={DASHBOARD_LABEL}>Reservas</p>
-          <h1 className={DASHBOARD_TITLE}>Serviços</h1>
-          <p className={DASHBOARD_MUTED}>Cria e gere o catálogo de serviços.</p>
+          <h1 className="text-xl font-semibold text-white">Serviços</h1>
+          <p className={DASHBOARD_MUTED}>Cria, ajusta e gere apenas o catálogo de serviços.</p>
         </div>
-        <Link href={appendOrganizationIdToHref("/org/bookings?create=service", canonicalOrganizationId)} className={CTA_PRIMARY}>
-          Novo serviço
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={appendOrganizationIdToHref("/org/bookings/operations", canonicalOrganizationId)} className={CTA_SECONDARY}>
+            Operações
+          </Link>
+          <Link href={appendOrganizationIdToHref("/org/bookings/new", canonicalOrganizationId)} className={CTA_PRIMARY}>
+            Novo serviço
+          </Link>
+        </div>
       </header>
 
       <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
@@ -66,9 +72,21 @@ export default function ReservasServicosPage() {
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[12px] font-semibold text-white">{service.title}</p>
-                <span className="text-[11px] text-white/50">
-                  {service.durationMinutes} min · {formatPrice(service.unitPriceCents, service.currency)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-white/50">
+                    {service.durationMinutes} min · {formatPrice(service.unitPriceCents, service.currency)}
+                  </span>
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px]",
+                      service.isActive
+                        ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-100"
+                        : "border-white/15 bg-white/5 text-white/60",
+                    )}
+                  >
+                    {service.isActive ? "Ativo" : "Inativo"}
+                  </span>
+                </div>
               </div>
             </Link>
           ))}

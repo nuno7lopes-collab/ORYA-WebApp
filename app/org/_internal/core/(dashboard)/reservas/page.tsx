@@ -4,7 +4,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   Elements,
@@ -40,15 +40,7 @@ const CHIP_BASE =
   "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[12px] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-white/20 hover:bg-white/10 hover:text-white";
 const CHIP_ACTIVE =
   "border-white/35 bg-white/18 text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]";
-const SERVICE_DURATION_OPTIONS = [30, 60, 90, 120];
 type ReservationFilterMode = "PROFESSIONAL" | "RESOURCE";
-
-const formatRangeDate = (date: Date, timezone: string) =>
-  new Intl.DateTimeFormat("pt-PT", {
-    day: "2-digit",
-    month: "short",
-    timeZone: timezone,
-  }).format(date);
 
 const formatLongDate = (date: Date, timezone: string) =>
   new Intl.DateTimeFormat("pt-PT", {
@@ -240,14 +232,6 @@ const formatInputTime = (date: Date, timezone: string) => {
   return `${hour}:${minute}`;
 };
 
-const getWeekStart = (date: Date, timezone: string) => {
-  const parts = getDateParts(date, timezone);
-  const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
-  const diff = (weekday + 6) % 7;
-  const startParts = addDaysToParts(parts, -diff);
-  return buildZonedDate(startParts, timezone, 0, 0);
-};
-
 type ServiceItem = {
   id: number;
   title: string;
@@ -300,6 +284,27 @@ type BookingItem = {
     expiresAt: string;
     createdAt: string;
   } | null;
+};
+
+type QueueStatusFilter = "ALL" | "PENDING" | "CONFIRMED" | "DELAYED";
+
+const isPendingBooking = (status: string) => ["PENDING_CONFIRMATION", "PENDING"].includes(status);
+const isConfirmedBooking = (status: string) => ["CONFIRMED", "COMPLETED"].includes(status);
+const isDelayedBooking = (booking: BookingItem) => {
+  if ((booking.delayMinutes ?? 0) > 0) return true;
+  if (!booking.estimatedStartsAt) return false;
+  return new Date(booking.estimatedStartsAt).getTime() > new Date(booking.startsAt).getTime();
+};
+const getOperationalStartMs = (booking: BookingItem) => {
+  const estimated = booking.estimatedStartsAt ? new Date(booking.estimatedStartsAt).getTime() : NaN;
+  if (Number.isFinite(estimated)) return estimated;
+  return new Date(booking.startsAt).getTime();
+};
+const matchesQueueStatus = (booking: BookingItem, filter: QueueStatusFilter) => {
+  if (filter === "ALL") return true;
+  if (filter === "PENDING") return isPendingBooking(booking.status);
+  if (filter === "CONFIRMED") return isConfirmedBooking(booking.status);
+  return isDelayedBooking(booking);
 };
 
 const getBookingMode = (booking: BookingItem): ReservationFilterMode => {
@@ -407,6 +412,7 @@ type SplitState = {
 
 
 export default function ReservasDashboardPage() {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const organizationIdParam = searchParams?.get("organizationId") ?? null;
@@ -430,7 +436,8 @@ export default function ReservasDashboardPage() {
       : null;
   const [selectedPadelClubId, setSelectedPadelClubId] = useState<number | null>(null);
   const [selectedPadelCourtId, setSelectedPadelCourtId] = useState<number | null>(null);
-  const [focusDate, setFocusDate] = useState(() => new Date());
+  const [operationalWindowDays, setOperationalWindowDays] = useState(14);
+  const [queueStatusFilter, setQueueStatusFilter] = useState<QueueStatusFilter>("ALL");
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<number | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<number | null>(null);
   const [drawerBooking, setDrawerBooking] = useState<BookingItem | null>(null);
@@ -458,7 +465,6 @@ export default function ReservasDashboardPage() {
   const [noShowBusy, setNoShowBusy] = useState(false);
   const [modeSaving, setModeSaving] = useState<string | null>(null);
   const initializedRef = useRef(false);
-  const serviceInitRef = useRef(false);
   const [createSlot, setCreateSlot] = useState<Date | null>(null);
   const [createServiceId, setCreateServiceId] = useState<number | null>(null);
   const [createClient, setCreateClient] = useState<ClientItem | null>(null);
@@ -481,13 +487,6 @@ export default function ReservasDashboardPage() {
   const [delayNotifyWindow, setDelayNotifyWindow] = useState("24");
   const [delaySaving, setDelaySaving] = useState(false);
   const [delayError, setDelayError] = useState<string | null>(null);
-  const [serviceDrawerOpen, setServiceDrawerOpen] = useState(false);
-  const [serviceTitle, setServiceTitle] = useState("");
-  const [serviceDescription, setServiceDescription] = useState("");
-  const [serviceDuration, setServiceDuration] = useState("60");
-  const [servicePrice, setServicePrice] = useState("20");
-  const [serviceSaving, setServiceSaving] = useState(false);
-  const [serviceError, setServiceError] = useState<string | null>(null);
   const splitInitRef = useRef<number | null>(null);
   const splitDirtyRef = useRef(false);
   const [splitState, setSplitState] = useState<SplitState | null>(null);
@@ -498,21 +497,7 @@ export default function ReservasDashboardPage() {
   const [inviteSaving, setInviteSaving] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  function showServiceDrawer() {
-    setDrawerBooking(null);
-    setCreateSlot(null);
-    setCreateServiceId(null);
-    setCheckout(null);
-    setPaymentError(null);
-    setCreateError(null);
-    setServiceSaving(false);
-    setServiceError(null);
-    setServiceDrawerOpen(true);
-  }
-  const showServiceDrawerRef = useRef<() => void>(() => {});
-  showServiceDrawerRef.current = showServiceDrawer;
-
-  const { data: servicesData, isLoading: servicesLoading, mutate: mutateServices } = useSWR<{
+  const { data: servicesData, isLoading: servicesLoading } = useSWR<{
     ok: boolean;
     items: ServiceItem[];
   }>(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), fetcher);
@@ -815,17 +800,6 @@ export default function ReservasDashboardPage() {
   }, [assignmentMode, canFilterByProfessional, canFilterByResource, searchParams]);
 
   useEffect(() => {
-    const createParam = searchParams.get("create");
-    if (createParam === "service") {
-      if (serviceInitRef.current) return;
-      showServiceDrawerRef.current();
-      serviceInitRef.current = true;
-      return;
-    }
-    serviceInitRef.current = false;
-  }, [searchParams]);
-
-  useEffect(() => {
     if (!createSlot) return;
     if (!createServiceId && activeServices.length) {
       setCreateServiceId(activeServices[0].id);
@@ -887,36 +861,16 @@ export default function ReservasDashboardPage() {
     };
   }, [clientQuery, createSlot]);
 
-  const calendarStart = useMemo(() => getWeekStart(focusDate, timezone), [focusDate, timezone]);
-
-  const rangeStartIso = calendarStart.toISOString();
-  const rangeEndIso = useMemo(() => {
-    const startParts = getDateParts(calendarStart, timezone);
-    const endParts = addDaysToParts(startParts, 7);
-    return buildZonedDate(endParts, timezone, 0, 0).toISOString();
-  }, [calendarStart, timezone]);
-
   const requiresPadelClubSelection = hasPadelClubs && !selectedPadelClubId;
   const padelClubQuery = selectedPadelClubId ? `&padelClubId=${selectedPadelClubId}` : "";
   const padelCourtQuery = selectedPadelCourtId ? `&courtId=${selectedPadelCourtId}` : "";
 
-  const { data: bookingsData, isLoading: bookingsLoading, mutate: mutateBookings } = useSWR<
-    { ok: boolean; items: BookingItem[] }
-  >(
-    !requiresPadelClubSelection
-      ? resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas?from=${encodeURIComponent(rangeStartIso)}&to=${encodeURIComponent(
-          rangeEndIso,
-        )}${padelClubQuery}${padelCourtQuery}`)
-      : null,
-    fetcher,
-  );
-
   const upcomingRange = useMemo(() => {
     const todayParts = getDateParts(new Date(), timezone);
     const start = buildZonedDate(todayParts, timezone, 0, 0);
-    const end = buildZonedDate(addDaysToParts(todayParts, 14), timezone, 0, 0);
+    const end = buildZonedDate(addDaysToParts(todayParts, operationalWindowDays), timezone, 0, 0);
     return { start, end };
-  }, [timezone]);
+  }, [operationalWindowDays, timezone]);
   const { data: upcomingData, isLoading: upcomingLoading, mutate: mutateUpcoming } = useSWR<{
     ok: boolean;
     items: BookingItem[];
@@ -941,7 +895,6 @@ export default function ReservasDashboardPage() {
     fetcher,
   );
 
-  const bookings = bookingsData?.items ?? [];
   const professionals = professionalsData?.items ?? [];
   const resources = resourcesData?.items ?? [];
   const activeProfessionals = professionals.filter((professional) => professional.isActive);
@@ -1032,24 +985,11 @@ export default function ReservasDashboardPage() {
     }
   }, [createAssignmentMode, availableResourcesForService, createResourceId, createPartySize]);
 
-  const filteredBookings = useMemo(() => {
-    return bookings.filter((booking) => {
-      const bookingMode = getBookingMode(booking);
-      if (bookingMode !== filterMode) return false;
-      if (filterMode === "PROFESSIONAL" && selectedProfessionalId) {
-        return booking.professional?.id === selectedProfessionalId;
-      }
-      if (filterMode === "RESOURCE" && selectedResourceId) {
-        return booking.resource?.id === selectedResourceId;
-      }
-      return true;
-    });
-  }, [filterMode, bookings, selectedProfessionalId, selectedResourceId]);
-
-  const now = new Date();
-
-  const upcomingBookings = useMemo(() => {
+  const operationalBookings = useMemo(() => {
+    const nowMs = Date.now();
     const items = (upcomingData?.items ?? []).filter((booking) => {
+      const startsAtMs = getOperationalStartMs(booking);
+      if (!Number.isFinite(startsAtMs) || startsAtMs < nowMs) return false;
       const bookingMode = getBookingMode(booking);
       if (bookingMode !== filterMode) return false;
       if (filterMode === "PROFESSIONAL" && selectedProfessionalId) {
@@ -1060,25 +1000,23 @@ export default function ReservasDashboardPage() {
       }
       return true;
     });
-    return items
-      .filter((booking) => new Date(booking.startsAt) >= now)
-      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
-      .slice(0, 6);
-  }, [filterMode, now, selectedProfessionalId, selectedResourceId, upcomingData?.items]);
+    return items.sort((a, b) => getOperationalStartMs(a) - getOperationalStartMs(b));
+  }, [filterMode, selectedProfessionalId, selectedResourceId, upcomingData?.items]);
+  const filteredUpcomingBookings = useMemo(
+    () => operationalBookings.filter((booking) => matchesQueueStatus(booking, queueStatusFilter)),
+    [operationalBookings, queueStatusFilter],
+  );
+  const upcomingBookings = filteredUpcomingBookings.slice(0, 12);
+  const upcomingBookingsCount = filteredUpcomingBookings.length;
+  const queueTotalCount = operationalBookings.length;
+  const pendingBookings = operationalBookings.filter((booking) => isPendingBooking(booking.status)).length;
+  const confirmedBookings = operationalBookings.filter((booking) => isConfirmedBooking(booking.status)).length;
+  const delayedBookings = operationalBookings.filter((booking) => isDelayedBooking(booking)).length;
 
-  const activeServiceCount = activeServices.length;
-  const confirmedRevenueCents = bookings.reduce(
-    (sum, booking) => (["CONFIRMED", "COMPLETED"].includes(booking.status) ? sum + booking.price : sum),
+  const confirmedRevenueCents = operationalBookings.reduce(
+    (sum, booking) => (isConfirmedBooking(booking.status) ? sum + booking.price : sum),
     0,
   );
-  const pendingBookings = bookings.filter((booking) =>
-    ["PENDING_CONFIRMATION", "PENDING"].includes(booking.status),
-  ).length;
-
-  const rangeLabel = `${formatRangeDate(calendarStart, timezone)} — ${formatRangeDate(
-    buildZonedDate(addDaysToParts(getDateParts(calendarStart, timezone), 6), timezone, 0, 0),
-    timezone,
-  )}`;
 
   const drawerBookingClosed = drawerBooking
     ? ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "DISPUTED", "NO_SHOW"].includes(
@@ -1171,12 +1109,6 @@ export default function ReservasDashboardPage() {
   const splitLocked =
     drawerBookingClosed || (splitState ? splitState.paidCents > 0 || splitState.status === "SETTLED" : false);
 
-  const handleShiftRange = (direction: -1 | 1) => {
-    const baseParts = getDateParts(focusDate, timezone);
-    const nextParts = addDaysToParts(baseParts, 7 * direction);
-    setFocusDate(buildZonedDate(nextParts, timezone, 12, 0));
-  };
-
   const handleModeChange = async (mode: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY") => {
     if (modeSaving || organizationAssignmentMode === mode) return;
     setModeSaving(mode);
@@ -1219,7 +1151,7 @@ export default function ReservasDashboardPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao cancelar reserva.");
       }
-      mutateBookings();
+      mutateUpcoming();
       if (json.booking) {
         setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
       }
@@ -1261,7 +1193,7 @@ export default function ReservasDashboardPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao reagendar reserva.");
       }
-      mutateBookings();
+      mutateUpcoming();
       if (json.request) {
         setRescheduleNotice("Pedido de reagendamento enviado ao cliente.");
         setDrawerBooking((prev) => (prev ? { ...prev, changeRequest: json.request } : prev));
@@ -1458,7 +1390,6 @@ export default function ReservasDashboardPage() {
         throw new Error(json?.message || json?.error || "Erro ao atualizar atraso.");
       }
       await mutateDelay();
-      await mutateBookings();
       await mutateUpcoming();
     } catch (err) {
       setDelayError(err instanceof Error ? err.message : "Erro ao atualizar atraso.");
@@ -1481,7 +1412,7 @@ export default function ReservasDashboardPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao atualizar reserva.");
       }
-      mutateBookings();
+      mutateUpcoming();
       if (json.booking) {
         setDrawerBooking((prev) => (prev ? { ...prev, ...json.booking } : prev));
       }
@@ -1506,69 +1437,11 @@ export default function ReservasDashboardPage() {
     setCreateLoading(false);
     setCheckout(null);
     setPaymentError(null);
-    setServiceDrawerOpen(false);
-  };
-
-  const closeServiceDrawer = () => {
-    setServiceDrawerOpen(false);
-    setServiceSaving(false);
-    setServiceError(null);
-    setServiceTitle("");
-    setServiceDescription("");
-    setServiceDuration("60");
-    setServicePrice("20");
-  };
-
-  const handleCreateService = async () => {
-    if (serviceSaving) return;
-    const title = serviceTitle.trim();
-    if (!title) {
-      setServiceError("Indica um título.");
-      return;
-    }
-    const durationValue = Number(serviceDuration);
-    if (!SERVICE_DURATION_OPTIONS.includes(durationValue)) {
-      setServiceError("Seleciona a duração.");
-      return;
-    }
-    const priceValue = Number(servicePrice.replace(",", "."));
-    if (!Number.isFinite(priceValue) || priceValue < 0) {
-      setServiceError("Preço inválido.");
-      return;
-    }
-    setServiceSaving(true);
-    setServiceError(null);
-    try {
-      const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/servicos"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description: serviceDescription.trim() || null,
-          durationMinutes: durationValue,
-          unitPriceCents: Math.round(priceValue * 100),
-          currency: "EUR",
-          categoryTag: null,
-          locationMode: "FIXED",
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.message || json?.error || "Erro ao criar serviço.");
-      }
-      closeServiceDrawer();
-      setCreateServiceId(json.service?.id ?? null);
-      mutateServices();
-    } catch (err) {
-      setServiceError(err instanceof Error ? err.message : "Erro ao criar serviço.");
-    } finally {
-      setServiceSaving(false);
-    }
   };
 
   const openCreateDrawer = (startsAt: Date) => {
     if (!servicesLoading && activeServices.length === 0) {
-      showServiceDrawer();
+      router.push(appendOrganizationIdToHref("/org/bookings/new", organizationId));
       return;
     }
     const initialServiceId = activeServices[0]?.id ?? null;
@@ -1582,7 +1455,6 @@ export default function ReservasDashboardPage() {
       serviceKind: initialServiceKind,
     }).mode;
     setDrawerBooking(null);
-    setServiceDrawerOpen(false);
     setCreateSlot(startsAt);
     setCreateServiceId(initialServiceId);
     setCreateClient(null);
@@ -1692,7 +1564,7 @@ export default function ReservasDashboardPage() {
         return;
       }
 
-      mutateBookings();
+      mutateUpcoming();
 
       const checkoutRes = await fetch(resolveCanonicalOrgApiPath(`/api/org/[orgId]/reservas/${bookingId}/checkout`), {
         method: "POST",
@@ -1722,7 +1594,6 @@ export default function ReservasDashboardPage() {
     setCheckout(null);
     setPaymentError(null);
     setCreateError(null);
-    mutateBookings();
     mutateUpcoming();
     closeCreateDrawer();
   };
@@ -1735,60 +1606,55 @@ export default function ReservasDashboardPage() {
             <p className={DASHBOARD_LABEL}>Reservas</p>
             <h1 className="text-xl font-semibold text-white">Operações de reservas</h1>
             <p className={DASHBOARD_MUTED}>
-              Setup e ações transacionais. O calendário operacional foi consolidado na ferramenta Calendário.
+              Fluxo transacional de reservas. Gestão de serviços em Serviços.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button type="button" className={CTA_PRIMARY} onClick={handleQuickCreateBooking}>
+              Nova reserva
+            </button>
             <Link href={operationalCalendarHref} className={CTA_SECONDARY}>
               Abrir calendário operacional
             </Link>
-            <button type="button" className={CTA_PRIMARY} onClick={showServiceDrawer}>
-              Novo serviço
-            </button>
           </div>
         </div>
 
-        <div className={cn(DASHBOARD_CARD, "p-3 flex flex-wrap items-center justify-between gap-3")}> 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={CHIP_BASE}
-              onClick={() => {
-                const todayParts = getDateParts(new Date(), timezone);
-                setFocusDate(buildZonedDate(todayParts, timezone, 12, 0));
-              }}
-            >
-              Hoje
-            </button>
-            <button
-              type="button"
-              className={CHIP_BASE}
-              onClick={() => handleShiftRange(-1)}
-              title="Anterior"
-              aria-label="Anterior"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              className={CHIP_BASE}
-              onClick={() => handleShiftRange(1)}
-              title="Seguinte"
-              aria-label="Seguinte"
-            >
-              →
-            </button>
-            <span className="text-sm font-semibold text-white/90">{rangeLabel}</span>
-            <span className="text-[10px] uppercase tracking-[0.22em] text-white/45">Fuso: {timezone}</span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <span className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
-              Agenda operacional disponível em Calendário
-            </span>
-            <button type="button" onClick={handleQuickCreateBooking} className={CHIP_BASE}>
-              Nova reserva
-            </button>
+        <div className={cn(DASHBOARD_CARD, "p-3 space-y-3")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/45">Janela operacional</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOperationalWindowDays(1)}
+                  className={cn(CHIP_BASE, operationalWindowDays === 1 && CHIP_ACTIVE)}
+                >
+                  24h
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOperationalWindowDays(3)}
+                  className={cn(CHIP_BASE, operationalWindowDays === 3 && CHIP_ACTIVE)}
+                >
+                  3 dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOperationalWindowDays(7)}
+                  className={cn(CHIP_BASE, operationalWindowDays === 7 && CHIP_ACTIVE)}
+                >
+                  7 dias
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOperationalWindowDays(14)}
+                  className={cn(CHIP_BASE, operationalWindowDays === 14 && CHIP_ACTIVE)}
+                >
+                  14 dias
+                </button>
+              </div>
+            </div>
+            <span className="text-[11px] uppercase tracking-[0.22em] text-white/45">Fuso: {timezone}</span>
           </div>
 
           {isStaffMember ? (
@@ -1798,7 +1664,10 @@ export default function ReservasDashboardPage() {
                 <span className="text-white/40"> | Híbrido</span>
               )}
               {hasHybridFilters && (
-                <span className="text-white/40"> | Vista: {filterMode === "RESOURCE" ? "Recursos" : "Profissionais"}</span>
+                <span className="text-white/40">
+                  {" "}
+                  | Vista: {filterMode === "RESOURCE" ? "Recursos" : "Profissionais"}
+                </span>
               )}
             </div>
           ) : (
@@ -1830,9 +1699,9 @@ export default function ReservasDashboardPage() {
         </div>
 
         {(canFilterByProfessional || canFilterByResource) && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
+          <div className="space-y-2 text-[12px] text-white/70">
             {hasHybridFilters && (
-              <>
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Vista</span>
                 <button
                   type="button"
@@ -1854,86 +1723,94 @@ export default function ReservasDashboardPage() {
                 >
                   Recursos
                 </button>
-              </>
+              </div>
             )}
-            <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Filtrar</span>
-            {!isStaffMember && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedProfessionalId(null);
-                  setSelectedResourceId(null);
-                }}
-                className={cn(
-                  CHIP_BASE,
-                  (filterMode === "PROFESSIONAL" ? !selectedProfessionalId : !selectedResourceId) && CHIP_ACTIVE,
-                )}
-              >
-                Todos
-              </button>
-            )}
-            {filterMode === "PROFESSIONAL" &&
-              (activeProfessionals.length === 0 ? (
-                <span className="text-white/40">Sem profissionais ativos.</span>
-              ) : (
-                activeProfessionals.map((professional) => (
-                  <button
-                    key={professional.id}
-                    type="button"
-                    onClick={() => setSelectedProfessionalId(professional.id)}
-                    className={cn(
-                      CHIP_BASE,
-                      selectedProfessionalId === professional.id && CHIP_ACTIVE,
-                    )}
-                  >
-                    {professional.name}
-                  </button>
-                ))
-              ))}
-            {filterMode === "RESOURCE" &&
-              (activeResources.length === 0 ? (
-                <span className="text-white/40">Sem recursos configurados.</span>
-              ) : (
-                activeResources.map((resource) => (
-                  <button
-                    key={resource.id}
-                    type="button"
-                    onClick={() => setSelectedResourceId(resource.id)}
-                    className={cn(
-                      CHIP_BASE,
-                      selectedResourceId === resource.id && CHIP_ACTIVE,
-                    )}
-                  >
-                    {resource.label} · {resource.capacity}
-                  </button>
-                ))
-              ))}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <span className="shrink-0 text-[10px] uppercase tracking-[0.24em] text-white/50">Filtrar</span>
+              {!isStaffMember && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedProfessionalId(null);
+                    setSelectedResourceId(null);
+                  }}
+                  className={cn(
+                    CHIP_BASE,
+                    "shrink-0",
+                    (filterMode === "PROFESSIONAL" ? !selectedProfessionalId : !selectedResourceId) && CHIP_ACTIVE,
+                  )}
+                >
+                  Todos
+                </button>
+              )}
+              {filterMode === "PROFESSIONAL" &&
+                (activeProfessionals.length === 0 ? (
+                  <span className="text-white/40">Sem profissionais ativos.</span>
+                ) : (
+                  activeProfessionals.map((professional) => (
+                    <button
+                      key={professional.id}
+                      type="button"
+                      onClick={() => setSelectedProfessionalId(professional.id)}
+                      className={cn(
+                        CHIP_BASE,
+                        "shrink-0",
+                        selectedProfessionalId === professional.id && CHIP_ACTIVE,
+                      )}
+                    >
+                      {professional.name}
+                    </button>
+                  ))
+                ))}
+              {filterMode === "RESOURCE" &&
+                (activeResources.length === 0 ? (
+                  <span className="text-white/40">Sem recursos configurados.</span>
+                ) : (
+                  activeResources.map((resource) => (
+                    <button
+                      key={resource.id}
+                      type="button"
+                      onClick={() => setSelectedResourceId(resource.id)}
+                      className={cn(
+                        CHIP_BASE,
+                        "shrink-0",
+                        selectedResourceId === resource.id && CHIP_ACTIVE,
+                      )}
+                    >
+                      {resource.label} · {resource.capacity}
+                    </button>
+                  ))
+                ))}
+            </div>
           </div>
         )}
 
         {hasPadelClubs && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px] text-white/70">
-            <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Clube</span>
-            {padelClubs.map((club) => (
-              <button
-                key={club.id}
-                type="button"
-                onClick={() => setSelectedPadelClubId(club.id)}
-                className={cn(
-                  CHIP_BASE,
-                  selectedPadelClubId === club.id && CHIP_ACTIVE,
-                )}
-              >
-                {club.shortName || club.name}
-              </button>
-            ))}
+          <div className="space-y-2 text-[12px] text-white/70">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <span className="shrink-0 text-[10px] uppercase tracking-[0.24em] text-white/50">Clube</span>
+              {padelClubs.map((club) => (
+                <button
+                  key={club.id}
+                  type="button"
+                  onClick={() => setSelectedPadelClubId(club.id)}
+                  className={cn(
+                    CHIP_BASE,
+                    "shrink-0",
+                    selectedPadelClubId === club.id && CHIP_ACTIVE,
+                  )}
+                >
+                  {club.shortName || club.name}
+                </button>
+              ))}
+            </div>
             {selectedPadelClubId && (
-              <>
-                <span className="text-[10px] uppercase tracking-[0.24em] text-white/50">Campo</span>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <span className="shrink-0 text-[10px] uppercase tracking-[0.24em] text-white/50">Campo</span>
                 <button
                   type="button"
                   onClick={() => setSelectedPadelCourtId(null)}
-                  className={cn(CHIP_BASE, !selectedPadelCourtId && CHIP_ACTIVE)}
+                  className={cn(CHIP_BASE, "shrink-0", !selectedPadelCourtId && CHIP_ACTIVE)}
                 >
                   Todos
                 </button>
@@ -1947,6 +1824,7 @@ export default function ReservasDashboardPage() {
                       onClick={() => setSelectedPadelCourtId(court.id)}
                       className={cn(
                         CHIP_BASE,
+                        "shrink-0",
                         selectedPadelCourtId === court.id && CHIP_ACTIVE,
                       )}
                     >
@@ -1954,7 +1832,7 @@ export default function ReservasDashboardPage() {
                     </button>
                   ))
                 )}
-              </>
+              </div>
             )}
             {requiresPadelClubSelection && (
               <span className="text-white/40">Seleciona um clube para carregar a agenda.</span>
@@ -1964,47 +1842,139 @@ export default function ReservasDashboardPage() {
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className={cn(DASHBOARD_CARD, "p-4")}>
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-cyan-300/30 bg-[linear-gradient(140deg,rgba(34,211,238,0.16),rgba(59,130,246,0.1))] p-4">
-              <h2 className="text-sm font-semibold text-cyan-50">Calendário operacional centralizado</h2>
-              <p className="mt-1 text-sm text-cyan-100/90">
-                A grelha operacional foi removida desta página para evitar duplicação e inconsistência.
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
-                <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white/85">
-                  {bookingsLoading ? "A carregar..." : `${filteredBookings.length} reservas no intervalo`}
-                </span>
-                <Link href={operationalCalendarHref} className={CTA_PRIMARY}>
-                  Abrir calendário operacional
-                </Link>
-                <button type="button" onClick={handleQuickCreateBooking} className={CTA_SECONDARY}>
-                  Nova reserva
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-              <h3 className="text-sm font-semibold text-white">O que fica em Reservas</h3>
-              <ul className="mt-2 space-y-1 text-[12px] text-white/70">
-                <li>Serviços, profissionais, recursos e clientes.</li>
-                <li>Ações transacionais: cancelar, reagendar, no-show, split, checkout.</li>
-                <li>Configuração de disponibilidade em /bookings/availability.</li>
-              </ul>
-            </div>
+        <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white">Fila operacional</h2>
+            <span className="text-[11px] text-white/50">{upcomingBookingsCount}</span>
           </div>
+          <p className="text-[12px] text-white/65">
+            Reservas da janela ativa. Seleciona uma reserva para agir.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <button
+              type="button"
+              onClick={() => setQueueStatusFilter("ALL")}
+              className={cn(CHIP_BASE, queueStatusFilter === "ALL" && CHIP_ACTIVE)}
+            >
+              Todas ({queueTotalCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueStatusFilter("PENDING")}
+              className={cn(CHIP_BASE, queueStatusFilter === "PENDING" && CHIP_ACTIVE)}
+            >
+              Pendentes ({pendingBookings})
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueStatusFilter("CONFIRMED")}
+              className={cn(CHIP_BASE, queueStatusFilter === "CONFIRMED" && CHIP_ACTIVE)}
+            >
+              Confirmadas ({confirmedBookings})
+            </button>
+            <button
+              type="button"
+              onClick={() => setQueueStatusFilter("DELAYED")}
+              className={cn(CHIP_BASE, queueStatusFilter === "DELAYED" && CHIP_ACTIVE)}
+            >
+              Com atraso ({delayedBookings})
+            </button>
+          </div>
+          {upcomingLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
+          {!upcomingLoading && upcomingBookingsCount === 0 && (
+            <p className="text-[12px] text-white/50">Sem reservas futuras neste período.</p>
+          )}
+          <div className="space-y-2">
+            {upcomingBookings.map((booking) => {
+              const start = new Date(booking.startsAt);
+              const estimatedStart = booking.estimatedStartsAt ? new Date(booking.estimatedStartsAt) : null;
+              const showEstimate = estimatedStart && estimatedStart.getTime() !== start.getTime();
+              const bookingMode = getBookingMode(booking);
+              const statusLabel = isDelayedBooking(booking)
+                ? "Com atraso"
+                : isPendingBooking(booking.status)
+                  ? "Pendente"
+                  : isConfirmedBooking(booking.status)
+                    ? "Confirmada"
+                    : formatBookingStatus(booking.status);
+              const assignmentLabel =
+                bookingMode === "RESOURCE"
+                  ? booking.resource?.label || "Recurso automático"
+                  : booking.professional?.name || "Profissional automático";
+              const selected = drawerBooking?.id === booking.id;
+              return (
+                <button
+                  key={booking.id}
+                  type="button"
+                  onClick={() => {
+                    closeCreateDrawer();
+                    setDrawerBooking(booking);
+                  }}
+                  className={cn(
+                    "w-full rounded-xl border p-3 text-left transition",
+                    selected
+                      ? "border-[#22D3EE]/55 bg-[#22D3EE]/14"
+                      : "border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/10",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[12px] font-semibold text-white">{booking.service?.title || "Serviço"}</p>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.12em]",
+                        isDelayedBooking(booking)
+                          ? "border-amber-300/45 bg-amber-400/15 text-amber-100"
+                          : isPendingBooking(booking.status)
+                            ? "border-white/20 bg-white/10 text-white/75"
+                            : "border-emerald-300/40 bg-emerald-400/10 text-emerald-100",
+                      )}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-white/60">
+                    {formatLongDate(start, timezone)} · {formatTimeLabel(start, timezone)}
+                  </p>
+                  {showEstimate && (
+                    <p className="text-[11px] text-amber-100/80">
+                      Estimado {formatTimeLabel(estimatedStart, timezone)}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-white/60">{booking.user?.fullName || booking.user?.username || "Cliente"}</p>
+                  <p className="text-[11px] text-white/50">
+                    {bookingMode === "RESOURCE" ? "Recurso" : "Profissional"}: {assignmentLabel}
+                    {bookingMode === "RESOURCE" && booking.partySize ? ` · ${booking.partySize} pax` : ""}
+                    {" · "}
+                    {formatCurrency(booking.price, booking.currency)}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          {!upcomingLoading && upcomingBookingsCount > upcomingBookings.length && (
+            <p className="text-[11px] text-white/50">+{upcomingBookingsCount - upcomingBookings.length} no intervalo</p>
+          )}
         </section>
 
         <aside className="space-y-4">
-          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
+          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
             <div>
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Resumo</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{activeServiceCount}</p>
-              <p className={DASHBOARD_MUTED}>serviços ativos</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{upcomingBookingsCount}</p>
+              <p className={DASHBOARD_MUTED}>reservas em fila</p>
+              <p className="text-[11px] text-white/45">janela de {operationalWindowDays === 1 ? "24h" : `${operationalWindowDays} dias`}</p>
             </div>
             <div className="flex items-center justify-between text-sm text-white/70">
               <span>Reservas pendentes</span>
               <span>{pendingBookings}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Confirmadas</span>
+              <span>{confirmedBookings}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-white/70">
+              <span>Com atraso</span>
+              <span>{delayedBookings}</span>
             </div>
             <div className="flex items-center justify-between text-sm text-white/70">
               <span>Receita confirmada</span>
@@ -2012,7 +1982,7 @@ export default function ReservasDashboardPage() {
             </div>
           </section>
 
-          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
+          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
             <div>
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">Atrasos</p>
               <p className="text-sm text-white/70">Escopo: {delayScope.label}</p>
@@ -2084,226 +2054,8 @@ export default function ReservasDashboardPage() {
               </button>
             </div>
           </section>
-
-          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">Ações rápidas</h3>
-              <button type="button" onClick={showServiceDrawer} className="text-[11px] text-[#6BFFFF]">
-                Novo serviço
-              </button>
-            </div>
-            <div className="grid gap-2 text-[12px]">
-              <Link href={appendOrganizationIdToHref("/org/calendar", organizationId)} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80">
-                Calendário operacional
-              </Link>
-              {canFilterByProfessional && (
-                <Link
-                  href={appendOrganizationIdToHref("/org/bookings/professionals", organizationId)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
-                >
-                  Profissionais
-                </Link>
-              )}
-              {canFilterByResource && (
-                <Link
-                  href={appendOrganizationIdToHref("/org/bookings/resources", organizationId)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
-                >
-                  Recursos
-                </Link>
-              )}
-              <Link
-                href={appendOrganizationIdToHref("/org/bookings/availability", organizationId)}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white/80"
-              >
-                Editar disponibilidade
-              </Link>
-            </div>
-          </section>
-
-          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">Proximas reservas</h3>
-              <span className="text-[11px] text-white/50">{upcomingBookings.length}</span>
-            </div>
-            {upcomingLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
-            {!upcomingLoading && upcomingBookings.length === 0 && (
-              <p className="text-[12px] text-white/50">Sem reservas futuras neste periodo.</p>
-            )}
-            <div className="space-y-2">
-              {upcomingBookings.map((booking) => {
-                const start = new Date(booking.startsAt);
-                const estimatedStart = booking.estimatedStartsAt ? new Date(booking.estimatedStartsAt) : null;
-                const showEstimate =
-                  estimatedStart && estimatedStart.getTime() !== start.getTime();
-                return (
-                  <button
-                    key={booking.id}
-                    type="button"
-                    onClick={() => {
-                      closeCreateDrawer();
-                      setDrawerBooking(booking);
-                    }}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 p-2 text-left"
-                  >
-                    <p className="text-[12px] font-semibold text-white">
-                      {booking.service?.title || "Serviço"}
-                    </p>
-                    <p className="text-[11px] text-white/60">
-                      {formatLongDate(start, timezone)} · {formatTimeLabel(start, timezone)}
-                    </p>
-                    {showEstimate && (
-                      <p className="text-[11px] text-amber-100/80">
-                        Estimado {formatTimeLabel(estimatedStart, timezone)}
-                      </p>
-                    )}
-                    <p className="text-[11px] text-white/60">
-                      {booking.user?.fullName || booking.user?.username || "Cliente"}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}> 
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-white">Catalogo</h3>
-              <div className="flex items-center gap-2 text-[11px]">
-                <button type="button" onClick={showServiceDrawer} className="text-[#6BFFFF]">
-                  Novo serviço
-                </button>
-                <Link href={appendOrganizationIdToHref("/org/bookings", organizationId)} className="text-white/50">
-                  Gerir
-                </Link>
-              </div>
-            </div>
-            {servicesLoading && <p className="text-[12px] text-white/60">A carregar...</p>}
-            {!servicesLoading && services.length === 0 && (
-              <div className="space-y-2">
-                <p className="text-[12px] text-white/50">Cria o teu primeiro serviço.</p>
-                <button
-                  type="button"
-                  onClick={showServiceDrawer}
-                  className="rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
-                >
-                  Criar agora
-                </button>
-              </div>
-            )}
-            <div className="space-y-2">
-              {services.slice(0, 4).map((service) => (
-                <Link
-                  key={service.id}
-                  href={appendOrganizationIdToHref(`/org/bookings/${service.id}`, organizationId)}
-                  className="block rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                >
-                  <p className="text-[12px] font-semibold text-white">{service.title}</p>
-                  <p className="text-[11px] text-white/60">
-                    {service.durationMinutes} min · {formatCurrency(service.unitPriceCents, service.currency)}
-                  </p>
-                </Link>
-              ))}
-            </div>
-          </section>
         </aside>
       </div>
-
-      {serviceDrawerOpen && (
-        <div className="fixed inset-0 z-40 flex">
-          <div
-            className="absolute left-0 right-0 bottom-0 top-[var(--org-topbar-height)] bg-black/60"
-            onClick={closeServiceDrawer}
-          />
-          <aside className="relative ml-auto mt-[var(--org-topbar-height)] h-[calc(100vh-var(--org-topbar-height))] w-full max-w-md overflow-y-auto border-l border-white/10 bg-[#0B0F16] p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-white/50">Serviços</p>
-                <h2 className="text-xl font-semibold text-white">Novo serviço</h2>
-              </div>
-              <button
-                type="button"
-                className="rounded-full border border-white/15 px-3 py-1 text-[12px] text-white/70"
-                onClick={closeServiceDrawer}
-              >
-                Fechar
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-4 text-sm text-white/70">
-              <div>
-                <label className="text-white/50">Título</label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={serviceTitle}
-                  onChange={(event) => setServiceTitle(event.target.value)}
-                  placeholder="Ex: Corte + barba"
-                />
-              </div>
-
-              <div>
-                <label className="text-white/50">Duração</label>
-                <select
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={serviceDuration}
-                  onChange={(event) => setServiceDuration(event.target.value)}
-                >
-                  {SERVICE_DURATION_OPTIONS.map((option) => (
-                    <option key={`service-duration-${option}`} value={String(option)}>
-                      {option} min
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-white/50">Preço</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  value={servicePrice}
-                  onChange={(event) => setServicePrice(event.target.value)}
-                />
-                <p className="text-[11px] text-white/50">Usa 0 para gratuito.</p>
-              </div>
-
-              <div>
-                <label className="text-white/50">Descrição</label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-white/40"
-                  rows={3}
-                  value={serviceDescription}
-                  onChange={(event) => setServiceDescription(event.target.value)}
-                  placeholder="Resumo (opcional)"
-                />
-              </div>
-            </div>
-
-            {serviceError && (
-              <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
-                {serviceError}
-              </div>
-            )}
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button
-                type="button"
-                className={CTA_PRIMARY}
-                onClick={handleCreateService}
-                disabled={serviceSaving || !serviceTitle.trim()}
-              >
-                {serviceSaving ? "A criar..." : "Criar serviço"}
-              </button>
-              <button type="button" className={CTA_SECONDARY} onClick={closeServiceDrawer}>
-                Cancelar
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
 
       {drawerBooking && (
         <div className="fixed inset-0 z-40 flex">
@@ -2921,13 +2673,12 @@ export default function ReservasDashboardPage() {
                 {activeServices.length === 0 ? (
                   <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/70">
                     <p>Sem serviços ativos.</p>
-                    <button
-                      type="button"
-                      onClick={showServiceDrawer}
-                      className="mt-2 rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
+                    <Link
+                      href={appendOrganizationIdToHref("/org/bookings/new", organizationId)}
+                      className="mt-2 inline-flex rounded-full border border-white/15 px-3 py-1 text-[11px] text-white/70"
                     >
                       Criar serviço
-                    </button>
+                    </Link>
                   </div>
                 ) : (
                   <>

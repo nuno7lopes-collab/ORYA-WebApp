@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { getDateParts } from "@/lib/reservas/availability";
 import { cn } from "@/lib/utils";
 import {
@@ -20,6 +20,42 @@ type DatePickerTwoMonthsProps = {
 };
 
 const WEEKDAY_LABELS = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"];
+type DateParts = { year: number; month: number; day: number };
+
+function buildUtcDate(parts: DateParts) {
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+}
+
+function datePartsFromUtc(date: Date): DateParts {
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+function addDaysToDateParts(parts: DateParts, amount: number): DateParts {
+  const next = buildUtcDate(parts);
+  next.setUTCDate(next.getUTCDate() + amount);
+  return datePartsFromUtc(next);
+}
+
+function daysInMonth(parts: { year: number; month: number }) {
+  return new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate();
+}
+
+function shiftDatePartsByMonths(parts: DateParts, amount: number): DateParts {
+  const nextMonth = addMonthsToParts({ year: parts.year, month: parts.month }, amount);
+  return {
+    year: nextMonth.year,
+    month: nextMonth.month,
+    day: Math.min(parts.day, daysInMonth(nextMonth)),
+  };
+}
+
+function mondayBasedWeekday(parts: DateParts) {
+  return (buildUtcDate(parts).getUTCDay() + 6) % 7;
+}
+
+function partsEqual(left: DateParts, right: DateParts) {
+  return left.year === right.year && left.month === right.month && left.day === right.day;
+}
 
 export function DatePickerTwoMonths({
   selectedDate,
@@ -28,14 +64,17 @@ export function DatePickerTwoMonths({
   onOpenChange,
   onSelectDate,
 }: DatePickerTwoMonthsProps) {
+  const dialogId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selectedParts = getDateParts(selectedDate, timezone);
   const [baseMonth, setBaseMonth] = useState({ year: selectedParts.year, month: selectedParts.month });
+  const [activeParts, setActiveParts] = useState<DateParts>(selectedParts);
 
   useEffect(() => {
     if (!open) return;
     setBaseMonth({ year: selectedParts.year, month: selectedParts.month });
-  }, [open, selectedParts.month, selectedParts.year]);
+    setActiveParts(selectedParts);
+  }, [open, selectedParts.day, selectedParts.month, selectedParts.year]);
 
   useEffect(() => {
     if (!open) return;
@@ -44,22 +83,38 @@ export function DatePickerTwoMonths({
         onOpenChange(false);
       }
     };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onOpenChange(false);
-      }
-    };
     window.addEventListener("mousedown", handlePointerDown);
-    window.addEventListener("keydown", handleEscape);
     return () => {
       window.removeEventListener("mousedown", handlePointerDown);
-      window.removeEventListener("keydown", handleEscape);
     };
   }, [onOpenChange, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const monthOffset = (activeParts.year - baseMonth.year) * 12 + (activeParts.month - baseMonth.month);
+    if (monthOffset < 0) {
+      setBaseMonth({ year: activeParts.year, month: activeParts.month });
+      return;
+    }
+    if (monthOffset > 1) {
+      setBaseMonth(addMonthsToParts({ year: activeParts.year, month: activeParts.month }, -1));
+    }
+  }, [activeParts.month, activeParts.year, baseMonth.month, baseMonth.year, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const activeButtonId = `${dialogId}-day-${activeParts.year}-${activeParts.month}-${activeParts.day}`;
+    const activeButton = document.getElementById(activeButtonId) as HTMLButtonElement | null;
+    activeButton?.focus();
+  }, [activeParts.day, activeParts.month, activeParts.year, baseMonth.month, baseMonth.year, dialogId, open]);
 
   const nextMonth = useMemo(() => addMonthsToParts(baseMonth, 1), [baseMonth]);
   const todayParts = getDateParts(new Date(), timezone);
   const selectedMonthLabel = useMemo(() => formatMonthLabel(baseMonth), [baseMonth]);
+  const commitDate = (parts: DateParts) => {
+    onSelectDate(buildZonedDate(parts, timezone, 12, 0));
+    onOpenChange(false);
+  };
 
   return (
     <div ref={rootRef} className="relative">
@@ -67,6 +122,7 @@ export function DatePickerTwoMonths({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? dialogId : undefined}
         onClick={() => onOpenChange(!open)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") {
@@ -86,8 +142,60 @@ export function DatePickerTwoMonths({
 
       {open && (
         <div
+          id={dialogId}
           role="dialog"
           aria-label="Selecionar data"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onOpenChange(false);
+              return;
+            }
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, -1));
+              return;
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, 1));
+              return;
+            }
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, -7));
+              return;
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, 7));
+              return;
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, -mondayBasedWeekday(current)));
+              return;
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              setActiveParts((current) => addDaysToDateParts(current, 6 - mondayBasedWeekday(current)));
+              return;
+            }
+            if (event.key === "PageUp") {
+              event.preventDefault();
+              setActiveParts((current) => shiftDatePartsByMonths(current, -1));
+              return;
+            }
+            if (event.key === "PageDown") {
+              event.preventDefault();
+              setActiveParts((current) => shiftDatePartsByMonths(current, 1));
+              return;
+            }
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              commitDate(activeParts);
+            }
+          }}
           className={cn(
             "absolute left-0 top-[calc(100%+8px)] z-50 rounded-2xl border border-white/15 bg-[#111319]/95 p-4",
             "shadow-[0_36px_90px_rgba(0,0,0,0.7)] backdrop-blur-xl",
@@ -100,7 +208,7 @@ export function DatePickerTwoMonths({
             </div>
             <button
               type="button"
-              onClick={() => setBaseMonth((current) => addMonthsToParts(current, -1))}
+              onClick={() => setActiveParts((current) => shiftDatePartsByMonths(current, -1))}
               className="rounded-full border border-white/15 px-3 py-1 text-sm text-white/75 transition hover:border-white/35 hover:text-white"
               aria-label="Mês anterior"
             >
@@ -108,7 +216,7 @@ export function DatePickerTwoMonths({
             </button>
             <button
               type="button"
-              onClick={() => setBaseMonth((current) => addMonthsToParts(current, 1))}
+              onClick={() => setActiveParts((current) => shiftDatePartsByMonths(current, 1))}
               className="rounded-full border border-white/15 px-3 py-1 text-sm text-white/75 transition hover:border-white/35 hover:text-white"
               aria-label="Mês seguinte"
             >
@@ -121,8 +229,8 @@ export function DatePickerTwoMonths({
               type="button"
               onClick={() => {
                 setBaseMonth({ year: todayParts.year, month: todayParts.month });
-                onSelectDate(buildZonedDate(todayParts, timezone, 12, 0));
-                onOpenChange(false);
+                setActiveParts(todayParts);
+                commitDate(todayParts);
               }}
               className="rounded-full border border-cyan-300/45 bg-cyan-300/12 px-3 py-1 text-[11px] text-cyan-100 transition hover:border-cyan-300/75"
             >
@@ -130,6 +238,7 @@ export function DatePickerTwoMonths({
             </button>
             <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">{timezone}</span>
           </div>
+          <p className="mb-3 text-[10px] text-white/55">Atalhos: setas, Home/End, PgUp/PgDn, Enter.</p>
 
           <div className="flex gap-4 overflow-x-auto pb-1">
             {[baseMonth, nextMonth].map((month) => {
@@ -155,6 +264,7 @@ export function DatePickerTwoMonths({
                             cell.year === selectedParts.year &&
                             cell.month === selectedParts.month &&
                             cell.day === selectedParts.day;
+                          const isActive = partsEqual(cell, activeParts);
                           const isToday =
                             cell.year === todayParts.year &&
                             cell.month === todayParts.month &&
@@ -162,10 +272,17 @@ export function DatePickerTwoMonths({
                           return (
                             <button
                               key={`${month.year}-${month.month}-${cell.day}`}
+                              id={`${dialogId}-day-${cell.year}-${cell.month}-${cell.day}`}
                               type="button"
+                              role="gridcell"
+                              tabIndex={isActive ? 0 : -1}
+                              aria-selected={selected}
+                              aria-current={isToday ? "date" : undefined}
+                              onFocus={() => setActiveParts(cell)}
+                              onMouseEnter={() => setActiveParts(cell)}
                               onClick={() => {
-                                onSelectDate(buildZonedDate(cell, timezone, 12, 0));
-                                onOpenChange(false);
+                                setActiveParts(cell);
+                                commitDate(cell);
                               }}
                               className={cn(
                                 "h-9 rounded-lg border text-sm transition",
@@ -173,6 +290,7 @@ export function DatePickerTwoMonths({
                                   ? "border-cyan-300/60 bg-cyan-300/20 text-white"
                                   : "border-transparent text-white/80 hover:border-white/25 hover:bg-white/10 hover:text-white",
                                 isToday && !selected && "border-white/25",
+                                isActive && "ring-1 ring-white/45",
                               )}
                             >
                               {cell.day}

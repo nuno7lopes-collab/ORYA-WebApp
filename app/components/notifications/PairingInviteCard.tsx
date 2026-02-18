@@ -91,7 +91,7 @@ export default function PairingInviteCard({
   compact = false,
 }: Props) {
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const pairingId = useMemo(() => extractPairingId(payload), [payload]);
   const { data, mutate } = useSWR<InviteStatusResponse>(
     pairingId ? `/api/padel/pairings/invite-status?pairingId=${pairingId}` : null,

@@ -16,11 +16,13 @@ import {
   parseResultBody,
   requireAuthenticatedUser,
   resolveClientRequestId,
+  resolveResultScoreRulesContext,
   resolveResultRouteContext,
 } from "@/app/api/padel/matches/[id]/result/_shared";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { queueMatchResult } from "@/domain/notifications/tournament";
 import { resolveIncidentAuthority } from "@/domain/padel/incidentGovernance";
+import { resolveLiveResultScore } from "@/domain/padel/liveResultScore";
 
 function resolveWinnerParticipantId(params: {
   winnerSide: "A" | "B" | null;
@@ -151,10 +153,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     );
   }
 
-  const winnerSide =
-    context.match.score.winnerSide === "A" || context.match.score.winnerSide === "B"
-      ? (context.match.score.winnerSide as "A" | "B")
-      : context.match.winnerSide;
+  const { scoreRules } = await resolveResultScoreRulesContext(context.match.eventId);
+  const scoreEvaluation = resolveLiveResultScore({
+    incomingScore: transition.score as Record<string, unknown>,
+    currentScoreSets: context.match.scoreSets,
+    fallbackWinnerSide: context.match.winnerSide,
+    scoreRules,
+  });
+  if (scoreEvaluation.hasScoreEvidence && !scoreEvaluation.stats) {
+    return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
+  }
+  const winnerSide = scoreEvaluation.winnerSide;
   const winnerParticipantId = resolveWinnerParticipantId({
     winnerSide,
     participants: context.match.participants,
@@ -165,7 +174,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     transition.status === padel_match_status.WALKOVER ||
     transition.status === padel_match_status.RETIRED
   ) {
-    if (!winnerSide || !winnerParticipantId) {
+    if (
+      !scoreEvaluation.isDrawResult &&
+      !scoreEvaluation.isByeNeutral &&
+      (!winnerSide || !winnerParticipantId)
+    ) {
       return jsonWrap({ ok: false, error: "INVALID_SCORE" }, { status: 400 });
     }
   }
@@ -189,8 +202,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     data: {
       status: transition.status,
       score: persistedScore as Prisma.InputJsonValue,
-      winnerSide,
-      winnerParticipantId,
+      scoreSets: scoreEvaluation.nextScoreSets,
+      winnerSide: scoreEvaluation.isDrawResult || scoreEvaluation.isByeNeutral ? null : winnerSide,
+      winnerParticipantId:
+        scoreEvaluation.isDrawResult || scoreEvaluation.isByeNeutral ? null : winnerParticipantId,
     },
   });
 

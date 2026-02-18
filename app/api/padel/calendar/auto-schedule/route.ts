@@ -539,6 +539,10 @@ async function _POST(req: NextRequest) {
       select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
     });
 
+    const allowPlaceholderMatches =
+      event.padelTournamentConfig?.format === "NON_STOP" ||
+      sortedUnscheduledMatches.some((match) => match.groupLabel === "NS");
+
     const scheduleResult = computeAutoSchedulePlan({
       unscheduledMatches: sortedUnscheduledMatches,
       scheduledMatches: normalizedScheduledMatches,
@@ -553,7 +557,7 @@ async function _POST(req: NextRequest) {
         bufferMinutes,
         minRestMinutes,
         priority,
-        allowPlaceholderMatches: event.padelTournamentConfig?.format === "NON_STOP",
+        allowPlaceholderMatches,
       },
     });
     const unscheduledByReason = scheduleResult.unscheduledByReason;

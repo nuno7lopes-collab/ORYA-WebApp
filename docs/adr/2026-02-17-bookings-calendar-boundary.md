@@ -45,7 +45,8 @@ Define strict ownership boundaries.
 ## Target IA
 - `/org/[orgId]/calendar` -> Operational week board (read-only)
 - `/org/[orgId]/calendar/day` -> Operational day board (read-only)
-- `/org/[orgId]/bookings` -> Services and booking operations hub (no duplicate calendar grid)
+- `/org/[orgId]/bookings` -> Services catalog and setup hub
+- `/org/[orgId]/bookings/operations` -> Booking transactional operations hub (no duplicate calendar grid)
 - `/org/[orgId]/bookings/availability` -> Availability editor (write)
 - `/org/[orgId]/bookings/professionals` -> Professional management
 - `/org/[orgId]/bookings/resources` -> Resource management
@@ -90,9 +91,9 @@ Acceptance criteria:
 - Bookings no longer renders week/day agenda timeline.
 
 ### Phase 1 progress (implemented)
-1. `/bookings` no longer renders duplicated timeline grid.
+1. `/bookings/operations` no longer renders duplicated timeline grid.
 2. Legacy controls (`Dia/Semana` + `Zoom`) were removed from bookings dashboard.
-3. Bookings now exposes operational CTA to `/calendar` plus quick booking creation entrypoint without timeline dependency.
+3. Services are now isolated in `/bookings`, while quick booking creation stays in operations without timeline dependency.
 
 ### Phase 2: Decompose monolith bookings dashboard (2 sprints)
 1. Extract feature blocks from `reservas/page.tsx` into independent page-level modules:
@@ -100,7 +101,7 @@ Acceptance criteria:
 - service drawer/forms
 - delays panel
 - upcoming bookings list
-2. Reduce root `/bookings` page to operations + service catalog summary.
+2. Keep root `/bookings` strictly for services and move operations to `/bookings/operations`.
 3. Keep all write flows intact and scoped to bookings.
 
 Acceptance criteria:

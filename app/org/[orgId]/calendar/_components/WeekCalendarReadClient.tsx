@@ -20,6 +20,7 @@ import {
   resolveIntervalsForDate,
 } from "@/lib/reservas/availability";
 import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "./timezones";
+import { summarizeAgendaItemsByStatus } from "./statusSummary";
 
 type AgendaItem = {
   kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
@@ -129,6 +130,64 @@ const DEFAULT_WEEKDAY_INTERVALS: Interval[] = [{ startMinute: 8 * 60, endMinute:
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
+const DAY_HEADER_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const DAY_AVAILABILITY_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const DATE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+const HOUR_MINUTE_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+function getDayHeaderFormatter(timezone: string) {
+  const cached = DAY_HEADER_FORMATTER_CACHE.get(timezone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: timezone,
+  });
+  DAY_HEADER_FORMATTER_CACHE.set(timezone, formatter);
+  return formatter;
+}
+
+function getDayAvailabilityFormatter(timezone: string) {
+  const cached = DAY_AVAILABILITY_FORMATTER_CACHE.get(timezone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    weekday: "short",
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: timezone,
+  });
+  DAY_AVAILABILITY_FORMATTER_CACHE.set(timezone, formatter);
+  return formatter;
+}
+
+function getDateTimeFormatter(timezone: string) {
+  const cached = DATE_TIME_FORMATTER_CACHE.get(timezone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: timezone,
+  });
+  DATE_TIME_FORMATTER_CACHE.set(timezone, formatter);
+  return formatter;
+}
+
+function getHourMinuteFormatter(timezone: string) {
+  const cached = HOUR_MINUTE_FORMATTER_CACHE.get(timezone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("pt-PT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  });
+  HOUR_MINUTE_FORMATTER_CACHE.set(timezone, formatter);
+  return formatter;
+}
 
 function encodeOptionId(prefix: string, id: number) {
   return `${prefix}${id}`;
@@ -432,23 +491,11 @@ function resolveAggregateTone(items: ProjectedAgendaItem[]) {
 
 function formatDateTime(dateRaw: string, timezone: string) {
   const date = new Date(dateRaw);
-  return date.toLocaleString("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: timezone,
-  });
+  return getDateTimeFormatter(timezone).format(date);
 }
 
 function formatHourMinute(date: Date, timezone: string) {
-  return new Intl.DateTimeFormat("pt-PT", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: timezone,
-  }).format(date);
+  return getHourMinuteFormatter(timezone).format(date);
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -528,6 +575,9 @@ export default function WeekCalendarReadClient() {
     replaceState({
       nextProfessionals: decodePrefixedIds(optionIds, PROFESSIONAL_OPTION_PREFIX),
     });
+  };
+  const clearSelections = () => {
+    replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] });
   };
 
   const range = useMemo(() => {
@@ -812,6 +862,9 @@ export default function WeekCalendarReadClient() {
   const nowTop = (nowTimeParts.hour * 60 + nowTimeParts.minute) * minuteHeight;
   const dateInputValue = formatDateParam(anchorDate, timezone);
   const visibleCountLabel = `${filteredItems.length} ${filteredItems.length === 1 ? "item visível" : "itens visíveis"}`;
+  const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredItems), [filteredItems]);
+  const dayHeaderFormatter = useMemo(() => getDayHeaderFormatter(timezone), [timezone]);
+  const dayAvailabilityFormatter = useMemo(() => getDayAvailabilityFormatter(timezone), [timezone]);
   const scrollWeekToMinute = (minute: number) => {
     const node = gridScrollRef.current;
     if (!node) return;
@@ -865,6 +918,11 @@ export default function WeekCalendarReadClient() {
       if (key === "t") {
         event.preventDefault();
         setToday();
+        return;
+      }
+      if (key === "g") {
+        event.preventDefault();
+        replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] });
         return;
       }
       if (key === "d" && dayViewHref !== "#") {
@@ -970,7 +1028,7 @@ export default function WeekCalendarReadClient() {
           />
           <button
             type="button"
-            onClick={() => replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] })}
+            onClick={clearSelections}
             className={cn(CHIP_BASE, !hasActiveSelection && CHIP_ACTIVE)}
           >
             Geral
@@ -987,13 +1045,13 @@ export default function WeekCalendarReadClient() {
             {hasActiveSelection ? (
               <button
                 type="button"
-                onClick={() => replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] })}
+                onClick={clearSelections}
                 className="rounded-full border border-white/20 px-3 py-1 text-[11px] text-white/80 transition hover:border-white/35 hover:text-white"
               >
                 Limpar seleção
               </button>
             ) : null}
-            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Atalhos: ← → · T · D</span>
+            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Atalhos: ← → · T · D · G</span>
           </div>
         </div>
       </section>
@@ -1004,6 +1062,31 @@ export default function WeekCalendarReadClient() {
             <div>
               <h2 className="text-sm font-semibold text-white">Agenda em grelha</h2>
               <p className="text-xs text-white/55">{visibleCountLabel}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]" aria-live="polite">
+                <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-white/75">
+                  Total {statusSummary.total}
+                </span>
+                {statusSummary.confirmed > 0 ? (
+                  <span className="rounded-full border border-emerald-300/45 bg-emerald-400/12 px-2 py-0.5 text-emerald-100">
+                    Confirmado {statusSummary.confirmed}
+                  </span>
+                ) : null}
+                {statusSummary.pending > 0 ? (
+                  <span className="rounded-full border border-amber-300/45 bg-amber-400/12 px-2 py-0.5 text-amber-100">
+                    Pendente {statusSummary.pending}
+                  </span>
+                ) : null}
+                {statusSummary.cancelled > 0 ? (
+                  <span className="rounded-full border border-rose-300/45 bg-rose-400/12 px-2 py-0.5 text-rose-100">
+                    Cancelado/No-show {statusSummary.cancelled}
+                  </span>
+                ) : null}
+                {statusSummary.disputed > 0 ? (
+                  <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">
+                    Disputa {statusSummary.disputed}
+                  </span>
+                ) : null}
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {jumpTimes.map((hour) => (
@@ -1053,12 +1136,7 @@ export default function WeekCalendarReadClient() {
                   <div className="grid grid-cols-7 gap-1">
                     {days.map((day) => {
                       const isToday = isSameDay(day, now, timezone);
-                      const label = new Intl.DateTimeFormat("pt-PT", {
-                        weekday: "short",
-                        day: "2-digit",
-                        month: "short",
-                        timeZone: timezone,
-                      }).format(day);
+                      const label = dayHeaderFormatter.format(day);
                       return (
                         <div
                           key={`calendar-header-${getDayKey(day, timezone)}`}
@@ -1346,12 +1424,7 @@ export default function WeekCalendarReadClient() {
                     {days.map((day) => {
                       const intervals = resolveIntervalsForDay(entry.normalized, day, timezone);
                       const occupancy = countTargetItemsForDay(filteredItems, entry.target, day, timezone);
-                      const dayLabel = new Intl.DateTimeFormat("pt-PT", {
-                        weekday: "short",
-                        day: "2-digit",
-                        month: "2-digit",
-                        timeZone: timezone,
-                      }).format(day);
+                      const dayLabel = dayAvailabilityFormatter.format(day);
                       return (
                         <div key={`${entry.target.scopeType}-${entry.target.id}-${getDayKey(day, timezone)}`} className="rounded-lg border border-white/10 bg-black/20 p-2">
                           <div className="flex items-center justify-between gap-2">
@@ -1370,12 +1443,7 @@ export default function WeekCalendarReadClient() {
                   <div className="space-y-2">
                     {days.map((day) => {
                       const occupancy = countTargetItemsForDay(filteredItems, entry.target, day, timezone);
-                      const dayLabel = new Intl.DateTimeFormat("pt-PT", {
-                        weekday: "short",
-                        day: "2-digit",
-                        month: "2-digit",
-                        timeZone: timezone,
-                      }).format(day);
+                      const dayLabel = dayAvailabilityFormatter.format(day);
                       return (
                         <div
                           key={`${entry.target.scopeType}-${entry.target.id}-${getDayKey(day, timezone)}-court-summary`}

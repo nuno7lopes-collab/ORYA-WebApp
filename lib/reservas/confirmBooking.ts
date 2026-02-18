@@ -9,6 +9,7 @@ import {
   buildBookingConfirmationSnapshot,
   type BookingConfirmationPaymentMeta,
 } from "@/lib/reservas/confirmationSnapshot";
+import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 
 const SLOT_STEP_MINUTES = 5;
 
@@ -221,7 +222,7 @@ export async function confirmPendingBooking({
   const dayParts = getDateParts(booking.startsAt, timezone);
   const dayStart = makeUtcDateFromLocal({ ...dayParts, hour: 0, minute: 0 }, timezone);
   const dayEnd = makeUtcDateFromLocal({ ...dayParts, hour: 23, minute: 59 }, timezone);
-  const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+  const conflictWindowStart = getConflictWindowStart(dayStart);
   const bookingEndsAt = new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000);
 
   const scopeType: AvailabilityScopeType = assignmentMode === "RESOURCE" ? "RESOURCE" : "PROFESSIONAL";
@@ -312,6 +313,11 @@ export async function confirmPendingBooking({
     return { ok: false, code: "SLOT_TAKEN", message: "Sem disponibilidade para este serviço." };
   }
 
+  const conflictScopeIds = candidateScopes.map((scope) => scope.scopeId);
+  const scopedConflictFilter =
+    assignmentMode === "RESOURCE"
+      ? { resourceId: { in: conflictScopeIds } }
+      : { professionalId: { in: conflictScopeIds } };
   const shouldUseOrgOnly = false;
   const [templates, overrides, blocking, classSessions] = await Promise.all([
     tx.weeklyAvailabilityTemplate.findMany({
@@ -322,7 +328,7 @@ export async function confirmPendingBooking({
           : {
               OR: [
                 { scopeType: "ORGANIZATION", scopeId: 0 },
-                { scopeType, scopeId: { in: candidateScopes.map((scope) => scope.scopeId) } },
+                { scopeType, scopeId: { in: conflictScopeIds } },
               ],
             }),
       },
@@ -336,7 +342,7 @@ export async function confirmPendingBooking({
           : {
               OR: [
                 { scopeType: "ORGANIZATION", scopeId: 0 },
-                { scopeType, scopeId: { in: candidateScopes.map((scope) => scope.scopeId) } },
+                { scopeType, scopeId: { in: conflictScopeIds } },
               ],
             }),
         date: new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)),
@@ -347,7 +353,8 @@ export async function confirmPendingBooking({
     tx.booking.findMany({
       where: {
         organizationId: booking.organizationId,
-        startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
+        startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+        ...scopedConflictFilter,
         NOT: { id: booking.id },
         OR: [
           { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
@@ -358,15 +365,15 @@ export async function confirmPendingBooking({
     }),
     assignmentMode === "PROFESSIONAL"
       ? tx.classSession.findMany({
-          where: {
-            organizationId: booking.organizationId,
-            status: "SCHEDULED",
-            startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
-            endsAt: { gt: bookingWindowStart },
-            ...(candidateScopes.length > 0 ? { professionalId: { in: candidateScopes.map((scope) => scope.scopeId) } } : {}),
-          },
-          select: { startsAt: true, endsAt: true, professionalId: true },
-        })
+        where: {
+          organizationId: booking.organizationId,
+          status: "SCHEDULED",
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          endsAt: { gt: conflictWindowStart },
+          ...(conflictScopeIds.length > 0 ? { professionalId: { in: conflictScopeIds } } : {}),
+        },
+        select: { startsAt: true, endsAt: true, professionalId: true },
+      })
       : Promise.resolve([]),
   ]);
 

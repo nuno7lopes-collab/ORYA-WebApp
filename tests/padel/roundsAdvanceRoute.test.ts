@@ -83,4 +83,65 @@ describe("POST /api/padel/rounds/advance", () => {
     expect(body.ok).toBe(false);
     expect(body.error).toBe("ROUND_STATE_NOT_FOUND");
   });
+
+  it("supports NON_STOP HARD_CAP_WAITLIST round advance in dry-run mode", async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      id: 281,
+      organizationId: 2,
+      startsAt: new Date("2026-04-28T11:00:00.000Z"),
+      endsAt: new Date("2026-04-28T19:00:00.000Z"),
+      padelTournamentConfig: {
+        format: "NON_STOP",
+        advancedSettings: {
+          formatProfilesByCategory: {
+            global: {
+              format: "NON_STOP",
+              nonStopMode: "HARD_CAP_WAITLIST",
+            },
+          },
+          nonStopRuntimeByCategory: {
+            global: {
+              mode: "HARD_CAP_WAITLIST",
+              round: 1,
+              roundsTotal: 3,
+              activeCourtsCount: 1,
+              queue: [],
+              activePairs: [[11, 12]],
+            },
+          },
+        },
+        padelClubId: 11,
+        partnerClubIds: [],
+      },
+    });
+    prisma.eventMatchSlot.findMany.mockResolvedValue([
+      {
+        id: 100,
+        roundLabel: "R1.C1",
+        status: "OFFICIAL",
+        pairingAId: 11,
+        pairingBId: 12,
+        winnerPairingId: 11,
+        courtId: 901,
+        courtNumber: 1,
+        courtName: "Campo 1",
+      },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/padel/rounds/advance", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 281,
+        dryRun: true,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.generated).toBe(1);
+    expect(body.roundState?.mode).toBe("HARD_CAP_WAITLIST");
+  });
 });

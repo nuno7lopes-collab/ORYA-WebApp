@@ -63,6 +63,7 @@ test("@web authenticated user+org surfaces render", async ({ browser }) => {
       `/org/${orgId}/analytics`,
       `/org/${orgId}/bookings`,
       `/org/${orgId}/calendar`,
+      `/org/${orgId}/calendar/day`,
       `/org/${orgId}/finance`,
       `/org/${orgId}/policies`,
       `/org/${orgId}/chat`,

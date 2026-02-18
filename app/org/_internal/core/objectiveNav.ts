@@ -35,7 +35,7 @@ const PRIMARY_META: Record<
   },
   RESERVAS: {
     createLabel: "Criar serviço",
-    createHref: "/org/bookings?create=service",
+    createHref: "/org/bookings/new",
   },
 };
 const PADEL_CLUB_SECTION = "padel-club";
@@ -141,6 +141,11 @@ export function getObjectiveSections(
         href: manageBase ?? baseHref,
       });
       sections.push(
+        {
+          id: "operacoes",
+          label: "Operações",
+          href: `${baseHref}/operations`,
+        },
         {
           id: "disponibilidade",
           label: "Disponibilidade",

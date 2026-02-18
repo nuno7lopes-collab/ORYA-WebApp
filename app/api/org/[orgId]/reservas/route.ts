@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import { getAvailableSlotsForScope } from "@/lib/reservas/availabilitySelect";
 import { groupByScope, type AvailabilityScopeType, type ScopedOverride, type ScopedTemplate } from "@/lib/reservas/scopedAvailability";
+import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getResourceModeBlockedPayload, resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
@@ -798,7 +799,7 @@ async function _POST(req: NextRequest) {
     const dateParts = getDateParts(startsAt, timezone);
     const dayStart = makeUtcDateFromLocal({ ...dateParts, hour: 0, minute: 0 }, timezone);
     const dayEnd = makeUtcDateFromLocal({ ...dateParts, hour: 23, minute: 59 }, timezone);
-    const bookingWindowStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+    const conflictWindowStart = getConflictWindowStart(dayStart);
 
     if (scopeIds.length === 0) {
       return fail(ctx, 409, "NO_AVAILABILITY", "Sem disponibilidade para este serviço.");
@@ -806,6 +807,8 @@ async function _POST(req: NextRequest) {
 
     const shouldUseOrgOnly = false;
     const bookingEndsAt = new Date(startsAt.getTime() + service.durationMinutes * 60 * 1000);
+    const scopedConflictFilter =
+      assignmentMode === "RESOURCE" ? { resourceId: { in: scopeIds } } : { professionalId: { in: scopeIds } };
     const [templates, overrides, blockingBookings, classSessions] = await Promise.all([
       prisma.weeklyAvailabilityTemplate.findMany({
         where: {
@@ -840,7 +843,8 @@ async function _POST(req: NextRequest) {
       prisma.booking.findMany({
         where: {
           organizationId: service.organizationId,
-          startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          ...scopedConflictFilter,
           OR: [
             { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
             { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
@@ -853,8 +857,8 @@ async function _POST(req: NextRequest) {
             where: {
               organizationId: service.organizationId,
               status: "SCHEDULED",
-              startsAt: { lt: bookingEndsAt, gte: bookingWindowStart },
-              endsAt: { gt: bookingWindowStart },
+              startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+              endsAt: { gt: conflictWindowStart },
               ...(scopeIds.length > 0 ? { professionalId: { in: scopeIds } } : {}),
             },
             select: { id: true, startsAt: true, endsAt: true, professionalId: true },

@@ -1,8 +1,17 @@
 {
+  "/api/auth/bootstrap/route": "app/api/auth/bootstrap/route.js",
+  "/api/org-hub/organizations/route": "app/api/org-hub/organizations/route.js",
+  "/api/admin/organizacoes/list/route": "app/api/admin/organizacoes/list/route.js",
   "/api/auth/me/route": "app/api/auth/me/route.js",
-  "/api/explorar/list/route": "app/api/explorar/list/route.js",
+  "/api/me/reservas/route": "app/api/me/reservas/route.js",
+  "/api/admin/mfa/session/route": "app/api/admin/mfa/session/route.js",
+  "/api/admin/config/platform-email/route": "app/api/admin/config/platform-email/route.js",
   "/login/page": "app/login/page.js",
   "/eventos/page": "app/eventos/page.js",
   "/descobrir/page": "app/descobrir/page.js",
-  "/admin/(protected)/page": "app/admin/(protected)/page.js"
+  "/admin/(protected)/page": "app/admin/(protected)/page.js",
+  "/me/settings/page": "app/me/settings/page.js",
+  "/me/reservas/page": "app/me/reservas/page.js",
+  "/admin/(protected)/organizacoes/page": "app/admin/(protected)/organizacoes/page.js",
+  "/admin/(protected)/tickets/page": "app/admin/(protected)/tickets/page.js"
 }

@@ -14,6 +14,62 @@ const clampLimit = (raw: string | null) => {
   return Math.min(Math.max(1, Math.floor(parsed)), 200);
 };
 
+const FINAL_STATUSES = new Set(["OFFICIAL", "WALKOVER", "RETIRED", "CANCELLED"]);
+const REVIEW_LOCKED_STATUSES = new Set(["PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"]);
+
+const formatStatusLabel = (status: string | null) => {
+  switch (status) {
+    case "PENDING":
+      return "Pendente";
+    case "IN_PROGRESS":
+      return "Em curso";
+    case "RESULT_SUBMITTED":
+      return "Resultado submetido";
+    case "PENDING_CONFIRMATION":
+      return "Pendente confirmação";
+    case "PENDING_REVIEW_EXPIRED":
+      return "Pendente expirado";
+    case "DISPUTED":
+      return "Em disputa";
+    case "OFFICIAL":
+      return "Oficial";
+    case "WALKOVER":
+      return "WO";
+    case "RETIRED":
+      return "Desistência";
+    case "CANCELLED":
+      return "Cancelado";
+    default:
+      return status ?? "—";
+  }
+};
+
+const formatScoreLabel = (params: {
+  status: string | null;
+  scoreSets: Array<{ teamA: number; teamB: number }> | null;
+  score: Record<string, unknown> | null;
+}) => {
+  if (params.scoreSets?.length) {
+    return params.scoreSets.map((set) => `${set.teamA}-${set.teamB}`).join(", ");
+  }
+  const score = params.score ?? {};
+  const resultType =
+    score.resultType === "WALKOVER" || score.walkover === true
+      ? "WALKOVER"
+      : score.resultType === "RETIREMENT"
+        ? "RETIREMENT"
+        : score.resultType === "INJURY"
+          ? "INJURY"
+          : null;
+  if (resultType === "WALKOVER") return "WO";
+  if (resultType === "RETIREMENT") return "Desistência";
+  if (resultType === "INJURY") return "Lesão";
+  if (params.status === "DISPUTED") return "Em disputa";
+  if (params.status === "PENDING_CONFIRMATION") return "Pendente confirmação";
+  if (params.status === "PENDING_REVIEW_EXPIRED") return "Pendente expirado";
+  return "—";
+};
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -104,6 +160,12 @@ async function _GET(req: NextRequest) {
           startsAt: true,
           endsAt: true,
           coverImageUrl: true,
+          padelTournamentConfig: {
+            select: {
+              playerResultSubmissionEnabled: true,
+              resultValidationMode: true,
+            },
+          },
         },
       },
       category: { select: { id: true, label: true } },
@@ -126,9 +188,23 @@ async function _GET(req: NextRequest) {
     })();
     const stats = resolvePadelMatchStats(match.scoreSets ?? null, match.score ?? null);
     const winnerSide = stats?.winner ?? null;
+    const rawStatus = typeof match.status === "string" ? match.status : null;
+    const scoreObject = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null;
+    const workflow =
+      scoreObject?.liveWorkflow && typeof scoreObject.liveWorkflow === "object" && !Array.isArray(scoreObject.liveWorkflow)
+        ? (scoreObject.liveWorkflow as Record<string, unknown>)
+        : null;
+    const pendingConfirmationExpiresAt =
+      workflow && typeof workflow.pendingConfirmationExpiresAt === "string" ? workflow.pendingConfirmationExpiresAt : null;
+    const playerSubmissionEnabled = match.event?.padelTournamentConfig?.playerResultSubmissionEnabled === true;
+    const playerCanSubmitResult =
+      playerSubmissionEnabled &&
+      !(rawStatus && FINAL_STATUSES.has(rawStatus)) &&
+      !(rawStatus && REVIEW_LOCKED_STATUSES.has(rawStatus));
     return {
       id: match.id,
-      status: match.status ?? null,
+      status: rawStatus,
+      statusLabel: formatStatusLabel(rawStatus),
       startTime: match.startTime ?? null,
       plannedStartAt: match.plannedStartAt ?? null,
       plannedEndAt: match.plannedEndAt ?? null,
@@ -137,7 +213,19 @@ async function _GET(req: NextRequest) {
       winnerSide,
       isWinner: pairingSide ? pairingSide === winnerSide : null,
       scoreSets: match.scoreSets ?? null,
-      score: match.score ?? null,
+      score: scoreObject ?? null,
+      scoreLabel: formatScoreLabel({
+        status: rawStatus,
+        scoreSets: (match.scoreSets as Array<{ teamA: number; teamB: number }> | null) ?? null,
+        score: scoreObject,
+      }),
+      playerCanSubmitResult,
+      playerSubmissionEnabled,
+      resultValidationMode:
+        match.event?.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+          ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+          : "IMMEDIATE_OFFICIAL",
+      pendingConfirmationExpiresAt,
       event: match.event
         ? {
             id: match.event.id,

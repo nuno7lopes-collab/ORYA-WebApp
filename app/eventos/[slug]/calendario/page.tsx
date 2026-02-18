@@ -13,11 +13,86 @@ type PageProps = {
 const VIEWS = new Set(["calendario", "grupos", "quadro", "resultados", "participantes"]);
 
 type ViewKey = "calendario" | "grupos" | "quadro" | "resultados" | "participantes";
+type StatusFilterKey =
+  | "all"
+  | "in_progress"
+  | "pending_confirmation"
+  | "pending_review_expired"
+  | "disputed"
+  | "official";
+type ScheduledMatchView = {
+  id: number;
+  status: string;
+  roundLabel: string | null;
+  groupLabel: string | null;
+  startAt: string;
+  endAt: string | null;
+  courtId: number | null;
+  courtLabel: string;
+  pairingA: string;
+  pairingB: string;
+  scoreLabel: string;
+  day: string;
+};
+
+const STATUS_FILTERS = new Set<StatusFilterKey>([
+  "all",
+  "in_progress",
+  "pending_confirmation",
+  "pending_review_expired",
+  "disputed",
+  "official",
+]);
 
 function resolveView(input: string | null | undefined): ViewKey {
   if (!input) return "calendario";
   const normalized = input.toLowerCase();
   return VIEWS.has(normalized) ? (normalized as ViewKey) : "calendario";
+}
+
+function resolveStatusFilter(input: string | null | undefined): StatusFilterKey {
+  if (!input) return "all";
+  const normalized = input.toLowerCase() as StatusFilterKey;
+  return STATUS_FILTERS.has(normalized) ? normalized : "all";
+}
+
+function statusFilterLabel(value: StatusFilterKey) {
+  switch (value) {
+    case "in_progress":
+      return "Em jogo";
+    case "pending_confirmation":
+      return "Pendente confirmação";
+    case "pending_review_expired":
+      return "Pendente expirado";
+    case "disputed":
+      return "Disputa";
+    case "official":
+      return "Oficiais";
+    case "all":
+    default:
+      return "Todos";
+  }
+}
+
+function isOfficialStatus(status: string) {
+  return status === "OFFICIAL" || status === "WALKOVER" || status === "RETIRED";
+}
+
+function matchStatusMatchesFilter(status: string, filter: StatusFilterKey) {
+  if (filter === "all") return true;
+  if (filter === "in_progress") return status === "IN_PROGRESS";
+  if (filter === "pending_confirmation") return status === "PENDING_CONFIRMATION";
+  if (filter === "pending_review_expired") return status === "PENDING_REVIEW_EXPIRED";
+  if (filter === "disputed") return status === "DISPUTED";
+  if (filter === "official") return isOfficialStatus(status);
+  return true;
+}
+
+function toDayKey(value: string | null | undefined, timezone: string) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString("en-CA", { timeZone: timezone });
 }
 
 function formatStatus(status: string) {
@@ -72,7 +147,26 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
       : Array.isArray(resolvedSearch?.view)
         ? resolvedSearch.view[0]
         : null;
+  const statusParam =
+    typeof resolvedSearch?.status === "string"
+      ? resolvedSearch.status
+      : Array.isArray(resolvedSearch?.status)
+        ? resolvedSearch.status[0]
+        : null;
+  const dayParam =
+    typeof resolvedSearch?.day === "string"
+      ? resolvedSearch.day
+      : Array.isArray(resolvedSearch?.day)
+        ? resolvedSearch.day[0]
+        : null;
+  const courtParam =
+    typeof resolvedSearch?.court === "string"
+      ? resolvedSearch.court
+      : Array.isArray(resolvedSearch?.court)
+        ? resolvedSearch.court[0]
+        : null;
   const view = resolveView(viewParam);
+  const statusFilter = resolveStatusFilter(statusParam);
 
   const headersList = await headers();
   const acceptLanguage = headersList.get("accept-language");
@@ -93,11 +187,104 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
   if (!live.event.isPublicEvent) redirect(`/eventos/${event.slug}`);
 
   const tabBase = `/eventos/${event.slug}/calendario`;
-
-  const knockoutCandidates = live.calendar_days
-    .flatMap((day) => day.courts.flatMap((court) => court.matches))
+  const allScheduledMatches: ScheduledMatchView[] = live.calendar_days.flatMap((day) =>
+    day.courts.flatMap((court) =>
+      court.matches.map((match) => ({
+        ...match,
+        courtId: court.courtId ?? null,
+        courtLabel: court.courtLabel,
+        day: day.date,
+      })),
+    ),
+  );
+  const availableDays = Array.from(new Set(live.calendar_days.map((day) => day.date))).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const availableCourts = Array.from(new Set(allScheduledMatches.map((match) => match.courtLabel))).sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const dayFilter = dayParam && availableDays.includes(dayParam) ? dayParam : null;
+  const courtFilter = courtParam && availableCourts.includes(courtParam) ? courtParam : null;
+  const matchPassesFilters = (match: ScheduledMatchView) => {
+    if (!matchStatusMatchesFilter(match.status, statusFilter)) return false;
+    if (dayFilter && match.day !== dayFilter) return false;
+    if (courtFilter && match.courtLabel !== courtFilter) return false;
+    return true;
+  };
+  const filteredCalendarDays = live.calendar_days
+    .map((day) => ({
+      date: day.date,
+      courts: day.courts
+        .map((court) => ({
+          courtId: court.courtId,
+          courtLabel: court.courtLabel,
+          matches: court.matches.filter((match) =>
+            matchPassesFilters({
+              ...match,
+              courtId: court.courtId ?? null,
+              courtLabel: court.courtLabel,
+              day: day.date,
+            }),
+          ),
+        }))
+        .filter((court) => court.matches.length > 0),
+    }))
+    .filter((day) => day.courts.length > 0);
+  const knockoutCandidates = allScheduledMatches
     .filter((match) => match.roundLabel && !match.groupLabel)
+    .filter(matchPassesFilters)
     .slice(0, 40);
+  const filteredResultsFeed = live.latest_results_feed
+    .filter((item) => {
+      if (!matchStatusMatchesFilter(item.status, statusFilter)) return false;
+      if (courtFilter && item.courtLabel !== courtFilter) return false;
+      if (dayFilter) {
+        const dayKey = toDayKey(item.startAt, live.event.timezone);
+        if (!dayKey || dayKey !== dayFilter) return false;
+      }
+      return true;
+    })
+    .slice(0, 30);
+  const filteredUpcomingByPlayer = live.upcoming_matches_by_player
+    .map((player) => ({
+      playerLabel: player.playerLabel,
+      matches: player.matches.filter((match) => {
+        if (!matchStatusMatchesFilter(match.status, statusFilter)) return false;
+        if (courtFilter && match.courtLabel !== courtFilter) return false;
+        if (dayFilter) {
+          const dayKey = toDayKey(match.startAt, live.event.timezone);
+          if (!dayKey || dayKey !== dayFilter) return false;
+        }
+        return true;
+      }),
+    }))
+    .filter((player) => player.matches.length > 0);
+  const liveAlerts = allScheduledMatches
+    .filter((match) =>
+      ["PENDING_REVIEW_EXPIRED", "DISPUTED", "PENDING_CONFIRMATION", "RESULT_SUBMITTED"].includes(match.status),
+    )
+    .filter(matchPassesFilters)
+    .sort((a, b) => b.startAt.localeCompare(a.startAt))
+    .slice(0, 8);
+  const liveSummary = {
+    inProgress: allScheduledMatches.filter((match) => match.status === "IN_PROGRESS").length,
+    pendingConfirmation: allScheduledMatches.filter((match) => match.status === "PENDING_CONFIRMATION").length,
+    pendingReviewExpired: allScheduledMatches.filter((match) => match.status === "PENDING_REVIEW_EXPIRED").length,
+    disputed: allScheduledMatches.filter((match) => match.status === "DISPUTED").length,
+  };
+  const buildViewHref = (
+    nextView: ViewKey,
+    nextStatus: StatusFilterKey = statusFilter,
+    nextDay: string | null = dayFilter,
+    nextCourt: string | null = courtFilter,
+  ) => {
+    const params = new URLSearchParams();
+    params.set("view", nextView);
+    if (nextStatus !== "all") params.set("status", nextStatus);
+    if (nextDay) params.set("day", nextDay);
+    if (nextCourt) params.set("court", nextCourt);
+    return `${tabBase}?${params.toString()}`;
+  };
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#1e1b4b_0%,#0b1024_35%,#050711_100%)] text-white">
@@ -170,7 +357,7 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
             ] as Array<[ViewKey, string]>).map(([key, label]) => (
               <Link
                 key={`tab-${key}`}
-                href={`${tabBase}?view=${key}`}
+                href={buildViewHref(key)}
                 className={`rounded-full border px-3 py-1 ${
                   view === key
                     ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
@@ -181,18 +368,133 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
               </Link>
             ))}
           </nav>
+
+          <div className="rounded-2xl border border-white/12 bg-black/30 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Filtros rápidos</p>
+              <span className="text-[11px] text-white/60">
+                Estado: {statusFilterLabel(statusFilter)}
+                {dayFilter ? ` · Dia ${dayFilter}` : ""}
+                {courtFilter ? ` · ${courtFilter}` : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {(["all", "in_progress", "pending_confirmation", "pending_review_expired", "disputed", "official"] as StatusFilterKey[]).map(
+                (status) => (
+                  <Link
+                    key={`status-filter-${status}`}
+                    href={buildViewHref(view, status)}
+                    className={`rounded-full border px-3 py-1 ${
+                      statusFilter === status
+                        ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                        : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                    }`}
+                  >
+                    {statusFilterLabel(status)}
+                  </Link>
+                ),
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <Link
+                href={buildViewHref(view, statusFilter, null)}
+                className={`rounded-full border px-3 py-1 ${
+                  dayFilter === null
+                    ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                    : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                }`}
+              >
+                Todos os dias
+              </Link>
+              {availableDays.map((day) => (
+                <Link
+                  key={`day-filter-${day}`}
+                  href={buildViewHref(view, statusFilter, day)}
+                  className={`rounded-full border px-3 py-1 ${
+                    dayFilter === day
+                      ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                      : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                  }`}
+                >
+                  {day}
+                </Link>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              <Link
+                href={buildViewHref(view, statusFilter, dayFilter, null)}
+                className={`rounded-full border px-3 py-1 ${
+                  courtFilter === null
+                    ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                    : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                }`}
+              >
+                Todos os campos
+              </Link>
+              {availableCourts.map((courtLabel) => (
+                <Link
+                  key={`court-filter-${courtLabel}`}
+                  href={buildViewHref(view, statusFilter, dayFilter, courtLabel)}
+                  className={`rounded-full border px-3 py-1 ${
+                    courtFilter === courtLabel
+                      ? "border-cyan-300/60 bg-cyan-400/15 text-cyan-100"
+                      : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                  }`}
+                >
+                  {courtLabel}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-emerald-300/30 bg-emerald-400/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-100/80">Em jogo</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-50">{liveSummary.inProgress}</p>
+            </div>
+            <div className="rounded-xl border border-sky-300/30 bg-sky-400/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-sky-100/80">Pend. conf.</p>
+              <p className="mt-1 text-xl font-semibold text-sky-50">{liveSummary.pendingConfirmation}</p>
+            </div>
+            <div className="rounded-xl border border-rose-300/30 bg-rose-400/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-rose-100/80">Pend. exp.</p>
+              <p className="mt-1 text-xl font-semibold text-rose-50">{liveSummary.pendingReviewExpired}</p>
+            </div>
+            <div className="rounded-xl border border-amber-300/30 bg-amber-400/10 px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-amber-100/80">Disputa</p>
+              <p className="mt-1 text-xl font-semibold text-amber-50">{liveSummary.disputed}</p>
+            </div>
+          </div>
+
+          {liveAlerts.length > 0 && (
+            <div className="rounded-2xl border border-amber-300/30 bg-amber-400/10 p-4 space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-amber-100/90">Alertas live</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {liveAlerts.map((match) => (
+                  <div key={`alert-${match.id}`} className="rounded-lg border border-amber-200/25 bg-black/25 px-3 py-2">
+                    <p className="text-sm font-semibold text-amber-50">
+                      {match.pairingA} vs {match.pairingB}
+                    </p>
+                    <p className="text-[12px] text-amber-100/85">
+                      {formatDateTime(match.startAt, locale, live.event.timezone)} · {match.courtLabel} · {formatStatus(match.status)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
       <section className="orya-page-width px-6 pb-16 md:px-10">
         {view === "calendario" && (
           <div className="space-y-4">
-            {live.calendar_days.length === 0 && (
+            {filteredCalendarDays.length === 0 && (
               <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
-                Sem jogos agendados.
+                Sem jogos agendados para o filtro atual.
               </div>
             )}
-            {live.calendar_days.map((day) => (
+            {filteredCalendarDays.map((day) => (
               <div key={`day-${day.date}`} className="rounded-2xl border border-white/12 bg-black/30 p-4 space-y-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{day.date}</p>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -244,7 +546,7 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
           <div className="space-y-4">
             {knockoutCandidates.length === 0 && (
               <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
-                Quadro ainda sem jogos oficiais publicados.
+                Quadro sem jogos para o filtro atual.
               </div>
             )}
             {knockoutCandidates.map((match) => (
@@ -259,12 +561,12 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
 
         {view === "resultados" && (
           <div className="space-y-3">
-            {live.latest_results_feed.length === 0 && (
+            {filteredResultsFeed.length === 0 && (
               <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
-                Sem resultados oficiais ainda.
+                Sem resultados para o filtro atual.
               </div>
             )}
-            {live.latest_results_feed.map((item) => (
+            {filteredResultsFeed.map((item) => (
               <div key={`result-${item.id}`} className="rounded-2xl border border-white/12 bg-black/30 p-4 space-y-1">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">{item.courtLabel} · {item.roundLabel || item.groupLabel || "Jogo"}</p>
                 <p className="text-sm font-semibold">{item.pairingA} vs {item.pairingB}</p>
@@ -276,12 +578,12 @@ export default async function EventCalendarPage({ params, searchParams }: PagePr
 
         {view === "participantes" && (
           <div className="space-y-3">
-            {live.upcoming_matches_by_player.length === 0 && (
+            {filteredUpcomingByPlayer.length === 0 && (
               <div className="rounded-2xl border border-white/12 bg-black/30 px-4 py-4 text-sm text-white/70">
-                Sem agenda individual disponível.
+                Sem agenda individual para o filtro atual.
               </div>
             )}
-            {live.upcoming_matches_by_player.map((player) => (
+            {filteredUpcomingByPlayer.map((player) => (
               <div key={`player-${player.playerLabel}`} className="rounded-2xl border border-white/12 bg-black/30 p-4 space-y-2">
                 <p className="text-sm font-semibold">{player.playerLabel}</p>
                 <div className="space-y-1">

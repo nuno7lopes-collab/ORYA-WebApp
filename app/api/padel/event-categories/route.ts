@@ -205,7 +205,67 @@ async function _GET(req: NextRequest) {
     orderBy: { id: "asc" },
   });
 
-  return jsonWrap({ ok: true, items: links }, { status: 200 });
+  const pairings = await prisma.padelPairing.findMany({
+    where: { eventId },
+    select: {
+      categoryId: true,
+      pairingStatus: true,
+      registration: { select: { status: true } },
+    },
+  });
+  const pendingStatuses = new Set<PadelRegistrationStatus>([
+    PadelRegistrationStatus.PENDING_PARTNER,
+    PadelRegistrationStatus.PENDING_PAYMENT,
+    PadelRegistrationStatus.MATCHMAKING,
+  ]);
+  const byCategory = new Map<
+    number,
+    {
+      activeTeams: number;
+      completeTeams: number;
+      confirmedTeams: number;
+      pendingTeams: number;
+    }
+  >();
+  for (const pairing of pairings) {
+    const categoryId = pairing.categoryId;
+    if (!categoryId || categoryId <= 0) continue;
+    const bucket = byCategory.get(categoryId) ?? {
+      activeTeams: 0,
+      completeTeams: 0,
+      confirmedTeams: 0,
+      pendingTeams: 0,
+    };
+    const isCancelled = pairing.pairingStatus === PadelPairingStatus.CANCELLED;
+    if (!isCancelled) {
+      bucket.activeTeams += 1;
+    }
+    if (pairing.pairingStatus === PadelPairingStatus.COMPLETE) {
+      bucket.completeTeams += 1;
+    }
+    const registrationStatus = pairing.registration?.status ?? null;
+    if (!isCancelled && registrationStatus === PadelRegistrationStatus.CONFIRMED) {
+      bucket.confirmedTeams += 1;
+    }
+    if (!isCancelled && registrationStatus && pendingStatuses.has(registrationStatus)) {
+      bucket.pendingTeams += 1;
+    }
+    byCategory.set(categoryId, bucket);
+  }
+
+  const items = links.map((link) => {
+    const categoryId = link.padelCategoryId ?? null;
+    const counters = categoryId ? byCategory.get(categoryId) : null;
+    return {
+      ...link,
+      activeTeams: counters?.activeTeams ?? 0,
+      completeTeams: counters?.completeTeams ?? 0,
+      confirmedTeams: counters?.confirmedTeams ?? 0,
+      pendingTeams: counters?.pendingTeams ?? 0,
+    };
+  });
+
+  return jsonWrap({ ok: true, items }, { status: 200 });
 }
 
 async function _POST(req: NextRequest) {

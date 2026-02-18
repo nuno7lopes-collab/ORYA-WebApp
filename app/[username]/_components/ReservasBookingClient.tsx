@@ -1152,6 +1152,17 @@ export default function ReservasBookingClient({
         : activeStep === 3
           ? "Seleciona dia e hora para criar a pré-reserva."
           : "Confirma os dados e finaliza o pagamento.";
+  const canJumpToCheckoutFromStep3 = Boolean(bookingPending || checkout);
+  const step3Summary = selectedDateLabel && selectedTimeLabel
+    ? `${selectedDateLabel} · ${selectedTimeLabel}`
+    : selectedDay
+      ? `${formatDayLabel(selectedDay, timezone)} · escolhe um horário`
+      : "Escolhe um dia para ver horários";
+  const step3LiveMessage = selectedDateLabel && selectedTimeLabel
+    ? `Horário selecionado: ${selectedDateLabel} às ${selectedTimeLabel}.`
+    : selectedDay
+      ? `Dia selecionado ${formatDayLabel(selectedDay, timezone)} sem horário.`
+      : "Nenhum dia selecionado.";
   const selectedCapacityLabel =
     selectedPartySize != null
       ? capacityOptions.find((opt) => opt.value === selectedPartySize)?.label ?? null
@@ -1356,6 +1367,8 @@ export default function ReservasBookingClient({
                     key={step.id}
                     type="button"
                     disabled={!enabled}
+                    aria-current={isActive ? "step" : undefined}
+                    aria-disabled={!enabled}
                     onClick={() => enabled && goToStep(step.id)}
                     className={`flex min-w-[112px] items-center gap-2 rounded-full border px-3 py-2 text-left transition sm:min-w-0 ${
                       isActive
@@ -1769,6 +1782,9 @@ export default function ReservasBookingClient({
                     )}
 
                     <div className="space-y-3">
+                      <p className="sr-only" aria-live="polite">
+                        {step3LiveMessage}
+                      </p>
                       {slotsLoading && (
                         <p role="status" className="text-[12px] text-white/60">
                           A carregar horários...
@@ -1821,21 +1837,40 @@ export default function ReservasBookingClient({
                       ))}
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 text-[12px] text-white/60">
+                    <div className="hidden items-center justify-between gap-3 text-[12px] text-white/60 lg:flex">
                       <button type="button" className={ghostButtonClass} onClick={() => goToStep(2)}>
                         Voltar
                       </button>
-                      {bookingPending || checkout ? (
+                      {canJumpToCheckoutFromStep3 ? (
                         <button
                           type="button"
                           className={primaryButtonClass}
                           onClick={() => goToStep(4)}
                         >
-                          Continuar
+                          Continuar para pagamento
                         </button>
                       ) : (
                         <span>Escolhe um horário.</span>
                       )}
+                    </div>
+                    <div className="sticky bottom-0 z-20 rounded-2xl border border-white/12 bg-[#0b1220]/95 p-3 backdrop-blur lg:hidden">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.18em] text-white/55">Seleção atual</p>
+                          <p className="text-[12px] text-white/80">{step3Summary}</p>
+                        </div>
+                        {canJumpToCheckoutFromStep3 ? (
+                          <button
+                            type="button"
+                            className={primaryButtonClass}
+                            onClick={() => goToStep(4)}
+                          >
+                            Pagamento
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-white/60">Seleciona hora</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

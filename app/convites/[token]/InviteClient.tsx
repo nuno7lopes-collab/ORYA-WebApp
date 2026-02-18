@@ -174,7 +174,7 @@ function InvitePaymentForm({
 
 export default function InviteClient({ token }: { token: string }) {
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const { data, isLoading, mutate } = useSWR(token ? `/api/convites/${encodeURIComponent(token)}` : null, fetcher);
   const [actionLoading, setActionLoading] = useState<"accept" | "decline" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);

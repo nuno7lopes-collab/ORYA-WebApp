@@ -13,6 +13,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { asScoreObject, markPendingReviewExpired, normalizeResultWorkflowConfig } from "@/domain/padel/resultWorkflow";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { normalizePadelScoreRules } from "@/domain/padel/score";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const ADMIN_ROLES = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
@@ -53,6 +54,16 @@ type ActorContext = {
 export type ResultRouteContext = {
   match: MatchContext;
   actor: ActorContext;
+};
+
+export type ResultScoreRulesContext = {
+  scoreRules: ReturnType<typeof normalizePadelScoreRules>;
+  ruleSnapshot: {
+    source: "VERSION" | "RULESET" | "DEFAULT";
+    ruleSetId: number | null;
+    ruleSetVersionId: number | null;
+    capturedAt: string;
+  };
 };
 
 function toParticipantSide(value: string | null | undefined): "A" | "B" | null {
@@ -255,6 +266,27 @@ export async function requireAuthenticatedUser() {
 
 export function resolveClientRequestId(req: NextRequest, body: Record<string, unknown> | null | undefined) {
   return parseClientRequestId(req, body);
+}
+
+export async function resolveResultScoreRulesContext(eventId: number): Promise<ResultScoreRulesContext> {
+  const config = await prisma.padelTournamentConfig.findUnique({
+    where: { eventId },
+    select: { advancedSettings: true, ruleSetId: true, ruleSetVersionId: true },
+  });
+  return {
+    scoreRules: normalizePadelScoreRules((config?.advancedSettings as Record<string, unknown> | null)?.scoreRules),
+    ruleSnapshot: {
+      source:
+        config?.ruleSetVersionId != null
+          ? "VERSION"
+          : config?.ruleSetId != null
+            ? "RULESET"
+            : "DEFAULT",
+      ruleSetId: config?.ruleSetId ?? null,
+      ruleSetVersionId: config?.ruleSetVersionId ?? null,
+      capturedAt: new Date().toISOString(),
+    },
+  };
 }
 
 export async function applyPendingExpiryIfNeeded(params: {

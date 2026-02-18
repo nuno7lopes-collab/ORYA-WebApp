@@ -141,7 +141,7 @@ function ChargePaymentForm({
 
 export default function ChargeClient({ token }: { token: string }) {
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const { data, isLoading, mutate } = useSWR(token ? `/api/cobrancas/${encodeURIComponent(token)}` : null, fetcher);
   const [checkout, setCheckout] = useState<{ clientSecret: string; amountCents: number; currency: string; paymentIntentId: string } | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);

@@ -78,6 +78,7 @@ export default function MePage() {
     items?: Array<{
       id: number;
       status: string | null;
+      statusLabel?: string | null;
       startTime?: string | null;
       plannedStartAt?: string | null;
       event?: { title?: string | null; slug?: string | null } | null;
@@ -86,6 +87,11 @@ export default function MePage() {
       winnerSide?: "A" | "B" | null;
       pairingSide?: "A" | "B" | null;
       isWinner?: boolean | null;
+      scoreLabel?: string | null;
+      playerCanSubmitResult?: boolean;
+      playerSubmissionEnabled?: boolean;
+      resultValidationMode?: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | string | null;
+      pendingConfirmationExpiresAt?: string | null;
     }>;
   }>(user ? "/api/padel/me/matches?scope=upcoming&limit=6" : null, fetcher);
   const { data: padelHistoryData } = useSWR<{
@@ -422,6 +428,16 @@ export default function MePage() {
                     {formatAgendaDate(nextPadelMatch.plannedStartAt || nextPadelMatch.startTime || null) || "Data por definir"}
                     {nextPadelMatch.category?.label ? ` · ${nextPadelMatch.category.label}` : ""}
                   </p>
+                  <p className="text-[12px] text-cyan-100/90">
+                    {nextPadelMatch.statusLabel || nextPadelMatch.status || "Estado por definir"}
+                    {nextPadelMatch.courtName ? ` · ${nextPadelMatch.courtName}` : ""}
+                  </p>
+                  {nextPadelMatch.playerCanSubmitResult && (
+                    <p className="text-[11px] text-cyan-100/80">Podes submeter resultado como jogador.</p>
+                  )}
+                  {!nextPadelMatch.playerCanSubmitResult && nextPadelMatch.playerSubmissionEnabled === false && (
+                    <p className="text-[11px] text-cyan-100/75">Submissão por jogador desativada.</p>
+                  )}
                 </Link>
               )}
               {(padelStats || latestPadelTitle || padelRanking) && (

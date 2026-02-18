@@ -809,7 +809,7 @@ function OrganizacaoPageInner({
   const hasMarketingModule = activeModules.includes("MARKETING");
   const primaryCreateMeta =
     primaryOperation === "RESERVAS"
-      ? { label: "Criar serviço", href: "/org/bookings?create=service", singular: "serviço", plural: "serviços" }
+      ? { label: "Criar serviço", href: "/org/bookings/new", singular: "serviço", plural: "serviços" }
       : primaryOperation === "TORNEIOS"
         ? {
             label: "Criar torneio",

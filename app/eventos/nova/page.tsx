@@ -8,7 +8,7 @@ import { resolveLocale, t } from "@/lib/i18n";
 
 export default function NovaEventoPage() {
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const orgId = getOrganizationIdFromBrowser();
   const becomeHref = buildOrgHubHref("/create");
   const dashboardHref = orgId ? buildOrgHref(orgId, "/overview") : buildOrgHubHref("/organizations");

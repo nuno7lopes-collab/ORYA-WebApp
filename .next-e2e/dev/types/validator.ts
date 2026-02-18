@@ -1937,6 +1937,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/admin/padel/settings/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/padel/settings">> = Specific
+  const handler = {} as typeof import("../../../app/api/admin/padel/settings/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/admin/payments/dispute/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/payments/dispute">> = Specific
@@ -5240,6 +5249,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/padel/formats/plan/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/formats/plan">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/formats/plan/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/padel/live/raw/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/live/raw">> = Specific
@@ -5703,6 +5721,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/rankings/sanctions">> = Specific
   const handler = {} as typeof import("../../../app/api/padel/rankings/sanctions/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/padel/rounds/advance/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/rounds/advance">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/rounds/advance/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

@@ -15,6 +15,45 @@ const parseDay = (value: string | null) => {
   return parsed.toLocaleDateString("en-CA");
 };
 
+const STATUS_FILTERS = new Set([
+  "ALL",
+  "IN_PROGRESS",
+  "PENDING_CONFIRMATION",
+  "PENDING_REVIEW_EXPIRED",
+  "DISPUTED",
+  "RESULT_SUBMITTED",
+  "OFFICIAL",
+]);
+
+type StatusFilter =
+  | "ALL"
+  | "IN_PROGRESS"
+  | "PENDING_CONFIRMATION"
+  | "PENDING_REVIEW_EXPIRED"
+  | "DISPUTED"
+  | "RESULT_SUBMITTED"
+  | "OFFICIAL";
+
+const parseStatusFilter = (value: string | null): StatusFilter => {
+  if (!value) return "ALL";
+  const normalized = value.trim().toUpperCase();
+  return STATUS_FILTERS.has(normalized) ? (normalized as StatusFilter) : "ALL";
+};
+
+const parseCourtFilter = (value: string | null) => {
+  if (!value) return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const isOfficialStatus = (status: string) => status === "OFFICIAL" || status === "WALKOVER" || status === "RETIRED";
+
+const matchStatusMatchesFilter = (status: string, filter: StatusFilter) => {
+  if (filter === "ALL") return true;
+  if (filter === "OFFICIAL") return isOfficialStatus(status);
+  return status === filter;
+};
+
 function fail(
   ctx: RequestContext,
   status: number,
@@ -53,7 +92,25 @@ async function _GET(req: NextRequest) {
   if (!live.event.isPublicEvent) return fail(ctx, 403, "FORBIDDEN");
 
   const dayFilter = parseDay(req.nextUrl.searchParams.get("date"));
-  const days = dayFilter ? live.calendar_days.filter((day) => day.date === dayFilter) : live.calendar_days;
+  const statusFilter = parseStatusFilter(req.nextUrl.searchParams.get("status"));
+  const courtFilter = parseCourtFilter(req.nextUrl.searchParams.get("court"));
+  const days = live.calendar_days
+    .map((day) => ({
+      date: day.date,
+      courts: day.courts
+        .map((court) => ({
+          courtId: court.courtId,
+          courtLabel: court.courtLabel,
+          matches: court.matches.filter(
+            (match) =>
+              matchStatusMatchesFilter(match.status, statusFilter) &&
+              (!courtFilter || court.courtLabel === courtFilter),
+          ),
+        }))
+        .filter((court) => court.matches.length > 0),
+    }))
+    .filter((day) => day.courts.length > 0)
+    .filter((day) => (dayFilter ? day.date === dayFilter : true));
 
   return respondOk(
     ctx,
@@ -65,6 +122,11 @@ async function _GET(req: NextRequest) {
         timezone: live.event.timezone,
       },
       days,
+      filters: {
+        date: dayFilter,
+        status: statusFilter,
+        court: courtFilter,
+      },
     },
     { status: 200 },
   );

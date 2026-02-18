@@ -63,7 +63,12 @@ test("@responsive org shell responsive guardrails across target breakpoints", as
 
   const routes = ["/me/reservas"];
   if (orgId) {
-    routes.push(`/org/${orgId}/overview`, `/org/${orgId}/bookings`);
+    routes.push(
+      `/org/${orgId}/overview`,
+      `/org/${orgId}/bookings`,
+      `/org/${orgId}/calendar`,
+      `/org/${orgId}/calendar/day`,
+    );
   }
 
   for (const viewport of VIEWPORTS) {

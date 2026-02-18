@@ -147,7 +147,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 export default function TicketDetailClient({ entitlementId }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const locale = resolveLocale(searchParams?.get("lang") ?? (typeof navigator !== "undefined" ? navigator.language : null));
+  const locale = resolveLocale(searchParams?.get("lang"));
   const { user } = useUser();
   const { openModal: openAuthModal } = useAuthModal();
   const [ticket, setTicket] = useState<TicketDetail | null>(null);

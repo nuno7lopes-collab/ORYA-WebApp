@@ -26,6 +26,86 @@ function supabaseConfig() {
   return { supabaseUrl, supabaseAnonKey };
 }
 
+function supabaseAdminConfig() {
+  const supabaseUrl = pickNonEmpty(process.env.SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const serviceRoleKey = pickNonEmpty(process.env.SUPABASE_SERVICE_ROLE);
+  if (!supabaseUrl || !serviceRoleKey) return null;
+  return { supabaseUrl, serviceRoleKey };
+}
+
+function isProvisionableCandidate(role, candidate) {
+  if (role !== "user") return false;
+  return (
+    candidate.source === "E2E_USER_EMAIL/E2E_USER_PASSWORD" ||
+    candidate.source === "E2E_EMAIL/E2E_PASSWORD" ||
+    candidate.source === "default_test_user"
+  );
+}
+
+async function findUserByEmail(adminClient, email) {
+  const target = email.trim().toLowerCase();
+  if (!target) return null;
+
+  let page = 1;
+  const perPage = 200;
+  while (page <= 20) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) return null;
+    const users = data?.users ?? [];
+    const matched = users.find((user) => (user.email ?? "").trim().toLowerCase() === target);
+    if (matched) return matched;
+    if (users.length < perPage) break;
+    page += 1;
+  }
+
+  return null;
+}
+
+async function provisionUserCandidate(candidate) {
+  const adminCfg = supabaseAdminConfig();
+  if (!adminCfg) {
+    return { ok: false, reason: "SUPABASE_SERVICE_ROLE_MISSING" };
+  }
+
+  const adminClient = createClient(adminCfg.supabaseUrl, adminCfg.serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+  const normalizedEmail = candidate.email.trim().toLowerCase();
+
+  const existing = await findUserByEmail(adminClient, normalizedEmail);
+  if (existing?.id) {
+    const { error } = await adminClient.auth.admin.updateUserById(existing.id, {
+      password: candidate.password,
+      email_confirm: true,
+      user_metadata: {
+        ...(existing.user_metadata ?? {}),
+        full_name:
+          typeof existing.user_metadata?.full_name === "string" && existing.user_metadata.full_name.trim()
+            ? existing.user_metadata.full_name
+            : "E2E User",
+      },
+    });
+    if (error) {
+      return { ok: false, reason: `UPDATE_USER_FAILED: ${error.message}` };
+    }
+    return { ok: true, mode: "update" };
+  }
+
+  const { error } = await adminClient.auth.admin.createUser({
+    email: normalizedEmail,
+    password: candidate.password,
+    email_confirm: true,
+    user_metadata: { full_name: "E2E User" },
+  });
+  if (error) {
+    return { ok: false, reason: `CREATE_USER_FAILED: ${error.message}` };
+  }
+  return { ok: true, mode: "create" };
+}
+
 function candidates(role) {
   const defaultUser = {
     email: "test-orya@orya.pt",
@@ -79,9 +159,10 @@ function candidates(role) {
 async function loginWithCandidates(role) {
   const { supabaseUrl, supabaseAnonKey } = supabaseConfig();
   const client = createClient(supabaseUrl, supabaseAnonKey);
+  const roleCandidates = candidates(role);
   const failures = [];
 
-  for (const candidate of candidates(role)) {
+  for (const candidate of roleCandidates) {
     const { data, error } = await client.auth.signInWithPassword({
       email: candidate.email,
       password: candidate.password,
@@ -93,6 +174,30 @@ async function loginWithCandidates(role) {
     }
 
     failures.push({ source: candidate.source, message: error?.message ?? "MISSING_TOKEN" });
+  }
+
+  const provisionFailures = [];
+  for (const candidate of roleCandidates) {
+    if (!isProvisionableCandidate(role, candidate)) continue;
+    const provision = await provisionUserCandidate(candidate);
+    if (!provision.ok) {
+      provisionFailures.push({ source: candidate.source, message: provision.reason });
+      continue;
+    }
+
+    const { data, error } = await client.auth.signInWithPassword({
+      email: candidate.email,
+      password: candidate.password,
+    });
+    const token = data?.session?.access_token;
+    if (!error && token) {
+      return token;
+    }
+    provisionFailures.push({ source: candidate.source, message: error?.message ?? "MISSING_TOKEN_AFTER_PROVISION" });
+  }
+
+  if (provisionFailures.length > 0) {
+    failures.push(...provisionFailures);
   }
 
   throw new Error(`${role.toUpperCase()}_LOGIN_FAILED ${JSON.stringify(failures, null, 2)}`);
@@ -155,7 +260,7 @@ async function fetchJson(url, bearer) {
 export async function resolveOrgId(baseURL, bearer) {
   const envOrgId = pickNonEmpty(process.env.UI_E2E_ORG_ID);
 
-  const { response, json, text } = await fetchJson(
+  const { response, json } = await fetchJson(
     `${baseURL.replace(/\/+$/, "")}/api/org-hub/organizations`,
     bearer,
   );

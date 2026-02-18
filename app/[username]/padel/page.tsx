@@ -7,6 +7,7 @@ import { getProfileCoverUrl } from "@/lib/profileCover";
 import { getPadelOnboardingMissing, isPadelOnboardingComplete } from "@/domain/padelOnboarding";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 import PadelDisputeButton from "./PadelDisputeButton";
+import PadelResultSubmitCard from "./PadelResultSubmitCard";
 import { getUserFollowCounts, isUserFollowing } from "@/domain/social/follows";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
@@ -91,6 +92,47 @@ function formatScoreSummary(match: {
   if (resultType === "RETIREMENT") return "Desistência";
   if (resultType === "INJURY") return "Lesão";
   return "—";
+}
+
+function formatMatchStatusLabel(status: string) {
+  switch (status) {
+    case "PENDING":
+      return "Pendente";
+    case "IN_PROGRESS":
+      return "Em curso";
+    case "RESULT_SUBMITTED":
+      return "Resultado submetido";
+    case "PENDING_CONFIRMATION":
+      return "Pendente confirmação";
+    case "PENDING_REVIEW_EXPIRED":
+      return "Pendente expirado";
+    case "DISPUTED":
+      return "Em disputa";
+    case "OFFICIAL":
+      return "Oficial";
+    case "WALKOVER":
+      return "WO";
+    case "RETIRED":
+      return "Desistência";
+    case "CANCELLED":
+      return "Cancelado";
+    default:
+      return status || "—";
+  }
+}
+
+function matchStatusToneClass(status: string) {
+  if (status === "IN_PROGRESS") return "border-emerald-300/35 bg-emerald-500/10 text-emerald-100";
+  if (status === "RESULT_SUBMITTED" || status === "PENDING_CONFIRMATION") {
+    return "border-sky-300/35 bg-sky-500/10 text-sky-100";
+  }
+  if (status === "PENDING_REVIEW_EXPIRED" || status === "DISPUTED") {
+    return "border-amber-300/35 bg-amber-500/10 text-amber-100";
+  }
+  if (status === "OFFICIAL" || status === "WALKOVER" || status === "RETIRED") {
+    return "border-white/25 bg-white/10 text-white/85";
+  }
+  return "border-white/20 bg-white/5 text-white/75";
 }
 
 type PadelStats = {
@@ -442,7 +484,12 @@ export default async function PadelProfilePage({ params }: PageProps) {
     startAt: Date | null;
     scoreSets: Array<{ teamA: number; teamB: number }> | null;
     score: Record<string, unknown> | null;
-    event: { title: string; slug: string };
+    event: {
+      title: string;
+      slug: string;
+      playerResultSubmissionEnabled: boolean;
+      resultValidationMode: "IMMEDIATE_OFFICIAL" | "IMMEDIATE_PENDING_THEN_OFFICIAL" | null;
+    };
     pairingA: any;
     pairingB: any;
   }> = [];
@@ -458,7 +505,18 @@ export default async function PadelProfilePage({ params }: PageProps) {
         ],
       },
       include: {
-        event: { select: { title: true, slug: true } },
+        event: {
+          select: {
+            title: true,
+            slug: true,
+            padelTournamentConfig: {
+              select: {
+                playerResultSubmissionEnabled: true,
+                resultValidationMode: true,
+              },
+            },
+          },
+        },
         pairingA: { include: { slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } } } },
         pairingB: { include: { slots: { select: { playerProfile: { select: { displayName: true, fullName: true } } } } } },
       },
@@ -474,7 +532,15 @@ export default async function PadelProfilePage({ params }: PageProps) {
       startAt: match.startTime ?? match.plannedStartAt ?? match.actualStartAt ?? null,
       scoreSets: Array.isArray(match.scoreSets) ? (match.scoreSets as Array<{ teamA: number; teamB: number }>) : null,
       score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
-      event: { title: match.event.title, slug: match.event.slug },
+      event: {
+        title: match.event.title,
+        slug: match.event.slug,
+        playerResultSubmissionEnabled: match.event.padelTournamentConfig?.playerResultSubmissionEnabled === true,
+        resultValidationMode:
+          match.event.padelTournamentConfig?.resultValidationMode === "IMMEDIATE_PENDING_THEN_OFFICIAL"
+            ? "IMMEDIATE_PENDING_THEN_OFFICIAL"
+            : "IMMEDIATE_OFFICIAL",
+      },
       pairingA: match.pairingA,
       pairingB: match.pairingB,
     }));
@@ -1128,6 +1194,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
                   {padelUpcoming.map((match) => (
                     <div key={`padel-up-${match.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
                       <p className="text-[11px] text-white/60">{match.event.title}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] ${matchStatusToneClass(match.status)}`}>
+                          {formatMatchStatusLabel(match.status)}
+                        </span>
+                      </div>
                       <p className="text-sm text-white/90">
                         {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
                       </p>
@@ -1136,6 +1207,14 @@ export default async function PadelProfilePage({ params }: PageProps) {
                           {match.roundLabel || match.groupLabel || "Jogo"} · {formatDate(match.startAt)}
                         </p>
                       ) : null}
+                      {isOwner && (
+                        <PadelResultSubmitCard
+                          matchId={match.id}
+                          status={match.status}
+                          playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
+                          validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1148,6 +1227,14 @@ export default async function PadelProfilePage({ params }: PageProps) {
                   )}
                   {padelRecent.map((match) => {
                     const score = match.score || {};
+                    const workflow =
+                      score.liveWorkflow && typeof score.liveWorkflow === "object" && !Array.isArray(score.liveWorkflow)
+                        ? (score.liveWorkflow as Record<string, unknown>)
+                        : null;
+                    const pendingConfirmationExpiresAt =
+                      workflow && typeof workflow.pendingConfirmationExpiresAt === "string"
+                        ? workflow.pendingConfirmationExpiresAt
+                        : null;
                     const disputeStatusRaw = typeof score.disputeStatus === "string" ? score.disputeStatus : null;
                     const disputeStatus =
                       disputeStatusRaw === "OPEN" || disputeStatusRaw === "RESOLVED" ? disputeStatusRaw : null;
@@ -1155,6 +1242,11 @@ export default async function PadelProfilePage({ params }: PageProps) {
                     return (
                       <div key={`padel-recent-${match.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80">
                         <p className="text-[11px] text-white/60">{match.event.title}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] ${matchStatusToneClass(match.status)}`}>
+                            {formatMatchStatusLabel(match.status)}
+                          </span>
+                        </div>
                         <p className="text-sm text-white/90">
                           {buildPairingLabel(match.pairingA)} vs {buildPairingLabel(match.pairingB)}
                         </p>
@@ -1164,6 +1256,19 @@ export default async function PadelProfilePage({ params }: PageProps) {
                           </p>
                         ) : null}
                         <p className="text-[11px] text-white/70">Resultado: {formatScoreSummary(match)}</p>
+                        {pendingConfirmationExpiresAt && (
+                          <p className="text-[11px] text-white/60">
+                            Confirmação até {formatDateTimeLabel(new Date(pendingConfirmationExpiresAt))}.
+                          </p>
+                        )}
+                        {isOwner && (
+                          <PadelResultSubmitCard
+                            matchId={match.id}
+                            status={match.status}
+                            playerSubmissionEnabled={match.event.playerResultSubmissionEnabled}
+                            validationMode={match.event.resultValidationMode ?? "IMMEDIATE_OFFICIAL"}
+                          />
+                        )}
                         {isOwner && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(match.status) && (
                           <PadelDisputeButton
                             matchId={match.id}

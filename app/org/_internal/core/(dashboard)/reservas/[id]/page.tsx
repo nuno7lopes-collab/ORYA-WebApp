@@ -1823,24 +1823,6 @@ export default function ServicoDetalhePage() {
         </section>
       )}
 
-      <section className={cn(DASHBOARD_CARD, "p-5 space-y-3")}>
-        <div>
-          <h2 className="text-base font-semibold text-white">Agenda central</h2>
-          <p className={DASHBOARD_MUTED}>
-            A disponibilidade e as marcações são geridas no calendário principal.
-          </p>
-        </div>
-        <button
-          type="button"
-          className={CTA_SECONDARY}
-          onClick={() =>
-            router.push(appendOrganizationIdToHref("/org/bookings/availability", organizationId))
-          }
-        >
-          Abrir agenda
-        </button>
-      </section>
-
       {packsEnabled && (
         <section className={cn(DASHBOARD_CARD, "p-5 space-y-4")}>
           <div>
