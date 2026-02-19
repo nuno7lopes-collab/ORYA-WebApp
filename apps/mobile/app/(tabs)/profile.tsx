@@ -57,6 +57,31 @@ const INTEREST_ICONS: Record<InterestId, string> = {
   workshops: "construct",
 };
 
+const normalizePadelGenderValue = (value: unknown): PadelGender | null => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "MALE" || normalized === "MASCULINO") return "MALE";
+  if (normalized === "FEMALE" || normalized === "FEMININO") return "FEMALE";
+  return null;
+};
+
+const normalizePadelSideValue = (value: unknown): PadelPreferredSide | null => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (normalized === "ESQUERDA" || normalized === "LEFT") return "ESQUERDA";
+  if (normalized === "DIREITA" || normalized === "RIGHT") return "DIREITA";
+  if (normalized === "QUALQUER" || normalized === "ANY") return "QUALQUER";
+  return null;
+};
+
+const normalizePadelLevelValue = (value: unknown): PadelLevel | null => {
+  const candidate = typeof value === "number" && Number.isFinite(value) ? String(value) : String(value ?? "").trim();
+  if (!candidate) return null;
+  return PADEL_LEVELS.includes(candidate as PadelLevel) ? (candidate as PadelLevel) : null;
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
@@ -582,6 +607,22 @@ export default function ProfileScreen() {
   );
   const featuredUpcomingItem = activeTimelineItems[0] ?? null;
   const remainingUpcomingItems = featuredUpcomingItem ? activeTimelineItems.slice(1) : [];
+  const historyGroups = useMemo(() => {
+    const groups: Array<{ label: string; items: AgendaItem[] }> = [];
+    historyTimelineItems.forEach((item) => {
+      const date = new Date(item.startAt);
+      const label = Number.isNaN(date.getTime())
+        ? "Outros"
+        : date.toLocaleDateString("pt-PT", { month: "long", year: "numeric" });
+      const previous = groups[groups.length - 1];
+      if (previous && previous.label === label) {
+        previous.items.push(item);
+      } else {
+        groups.push({ label, items: [item] });
+      }
+    });
+    return groups;
+  }, [historyTimelineItems]);
 
   const formatAgendaDate = (value: string, long = false) =>
     new Date(value).toLocaleDateString("pt-PT", long ? { weekday: "short", day: "2-digit", month: "long" } : { day: "2-digit", month: "short" });
@@ -697,7 +738,7 @@ export default function ProfileScreen() {
       >
         <View className="items-center" style={{ width: 14 }}>
           <View style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: accentColor, marginTop: 5 }} />
-          {showDivider ? <View style={{ width: 1, flex: 1, minHeight: 22, backgroundColor: "rgba(255,255,255,0.16)", marginTop: 6 }} /> : null}
+          {showDivider ? <View style={{ width: 1, flex: 1, minHeight: 44, backgroundColor: "rgba(255,255,255,0.16)", marginTop: 6 }} /> : null}
         </View>
         <View style={{ flex: 1 }}>
           <Text className="text-white text-sm font-semibold" numberOfLines={1}>
@@ -1110,9 +1151,16 @@ export default function ProfileScreen() {
                           <View className="gap-2">
                             <Text className="text-white/90 text-base font-semibold">Histórico</Text>
                             <View className="border-b border-white/10 pb-1">
-                              {historyTimelineItems.map((item, index) =>
-                                renderHistoryItem(item, index, historyTimelineItems.length),
-                              )}
+                              {historyGroups.map((group) => (
+                                <View key={group.label} className="gap-1">
+                                  <Text className="text-white/55 text-[11px] uppercase tracking-[0.08em] py-1">
+                                    {group.label}
+                                  </Text>
+                                  {group.items.map((item, index) =>
+                                    renderHistoryItem(item, index, group.items.length),
+                                  )}
+                                </View>
+                              ))}
                             </View>
                           </View>
                         ) : null}

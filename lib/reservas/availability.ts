@@ -6,6 +6,7 @@ export type AvailabilitySlot = {
 };
 
 const MINUTES_PER_DAY = 24 * 60;
+const DEFAULT_WEEKDAY_INTERVALS: Interval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
 
 function clampMinute(value: number) {
   return Math.max(0, Math.min(MINUTES_PER_DAY, value));
@@ -201,7 +202,9 @@ export function resolveIntervalsForDate(params: {
 }) {
   let intervals = params.templatesByDay.has(params.dayOfWeek)
     ? params.templatesByDay.get(params.dayOfWeek) ?? []
-    : [];
+    : params.fallbackToDefault && params.dayOfWeek >= 1 && params.dayOfWeek <= 5
+      ? [...DEFAULT_WEEKDAY_INTERVALS]
+      : [];
   if (!params.overrides.length) return intervals;
   for (const override of params.overrides) {
     if (override.kind === "CLOSED") {
@@ -272,7 +275,7 @@ export function buildSlotsForRange(params: {
     const key = getDateKey(current.year, current.month, current.day);
     const dayOfWeek = cursor.getUTCDay();
     const overrides = overridesByDate.get(key) ?? [];
-    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides, fallbackToDefault: false });
+    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides, fallbackToDefault: true });
     if (intervals.length) {
       for (const interval of intervals) {
         for (let minute = interval.startMinute; minute + params.durationMinutes <= interval.endMinute; minute += stepMinutes) {

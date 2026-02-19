@@ -2557,8 +2557,12 @@ export default function PadelHubClient({
       setLessonError("Este treinador ainda não está ligado a um profissional ativo.");
       return;
     }
-    if (selectedTrainer.professionalIsActive !== true) {
+    if (selectedTrainer.professionalIsActive === false) {
       setLessonError("O profissional deste treinador está inativo. Reativa em Reservas > Profissionais.");
+      return;
+    }
+    if (selectedTrainer.professionalIsActive !== true) {
+      setLessonError("Treinador sem profissional operacional ativo.");
       return;
     }
     const professionalIds = [selectedTrainer.professionalId];

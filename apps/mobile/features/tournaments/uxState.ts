@@ -14,8 +14,8 @@ export type RegistrationBlockReason =
 type RegistrationBlockInput = {
   registrationOpen: boolean;
   hasCategory: boolean;
-  hasCategoryTicket: boolean;
-  hasCategoryPurchasableTicket: boolean;
+  hasCategoryTicket?: boolean;
+  hasCategoryPurchasableTicket?: boolean;
   joinMode: PairingJoinMode;
   inviteContact: string;
   pairingBusy: boolean;
@@ -25,10 +25,13 @@ type RegistrationBlockInput = {
 export const resolveRegistrationBlockReason = (
   input: RegistrationBlockInput,
 ): RegistrationBlockReason | null => {
+  const hasCategoryTicket = input.hasCategoryTicket ?? true;
+  const hasCategoryPurchasableTicket = input.hasCategoryPurchasableTicket ?? true;
+
   if (!input.hasCategory) return "MISSING_CATEGORY";
   if (!input.registrationOpen) return "REGISTRATION_CLOSED";
-  if (!input.hasCategoryTicket) return "MISSING_CATEGORY_TICKET";
-  if (!input.hasCategoryPurchasableTicket) return "CATEGORY_TICKET_UNAVAILABLE";
+  if (!hasCategoryTicket) return "MISSING_CATEGORY_TICKET";
+  if (!hasCategoryPurchasableTicket) return "CATEGORY_TICKET_UNAVAILABLE";
   if (input.joinMode === "INVITE_PARTNER" && input.inviteContact.trim().length === 0) {
     return "MISSING_INVITE_CONTACT";
   }
