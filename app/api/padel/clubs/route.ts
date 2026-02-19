@@ -3,10 +3,8 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import {
-  AddressSourceProvider,
   OrganizationMemberRole,
   OrganizationModule,
-  PadelClubKind,
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -15,12 +13,10 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { parseOrganizationId, resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
 import { deactivateReservationResourcesForCourts } from "@/lib/reservas/courtResourceLink";
 
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
-const CLUB_KINDS = new Set(["OWN", "PARTNER"]);
 
 function normalizeSlug(raw: string | null | undefined) {
   if (!raw) return "";
@@ -149,14 +145,6 @@ async function _POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const addressIdRaw = typeof body.addressId === "string" ? body.addressId.trim() : "";
   const addressIdInput = addressIdRaw || null;
-  const kindRaw = typeof body.kind === "string" ? body.kind.trim().toUpperCase() : "";
-  const requestedKind = CLUB_KINDS.has(kindRaw) ? kindRaw : null;
-  const sourceClubIdRaw =
-    typeof body.sourceClubId === "number"
-      ? body.sourceClubId
-      : typeof body.sourceClubId === "string"
-        ? Number(body.sourceClubId)
-        : null;
   const courtsCountRaw =
     typeof body.courtsCount === "number"
       ? body.courtsCount
@@ -164,8 +152,6 @@ async function _POST(req: NextRequest) {
         ? Number(body.courtsCount)
         : null;
   const isActive = typeof body.isActive === "boolean" ? body.isActive : true;
-  const slugInput = typeof body.slug === "string" ? normalizeSlug(body.slug) : "";
-  const isDefault = typeof body.isDefault === "boolean" ? body.isDefault : false;
 
   const existing = id
     ? await prisma.padelClub.findFirst({
@@ -174,9 +160,6 @@ async function _POST(req: NextRequest) {
           id: true,
           name: true,
           addressId: true,
-          kind: true,
-          sourceClubId: true,
-          isDefault: true,
           isActive: true,
           addressRef: {
             select: {
@@ -195,53 +178,25 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "Clube não encontrado." }, { status: 404 });
   }
 
-  const existingKind = existing?.kind ? String(existing.kind).toUpperCase() : null;
-  const kind = ((existingKind && CLUB_KINDS.has(existingKind) ? existingKind : requestedKind) ?? "OWN") as PadelClubKind;
-  const isPartner = kind === "PARTNER";
-  const sourceClubIdCandidate = Number.isFinite(sourceClubIdRaw as number)
-    ? Math.floor(sourceClubIdRaw as number)
-    : null;
-  const sourceClub = isPartner && sourceClubIdCandidate
-    ? await prisma.padelClub.findFirst({
-        where: { id: sourceClubIdCandidate, deletedAt: null, isActive: true },
-        select: {
-          id: true,
-          addressId: true,
-          addressRef: {
-            select: {
-              formattedAddress: true,
-              canonical: true,
-              latitude: true,
-              longitude: true,
-              sourceProvider: true,
-              sourceProviderPlaceId: true,
-            },
-          },
-        },
-      })
-    : null;
-  const activeAgreement =
-    isPartner && !existing && sourceClubIdCandidate
-      ? await prisma.padelPartnershipAgreement.findFirst({
-          where: {
-            ownerClubId: sourceClubIdCandidate,
-            partnerOrganizationId: organization.id,
-            status: "APPROVED",
-            revokedAt: null,
-            OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }],
-            AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: new Date() } }] }],
-          },
-          select: {
-            id: true,
-            partnerClubId: true,
-          },
-          orderBy: [{ approvedAt: "desc" }, { id: "desc" }],
-        })
-      : null;
+  if (!existing) {
+    const organizationClub = await prisma.padelClub.findFirst({
+      where: {
+        organizationId: organization.id,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (organizationClub) {
+      return jsonWrap(
+        { ok: false, error: "A organização já tem um clube. Edita o clube existente." },
+        { status: 409 },
+      );
+    }
+  }
 
-  const resolvedAddressId = addressIdInput ?? sourceClub?.addressId ?? existing?.addressId ?? null;
+  const resolvedAddressId = addressIdInput ?? existing?.addressId ?? null;
   if (!resolvedAddressId) {
-    return jsonWrap({ ok: false, error: "Seleciona uma morada normalizada antes de guardar." }, { status: 400 });
+    return jsonWrap({ ok: false, error: "Seleciona uma morada antes de guardar." }, { status: 400 });
   }
 
   const resolvedAddressRecord = await prisma.address.findUnique({
@@ -251,71 +206,32 @@ async function _POST(req: NextRequest) {
   if (!resolvedAddressRecord) {
     return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
   }
-  if (resolvedAddressRecord.sourceProvider !== AddressSourceProvider.APPLE_MAPS) {
-    return jsonWrap({ ok: false, error: "Morada deve ser Apple Maps." }, { status: 400 });
-  }
 
   const resolvedName = name || existing?.name || "";
 
   if (!resolvedName || resolvedName.length < 3) {
     return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
   }
-  if (isPartner && sourceClubIdRaw && !Number.isFinite(sourceClubIdRaw)) {
-    return jsonWrap({ ok: false, error: "Clube parceiro inválido." }, { status: 400 });
-  }
 
   const courtsCount = courtsCountRaw && Number.isFinite(courtsCountRaw)
     ? Math.min(1000, Math.max(1, Math.floor(courtsCountRaw)))
     : 1;
-  const baseSlug = slugInput || normalizeSlug(resolvedName);
-
-  const safeIsDefault = !isPartner && isActive ? isDefault : false;
+  const baseSlug = normalizeSlug(resolvedName);
 
   try {
-    if (isPartner && !existing && sourceClubIdCandidate && !sourceClub) {
-      return jsonWrap(
-        { ok: false, error: "Clube parceiro indisponível ou inexistente." },
-        { status: 400 },
-      );
-    }
-    if (isPartner && !existing) {
-      if (!sourceClubIdCandidate) {
-        return jsonWrap({ ok: false, error: "AGREEMENT_REQUIRED" }, { status: 409 });
-      }
-      if (!activeAgreement) {
-        return jsonWrap({ ok: false, error: "AGREEMENT_REQUIRED" }, { status: 409 });
-      }
-      if (activeAgreement.partnerClubId) {
-        return jsonWrap(
-          { ok: false, error: "PARTNER_CLUB_ALREADY_LINKED", partnerClubId: activeAgreement.partnerClubId },
-          { status: 409 },
-        );
-      }
-    }
-
     const slug = baseSlug ? await generateUniqueSlug(baseSlug, organization.id, id) : null;
-    const sourceClubId = isPartner
-      ? sourceClubIdCandidate ?? existing?.sourceClubId ?? null
-      : null;
-
-    const updateData: Prisma.PadelClubUncheckedUpdateInput = isPartner && existing
-      ? {
-          isActive,
-          isDefault: false,
-        }
-      : {
-          name: resolvedName,
-          shortName: resolvedName,
-          addressId: resolvedAddressId,
-          courtsCount,
-          hours: null,
-          favoriteCategoryIds: [] as number[],
-          isActive,
-          slug: slug || null,
-          isDefault: safeIsDefault,
-          kind,
-          sourceClubId,
-        };
+    const updateData: Prisma.PadelClubUncheckedUpdateInput = {
+      name: resolvedName,
+      shortName: resolvedName,
+      addressId: resolvedAddressId,
+      courtsCount,
+      hours: null,
+      favoriteCategoryIds: [] as number[],
+      isActive,
+      slug: slug || null,
+      kind: "OWN",
+      sourceClubId: null,
+    };
     const createData: Prisma.PadelClubUncheckedCreateInput = {
       organizationId: organization.id,
       name: resolvedName,
@@ -326,13 +242,12 @@ async function _POST(req: NextRequest) {
       favoriteCategoryIds: [] as number[],
       isActive,
       slug: slug || null,
-      isDefault: safeIsDefault,
-      kind,
-      sourceClubId,
+      kind: "OWN",
+      sourceClubId: null,
     };
 
     const club = await prisma.$transaction(async (tx) => {
-      let saved = id
+      const saved = id
         ? await tx.padelClub.update({
             where: { id, organizationId: organization.id, deletedAt: null },
             data: updateData,
@@ -340,61 +255,14 @@ async function _POST(req: NextRequest) {
         : await tx.padelClub.create({
             data: createData,
           });
-
-      const allowDefault = !isPartner;
-      if (allowDefault && isDefault) {
-        await tx.padelClub.updateMany({
-          where: { organizationId: organization.id, NOT: { id: saved.id }, isDefault: true, deletedAt: null },
-          data: { isDefault: false },
-        });
-      } else if (allowDefault) {
-        // Se não existir nenhum default, garante que o primeiro ativo fica default
-        const defaults = await tx.padelClub.count({
-          where: { organizationId: organization.id, isDefault: true, deletedAt: null, isActive: true },
-        });
-        if (defaults === 0 && saved.isActive) {
-          saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: true } });
-        }
-      }
-
-      if (!saved.isActive && saved.isDefault) {
-        saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
-      }
-      if (isPartner && saved.isDefault) {
-        saved = await tx.padelClub.update({ where: { id: saved.id }, data: { isDefault: false } });
-      }
-      if (isPartner && !existing && activeAgreement?.id) {
-        await tx.padelPartnershipAgreement.update({
-          where: { id: activeAgreement.id },
-          data: { partnerClubId: saved.id },
-        });
-      }
       return saved;
     });
-
-    let syncResult: { localCourtIds: number[]; created: number; updated: number; deactivated: number; sourceCount: number } | null = null;
-    if (club.kind === "PARTNER" && club.sourceClubId) {
-      syncResult = await syncPartnerClubCourts({
-        partnerOrganizationId: organization.id,
-        partnerClubId: club.id,
-        sourceClubId: club.sourceClubId,
-        fallbackCount: courtsCount,
-      });
-    }
 
     return jsonWrap(
       {
         ok: true,
         club,
-        partnerCourtSync: syncResult
-          ? {
-              localCourtIds: syncResult.localCourtIds,
-              created: syncResult.created,
-              updated: syncResult.updated,
-              deactivated: syncResult.deactivated,
-              sourceCount: syncResult.sourceCount,
-            }
-          : null,
+        partnerCourtSync: null,
       },
       { status: id ? 200 : 201 },
     );
@@ -403,7 +271,7 @@ async function _POST(req: NextRequest) {
     const code = (err as { code?: string })?.code;
     if (code === "P2002") {
       return jsonWrap(
-        { ok: false, error: "Já existe um clube com este slug/nome. Escolhe outro." },
+        { ok: false, error: "Já existe um clube com este nome. Escolhe outro." },
         { status: 409 },
       );
     }
@@ -475,22 +343,8 @@ async function _DELETE(req: NextRequest) {
     });
     const saved = await tx.padelClub.update({
       where: { id: clubId },
-      data: { isActive: false, deletedAt: now, isDefault: false },
+      data: { isActive: false, deletedAt: now },
     });
-
-    const defaults = await tx.padelClub.count({
-      where: { organizationId: organization.id, isDefault: true, deletedAt: null, isActive: true },
-    });
-    if (defaults === 0) {
-      const nextDefault = await tx.padelClub.findFirst({
-        where: { organizationId: organization.id, isActive: true, deletedAt: null },
-        orderBy: { createdAt: "asc" },
-        select: { id: true },
-      });
-      if (nextDefault) {
-        await tx.padelClub.update({ where: { id: nextDefault.id }, data: { isDefault: true } });
-      }
-    }
 
     return saved;
   });

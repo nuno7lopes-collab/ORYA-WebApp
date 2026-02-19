@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
 import { OrganizationMemberRole } from "@prisma/client";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACTIVE_MEMBER_FILTER = {
@@ -59,24 +59,25 @@ async function _POST(req: NextRequest, context: { params: { messageId: string } 
       where: { messageId },
       select: { id: true, messageId: true, pinnedBy: true, pinnedAt: true },
     });
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "pin:update",
       organizationId: organization.id,
       conversationId: message.conversationId,
       messageId,
       pins,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true });
+    return jsonWrap({ ok: true, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/messages/[id]/pins error:", err);
     return jsonWrap({ ok: false, error: "Erro ao fixar mensagem." }, { status: 500 });
@@ -124,24 +125,25 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
       where: { messageId },
       select: { id: true, messageId: true, pinnedBy: true, pinnedAt: true },
     });
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "pin:update",
       organizationId: organization.id,
       conversationId: message.conversationId,
       messageId,
       pins,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true });
+    return jsonWrap({ ok: true, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("DELETE /api/messages/messages/[id]/pins error:", err);
     return jsonWrap({ ok: false, error: "Erro ao remover pin." }, { status: 500 });

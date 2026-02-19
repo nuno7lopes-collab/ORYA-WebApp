@@ -19,8 +19,6 @@ export const HOUR_START = 0;
 export const HOUR_END = 24;
 export const DEFAULT_HOUR_HEIGHT = 56;
 
-const DEFAULT_WORKING_WEEKDAY_INTERVALS: TimeInterval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
-
 export type NormalizedAvailability = {
   schedules: Array<{ id: number; startDate: Date; endDate: Date | null; createdAt?: Date }>;
   templatesBySchedule: Map<number, Map<number, TimeInterval[]>>;
@@ -420,8 +418,7 @@ export function resolveIntervalsForDay(
 ): TimeInterval[] {
   const dayParts = getDateParts(day, timezone);
   const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
-  const defaultIntervals = dayOfWeek === 0 || dayOfWeek === 6 ? [] : DEFAULT_WORKING_WEEKDAY_INTERVALS;
-  if (!normalized) return defaultIntervals;
+  if (!normalized) return [];
   const schedule = resolveScheduleForDate(normalized.schedules, day, timezone);
   const templatesByDay = schedule ? normalized.templatesBySchedule.get(schedule.id) ?? new Map() : new Map();
   const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
@@ -429,12 +426,8 @@ export function resolveIntervalsForDay(
     dayOfWeek,
     templatesByDay,
     overrides,
-    fallbackToDefault: !schedule,
+    fallbackToDefault: false,
   });
-  if (resolved.length > 0) return resolved;
-  if (!schedule && overrides.length === 0) {
-    return defaultIntervals;
-  }
   return resolved;
 }
 

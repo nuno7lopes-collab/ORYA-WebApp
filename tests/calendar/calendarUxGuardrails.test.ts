@@ -21,12 +21,12 @@ describe("calendar ux guardrails", () => {
     expect(dayClient).not.toContain("ZOOM");
   });
 
-  it("keeps general calendar and default availability communication visible", () => {
+  it("keeps general calendar communication visible without fallback copy antiga", () => {
     const dayHeader = readLocal("app/org/[orgId]/calendar/_components/day/CalendarHeader.tsx");
     const weekClient = readLocal("app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx");
 
     expect(dayHeader).toContain("Geral");
-    expect(weekClient).toContain("Default quando não configurado: 2ª–6ª, 08:00-17:00");
+    expect(weekClient).not.toContain("Default quando não configurado: 2ª–6ª, 08:00-17:00");
   });
 
   it("keeps keyboard-first navigation in calendar day/week and datepicker", () => {
@@ -38,9 +38,9 @@ describe("calendar ux guardrails", () => {
     expect(dayClient).toContain('key === "f"');
     expect(dayClient).toContain('key === "g"');
     expect(dayClient).toContain('key === "escape"');
-    expect(dayClient).toContain("Atalhos:");
+    expect(dayClient).not.toContain("Atalhos:");
     expect(weekClient).toContain('key === "g"');
-    expect(weekClient).toContain("Atalhos: ← → · T · D · G");
+    expect(weekClient).not.toContain("Atalhos: ← → · T · D · G");
 
     expect(datePicker).toContain("OryaDateField");
     expect(sharedDateField).toContain('event.key === "ArrowLeft"');

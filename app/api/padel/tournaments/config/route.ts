@@ -22,6 +22,7 @@ import { filterPadelFormats, parsePadelFormat, PADEL_FORMAT_SET } from "@/domain
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
 import { deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows, type PadelDailyWindow } from "@/lib/padel/scheduleWindows";
+import { FIXED_SPLIT_DEADLINE_HOURS } from "@/domain/padelDeadlines";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -277,11 +278,7 @@ async function _POST(req: NextRequest) {
     Object.values(PadelEligibilityType).includes(body.eligibilityType as PadelEligibilityType)
       ? (body.eligibilityType as PadelEligibilityType)
       : null;
-  const hasSplitDeadlineHours = Object.prototype.hasOwnProperty.call(body, "splitDeadlineHours");
-  const splitDeadlineHours =
-    hasSplitDeadlineHours && typeof body.splitDeadlineHours === "number" && Number.isFinite(body.splitDeadlineHours)
-      ? Math.max(48, Math.min(168, Math.floor(body.splitDeadlineHours)))
-      : null;
+  const splitDeadlineHours = FIXED_SPLIT_DEADLINE_HOURS;
   const hasEnabledFormats = Object.prototype.hasOwnProperty.call(body, "enabledFormats");
   const enabledFormats = hasEnabledFormats ? filterPadelFormats(body.enabledFormats) : null;
   const hasResultValidationMode = Object.prototype.hasOwnProperty.call(body, "resultValidationMode");
@@ -847,7 +844,6 @@ async function _POST(req: NextRequest) {
         hasRuleSetId ||
         hasDefaultCategoryId ||
         hasEligibilityType ||
-        hasSplitDeadlineHours ||
         hasGroupsConfig ||
         hasScheduleDefaults ||
         hasScoreRules ||
@@ -928,7 +924,7 @@ async function _POST(req: NextRequest) {
         ruleSetId: effectiveRuleSetId ?? undefined,
         defaultCategoryId: hasDefaultCategoryId ? defaultCategoryId ?? undefined : existing?.defaultCategoryId ?? undefined,
         eligibilityType: hasEligibilityType ? eligibilityType || undefined : existing?.eligibilityType ?? undefined,
-        splitDeadlineHours: hasSplitDeadlineHours ? splitDeadlineHours ?? undefined : existing?.splitDeadlineHours ?? undefined,
+        splitDeadlineHours,
         enabledFormats: normalizedFormats ?? existing?.enabledFormats ?? undefined,
         isInterclub: resolvedIsInterclub,
         teamSize: normalizedTeamSize ?? undefined,
@@ -947,7 +943,7 @@ async function _POST(req: NextRequest) {
         ...(hasRuleSetId ? { ruleSetId: effectiveRuleSetId } : {}),
         ...(hasDefaultCategoryId ? { defaultCategoryId } : {}),
         ...(hasEligibilityType ? { eligibilityType: eligibilityType || undefined } : {}),
-        ...(hasSplitDeadlineHours ? { splitDeadlineHours } : {}),
+        splitDeadlineHours,
         ...(hasEnabledFormats ? { enabledFormats: normalizedFormats ?? [] } : {}),
         ...((hasIsInterclub || hasTeamSize) ? { isInterclub: resolvedIsInterclub, teamSize: normalizedTeamSize ?? null } : {}),
         ...(hasResultValidationMode && resultValidationMode ? { resultValidationMode } : {}),

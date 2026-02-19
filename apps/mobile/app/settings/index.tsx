@@ -26,7 +26,7 @@ import { SettingsModal } from "../../components/settings/SettingsModal";
 import { SettingsRow } from "../../components/settings/SettingsRow";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { useMemo, useEffect, useState, useCallback } from "react";
+import { useMemo, useEffect, useState, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchConsents, fetchNotificationPrefs, updateConsent, updateEmail, updateSettings } from "../../features/settings/api";
 import { ConsentItem, NotificationPrefs, Visibility } from "../../features/settings/types";
@@ -35,10 +35,15 @@ import * as Linking from "expo-linking";
 import Constants from "expo-constants";
 import { getMobileEnv } from "../../lib/env";
 import { INTEREST_OPTIONS, InterestId } from "../../features/onboarding/types";
-import { Image } from "expo-image";
 import { api } from "../../lib/api";
-import { getPushPermissionStatus, registerForPushToken, requestPushPermission } from "../../lib/push";
+import {
+  getPushPermissionStatus,
+  type PushPermissionReason,
+  registerForPushToken,
+  requestPushPermission,
+} from "../../lib/push";
 import { useI18n, type Locale } from "../../lib/i18n";
+import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -108,9 +113,11 @@ export default function SettingsScreen() {
 
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
   const [savingVisibility, setSavingVisibility] = useState(false);
+  const [privacyMessage, setPrivacyMessage] = useState<string | null>(null);
 
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [savingInterests, setSavingInterests] = useState(false);
+  const [interestsMessage, setInterestsMessage] = useState<string | null>(null);
 
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
     allowEmailNotifications: true,
@@ -125,16 +132,25 @@ export default function SettingsScreen() {
     allowSystemAnnouncements: true,
   });
   const [savingNotifications, setSavingNotifications] = useState(false);
+  const [notificationsMessage, setNotificationsMessage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined" | "unavailable">("undetermined");
+  const [pushReason, setPushReason] = useState<PushPermissionReason>(null);
   const [pushBusy, setPushBusy] = useState(false);
 
   const [consents, setConsents] = useState<ConsentItem[]>([]);
+  const [consentsExpanded, setConsentsExpanded] = useState(false);
   const [consentError, setConsentError] = useState<string | null>(null);
+  const [consentSavedMessage, setConsentSavedMessage] = useState<string | null>(null);
   const [consentSaving, setConsentSaving] = useState<Record<string, boolean>>({});
+  const [consentBatchSaving, setConsentBatchSaving] = useState<Record<"MARKETING" | "CONTACT_EMAIL", boolean>>({
+    MARKETING: false,
+    CONTACT_EMAIL: false,
+  });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const feedbackTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (!profile?.email) return;
@@ -143,7 +159,7 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     if (!profile?.visibility) return;
-    setVisibility(profile.visibility as Visibility);
+    setVisibility(profile.visibility === "PRIVATE" ? "FOLLOWERS" : (profile.visibility as Visibility));
   }, [profile?.visibility]);
 
   useEffect(() => {
@@ -161,9 +177,25 @@ export default function SettingsScreen() {
     setConsents(consentsQuery.data);
   }, [consentsQuery.data]);
 
+  useEffect(() => {
+    return () => {
+      feedbackTimers.current.forEach((timer) => clearTimeout(timer));
+      feedbackTimers.current = [];
+    };
+  }, []);
+
+  const showTransientMessage = useCallback((setter: (value: string | null) => void, message: string) => {
+    setter(message);
+    const timer = setTimeout(() => setter(null), 2400);
+    feedbackTimers.current.push(timer);
+  }, []);
+
   const refreshPushStatus = useCallback(() => {
     getPushPermissionStatus()
-      .then((result) => setPushStatus(result.status))
+      .then((result) => {
+        setPushStatus(result.status);
+        setPushReason(result.reason);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -187,6 +219,7 @@ export default function SettingsScreen() {
     try {
       const result = await requestPushPermission();
       setPushStatus(result.status);
+      setPushReason(result.reason);
       if (result.granted && accessToken) {
         const token = await registerForPushToken();
         if (token) {
@@ -208,8 +241,10 @@ export default function SettingsScreen() {
   }, [email, profile?.email]);
 
   const visibilityDirty = useMemo(() => {
-    const baseline = (profile?.visibility ?? "PUBLIC") as Visibility;
-    return visibility !== baseline;
+    const baselineRaw = (profile?.visibility ?? "PUBLIC") as Visibility;
+    const baseline = baselineRaw === "PRIVATE" ? "FOLLOWERS" : baselineRaw;
+    const selected = visibility === "PRIVATE" ? "FOLLOWERS" : visibility;
+    return selected !== baseline;
   }, [visibility, profile?.visibility]);
 
   const interestsDirty = useMemo(() => {
@@ -235,6 +270,39 @@ export default function SettingsScreen() {
       notificationPrefs.allowSystemAnnouncements !== baseline.allowSystemAnnouncements
     );
   }, [notificationPrefs, prefsQuery.data]);
+
+  const pushUnavailableDetail = useMemo(() => {
+    if (pushStatus !== "unavailable") return null;
+    if (pushReason === "simulator") return t("settings:notifications.pushUnavailableSimulator");
+    if (pushReason === "expo_go") return t("settings:notifications.pushUnavailableExpoGo");
+    if (pushReason === "not_ios") return t("settings:notifications.pushUnavailablePlatform");
+    return t("settings:notifications.pushUnavailableUnknown");
+  }, [pushReason, pushStatus, t]);
+
+  const consentItems = useMemo(() => {
+    return consents
+      .filter((item) => item.isFollowed || item.consents.MARKETING || item.consents.CONTACT_EMAIL)
+      .sort((a, b) => {
+        const af = a.isFollowed ? 1 : 0;
+        const bf = b.isFollowed ? 1 : 0;
+        if (af !== bf) return bf - af;
+        const an =
+          a.organization.publicName || a.organization.businessName || a.organization.username || "";
+        const bn =
+          b.organization.publicName || b.organization.businessName || b.organization.username || "";
+        return an.localeCompare(bn, "pt-PT");
+      });
+  }, [consents]);
+
+  const generalMarketingValue = useMemo(() => {
+    if (consentItems.length === 0) return false;
+    return consentItems.every((item) => item.consents.MARKETING);
+  }, [consentItems]);
+
+  const generalEmailValue = useMemo(() => {
+    if (consentItems.length === 0) return false;
+    return consentItems.every((item) => item.consents.CONTACT_EMAIL);
+  }, [consentItems]);
 
   const handleEmailSave = async () => {
     const normalized = email.trim().toLowerCase();
@@ -281,11 +349,13 @@ export default function SettingsScreen() {
   const handleSaveVisibility = async () => {
     if (!visibilityDirty) return;
     setSavingVisibility(true);
+    setPrivacyMessage(null);
     try {
       await updateSettings({ visibility }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
+      showTransientMessage(setPrivacyMessage, t("settings:messages.privacySaved"));
     } catch {
-      Alert.alert(t("common:labels.error"), t("settings:messages.privacySaveFailed"));
+      setPrivacyMessage(t("settings:messages.privacySaveFailed"));
     } finally {
       setSavingVisibility(false);
     }
@@ -294,11 +364,13 @@ export default function SettingsScreen() {
   const handleSaveInterests = async () => {
     if (!interestsDirty) return;
     setSavingInterests(true);
+    setInterestsMessage(null);
     try {
       await updateSettings({ favouriteCategories: interests }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
+      showTransientMessage(setInterestsMessage, t("settings:messages.interestsSaved"));
     } catch {
-      Alert.alert(t("common:labels.error"), t("settings:messages.interestsSaveFailed"));
+      setInterestsMessage(t("settings:messages.interestsSaveFailed"));
     } finally {
       setSavingInterests(false);
     }
@@ -307,6 +379,7 @@ export default function SettingsScreen() {
   const handleSaveNotifications = async () => {
     if (!notificationsDirty) return;
     setSavingNotifications(true);
+    setNotificationsMessage(null);
     try {
       await updateSettings({ ...notificationPrefs }, accessToken);
       await api.requestWithAccessToken("/api/notifications/prefs", accessToken, {
@@ -315,8 +388,9 @@ export default function SettingsScreen() {
         body: JSON.stringify(notificationPrefs),
       });
       prefsQuery.refetch();
+      showTransientMessage(setNotificationsMessage, t("settings:messages.notificationsSaved"));
     } catch {
-      Alert.alert(t("common:labels.error"), t("settings:messages.notificationsSaveFailed"));
+      setNotificationsMessage(t("settings:messages.notificationsSaveFailed"));
     } finally {
       setSavingNotifications(false);
     }
@@ -332,12 +406,13 @@ export default function SettingsScreen() {
 
   const handleConsentToggle = async (
     organizationId: number,
-    type: "MARKETING" | "CONTACT_EMAIL" | "CONTACT_SMS",
+    type: "MARKETING" | "CONTACT_EMAIL",
     granted: boolean,
   ) => {
     const key = `${organizationId}:${type}`;
     setConsentSaving((prev) => ({ ...prev, [key]: true }));
     setConsentError(null);
+    setConsentSavedMessage(null);
     const previous = consents;
     setConsents((prev) =>
       prev.map((item) =>
@@ -348,11 +423,48 @@ export default function SettingsScreen() {
     );
     try {
       await updateConsent(organizationId, type, granted, accessToken);
+      showTransientMessage(setConsentSavedMessage, t("settings:messages.consentSaved"));
     } catch {
       setConsents(previous);
       setConsentError(t("settings:messages.consentSaveFailed"));
     } finally {
       setConsentSaving((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleGlobalConsentToggle = async (
+    type: "MARKETING" | "CONTACT_EMAIL",
+    granted: boolean,
+  ) => {
+    if (consentItems.length === 0) return;
+    setConsentError(null);
+    setConsentSavedMessage(null);
+    setConsentBatchSaving((prev) => ({ ...prev, [type]: true }));
+    const previous = consents;
+    const targetOrgIds = new Set(consentItems.map((item) => item.organization.id));
+    setConsents((prev) =>
+      prev.map((item) =>
+        targetOrgIds.has(item.organization.id)
+          ? { ...item, consents: { ...item.consents, [type]: granted } }
+          : item,
+      ),
+    );
+    try {
+      const results = await Promise.allSettled(
+        Array.from(targetOrgIds).map((organizationId) => updateConsent(organizationId, type, granted, accessToken)),
+      );
+      const failed = results.some((result) => result.status === "rejected");
+      if (failed) {
+        setConsents(previous);
+        setConsentError(t("settings:messages.consentSaveFailed"));
+      } else {
+        showTransientMessage(setConsentSavedMessage, t("settings:messages.consentSaved"));
+      }
+    } catch {
+      setConsents(previous);
+      setConsentError(t("settings:messages.consentSaveFailed"));
+    } finally {
+      setConsentBatchSaving((prev) => ({ ...prev, [type]: false }));
     }
   };
 
@@ -440,10 +552,10 @@ export default function SettingsScreen() {
           <View style={styles.optionRow}>
             {([
               { key: "PUBLIC", label: t("settings:privacy.public") },
-              { key: "FOLLOWERS", label: t("settings:privacy.followers") },
-              { key: "PRIVATE", label: t("settings:privacy.private") },
+              { key: "FOLLOWERS", label: t("settings:privacy.privateFollowers") },
             ] as { key: Visibility; label: string }[]).map((option) => {
-              const active = visibility === option.key;
+              const normalizedVisibility = visibility === "PRIVATE" ? "FOLLOWERS" : visibility;
+              const active = normalizedVisibility === option.key;
               return (
                 <Pressable
                   key={option.key}
@@ -472,6 +584,7 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
+          {privacyMessage ? <Text style={styles.statusText}>{privacyMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -512,6 +625,7 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
+          {interestsMessage ? <Text style={styles.statusText}>{interestsMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -595,10 +709,15 @@ export default function SettingsScreen() {
                 <Text style={styles.pushBadgeText}>{t("settings:notifications.pushActive")}</Text>
               </View>
             ) : pushStatus === "unavailable" ? (
-              <View style={styles.pushBadgeMuted}>
-                <Text style={styles.pushBadgeTextMuted}>
-                  {t("settings:notifications.pushUnavailable")}
-                </Text>
+              <View style={styles.pushUnavailableBlock}>
+                <View style={styles.pushBadgeMuted}>
+                  <Text style={styles.pushBadgeTextMuted}>
+                    {t("settings:notifications.pushUnavailable")}
+                  </Text>
+                </View>
+                {pushUnavailableDetail ? (
+                  <Text style={styles.pushUnavailableText}>{pushUnavailableDetail}</Text>
+                ) : null}
               </View>
             ) : (
               <SettingsButton
@@ -622,6 +741,7 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
+          {notificationsMessage ? <Text style={styles.statusText}>{notificationsMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -653,16 +773,49 @@ export default function SettingsScreen() {
           subtitle={t("settings:consents.subtitle")}
         >
           {consentError ? <Text style={styles.errorText}>{consentError}</Text> : null}
+          {consentSavedMessage ? <Text style={styles.statusText}>{consentSavedMessage}</Text> : null}
           {consentsQuery.isLoading ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator color="rgba(255,255,255,0.7)" />
               <Text style={styles.helperText}>{t("settings:consents.loading")}</Text>
             </View>
-          ) : consents.length === 0 ? (
+          ) : consentItems.length === 0 ? (
             <Text style={styles.helperText}>{t("settings:consents.empty")}</Text>
           ) : (
             <View style={styles.stack}>
-              {consents.map((item) => {
+              <View style={styles.stack}>
+                <Text style={styles.groupLabel}>{t("settings:consents.generalTitle")}</Text>
+                <SettingsToggle
+                  label={t("settings:consents.generalUpdates")}
+                  value={generalMarketingValue}
+                  onValueChange={(next) => handleGlobalConsentToggle("MARKETING", next)}
+                  disabled={consentBatchSaving.MARKETING}
+                />
+                <SettingsToggle
+                  label={t("settings:consents.generalEmail")}
+                  value={generalEmailValue}
+                  onValueChange={(next) => handleGlobalConsentToggle("CONTACT_EMAIL", next)}
+                  disabled={consentBatchSaving.CONTACT_EMAIL}
+                />
+              </View>
+              <Pressable
+                onPress={() => setConsentsExpanded((prev) => !prev)}
+                style={({ pressed }) => [styles.dropdownToggle, pressed ? { opacity: 0.86 } : null]}
+                accessibilityRole="button"
+                accessibilityLabel={t("settings:consents.orgToggle")}
+                accessibilityState={{ expanded: consentsExpanded }}
+              >
+                <Text style={styles.dropdownToggleLabel}>
+                  {t("settings:consents.orgToggleCount", { count: consentItems.length })}
+                </Text>
+                <Ionicons
+                  name={consentsExpanded ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="rgba(255,255,255,0.82)"
+                />
+              </Pressable>
+              {consentsExpanded
+                ? consentItems.map((item) => {
                 const orgName =
                   item.organization.publicName ||
                   item.organization.businessName ||
@@ -670,7 +823,7 @@ export default function SettingsScreen() {
                   t("settings:consents.orgFallback");
                 const orgUsername = item.organization.username ?? null;
                 return (
-                  <View key={item.organization.id} style={styles.consentCard}>
+                  <View key={item.organization.id} style={styles.orgBlock}>
                     <Pressable
                       onPress={() => {
                         if (orgUsername) {
@@ -683,24 +836,22 @@ export default function SettingsScreen() {
                       accessibilityLabel={t("settings:consents.openOrg", { name: orgName })}
                       accessibilityState={{ disabled: !orgUsername }}
                     >
-                      {item.organization.brandingAvatarUrl ? (
-                        <Image source={{ uri: item.organization.brandingAvatarUrl }} style={styles.orgAvatar} />
-                      ) : (
-                        <View style={styles.orgAvatarFallback}>
-                          <Ionicons name="business" size={16} color="rgba(255,255,255,0.9)" />
-                        </View>
-                      )}
+                      <AvatarCircle
+                        size={32}
+                        uri={item.organization.brandingAvatarUrl ?? null}
+                        iconName="business"
+                        borderColor="rgba(255,255,255,0.18)"
+                        borderWidth={1}
+                      />
                       <Text style={styles.orgName}>{orgName}</Text>
                     </Pressable>
                     <View style={styles.stack}>
-                      {(["MARKETING", "CONTACT_EMAIL", "CONTACT_SMS"] as const).map((type) => {
+                      {(["MARKETING", "CONTACT_EMAIL"] as const).map((type) => {
                         const savingKey = `${item.organization.id}:${type}`;
                         const label =
                           type === "MARKETING"
                             ? t("settings:consents.marketing")
-                            : type === "CONTACT_EMAIL"
-                              ? t("settings:consents.contactEmail")
-                              : t("settings:consents.contactSms");
+                            : t("settings:consents.contactEmail");
                         return (
                           <SettingsToggle
                             key={type}
@@ -716,7 +867,8 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                 );
-              })}
+              })
+                : null}
             </View>
           )}
         </SettingsSection>
@@ -725,18 +877,18 @@ export default function SettingsScreen() {
           title={t("settings:sections.session.title")}
           subtitle={t("settings:sections.session.subtitle")}
         >
-          <View style={styles.rowButtons}>
+          <View style={styles.stack}>
             <SettingsButton
               label={t("settings:session.signOut")}
               onPress={handleLogout}
-              variant="secondary"
-              style={{ flex: 1 }}
+              variant="primary"
+              style={{ alignSelf: "stretch" }}
             />
             <SettingsButton
               label={t("settings:session.delete")}
               onPress={() => setDeleteModalOpen(true)}
               variant="danger"
-              style={{ flex: 1 }}
+              style={{ alignSelf: "stretch" }}
             />
           </View>
         </SettingsSection>
@@ -796,7 +948,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 20,
-    gap: tokens.spacing.lg,
+    gap: tokens.spacing.xl,
   },
   backButton: {
     flexDirection: "row",
@@ -813,28 +965,33 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   fieldLabel: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255,255,255,0.76)",
     fontSize: 12,
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
   input: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: tokens.radius.lg,
-    paddingHorizontal: tokens.spacing.md,
-    paddingVertical: 12,
-    color: "rgba(255,255,255,0.95)",
-    fontSize: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.3)",
+    paddingHorizontal: 0,
+    paddingVertical: 10,
+    color: "rgba(255,255,255,0.98)",
+    fontSize: 18,
+    fontWeight: "500",
   },
   helperText: {
-    color: "rgba(255,255,255,0.75)",
-    fontSize: 12,
+    color: "rgba(255,255,255,0.86)",
+    fontSize: 13,
+    lineHeight: 18,
   },
   errorText: {
     color: "rgba(255,150,160,0.9)",
     fontSize: 12,
+  },
+  statusText: {
+    color: "rgba(157, 255, 206, 0.95)",
+    fontSize: 12,
+    lineHeight: 17,
   },
   rowButtons: {
     flexDirection: "row",
@@ -848,16 +1005,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: tokens.radius.lg,
-    paddingHorizontal: tokens.spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 0,
     paddingVertical: 12,
   },
   radioOptionActive: {
-    borderColor: "rgba(107,255,255,0.5)",
-    backgroundColor: "rgba(107,255,255,0.08)",
+    borderBottomColor: "rgba(123,232,255,0.8)",
   },
   radioDot: {
     width: 10,
@@ -871,11 +1025,11 @@ const styles = StyleSheet.create({
     borderColor: "rgba(107,255,255,0.9)",
   },
   radioLabel: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 16,
   },
   radioLabelActive: {
-    color: "#E8F6FF",
+    color: "#F2FBFF",
     fontWeight: "600",
   },
   interestGrid: {
@@ -913,13 +1067,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  consentCard: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: tokens.radius.lg,
-    padding: tokens.spacing.md,
-    backgroundColor: "rgba(255,255,255,0.04)",
+  groupLabel: {
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
+  },
+  dropdownToggle: {
+    marginTop: tokens.spacing.xs,
+    minHeight: tokens.layout.touchTarget,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.22)",
+    paddingVertical: 12,
+  },
+  dropdownToggleLabel: {
+    color: "rgba(255,255,255,0.96)",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  orgBlock: {
     gap: tokens.spacing.sm,
+    paddingTop: tokens.spacing.sm,
   },
   consentHeader: {
     flexDirection: "row",
@@ -935,7 +1106,7 @@ const styles = StyleSheet.create({
     marginBottom: tokens.spacing.sm,
   },
   pushTitle: {
-    color: "rgba(255,255,255,0.92)",
+    color: "rgba(255,255,255,0.96)",
     fontSize: 13,
     fontWeight: "700",
   },
@@ -965,38 +1136,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  orgAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  pushUnavailableBlock: {
+    alignItems: "flex-end",
+    gap: 6,
+    maxWidth: 220,
   },
-  orgAvatarFallback: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
+  pushUnavailableText: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 11,
+    textAlign: "right",
+    lineHeight: 15,
   },
   orgName: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 14,
+    color: "rgba(255,255,255,0.98)",
+    fontSize: 15,
     fontWeight: "600",
   },
   linkRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: tokens.radius.lg,
-    paddingHorizontal: tokens.spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 0,
     paddingVertical: 12,
   },
   linkLabel: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 14,
+    color: "rgba(255,255,255,0.96)",
+    fontSize: 16,
     fontWeight: "600",
   },
   versionRow: {

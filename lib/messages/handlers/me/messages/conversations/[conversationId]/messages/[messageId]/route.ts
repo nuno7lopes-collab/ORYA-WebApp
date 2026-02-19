@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
-import { isChatRedisUnavailableError, publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ChatConversationContextType } from "@prisma/client";
 
@@ -136,15 +136,20 @@ async function _DELETE(req: NextRequest, context: { params: { conversationId: st
         : null;
     }
 
-    await publishChatEvent(eventPayload);
+    const warnings: string[] = [];
+    const published = await publishChatEvent(eventPayload);
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true, deletedAt: deletedAt.toISOString() });
+    return jsonWrap({
+      ok: true,
+      deletedAt: deletedAt.toISOString(),
+      ...(warnings.length ? { warnings } : {}),
+    });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ error: "UNAUTHENTICATED" }, { status: 401 });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ error: err.code }, { status: 503 });
     }
     console.error("[api/me/messages/conversations/messages/delete] error", err);
     return jsonWrap({ error: "Erro ao remover mensagem." }, { status: 500 });

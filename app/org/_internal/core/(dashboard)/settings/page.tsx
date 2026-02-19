@@ -1049,14 +1049,12 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
             coverHeightClassName="aspect-[3/1] h-auto"
             contentWidthClassName="mx-auto w-full max-w-[640px]"
             avatarSlot={
-              <div className="rounded-full bg-gradient-to-br from-white/65 via-[#6BFFFF]/45 to-[#FF7AD1]/45 p-[2px] shadow-[0_22px_70px_rgba(0,0,0,0.55)]">
-                <Avatar
-                  src={publicPreviewAvatar}
-                  name={publicPreviewName}
-                  className="h-28 w-28 rounded-full border-2 border-white/35 bg-white/10"
-                  textClassName="text-[10px] tracking-[0.14em]"
-                />
-              </div>
+              <Avatar
+                src={publicPreviewAvatar}
+                name={publicPreviewName}
+                className="h-28 w-28"
+                textClassName="text-[10px] tracking-[0.14em]"
+              />
             }
             titleSlot={<h3 className="truncate text-[20px] font-semibold tracking-tight text-white">{publicPreviewName}</h3>}
             metaSlot={
@@ -1132,7 +1130,7 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
                 <Avatar
                   src={publicPreviewAvatar}
                   name={publicPreviewName}
-                  className="h-20 w-20 rounded-full border-2 border-white/35 bg-white/10 shadow-[0_18px_46px_rgba(0,0,0,0.45)]"
+                  className="h-20 w-20"
                   textClassName="text-[10px] tracking-[0.14em]"
                 />
                 {canEditPublicBranding && (

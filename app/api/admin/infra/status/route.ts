@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { requireAdminUser } from "@/lib/admin/auth";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -15,6 +17,127 @@ function fail(ctx: ReturnType<typeof getRequestContext>, status: number, errorCo
   return respondError(ctx, { errorCode, message, retryable: status >= 500 }, { status });
 }
 
+const execFileAsync = promisify(execFile);
+
+type RedisStatus = {
+  configured: boolean;
+  cacheName: string | null;
+  status: string | null;
+  endpoint: string | null;
+  source: "secretsmanager" | "secret-missing" | "error";
+};
+
+function parseRedisCacheName(redisUrl: string | null) {
+  if (!redisUrl) return null;
+  try {
+    const url = new URL(redisUrl);
+    const host = url.hostname;
+    if (!host) return null;
+    return host.split(".")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function runAwsCli(args: string[]) {
+  const region = process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "eu-west-1";
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    AWS_REGION: region,
+    AWS_DEFAULT_REGION: region,
+  };
+  const { stdout } = await execFileAsync("aws", args, {
+    env,
+    timeout: 20_000,
+    maxBuffer: 1024 * 1024,
+  });
+  return stdout.trim();
+}
+
+async function resolveRedisStatus(secretId: string): Promise<RedisStatus> {
+  try {
+    const secretRaw = await runAwsCli([
+      "secretsmanager",
+      "get-secret-value",
+      "--secret-id",
+      secretId,
+      "--query",
+      "SecretString",
+      "--output",
+      "text",
+    ]);
+    if (!secretRaw) {
+      return {
+        configured: false,
+        cacheName: null,
+        status: null,
+        endpoint: null,
+        source: "secret-missing",
+      };
+    }
+
+    const secret = JSON.parse(secretRaw) as { REDIS_URL?: string };
+    const redisUrl = secret.REDIS_URL?.trim() || "";
+    if (!redisUrl) {
+      return {
+        configured: false,
+        cacheName: null,
+        status: null,
+        endpoint: null,
+        source: "secretsmanager",
+      };
+    }
+
+    const cacheName = parseRedisCacheName(redisUrl);
+    if (!cacheName) {
+      return {
+        configured: true,
+        cacheName: null,
+        status: null,
+        endpoint: null,
+        source: "secretsmanager",
+      };
+    }
+
+    try {
+      const cacheRaw = await runAwsCli([
+        "elasticache",
+        "describe-serverless-caches",
+        "--serverless-cache-name",
+        cacheName,
+        "--query",
+        "ServerlessCaches[0].{status:Status,endpoint:Endpoint.Address}",
+        "--output",
+        "json",
+      ]);
+      const cache = cacheRaw ? (JSON.parse(cacheRaw) as { status?: string; endpoint?: string } | null) : null;
+      return {
+        configured: true,
+        cacheName,
+        status: cache?.status ?? null,
+        endpoint: cache?.endpoint ?? null,
+        source: "secretsmanager",
+      };
+    } catch {
+      return {
+        configured: true,
+        cacheName,
+        status: "not-found",
+        endpoint: null,
+        source: "secretsmanager",
+      };
+    }
+  } catch {
+    return {
+      configured: false,
+      cacheName: null,
+      status: null,
+      endpoint: null,
+      source: "error",
+    };
+  }
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   try {
@@ -22,6 +145,7 @@ async function _GET(req: NextRequest) {
     if (!admin.ok) return fail(ctx, admin.status, admin.error);
 
     const stackName = process.env.ORYA_CF_STACK ?? "orya-prod";
+    const redisSecretId = process.env.REDIS_SECRET_ID ?? "orya/prod/app";
     const cfClient = new CloudFormationClient(getAwsConfig());
     const ecsClient = new ECSClient(getAwsConfig());
 
@@ -61,12 +185,15 @@ async function _GET(req: NextRequest) {
       }));
     }
 
+    const redis = await resolveRedisStatus(redisSecretId);
+
     return respondOk(ctx, {
       stackName,
       status: stack.StackStatus,
       updatedAt: stack.LastUpdatedTime ?? stack.CreationTime,
       outputs,
       services,
+      redis,
     });
   } catch (err) {
     logError("admin.infra.status_failed", err);

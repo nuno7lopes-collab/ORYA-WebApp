@@ -1,6 +1,5 @@
 import { PropsWithChildren } from "react";
-import { StyleProp, ViewStyle } from "react-native";
-import { GlassCard } from "../liquid/GlassCard";
+import { StyleProp, View, ViewStyle } from "react-native";
 import { SectionHeader } from "../liquid/SectionHeader";
 import { tokens } from "@orya/shared";
 
@@ -12,13 +11,9 @@ type SettingsSectionProps = PropsWithChildren<{
 
 export function SettingsSection({ title, subtitle, children, style }: SettingsSectionProps) {
   return (
-    <GlassCard
-      padding={tokens.spacing.lg}
-      style={style as ViewStyle}
-      contentStyle={{ gap: tokens.spacing.md }}
-    >
+    <View style={[{ gap: tokens.spacing.md }, style as ViewStyle]}>
       <SectionHeader title={title} subtitle={subtitle} />
       {children}
-    </GlassCard>
+    </View>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
@@ -15,8 +15,6 @@ type AgreementItem = {
   id: number;
   ownerOrganizationId: number;
   partnerOrganizationId: number;
-  ownerClubId: number;
-  partnerClubId: number | null;
   status: "PENDING" | "APPROVED" | "PAUSED" | "REVOKED" | "EXPIRED";
   startsAt: string | null;
   endsAt: string | null;
@@ -40,19 +38,6 @@ type AgreementsResponse = {
   error?: string;
 };
 
-type ClubItem = {
-  id: number;
-  name: string;
-  kind?: "OWN" | "PARTNER" | null;
-  isActive?: boolean;
-};
-
-type ClubsResponse = {
-  ok: boolean;
-  items?: ClubItem[];
-  error?: string;
-};
-
 type TournamentRequestItem = {
   id: number;
   status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
@@ -61,8 +46,6 @@ type TournamentRequestItem = {
   endsAt: string;
   ownerOrganizationId: number;
   partnerOrganizationId: number;
-  ownerClubId: number;
-  partnerClubId: number;
   ownerOrganizationName?: string | null;
   partnerOrganizationName?: string | null;
   ownerClubName?: string | null;
@@ -77,6 +60,20 @@ type TournamentRequestItem = {
 type TournamentRequestsResponse = {
   ok: boolean;
   items?: TournamentRequestItem[];
+  error?: string;
+};
+
+type OrganizationSuggestion = {
+  id: number;
+  username: string | null;
+  name: string;
+  clubId: number | null;
+  clubName: string | null;
+};
+
+type OrganizationSearchResponse = {
+  ok: boolean;
+  items?: OrganizationSuggestion[];
   error?: string;
 };
 
@@ -98,35 +95,51 @@ const REQUEST_STATUS_LABEL: Record<TournamentRequestItem["status"], string> = {
   EXPIRED: "Expirado",
 };
 
+function formatOrganizationLabel(item: OrganizationSuggestion) {
+  if (item.username) return `${item.name} · @${item.username}`;
+  return item.name;
+}
+
 export default function PartnershipsPageClient({ organizationId, embedded = false }: Props) {
-  const [ownerClubId, setOwnerClubId] = useState("");
-  const [partnerOrganizationId, setPartnerOrganizationId] = useState("");
+  const [targetQuery, setTargetQuery] = useState("");
+  const [selectedTarget, setSelectedTarget] = useState<OrganizationSuggestion | null>(null);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [requestBusyId, setRequestBusyId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const normalizedTargetQuery = targetQuery.trim();
+
   const baseUrl = useMemo(() => {
     if (!organizationId) return null;
     return `/api/padel/partnerships/agreements?organizationId=${organizationId}`;
-  }, [organizationId]);
-  const clubsUrl = useMemo(() => {
-    if (!organizationId) return null;
-    return `/api/padel/clubs?organizationId=${organizationId}&includeInactive=0`;
   }, [organizationId]);
   const requestsUrl = useMemo(() => {
     if (!organizationId) return null;
     return `/api/padel/partnerships/tournament-requests?organizationId=${organizationId}`;
   }, [organizationId]);
+  const organizationsUrl = useMemo(() => {
+    if (!organizationId) return null;
+    if (selectedTarget) return null;
+    if (normalizedTargetQuery.length < 2) return null;
+    const params = new URLSearchParams({
+      organizationId: String(organizationId),
+      q: normalizedTargetQuery,
+      limit: "8",
+    });
+    return `/api/padel/partnerships/organizations?${params.toString()}`;
+  }, [organizationId, normalizedTargetQuery, selectedTarget]);
 
   const { data, mutate, isLoading } = useSWR<AgreementsResponse>(baseUrl, fetcher, {
     revalidateOnFocus: false,
   });
-  const { data: clubsData } = useSWR<ClubsResponse>(clubsUrl, fetcher, {
-    revalidateOnFocus: false,
-  });
   const { data: tournamentRequestsData, mutate: mutateTournamentRequests } = useSWR<TournamentRequestsResponse>(
     requestsUrl,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const { data: organizationsData, isLoading: organizationsLoading } = useSWR<OrganizationSearchResponse>(
+    organizationsUrl,
     fetcher,
     { revalidateOnFocus: false },
   );
@@ -142,43 +155,15 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
 
   const items = Array.isArray(data?.items) ? data.items : [];
   const tournamentRequests = Array.isArray(tournamentRequestsData?.items) ? tournamentRequestsData.items : [];
-  const ownerClubs = useMemo(() => {
-    const list = Array.isArray(clubsData?.items) ? clubsData.items : [];
-    return list.filter((club) => club.isActive !== false && (club.kind ?? "OWN") === "OWN");
-  }, [clubsData?.items]);
-
-  useEffect(() => {
-    if (ownerClubId || ownerClubs.length === 0) return;
-    setOwnerClubId(String(ownerClubs[0]!.id));
-  }, [ownerClubId, ownerClubs]);
-
-  const knownPartnerOrganizations = useMemo(() => {
-    if (!organizationId) return [];
-    const map = new Map<number, string>();
-    for (const item of items) {
-      const isOwnerSide = item.ownerOrganizationId === organizationId;
-      const orgId = isOwnerSide ? item.partnerOrganizationId : item.ownerOrganizationId;
-      const orgName = isOwnerSide ? item.partnerOrganizationName : item.ownerOrganizationName;
-      if (!orgId || orgId === organizationId || map.has(orgId)) continue;
-      map.set(orgId, orgName || `Organização #${orgId}`);
-    }
-    return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-PT"));
-  }, [items, organizationId]);
+  const organizationSuggestions = Array.isArray(organizationsData?.items) ? organizationsData.items : [];
 
   const createAgreement = async () => {
     if (!organizationId) return;
-    const ownerClub = Number(ownerClubId);
-    if (!Number.isFinite(ownerClub) || ownerClub <= 0) {
-      setFeedback("Seleciona um clube dono.");
+    if (!selectedTarget) {
+      setFeedback("Seleciona a organização de destino.");
       return;
     }
-    const partnerOrganization = partnerOrganizationId ? Number(partnerOrganizationId) : null;
-    if (partnerOrganizationId && (!Number.isFinite(partnerOrganization) || partnerOrganization <= 0)) {
-      setFeedback("Seleciona uma organização parceira válida.");
-      return;
-    }
+
     setBusy(true);
     setFeedback(null);
     try {
@@ -187,8 +172,7 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organizationId,
-          ownerClubId: ownerClub,
-          partnerOrganizationId: partnerOrganization || undefined,
+          partnerOrganizationId: selectedTarget.id,
           notes: notes || undefined,
         }),
       });
@@ -197,9 +181,10 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
         setFeedback(sanitizeUiErrorMessage(json?.error, "Não foi possível criar o pedido."));
         return;
       }
-      setPartnerOrganizationId("");
+      setTargetQuery("");
+      setSelectedTarget(null);
       setNotes("");
-      setFeedback("Pedido de parceria criado.");
+      setFeedback("Pedido de parceria enviado.");
       await mutate();
     } finally {
       setBusy(false);
@@ -229,51 +214,61 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
   };
 
   const wrapperClass = embedded ? "space-y-4 text-white" : "mx-auto w-full max-w-6xl space-y-5 px-4 py-6 text-white";
-  const sectionClass = embedded
-    ? "rounded-2xl border border-white/12 bg-white/[0.03] p-4"
-    : "rounded-2xl border border-white/12 bg-white/[0.03] p-4";
+  const sectionClass =
+    "rounded-2xl border border-white/12 bg-[linear-gradient(145deg,rgba(107,255,255,0.08),rgba(10,16,28,0.78))] p-4";
 
   return (
     <div className={wrapperClass}>
       {!embedded && (
         <header className={sectionClass}>
           <h1 className="text-xl font-semibold">Parcerias de Padel</h1>
-          <p className="text-sm text-white/70">Pedido, aprovação e entrada no workspace operacional partilhado.</p>
+          <p className="text-sm text-white/70">Pedidos entre organizações e gestão operacional partilhada.</p>
         </header>
       )}
 
       <section className={sectionClass}>
         <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-white/75">Novo pedido</h2>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Clube dono</span>
-            <select
-              value={ownerClubId}
-              onChange={(event) => setOwnerClubId(event.target.value)}
+          <label className="relative space-y-1 md:col-span-2">
+            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Organização destino</span>
+            <input
+              value={targetQuery}
+              onChange={(event) => {
+                setTargetQuery(event.target.value);
+                setSelectedTarget(null);
+              }}
+              placeholder="Pesquisar por username ou nome"
               className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
-            >
-              <option value="">Seleciona o clube</option>
-              {ownerClubs.map((club) => (
-                <option key={`owner-club-${club.id}`} value={club.id}>
-                  {club.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Organização parceira</span>
-            <select
-              value={partnerOrganizationId}
-              onChange={(event) => setPartnerOrganizationId(event.target.value)}
-              className="w-full rounded-xl border border-white/15 bg-black/35 px-3 py-2 text-sm outline-none focus:border-white/40"
-            >
-              <option value="">Usar organização atual (automático)</option>
-              {knownPartnerOrganizations.map((org) => (
-                <option key={`partner-org-${org.id}`} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </select>
+            />
+            {!selectedTarget && normalizedTargetQuery.length >= 2 && (
+              <div className="absolute left-0 right-0 top-[72px] z-20 rounded-xl border border-white/15 bg-[#050b16]/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)]">
+                {organizationsLoading ? (
+                  <p className="px-2 py-1 text-xs text-white/65">A pesquisar organizações...</p>
+                ) : organizationSuggestions.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-white/65">Sem organizações elegíveis com clube ativo.</p>
+                ) : (
+                  <div className="max-h-52 space-y-1 overflow-auto">
+                    {organizationSuggestions.map((item) => (
+                      <button
+                        key={`target-org-${item.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTarget(item);
+                          setTargetQuery(formatOrganizationLabel(item));
+                        }}
+                        className="w-full rounded-lg border border-transparent px-2 py-2 text-left text-xs text-white/80 transition hover:border-white/20 hover:bg-white/10"
+                      >
+                        <p className="truncate text-sm text-white">{formatOrganizationLabel(item)}</p>
+                        <p className="truncate text-[11px] text-white/60">Organização elegível para parceria.</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {selectedTarget ? (
+              <p className="text-[11px] text-emerald-100">Destino selecionado: {formatOrganizationLabel(selectedTarget)}</p>
+            ) : null}
           </label>
           <label className="space-y-1">
             <span className="text-[11px] uppercase tracking-[0.14em] text-white/55">Notas</span>
@@ -292,7 +287,7 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
             onClick={createAgreement}
             className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 disabled:opacity-60"
           >
-            {busy ? "A criar..." : "Criar pedido"}
+            {busy ? "A enviar..." : "Criar pedido"}
           </button>
           {feedback && <p className="text-sm text-white/75">{feedback}</p>}
         </div>
@@ -309,18 +304,14 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
             {items.map((item) => (
               <article key={`agreement-${item.id}`} className="rounded-xl border border-white/10 bg-black/30 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-semibold text-white">Acordo #{item.id}</p>
+                  <p className="font-semibold text-white">Acordo de parceria</p>
                   <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">
                     {STATUS_LABEL[item.status]}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-white/70">
-                  Dono: {item.ownerOrganizationName || `Org #${item.ownerOrganizationId}`} · Clube{" "}
-                  {item.ownerClubName || `#${item.ownerClubId}`}
-                </p>
-                <p className="mt-1 text-xs text-white/70">
-                  Parceiro: {item.partnerOrganizationName || `Org #${item.partnerOrganizationId}`}
-                  {item.partnerClubId ? ` · Clube ${item.partnerClubName || `#${item.partnerClubId}`}` : ""}
+                  {item.ownerOrganizationName || "Organização origem"} →{" "}
+                  {item.partnerOrganizationName || "Organização destino"}
                 </p>
                 <p className="mt-1 text-xs text-white/65">
                   {item.activeWindowsCount != null ? `Janelas ativas ${item.activeWindowsCount}` : "Janelas ativas 0"}
@@ -358,12 +349,8 @@ export default function PartnershipsPageClient({ organizationId, embedded = fals
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-white/70">
-                    {requestItem.ownerOrganizationName || `Org #${requestItem.ownerOrganizationId}`} ·{" "}
-                    {requestItem.ownerClubName || `Clube #${requestItem.ownerClubId}`}
-                  </p>
-                  <p className="mt-1 text-xs text-white/70">
-                    {requestItem.partnerOrganizationName || `Org #${requestItem.partnerOrganizationId}`} ·{" "}
-                    {requestItem.partnerClubName || `Clube #${requestItem.partnerClubId}`}
+                    {requestItem.ownerOrganizationName || "Organização origem"} →{" "}
+                    {requestItem.partnerOrganizationName || "Organização destino"}
                   </p>
                   <p className="mt-1 text-xs text-white/65">
                     {new Date(requestItem.startsAt).toLocaleString("pt-PT")} →{" "}

@@ -51,7 +51,6 @@ type PadelClub = {
   courtsCount: number;
   slug?: string | null;
   isActive: boolean;
-  isDefault?: boolean;
   createdAt: string | Date;
 };
 
@@ -209,7 +208,6 @@ type PadelConfigResponse = {
     ruleSetId?: number | null;
     defaultCategoryId?: number | null;
     eligibilityType?: string | null;
-    splitDeadlineHours?: number | null;
     enabledFormats?: string[] | null;
     isInterclub?: boolean | null;
     teamSize?: number | null;
@@ -559,7 +557,6 @@ const DEFAULT_FORM = {
   longitude: null as number | null,
   courtsCount: "1",
   isActive: true,
-  isDefault: false,
   kind: "OWN" as ClubKind,
   sourceClubId: null as number | null,
 };
@@ -1976,9 +1973,9 @@ export default function PadelHubClient({
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [clubs]);
+  const visibleClubs = useMemo(() => sortedClubs.slice(0, 1), [sortedClubs]);
 
   const selectedClub = useMemo(() => clubs.find((c) => c.id === drawerClubId) || null, [clubs, drawerClubId]);
-  const selectedClubIsPartner = selectedClub?.kind === "PARTNER";
 
   const padelEvents = useMemo(() => {
     if (!padelEventsRes?.ok || !Array.isArray(padelEventsRes.items)) return [];
@@ -2830,21 +2827,46 @@ export default function PadelHubClient({
       toast("Apenas leitura. Sem permissões para criar clubes.", "warn");
       return;
     }
-    setClubForm({
-      ...DEFAULT_FORM,
-      kind: "OWN",
-      courtsCount: "1",
-      addressId: "",
-      locationProviderId: "",
-      locationFormattedAddress: "",
-      latitude: null,
-      longitude: null,
-      sourceClubId: null,
-      isActive: true,
-    });
+    const existingClub = sortedClubs[0] ?? null;
+    if (existingClub) {
+      setClubForm({
+        ...DEFAULT_FORM,
+        id: existingClub.id,
+        name: existingClub.name,
+        addressId: existingClub.addressId ?? "",
+        locationProviderId: existingClub.addressRef?.sourceProviderPlaceId ?? "",
+        locationFormattedAddress: existingClub.addressRef?.formattedAddress ?? "",
+        locationSourceProvider: existingClub.addressRef?.sourceProvider ?? null,
+        locationConfidenceScore: existingClub.addressRef?.confidenceScore ?? null,
+        locationValidationStatus: existingClub.addressRef?.validationStatus ?? null,
+        latitude: existingClub.addressRef?.latitude ?? null,
+        longitude: existingClub.addressRef?.longitude ?? null,
+        courtsCount: String(Math.max(1, existingClub.courtsCount || 1)),
+        kind: "OWN",
+        sourceClubId: null,
+        isActive: existingClub.isActive,
+      });
+      setClubLocationQuery(existingClub.addressRef?.formattedAddress ?? "");
+      setClubMessage("A organização já tem um clube. Podes atualizar os dados.");
+    } else {
+      setClubForm({
+        ...DEFAULT_FORM,
+        kind: "OWN",
+        courtsCount: "1",
+        addressId: "",
+        locationProviderId: "",
+        locationFormattedAddress: "",
+        latitude: null,
+        longitude: null,
+        sourceClubId: null,
+        isActive: true,
+      });
+      setClubLocationQuery("");
+    }
     setClubError(null);
-    setClubMessage(null);
-    setClubLocationQuery("");
+    if (!existingClub) {
+      setClubMessage(null);
+    }
     setShowCommandPalette(false);
     setShowOpsDrawer(false);
     setClubModalOpen(true);
@@ -2937,7 +2959,6 @@ export default function PadelHubClient({
           sourceClubId: null,
           courtsCount,
           isActive: true,
-          isDefault: clubForm.isDefault,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -2986,47 +3007,6 @@ export default function PadelHubClient({
     }
   };
 
-  const markDefaultClub = async (club: PadelClub) => {
-    if (isPadelReadOnly) {
-      setClubError("Apenas leitura. Sem permissões para alterar o clube principal.");
-      return;
-    }
-    setClubError(null);
-    setClubMessage(null);
-    if (club.kind === "PARTNER") {
-      setClubError("Clubes parceiros não podem ser definidos como principal.");
-      return;
-    }
-    try {
-      const res = await fetch("/api/padel/clubs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: club.id,
-          organizationId,
-          name: club.name,
-          addressId: club.addressId ?? null,
-          kind: club.kind ?? "OWN",
-          courtsCount: club.courtsCount,
-          isActive: club.isActive,
-          isDefault: true,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) {
-        setClubError(sanitizeUiErrorMessage(json?.error, "Erro ao definir default."));
-      } else {
-        const saved = json.club as PadelClub;
-        setClubs((prev) => prev.map((c) => ({ ...c, isDefault: c.id === saved.id })));
-        setClubMessage("Clube definido como predefinido.");
-        trackEvent("padel_club_marked_default", { clubId: saved.id });
-      }
-    } catch (err) {
-      console.error("[padel/clubs] default", err);
-      setClubError("Erro inesperado ao definir default.");
-    }
-  };
-
   const resetCourtForm = () => {
     setCourtForm(DEFAULT_COURT_FORM);
     setCourtMessage(null);
@@ -3036,10 +3016,6 @@ export default function PadelHubClient({
   const handleEditCourt = (court: PadelClubCourt) => {
     if (isPadelReadOnly) {
       setCourtError("Apenas leitura. Sem permissões para editar campos.");
-      return;
-    }
-    if (selectedClubIsPartner) {
-      setCourtError("Clube parceiro é apenas leitura.");
       return;
     }
     setCourtForm({
@@ -3058,10 +3034,6 @@ export default function PadelHubClient({
       return;
     }
     if (!selectedClub) return;
-    if (selectedClubIsPartner) {
-      setCourtError("Clube parceiro é apenas leitura.");
-      return;
-    }
     const fallbackName = courtForm.name.trim() || `Campo ${courts.length + 1}`;
     const desiredOrder = Number.isFinite(courtForm.displayOrder) ? Math.max(1, Math.floor(courtForm.displayOrder)) : 1;
     const maxOrder = Math.max(1, activeCourtsCount + (courtForm.id ? 0 : courtForm.isActive ? 1 : 0));
@@ -3138,7 +3110,6 @@ export default function PadelHubClient({
           addressId: club.addressId ?? null,
           courtsCount: club.courtsCount,
           isActive: next,
-          isDefault: club.isDefault,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -3193,10 +3164,6 @@ export default function PadelHubClient({
       return;
     }
     if (!selectedClub) return;
-    if (selectedClubIsPartner) {
-      setCourtError("Clube parceiro é apenas leitura.");
-      return;
-    }
     setSavingCourt(true);
     try {
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts`, {
@@ -3226,10 +3193,6 @@ export default function PadelHubClient({
       return;
     }
     if (!selectedClub) return;
-    if (selectedClubIsPartner) {
-      setCourtError("Clube parceiro é apenas leitura.");
-      return;
-    }
     setSavingCourt(true);
     try {
       const res = await fetch(`/api/padel/clubs/${selectedClub.id}/courts?courtId=${court.id}`, {
@@ -3265,11 +3228,7 @@ export default function PadelHubClient({
 
   const handleEditStaff = (member: PadelClubStaff) => {
     if (courtsPanelReadOnly) {
-      setStaffError(
-        selectedClubIsPartner
-          ? "Clube parceiro é apenas leitura."
-          : "Apenas leitura. Sem permissões para editar staff.",
-      );
+      setStaffError("Apenas leitura. Sem permissões para editar staff.");
       return;
     }
     setStaffForm({
@@ -3288,10 +3247,6 @@ export default function PadelHubClient({
       return;
     }
     if (!selectedClub) return;
-    if (selectedClubIsPartner) {
-      setStaffError("Clube parceiro é apenas leitura.");
-      return;
-    }
     const selectedMember = staffMode === "existing" ? staffOptions.find((m) => m.userId === staffForm.staffMemberId) : null;
     if (staffMode === "existing" && !selectedMember) {
       setStaffError("Escolhe um membro do staff global.");
@@ -3402,7 +3357,7 @@ export default function PadelHubClient({
   const isClubsTab = activeTab === "clubs";
   const showCourtsPanel = isClubsTab;
   const showClubStaffPanel = SHOW_CLUB_STAFF_PANEL;
-  const courtsPanelReadOnly = selectedClubIsPartner || isPadelReadOnly;
+  const courtsPanelReadOnly = isPadelReadOnly;
   const calendarBlocksRaw: CalendarBlock[] = calendarData?.blocks ?? [];
   const calendarAvailabilitiesRaw: CalendarAvailability[] = calendarData?.availabilities ?? [];
   const calendarMatchesRaw: CalendarMatch[] = calendarData?.matches ?? [];
@@ -4816,7 +4771,6 @@ export default function PadelHubClient({
           ruleSetId: padelConfig.ruleSetId ?? null,
           defaultCategoryId: padelConfig.defaultCategoryId ?? null,
           eligibilityType: padelConfig.eligibilityType ?? null,
-          splitDeadlineHours: padelConfig.splitDeadlineHours ?? null,
           enabledFormats: padelConfig.enabledFormats ?? null,
           scheduleDefaults: {
             windowStart: startIso ?? null,
@@ -5251,7 +5205,7 @@ export default function PadelHubClient({
       },
       {
         id: "open-partnerships",
-        label: "Parcerias operacionais",
+        label: "Parcerias",
         description: "Acordos, reivindicações e exceções entre clubes.",
         run: () => setPadelSection("partnerships"),
         enabled: toolMode === "CLUB",
@@ -6991,11 +6945,11 @@ export default function PadelHubClient({
                 disabled={isPadelReadOnly}
                 className={CTA_PAD_PRIMARY}
               >
-                Novo clube
+                {visibleClubs.length > 0 ? "Editar clube" : "Novo clube"}
               </button>
             </div>
           </div>
-          {sortedClubs.length === 0 ? (
+          {visibleClubs.length === 0 ? (
             <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
               <p className="text-lg font-semibold">Sem clubes.</p>
               <p className="text-sm text-white/70">Adiciona o clube principal com morada e campos.</p>
@@ -7012,7 +6966,7 @@ export default function PadelHubClient({
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {sortedClubs.map((club) => {
+              {visibleClubs.map((club) => {
                 return (
                   <div
                     key={club.id}
@@ -7051,23 +7005,9 @@ export default function PadelHubClient({
                         >
                           {club.isActive ? "Ativo" : "Inativo"}
                         </span>
-                        {club.kind === "PARTNER" && <span className={badge("amber")}>Parceiro</span>}
-                        {club.isDefault && <span className={badge("slate")}>Principal</span>}
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!isPadelReadOnly && !club.isDefault && club.kind !== "PARTNER" && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            markDefaultClub(club);
-                          }}
-                          className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white/80 hover:border-white/30"
-                        >
-                          Definir default
-                        </button>
-                      )}
                       {!isPadelReadOnly && (
                         <button
                           type="button"
@@ -7109,40 +7049,8 @@ export default function PadelHubClient({
                 <div>
                   <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos do clube</p>
                   <p className="text-sm text-white/70">Atualização operacional dos campos por clube.</p>
-                  {!showClubStaffPanel && (
-                    <p className="text-[12px] text-white/55">
-                      Gestão de equipa centralizada em{" "}
-                      <Link
-                        href={organizationId ? buildOrgHref(organizationId, "/team") : buildOrgHubHref("/organizations")}
-                        className="underline decoration-white/30 underline-offset-2 hover:text-white"
-                      >
-                        Equipa
-                      </Link>
-                      .
-                    </p>
-                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="sr-only" htmlFor="club-switcher">
-                    Trocar clube
-                  </label>
-                  <select
-                    id="club-switcher"
-                    value={drawerClubId ?? ""}
-                    onChange={(e) => {
-                      const nextId = Number(e.target.value);
-                      if (Number.isFinite(nextId)) {
-                        setDrawerClubId(nextId);
-                      }
-                    }}
-                    className="rounded-full border border-white/20 bg-black/50 px-3 py-1 text-[12px] text-white shadow-inner outline-none transition focus:border-white/60 focus:ring-2 focus:ring-cyan-400/40"
-                  >
-                    {sortedClubs.map((club) => (
-                      <option key={club.id} value={club.id}>
-                        {club.name}
-                      </option>
-                    ))}
-                  </select>
                   <span className={badge("slate")}>{selectedClub.name}</span>
                   <button
                     type="button"
@@ -7177,11 +7085,7 @@ export default function PadelHubClient({
                     <span className={badge("slate")}>{courts.filter((c) => c.isActive).length} ativos</span>
                   </div>
                   {courtsPanelReadOnly && (
-                    <p className="text-[11px] text-amber-200">
-                      {selectedClubIsPartner
-                        ? "Clube parceiro é apenas leitura."
-                        : "Sem permissões para editar campos neste modo."}
-                    </p>
+                    <p className="text-[11px] text-amber-200">Sem permissões para editar campos neste modo.</p>
                   )}
                   <div className="grid gap-2 sm:grid-cols-2">
                     <input
@@ -7357,11 +7261,7 @@ export default function PadelHubClient({
                     <span className={badge("slate")}>Herdam: {inheritedStaffCount}</span>
                   </div>
                   {courtsPanelReadOnly && (
-                    <p className="text-[11px] text-amber-200">
-                      {selectedClubIsPartner
-                        ? "Clube parceiro é apenas leitura."
-                        : "Sem permissões para editar staff neste modo."}
-                    </p>
+                    <p className="text-[11px] text-amber-200">Sem permissões para editar staff neste modo.</p>
                   )}
 
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -8647,12 +8547,6 @@ export default function PadelHubClient({
         </div>
       )}
 
-      {organizationKind !== "CLUBE_PADEL" && (
-        <div className="rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 text-[12px] text-white/70 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-          Sem clube próprio? Usa o modo organizador e gere clubes parceiros por torneio.
-        </div>
-      )}
-
       {clubModalOpen &&
         hasMounted &&
         createPortal(
@@ -8669,7 +8563,7 @@ export default function PadelHubClient({
                   <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">
                     {clubForm.id ? "Editar clube" : "Novo clube"}
                   </p>
-                  <h3 className="text-xl font-semibold text-white">{clubForm.id ? "Clube" : "Novo clube principal"}</h3>
+                  <h3 className="text-xl font-semibold text-white">{clubForm.id ? "Clube" : "Novo clube"}</h3>
                   <p className="text-[11px] text-white/60">
                     Indica nome, morada e número de campos.
                   </p>

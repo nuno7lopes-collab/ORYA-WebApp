@@ -340,7 +340,6 @@ type PadelClubSummary = {
   name: string;
   shortName?: string | null;
   isActive?: boolean;
-  isDefault?: boolean;
   kind?: string | null;
 };
 
@@ -538,9 +537,7 @@ export default function ReservasDashboardPage() {
       return;
     }
     if (selectedPadelClubId && padelClubs.some((club) => club.id === selectedPadelClubId)) return;
-    const preferred =
-      padelClubs.find((club) => club.isDefault) ??
-      (padelClubs.length === 1 ? padelClubs[0] : null);
+    const preferred = padelClubs[0] ?? null;
     if (preferred) {
       setSelectedPadelClubId(preferred.id);
     }

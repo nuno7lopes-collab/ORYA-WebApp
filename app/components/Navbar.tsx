@@ -640,17 +640,14 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                   aria-expanded={isProfileMenuOpen}
                   aria-label="Abrir menu de conta"
                 >
-                  <div className="relative h-9 w-9">
-                    <div className="absolute inset-[-3px] rounded-full bg-[conic-gradient(from_180deg,#ff00c8_0deg,#ff5afc_120deg,#6b7bff_240deg,#ff00c8_360deg)] opacity-85 blur-[8px]" />
-                    <Avatar
-                      src={profile?.avatarUrl ?? null}
-                      version={profile?.updatedAt ?? null}
-                      name={userLabel || "Conta ORYA"}
-                      className="relative h-full w-full border border-white/20 shadow-[0_0_22px_rgba(255,0,200,0.32)]"
-                      textClassName="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85"
-                      fallbackText="OR"
-                    />
-                  </div>
+                  <Avatar
+                    src={profile?.avatarUrl ?? null}
+                    version={profile?.updatedAt ?? null}
+                    name={userLabel || "Conta ORYA"}
+                    className="h-9 w-9"
+                    textClassName="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85"
+                    fallbackText="OR"
+                  />
                   <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
                     {userLabel || "Conta ORYA"}
                   </span>

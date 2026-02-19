@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: tokens.spacing.lg,
-    paddingVertical: 12,
+    paddingVertical: 13,
     alignItems: "center",
     justifyContent: "center",
     minHeight: tokens.layout.touchTarget,
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.99 }],
   },
   label: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
 });

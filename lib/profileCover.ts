@@ -1,4 +1,5 @@
 import { optimizeImageUrl } from "@/lib/image";
+import { normalizeProfileCoverUrl } from "@/lib/profileMedia";
 
 const PROFILE_COVER_WIDTH = 1500;
 const PROFILE_COVER_HEIGHT = 500;
@@ -22,9 +23,7 @@ export function isProfileCoverUrl(coverUrl: string | null | undefined) {
 }
 
 export function sanitizeProfileCoverUrl(coverUrl: string | null | undefined) {
-  const trimmed = coverUrl?.trim();
-  if (!trimmed) return null;
-  return isProfileCoverUrl(trimmed) ? trimmed : null;
+  return normalizeProfileCoverUrl(coverUrl);
 }
 
 export function getProfileCoverUrl(

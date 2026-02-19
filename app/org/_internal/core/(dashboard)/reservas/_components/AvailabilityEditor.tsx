@@ -174,7 +174,6 @@ export default function AvailabilityEditor({
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [scheduleFormMode, setScheduleFormMode] = useState<"create" | "edit">("create");
   const [scheduleDraftId, setScheduleDraftId] = useState<number | null>(null);
-  const [cloneFromActive, setCloneFromActive] = useState(true);
   const [overrideDate, setOverrideDate] = useState("");
   const [overrideKind, setOverrideKind] = useState<AvailabilityOverride["kind"]>("CLOSED");
   const [overrideIntervals, setOverrideIntervals] = useState<TimeDraft[]>([]);
@@ -289,7 +288,6 @@ export default function AvailabilityEditor({
     setScheduleStartDate("");
     setScheduleEndDate("");
     setScheduleNoEnd(true);
-    setCloneFromActive(true);
   };
 
   const handleEditSchedule = (schedule: AvailabilitySchedule) => {
@@ -298,7 +296,6 @@ export default function AvailabilityEditor({
     setScheduleStartDate(toDateInput(schedule.startDate));
     setScheduleEndDate(toDateInput(schedule.endDate));
     setScheduleNoEnd(!schedule.endDate);
-    setCloneFromActive(false);
   };
 
   const handleScheduleSubmit = async () => {
@@ -316,16 +313,15 @@ export default function AvailabilityEditor({
       const res = await fetch(resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/disponibilidade"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: "SCHEDULE",
-          scopeType,
-          scopeId,
-          scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : undefined,
-          startDate: scheduleStartDate,
-          endDate: scheduleNoEnd ? null : scheduleEndDate,
-          cloneFromScheduleId: scheduleFormMode === "create" && cloneFromActive ? activeScheduleId : undefined,
-        }),
-      });
+          body: JSON.stringify({
+            mode: "SCHEDULE",
+            scopeType,
+            scopeId,
+            scheduleId: scheduleFormMode === "edit" ? scheduleDraftId : undefined,
+            startDate: scheduleStartDate,
+            endDate: scheduleNoEnd ? null : scheduleEndDate,
+          }),
+        });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "Erro ao guardar disponibilidade.");
@@ -647,11 +643,6 @@ export default function AvailabilityEditor({
             Sem horários próprios. A usar disponibilidade base da organização.
           </p>
         )}
-        {!inheritsOrganization && scopeType === "ORGANIZATION" && schedules.length === 0 && (
-          <p className="mt-2 text-[12px] text-white/60">
-            Default ativo: 2ª a 6ª, 08:00-17:00 (sábado/domingo fechado).
-          </p>
-        )}
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)]">
@@ -756,18 +747,6 @@ export default function AvailabilityEditor({
               />
               Sem fim
             </label>
-            {scheduleFormMode === "create" && (
-              <label className="flex items-center gap-2 text-xs text-white/70">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-white/20 bg-black/30"
-                  checked={cloneFromActive}
-                  onChange={(event) => setCloneFromActive(event.target.checked)}
-                  disabled={!activeScheduleId}
-                />
-                Copiar da disponibilidade ativa
-              </label>
-            )}
           </div>
           <div className="flex items-end">
             <button type="button" className={CTA_PRIMARY} onClick={handleScheduleSubmit} disabled={scheduleSaving}>

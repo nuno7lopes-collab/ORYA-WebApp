@@ -1,6 +1,6 @@
-import { Image } from "expo-image";
 import { PropsWithChildren } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { AvatarCircle } from "../../avatar/AvatarCircle";
 
 type OrganizerMeta = {
   name: string | null;
@@ -17,20 +17,6 @@ type EventHeaderMetaProps = PropsWithChildren<{
   organizer?: OrganizerMeta | null;
 }>;
 
-const resolveInitials = (name: string | null, username: string | null) => {
-  const safeName = name?.trim() ?? "";
-  if (safeName) {
-    const chunks = safeName.split(/\s+/).filter(Boolean);
-    const initials = chunks
-      .slice(0, 2)
-      .map((chunk) => chunk.slice(0, 1).toUpperCase())
-      .join("");
-    if (initials) return initials;
-  }
-  const safeUsername = username?.replace(/^@+/, "").trim() ?? "";
-  return safeUsername ? safeUsername.slice(0, 2).toUpperCase() : "OR";
-};
-
 export function EventHeaderMeta({
   title,
   dateLabel,
@@ -44,7 +30,6 @@ export function EventHeaderMeta({
   const organizerPrimary = organizerName || (organizerUsername ? `@${organizerUsername}` : null);
   const organizerSecondary =
     organizerName && organizerUsername ? `@${organizerUsername}` : null;
-  const avatarInitials = resolveInitials(organizerName, organizerUsername);
 
   return (
     <View style={styles.container}>
@@ -81,16 +66,14 @@ export function EventHeaderMeta({
           </Text>
           <View style={styles.organizerProfileRow}>
             <View style={styles.organizerAvatar}>
-              {organizer?.avatarUri ? (
-                <Image
-                  source={{ uri: organizer.avatarUri }}
-                  style={styles.organizerAvatarImage}
-                  contentFit="cover"
-                  transition={160}
-                />
-              ) : (
-                <Text style={styles.organizerAvatarInitials}>{avatarInitials}</Text>
-              )}
+              <AvatarCircle
+                size={48}
+                uri={organizer?.avatarUri ?? null}
+                iconName="business"
+                borderColor="rgba(220,240,255,0.36)"
+                borderWidth={1}
+                ringColors={["#FF73DF", "#6BFFFF", "#6B7BFF"]}
+              />
             </View>
             <View style={styles.organizerTextWrap}>
               {organizerPrimary ? (
@@ -143,48 +126,26 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   organizerRow: {
-    minHeight: 78,
-    marginTop: 14,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "rgba(255,255,255,0.025)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 12,
+    minHeight: 84,
+    marginTop: 22,
+    paddingRight: 8,
   },
   organizerLabel: {
     color: "rgba(229,241,255,0.72)",
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "600",
-    letterSpacing: 0.36,
+    letterSpacing: 0.2,
+    marginBottom: 16,
   },
   organizerProfileRow: {
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 16,
   },
   organizerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: "rgba(220,240,255,0.36)",
-    backgroundColor: "rgba(140,196,255,0.26)",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  organizerAvatarImage: {
-    width: "100%",
-    height: "100%",
-  },
-  organizerAvatarInitials: {
-    color: "#EFF7FF",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.3,
+    width: 48,
+    height: 48,
   },
   organizerTextWrap: {
     flex: 1,

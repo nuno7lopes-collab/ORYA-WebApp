@@ -10,7 +10,6 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
 import {
   deactivateReservationResourcesForCourts,
   syncReservationResourceForCourt,
@@ -54,20 +53,6 @@ async function _GET(req: NextRequest) {
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
-
-  if (club.kind === "PARTNER" && club.sourceClubId) {
-    const activePartnerCourts = await prisma.padelClubCourt.count({
-      where: { padelClubId: club.id, isActive: true, deletedAt: null },
-    });
-    if (activePartnerCourts === 0) {
-      await syncPartnerClubCourts({
-        partnerOrganizationId: organization.id,
-        partnerClubId: club.id,
-        sourceClubId: club.sourceClubId,
-        fallbackCount: club.courtsCount,
-      });
-    }
-  }
 
   const courts = await prisma.padelClubCourt.findMany({
     where: { padelClubId: club.id, deletedAt: null },

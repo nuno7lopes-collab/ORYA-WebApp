@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { sendEmail } from "@/lib/emailClient";
 import { env } from "@/lib/env";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
-import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -73,17 +73,6 @@ async function _POST(req: NextRequest) {
         requireDistributed: true,
       });
     } catch (err) {
-      if (isRateLimitBackendUnavailableError(err)) {
-        return jsonWrap(
-          {
-            ok: false,
-            errorCode: err.code,
-            message: "Serviço de proteção temporariamente indisponível.",
-            retryable: true,
-          },
-          { status: 503 }
-        );
-      }
       throw err;
     }
     if (!ipLimiter.allowed) {
@@ -108,17 +97,6 @@ async function _POST(req: NextRequest) {
         requireDistributed: true,
       });
     } catch (err) {
-      if (isRateLimitBackendUnavailableError(err)) {
-        return jsonWrap(
-          {
-            ok: false,
-            errorCode: err.code,
-            message: "Serviço de proteção temporariamente indisponível.",
-            retryable: true,
-          },
-          { status: 503 }
-        );
-      }
       throw err;
     }
     if (!limiter.allowed) {

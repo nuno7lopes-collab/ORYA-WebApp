@@ -1,6 +1,7 @@
 import {
   IOS_PULL_DISMISS_THRESHOLD,
   resolveCanOpenTicketSheet,
+  resolveTicketSheetGateState,
   shouldDismissByPullDown,
 } from "../features/events/detailState";
 
@@ -32,8 +33,10 @@ describe("event detail state helpers", () => {
       resolveCanOpenTicketSheet({
         showStickyPurchaseBar: true,
         ticketMetaLength: 3,
+        selectableTicketMetaLength: 3,
         canAccessInvite: true,
         eventIsActive: false,
+        isPublicEvent: true,
       }),
     ).toBe(false);
   });
@@ -43,9 +46,24 @@ describe("event detail state helpers", () => {
       resolveCanOpenTicketSheet({
         showStickyPurchaseBar: true,
         ticketMetaLength: 2,
+        selectableTicketMetaLength: 2,
         canAccessInvite: true,
         eventIsActive: true,
+        isPublicEvent: true,
       }),
     ).toBe(true);
+  });
+
+  it("flags config invalid when event has tickets but none selectable", () => {
+    const state = resolveTicketSheetGateState({
+      showStickyPurchaseBar: true,
+      ticketMetaLength: 2,
+      selectableTicketMetaLength: 0,
+      canAccessInvite: true,
+      eventIsActive: true,
+      isPublicEvent: true,
+    });
+    expect(state.configInvalid).toBe(true);
+    expect(state.canOpenSheet).toBe(false);
   });
 });

@@ -6,11 +6,11 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -69,11 +69,6 @@ async function _GET(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
-    }
-
     await ensureDefaultPolicies(prisma, organization.id);
 
     const items = await prisma.organizationPolicy.findMany({
@@ -93,19 +88,59 @@ async function _GET(req: NextRequest) {
       },
     });
 
-    const orgSettings = await prisma.organization.findUnique({
+    const organizationSnapshot = await prisma.organization.findUnique({
       where: { id: organization.id },
-      select: { orgRescheduleWindowMinutes: true },
+      select: {
+        orgRescheduleWindowMinutes: true,
+        orgType: true,
+        stripeAccountId: true,
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        feeMode: true,
+        platformFeeBps: true,
+        platformFeeFixedCents: true,
+      },
     });
+    const paymentsMode = organizationSnapshot?.orgType === "PLATFORM" ? "PLATFORM" : "CONNECT";
+    const connectStatus =
+      paymentsMode === "PLATFORM"
+        ? "NOT_REQUIRED"
+        : resolveConnectStatus(
+            organizationSnapshot?.stripeAccountId ?? null,
+            organizationSnapshot?.stripeChargesEnabled ?? false,
+            organizationSnapshot?.stripePayoutsEnabled ?? false,
+          );
+    const isPaymentsReady = connectStatus === "READY" || connectStatus === "NOT_REQUIRED";
+
+    const canonicalPolicy = items.find((item) => item.policyType === "MODERATE") ?? items[0] ?? null;
+    const normalizedItems = canonicalPolicy ? [canonicalPolicy] : [];
 
     return respondOk(ctx, {
-      items: items.map((item) => ({
+      items: normalizedItems.map((item) => ({
         ...item,
         cancellationPenaltyBps: 0,
         noShowFeeCents: 0,
       })),
       organizationPolicy: {
-        orgRescheduleWindowMinutes: orgSettings?.orgRescheduleWindowMinutes ?? 240,
+        orgRescheduleWindowMinutes: organizationSnapshot?.orgRescheduleWindowMinutes ?? 240,
+      },
+      financePolicy: {
+        paymentsMode,
+        paymentsAccount: {
+          status: connectStatus,
+          ready: isPaymentsReady,
+          hasStripeAccount: Boolean(organizationSnapshot?.stripeAccountId),
+          chargesEnabled: Boolean(organizationSnapshot?.stripeChargesEnabled),
+          payoutsEnabled: Boolean(organizationSnapshot?.stripePayoutsEnabled),
+        },
+        fees: {
+          processingSource: "STRIPE_AUTOMATIC",
+          processingPayer: "ORGANIZATION",
+          feeMode: organizationSnapshot?.feeMode ?? "ADDED",
+          platformFeeBps: organizationSnapshot?.platformFeeBps ?? 0,
+          platformFeeFixedCents: organizationSnapshot?.platformFeeFixedCents ?? 0,
+          managePath: `/org/${organization.id}/finance/payouts`,
+        },
       },
     });
   } catch (err) {
@@ -150,109 +185,12 @@ async function _POST(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(
-        ctx,
-        {
-          errorCode: emailGate.errorCode ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
-          retryable: false,
-          details: emailGate,
-        },
-        { status: 403 },
-      );
-    }
-
-    const payload = await req.json().catch(() => ({}));
-    const name = String(payload?.name ?? "").trim();
-    const policyTypeRaw = String(payload?.policyType ?? "CUSTOM").trim().toUpperCase();
-    const policyType = Object.values(OrganizationPolicyType).includes(policyTypeRaw as OrganizationPolicyType)
-      ? (policyTypeRaw as OrganizationPolicyType)
-      : OrganizationPolicyType.CUSTOM;
-    const cancellationWindowMinutes =
-      payload?.cancellationWindowMinutes === null
-        ? null
-        : Number.isFinite(Number(payload?.cancellationWindowMinutes))
-          ? Math.max(0, Math.round(Number(payload.cancellationWindowMinutes)))
-          : null;
-    const allowCancellation =
-      typeof payload?.allowCancellation === "boolean" ? payload.allowCancellation : true;
-    const cancellationPenaltyBps = 0;
-    if (
-      payload?.cancellationPenaltyBps !== undefined &&
-      Number(payload?.cancellationPenaltyBps) !== 0
-    ) {
-      return fail(400, "CANCELLATION_PENALTY_LOCKED");
-    }
-    const allowReschedule =
-      typeof payload?.allowReschedule === "boolean" ? payload.allowReschedule : true;
-    const rescheduleWindowMinutes =
-      payload?.rescheduleWindowMinutes === null
-        ? null
-        : Number.isFinite(Number(payload?.rescheduleWindowMinutes))
-          ? Math.max(0, Math.round(Number(payload.rescheduleWindowMinutes)))
-          : cancellationWindowMinutes;
-    const guestBookingAllowed =
-      typeof payload?.guestBookingAllowed === "boolean" ? payload.guestBookingAllowed : false;
-    if (payload?.noShowFeeCents !== undefined && Number(payload?.noShowFeeCents) !== 0) {
-      return fail(400, "NO_SHOW_POLICY_LOCKED");
-    }
-    const noShowFeeCents = 0;
-
-    if (!name) {
-      return fail(400, "Nome é obrigatório.");
-    }
-
-    const policy = await prisma.organizationPolicy.create({
-      data: {
-        organizationId: organization.id,
-        name,
-        policyType,
-        allowCancellation,
-        cancellationWindowMinutes: allowCancellation ? cancellationWindowMinutes : null,
-        cancellationPenaltyBps,
-        allowReschedule,
-        rescheduleWindowMinutes: allowReschedule ? rescheduleWindowMinutes : null,
-        guestBookingAllowed,
-        noShowFeeCents,
-      },
-      select: {
-        id: true,
-        name: true,
-        policyType: true,
-        allowCancellation: true,
-        cancellationWindowMinutes: true,
-        cancellationPenaltyBps: true,
-        allowReschedule: true,
-        rescheduleWindowMinutes: true,
-        guestBookingAllowed: true,
-        noShowFeeCents: true,
-      },
-    });
-
-    const { ip, userAgent } = getRequestMeta(req);
-    await recordOrganizationAudit(prisma, {
-      organizationId: organization.id,
-      actorUserId: profile.id,
-      action: "POLICY_CREATED",
-      metadata: {
-        policyId: policy.id,
-        name: policy.name,
-        policyType: policy.policyType,
-        allowCancellation: policy.allowCancellation,
-        cancellationWindowMinutes: policy.cancellationWindowMinutes,
-        cancellationPenaltyBps: policy.cancellationPenaltyBps,
-        allowReschedule: policy.allowReschedule,
-        rescheduleWindowMinutes: policy.rescheduleWindowMinutes,
-        guestBookingAllowed: policy.guestBookingAllowed,
-        noShowFeeCents: 0,
-      },
-      ip,
-      userAgent,
-    });
-
-    return respondOk(ctx, { policy }, { status: 201 });
+    return fail(
+      403,
+      "Existe apenas uma política default de reservas. Para alterar, edita a política atual.",
+      "BOOKING_POLICY_SINGLE_DEFAULT",
+      false,
+    );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
@@ -295,20 +233,6 @@ async function _PATCH(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(
-        ctx,
-        {
-          errorCode: emailGate.errorCode ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
-          retryable: false,
-          details: emailGate,
-        },
-        { status: 403 },
-      );
-    }
-
     const payload = await req.json().catch(() => ({}));
     if (!Object.prototype.hasOwnProperty.call(payload, "orgRescheduleWindowMinutes")) {
       return fail(400, "Sem alterações.");

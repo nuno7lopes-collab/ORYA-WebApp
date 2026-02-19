@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { PadelClubKind, PadelPartnershipTournamentRequestStatus } from "@prisma/client";
+import { PadelClubKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -11,7 +11,19 @@ import {
   parsePositiveInt,
 } from "@/app/api/padel/partnerships/_shared";
 
-const REQUEST_STATUSES = new Set<PadelPartnershipTournamentRequestStatus>([
+type PartnershipTournamentRequestStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
+
+type PartnershipTournamentRequestDelegate = {
+  findMany: (args: Record<string, unknown>) => Promise<any[]>;
+  count: (args: Record<string, unknown>) => Promise<number>;
+  create: (args: Record<string, unknown>) => Promise<any>;
+};
+
+const partnershipTournamentRequestDelegate =
+  (prisma as unknown as { padelPartnershipTournamentRequest?: PartnershipTournamentRequestDelegate })
+    .padelPartnershipTournamentRequest ?? null;
+
+const REQUEST_STATUSES = new Set<PartnershipTournamentRequestStatus>([
   "PENDING",
   "APPROVED",
   "REJECTED",
@@ -19,25 +31,47 @@ const REQUEST_STATUSES = new Set<PadelPartnershipTournamentRequestStatus>([
   "EXPIRED",
 ]);
 
+async function resolveOwnerOrganizationId(params: {
+  partnerOrganizationId?: number | null;
+  partnerOrganizationUsername?: string | null;
+}) {
+  if (params.partnerOrganizationId && Number.isFinite(params.partnerOrganizationId) && params.partnerOrganizationId > 0) {
+    return params.partnerOrganizationId;
+  }
+  const normalizedUsername = params.partnerOrganizationUsername?.trim().toLowerCase() ?? "";
+  if (!normalizedUsername) return null;
+  const organization = await prisma.organization.findFirst({
+    where: {
+      username: { equals: normalizedUsername, mode: "insensitive" },
+      status: "ACTIVE",
+    },
+    select: { id: true },
+  });
+  return organization?.id ?? null;
+}
+
 async function _GET(req: NextRequest) {
   const check = await ensurePartnershipOrganization({ req, required: "VIEW" });
   if (!check.ok) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
+  if (!partnershipTournamentRequestDelegate) {
+    return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
+  }
 
   const statusRaw = req.nextUrl.searchParams.get("status");
   const status = statusRaw ? statusRaw.trim().toUpperCase() : null;
-  if (status && !REQUEST_STATUSES.has(status as PadelPartnershipTournamentRequestStatus)) {
+  if (status && !REQUEST_STATUSES.has(status as PartnershipTournamentRequestStatus)) {
     return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
   }
 
-  const items = await prisma.padelPartnershipTournamentRequest.findMany({
+  const items = await partnershipTournamentRequestDelegate.findMany({
     where: {
       OR: [
         { ownerOrganizationId: check.organization.id },
         { partnerOrganizationId: check.organization.id },
       ],
-      ...(status ? { status: status as PadelPartnershipTournamentRequestStatus } : {}),
+      ...(status ? { status: status as PartnershipTournamentRequestStatus } : {}),
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 300,
@@ -64,22 +98,22 @@ async function _GET(req: NextRequest) {
           where: { id: { in: organizationIds } },
           select: { id: true, publicName: true, businessName: true, username: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve([] as Array<{ id: number; publicName: string | null; businessName: string | null; username: string | null }>),
     clubIds.length > 0
       ? prisma.padelClub.findMany({
           where: { id: { in: clubIds }, deletedAt: null },
           select: { id: true, name: true },
         })
-      : Promise.resolve([]),
+      : Promise.resolve([] as Array<{ id: number; name: string }>),
   ]);
 
-  const organizationNameById = new Map(
-    organizations.map((organization) => [
+  const organizationNameById = new Map<number, string>(
+    organizations.map((organization): [number, string] => [
       organization.id,
-      organization.publicName || organization.businessName || organization.username || `Org #${organization.id}`,
+      organization.publicName || organization.businessName || organization.username || "Organização",
     ]),
   );
-  const clubNameById = new Map(clubs.map((club) => [club.id, club.name]));
+  const clubNameById = new Map<number, string>(clubs.map((club): [number, string] => [club.id, club.name]));
 
   return jsonWrap(
     {
@@ -104,10 +138,27 @@ async function _POST(req: NextRequest) {
   if (!check.ok) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
+  if (!partnershipTournamentRequestDelegate) {
+    return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
+  }
 
-  const partnerClubId = parsePositiveInt(body.partnerClubId ?? body.clubId);
-  if (!partnerClubId) {
-    return jsonWrap({ ok: false, error: "CLUB_REQUIRED" }, { status: 400 });
+  const agreementId = parsePositiveInt(body.agreementId);
+  const ownerOrganizationIdInput = parsePositiveInt(body.partnerOrganizationId);
+  const ownerOrganizationUsernameInput =
+    typeof body.partnerOrganizationUsername === "string" ? body.partnerOrganizationUsername.trim() : "";
+
+  const partnerClub = await prisma.padelClub.findFirst({
+    where: {
+      organizationId: check.organization.id,
+      kind: PadelClubKind.OWN,
+      deletedAt: null,
+      isActive: true,
+    },
+    select: { id: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (!partnerClub) {
+    return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_CLUB_REQUIRED" }, { status: 409 });
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -126,50 +177,57 @@ async function _POST(req: NextRequest) {
       ? (body.payload as Record<string, unknown>)
       : null;
 
-  const partnerClub = await prisma.padelClub.findFirst({
-    where: {
-      id: partnerClubId,
-      organizationId: check.organization.id,
-      kind: PadelClubKind.PARTNER,
-      deletedAt: null,
-      isActive: true,
-    },
-    select: { id: true, sourceClubId: true },
+  const ownerOrganizationId = await resolveOwnerOrganizationId({
+    partnerOrganizationId: ownerOrganizationIdInput,
+    partnerOrganizationUsername: ownerOrganizationUsernameInput || null,
   });
-  if (!partnerClub || !partnerClub.sourceClubId) {
-    return jsonWrap({ ok: false, error: "CLUB_INVALID" }, { status: 400 });
+  if (!agreementId && (ownerOrganizationIdInput || ownerOrganizationUsernameInput) && !ownerOrganizationId) {
+    return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_NOT_FOUND" }, { status: 404 });
   }
 
-  const agreement = await prisma.padelPartnershipAgreement.findFirst({
-    where: {
-      ownerClubId: partnerClub.sourceClubId,
-      partnerOrganizationId: check.organization.id,
-      status: "APPROVED",
-      revokedAt: null,
-      OR: [{ partnerClubId: partnerClub.id }, { partnerClubId: null }],
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }] },
-        { OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }] },
-      ],
-    },
+  const agreementDateClauses = [
+    { OR: [{ startsAt: null }, { startsAt: { lte: endsAt } }] },
+    { OR: [{ endsAt: null }, { endsAt: { gte: startsAt } }] },
+  ];
+
+  const agreementWhere = {
+    partnerOrganizationId: check.organization.id,
+    status: "APPROVED" as const,
+    revokedAt: null,
+    ...(agreementId ? { id: agreementId } : {}),
+    ...(ownerOrganizationId ? { ownerOrganizationId } : {}),
+    AND: agreementDateClauses,
+  };
+
+  const agreements = await prisma.padelPartnershipAgreement.findMany({
+    where: agreementWhere,
     select: {
       id: true,
       ownerOrganizationId: true,
       ownerClubId: true,
       partnerOrganizationId: true,
       partnerClubId: true,
+      approvedAt: true,
     },
     orderBy: [{ approvedAt: "desc" }, { id: "desc" }],
+    take: agreementId ? 1 : 5,
   });
-  if (!agreement) {
+
+  if (agreements.length === 0) {
     return jsonWrap({ ok: false, error: "AGREEMENT_REQUIRED" }, { status: 409 });
   }
-
+  if (!agreementId && !ownerOrganizationId && agreements.length > 1) {
+    return jsonWrap(
+      { ok: false, error: "AGREEMENT_REQUIRED", reason: "MULTIPLE_APPROVED_AGREEMENTS" },
+      { status: 409 },
+    );
+  }
+  const agreement = agreements[0]!;
   if (agreement.partnerClubId && agreement.partnerClubId !== partnerClub.id) {
     return jsonWrap({ ok: false, error: "AGREEMENT_CLUB_MISMATCH" }, { status: 409 });
   }
 
-  const overlappingPending = await prisma.padelPartnershipTournamentRequest.count({
+  const overlappingPending = await partnershipTournamentRequestDelegate.count({
     where: {
       agreementId: agreement.id,
       partnerClubId: partnerClub.id,
@@ -183,7 +241,7 @@ async function _POST(req: NextRequest) {
   }
 
   const expiresAt = new Date(startsAt.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const created = await prisma.padelPartnershipTournamentRequest.create({
+  const created = await partnershipTournamentRequestDelegate.create({
     data: {
       agreementId: agreement.id,
       ownerOrganizationId: agreement.ownerOrganizationId,

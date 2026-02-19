@@ -8,7 +8,16 @@ export default function PoliciesSubnav({ orgId, className }: { orgId: number | n
 
   const resolveView = (searchParams: URLSearchParams) => {
     const view = searchParams.get("view");
-    if (view === "overview" || view === "booking" || view === "terms" || view === "store" || view === "guardrails") {
+    if (
+      view === "overview" ||
+      view === "booking" ||
+      view === "crm" ||
+      view === "finance" ||
+      view === "padel" ||
+      view === "terms" ||
+      view === "store" ||
+      view === "guardrails"
+    ) {
       return view;
     }
     return "overview";
@@ -31,6 +40,24 @@ export default function PoliciesSubnav({ orgId, className }: { orgId: number | n
           isActive: ({ searchParams }) => resolveView(searchParams) === "booking",
         },
         {
+          id: "finance",
+          label: "Financeiro",
+          href: buildOrgHref(orgId, "/policies", { view: "finance" }),
+          isActive: ({ searchParams }) => resolveView(searchParams) === "finance",
+        },
+        {
+          id: "crm",
+          label: "CRM",
+          href: buildOrgHref(orgId, "/policies", { view: "crm" }),
+          isActive: ({ searchParams }) => resolveView(searchParams) === "crm",
+        },
+        {
+          id: "padel",
+          label: "Padel",
+          href: buildOrgHref(orgId, "/policies", { view: "padel" }),
+          isActive: ({ searchParams }) => resolveView(searchParams) === "padel",
+        },
+        {
           id: "terms",
           label: "Termos",
           href: buildOrgHref(orgId, "/policies", { view: "terms" }),
@@ -44,7 +71,7 @@ export default function PoliciesSubnav({ orgId, className }: { orgId: number | n
         },
         {
           id: "guardrails",
-          label: "Guardrails",
+          label: "Limites",
           href: buildOrgHref(orgId, "/policies", { view: "guardrails" }),
           isActive: ({ searchParams }) => resolveView(searchParams) === "guardrails",
         },

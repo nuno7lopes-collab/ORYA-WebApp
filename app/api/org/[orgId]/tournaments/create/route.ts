@@ -7,7 +7,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { clampDeadlineHours } from "@/domain/padelDeadlines";
+import { FIXED_SPLIT_DEADLINE_HOURS } from "@/domain/padelDeadlines";
 import { DEFAULT_PADEL_SCORE_RULES } from "@/domain/padel/score";
 import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
@@ -62,7 +62,6 @@ type CreateTournamentPadelInput = {
   ruleSetId?: number | null;
   isInterclub?: boolean | null;
   teamSize?: number | string | null;
-  splitDeadlineHours?: number | null;
   categoryIds?: number[];
   defaultCategoryId?: number | null;
   categoryConfigs?: CreateTournamentCategoryConfigInput[];
@@ -107,6 +106,15 @@ class ApiError extends Error {
     this.details = options?.details;
   }
 }
+
+type PartnershipTournamentRequestDelegate = {
+  findFirst: (args: Record<string, unknown>) => Promise<{ id: number } | null>;
+  updateMany: (args: Record<string, unknown>) => Promise<{ count: number }>;
+};
+
+const partnershipTournamentRequestDelegate =
+  (prisma as unknown as { padelPartnershipTournamentRequest?: PartnershipTournamentRequestDelegate })
+    .padelPartnershipTournamentRequest ?? null;
 
 const ADDRESS_SELECT = {
   id: true,
@@ -412,11 +420,6 @@ async function _POST(req: NextRequest) {
       return fail(400, "TEAM_SIZE_REQUIRED", "TEAM_SIZE_REQUIRED", false);
     }
 
-    const splitDeadlineHours =
-      typeof padelInput?.splitDeadlineHours === "number" && Number.isFinite(padelInput.splitDeadlineHours)
-        ? clampDeadlineHours(padelInput.splitDeadlineHours)
-        : null;
-
     const advancedSettings =
       padelInput?.advancedSettings && typeof padelInput.advancedSettings === "object" && !Array.isArray(padelInput.advancedSettings)
         ? (padelInput.advancedSettings as Record<string, unknown>)
@@ -519,7 +522,8 @@ async function _POST(req: NextRequest) {
         );
       }
 
-      const approvedRequest = await prisma.padelPartnershipTournamentRequest.findFirst({
+      const approvedRequest = partnershipTournamentRequestDelegate
+        ? await partnershipTournamentRequestDelegate.findFirst({
         where: {
           id: partnershipTournamentRequestId,
           status: "APPROVED",
@@ -532,7 +536,8 @@ async function _POST(req: NextRequest) {
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
         select: { id: true },
-      });
+      })
+        : null;
       if (!approvedRequest) {
         return fail(
           409,
@@ -719,7 +724,7 @@ async function _POST(req: NextRequest) {
           ruleSetId: parsePositiveInt(padelInput?.ruleSetId) ?? undefined,
           defaultCategoryId: defaultCategoryId ?? undefined,
           eligibilityType: padelEligibilityType,
-          splitDeadlineHours: splitDeadlineHours ?? undefined,
+          splitDeadlineHours: FIXED_SPLIT_DEADLINE_HOURS,
           isInterclub,
           teamSize: isInterclub ? teamSize ?? undefined : null,
           padelV2Enabled: true,
@@ -739,7 +744,7 @@ async function _POST(req: NextRequest) {
           ruleSetId: parsePositiveInt(padelInput?.ruleSetId) ?? undefined,
           defaultCategoryId: defaultCategoryId ?? undefined,
           eligibilityType: padelEligibilityType,
-          splitDeadlineHours: splitDeadlineHours ?? undefined,
+          splitDeadlineHours: FIXED_SPLIT_DEADLINE_HOURS,
           isInterclub,
           teamSize: isInterclub ? teamSize ?? undefined : null,
           padelV2Enabled: true,
@@ -880,8 +885,8 @@ async function _POST(req: NextRequest) {
       return event;
     });
 
-    if (consumedPartnershipRequestId) {
-      await prisma.padelPartnershipTournamentRequest.updateMany({
+    if (consumedPartnershipRequestId && partnershipTournamentRequestDelegate) {
+      await partnershipTournamentRequestDelegate.updateMany({
         where: {
           id: consumedPartnershipRequestId,
           status: "APPROVED",

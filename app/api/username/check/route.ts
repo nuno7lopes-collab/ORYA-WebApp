@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { checkUsernameAvailability } from "@/lib/globalUsernames";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
-import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(req: NextRequest) {
@@ -21,16 +21,6 @@ async function _GET(req: NextRequest) {
         requireDistributed: true,
       });
     } catch (err) {
-      if (isRateLimitBackendUnavailableError(err)) {
-        return jsonWrap(
-          {
-            ok: false,
-            errorCode: err.code,
-            error: "Serviço de proteção temporariamente indisponível.",
-          },
-          { status: 503 },
-        );
-      }
       throw err;
     }
     if (!limiter.allowed) {

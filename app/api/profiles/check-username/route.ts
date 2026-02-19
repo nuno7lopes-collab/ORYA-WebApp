@@ -4,10 +4,7 @@ import { checkUsernameAvailability } from "@/lib/globalUsernames";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
-import {
-  isRateLimitBackendUnavailableError,
-  rateLimit,
-} from "@/lib/auth/rateLimit";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
 function isMobileClientRequest(req: NextRequest) {
@@ -40,17 +37,6 @@ async function _POST(req: NextRequest) {
         requireDistributed: true,
       });
     } catch (err) {
-      if (isRateLimitBackendUnavailableError(err)) {
-        return jsonWrap(
-          {
-            ok: false,
-            errorCode: err.code,
-            message: "Serviço de proteção temporariamente indisponível.",
-            retryable: true,
-          },
-          { status: 503 },
-        );
-      }
       throw err;
     }
     if (!ipLimiter.allowed) {
@@ -81,17 +67,6 @@ async function _POST(req: NextRequest) {
         requireDistributed: true,
       });
     } catch (err) {
-      if (isRateLimitBackendUnavailableError(err)) {
-        return jsonWrap(
-          {
-            ok: false,
-            errorCode: err.code,
-            message: "Serviço de proteção temporariamente indisponível.",
-            retryable: true,
-          },
-          { status: 503 },
-        );
-      }
       throw err;
     }
     if (!limiter.allowed) {

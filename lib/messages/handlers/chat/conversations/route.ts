@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 
@@ -212,9 +212,6 @@ async function _GET(req: NextRequest) {
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
     }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
-    }
     console.error("GET /api/messages/conversations error:", err);
     return jsonWrap({ ok: false, error: "Erro ao carregar conversas." }, { status: 500 });
   }
@@ -354,26 +351,30 @@ async function _POST(req: NextRequest) {
       },
     });
 
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "conversation:update",
       action: "created",
       organizationId: organization.id,
       conversationId: conversation.id,
       conversation,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
     console.log("[chat] canal criado", { conversationId: conversation.id, actor: user.id });
 
-    return jsonWrap({ ok: true, conversation }, { status: 201 });
+    return jsonWrap(
+      { ok: true, conversation, ...(warnings.length ? { warnings } : {}) },
+      { status: 201 }
+    );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/conversations error:", err);
     return jsonWrap({ ok: false, error: "Erro ao criar conversa." }, { status: 500 });

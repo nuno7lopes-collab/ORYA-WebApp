@@ -12,8 +12,8 @@ export async function shouldNotify(userId: string, type: NotificationType) {
   const category = resolveNotificationCategory(type);
   if (category === "network") return allowSocial;
   if (category === "events") return allowEvents;
-  if (category === "marketing") return false;
-  if (category === "system" || category === "chat") return false;
+  if (category === "marketing") return allowMarketing;
+  if (category === "system" || category === "chat") return allowSystem;
   return false;
 }
 

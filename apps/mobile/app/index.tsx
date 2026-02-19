@@ -9,6 +9,9 @@ import { isAuthError, resolveOnboardingGate } from "../lib/onboardingGate";
 import { getOnboardingDraft } from "../lib/onboardingDraft";
 import { perfLog, perfMark, perfMeasure } from "../lib/perf";
 import { CachedProfile, getProfileCache, setProfileCache } from "../lib/profileCache";
+import { tokens } from "@orya/shared";
+
+const APP_BACKGROUND = tokens.colors.background;
 
 export default function Index() {
   const { loading, session } = useAuth();
@@ -101,7 +104,14 @@ export default function Index() {
 
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: APP_BACKGROUND,
+        }}
+      >
         <ActivityIndicator />
       </View>
     );
@@ -119,7 +129,7 @@ export default function Index() {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          backgroundColor: "#0b1014",
+          backgroundColor: APP_BACKGROUND,
         }}
       >
         <Text style={{ color: "white", fontSize: 16, fontWeight: "600", textAlign: "center" }}>

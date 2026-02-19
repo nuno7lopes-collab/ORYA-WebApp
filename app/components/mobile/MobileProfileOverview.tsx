@@ -136,16 +136,14 @@ export default function MobileProfileOverview({
           <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/40 to-black/90" />
         </div>
         <div className="absolute bottom-[-40px] left-4">
-          <div className="rounded-full p-[3px] bg-[linear-gradient(135deg,var(--orya-neon-pink),var(--orya-neon-cyan))] shadow-[0_0_26px_rgba(107,255,255,0.25),0_0_26px_rgba(255,0,200,0.18)]">
-            <Avatar
-              src={avatarUrl}
-              name={name}
-              version={avatarUpdatedAt ?? undefined}
-              className="h-20 w-20 border border-white/10"
-              textClassName="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/80"
-              fallbackText="OR"
-            />
-          </div>
+          <Avatar
+            src={avatarUrl}
+            name={name}
+            version={avatarUpdatedAt ?? undefined}
+            className="h-20 w-20"
+            textClassName="text-[12px] font-semibold uppercase tracking-[0.16em] text-white/80"
+            fallbackText="OR"
+          />
         </div>
       </div>
 

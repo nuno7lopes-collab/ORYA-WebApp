@@ -633,7 +633,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
         {actionFeedback && <p className="mt-2 text-sm text-white/80">{actionFeedback}</p>}
         {isRedactedForPartner && (
           <p className="mt-2 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-            Modo parceiro: bloqueios do clube dono aparecem apenas como indisponibilidade.
+            Modo parceiro: bloqueios da organização dona aparecem apenas como indisponibilidade.
           </p>
         )}
       </header>
@@ -647,8 +647,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
               <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">
                 Estado: {toStatusLabel(agreement.status, AGREEMENT_STATUS_LABEL)}
               </span>
-              <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Clube dono #{agreement.ownerClubId}</span>
-              <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Clube parceiro {agreement.partnerClubId ?? "—"}</span>
+              <span className="rounded-full border border-white/20 px-2 py-1 text-xs text-white/80">Fluxo organização → organização</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {(["approve", "pause", "revoke"] as const).map((action) => (
@@ -1123,8 +1122,8 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                                 courtId: row.courtId,
                                 startAt: row.startAt,
                                 endAt: row.endAt,
-                                sourceType: row.sourceType,
-                                sourceId: row.sourceId,
+                                sourceType: row.sourceType ?? undefined,
+                                sourceId: row.sourceId ?? undefined,
                               })
                             }
                             disabled={Boolean(actionBusy)}

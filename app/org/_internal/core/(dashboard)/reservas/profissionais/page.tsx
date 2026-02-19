@@ -288,7 +288,10 @@ export default function ProfissionaisPage() {
                           {item.isActive ? "Desativar" : "Ativar"}
                         </button>
                         <Link
-                          href={appendOrganizationIdToHref(`/org/bookings/professionals/${item.id}`, canonicalOrganizationId)}
+                          href={appendOrganizationIdToHref(
+                            `/org/bookings/availability?scopeType=PROFESSIONAL&scopeId=${item.id}`,
+                            canonicalOrganizationId,
+                          )}
                           className={CTA_PRIMARY}
                         >
                           Disponibilidade

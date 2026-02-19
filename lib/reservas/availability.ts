@@ -6,15 +6,9 @@ export type AvailabilitySlot = {
 };
 
 const MINUTES_PER_DAY = 24 * 60;
-const DEFAULT_OPEN_WEEKDAY_INTERVAL: Interval = { startMinute: 8 * 60, endMinute: 17 * 60 };
 
 function clampMinute(value: number) {
   return Math.max(0, Math.min(MINUTES_PER_DAY, value));
-}
-
-function getDefaultTemplateIntervals(dayOfWeek: number): Interval[] {
-  if (dayOfWeek === 0 || dayOfWeek === 6) return [];
-  return [{ ...DEFAULT_OPEN_WEEKDAY_INTERVAL }];
 }
 
 function parseInterval(raw: any): Interval | null {
@@ -205,12 +199,9 @@ export function resolveIntervalsForDate(params: {
   overrides: Array<{ kind: string; intervals: Interval[] }>;
   fallbackToDefault?: boolean;
 }) {
-  const fallbackToDefault = params.fallbackToDefault !== false;
   let intervals = params.templatesByDay.has(params.dayOfWeek)
     ? params.templatesByDay.get(params.dayOfWeek) ?? []
-    : fallbackToDefault
-      ? getDefaultTemplateIntervals(params.dayOfWeek)
-      : [];
+    : [];
   if (!params.overrides.length) return intervals;
   for (const override of params.overrides) {
     if (override.kind === "CLOSED") {
@@ -281,7 +272,7 @@ export function buildSlotsForRange(params: {
     const key = getDateKey(current.year, current.month, current.day);
     const dayOfWeek = cursor.getUTCDay();
     const overrides = overridesByDate.get(key) ?? [];
-    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides, fallbackToDefault: true });
+    const intervals = resolveIntervalsForDate({ dayOfWeek, templatesByDay, overrides, fallbackToDefault: false });
     if (intervals.length) {
       for (const interval of intervals) {
         for (let minute = interval.startMinute; minute + params.durationMinutes <= interval.endMinute; minute += stepMinutes) {
@@ -361,7 +352,7 @@ export function buildSlotsForRangeWithSchedules(params: {
       dayOfWeek,
       templatesByDay,
       overrides,
-      fallbackToDefault: !schedule,
+      fallbackToDefault: false,
     });
 
     if (intervals.length) {

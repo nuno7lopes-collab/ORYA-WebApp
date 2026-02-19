@@ -1,6 +1,9 @@
-const MIN_DEADLINE_HOURS = 48;
-const MAX_DEADLINE_HOURS = 168;
-const BEFORE_EVENT_DEADLINE_HOURS = 24;
+export const FIXED_SPLIT_DEADLINE_HOURS = 24;
+export const FIXED_SPLIT_CLOSE_BEFORE_EVENT_HOURS = 24;
+
+const MIN_DEADLINE_HOURS = FIXED_SPLIT_DEADLINE_HOURS;
+const MAX_DEADLINE_HOURS = FIXED_SPLIT_DEADLINE_HOURS;
+const BEFORE_EVENT_DEADLINE_HOURS = FIXED_SPLIT_CLOSE_BEFORE_EVENT_HOURS;
 const MIN_LINK_MINUTES = 15;
 const MAX_LINK_MINUTES = 30;
 const DEFAULT_LINK_MINUTES = 30;
@@ -8,8 +11,8 @@ const GRACE_HOURS = 1;
 const MATCHMAKING_CLOSE_HOURS = 24;
 
 export function clampDeadlineHours(raw?: number | null): number {
-  const base = typeof raw === "number" && !Number.isNaN(raw) ? raw : MIN_DEADLINE_HOURS;
-  return Math.min(Math.max(base, MIN_DEADLINE_HOURS), MAX_DEADLINE_HOURS);
+  void raw;
+  return MIN_DEADLINE_HOURS;
 }
 
 export function computeDeadlineAt(now: Date, splitDeadlineHours?: number | null): Date {

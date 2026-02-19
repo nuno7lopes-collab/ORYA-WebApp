@@ -104,9 +104,12 @@ function resolveLabel(
   }
   if (/^\/org\/\d+\/policies(?:\/|$)/.test(pathname)) {
     if (view === "booking") return "Políticas · Reservas";
+    if (view === "crm") return "Políticas · CRM";
+    if (view === "finance") return "Políticas · Financeiro";
+    if (view === "padel") return "Políticas · Padel";
     if (view === "terms") return "Políticas · Termos";
     if (view === "store") return "Políticas · Loja";
-    if (view === "guardrails") return "Políticas · Guardrails";
+    if (view === "guardrails") return "Políticas · Limites";
     return "Políticas";
   }
   if (pathname.startsWith("/org/clube/membros")) return "Clube · Membros";

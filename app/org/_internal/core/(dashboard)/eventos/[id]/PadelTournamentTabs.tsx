@@ -1612,9 +1612,7 @@ export default function PadelTournamentTabs({
       },
       {},
     );
-    const currentProfile =
-      nextProfiles[targetKey] ??
-      (targetKey !== "global" && nextProfiles.global ? { ...nextProfiles.global } : {});
+    const currentProfile = nextProfiles[targetKey] ?? {};
     const nextProfile: Record<string, unknown> = { ...currentProfile };
 
     const requestedFormat = typeof patch.format === "string" ? patch.format : nextProfile.format;

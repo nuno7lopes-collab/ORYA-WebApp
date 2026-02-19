@@ -1,8 +1,8 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { getTimeParts, HOUR_END, HOUR_START, isSameDay, minuteToLabel, pad2, SLOT_MINUTES } from "./helpers";
 import type { CalendarEvent, CalendarColumn } from "./types";
@@ -232,18 +232,12 @@ export function DayGrid({
                     style={{ left: virtualColumn.start, width: virtualColumn.size }}
                   >
                     <div className="flex h-full items-center gap-2">
-                      {column.avatarUrl ? (
-                        <img
-                          src={column.avatarUrl}
-                          alt=""
-                          className="h-7 w-7 rounded-full border border-white/20 object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/8 text-[10px] uppercase text-white/70">
-                          {column.label.slice(0, 2)}
-                        </div>
-                      )}
+                      <Avatar
+                        src={column.avatarUrl}
+                        name={column.label}
+                        className="h-7 w-7"
+                        fallbackText={column.label.slice(0, 2)}
+                      />
                       <div className="min-w-0">
                         <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-white/80">
                           {column.label}

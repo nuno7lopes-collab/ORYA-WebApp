@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { ContextDrawer } from "@/components/ui/context-drawer";
 import { OryaDateField } from "@/components/ui/datetime";
 import { SearchableEntitySelect, type SearchableEntityOption } from "./day/SearchableEntitySelect";
 import {
@@ -106,13 +107,6 @@ type AvailabilityResponse = {
   message?: string;
 };
 
-type AvailabilityTarget = {
-  scopeType: "RESOURCE" | "PROFESSIONAL" | "COURT";
-  id: number;
-  label: string;
-  meta: string | null;
-};
-
 type Interval = { startMinute: number; endMinute: number };
 
 type NormalizedAvailability = {
@@ -132,12 +126,6 @@ function getOverrideKey(value: string, timezone: string) {
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
-type AvailabilityEntry = {
-  target: AvailabilityTarget;
-  normalized?: NormalizedAvailability;
-  error?: string;
-};
-
 type PositionedAgendaItem = {
   item: AgendaItem;
   start: Date;
@@ -155,12 +143,10 @@ const DEFAULT_HOUR_HEIGHT = 56;
 const VISIBLE_HOURS = 10;
 const HOUR_START = 0;
 const HOUR_END = 24;
-const DEFAULT_WEEKDAY_INTERVALS: Interval[] = [{ startMinute: 8 * 60, endMinute: 17 * 60 }];
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
 const DAY_HEADER_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
-const DAY_AVAILABILITY_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 const DATE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 const HOUR_MINUTE_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 
@@ -174,19 +160,6 @@ function getDayHeaderFormatter(timezone: string) {
     timeZone: timezone,
   });
   DAY_HEADER_FORMATTER_CACHE.set(timezone, formatter);
-  return formatter;
-}
-
-function getDayAvailabilityFormatter(timezone: string) {
-  const cached = DAY_AVAILABILITY_FORMATTER_CACHE.get(timezone);
-  if (cached) return cached;
-  const formatter = new Intl.DateTimeFormat("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: timezone,
-  });
-  DAY_AVAILABILITY_FORMATTER_CACHE.set(timezone, formatter);
   return formatter;
 }
 
@@ -343,18 +316,6 @@ function isSameDay(a: Date, b: Date, timezone: string) {
   return aa.year === bb.year && aa.month === bb.month && aa.day === bb.day;
 }
 
-function formatMinute(minute: number) {
-  const normalized = Math.max(0, Math.min(24 * 60, minute));
-  const hours = Math.floor(normalized / 60);
-  const mins = normalized % 60;
-  return `${pad2(hours)}:${pad2(mins)}`;
-}
-
-function formatIntervals(intervals: Interval[]) {
-  if (intervals.length === 0) return "Fechado";
-  return intervals.map((interval) => `${formatMinute(interval.startMinute)}-${formatMinute(interval.endMinute)}`).join(" · ");
-}
-
 function normalizeAvailability(payload: AvailabilityResponse, timezone: string): NormalizedAvailability {
   const templatesBySchedule = new Map<number, Map<number, Interval[]>>();
   const overridesByDate = new Map<string, Array<{ kind: string; intervals: Interval[] }>>();
@@ -395,8 +356,7 @@ function normalizeAvailability(payload: AvailabilityResponse, timezone: string):
 function resolveIntervalsForDay(normalized: NormalizedAvailability | undefined, day: Date, timezone: string) {
   const dayParts = getDateParts(day, timezone);
   const dayOfWeek = new Date(Date.UTC(dayParts.year, dayParts.month - 1, dayParts.day)).getUTCDay();
-  const defaultIntervals = dayOfWeek === 0 || dayOfWeek === 6 ? [] : DEFAULT_WEEKDAY_INTERVALS;
-  if (!normalized) return defaultIntervals;
+  if (!normalized) return [];
   const schedule = resolveScheduleForDate(normalized.schedules, day, timezone);
   const templatesByDay = schedule ? normalized.templatesBySchedule.get(schedule.id) ?? new Map() : new Map();
   const overrides = normalized.overridesByDate.get(getDayKey(day, timezone)) ?? [];
@@ -404,10 +364,8 @@ function resolveIntervalsForDay(normalized: NormalizedAvailability | undefined, 
     dayOfWeek,
     templatesByDay,
     overrides,
-    fallbackToDefault: !schedule,
+    fallbackToDefault: false,
   });
-  if (resolved.length > 0) return resolved;
-  if (!schedule && overrides.length === 0) return defaultIntervals;
   return resolved;
 }
 
@@ -426,29 +384,6 @@ function invertIntervals(intervals: Interval[]) {
     outside.push({ startMinute: cursor, endMinute: 24 * 60 });
   }
   return outside;
-}
-
-function overlapsDay(item: AgendaItem, dayStart: Date, dayEndExclusive: Date) {
-  const startsAt = new Date(item.startsAt);
-  const endsAt = new Date(item.endsAt);
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return false;
-  return endsAt.getTime() > dayStart.getTime() && startsAt.getTime() < dayEndExclusive.getTime();
-}
-
-function countTargetItemsForDay(
-  items: AgendaItem[],
-  target: AvailabilityTarget,
-  day: Date,
-  timezone: string,
-) {
-  const start = buildZonedDate(getDateParts(day, timezone), timezone, 0, 0);
-  const end = addDays(start, 1, timezone);
-  return items.filter((item) => {
-    if (target.scopeType === "RESOURCE" && item.resourceId !== target.id) return false;
-    if (target.scopeType === "COURT" && item.courtId !== target.id) return false;
-    if (target.scopeType === "PROFESSIONAL" && item.professionalId !== target.id) return false;
-    return overlapsDay(item, start, end);
-  }).length;
 }
 
 function buildAgendaPositions(params: {
@@ -821,7 +756,6 @@ export default function WeekCalendarReadClient() {
   }, [aggregateByDay]);
   const selectedAggregate = selectedAggregateKey ? aggregatesByKey.get(selectedAggregateKey) ?? null : null;
   const hoveredAggregate = hoveredAggregateKey ? aggregatesByKey.get(hoveredAggregateKey) ?? null : null;
-  const focusedAggregate = selectedAggregate ?? hoveredAggregate;
 
   const organizationAvailabilityKey =
     Number.isFinite(organizationId) && organizationId > 0 ? `org-availability:${organizationId}` : null;
@@ -846,89 +780,6 @@ export default function WeekCalendarReadClient() {
     return map;
   }, [days, organizationAvailability, timezone]);
 
-  const availabilityTargets = useMemo(() => {
-    const targets: AvailabilityTarget[] = [];
-    selectedResourceIds.forEach((id) => {
-      const resource = resourcesById.get(id);
-      if (!resource) return;
-      targets.push({
-        scopeType: "RESOURCE",
-        id: resource.id,
-        label: resource.label,
-        meta: `Capacidade ${resource.capacity}`,
-      });
-    });
-    selectedCourtIds.forEach((id) => {
-      const court = courtsById.get(id);
-      if (!court) return;
-      targets.push({
-        scopeType: "COURT",
-        id: court.id,
-        label: court.label,
-        meta: court.clubName ? `Campo · ${court.clubName}` : "Campo de padel",
-      });
-    });
-    selectedProfessionalIds.forEach((id) => {
-      const professional = professionalsById.get(id);
-      if (!professional) return;
-      targets.push({
-        scopeType: "PROFESSIONAL",
-        id: professional.id,
-        label: professional.name,
-        meta: professional.roleTitle ?? null,
-      });
-    });
-    return targets;
-  }, [courtsById, professionalsById, resourcesById, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
-
-  const availabilityKey =
-    Number.isFinite(organizationId) && organizationId > 0 && availabilityTargets.length > 0
-      ? `availability:${organizationId}:${availabilityTargets
-          .map((target) => `${target.scopeType}:${target.id}`)
-          .join("|")}`
-      : null;
-
-  const { data: availabilityEntries, isLoading: availabilityLoading } = useSWR<AvailabilityEntry[]>(
-    availabilityKey,
-    async () => {
-      const entries = await Promise.all(
-        availabilityTargets.map(async (target) => {
-          const isCourtTarget = target.scopeType === "COURT";
-          const query = new URLSearchParams({
-            scopeType: isCourtTarget ? "ORGANIZATION" : target.scopeType,
-            ...(isCourtTarget ? {} : { scopeId: String(target.id) }),
-          });
-          query.set("includeTemplates", "all");
-          const url = `/api/org/${organizationId}/reservas/disponibilidade?${query.toString()}`;
-          try {
-            const payload = await fetchJson<AvailabilityResponse>(url);
-            if (!payload.ok) {
-              if (isCourtTarget) {
-                return { target } satisfies AvailabilityEntry;
-              }
-              return {
-                target,
-                error: payload.message || payload.errorCode || "Sem disponibilidade",
-              } satisfies AvailabilityEntry;
-            }
-            return {
-              target,
-              normalized: normalizeAvailability(payload, timezone),
-            } satisfies AvailabilityEntry;
-          } catch (availabilityError) {
-            if (isCourtTarget) {
-              return { target } satisfies AvailabilityEntry;
-            }
-            const message =
-              availabilityError instanceof Error ? availabilityError.message : "Sem disponibilidade";
-            return { target, error: message } satisfies AvailabilityEntry;
-          }
-        }),
-      );
-      return entries;
-    },
-  );
-
   const now = new Date();
   const isTodayInRange = days.some((day) => isSameDay(day, now, timezone));
   const nowTimeParts = getTimeParts(now, timezone);
@@ -937,7 +788,6 @@ export default function WeekCalendarReadClient() {
   const visibleCountLabel = `${filteredItems.length} ${filteredItems.length === 1 ? "item visível" : "itens visíveis"}`;
   const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredItems), [filteredItems]);
   const dayHeaderFormatter = useMemo(() => getDayHeaderFormatter(timezone), [timezone]);
-  const dayAvailabilityFormatter = useMemo(() => getDayAvailabilityFormatter(timezone), [timezone]);
   const scrollWeekToMinute = (minute: number) => {
     const node = gridScrollRef.current;
     if (!node) return;
@@ -1023,14 +873,6 @@ export default function WeekCalendarReadClient() {
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 p-1">
-            <button type="button" className={cn(CHIP_BASE, CHIP_ACTIVE)} aria-current="page">
-              Semana
-            </button>
-            <Link href={dayViewHref} className={CHIP_BASE}>
-              Dia
-            </Link>
-          </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1122,12 +964,11 @@ export default function WeekCalendarReadClient() {
                 Limpar seleção
               </button>
             ) : null}
-            <span className="text-[10px] uppercase tracking-[0.16em] text-white/45">Atalhos: ← → · T · D · G</span>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-4">
         <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
             <div>
@@ -1195,6 +1036,22 @@ export default function WeekCalendarReadClient() {
             <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
             <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
           </div>
+          {hoveredAggregate && !selectedAggregate && (
+            <article className="mb-3 rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
+              <p className="text-xs font-semibold text-cyan-100">
+                Pré-visualização: {formatHourMinute(hoveredAggregate.start, timezone)} -{" "}
+                {formatHourMinute(hoveredAggregate.end, timezone)}
+              </p>
+              <p className="mt-1 text-[11px] text-cyan-50/80">
+                {hoveredAggregate.items.length} {hoveredAggregate.items.length === 1 ? "ocupação" : "ocupações"}
+              </p>
+              {hoveredAggregate.items.slice(0, 2).map((entry, index) => (
+                <p key={getProjectedEntryKey(entry, index)} className="truncate text-[11px] text-cyan-50/75">
+                  {formatHourMinute(entry.start, timezone)} {entry.item.title}
+                </p>
+              ))}
+            </article>
+          )}
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(5,10,22,0.82)]">
             <div className="overflow-x-auto">
@@ -1383,160 +1240,51 @@ export default function WeekCalendarReadClient() {
             <p className="mt-3 text-sm text-white/55">Sem ocupação para os filtros e intervalo selecionados.</p>
           )}
         </section>
-
-        <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)]">
-          <h2 className="text-sm font-semibold text-white">Detalhe da ocupação</h2>
-          <p className="mt-1 text-xs text-white/60">
-            Passa o rato para resumo rápido e clica no bloco para fixar detalhe.
-            {selectedAggregate ? " (fixo)" : hoveredAggregate ? " (prévia de hover)" : ""}
-          </p>
-          <p className="mt-2 text-[11px] text-white/55">
-            Default quando não configurado: 2ª–6ª, 08:00-17:00 (sábado/domingo fechado). Personaliza em{" "}
-            <Link
-              href={buildOrgHref(organizationId, "/bookings/availability")}
-              className="text-cyan-100 underline decoration-cyan-300/60 underline-offset-2 hover:decoration-cyan-300"
-            >
-              Bookings
-            </Link>
-            .
-          </p>
-          {selectedAggregate ? (
-            <button
-              type="button"
-              onClick={() => setSelectedAggregateKey(null)}
-              className="mt-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:border-white/35 hover:text-white"
-            >
-              Desfixar
-            </button>
-          ) : null}
-          {focusedAggregate ? (
-            <article className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <p className="text-xs font-semibold text-white">
-                {formatDateTime(focusedAggregate.start.toISOString(), timezone)} -{" "}
-                {formatDateTime(focusedAggregate.end.toISOString(), timezone)}
-              </p>
-              <p className="mt-1 text-[11px] text-white/65">
-                {focusedAggregate.items.length} {focusedAggregate.items.length === 1 ? "ocupação" : "ocupações"}
-              </p>
-              <div className="mt-2 space-y-2">
-                {focusedAggregate.items.map((entry, index) => {
-                  const resourceLabel = entry.item.resourceId ? resourcesById.get(entry.item.resourceId)?.label ?? null : null;
-                  const courtLabel = entry.item.courtId ? courtsById.get(entry.item.courtId)?.label ?? null : null;
-                  const professionalLabel = entry.item.professionalId
-                    ? professionalsById.get(entry.item.professionalId)?.name ?? null
-                    : null;
-                  return (
-                    <div
-                      key={getProjectedEntryKey(entry, index)}
-                      className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5"
-                    >
-                      <p className="truncate text-[11px] text-white/90">
-                        {formatHourMinute(entry.start, timezone)} {entry.item.title}
-                      </p>
-                      <p className="truncate text-[10px] uppercase tracking-[0.08em] text-white/65">
-                        {resolveKindLabel(entry.item.kind)} · {resolveStatusLabel(entry.item.status)}
-                      </p>
-                      {(resourceLabel || courtLabel || professionalLabel) && (
-                        <p className="truncate text-[10px] text-white/65">
-                          {[resourceLabel, courtLabel, professionalLabel].filter(Boolean).join(" · ")}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </article>
-          ) : (
-            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
-              Nenhuma ocupação selecionada.
-            </p>
-          )}
-
-          <h3 className="mt-4 text-sm font-semibold text-white">Disponibilidade por seleção</h3>
-          <p className="mt-1 text-xs text-white/60">Compara disponibilidade dos filtros ativos por dia.</p>
-
-          {availabilityTargets.length === 0 && (
-            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
-              Sem seleção ativa. Escolhe recursos ou profissionais para carregar disponibilidade.
-            </p>
-          )}
-
-          {availabilityLoading && (
-            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/60">
-              A carregar disponibilidade...
-            </p>
-          )}
-
-          <div className="mt-3 space-y-3">
-            {(availabilityEntries ?? []).map((entry) => (
-              <article key={`${entry.target.scopeType}-${entry.target.id}`} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <header className="mb-2">
-                  <p className="text-xs font-semibold text-white">
-                    {entry.target.label}
-                    <span className="ml-2 text-[10px] uppercase tracking-[0.16em] text-white/55">
-                      {entry.target.scopeType === "RESOURCE"
-                        ? "Recurso"
-                        : entry.target.scopeType === "COURT"
-                          ? "Campo"
-                          : "Profissional"}
-                    </span>
-                  </p>
-                  {entry.target.meta && <p className="text-[11px] text-white/55">{entry.target.meta}</p>}
-                  {entry.normalized?.inheritsOrganization && (
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-100/70">
-                      Herda template da organização
-                    </p>
-                  )}
-                </header>
-
-                {entry.error && <p className="text-xs text-red-200">{entry.error}</p>}
-                {!entry.error && entry.normalized && (
-                  <div className="space-y-2">
-                    {days.map((day) => {
-                      const intervals = resolveIntervalsForDay(entry.normalized, day, timezone);
-                      const occupancy = countTargetItemsForDay(filteredItems, entry.target, day, timezone);
-                      const dayLabel = dayAvailabilityFormatter.format(day);
-                      return (
-                        <div key={`${entry.target.scopeType}-${entry.target.id}-${getDayKey(day, timezone)}`} className="rounded-lg border border-white/10 bg-black/20 p-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-medium text-white/90">{dayLabel}</span>
-                            <span className="text-[10px] text-white/55">
-                              {occupancy} {occupancy === 1 ? "ocupação" : "ocupações"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-white/70">{formatIntervals(intervals)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {!entry.error && !entry.normalized && entry.target.scopeType === "COURT" && (
-                  <div className="space-y-2">
-                    {days.map((day) => {
-                      const occupancy = countTargetItemsForDay(filteredItems, entry.target, day, timezone);
-                      const dayLabel = dayAvailabilityFormatter.format(day);
-                      return (
-                        <div
-                          key={`${entry.target.scopeType}-${entry.target.id}-${getDayKey(day, timezone)}-court-summary`}
-                          className="rounded-lg border border-white/10 bg-black/20 p-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-medium text-white/90">{dayLabel}</span>
-                            <span className="text-[10px] text-white/55">
-                              {occupancy} {occupancy === 1 ? "ocupação" : "ocupações"}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-white/60">Disponibilidade herdada da organização.</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </aside>
       </div>
+
+      <ContextDrawer
+        open={Boolean(selectedAggregate)}
+        onClose={() => setSelectedAggregateKey(null)}
+        eyebrow="Agenda semanal"
+        title="Detalhe da ocupação"
+        widthClassName="max-w-xl"
+      >
+        {selectedAggregate ? (
+          <div className="space-y-3">
+            <p className="text-xs text-white/70">
+              {formatDateTime(selectedAggregate.start.toISOString(), timezone)} -{" "}
+              {formatDateTime(selectedAggregate.end.toISOString(), timezone)}
+            </p>
+            <p className="text-sm text-white/75">
+              {selectedAggregate.items.length} {selectedAggregate.items.length === 1 ? "ocupação" : "ocupações"}
+            </p>
+            <div className="space-y-2">
+              {selectedAggregate.items.map((entry, index) => {
+                const resourceLabel = entry.item.resourceId ? resourcesById.get(entry.item.resourceId)?.label ?? null : null;
+                const courtLabel = entry.item.courtId ? courtsById.get(entry.item.courtId)?.label ?? null : null;
+                const professionalLabel = entry.item.professionalId
+                  ? professionalsById.get(entry.item.professionalId)?.name ?? null
+                  : null;
+                return (
+                  <article key={getProjectedEntryKey(entry, index)} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <p className="truncate text-sm text-white">
+                      {formatHourMinute(entry.start, timezone)} {entry.item.title}
+                    </p>
+                    <p className="mt-1 truncate text-[11px] uppercase tracking-[0.08em] text-white/65">
+                      {resolveKindLabel(entry.item.kind)} · {resolveStatusLabel(entry.item.status)}
+                    </p>
+                    {(resourceLabel || courtLabel || professionalLabel) && (
+                      <p className="mt-1 truncate text-[11px] text-white/65">
+                        {[resourceLabel, courtLabel, professionalLabel].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </ContextDrawer>
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-xs text-white/60">
         <p>

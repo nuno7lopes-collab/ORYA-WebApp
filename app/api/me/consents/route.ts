@@ -22,10 +22,10 @@ async function _GET(_req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const [crmContacts, consentRows] = await Promise.all([
-      prisma.crmContact.findMany({
-        where: { userId: user.id },
-        select: { organizationId: true },
+    const [followRows, consentRows] = await Promise.all([
+      prisma.organization_follows.findMany({
+        where: { follower_id: user.id },
+        select: { organization_id: true },
       }),
       prisma.userConsent.findMany({
         where: { userId: user.id },
@@ -33,9 +33,10 @@ async function _GET(_req: NextRequest) {
       }),
     ]);
 
+    const followedOrgIds = new Set(followRows.map((row) => row.organization_id));
     const orgIds = Array.from(
       new Set([
-        ...crmContacts.map((row) => row.organizationId),
+        ...followRows.map((row) => row.organization_id),
         ...consentRows.map((row) => row.organizationId),
       ]),
     );
@@ -53,7 +54,7 @@ async function _GET(_req: NextRequest) {
         username: true,
         brandingAvatarUrl: true,
       },
-      orderBy: { publicName: "asc" },
+      orderBy: [{ publicName: "asc" }, { businessName: "asc" }, { id: "asc" }],
     });
 
     const consents = await prisma.userConsent.findMany({
@@ -73,6 +74,7 @@ async function _GET(_req: NextRequest) {
       const orgConsents = consentMap.get(org.id);
       return {
         organization: org,
+        isFollowed: followedOrgIds.has(org.id),
         consents: {
           MARKETING: orgConsents?.get(ConsentType.MARKETING) === ConsentStatus.GRANTED,
           CONTACT_EMAIL: orgConsents?.get(ConsentType.CONTACT_EMAIL) === ConsentStatus.GRANTED,
@@ -113,7 +115,7 @@ async function _PUT(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Payload inválido." }, { status: 400 });
     }
 
-    const [existingConsent, existingContact] = await Promise.all([
+    const [existingConsent, existingContact, existingFollow] = await Promise.all([
       prisma.userConsent.findFirst({
         where: { organizationId, userId: user.id },
         select: { id: true },
@@ -122,9 +124,13 @@ async function _PUT(req: NextRequest) {
         where: { organizationId, userId: user.id },
         select: { id: true, contactEmail: true, contactPhone: true },
       }),
+      prisma.organization_follows.findFirst({
+        where: { organization_id: organizationId, follower_id: user.id },
+        select: { id: true },
+      }),
     ]);
 
-    if (!existingContact && !existingConsent) {
+    if (!existingContact && !existingConsent && !existingFollow) {
       return jsonWrap({ ok: false, error: "Organização não autorizada." }, { status: 403 });
     }
 

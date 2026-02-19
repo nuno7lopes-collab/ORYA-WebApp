@@ -1,6 +1,27 @@
-import { env } from "@/lib/env";
+function getPublicSupabaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
+  return raw.trim().replace(/\/+$/, "");
+}
 
-const SUPABASE_PUBLIC_PREFIX = `${env.supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/public/`;
+const SUPABASE_PUBLIC_BASE_URL = getPublicSupabaseUrl();
+const SUPABASE_PUBLIC_PREFIX = SUPABASE_PUBLIC_BASE_URL
+  ? `${SUPABASE_PUBLIC_BASE_URL}/storage/v1/object/public/`
+  : "";
+
+const uploadsBucket =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_UPLOADS ??
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ??
+  process.env.SUPABASE_STORAGE_BUCKET_UPLOADS ??
+  process.env.SUPABASE_STORAGE_BUCKET ??
+  "uploads";
+const avatarsBucketEnv =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_AVATARS ??
+  process.env.SUPABASE_STORAGE_BUCKET_AVATARS ??
+  "";
+const eventCoversBucketEnv =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_EVENT_COVERS ??
+  process.env.SUPABASE_STORAGE_BUCKET_EVENT_COVERS ??
+  "";
 
 export type SupabasePublicObjectRef = {
   bucket: string;
@@ -21,6 +42,7 @@ function normalizePublicUrl(
   buckets: string[],
   options?: { pathPrefixes?: string[] },
 ) {
+  if (!SUPABASE_PUBLIC_PREFIX) return null;
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -44,6 +66,7 @@ function normalizePublicUrl(
 export function parseSupabasePublicObjectUrl(
   raw: string | null | undefined,
 ): SupabasePublicObjectRef | null {
+  if (!SUPABASE_PUBLIC_PREFIX) return null;
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -64,8 +87,8 @@ export function parseSupabasePublicObjectUrl(
   }
 }
 
-const avatarBuckets = resolveBuckets(env.avatarsBucket, env.uploadsBucket);
-const coverBuckets = resolveBuckets(env.eventCoversBucket, env.uploadsBucket);
+const avatarBuckets = resolveBuckets(avatarsBucketEnv, uploadsBucket);
+const coverBuckets = resolveBuckets(eventCoversBucketEnv, uploadsBucket);
 
 export function normalizeProfileAvatarUrl(raw: string | null | undefined) {
   return normalizePublicUrl(raw, avatarBuckets);

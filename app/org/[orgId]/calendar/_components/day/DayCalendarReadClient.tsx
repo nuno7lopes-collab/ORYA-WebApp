@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { getDateParts } from "@/lib/reservas/availability";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
+import { ContextDrawer } from "@/components/ui/context-drawer";
 import {
   addDays,
   buildActiveFilterChips,
@@ -540,8 +540,6 @@ export default function DayCalendarReadClient() {
   }, [selectedCourtIds.length, selectedProfessionalIds.length, selectedResourceIds.length]);
   const selectedEvent = selectedEventId ? filteredEventsById.get(selectedEventId) ?? null : null;
   const hoveredEvent = hoveredEventId ? filteredEventsById.get(hoveredEventId) ?? null : null;
-  const focusedEvent = selectedEvent ?? hoveredEvent;
-  const isPreviewingByHover = Boolean(!selectedEvent && hoveredEvent);
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -601,29 +599,6 @@ export default function DayCalendarReadClient() {
   return (
     <div className="space-y-4 p-4 md:p-6">
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/25 p-1">
-            <Link href={weekViewHref} className="rounded-full border border-white/12 bg-white/[0.04] px-3 py-1 text-[12px] text-white/70 transition hover:border-white/25 hover:bg-white/10 hover:text-white">
-              Semana
-            </Link>
-            <button
-              type="button"
-              className="rounded-full border border-white/40 bg-white/18 px-3 py-1 text-[12px] text-white shadow-[0_10px_24px_rgba(0,0,0,0.3)]"
-              aria-current="page"
-            >
-              Dia
-            </button>
-          </div>
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-white/45">
-            <span>Atalhos:</span>
-            <span>← →</span>
-            <span>T</span>
-            <span>F</span>
-            <span>G</span>
-            <span>W</span>
-            <span>Esc</span>
-          </div>
-        </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[11px] text-white/58">
             {hasActiveSelection
@@ -726,7 +701,19 @@ export default function DayCalendarReadClient() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-4">
+        {hoveredEvent && !selectedEvent ? (
+          <article className="rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
+            <p className="text-sm font-semibold text-cyan-100">{hoveredEvent.title}</p>
+            <p className="mt-1 text-[11px] text-cyan-50/85">
+              {formatDateTime(hoveredEvent.startsAt, timezone)} - {formatDateTime(hoveredEvent.endsAt, timezone)}
+            </p>
+            <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-cyan-50/70">
+              {resolveKindLabel(hoveredEvent.kind)} · {resolveStatusLabel(hoveredEvent.status)}
+            </p>
+          </article>
+        ) : null}
+
         <div>
           <DayGrid
             date={selectedDate}
@@ -784,58 +771,38 @@ export default function DayCalendarReadClient() {
             </div>
           ) : null}
         </div>
-
-        <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 shadow-[0_24px_80px_rgba(3,8,20,0.45)] xl:sticky xl:top-24 xl:self-start">
-          <h2 className="text-sm font-semibold text-white">Detalhe da ocupação</h2>
-          <p className="mt-1 text-xs text-white/60">
-            Hover mostra pré-visualização. Click fixa o detalhe.
-            {isPreviewingByHover ? " (prévia ativa)" : ""}
-          </p>
-          <p className="mt-1 text-[11px] text-white/55">Fuso ativo: {timezone}.</p>
-          {!hasActiveSelection ? (
-            <p className="mt-1 text-[11px] text-white/55">
-              Modo Geral: ocupações sobrepostas aparecem agregadas num único bloco com linhas internas.
-            </p>
-          ) : null}
-          <p className="mt-2 text-[11px] text-white/55">
-            Default quando não configurado: 2ª–6ª, 08:00-17:00 (sábado/domingo fechado). Personaliza em{" "}
-            <Link
-              href={buildOrgHref(organizationId, "/bookings/availability")}
-              className="text-cyan-100 underline decoration-cyan-300/60 underline-offset-2 hover:decoration-cyan-300"
-            >
-              Bookings
-            </Link>
-            .
-          </p>
-
-          {focusedEvent ? (
-            <article className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <p className="text-xs font-semibold text-white">{focusedEvent.title}</p>
-              <p className="mt-1 text-[11px] text-white/75">
-                {formatDateTime(focusedEvent.startsAt, timezone)} - {formatDateTime(focusedEvent.endsAt, timezone)}
-              </p>
-              <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-white/65">
-                {resolveKindLabel(focusedEvent.kind)} · {resolveStatusLabel(focusedEvent.status)}
-              </p>
-
-              <div className="mt-2 space-y-1 text-[11px] text-white/70">
-                {focusedEvent.serviceTitle ? <p>Serviço: {focusedEvent.serviceTitle}</p> : null}
-                {focusedEvent.professionalId ? (
-                  <p>Profissional: {professionalLabels.get(focusedEvent.professionalId) ?? `#${focusedEvent.professionalId}`}</p>
-                ) : null}
-                {focusedEvent.resourceId ? (
-                  <p>Recurso: {resourceLabels.get(focusedEvent.resourceId) ?? `#${focusedEvent.resourceId}`}</p>
-                ) : null}
-                {focusedEvent.courtId ? <p>Campo: {courtLabels.get(focusedEvent.courtId) ?? `#${focusedEvent.courtId}`}</p> : null}
-              </div>
-            </article>
-          ) : (
-            <p className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/55">
-              Nenhuma ocupação selecionada.
-            </p>
-          )}
-        </aside>
       </div>
+
+      <ContextDrawer
+        open={Boolean(selectedEvent)}
+        onClose={() => setSelectedEventId(null)}
+        eyebrow="Agenda diária"
+        title="Detalhe da ocupação"
+        widthClassName="max-w-xl"
+      >
+        {selectedEvent ? (
+          <article className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-sm font-semibold text-white">{selectedEvent.title}</p>
+            <p className="text-[11px] text-white/75">
+              {formatDateTime(selectedEvent.startsAt, timezone)} - {formatDateTime(selectedEvent.endsAt, timezone)}
+            </p>
+            <p className="text-[10px] uppercase tracking-[0.08em] text-white/65">
+              {resolveKindLabel(selectedEvent.kind)} · {resolveStatusLabel(selectedEvent.status)}
+            </p>
+
+            <div className="space-y-1 text-[11px] text-white/70">
+              {selectedEvent.serviceTitle ? <p>Serviço: {selectedEvent.serviceTitle}</p> : null}
+              {selectedEvent.professionalId ? (
+                <p>Profissional: {professionalLabels.get(selectedEvent.professionalId) ?? `#${selectedEvent.professionalId}`}</p>
+              ) : null}
+              {selectedEvent.resourceId ? (
+                <p>Recurso: {resourceLabels.get(selectedEvent.resourceId) ?? `#${selectedEvent.resourceId}`}</p>
+              ) : null}
+              {selectedEvent.courtId ? <p>Campo: {courtLabels.get(selectedEvent.courtId) ?? `#${selectedEvent.courtId}`}</p> : null}
+            </div>
+          </article>
+        ) : null}
+      </ContextDrawer>
 
       <FiltersDrawer
         open={filtersOpen}

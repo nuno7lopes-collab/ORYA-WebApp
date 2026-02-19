@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { respondOk } from "@/lib/http/envelope";
+import { respondError, respondOk } from "@/lib/http/envelope";
 import { prisma } from "@/lib/prisma";
-import { ensureCrmPolicy, normalizeCrmConfigInput, policyToConfig } from "@/lib/crm/policy";
+import { ensureCrmPolicy, policyToConfig } from "@/lib/crm/policy";
 import { resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
 
 async function _GET(req: NextRequest) {
@@ -22,37 +22,15 @@ async function _PUT(req: NextRequest) {
   const access = await resolveCrmRequest({ req, required: "EDIT" });
   if (!access.ok) return access.response;
 
-  const body = (await req.json().catch(() => null)) as unknown;
-  const current = await ensureCrmPolicy(prisma, access.organization.id, access.organization.timezone ?? undefined);
-  const normalized = normalizeCrmConfigInput(body, policyToConfig(current));
-
-  const updated = await prisma.crmOrganizationPolicy.update({
-    where: { organizationId: access.organization.id },
-    data: {
-      timezone: normalized.timezone,
-      quietHoursStartMinute: normalized.quietHoursStartMinute,
-      quietHoursEndMinute: normalized.quietHoursEndMinute,
-      capPerDay: normalized.capPerDay,
-      capPerWeek: normalized.capPerWeek,
-      capPerMonth: normalized.capPerMonth,
-      approvalEscalationHours: normalized.approvalEscalationHours,
-      approvalExpireHours: normalized.approvalExpireHours,
+  return respondError(
+    ctx,
+    {
+      errorCode: "CRM_POLICY_LOCKED",
+      message: "A política de CRM é gerida pela plataforma e não pode ser alterada pela organização.",
+      retryable: false,
     },
-    select: {
-      timezone: true,
-      quietHoursStartMinute: true,
-      quietHoursEndMinute: true,
-      capPerDay: true,
-      capPerWeek: true,
-      capPerMonth: true,
-      approvalEscalationHours: true,
-      approvalExpireHours: true,
-    },
-  });
-
-  return respondOk(ctx, {
-    config: policyToConfig(updated),
-  });
+    { status: 403 },
+  );
 }
 
 export const GET = withApiEnvelope(_GET);

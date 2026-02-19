@@ -40,11 +40,9 @@ export function SettingsToggle({
 
 const styles = StyleSheet.create({
   row: {
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: tokens.radius.lg,
-    paddingHorizontal: tokens.spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 0,
     paddingVertical: tokens.spacing.sm,
     flexDirection: "row",
     alignItems: "center",
@@ -57,14 +55,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   label: {
-    color: "rgba(255,255,255,0.92)",
-    fontSize: 14,
+    color: "rgba(255,255,255,0.96)",
+    fontSize: 16,
     fontWeight: "600",
   },
   description: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 12,
-    lineHeight: 16,
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 13,
+    lineHeight: 18,
   },
   disabled: {
     opacity: 0.6,

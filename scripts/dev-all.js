@@ -474,10 +474,12 @@ function resetDevState() {
   // Default to clean boot to avoid stale route/runtime artifacts.
   const shouldCleanNext = parseBool(process.env.DEV_ALL_CLEAN_NEXT, true);
   if (shouldCleanNext) {
-    const nextDir = path.join(repoRoot, ".next");
-    if (fs.existsSync(nextDir)) {
+    const nextDirs = [".next", ".next-e2e"];
+    for (const nextDirName of nextDirs) {
+      const nextDir = path.join(repoRoot, nextDirName);
+      if (!fs.existsSync(nextDir)) continue;
       fs.rmSync(nextDir, { recursive: true, force: true });
-      console.log("[dev-all] Removed .next cache.");
+      console.log(`[dev-all] Removed ${nextDirName} cache.`);
     }
   }
 

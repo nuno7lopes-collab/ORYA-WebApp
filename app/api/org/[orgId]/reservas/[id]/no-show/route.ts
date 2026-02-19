@@ -12,11 +12,6 @@ import { markNoShowBooking } from "@/domain/bookings/commands";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import {
-  computeNoShowRefundFromSnapshot,
-  parseBookingConfirmationSnapshot,
-} from "@/lib/reservas/confirmationSnapshot";
-import { refundBookingPayment } from "@/lib/reservas/bookingRefund";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -45,8 +40,6 @@ async function _POST(
     | {
         booking: { id: number; status: string };
         userId: string | null;
-        paymentIntentId: string | null;
-        refundAmountCents: number;
         snapshotTimezone: string;
       };
 
@@ -115,11 +108,9 @@ async function _POST(
           userId: true,
           status: true,
           startsAt: true,
-          paymentIntentId: true,
           organizationId: true,
           serviceId: true,
           snapshotTimezone: true,
-          confirmationSnapshot: true,
           professional: { select: { userId: true } },
         },
       });
@@ -145,32 +136,6 @@ async function _POST(
         return { error: fail(409, "BOOKING_NOT_STARTED", "Reserva ainda não ocorreu.") };
       }
 
-      const snapshot = parseBookingConfirmationSnapshot(booking.confirmationSnapshot);
-      if (!snapshot) {
-        return {
-          error: fail(
-            409,
-            "BOOKING_CONFIRMATION_SNAPSHOT_REQUIRED",
-            "Reserva sem snapshot. Corre o backfill antes de marcar no-show.",
-            false,
-            { bookingId: booking.id },
-          ),
-        };
-      }
-
-      const refundComputation = computeNoShowRefundFromSnapshot(snapshot);
-      if (!refundComputation) {
-        return {
-          error: fail(
-            409,
-            "BOOKING_CONFIRMATION_SNAPSHOT_INVALID",
-            "Snapshot inválido. Corre o backfill antes de marcar no-show.",
-            false,
-            { bookingId: booking.id },
-          ),
-        };
-      }
-
       const { booking: updated } = await markNoShowBooking({
         bookingId: booking.id,
         organizationId: booking.organizationId,
@@ -188,11 +153,9 @@ async function _POST(
           bookingId: booking.id,
           serviceId: booking.serviceId,
           actorRole: membership.role,
-          snapshotVersion: snapshot.version,
           snapshotTimezone: booking.snapshotTimezone,
-          penaltyCents: refundComputation.penaltyCents,
-          refundAmountCents: refundComputation.refundCents,
-          refundRule: refundComputation.rule,
+          financialImpact: "NONE",
+          noShowScope: "CRM_ONLY",
         },
         ip,
         userAgent,
@@ -201,32 +164,11 @@ async function _POST(
       return {
         booking: { id: updated.id, status: updated.status },
         userId: booking.userId,
-        paymentIntentId: booking.paymentIntentId,
-        refundAmountCents: refundComputation.refundCents,
         snapshotTimezone: booking.snapshotTimezone,
       };
     });
 
     if ("error" in result) return result.error;
-
-    if (result.paymentIntentId && result.refundAmountCents > 0) {
-      try {
-        await refundBookingPayment({
-          bookingId: result.booking.id,
-          paymentIntentId: result.paymentIntentId,
-          reason: "NO_SHOW_REFUND",
-          amountCents: result.refundAmountCents,
-        });
-      } catch (refundErr) {
-        console.error("[organizacao/no-show] refund failed", refundErr);
-        return fail(
-          502,
-          "BOOKING_REFUND_FAILED",
-          "No-show registado, mas o reembolso falhou.",
-          true,
-        );
-      }
-    }
 
     if (result.userId) {
       const shouldSend = await shouldNotify(result.userId, "SYSTEM_ANNOUNCE");

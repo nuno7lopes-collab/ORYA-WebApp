@@ -20,6 +20,7 @@ import { TabSwipeProvider } from "../components/navigation/TabSwipeProvider";
 import { I18nProvider } from "../components/i18n/I18nProvider";
 import { Manrope_500Medium, Manrope_700Bold } from "@expo-google-fonts/manrope";
 import { Sora_600SemiBold, Sora_700Bold } from "@expo-google-fonts/sora";
+import { tokens } from "@orya/shared";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -69,6 +70,7 @@ LogBox.ignoreLogs([
 const NAV_DURATION_FAST = 200;
 const NAV_DURATION_STANDARD = 220;
 const NAV_DURATION_EMPHASIS = 240;
+const APP_BACKGROUND = tokens.colors.background;
 
 export default function RootLayout() {
   perfMark("app_boot");
@@ -117,7 +119,7 @@ export default function RootLayout() {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0b1014",
+        backgroundColor: APP_BACKGROUND,
       }}
     >
       <ActivityIndicator />
@@ -129,7 +131,9 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0b1014" }}>
+    <GestureHandlerRootView
+      style={{ flex: 1, backgroundColor: APP_BACKGROUND }}
+    >
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StripeProvider
@@ -145,7 +149,7 @@ export default function RootLayout() {
                   <Stack
                     screenOptions={{
                       headerShown: false,
-                      contentStyle: { backgroundColor: "#0b1014" },
+                      contentStyle: { backgroundColor: APP_BACKGROUND },
                     }}
                   >
                     <Stack.Screen

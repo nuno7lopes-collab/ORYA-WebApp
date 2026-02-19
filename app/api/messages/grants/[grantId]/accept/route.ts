@@ -9,7 +9,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 
 function buildDmContextId(userA: string, userB: string) {
   return [userA, userB].sort().join(":");
@@ -598,14 +598,18 @@ export async function POST(
         },
       });
 
-      await publishChatEvent({
+      const warnings: string[] = [];
+      const published = await publishChatEvent({
         type: "conversation:update",
         action: "created",
         organizationId: orgId,
         conversationId,
       });
+      if (!published) {
+        warnings.push("REALTIME_DEGRADED");
+      }
 
-      return jsonWrap({ ok: true, conversationId });
+      return jsonWrap({ ok: true, conversationId, ...(warnings.length ? { warnings } : {}) });
     }
 
     if (grant.kind === "CHANNEL_CREATE_REQUEST") {
@@ -657,15 +661,24 @@ export async function POST(
         },
       });
 
-      await publishChatEvent({
+      const warnings: string[] = [];
+      const published = await publishChatEvent({
         type: "conversation:update",
         action: "created",
         organizationId: orgId,
         conversationId: conversation.id,
         conversation,
       });
+      if (!published) {
+        warnings.push("REALTIME_DEGRADED");
+      }
 
-      return jsonWrap({ ok: true, conversationId: conversation.id, conversation });
+      return jsonWrap({
+        ok: true,
+        conversationId: conversation.id,
+        conversation,
+        ...(warnings.length ? { warnings } : {}),
+      });
     }
 
     return jsonWrap({ ok: false, error: "UNSUPPORTED_GRANT_KIND" }, { status: 400 });
@@ -675,9 +688,6 @@ export async function POST(
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/grants/[grantId]/accept error:", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

@@ -55,6 +55,7 @@
     "gate:finance-ops:report": "FINANCE_CYCLES_STRICT=0 node scripts/finance_operational_gate.mjs",
     "gate:todo": "node scripts/v9_todo_gate.mjs",
     "gate:api-ui-coverage": "FAIL_ON_ORPHANS=1 node scripts/run-ts.cjs scripts/audit_api_ui_coverage.ts",
+    "audit:event-ticket-integrity": "node scripts/run-ts.cjs scripts/audit_event_ticket_integrity.ts",
     "ssot:p0:sync": "node scripts/sync_ssot_p0_endpoints.mjs",
     "ssot:p0:check": "node scripts/sync_ssot_p0_endpoints.mjs --check",
     "audit:public-events": "node scripts/run-ts.cjs scripts/audit_public_events.ts",

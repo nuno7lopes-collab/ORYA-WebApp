@@ -1012,7 +1012,7 @@ export default function ServicoDetalhePage() {
             <option value="">Usar política default</option>
             {policies.map((policy) => (
               <option key={policy.id} value={String(policy.id)}>
-                {policy.name} · {policy.policyType}
+                {policy.name}
               </option>
             ))}
           </select>

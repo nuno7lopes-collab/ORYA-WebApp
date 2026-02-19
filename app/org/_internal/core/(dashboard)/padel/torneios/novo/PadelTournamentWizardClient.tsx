@@ -290,7 +290,6 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
   const [globalNonStopMode, setGlobalNonStopMode] = useState<"ACTIVE_QUEUE" | "HARD_CAP_WAITLIST">("ACTIVE_QUEUE");
   const [globalNonStopRounds, setGlobalNonStopRounds] = useState("6");
   const [eligibility, setEligibility] = useState<string>("OPEN");
-  const [splitDeadlineHours, setSplitDeadlineHours] = useState<string>("48");
   const [waitlistEnabled, setWaitlistEnabled] = useState(true);
   const [ruleSetId, setRuleSetId] = useState<string>("");
   const [categoryDrafts, setCategoryDrafts] = useState<Record<number, CategoryDraft>>({});
@@ -808,7 +807,6 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
         categoryIds: selectedCategories.map((cat) => cat.id),
         format,
         eligibilityType: eligibility,
-        splitDeadlineHours: asNumber(splitDeadlineHours) ?? null,
         ruleSetId: ruleSetId ? Number(ruleSetId) : null,
         isInterclub: false,
         teamSize: null,
@@ -1238,7 +1236,7 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Políticas avançadas</p>
-                  <p className="text-[12px] text-white/70">Elegibilidade, split, ruleset, prioridade e buffer.</p>
+                  <p className="text-[12px] text-white/70">Elegibilidade, ruleset, prioridade e buffer.</p>
                 </div>
                 <button
                   type="button"
@@ -1264,14 +1262,10 @@ export default function PadelTournamentWizardClient({ organizationId }: { organi
                       ))}
                     </select>
                   </label>
-                  <label className="space-y-1 text-sm text-white/70">
-                    <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Deadline split (h)</span>
-                    <input
-                      value={splitDeadlineHours}
-                      onChange={(e) => setSplitDeadlineHours(e.target.value)}
-                      className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-white outline-none focus:border-[#6BFFFF]"
-                    />
-                  </label>
+                  <div className="space-y-1 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-sm text-white/70">
+                    <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">Split</span>
+                    <p className="text-white">Fixo em 24h antes do inicio.</p>
+                  </div>
                   <label className="space-y-1 text-sm text-white/70">
                     <span className="text-[11px] uppercase tracking-[0.18em] text-white/50">RuleSet</span>
                     <select

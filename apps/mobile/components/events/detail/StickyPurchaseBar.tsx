@@ -25,7 +25,7 @@ export function StickyPurchaseBar({
   return (
     <View style={[styles.wrapper, { paddingBottom: insets.bottom + 12 }]}>
       <LinearGradient
-        colors={["rgba(7,12,20,0)", "rgba(7,12,21,0.74)", "rgba(7,12,21,0.98)"]}
+        colors={["rgba(10,15,20,0)", "rgba(10,15,20,0.74)", "rgba(10,15,20,0.98)"]}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.contentWrap}>
@@ -51,7 +51,9 @@ export function StickyPurchaseBar({
                 <Text style={styles.buttonText}>A processar…</Text>
               </View>
             ) : (
-              <Text style={styles.buttonText}>{buttonLabel}</Text>
+              <Text style={styles.buttonText} numberOfLines={1}>
+                {buttonLabel}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -81,6 +83,7 @@ const styles = StyleSheet.create({
     padding: 12,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
     shadowColor: "rgba(0,0,0,0.6)",
     shadowOffset: { width: 0, height: 12 },
@@ -90,14 +93,18 @@ const styles = StyleSheet.create({
   },
   price: {
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
     color: "#F6FAFF",
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
     letterSpacing: -0.2,
   },
   button: {
     minHeight: tokens.layout.touchTarget,
-    minWidth: 170,
+    minWidth: 152,
+    maxWidth: "64%",
+    flexShrink: 1,
     borderRadius: 16,
     backgroundColor: "#EAF63A",
     alignItems: "center",

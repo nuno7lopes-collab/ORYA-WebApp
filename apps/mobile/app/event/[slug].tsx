@@ -66,7 +66,7 @@ import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
 import * as Haptics from "expo-haptics";
 import {
-  resolveCanOpenTicketSheet,
+  resolveTicketSheetGateState,
   shouldDismissByPullDown,
 } from "../../features/events/detailState";
 import { EventHeroSquare } from "../../components/events/detail/EventHeroSquare";
@@ -78,7 +78,7 @@ import {
   TicketSelectorItem,
   TicketSelectorSheet,
 } from "../../components/events/detail/TicketSelectorSheet";
-import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
+import { getDominantColor, type DominantColor } from "../../lib/imageTint";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -239,17 +239,12 @@ type Gradient4 = [string, string, string, string];
 
 type EventBackdropPalette = {
   rootGradient: Gradient3;
-  topGradient: Gradient4;
-  blendGradient: Gradient4;
-  closeOrbFill: string;
-  closeOrbBorder: string;
-  closeOrbHighlight: string;
-  closeButtonShadow: string;
+  topWashGradient: Gradient4 | null;
+  depthGradient: Gradient4;
 };
 
-const ORYA_BLUE_PRIMARY: Rgb = { r: 10, g: 29, b: 72 };
-const ORYA_BLUE_DEEP: Rgb = { r: 4, g: 14, b: 40 };
-const ORYA_SKY_ACCENT: Rgb = { r: 120, g: 222, b: 255 };
+const APP_BG_RGB: Rgb = { r: 10, g: 15, b: 20 };
+const APP_BG_DEEP: Rgb = { r: 8, g: 13, b: 19 };
 
 const clampChannel = (value: number) =>
   Math.max(0, Math.min(255, Math.round(value)));
@@ -260,14 +255,34 @@ const rgba = (color: Rgb, alpha: number) =>
     color.b,
   )}, ${clampAlpha(alpha)})`;
 
-const parsePercentOrFloat = (token: string) => {
-  const raw = token.trim();
-  if (!raw) return Number.NaN;
-  if (raw.endsWith("%")) return Number.parseFloat(raw) / 100;
-  return Number.parseFloat(raw);
+const rgbToHsl = ({ r, g, b }: Rgb) => {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let h = 0;
+
+  if (delta !== 0) {
+    if (max === red) h = ((green - blue) / delta) % 6;
+    else if (max === green) h = (blue - red) / delta + 2;
+    else h = (red - green) / delta + 4;
+  }
+
+  const hue = Math.round(h * 60);
+  const lightness = (max + min) / 2;
+  const saturation =
+    delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1));
+
+  return {
+    h: hue < 0 ? hue + 360 : hue,
+    s: saturation,
+    l: lightness,
+  };
 };
 
-const hslToRgb = (h: number, s: number, l: number): Rgb => {
+const hslToRgb = ({ h, s, l }: { h: number; s: number; l: number }): Rgb => {
   const hue = ((h % 360) + 360) % 360;
   const sat = Math.max(0, Math.min(1, s));
   const lig = Math.max(0, Math.min(1, l));
@@ -303,57 +318,6 @@ const hslToRgb = (h: number, s: number, l: number): Rgb => {
   };
 };
 
-const parseColorToRgb = (color: string): Rgb | null => {
-  const value = color.trim();
-  if (!value) return null;
-
-  const rgbaMatch = value.match(/^rgba?\(([^)]+)\)$/i);
-  if (rgbaMatch) {
-    const parts = rgbaMatch[1].split(",").map((item) => item.trim());
-    if (parts.length >= 3) {
-      const parsed = parts.slice(0, 3).map((item) => Number.parseFloat(item));
-      if (parsed.every((item) => Number.isFinite(item))) {
-        const [r, g, b] = parsed;
-        return { r: clampChannel(r), g: clampChannel(g), b: clampChannel(b) };
-      }
-    }
-  }
-
-  const hslaMatch = value.match(/^hsla?\(([^)]+)\)$/i);
-  if (hslaMatch) {
-    const parts = hslaMatch[1].split(",").map((item) => item.trim());
-    if (parts.length >= 3) {
-      const h = Number.parseFloat(parts[0]);
-      const s = parsePercentOrFloat(parts[1]);
-      const l = parsePercentOrFloat(parts[2]);
-      if (Number.isFinite(h) && Number.isFinite(s) && Number.isFinite(l)) {
-        return hslToRgb(h, s, l);
-      }
-    }
-  }
-
-  const hexMatch = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hexMatch) {
-    const raw = hexMatch[1];
-    const hex =
-      raw.length === 3
-        ? raw
-            .split("")
-            .map((char) => `${char}${char}`)
-            .join("")
-        : raw;
-    const parsed = Number.parseInt(hex, 16);
-    if (Number.isFinite(parsed)) {
-      return {
-        r: (parsed >> 16) & 0xff,
-        g: (parsed >> 8) & 0xff,
-        b: parsed & 0xff,
-      };
-    }
-  }
-  return null;
-};
-
 const mixRgb = (from: Rgb, to: Rgb, weight: number): Rgb => {
   const safe = Math.max(0, Math.min(1, weight));
   return {
@@ -363,49 +327,45 @@ const mixRgb = (from: Rgb, to: Rgb, weight: number): Rgb => {
   };
 };
 
-const liftTintForBackdrop = (input: Rgb): Rgb => {
-  const luminance = input.r * 0.2126 + input.g * 0.7152 + input.b * 0.0722;
-  let output = input;
-  if (luminance < 74) {
-    const lift = Math.min(1, (74 - luminance) / 74);
-    output = mixRgb(output, ORYA_SKY_ACCENT, 0.24 + lift * 0.4);
-  } else if (luminance > 190) {
-    output = mixRgb(output, ORYA_BLUE_PRIMARY, 0.3);
-  }
-  return mixRgb(output, ORYA_BLUE_PRIMARY, 0.18);
+const normalizeDominantColor = (input: Rgb): Rgb => {
+  const hsl = rgbToHsl(input);
+  const saturation = Math.max(0.22, Math.min(0.66, hsl.s));
+  const lightness = Math.max(0.22, Math.min(0.62, hsl.l));
+  return hslToRgb({ h: hsl.h, s: saturation, l: lightness });
 };
 
-const buildEventBackdropPalette = (tint: string): EventBackdropPalette => {
-  const parsedTint = parseColorToRgb(tint) ?? ORYA_BLUE_PRIMARY;
-  const liftedTint = liftTintForBackdrop(parsedTint);
-  const top = mixRgb(liftedTint, ORYA_SKY_ACCENT, 0.2);
-  const middle = mixRgb(liftedTint, ORYA_BLUE_PRIMARY, 0.46);
-  const deep = mixRgb(ORYA_BLUE_PRIMARY, ORYA_BLUE_DEEP, 0.52);
-  const closeOrb = mixRgb(top, ORYA_BLUE_PRIMARY, 0.5);
-  const closeEdge = mixRgb(top, { r: 255, g: 255, b: 255 }, 0.54);
-
+const buildEventBackdropPalette = (
+  dominantColor: DominantColor | null,
+): EventBackdropPalette => {
+  const normalized = dominantColor
+    ? normalizeDominantColor({
+        r: dominantColor.r,
+        g: dominantColor.g,
+        b: dominantColor.b,
+      })
+    : null;
+  const topWashBase = normalized
+    ? mixRgb(normalized, APP_BG_RGB, 0.24)
+    : null;
+  const topWashHead = normalized
+    ? mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.1)
+    : null;
   return {
-    rootGradient: [
-      rgba(mixRgb(ORYA_BLUE_PRIMARY, liftedTint, 0.16), 1),
-      rgba(deep, 1),
-      rgba(ORYA_BLUE_DEEP, 1),
+    rootGradient: [rgba(APP_BG_RGB, 1), rgba(APP_BG_RGB, 1), rgba(APP_BG_RGB, 1)],
+    topWashGradient: topWashHead && topWashBase
+      ? [
+          rgba(topWashHead, 0.84),
+          rgba(topWashBase, 0.5),
+          rgba(mixRgb(topWashBase, APP_BG_RGB, 0.62), 0.15),
+          "rgba(0,0,0,0)",
+        ]
+      : null,
+    depthGradient: [
+      "rgba(0,0,0,0)",
+      rgba(APP_BG_RGB, 0.14),
+      rgba(APP_BG_RGB, 0.76),
+      rgba(APP_BG_DEEP, 0.96),
     ],
-    topGradient: [
-      rgba(top, 0.92),
-      rgba(middle, 0.68),
-      rgba(mixRgb(middle, ORYA_BLUE_DEEP, 0.42), 0.28),
-      rgba(ORYA_BLUE_DEEP, 0),
-    ],
-    blendGradient: [
-      rgba(top, 0),
-      rgba(mixRgb(middle, ORYA_BLUE_PRIMARY, 0.36), 0.24),
-      rgba(mixRgb(ORYA_BLUE_PRIMARY, ORYA_BLUE_DEEP, 0.44), 0.76),
-      rgba(ORYA_BLUE_DEEP, 0.98),
-    ],
-    closeOrbFill: rgba(closeOrb, 0.34),
-    closeOrbBorder: rgba(closeEdge, 0.48),
-    closeOrbHighlight: rgba(mixRgb(closeEdge, { r: 255, g: 255, b: 255 }, 0.5), 0.2),
-    closeButtonShadow: rgba(mixRgb(closeEdge, ORYA_SKY_ACCENT, 0.26), 0.84),
   };
 };
 
@@ -494,11 +454,6 @@ export default function EventDetail() {
   const openAuth = useCallback(() => {
     router.push({ pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
-  const previewPrice = useMemo(() => {
-    const value = params.priceLabel;
-    if (Array.isArray(value)) return value[0];
-    return value ?? null;
-  }, [params.priceLabel]);
   const previewHost = useMemo(() => {
     const value = params.hostName;
     if (Array.isArray(value)) return value[0];
@@ -567,6 +522,8 @@ export default function EventDetail() {
   const [pairingActionBusy, setPairingActionBusy] = useState(false);
   const dismissInFlightRef = useRef(false);
   const scrollOffsetYRef = useRef(0);
+  const dragStartedAtTopRef = useRef(false);
+  const dragMinOffsetRef = useRef(0);
   const dismissResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -901,6 +858,17 @@ export default function EventDetail() {
     () => new Map(ticketMeta.map((ticket) => [ticket.id, ticket])),
     [ticketMeta],
   );
+  const activeCategoryLinkId = selectedPadelCategory?.linkId ?? null;
+  const activePadelCategoryTickets = useMemo(() => {
+    if (!Number.isFinite(activeCategoryLinkId)) return [];
+    return ticketMeta.filter(
+      (ticket) => ticket.padelEventCategoryLinkId === activeCategoryLinkId,
+    );
+  }, [activeCategoryLinkId, ticketMeta]);
+  const hasActivePadelCategoryTicket = activePadelCategoryTickets.length > 0;
+  const hasActivePadelCategoryPurchasableTicket = activePadelCategoryTickets.some(
+    (ticket) => !ticket.unavailable,
+  );
   const purchasableTickets = useMemo(
     () => ticketMeta.filter((ticket) => !ticket.unavailable),
     [ticketMeta],
@@ -1016,14 +984,6 @@ export default function EventDetail() {
   const date = formatDateRange(data?.startsAt, data?.endsAt);
   const location =
     data?.location?.formattedAddress || data?.location?.city || null;
-  const price =
-    typeof data?.priceFrom === "number"
-      ? data.priceFrom <= 0
-        ? t("common:price.free")
-        : t("common:price.from", {
-            price: formatCurrency(data.priceFrom, "EUR"),
-          })
-      : null;
   const description = data?.description ?? data?.shortDescription ?? null;
   const displayTitle = data?.title ?? eventTitleValue ?? null;
   const displayCover = cover ?? previewCoverValue ?? null;
@@ -1039,14 +999,11 @@ export default function EventDetail() {
       ),
     [data?.slug, displayCover, displayTitle, eventTitleValue, slugValue],
   );
-  const fallbackBackdropTint = useMemo(
-    () => getFallbackTint(backdropSeed),
-    [backdropSeed],
-  );
-  const [backdropTint, setBackdropTint] = useState(fallbackBackdropTint);
+  const [backdropDominantColor, setBackdropDominantColor] =
+    useState<DominantColor | null>(null);
   const backdropPalette = useMemo(
-    () => buildEventBackdropPalette(backdropTint),
-    [backdropTint],
+    () => buildEventBackdropPalette(backdropDominantColor),
+    [backdropDominantColor],
   );
   const displayLocation =
     data?.location?.formattedAddress ||
@@ -1054,7 +1011,6 @@ export default function EventDetail() {
     previewLocation ||
     location ||
     null;
-  const displayPrice = data ? price : (previewPrice ?? price);
   const displayHost =
     data?.hostName ?? previewHost ?? data?.hostUsername ?? null;
   const hostUsername = data?.hostUsername ?? null;
@@ -1071,20 +1027,17 @@ export default function EventDetail() {
   const statusLabel = data ? resolveStatusLabel(data.status, t) : null;
 
   useEffect(() => {
-    setBackdropTint(fallbackBackdropTint);
-  }, [fallbackBackdropTint]);
-
-  useEffect(() => {
     let active = true;
+    setBackdropDominantColor(null);
     if (!displayCover) {
       return () => {
         active = false;
       };
     }
     const task = InteractionManager.runAfterInteractions(() => {
-      getDominantTint(displayCover, backdropSeed)
+      getDominantColor(displayCover, backdropSeed)
         .then((resolved) => {
-          if (active) setBackdropTint(resolved);
+          if (active) setBackdropDominantColor(resolved);
         })
         .catch(() => undefined);
     });
@@ -1101,12 +1054,16 @@ export default function EventDetail() {
   };
   const showStickyPurchaseBar =
     Boolean(data) && !isLoading && !isError && !isPadelEvent;
-  const canOpenTicketSheet = resolveCanOpenTicketSheet({
+  const isPublicEventAccess = !isInviteOnly;
+  const ticketGateState = resolveTicketSheetGateState({
     showStickyPurchaseBar,
     ticketMetaLength: ticketMeta.length,
+    selectableTicketMetaLength: purchasableTickets.length,
     canAccessInvite,
     eventIsActive,
+    isPublicEvent: isPublicEventAccess,
   });
+  const canOpenTicketSheet = ticketGateState.canOpenSheet;
   const scrollBottomPadding = showStickyPurchaseBar ? insets.bottom + 190 : 36;
   const ticketSheetCurrency =
     selectedTicketItems[0]?.currency ??
@@ -1117,6 +1074,20 @@ export default function EventDetail() {
       ticketMeta.map((ticket) => {
         const quantity = ticketQuantities[ticket.id] ?? 0;
         const disabled = ticket.unavailable || !canAccessInvite || !eventIsActive;
+        const status = ticket.status ?? null;
+        const disabledReason = !canAccessInvite
+          ? t("events:invite.lockedTickets")
+          : !eventIsActive
+            ? t("events:status.ended")
+            : status === "UPCOMING"
+              ? t("events:tickets.upcoming")
+              : status === "CLOSED"
+                ? t("events:tickets.closed")
+                : status === "SOLD_OUT" || ticket.remaining === 0
+                  ? t("events:tickets.soldOut")
+                  : ticket.maxQuantity <= 0
+                    ? t("events:tickets.unavailableNow")
+                    : null;
         return {
           id: ticket.id,
           name: ticket.name,
@@ -1132,6 +1103,7 @@ export default function EventDetail() {
               : null,
           statusLabel: ticket.statusLabel,
           disabled,
+          disabledReason,
         };
       }),
     [canAccessInvite, eventIsActive, t, ticketMeta, ticketQuantities],
@@ -1139,23 +1111,78 @@ export default function EventDetail() {
   const stickyPriceLabel =
     selectedTicketQuantity > 0
       ? formatTicketPrice(selectedTicketTotalCents, ticketSheetCurrency, t)
-      : displayPrice ??
-        (hasPurchasableTickets
-          ? formatTicketPrice(
-              purchasableTickets[0].price,
-              purchasableTickets[0].currencyCode,
-              t,
-            )
-          : t("events:tickets.comingSoon"));
-  const stickyHelperText = !canAccessInvite
+      : hasPurchasableTickets
+        ? (() => {
+            const sorted = [...purchasableTickets].sort(
+              (a, b) => a.price - b.price,
+            );
+            const lowest = sorted[0];
+            if (!lowest) return t("events:tickets.unavailableNow");
+            const uniquePrices = new Set(sorted.map((ticket) => ticket.price));
+            return uniquePrices.size > 1 && lowest.price > 0
+              ? t("common:price.from", {
+                  price: formatCurrency(
+                    lowest.price / 100,
+                    lowest.currencyCode ?? "EUR",
+                  ),
+                })
+              : formatTicketPrice(lowest.price, lowest.currencyCode, t);
+          })()
+        : ticketGateState.hasTicketTypes
+          ? t("events:tickets.unavailableNow")
+        : t("events:tickets.comingSoon");
+  const hasPriceWithoutTicketTypes =
+    showStickyPurchaseBar &&
+    !ticketGateState.hasTicketTypes &&
+    typeof data?.priceFrom === "number";
+  const stickyHelperText = ticketGateState.inviteLocked
     ? t("events:invite.lockedTickets")
-    : !eventIsActive
+    : ticketGateState.eventEnded
       ? t("events:status.ended")
-      : ticketMeta.length === 0
+      : hasPriceWithoutTicketTypes
+        ? t("events:tickets.configurationIssue")
+      : !ticketGateState.hasTicketTypes
         ? t("events:tickets.comingSoon")
+        : ticketGateState.configInvalid
+          ? t("events:tickets.configurationIssue")
+          : !ticketGateState.hasSelectableTickets
+            ? t("events:tickets.unavailableNow")
         : !session?.user?.id
           ? t("events:detail.signInToContinue")
           : null;
+
+  useEffect(() => {
+    if (!ticketGateState.configInvalid || !data?.id) return;
+    trackEvent("event_ticket_config_invalid", {
+      eventId: data.id,
+      slug: data.slug,
+      ticketCount: ticketMeta.length,
+      accessMode: accessMode ?? "PUBLIC",
+    });
+  }, [
+    accessMode,
+    data?.id,
+    data?.slug,
+    ticketGateState.configInvalid,
+    ticketMeta.length,
+  ]);
+
+  useEffect(() => {
+    if (!hasPriceWithoutTicketTypes || !data?.id) return;
+    trackEvent("event_ticket_missing_types_for_price", {
+      eventId: data.id,
+      slug: data.slug,
+      priceFrom: data.priceFrom ?? null,
+      accessMode: accessMode ?? "PUBLIC",
+    });
+  }, [
+    accessMode,
+    data?.id,
+    data?.priceFrom,
+    data?.slug,
+    hasPriceWithoutTicketTypes,
+  ]);
+
   const shareUrl =
     data?.slug && env.apiBaseUrl
       ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}`
@@ -1225,6 +1252,8 @@ export default function EventDetail() {
   const registrationBlockReason = resolveRegistrationBlockReason({
     registrationOpen,
     hasCategory: Boolean(activeCategoryId),
+    hasCategoryTicket: hasActivePadelCategoryTicket,
+    hasCategoryPurchasableTicket: hasActivePadelCategoryPurchasableTicket,
     joinMode,
     inviteContact,
     pairingBusy,
@@ -1241,6 +1270,10 @@ export default function EventDetail() {
       ? t("events:padel.categoryRequired")
       : registrationBlockReason === "REGISTRATION_CLOSED"
         ? registrationMessage
+        : registrationBlockReason === "MISSING_CATEGORY_TICKET"
+          ? t("events:tickets.configurationIssue")
+        : registrationBlockReason === "CATEGORY_TICKET_UNAVAILABLE"
+          ? t("events:tickets.unavailableNow")
         : registrationBlockReason === "MISSING_INVITE_CONTACT"
           ? t("events:padel.partnerRequired")
           : registrationBlockReason === "BUSY"
@@ -1248,6 +1281,44 @@ export default function EventDetail() {
             : registrationBlockReason === "POLICY_LOCKED"
               ? t("events:padel.completeProfileToAccept")
               : t("events:padel.registrationReadyHint");
+
+  useEffect(() => {
+    if (!isPadelEvent || !activeCategoryId || !data?.id) return;
+    if (hasActivePadelCategoryTicket) return;
+    trackEvent("padel_category_missing_ticket_types", {
+      eventId: data.id,
+      slug: data.slug,
+      categoryId: activeCategoryId,
+      categoryLinkId: activeCategoryLinkId,
+    });
+  }, [
+    activeCategoryId,
+    activeCategoryLinkId,
+    data?.id,
+    data?.slug,
+    hasActivePadelCategoryTicket,
+    isPadelEvent,
+  ]);
+
+  useEffect(() => {
+    if (!isPadelEvent || !activeCategoryId || !data?.id) return;
+    if (!hasActivePadelCategoryTicket) return;
+    if (hasActivePadelCategoryPurchasableTicket) return;
+    trackEvent("padel_category_no_purchasable_tickets", {
+      eventId: data.id,
+      slug: data.slug,
+      categoryId: activeCategoryId,
+      categoryLinkId: activeCategoryLinkId,
+    });
+  }, [
+    activeCategoryId,
+    activeCategoryLinkId,
+    data?.id,
+    data?.slug,
+    hasActivePadelCategoryPurchasableTicket,
+    hasActivePadelCategoryTicket,
+    isPadelEvent,
+  ]);
 
   const handleShare = async () => {
     triggerLightHaptic();
@@ -1315,20 +1386,12 @@ export default function EventDetail() {
     setTicketSheetVisible(true);
   }, [canOpenTicketSheet, triggerLightHaptic]);
 
-  const handleEventScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
-    },
-    [],
-  );
-
-  const handleEventScrollEndDrag = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const triggerPullDownDismiss = useCallback(
+    (offsetY: number, dragStartedAtTop: boolean) => {
       if (Platform.OS !== "ios") return;
       if (ticketSheetVisible) return;
       if (dismissInFlightRef.current) return;
-      const offsetY = event.nativeEvent.contentOffset.y;
-      scrollOffsetYRef.current = offsetY;
+      if (!dragStartedAtTop) return;
       const shouldDismiss = shouldDismissByPullDown({
         platform: Platform.OS,
         offsetY,
@@ -1344,9 +1407,49 @@ export default function EventDetail() {
       dismissResetTimerRef.current = setTimeout(() => {
         dismissInFlightRef.current = false;
         dismissResetTimerRef.current = null;
-      }, 420);
+      }, 320);
     },
     [handleBack, ticketSheetVisible],
+  );
+
+  const handleEventScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      const isDragging = event.nativeEvent.isDragging;
+      scrollOffsetYRef.current = offsetY;
+      if (isDragging && dragStartedAtTopRef.current) {
+        dragMinOffsetRef.current = Math.min(dragMinOffsetRef.current, offsetY);
+      }
+      if (isDragging && dragStartedAtTopRef.current && offsetY <= 0) {
+        triggerPullDownDismiss(offsetY, true);
+      }
+    },
+    [triggerPullDownDismiss],
+  );
+
+  const handleEventScrollBeginDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      scrollOffsetYRef.current = offsetY;
+      dragStartedAtTopRef.current = offsetY <= 1;
+      dragMinOffsetRef.current = Math.min(0, offsetY);
+    },
+    [],
+  );
+
+  const handleEventScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      scrollOffsetYRef.current = offsetY;
+      const minOffset = Math.min(offsetY, dragMinOffsetRef.current);
+      const dragStartedAtTop = dragStartedAtTopRef.current;
+      dragStartedAtTopRef.current = false;
+      dragMinOffsetRef.current = 0;
+      if (minOffset <= 0) {
+        triggerPullDownDismiss(minOffset, dragStartedAtTop);
+      }
+    },
+    [triggerPullDownDismiss],
   );
 
   useEffect(() => {
@@ -1683,23 +1786,26 @@ export default function EventDetail() {
             end={{ x: 0.88, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
+          {backdropPalette.topWashGradient ? (
+            <LinearGradient
+              colors={backdropPalette.topWashGradient}
+              start={{ x: 0.46, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+              style={styles.backdropTopWash}
+            />
+          ) : null}
           <LinearGradient
-            colors={backdropPalette.topGradient}
-            start={{ x: 0.46, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.backdropTopWash}
-          />
-          <LinearGradient
-            colors={backdropPalette.blendGradient}
+            colors={backdropPalette.depthGradient}
             start={{ x: 0.5, y: 0 }}
             end={{ x: 0.5, y: 1 }}
-            style={styles.backdropBlend}
+            style={StyleSheet.absoluteFill}
           />
         </View>
         <Animated.ScrollView
           contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
+          onScrollBeginDrag={handleEventScrollBeginDrag}
           onScroll={handleEventScroll}
           onScrollEndDrag={handleEventScrollEndDrag}
         >
@@ -2020,6 +2126,19 @@ export default function EventDetail() {
                           <Text className="text-white/60 text-xs">
                             {t("events:padel.categoriesHelp")}
                           </Text>
+                          {activeCategoryId &&
+                          !hasActivePadelCategoryTicket ? (
+                            <Text className="text-amber-200 text-xs">
+                              {t("events:tickets.configurationIssue")}
+                            </Text>
+                          ) : null}
+                          {activeCategoryId &&
+                          hasActivePadelCategoryTicket &&
+                          !hasActivePadelCategoryPurchasableTicket ? (
+                            <Text className="text-amber-200 text-xs">
+                              {t("events:tickets.unavailableNow")}
+                            </Text>
+                          ) : null}
                           {visiblePadelCategories.map((category) => {
                             const isSelected = category.id === activeCategoryId;
                             const disabled = !category.isEnabled;
@@ -2723,51 +2842,30 @@ export default function EventDetail() {
               alignItems: "flex-end",
             }}
           >
-            <View
-              pointerEvents="none"
-              style={[
-                styles.closeOuterHalo,
-                {
-                  top: insets.top + 5,
-                  borderColor: backdropPalette.closeOrbBorder,
-                  backgroundColor: backdropPalette.closeOrbFill,
-                },
-              ]}
-            />
             <Pressable
               onPress={handleBack}
               accessibilityRole="button"
               accessibilityLabel={t("common:actions.back")}
-              style={({ pressed }) => [
-                styles.closeButton,
-                { shadowColor: backdropPalette.closeButtonShadow },
-                pressed ? styles.closeButtonPressed : null,
-              ]}
+              hitSlop={14}
+              style={({ pressed }) => [styles.closeButton, pressed ? styles.closeButtonPressed : null]}
             >
               <BlurView
                 tint="dark"
-                intensity={82}
+                intensity={88}
                 style={StyleSheet.absoluteFill}
               />
-              <View
+              <LinearGradient
                 pointerEvents="none"
-                style={[
-                  styles.closeButtonShade,
-                  { backgroundColor: backdropPalette.closeOrbFill },
+                colors={[
+                  "rgba(255,255,255,0.22)",
+                  "rgba(255,255,255,0.03)",
+                  "rgba(3,8,14,0.42)",
                 ]}
+                start={{ x: 0.2, y: 0 }}
+                end={{ x: 0.8, y: 1 }}
+                style={StyleSheet.absoluteFill}
               />
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.closeButtonHighlight,
-                  { backgroundColor: backdropPalette.closeOrbHighlight },
-                ]}
-              />
-              <Ionicons
-                name="close"
-                size={22}
-                color="rgba(245,251,255,0.96)"
-              />
+              <Ionicons name="close" size={24} color="rgba(248,252,255,0.98)" />
             </Pressable>
           </View>
         </View>
@@ -2786,6 +2884,11 @@ export default function EventDetail() {
           items={ticketSelectorItems}
           totalCents={selectedTicketTotalCents}
           currency={ticketSheetCurrency}
+          emptyStateMessage={
+            ticketGateState.hasTicketTypes
+              ? t("events:tickets.unavailableNow")
+              : t("events:tickets.comingSoon")
+          }
           canSubmit={
             selectedTicketQuantity > 0 &&
             canAccessInvite &&
@@ -2810,53 +2913,29 @@ const styles = StyleSheet.create({
   },
   backdropTopWash: {
     position: "absolute",
-    top: -40,
+    top: -20,
     left: 0,
     right: 0,
-    height: 560,
-  },
-  backdropBlend: {
-    position: "absolute",
-    top: 220,
-    left: 0,
-    right: 0,
-    bottom: -120,
-  },
-  closeOuterHalo: {
-    position: "absolute",
-    right: 17,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 1,
+    height: "48%",
   },
   closeButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 47,
+    height: 47,
+    borderRadius: 23.5,
     borderWidth: 1,
-    borderColor: "rgba(215,241,255,0.44)",
+    borderColor: "rgba(234,246,255,0.32)",
+    backgroundColor: "rgba(6,10,16,0.58)",
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: "rgba(0,0,0,0.7)",
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.34,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowRadius: 12,
+    elevation: 10,
   },
   closeButtonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.96 }],
-  },
-  closeButtonShade: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  closeButtonHighlight: {
-    position: "absolute",
-    top: 2,
-    left: 2,
-    right: 2,
-    height: 18,
-    borderRadius: 12,
   },
 });

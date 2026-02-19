@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
-import { isRateLimitBackendUnavailableError, rateLimit } from "@/lib/auth/rateLimit";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
@@ -60,17 +60,6 @@ async function _POST(req: NextRequest) {
       requireDistributed: true,
     });
   } catch (err) {
-    if (isRateLimitBackendUnavailableError(err)) {
-      return jsonWrap(
-        {
-          ok: false,
-          errorCode: err.code,
-          message: "Serviço de proteção temporariamente indisponível.",
-          retryable: true,
-        },
-        { status: 503 }
-      );
-    }
     console.error("[auth/login] rate-limit error:", err);
     return jsonWrap(
       { ok: false, errorCode: "RATE_LIMIT_ERROR", message: "Erro de proteção de pedidos." },
@@ -99,17 +88,6 @@ async function _POST(req: NextRequest) {
       requireDistributed: true,
     });
   } catch (err) {
-    if (isRateLimitBackendUnavailableError(err)) {
-      return jsonWrap(
-        {
-          ok: false,
-          errorCode: err.code,
-          message: "Serviço de proteção temporariamente indisponível.",
-          retryable: true,
-        },
-        { status: 503 }
-      );
-    }
     console.error("[auth/login] rate-limit error:", err);
     return jsonWrap(
       { ok: false, errorCode: "RATE_LIMIT_ERROR", message: "Erro de proteção de pedidos." },

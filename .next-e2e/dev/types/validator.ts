@@ -1820,6 +1820,24 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/admin/infra/redis/start/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/infra/redis/start">> = Specific
+  const handler = {} as typeof import("../../../app/api/admin/infra/redis/start/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/admin/infra/redis/stop/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/infra/redis/stop">> = Specific
+  const handler = {} as typeof import("../../../app/api/admin/infra/redis/stop/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/admin/infra/resume/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/infra/resume">> = Specific
@@ -4520,6 +4538,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/org/[orgId]/policies/padel/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/org/[orgId]/policies/padel">> = Specific
+  const handler = {} as typeof import("../../../app/api/org/[orgId]/policies/padel/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/org/[orgId]/policies/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/org/[orgId]/policies">> = Specific
@@ -5699,6 +5726,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/api/padel/partnerships/organizations/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/organizations">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/partnerships/organizations/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/api/padel/partnerships/overrides/[id]/execute/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/overrides/[id]/execute">> = Specific
@@ -5712,6 +5748,33 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/overrides">> = Specific
   const handler = {} as typeof import("../../../app/api/padel/partnerships/overrides/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/padel/partnerships/tournament-requests/[id]/approve/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/tournament-requests/[id]/approve">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/partnerships/tournament-requests/[id]/approve/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/padel/partnerships/tournament-requests/[id]/reject/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/tournament-requests/[id]/reject">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/partnerships/tournament-requests/[id]/reject/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/padel/partnerships/tournament-requests/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/padel/partnerships/tournament-requests">> = Specific
+  const handler = {} as typeof import("../../../app/api/padel/partnerships/tournament-requests/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

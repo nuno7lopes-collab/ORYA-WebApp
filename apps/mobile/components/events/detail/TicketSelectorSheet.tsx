@@ -26,6 +26,7 @@ export type TicketSelectorItem = {
   limitLabel?: string | null;
   statusLabel: string;
   disabled: boolean;
+  disabledReason?: string | null;
 };
 
 type TicketSelectorSheetProps = {
@@ -40,6 +41,7 @@ type TicketSelectorSheetProps = {
   onIncrement: (id: number) => void;
   onDecrement: (id: number) => void;
   onSubmit: () => void;
+  emptyStateMessage?: string | null;
 };
 
 export function TicketSelectorSheet({
@@ -54,6 +56,7 @@ export function TicketSelectorSheet({
   onIncrement,
   onDecrement,
   onSubmit,
+  emptyStateMessage = null,
 }: TicketSelectorSheetProps) {
   const translateY = useRef(new Animated.Value(380)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -97,81 +100,99 @@ export function TicketSelectorSheet({
         </View>
 
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {items.map((item) => (
-            <View
-              key={`ticket-sheet-${item.id}`}
-              style={[styles.ticketRow, item.disabled ? styles.ticketRowDisabled : null]}
-            >
-              <View style={styles.ticketInfo}>
-                <View style={styles.ticketHead}>
-                  <Text style={styles.ticketName} numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  {item.quantity > 0 ? (
-                    <View style={styles.qtyBadge}>
-                      <Text style={styles.qtyBadgeText}>{item.quantity}</Text>
-                    </View>
-                  ) : null}
-                </View>
-                {item.description ? (
-                  <Text style={styles.ticketDescription} numberOfLines={2}>
-                    {item.description}
-                  </Text>
-                ) : null}
-                <View style={styles.ticketMetaRow}>
-                  <Text style={styles.ticketPrice}>
-                    {item.priceCents <= 0 ? "Grátis" : formatCurrency(item.priceCents / 100, item.currency)}
-                  </Text>
-                  <Text style={styles.ticketStatus}>{item.statusLabel}</Text>
-                  {item.availabilityLabel ? (
-                    <Text style={styles.ticketAvailability} numberOfLines={1}>
-                      {item.availabilityLabel}
-                    </Text>
-                  ) : null}
-                  {item.limitLabel ? (
-                    <Text style={styles.ticketLimit} numberOfLines={1}>
-                      {item.limitLabel}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-              <View style={styles.counter}>
-                <Pressable
-                  onPress={() => onDecrement(item.id)}
-                  disabled={item.quantity === 0 || item.disabled}
-                  style={({ pressed }) => [
-                    styles.counterBtn,
-                    item.quantity === 0 || item.disabled ? styles.counterBtnDisabled : null,
-                    pressed ? styles.pressed : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remover bilhete ${item.name}`}
-                  accessibilityState={{ disabled: item.quantity === 0 || item.disabled }}
-                >
-                  <Ionicons name="remove" size={16} color="rgba(237,246,255,0.92)" />
-                </Pressable>
-                <Text style={styles.counterValue}>{item.quantity}</Text>
-                <Pressable
-                  onPress={() => onIncrement(item.id)}
-                  disabled={item.disabled || item.quantity >= item.maxQuantity}
-                  style={({ pressed }) => [
-                    styles.counterBtn,
-                    item.disabled || item.quantity >= item.maxQuantity
-                      ? styles.counterBtnDisabled
-                      : null,
-                    pressed ? styles.pressed : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Adicionar bilhete ${item.name}`}
-                  accessibilityState={{
-                    disabled: item.disabled || item.quantity >= item.maxQuantity,
-                  }}
-                >
-                  <Ionicons name="add" size={16} color="rgba(237,246,255,0.92)" />
-                </Pressable>
-              </View>
+          {items.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="ticket-outline"
+                size={20}
+                color="rgba(229,242,255,0.72)"
+              />
+              <Text style={styles.emptyStateText}>
+                {emptyStateMessage ?? "Sem bilhetes disponíveis neste momento."}
+              </Text>
             </View>
-          ))}
+          ) : (
+            items.map((item) => (
+              <View
+                key={`ticket-sheet-${item.id}`}
+                style={[styles.ticketRow, item.disabled ? styles.ticketRowDisabled : null]}
+              >
+                <View style={styles.ticketInfo}>
+                  <View style={styles.ticketHead}>
+                    <Text style={styles.ticketName} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                    {item.quantity > 0 ? (
+                      <View style={styles.qtyBadge}>
+                        <Text style={styles.qtyBadgeText}>{item.quantity}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  {item.description ? (
+                    <Text style={styles.ticketDescription} numberOfLines={2}>
+                      {item.description}
+                    </Text>
+                  ) : null}
+                  <View style={styles.ticketMetaRow}>
+                    <Text style={styles.ticketPrice}>
+                      {item.priceCents <= 0 ? "Grátis" : formatCurrency(item.priceCents / 100, item.currency)}
+                    </Text>
+                    <Text style={styles.ticketStatus}>{item.statusLabel}</Text>
+                    {item.availabilityLabel ? (
+                      <Text style={styles.ticketAvailability} numberOfLines={1}>
+                        {item.availabilityLabel}
+                      </Text>
+                    ) : null}
+                    {item.limitLabel ? (
+                      <Text style={styles.ticketLimit} numberOfLines={1}>
+                        {item.limitLabel}
+                      </Text>
+                    ) : null}
+                  </View>
+                  {item.disabled && item.disabledReason ? (
+                    <Text style={styles.disabledReason} numberOfLines={2}>
+                      {item.disabledReason}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={styles.counter}>
+                  <Pressable
+                    onPress={() => onDecrement(item.id)}
+                    disabled={item.quantity === 0 || item.disabled}
+                    style={({ pressed }) => [
+                      styles.counterBtn,
+                      item.quantity === 0 || item.disabled ? styles.counterBtnDisabled : null,
+                      pressed ? styles.pressed : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remover bilhete ${item.name}`}
+                    accessibilityState={{ disabled: item.quantity === 0 || item.disabled }}
+                  >
+                    <Ionicons name="remove" size={16} color="rgba(237,246,255,0.92)" />
+                  </Pressable>
+                  <Text style={styles.counterValue}>{item.quantity}</Text>
+                  <Pressable
+                    onPress={() => onIncrement(item.id)}
+                    disabled={item.disabled || item.quantity >= item.maxQuantity}
+                    style={({ pressed }) => [
+                      styles.counterBtn,
+                      item.disabled || item.quantity >= item.maxQuantity
+                        ? styles.counterBtnDisabled
+                        : null,
+                      pressed ? styles.pressed : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Adicionar bilhete ${item.name}`}
+                    accessibilityState={{
+                      disabled: item.disabled || item.quantity >= item.maxQuantity,
+                    }}
+                  >
+                    <Ionicons name="add" size={16} color="rgba(237,246,255,0.92)" />
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          )}
         </ScrollView>
         <View style={styles.footer}>
           <View>
@@ -343,6 +364,31 @@ const styles = StyleSheet.create({
   ticketLimit: {
     color: "rgba(255,227,122,0.9)",
     fontSize: 11,
+    fontWeight: "600",
+  },
+  disabledReason: {
+    color: "rgba(255,214,124,0.92)",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  emptyState: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  emptyStateText: {
+    flex: 1,
+    color: "rgba(234,244,255,0.82)",
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: "600",
   },
   counter: {

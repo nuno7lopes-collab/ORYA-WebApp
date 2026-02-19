@@ -19,28 +19,41 @@ export function isChatRedisUnavailableError(err: unknown): err is ChatRedisUnava
   return err instanceof ChatRedisUnavailableError;
 }
 
-function shouldFailFast() {
-  return process.env.NODE_ENV === "production";
+let missingConfigWarned = false;
+let publishWarned = false;
+let presenceWarned = false;
+
+function warnOnce(kind: "missing" | "publish" | "presence", message: string, err?: unknown) {
+  if (kind === "missing" && missingConfigWarned) return;
+  if (kind === "publish" && publishWarned) return;
+  if (kind === "presence" && presenceWarned) return;
+
+  if (kind === "missing") missingConfigWarned = true;
+  if (kind === "publish") publishWarned = true;
+  if (kind === "presence") presenceWarned = true;
+
+  if (err) {
+    console.warn(message, err);
+    return;
+  }
+  console.warn(message);
 }
 
 function requireChatRedisConfig() {
   if (isRedisConfigured()) return true;
-  if (shouldFailFast()) {
-    throw new ChatRedisUnavailableError("CHAT_REDIS_CONFIG_MISSING");
-  }
+  warnOnce("missing", "[chat] redis não configurado; realtime em modo degradado.");
   return false;
 }
 
-export async function publishChatEvent(event: ChatEvent) {
-  if (!requireChatRedisConfig()) return;
+export async function publishChatEvent(event: ChatEvent): Promise<boolean> {
+  if (!requireChatRedisConfig()) return false;
   try {
     const redis = await getRedisPublisherClient();
     await redis.publish(CHAT_EVENTS_CHANNEL, JSON.stringify(event));
+    return true;
   } catch (err) {
-    if (shouldFailFast()) {
-      throw new ChatRedisUnavailableError("CHAT_REDIS_PUBLISH_FAILED");
-    }
-    console.warn("[chat] falha ao publicar evento", err);
+    warnOnce("publish", "[chat] falha ao publicar evento realtime; modo degradado.", err);
+    return false;
   }
 }
 
@@ -55,10 +68,7 @@ export async function isChatUserOnline(userId: string) {
     const exists = await redis.exists(`${CHAT_PRESENCE_KEY_PREFIX}${userId}`);
     return Number(exists) > 0;
   } catch (err) {
-    if (shouldFailFast()) {
-      throw new ChatRedisUnavailableError("CHAT_REDIS_PRESENCE_FAILED");
-    }
-    console.warn("[chat] falha ao consultar presença", err);
+    warnOnce("presence", "[chat] falha ao consultar presença no redis; modo degradado.", err);
     return false;
   }
 }

@@ -42,12 +42,13 @@ async function _PATCH(req: NextRequest) {
       return jsonWrap({ ok: false, error: "Body inválido." }, { status: 400 });
     }
 
-    const visibility = body.visibility;
+    const rawVisibility = body.visibility;
+    const visibility = rawVisibility === "PRIVATE" ? "FOLLOWERS" : rawVisibility;
     const wantsHardDelete = body.hardDelete === true;
     const favouriteCategories = Array.isArray(body.favouriteCategories)
       ? normalizeInterestSelection(body.favouriteCategories, INTEREST_MAX_SELECTION)
       : undefined;
-    if (visibility && visibility !== "PUBLIC" && visibility !== "PRIVATE" && visibility !== "FOLLOWERS") {
+    if (visibility && visibility !== "PUBLIC" && visibility !== "FOLLOWERS") {
       return jsonWrap({ ok: false, error: "Visibilidade inválida." }, { status: 400 });
     }
 
@@ -98,12 +99,7 @@ async function _PATCH(req: NextRequest) {
         roles: ["user"],
         favouriteCategories: favouriteCategories ?? [],
         onboardingDone: false,
-        visibility:
-          dataToUpdate.visibility === "PRIVATE"
-            ? "PRIVATE"
-            : dataToUpdate.visibility === "FOLLOWERS"
-              ? "FOLLOWERS"
-              : "PUBLIC",
+        visibility: dataToUpdate.visibility === "FOLLOWERS" ? "FOLLOWERS" : "PUBLIC",
       },
     });
 

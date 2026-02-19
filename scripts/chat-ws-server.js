@@ -81,8 +81,7 @@ loadEnv();
 const redisUrl = process.env.REDIS_URL ? String(process.env.REDIS_URL).trim() : "";
 const redisConfigured = redisUrl.length > 0;
 if (process.env.NODE_ENV === "production" && !redisConfigured) {
-  console.error("[chat-ws] REDIS_URL em falta em produção.");
-  process.exit(1);
+  console.warn("[chat-ws] REDIS_URL em falta em produção. A correr em modo degradado (sem pub/sub redis).");
 }
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -570,8 +569,7 @@ if (redisConfigured) {
   ensureRedisClients().then((ok) => {
     if (ok) return;
     if (process.env.NODE_ENV === "production") {
-      console.error("[chat-ws] Redis indisponível em produção.");
-      process.exit(1);
+      console.warn("[chat-ws] Redis indisponível em produção. A continuar em modo degradado.");
     }
   });
 }

@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 import useSWR from "swr";
 import { useSearchParams } from "next/navigation";
+import { Avatar } from "@/components/ui/avatar";
 import { resolveLocale, t } from "@/lib/i18n";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type StripeElementsOptions } from "@stripe/stripe-js";
@@ -216,12 +216,10 @@ export default function ChargeClient({ token }: { token: string }) {
             <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
               <div className="flex items-center gap-3">
                 {payload.organization?.brandingAvatarUrl && (
-                  <Image
+                  <Avatar
                     src={payload.organization.brandingAvatarUrl}
-                    alt="avatar"
-                    width={48}
-                    height={48}
-                    className="h-12 w-12 rounded-full object-cover"
+                    name={payload.organization?.publicName || payload.organization?.businessName || "Organização"}
+                    className="h-12 w-12"
                   />
                 )}
                 <div>

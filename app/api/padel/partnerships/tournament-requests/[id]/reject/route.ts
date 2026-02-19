@@ -7,11 +7,23 @@ import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensurePartnershipOrganization } from "@/app/api/padel/partnerships/_shared";
 
+type PartnershipTournamentRequestDelegate = {
+  findUnique: (args: Record<string, unknown>) => Promise<any | null>;
+  update: (args: Record<string, unknown>) => Promise<any>;
+};
+
+const partnershipTournamentRequestDelegate =
+  (prisma as unknown as { padelPartnershipTournamentRequest?: PartnershipTournamentRequestDelegate })
+    .padelPartnershipTournamentRequest ?? null;
+
 async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const check = await ensurePartnershipOrganization({ req, required: "EDIT", body });
   if (!check.ok) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
+  }
+  if (!partnershipTournamentRequestDelegate) {
+    return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
   }
 
   const requestId = readNumericParam(undefined, req, "request");
@@ -19,7 +31,7 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_REQUEST_ID" }, { status: 400 });
   }
 
-  const requestItem = await prisma.padelPartnershipTournamentRequest.findUnique({
+  const requestItem = await partnershipTournamentRequestDelegate.findUnique({
     where: { id: requestId },
     select: {
       id: true,
@@ -43,7 +55,7 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "REQUEST_ALREADY_CONSUMED" }, { status: 409 });
   }
 
-  const updated = await prisma.padelPartnershipTournamentRequest.update({
+  const updated = await partnershipTournamentRequestDelegate.update({
     where: { id: requestItem.id },
     data: {
       status: "REJECTED",

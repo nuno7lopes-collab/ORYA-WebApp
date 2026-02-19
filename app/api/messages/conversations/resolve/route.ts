@@ -10,7 +10,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { requireChatContext, ChatContextError } from "@/lib/chat/context";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 import {
   enforceMobileClientRequest,
   getMessagesScope,
@@ -408,15 +408,22 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      await publishChatEvent({
+      const warnings: string[] = [];
+      const published = await publishChatEvent({
         type: "conversation:update",
         action: "created",
         organizationId: organization.id,
         conversationId: conversation.id,
         conversation,
       });
+      if (!published) {
+        warnings.push("REALTIME_DEGRADED");
+      }
 
-      return jsonWrap({ ok: true, conversation }, { status: 201 });
+      return jsonWrap(
+        { ok: true, conversation, ...(warnings.length ? { warnings } : {}) },
+        { status: 201 }
+      );
     }
 
     const supabase = await createSupabaseServer();
@@ -785,9 +792,6 @@ export async function POST(req: NextRequest) {
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/conversations/resolve error:", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });

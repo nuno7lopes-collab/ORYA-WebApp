@@ -5,7 +5,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACTIVE_MEMBER_FILTER = {
@@ -70,24 +70,25 @@ async function _POST(req: NextRequest, context: { params: { conversationId: stri
       data: { lastReadMessageId, lastReadAt: messageExists.createdAt },
     });
 
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "message:read",
       organizationId: organization.id,
       conversationId,
       userId: user.id,
       lastReadMessageId,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true, updated: true });
+    return jsonWrap({ ok: true, updated: true, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/conversations/[id]/read error:", err);
     return jsonWrap({ ok: false, error: "Erro ao atualizar leitura." }, { status: 500 });

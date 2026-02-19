@@ -66,7 +66,7 @@ async function _GET(req: NextRequest) {
 
     const clubs = await prisma.padelClub.findMany({
       where,
-      orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+      orderBy: [{ name: "asc" }],
       take: limit,
       select: {
         id: true,

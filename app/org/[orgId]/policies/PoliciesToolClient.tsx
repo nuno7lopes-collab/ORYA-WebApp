@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { isPoliciesAllowedView, type PoliciesAllowedView } from "@/lib/domainBoundaries";
@@ -14,6 +14,8 @@ type PoliciesToolClientProps = {
 
 type OrganizationPolicyType = "FLEXIBLE" | "MODERATE" | "RIGID" | "CUSTOM";
 type WindowPreset = "none" | "0" | "60" | "180" | "720" | "1440" | "2880" | "10080" | "custom";
+type ConnectAccountStatus = "READY" | "INCOMPLETE" | "MISSING" | "NOT_REQUIRED";
+type StorePolicyMode = "NO_RETURNS" | "WINDOW_DAYS";
 
 type PolicyItem = {
   id: number;
@@ -24,24 +26,45 @@ type PolicyItem = {
   cancellationPenaltyBps: number;
   allowReschedule: boolean;
   rescheduleWindowMinutes: number | null;
+  guestBookingAllowed?: boolean;
+};
+
+type FinancePolicySnapshot = {
+  paymentsMode: "CONNECT" | "PLATFORM";
+  paymentsAccount: {
+    status: ConnectAccountStatus;
+    ready: boolean;
+    hasStripeAccount: boolean;
+    chargesEnabled: boolean;
+    payoutsEnabled: boolean;
+  };
+  fees: {
+    processingSource: "STRIPE_AUTOMATIC";
+    processingPayer: "ORGANIZATION";
+    feeMode: "ADDED" | "INCLUDED";
+    platformFeeBps: number;
+    platformFeeFixedCents: number;
+    managePath: string;
+  };
 };
 
 type PoliciesResponse = {
   items: PolicyItem[];
+  organizationPolicy?: {
+    orgRescheduleWindowMinutes?: number | null;
+  };
+  financePolicy?: FinancePolicySnapshot;
 };
 
 type PolicyDraft = {
-  name: string;
-  policyType: OrganizationPolicyType;
   allowCancellation: boolean;
   cancellationWindowPreset: WindowPreset;
   cancellationWindowCustom: string;
   allowReschedule: boolean;
   rescheduleWindowPreset: WindowPreset;
   rescheduleWindowCustom: string;
+  guestBookingAllowed: boolean;
 };
-
-type StorePolicyMode = "NO_RETURNS" | "WINDOW_DAYS";
 
 type StorePolicyResponse = {
   storeFeatureEnabled: boolean;
@@ -65,12 +88,67 @@ type StorePolicyDraft = {
   returnWindowDays: string;
 };
 
+type CrmPolicyConfig = {
+  timezone: string;
+  quietHoursStartMinute: number;
+  quietHoursEndMinute: number;
+  capPerDay: number;
+  capPerWeek: number;
+  capPerMonth: number;
+  approvalEscalationHours: number;
+  approvalExpireHours: number;
+};
+
+type CrmPolicyResponse = {
+  config: CrmPolicyConfig;
+};
+
+type PadelPolicyResponse = {
+  policy: {
+    scope: "GLOBAL_FIXED";
+    customizableByOrganization: boolean;
+    splitDeadlineHours: number;
+    splitWindowCloseHoursBeforeStart: number;
+    pendingConfirmationWindowMin: number;
+    pendingConfirmationWindowMax: number;
+  };
+  adoption: {
+    totalTournaments: number;
+    legacyOverrides: number;
+  };
+};
+
 const swrOptions = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
   shouldRetryOnError: true,
   errorRetryCount: 2,
 } as const;
+
+const CRM_POLICY_FALLBACK: CrmPolicyConfig = {
+  timezone: "Europe/Lisbon",
+  quietHoursStartMinute: 20 * 60,
+  quietHoursEndMinute: 10 * 60,
+  capPerDay: 1,
+  capPerWeek: 4,
+  capPerMonth: 10,
+  approvalEscalationHours: 24,
+  approvalExpireHours: 48,
+};
+
+const PADEL_POLICY_FALLBACK = {
+  scope: "GLOBAL_FIXED" as const,
+  customizableByOrganization: false,
+  splitDeadlineHours: 24,
+  splitWindowCloseHoursBeforeStart: 24,
+  pendingConfirmationWindowMin: 1,
+  pendingConfirmationWindowMax: 240,
+};
+
+const PADEL_ADOPTION_FALLBACK = {
+  totalTournaments: 0,
+  legacyOverrides: 0,
+};
 
 function unwrapEnvelope(payload: unknown) {
   if (!payload || typeof payload !== "object") return payload;
@@ -102,11 +180,18 @@ function parseView(raw: string | null | undefined, fallback: PoliciesAllowedView
 }
 
 function prettyWindow(minutes: number | null) {
-  if (minutes === null) return "Sem cancelamento";
-  if (minutes === 0) return "Até à hora";
-  if (minutes % 1440 === 0) return `${minutes / 1440} dia(s)`;
-  if (minutes % 60 === 0) return `${minutes / 60} h`;
-  return `${minutes} min`;
+  if (minutes === null) return "não permitido";
+  if (minutes === 0) return "até à hora de início";
+  if (minutes % 1440 === 0) return `${minutes / 1440} dia(s) antes`;
+  if (minutes % 60 === 0) return `${minutes / 60} hora(s) antes`;
+  return `${minutes} minutos antes`;
+}
+
+function minutesToClock(minutes: number) {
+  const normalized = Math.min(1439, Math.max(0, Math.floor(minutes)));
+  const hh = String(Math.floor(normalized / 60)).padStart(2, "0");
+  const mm = String(normalized % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 function windowPresetFromValue(value: number | null): WindowPreset {
@@ -131,17 +216,11 @@ function resolveWindowFromDraft(preset: WindowPreset, customValue: string) {
   return Math.max(0, Math.round(Number(preset)));
 }
 
-function createInitialDraft(): PolicyDraft {
-  return {
-    name: "",
-    policyType: "CUSTOM",
-    allowCancellation: true,
-    cancellationWindowPreset: "1440",
-    cancellationWindowCustom: "",
-    allowReschedule: true,
-    rescheduleWindowPreset: "1440",
-    rescheduleWindowCustom: "",
-  };
+function formatFeeRateLabel(bps: number) {
+  const normalized = Math.max(0, Math.round(Number(bps) || 0));
+  if (normalized === 0) return "0%";
+  if (normalized % 100 === 0) return `${normalized / 100}%`;
+  return `${(normalized / 100).toFixed(2).replace(/\.00$/, "")}%`;
 }
 
 function createInitialStorePolicyDraft(): StorePolicyDraft {
@@ -153,61 +232,109 @@ function createInitialStorePolicyDraft(): StorePolicyDraft {
 
 function buildStoreReturnPolicyPreview(draft: StorePolicyDraft) {
   if (draft.returnPolicyMode === "NO_RETURNS") {
-    return "Sem devolucoes. Em caso de defeito, contactar o suporte.";
+    return "Não aceitas devoluções. Em caso de defeito, o cliente contacta o suporte.";
   }
   const parsedDays = Number(draft.returnWindowDays);
   const days = Number.isFinite(parsedDays) ? Math.min(730, Math.max(0, Math.round(parsedDays))) : 14;
-  return (
-    days === 0
-      ? "Devolucoes permitidas no proprio dia da compra, para produtos sem sinais de uso."
-      : `Devolucoes permitidas durante ${days} dia(s) apos a compra, para produtos sem sinais de uso.`
-  );
+  if (days === 0) {
+    return "Aceitas devolução apenas no próprio dia da compra, sem sinais de uso.";
+  }
+  return `Aceitas devolução durante ${days} dia(s), sem sinais de uso.`;
+}
+
+function toPolicyDraft(policy: PolicyItem): PolicyDraft {
+  const cancellationPreset = windowPresetFromValue(policy.cancellationWindowMinutes);
+  const reschedulePreset = windowPresetFromValue(policy.rescheduleWindowMinutes);
+  return {
+    allowCancellation: policy.allowCancellation,
+    cancellationWindowPreset: cancellationPreset,
+    cancellationWindowCustom:
+      cancellationPreset === "custom" ? String(policy.cancellationWindowMinutes ?? "") : "",
+    allowReschedule: policy.allowReschedule,
+    rescheduleWindowPreset: reschedulePreset,
+    rescheduleWindowCustom:
+      reschedulePreset === "custom" ? String(policy.rescheduleWindowMinutes ?? "") : "",
+    guestBookingAllowed: Boolean(policy.guestBookingAllowed),
+  };
+}
+
+function normalizeErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 }
 
 export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolClientProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const view = parseView(searchParams?.get("view") ?? null, initialView);
   const orgApiBase = `/api/org/${orgId}`;
 
-  const updateQuery = useCallback(
-    (updates: Record<string, string | null>) => {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === null || value.trim() === "") {
-          params.delete(key);
-        } else {
-          params.set(key, value);
-        }
-      }
-      const nextHref = buildOrgHref(orgId, "/policies", params);
-      router.replace(nextHref, { scroll: false });
-    },
-    [orgId, router, searchParams],
-  );
+  const shouldLoadCrmPolicy = view === "crm";
+  const shouldLoadPadelPolicy = view === "padel";
 
-  const { data: policiesData, error: policiesError, mutate: mutatePolicies, isLoading: policiesLoading } =
-    useSWR<PoliciesResponse>(`${orgApiBase}/policies`, apiFetcher, swrOptions);
-  const {
-    data: storePolicyData,
-    error: storePolicyError,
-    mutate: mutateStorePolicy,
-    isLoading: storePolicyLoading,
-  } = useSWR<StorePolicyResponse>(`${orgApiBase}/policies/store`, apiFetcher, swrOptions);
+  const { data: policiesData, error: policiesError, mutate: mutatePolicies } = useSWR<PoliciesResponse>(
+    `${orgApiBase}/policies`,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: storePolicyData, error: storePolicyError, mutate: mutateStorePolicy } = useSWR<StorePolicyResponse>(
+    `${orgApiBase}/policies/store`,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: crmPolicyData, error: crmPolicyError, isLoading: crmPolicyLoading } = useSWR<CrmPolicyResponse>(
+    shouldLoadCrmPolicy ? `${orgApiBase}/crm/config` : null,
+    apiFetcher,
+    swrOptions,
+  );
+  const { data: padelPolicyData, error: padelPolicyError, isLoading: padelPolicyLoading } =
+    useSWR<PadelPolicyResponse>(
+      shouldLoadPadelPolicy ? `${orgApiBase}/policies/padel` : null,
+      apiFetcher,
+      swrOptions,
+    );
 
   const policies = policiesData?.items ?? [];
-  const [createDraft, setCreateDraft] = useState<PolicyDraft>(createInitialDraft);
-  const [createSaving, setCreateSaving] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [editingPolicyId, setEditingPolicyId] = useState<number | null>(null);
-  const [editDraft, setEditDraft] = useState<PolicyDraft | null>(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  const financePolicy = policiesData?.financePolicy ?? null;
+  const paymentsAccount = financePolicy?.paymentsAccount ?? null;
+  const paymentsMode = financePolicy?.paymentsMode ?? "CONNECT";
+  const paymentsManagePath = financePolicy?.fees.managePath ?? buildOrgHref(orgId, "/finance/payouts");
+
+  const bookingPolicy = useMemo(
+    () => policies.find((policy) => policy.policyType === "MODERATE") ?? policies[0] ?? null,
+    [policies],
+  );
+
+  const [loadedBookingPolicyId, setLoadedBookingPolicyId] = useState<number | null>(null);
+  const [bookingDraft, setBookingDraft] = useState<PolicyDraft | null>(null);
+  const [bookingSaving, setBookingSaving] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccessMessage, setBookingSuccessMessage] = useState<string | null>(null);
+
   const [storePolicyDraft, setStorePolicyDraft] = useState<StorePolicyDraft>(createInitialStorePolicyDraft);
   const [storePolicyLoaded, setStorePolicyLoaded] = useState(false);
   const [storePolicySaving, setStorePolicySaving] = useState(false);
   const [storePolicyErrorMessage, setStorePolicyErrorMessage] = useState<string | null>(null);
   const [storePolicySuccessMessage, setStorePolicySuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!bookingPolicy) return;
+    if (loadedBookingPolicyId === bookingPolicy.id) return;
+    setBookingDraft(toPolicyDraft(bookingPolicy));
+    setLoadedBookingPolicyId(bookingPolicy.id);
+    setBookingError(null);
+    setBookingSuccessMessage(null);
+  }, [bookingPolicy, loadedBookingPolicyId]);
+
+  useEffect(() => {
+    setLoadedBookingPolicyId(null);
+    setBookingDraft(null);
+    setBookingError(null);
+    setBookingSuccessMessage(null);
+    setStorePolicyLoaded(false);
+    setStorePolicyDraft(createInitialStorePolicyDraft());
+    setStorePolicyErrorMessage(null);
+    setStorePolicySuccessMessage(null);
+  }, [orgId]);
 
   useEffect(() => {
     if (!storePolicyData?.policy || storePolicyLoaded) return;
@@ -221,191 +348,45 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
     setStorePolicyLoaded(true);
   }, [storePolicyData, storePolicyLoaded]);
 
-  useEffect(() => {
-    setStorePolicyLoaded(false);
-    setStorePolicyDraft(createInitialStorePolicyDraft());
-    setStorePolicyErrorMessage(null);
-    setStorePolicySuccessMessage(null);
-  }, [orgId]);
+  const saveBookingPolicy = useCallback(async () => {
+    if (!bookingPolicy || !bookingDraft || bookingSaving) return;
+    setBookingSaving(true);
+    setBookingError(null);
+    setBookingSuccessMessage(null);
 
-  const defaultModeratePolicy = useMemo(
-    () => policies.find((policy) => policy.policyType === "MODERATE") ?? policies[0] ?? null,
-    [policies],
-  );
-  const customPoliciesCount = useMemo(
-    () => policies.filter((policy) => policy.policyType === "CUSTOM").length,
-    [policies],
-  );
-  const strictestWindowMinutes = useMemo(() => {
-    const windows = policies
-      .filter((policy) => policy.allowCancellation && policy.cancellationWindowMinutes !== null)
-      .map((policy) => policy.cancellationWindowMinutes as number);
-    if (windows.length === 0) return null;
-    return Math.min(...windows);
-  }, [policies]);
-
-  const applyBookingPreset = useCallback((preset: "FLEXIBLE" | "MODERATE" | "RIGID") => {
-    if (preset === "FLEXIBLE") {
-      setCreateDraft((prev) => ({
-        ...prev,
-        policyType: "CUSTOM",
-        name: "Política flexível personalizada",
-        allowCancellation: true,
-        cancellationWindowPreset: "2880",
-        cancellationWindowCustom: "",
-        allowReschedule: true,
-        rescheduleWindowPreset: "2880",
-        rescheduleWindowCustom: "",
-      }));
-      return;
-    }
-    if (preset === "MODERATE") {
-      setCreateDraft((prev) => ({
-        ...prev,
-        policyType: "CUSTOM",
-        name: "Política moderada personalizada",
-        allowCancellation: true,
-        cancellationWindowPreset: "1440",
-        cancellationWindowCustom: "",
-        allowReschedule: true,
-        rescheduleWindowPreset: "1440",
-        rescheduleWindowCustom: "",
-      }));
-      return;
-    }
-    setCreateDraft((prev) => ({
-      ...prev,
-      policyType: "CUSTOM",
-      name: "Política rígida personalizada",
-      allowCancellation: true,
-      cancellationWindowPreset: "180",
-      cancellationWindowCustom: "",
-      allowReschedule: false,
-      rescheduleWindowPreset: "none",
-      rescheduleWindowCustom: "",
-    }));
-  }, []);
-
-  const createPolicy = useCallback(async () => {
-    if (createSaving) return;
-    if (!createDraft.name.trim()) {
-      setCreateError("O nome da política é obrigatório.");
-      return;
-    }
-    setCreateSaving(true);
-    setCreateError(null);
     try {
       const payload = {
-        name: createDraft.name.trim(),
-        policyType: createDraft.policyType,
-        allowCancellation: createDraft.allowCancellation,
-        cancellationWindowMinutes: createDraft.allowCancellation
-          ? resolveWindowFromDraft(createDraft.cancellationWindowPreset, createDraft.cancellationWindowCustom)
+        allowCancellation: bookingDraft.allowCancellation,
+        cancellationWindowMinutes: bookingDraft.allowCancellation
+          ? resolveWindowFromDraft(bookingDraft.cancellationWindowPreset, bookingDraft.cancellationWindowCustom)
           : null,
+        allowReschedule: bookingDraft.allowReschedule,
+        rescheduleWindowMinutes: bookingDraft.allowReschedule
+          ? resolveWindowFromDraft(bookingDraft.rescheduleWindowPreset, bookingDraft.rescheduleWindowCustom)
+          : null,
+        guestBookingAllowed: bookingDraft.guestBookingAllowed,
         cancellationPenaltyBps: 0,
-        allowReschedule: createDraft.allowReschedule,
-        rescheduleWindowMinutes: createDraft.allowReschedule
-          ? resolveWindowFromDraft(createDraft.rescheduleWindowPreset, createDraft.rescheduleWindowCustom)
-          : null,
       };
-      const response = await fetch(`${orgApiBase}/policies`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await response.json().catch(() => null);
-      if (!response.ok || json?.ok === false) {
-        throw new Error((json && (json.error || json.message)) || "Erro ao criar política.");
-      }
-      setCreateDraft(createInitialDraft());
-      await mutatePolicies();
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : "Erro ao criar política.");
-    } finally {
-      setCreateSaving(false);
-    }
-  }, [createDraft, createSaving, mutatePolicies, orgApiBase]);
 
-  const startEdit = useCallback((policy: PolicyItem) => {
-    setEditingPolicyId(policy.id);
-    setEditError(null);
-    setEditDraft({
-      name: policy.name,
-      policyType: policy.policyType,
-      allowCancellation: policy.allowCancellation,
-      cancellationWindowPreset: windowPresetFromValue(policy.cancellationWindowMinutes),
-      cancellationWindowCustom:
-        windowPresetFromValue(policy.cancellationWindowMinutes) === "custom"
-          ? String(policy.cancellationWindowMinutes ?? "")
-          : "",
-      allowReschedule: policy.allowReschedule,
-      rescheduleWindowPreset: windowPresetFromValue(policy.rescheduleWindowMinutes),
-      rescheduleWindowCustom:
-        windowPresetFromValue(policy.rescheduleWindowMinutes) === "custom"
-          ? String(policy.rescheduleWindowMinutes ?? "")
-          : "",
-    });
-  }, []);
-
-  const saveEdit = useCallback(async () => {
-    if (!editingPolicyId || !editDraft || editSaving) return;
-    if (!editDraft.name.trim()) {
-      setEditError("O nome da política é obrigatório.");
-      return;
-    }
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      const payload = {
-        name: editDraft.name.trim(),
-        policyType: editDraft.policyType,
-        allowCancellation: editDraft.allowCancellation,
-        cancellationWindowMinutes: editDraft.allowCancellation
-          ? resolveWindowFromDraft(editDraft.cancellationWindowPreset, editDraft.cancellationWindowCustom)
-          : null,
-        cancellationPenaltyBps: 0,
-        allowReschedule: editDraft.allowReschedule,
-        rescheduleWindowMinutes: editDraft.allowReschedule
-          ? resolveWindowFromDraft(editDraft.rescheduleWindowPreset, editDraft.rescheduleWindowCustom)
-          : null,
-      };
-      const response = await fetch(`${orgApiBase}/policies/${editingPolicyId}`, {
+      const response = await fetch(`${orgApiBase}/policies/${bookingPolicy.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || json?.ok === false) {
-        throw new Error((json && (json.error || json.message)) || "Erro ao guardar alterações.");
+        throw new Error((json && (json.error || json.message)) || "Não foi possível guardar a política.");
       }
-      setEditingPolicyId(null);
-      setEditDraft(null);
-      await mutatePolicies();
-    } catch (error) {
-      setEditError(error instanceof Error ? error.message : "Erro ao guardar alterações.");
-    } finally {
-      setEditSaving(false);
-    }
-  }, [editDraft, editSaving, editingPolicyId, mutatePolicies, orgApiBase]);
 
-  const deletePolicy = useCallback(
-    async (policy: PolicyItem) => {
-      if (policy.policyType !== "CUSTOM") return;
-      const confirmed = window.confirm(`Remover a política "${policy.name}"?`);
-      if (!confirmed) return;
-      try {
-        const response = await fetch(`${orgApiBase}/policies/${policy.id}`, { method: "DELETE" });
-        const json = await response.json().catch(() => null);
-        if (!response.ok || json?.ok === false) {
-          throw new Error((json && (json.error || json.message)) || "Erro ao remover política.");
-        }
-        await mutatePolicies();
-      } catch (error) {
-        setCreateError(error instanceof Error ? error.message : "Erro ao remover política.");
-      }
-    },
-    [mutatePolicies, orgApiBase],
-  );
+      setLoadedBookingPolicyId(null);
+      await mutatePolicies();
+      setBookingSuccessMessage("Política de reservas atualizada.");
+    } catch (error) {
+      setBookingError(normalizeErrorMessage(error, "Não foi possível guardar a política."));
+    } finally {
+      setBookingSaving(false);
+    }
+  }, [bookingDraft, bookingPolicy, bookingSaving, mutatePolicies, orgApiBase]);
 
   const saveStorePolicy = useCallback(async () => {
     if (storePolicySaving) return;
@@ -432,466 +413,392 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || json?.ok === false) {
-        throw new Error((json && (json.error || json.message)) || "Erro ao guardar política da loja.");
+        throw new Error((json && (json.error || json.message)) || "Não foi possível guardar a política da loja.");
       }
-      setStorePolicySuccessMessage("Política da loja guardada.");
+      setStorePolicySuccessMessage("Política da loja atualizada.");
       setStorePolicyLoaded(false);
       await mutateStorePolicy();
     } catch (error) {
-      setStorePolicyErrorMessage(error instanceof Error ? error.message : "Erro ao guardar política da loja.");
+      setStorePolicyErrorMessage(normalizeErrorMessage(error, "Não foi possível guardar a política da loja."));
     } finally {
       setStorePolicySaving(false);
     }
   }, [mutateStorePolicy, orgApiBase, storePolicyDraft, storePolicySaving]);
 
-  const headerByView: Record<PoliciesAllowedView, string> = {
-    overview: "Políticas da organização",
-    booking: "Políticas de reservas",
-    terms: "Termos canónicos",
-    store: "Políticas da loja",
-    guardrails: "Guardrails e limites",
-  };
+  const crmPolicy = crmPolicyData?.config ?? CRM_POLICY_FALLBACK;
+  const padelPolicy = padelPolicyData?.policy ?? PADEL_POLICY_FALLBACK;
+  const padelAdoption = padelPolicyData?.adoption ?? PADEL_ADOPTION_FALLBACK;
+  const canonicalLegalUrl = (storePolicyData?.policy.legalUrl ?? "").trim();
 
-  const hasPoliciesData = policies.length > 0;
-  const canonicalLegalUrl = storePolicyData?.policy.legalUrl ?? "/username/legal";
+  const isPlatformPayments = paymentsMode === "PLATFORM" || paymentsAccount?.status === "NOT_REQUIRED";
+
+  const paymentsStatusLabel = useMemo(() => {
+    if (isPlatformPayments) return "Na plataforma";
+    if (!paymentsAccount) return "Sem informação";
+    if (paymentsAccount.status === "READY") return "Pronta";
+    if (paymentsAccount.status === "INCOMPLETE") return "Em configuração";
+    return "Por ligar";
+  }, [isPlatformPayments, paymentsAccount]);
+
+  const paymentsChecklist = useMemo(() => {
+    if (isPlatformPayments) {
+      return [
+        {
+          id: "platform-processing",
+          label: "Pagamentos recebidos pela ORYA",
+          done: true,
+        },
+        {
+          id: "connect-not-required",
+          label: "Não é necessário Stripe Connect",
+          done: true,
+        },
+      ];
+    }
+    return [
+      {
+        id: "stripe-account",
+        label: "Conta Stripe ligada",
+        done: Boolean(paymentsAccount?.hasStripeAccount),
+      },
+      {
+        id: "charges-enabled",
+        label: "Pagamentos ativos",
+        done: Boolean(paymentsAccount?.chargesEnabled),
+      },
+      {
+        id: "payouts-enabled",
+        label: "Transferências ativas",
+        done: Boolean(paymentsAccount?.payoutsEnabled),
+      },
+    ];
+  }, [isPlatformPayments, paymentsAccount]);
+
+  const defaultViewError =
+    (policiesError instanceof Error ? policiesError.message : null) ??
+    (storePolicyError instanceof Error ? storePolicyError.message : null);
+  const crmViewError = crmPolicyError instanceof Error ? crmPolicyError.message : null;
+  const padelViewError = padelPolicyError instanceof Error ? padelPolicyError.message : null;
+  const activeError =
+    view === "crm" ? crmViewError ?? defaultViewError : view === "padel" ? padelViewError ?? defaultViewError : defaultViewError;
 
   return (
-    <section className="space-y-5 text-white sm:space-y-6">
-      <div className="rounded-3xl border border-white/16 bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(20,20,20,0.92))] px-4 py-4 sm:px-6 sm:py-5 backdrop-blur-2xl">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">{headerByView[view]}</h1>
-            <p className="text-sm text-white/70">
-              Ferramenta para personalizar politicas e regras com guardrails e templates fechados.
-            </p>
-          </div>
-          <div className="rounded-xl border border-cyan-300/45 bg-cyan-300/12 px-3 py-2 text-xs text-cyan-100">
-            Domínio: <span className="font-semibold">Políticas personalizáveis</span>
-          </div>
-        </div>
-      </div>
+    <section className="space-y-4 text-white sm:space-y-5">
+      <p className="text-sm text-white/80">Aqui encontras todas as regras da organização, num só lugar.</p>
 
-      {(policiesError || storePolicyError) && (
-        <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
-          {(policiesError instanceof Error ? policiesError.message : null) ??
-            (storePolicyError instanceof Error ? storePolicyError.message : "Erro ao carregar dados.")}
-        </div>
-      )}
+      {activeError ? (
+        <Notice tone="error">{activeError}</Notice>
+      ) : null}
 
-      {view === "overview" && (
-        <div className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Políticas ativas" value={String(policies.length)} />
-            <MetricCard label="Políticas custom" value={String(customPoliciesCount)} />
-            <MetricCard
-              label="Janela mais restritiva"
-              value={strictestWindowMinutes === null ? "Sem limite" : prettyWindow(strictestWindowMinutes)}
+      {view === "overview" ? (
+        <Panel title="Resumo">
+          <div className="space-y-2">
+            <InfoRow
+              label="Reservas"
+              value={
+                bookingPolicy
+                  ? `${bookingPolicy.allowCancellation ? "Com cancelamento" : "Sem cancelamento"} · ${prettyWindow(
+                      bookingPolicy.cancellationWindowMinutes,
+                    )}`
+                  : "Sem política carregada"
+              }
             />
-            <MetricCard label="Penalizacao cancelamento" value="0%" />
+            <InfoRow label="Financeiro" value={`${paymentsStatusLabel} · ${isPlatformPayments ? "Conta ORYA" : "Stripe Connect"}`} />
+            <InfoRow label="CRM" value="Regra fixa da plataforma (20:00 às 10:00)" />
+            <InfoRow label="Padel" value={`Split fixo em ${padelPolicy.splitDeadlineHours}h`} />
+            <InfoRow
+              label="Loja"
+              value={
+                storePolicyData?.policy.returnPolicyMode === "NO_RETURNS"
+                  ? "Sem devoluções"
+                  : `Devoluções: ${storePolicyData?.policy.returnWindowDays ?? 14} dia(s)`
+              }
+            />
+            <InfoRow label="Página legal" value={canonicalLegalUrl || "Ainda sem link público"} />
           </div>
-          <div className="grid gap-3 xl:grid-cols-2">
-            <Panel title="Default operacional" subtitle="Referência atual para novas configurações">
-              {defaultModeratePolicy ? (
-                <div className="rounded-xl border border-white/12 bg-white/5 p-3 text-sm text-white/85">
-                  <p className="font-semibold text-white">{defaultModeratePolicy.name}</p>
-                  <p className="mt-1 text-white/70">
-                    {defaultModeratePolicy.policyType} · Cancelamento:{" "}
-                    {defaultModeratePolicy.allowCancellation
-                      ? prettyWindow(defaultModeratePolicy.cancellationWindowMinutes)
-                      : "Desativado"}
+        </Panel>
+      ) : null}
+
+      {view === "booking" ? (
+        <div className="space-y-3">
+          <Panel
+            title="Reservas"
+            subtitle="Existe uma única regra padrão. Ao guardar, estás a atualizá-la."
+          >
+            {!bookingPolicy || !bookingDraft ? (
+              <EmptyState label="A preparar regra padrão de reservas..." />
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+                  <p>Esta regra é usada nas reservas e também na página legal pública.</p>
+                </div>
+
+                <PolicyControls
+                  draft={bookingDraft}
+                  onChange={(next) => {
+                    setBookingDraft((prev) => {
+                      const base = prev ?? bookingDraft;
+                      return typeof next === "function" ? next(base) : next;
+                    });
+                  }}
+                />
+
+                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+                  <p className="font-semibold text-white">Como fica para o cliente</p>
+                  <p className="mt-1">
+                    Cancelamento: {bookingDraft.allowCancellation
+                      ? prettyWindow(resolveWindowFromDraft(bookingDraft.cancellationWindowPreset, bookingDraft.cancellationWindowCustom))
+                      : "não permitido"}
                   </p>
-                  <p className="text-white/70">
-                    Penalizacao: 0% · Reagendamento:{" "}
-                    {defaultModeratePolicy.allowReschedule
-                      ? prettyWindow(defaultModeratePolicy.rescheduleWindowMinutes)
-                      : "Desativado"}
+                  <p className="mt-1">
+                    Reagendamento: {bookingDraft.allowReschedule
+                      ? prettyWindow(resolveWindowFromDraft(bookingDraft.rescheduleWindowPreset, bookingDraft.rescheduleWindowCustom))
+                      : "não permitido"}
+                  </p>
+                  <p className="mt-1">
+                    Reserva sem conta: {bookingDraft.guestBookingAllowed ? "permitida" : "não permitida"}
                   </p>
                 </div>
-              ) : (
-                <EmptyState label="Ainda não existem políticas carregadas." />
-              )}
-            </Panel>
-            <Panel title="Termos públicos" subtitle="Template legal fechado em URL canónica">
-              <div className="space-y-2 rounded-xl border border-white/12 bg-white/5 p-3 text-sm text-white/80">
-                <p>
-                  URL pública:{" "}
-                  <span className="font-semibold text-white">{canonicalLegalUrl}</span>
-                </p>
-                <p>
-                  Conteúdo legal é gerado por template ORYA (termos, privacidade, reservas e loja) sem campos de texto
-                  livre editáveis.
-                </p>
-              </div>
-            </Panel>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "booking" })}>
-              Gerir políticas de reservas
-            </button>
-            <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "terms" })}>
-              Ver termos canónicos
-            </button>
-            <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "store" })}>
-              Configurar política da loja
-            </button>
-            <button type="button" className={CTA_NEUTRAL} onClick={() => updateQuery({ view: "guardrails" })}>
-              Ver guardrails
-            </button>
-          </div>
-        </div>
-      )}
 
-      {view === "booking" && (
-        <div className="space-y-3">
-          <Panel title="Criar política personalizada" subtitle="Combina dropdowns e campos livres com defaults">
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Nome da política">
-                <input
-                  className={INPUT}
-                  value={createDraft.name}
-                  onChange={(event) => setCreateDraft((prev) => ({ ...prev, name: event.target.value }))}
-                  placeholder="Ex.: Política torneio premium"
-                />
-              </Field>
-              <Field label="Tipo base">
-                <select
-                  className={INPUT}
-                  value={createDraft.policyType}
-                  onChange={(event) =>
-                    setCreateDraft((prev) => ({ ...prev, policyType: event.target.value as OrganizationPolicyType }))
-                  }
-                >
-                  <option value="CUSTOM">CUSTOM</option>
-                  <option value="FLEXIBLE">FLEXIBLE</option>
-                  <option value="MODERATE">MODERATE</option>
-                  <option value="RIGID">RIGID</option>
-                </select>
-              </Field>
-            </div>
+                {bookingError ? <Notice tone="error">{bookingError}</Notice> : null}
+                {bookingSuccessMessage ? <Notice tone="success">{bookingSuccessMessage}</Notice> : null}
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={CTA_NEUTRAL} onClick={() => applyBookingPreset("FLEXIBLE")}>
-                Aplicar preset flexível
-              </button>
-              <button type="button" className={CTA_NEUTRAL} onClick={() => applyBookingPreset("MODERATE")}>
-                Aplicar preset moderado
-              </button>
-              <button type="button" className={CTA_NEUTRAL} onClick={() => applyBookingPreset("RIGID")}>
-                Aplicar preset rígido
-              </button>
-            </div>
-
-            <PolicyControls draft={createDraft} onChange={setCreateDraft} />
-
-            {createError ? (
-              <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
-                {createError}
-              </div>
-            ) : null}
-
-            <div className="mt-3">
-              <button type="button" className={CTA_PRIMARY} onClick={() => void createPolicy()} disabled={createSaving}>
-                {createSaving ? "A criar..." : "Criar política"}
-              </button>
-            </div>
-          </Panel>
-
-          <Panel title="Políticas existentes" subtitle="Editar, ajustar ou remover (apenas CUSTOM)">
-            {policiesLoading && !hasPoliciesData ? (
-              <EmptyState label="A carregar políticas..." />
-            ) : policies.length === 0 ? (
-              <EmptyState label="Sem políticas para mostrar." />
-            ) : (
-              <div className="space-y-2">
-                {policies.map((policy) => (
-                  <div key={policy.id} className="rounded-xl border border-white/12 bg-white/5 p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{policy.name}</p>
-                        <p className="text-[12px] text-white/70">
-                          {policy.policyType} · Cancelamento {policy.allowCancellation ? "ativo" : "desativado"} ·
-                          Penalizacao 0%
-                        </p>
-                        <p className="text-[12px] text-white/60">
-                          Janela cancelamento: {prettyWindow(policy.cancellationWindowMinutes)} · Janela reagendamento:{" "}
-                          {policy.allowReschedule ? prettyWindow(policy.rescheduleWindowMinutes) : "desativado"}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" className={CTA_NEUTRAL} onClick={() => startEdit(policy)}>
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(CTA_NEUTRAL, policy.policyType !== "CUSTOM" && "cursor-not-allowed opacity-45")}
-                          onClick={() => void deletePolicy(policy)}
-                          disabled={policy.policyType !== "CUSTOM"}
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <div>
+                  <button type="button" className={CTA_PRIMARY} onClick={() => void saveBookingPolicy()} disabled={bookingSaving}>
+                    {bookingSaving ? "A guardar..." : "Guardar alterações"}
+                  </button>
+                </div>
               </div>
             )}
           </Panel>
         </div>
-      )}
+      ) : null}
 
-      {view === "terms" && (
-        <Panel
-          title="Termos e políticas legais"
-          subtitle="Conteúdo 100% canónico gerado por templates ORYA"
-        >
-          <div className="space-y-3 text-sm text-white/80">
-            <div className="rounded-xl border border-white/12 bg-white/5 p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Página legal canónica</p>
-              <p className="mt-1 font-semibold text-white">{canonicalLegalUrl}</p>
-              <p className="mt-1 text-white/70">
-                A página inclui secções fixas de termos, privacidade, reservas e loja com links internos para checkout
-                e superfícies públicas.
-              </p>
-            </div>
-            <div className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
-              Texto livre está bloqueado nesta ferramenta. Alterações legais são derivadas apenas de campos estruturados.
-            </div>
-          </div>
-        </Panel>
-      )}
+      {view === "finance" ? (
+        <div className="space-y-3">
+          <Panel title="Pagamentos">
+            <div className="space-y-3 text-sm text-white/80">
+              <InfoRow label="Estado atual" value={paymentsStatusLabel} />
+              <InfoRow label="Modo" value={isPlatformPayments ? "Conta ORYA" : "Stripe Connect"} />
 
-      {view === "store" && (
-        <Panel
-          title="Política de checkout da loja"
-          subtitle="Template único para devoluções, privacidade e termos com guardrails operacionais"
-        >
-          {storePolicyLoading && !storePolicyData ? (
-            <EmptyState label="A carregar política da loja..." />
-          ) : (
-            <div className="space-y-3">
-              {!storePolicyData?.storeFeatureEnabled ? (
-                <div className="rounded-xl border border-amber-300/45 bg-amber-500/12 px-3 py-2 text-sm text-amber-100">
-                  O módulo de loja está desativado nesta instalação.
-                </div>
-              ) : null}
-
-              {storePolicyData?.storeFeatureEnabled && !storePolicyData?.hasStore ? (
-                <div className="rounded-xl border border-amber-300/45 bg-amber-500/12 px-3 py-2 text-sm text-amber-100">
-                  A organização ainda não tem loja ativa. A política fica pronta aqui e passa a aplicar quando a loja
-                  ficar disponível.
-                </div>
-              ) : null}
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Modo de devoluções">
-                  <select
-                    className={INPUT}
-                    value={storePolicyDraft.returnPolicyMode}
-                    onChange={(event) =>
-                      setStorePolicyDraft((prev) => ({
-                        ...prev,
-                        returnPolicyMode: event.target.value as StorePolicyMode,
-                      }))
-                    }
-                  >
-                    <option value="WINDOW_DAYS">Com devoluções</option>
-                    <option value="NO_RETURNS">Sem devoluções</option>
-                  </select>
-                </Field>
-                <Field label="URL legal canónica">
-                  <input
-                    className={cn(INPUT, "opacity-80")}
-                    value={storePolicyData?.policy.legalUrl ?? ""}
-                    readOnly
-                    placeholder="/{username}/legal"
-                  />
-                </Field>
+              <div className="space-y-2">
+                {paymentsChecklist.map((item) => (
+                  <div key={item.id} className="flex items-center justify-between rounded-xl border border-white/12 bg-white/5 px-3 py-2">
+                    <span>{item.label}</span>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                        item.done
+                          ? "border-emerald-300/45 bg-emerald-500/12 text-emerald-100"
+                          : "border-amber-300/45 bg-amber-500/12 text-amber-100",
+                      )}
+                    >
+                      {item.done ? "OK" : "Pendente"}
+                    </span>
+                  </div>
+                ))}
               </div>
-
-              {storePolicyDraft.returnPolicyMode === "WINDOW_DAYS" ? (
-                <Field label="Janela de devolução (dias)">
-                  <input
-                    className={INPUT}
-                    value={storePolicyDraft.returnWindowDays}
-                    onChange={(event) =>
-                      setStorePolicyDraft((prev) => ({
-                        ...prev,
-                        returnWindowDays: event.target.value.replace(/[^\d]/g, ""),
-                      }))
-                    }
-                    inputMode="numeric"
-                    placeholder="0 a 730"
-                  />
-                </Field>
-              ) : null}
-
-              <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Preview devoluções</p>
-                <p className="mt-1">{buildStoreReturnPolicyPreview(storePolicyDraft)}</p>
-              </div>
-
-              <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Privacidade (template ORYA)</p>
-                <p className="mt-1">{storePolicyData?.policy.privacyPolicy ?? "A carregar..."}</p>
-              </div>
-
-              {(storePolicyData?.policy.supportEmail || storePolicyData?.policy.supportPhone) ? (
-                <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Suporte atual</p>
-                  <p className="mt-1">
-                    {storePolicyData?.policy.supportEmail ?? ""}
-                    {storePolicyData?.policy.supportEmail && storePolicyData?.policy.supportPhone ? " · " : ""}
-                    {storePolicyData?.policy.supportPhone ?? ""}
-                  </p>
-                </div>
-              ) : null}
-
-              <div className="rounded-xl border border-cyan-300/35 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
-                Contactos de suporte (email/telefone) são geridos em
-                {" "}
-                <a className="underline" href={buildOrgHref(orgId, "/settings")}>
-                  Definições
-                </a>
-                {" "}
-                e reutilizados automaticamente no checkout.
-              </div>
-
-              {storePolicyErrorMessage ? (
-                <div className="rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
-                  {storePolicyErrorMessage}
-                </div>
-              ) : null}
-              {storePolicySuccessMessage ? (
-                <div className="rounded-xl border border-emerald-300/45 bg-emerald-500/12 px-3 py-2 text-sm text-emerald-100">
-                  {storePolicySuccessMessage}
-                </div>
-              ) : null}
 
               <div>
-                <button
-                  type="button"
-                  className={CTA_PRIMARY}
-                  onClick={() => void saveStorePolicy()}
-                  disabled={
-                    storePolicySaving ||
-                    !storePolicyData?.storeFeatureEnabled
-                  }
-                >
-                  {storePolicySaving ? "A guardar..." : "Guardar política da loja"}
-                </button>
+                <a className={CTA_PRIMARY} href={paymentsManagePath}>
+                  Abrir financeiro
+                </a>
               </div>
+            </div>
+          </Panel>
+
+          <Panel title="Taxas automáticas">
+            <div className="space-y-2 text-sm text-white/80">
+              <InfoRow label="Taxa de processamento" value="Vem da Stripe e é aplicada automaticamente" />
+              <InfoRow
+                label="Quem paga a taxa de processamento"
+                value="Organização"
+              />
+              <InfoRow
+                label="Taxa da plataforma"
+                value={`${formatFeeRateLabel(financePolicy?.fees.platformFeeBps ?? 0)} + ${financePolicy?.fees.platformFeeFixedCents ?? 0} cênt. por pagamento`}
+              />
+              <InfoRow
+                label="Como entra no preço"
+                value={(financePolicy?.fees.feeMode ?? "ADDED") === "INCLUDED" ? "Incluída no valor" : "Somada ao valor"}
+              />
+            </div>
+          </Panel>
+        </div>
+      ) : null}
+
+      {view === "crm" ? (
+        <Panel title="CRM (só leitura)">
+          {crmPolicyLoading && !crmPolicyData ? (
+            <EmptyState label="A carregar política de CRM..." />
+          ) : (
+            <div className="space-y-2 text-sm text-white/80">
+              <InfoRow
+                label="Período sem mensagens"
+                value={`${minutesToClock(crmPolicy.quietHoursStartMinute)} até ${minutesToClock(crmPolicy.quietHoursEndMinute)}`}
+              />
+              <InfoRow label="Limite por dia" value={`${crmPolicy.capPerDay} contacto(s)`} />
+              <InfoRow label="Limite por semana" value={`${crmPolicy.capPerWeek} contacto(s)`} />
+              <InfoRow label="Limite por mês" value={`${crmPolicy.capPerMonth} contacto(s)`} />
+              <InfoRow label="Sobe para revisão ao fim de" value={`${crmPolicy.approvalEscalationHours}h`} />
+              <InfoRow label="Aprovação válida por" value={`${crmPolicy.approvalExpireHours}h`} />
+              <Notice tone="info">Estas regras são fixas da plataforma.</Notice>
             </div>
           )}
         </Panel>
-      )}
+      ) : null}
 
-      {view === "guardrails" && (
-        <Panel title="Guardrails operacionais" subtitle="Limites de segurança para personalização">
-          <ul className="space-y-2 text-sm text-white/80">
-            <li className={GUARDRAIL_ITEM}>
-              Políticas predefinidas (`FLEXIBLE`, `MODERATE`, `RIGID`) podem ser editadas, mas só políticas `CUSTOM`
-              podem ser removidas.
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              Penalizacao de cancelamento e fixa em `0%` nesta versao.
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              Janelas são sempre validadas em minutos e normalizadas para inteiro n&atilde;o negativo.
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              Textos legais publicos sao gerados por template fechado e URL interna &apos;/username/legal&apos;.
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              No-show fee esta fora de customizacao nesta versao (lockado em 0 na politica publica).
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              Política da loja usa template fechado: devoluções `sem devoluções` ou `0..730 dias`, com clamp automático.
-            </li>
-            <li className={GUARDRAIL_ITEM}>
-              Email/telefone de suporte da loja vivem em `Definições` e não podem ser editados dentro da ferramenta Loja.
-            </li>
-          </ul>
-        </Panel>
-      )}
-
-      {editingPolicyId && editDraft && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-3xl rounded-2xl border border-white/14 bg-[#0b1014] p-4 shadow-[0_22px_70px_rgba(0,0,0,0.58)]">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-lg font-semibold text-white">Editar política</h3>
-              <button
-                type="button"
-                className={CTA_NEUTRAL}
-                onClick={() => {
-                  setEditingPolicyId(null);
-                  setEditDraft(null);
-                  setEditError(null);
-                }}
-              >
-                Fechar
-              </button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Nome da política">
-                <input
-                  className={INPUT}
-                  value={editDraft.name}
-                  onChange={(event) => setEditDraft((prev) => (prev ? { ...prev, name: event.target.value } : prev))}
+      {view === "padel" ? (
+        <div className="space-y-3">
+          <Panel title="Padel (regra fixa)">
+            {padelPolicyLoading && !padelPolicyData ? (
+              <EmptyState label="A carregar política de padel..." />
+            ) : (
+              <div className="space-y-2 text-sm text-white/80">
+                <InfoRow label="Prazo mínimo para split" value={`${padelPolicy.splitDeadlineHours}h antes do início`} />
+                <InfoRow
+                  label="Fecho do split"
+                  value={`${padelPolicy.splitWindowCloseHoursBeforeStart}h antes do início`}
                 />
-              </Field>
-              <Field label="Tipo base">
-                <select
-                  className={INPUT}
-                  value={editDraft.policyType}
-                  onChange={(event) =>
-                    setEditDraft((prev) => (prev ? { ...prev, policyType: event.target.value as OrganizationPolicyType } : prev))
-                  }
-                >
-                  <option value="CUSTOM">CUSTOM</option>
-                  <option value="FLEXIBLE">FLEXIBLE</option>
-                  <option value="MODERATE">MODERATE</option>
-                  <option value="RIGID">RIGID</option>
-                </select>
-              </Field>
-            </div>
-
-            <PolicyControls
-              draft={editDraft}
-              onChange={(next) =>
-                setEditDraft((prev) => {
-                  if (!prev) return prev;
-                  return typeof next === "function" ? next(prev) : next;
-                })
-              }
-            />
-
-            {editError ? (
-              <div className="mt-3 rounded-xl border border-rose-300/45 bg-rose-500/12 px-3 py-2 text-sm text-rose-100">
-                {editError}
+                <InfoRow
+                  label="Confirmação pendente"
+                  value={`${padelPolicy.pendingConfirmationWindowMin} a ${padelPolicy.pendingConfirmationWindowMax} minutos`}
+                />
+                <InfoRow label="Torneios na organização" value={String(padelAdoption.totalTournaments)} />
+                <InfoRow label="Registos antigos fora da regra" value={String(padelAdoption.legacyOverrides)} />
+                <Notice tone="info">É sempre igual para todos os torneios da organização.</Notice>
               </div>
+            )}
+          </Panel>
+        </div>
+      ) : null}
+
+      {view === "terms" ? (
+        <Panel title="Legal">
+          <div className="space-y-2 text-sm text-white/80">
+            <InfoRow label="Link público" value={canonicalLegalUrl || "Ainda sem link público"} />
+            <InfoRow label="Texto para clientes" value="Gerado automaticamente com base nas políticas" />
+            <InfoRow
+              label="Onde se altera"
+              value="Nas próprias políticas (reservas, loja, etc.)"
+            />
+            {canonicalLegalUrl ? (
+              <div>
+                <a className={CTA_NEUTRAL} href={canonicalLegalUrl}>
+                  Ver página legal
+                </a>
+              </div>
+            ) : (
+              <Notice tone="warning">O link público aparece quando a organização tiver username público ativo.</Notice>
+            )}
+          </div>
+        </Panel>
+      ) : null}
+
+      {view === "store" ? (
+        <Panel title="Loja" subtitle="Devoluções">
+          <div className="space-y-3">
+            {!storePolicyData?.storeFeatureEnabled ? (
+              <Notice tone="warning">O módulo de loja está desativado nesta instalação.</Notice>
             ) : null}
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={CTA_PRIMARY} onClick={() => void saveEdit()} disabled={editSaving}>
-                {editSaving ? "A guardar..." : "Guardar alterações"}
-              </button>
+            {storePolicyData?.storeFeatureEnabled && !storePolicyData?.hasStore ? (
+              <Notice tone="warning">
+                Ainda não tens loja ativa. Esta política fica guardada e entra em funcionamento quando a loja estiver ativa.
+              </Notice>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Com devoluções?">
+                <select
+                  className={INPUT}
+                  value={storePolicyDraft.returnPolicyMode}
+                  onChange={(event) =>
+                    setStorePolicyDraft((prev) => ({
+                      ...prev,
+                      returnPolicyMode: event.target.value as StorePolicyMode,
+                    }))
+                  }
+                >
+                  <option value="WINDOW_DAYS">Sim</option>
+                  <option value="NO_RETURNS">Não</option>
+                </select>
+              </Field>
+
+              <Field label="Link público legal">
+                <input className={cn(INPUT, "opacity-80")} value={storePolicyData?.policy.legalUrl ?? ""} readOnly />
+              </Field>
+            </div>
+
+            {storePolicyDraft.returnPolicyMode === "WINDOW_DAYS" ? (
+              <Field label="Prazo de devolução (em dias)">
+                <input
+                  className={INPUT}
+                  value={storePolicyDraft.returnWindowDays}
+                  onChange={(event) =>
+                    setStorePolicyDraft((prev) => ({
+                      ...prev,
+                      returnWindowDays: event.target.value.replace(/[^\d]/g, ""),
+                    }))
+                  }
+                  inputMode="numeric"
+                  placeholder="0 a 730"
+                />
+              </Field>
+            ) : null}
+
+            <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+              <p className="font-semibold text-white">Texto que o cliente vê</p>
+              <p className="mt-1">{buildStoreReturnPolicyPreview(storePolicyDraft)}</p>
+            </div>
+
+            <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/80">
+              <p className="font-semibold text-white">Contacto de suporte para o cliente</p>
+              <p className="mt-1">
+                {storePolicyData?.policy.supportEmail ?? "Sem email"}
+                {storePolicyData?.policy.supportEmail && storePolicyData?.policy.supportPhone ? " · " : ""}
+                {storePolicyData?.policy.supportPhone ?? ""}
+              </p>
+            </div>
+
+            <Notice tone="info">
+              Email e telefone de suporte vêm de
+              {" "}
+              <a className="underline" href={buildOrgHref(orgId, "/settings")}>
+                Definições
+              </a>
+              .
+            </Notice>
+
+            {storePolicyErrorMessage ? <Notice tone="error">{storePolicyErrorMessage}</Notice> : null}
+            {storePolicySuccessMessage ? <Notice tone="success">{storePolicySuccessMessage}</Notice> : null}
+
+            <div>
               <button
                 type="button"
-                className={CTA_NEUTRAL}
-                onClick={() => {
-                  setEditingPolicyId(null);
-                  setEditDraft(null);
-                  setEditError(null);
-                }}
-                disabled={editSaving}
+                className={CTA_PRIMARY}
+                onClick={() => void saveStorePolicy()}
+                disabled={storePolicySaving || !storePolicyData?.storeFeatureEnabled}
               >
-                Cancelar
+                {storePolicySaving ? "A guardar..." : "Guardar"}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </Panel>
+      ) : null}
+
+      {view === "guardrails" ? (
+        <Panel title="Limites fixos">
+          <ul className="space-y-2 text-sm text-white/80">
+            <li className={GUARDRAIL_ITEM}>Existe uma única regra padrão de reservas e, ao guardar, estás a atualizá-la.</li>
+            <li className={GUARDRAIL_ITEM}>Não existe multa extra em percentagem no cancelamento.</li>
+            <li className={GUARDRAIL_ITEM}>No-show não cria cobrança extra: fica apenas como registo operacional/CRM.</li>
+            <li className={GUARDRAIL_ITEM}>Taxas de pagamento vêm automaticamente da Stripe e da configuração da plataforma.</li>
+            <li className={GUARDRAIL_ITEM}>A página legal pública usa as mesmas políticas, para evitar versões diferentes da verdade.</li>
+            <li className={GUARDRAIL_ITEM}>No padel, o split é fixo para todos os torneios da organização.</li>
+          </ul>
+        </Panel>
+      ) : null}
     </section>
   );
 }
@@ -911,10 +818,10 @@ function PolicyControls({
   );
 
   return (
-    <div className="mt-3 space-y-3">
+    <div className="space-y-3">
       <div className="grid gap-3 md:grid-cols-2">
         <label className={TOGGLE_LABEL}>
-          <span>Permitir cancelamento</span>
+          <span>Permitir cancelamentos</span>
           <input
             type="checkbox"
             checked={draft.allowCancellation}
@@ -922,7 +829,7 @@ function PolicyControls({
           />
         </label>
         <label className={TOGGLE_LABEL}>
-          <span>Permitir reagendamento</span>
+          <span>Permitir reagendamentos</span>
           <input
             type="checkbox"
             checked={draft.allowReschedule}
@@ -932,7 +839,7 @@ function PolicyControls({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Janela de cancelamento">
+        <Field label="Prazo para cancelar">
           <select
             className={INPUT}
             value={draft.cancellationWindowPreset}
@@ -941,14 +848,14 @@ function PolicyControls({
             }
             disabled={!draft.allowCancellation}
           >
-            <option value="none">Sem cancelamento</option>
-            <option value="0">Até à hora</option>
-            <option value="60">1h</option>
-            <option value="180">3h</option>
-            <option value="720">12h</option>
-            <option value="1440">24h</option>
-            <option value="2880">48h</option>
-            <option value="10080">7 dias</option>
+            <option value="none">Não permitir</option>
+            <option value="0">Até à hora de início</option>
+            <option value="60">1 hora antes</option>
+            <option value="180">3 horas antes</option>
+            <option value="720">12 horas antes</option>
+            <option value="1440">24 horas antes</option>
+            <option value="2880">48 horas antes</option>
+            <option value="10080">7 dias antes</option>
             <option value="custom">Personalizado</option>
           </select>
           {draft.cancellationWindowPreset === "custom" ? (
@@ -963,10 +870,8 @@ function PolicyControls({
             />
           ) : null}
         </Field>
-      </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Janela de reagendamento">
+        <Field label="Prazo para reagendar">
           <select
             className={INPUT}
             value={draft.rescheduleWindowPreset}
@@ -975,14 +880,14 @@ function PolicyControls({
             }
             disabled={!draft.allowReschedule}
           >
-            <option value="none">Sem reagendamento</option>
-            <option value="0">Até à hora</option>
-            <option value="60">1h</option>
-            <option value="180">3h</option>
-            <option value="720">12h</option>
-            <option value="1440">24h</option>
-            <option value="2880">48h</option>
-            <option value="10080">7 dias</option>
+            <option value="none">Não permitir</option>
+            <option value="0">Até à hora de início</option>
+            <option value="60">1 hora antes</option>
+            <option value="180">3 horas antes</option>
+            <option value="720">12 horas antes</option>
+            <option value="1440">24 horas antes</option>
+            <option value="2880">48 horas antes</option>
+            <option value="10080">7 dias antes</option>
             <option value="custom">Personalizado</option>
           </select>
           {draft.rescheduleWindowPreset === "custom" ? (
@@ -998,6 +903,27 @@ function PolicyControls({
           ) : null}
         </Field>
       </div>
+
+      <label className={TOGGLE_LABEL}>
+        <span>Permitir reservas sem conta</span>
+        <input
+          type="checkbox"
+          checked={draft.guestBookingAllowed}
+          onChange={(event) => assign((prev) => ({ ...prev, guestBookingAllowed: event.target.checked }))}
+        />
+      </label>
+    </div>
+  );
+}
+
+function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4">
+      <div className="mb-3">
+        <h2 className="text-base font-semibold text-white">{title}</h2>
+        {subtitle ? <p className="text-xs text-white/65">{subtitle}</p> : null}
+      </div>
+      {children}
     </div>
   );
 }
@@ -1005,40 +931,45 @@ function PolicyControls({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[11px] uppercase tracking-[0.16em] text-white/60">{label}</span>
+      <span className="text-xs font-medium text-white/70">{label}</span>
       {children}
     </label>
   );
 }
 
-function Panel({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 shadow-[0_16px_46px_rgba(0,0,0,0.28)]">
-      <div className="mb-3">
-        <h2 className="text-base font-semibold text-white">{title}</h2>
-        {subtitle ? <p className="text-xs text-white/60">{subtitle}</p> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/14 bg-gradient-to-br from-white/12 via-[#0b1124]/72 to-[#050810]/95 p-3 shadow-[0_20px_62px_rgba(0,0,0,0.5)]">
-      <p className="text-[11px] uppercase tracking-[0.18em] text-white/70">{label}</p>
-      <p className="mt-1 text-[24px] font-bold leading-tight text-white">{value}</p>
-    </div>
-  );
-}
-
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-2xl border border-white/12 bg-white/[0.05] p-4 text-sm text-white/75">
-      <p className="font-semibold text-white/90">Sem dados disponíveis</p>
-      <p className="mt-1">{label}</p>
+    <div className="rounded-xl border border-white/12 bg-white/5 px-3 py-3 text-sm text-white/75">
+      {label}
     </div>
   );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 py-2 text-sm">
+      <span className="text-white/65">{label}</span>
+      <span className="font-medium text-white">{value}</span>
+    </div>
+  );
+}
+
+function Notice({
+  tone,
+  children,
+}: {
+  tone: "error" | "success" | "warning" | "info";
+  children: React.ReactNode;
+}) {
+  const toneClasses =
+    tone === "error"
+      ? "border-rose-300/45 bg-rose-500/12 text-rose-100"
+      : tone === "success"
+        ? "border-emerald-300/45 bg-emerald-500/12 text-emerald-100"
+        : tone === "warning"
+          ? "border-amber-300/45 bg-amber-500/12 text-amber-100"
+          : "border-cyan-300/35 bg-cyan-300/10 text-cyan-100";
+  return <div className={cn("rounded-xl border px-3 py-2 text-sm", toneClasses)}>{children}</div>;
 }
 
 const INPUT =
@@ -1049,4 +980,4 @@ const CTA_NEUTRAL =
   "inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[12px] text-white transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12";
 const TOGGLE_LABEL =
   "flex items-center justify-between gap-2 rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-sm text-white/85";
-const GUARDRAIL_ITEM = "rounded-xl border border-white/12 bg-white/5 px-3 py-2";
+const GUARDRAIL_ITEM = "border-b border-white/10 py-2";

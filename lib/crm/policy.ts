@@ -14,8 +14,8 @@ export type CrmConfig = {
 
 export const CRM_CONFIG_DEFAULTS: CrmConfig = {
   timezone: "Europe/Lisbon",
-  quietHoursStartMinute: 22 * 60,
-  quietHoursEndMinute: 8 * 60,
+  quietHoursStartMinute: 20 * 60,
+  quietHoursEndMinute: 10 * 60,
   capPerDay: 1,
   capPerWeek: 4,
   capPerMonth: 10,
@@ -111,7 +111,15 @@ export async function ensureCrmPolicy(
 ) {
   return client.crmOrganizationPolicy.upsert({
     where: { organizationId },
-    update: {},
+    update: {
+      quietHoursStartMinute: CRM_CONFIG_DEFAULTS.quietHoursStartMinute,
+      quietHoursEndMinute: CRM_CONFIG_DEFAULTS.quietHoursEndMinute,
+      capPerDay: CRM_CONFIG_DEFAULTS.capPerDay,
+      capPerWeek: CRM_CONFIG_DEFAULTS.capPerWeek,
+      capPerMonth: CRM_CONFIG_DEFAULTS.capPerMonth,
+      approvalEscalationHours: CRM_CONFIG_DEFAULTS.approvalEscalationHours,
+      approvalExpireHours: CRM_CONFIG_DEFAULTS.approvalExpireHours,
+    },
     create: {
       organizationId,
       timezone: timezoneFallback,

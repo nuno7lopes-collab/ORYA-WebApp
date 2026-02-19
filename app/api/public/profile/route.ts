@@ -202,6 +202,46 @@ async function _GET(req: NextRequest) {
       supabaseSelfProfile?.username &&
       supabaseSelfProfile.username.toLowerCase() === username.toLowerCase();
     if (supabaseSelfProfile && matchesUsername) {
+      const prismaSelfProfile = await prisma.profile.findUnique({
+        where: { id: viewerId },
+        select: {
+          id: true,
+          username: true,
+          fullName: true,
+          avatarUrl: true,
+          coverUrl: true,
+          bio: true,
+          visibility: true,
+          padelLevel: true,
+          padelPreferredSide: true,
+          gender: true,
+          favouriteCategories: true,
+          isDeleted: true,
+        },
+      });
+      const prismaUsernameMatches =
+        prismaSelfProfile?.username &&
+        prismaSelfProfile.username.toLowerCase() === username.toLowerCase();
+      if (prismaSelfProfile && !prismaSelfProfile.isDeleted && prismaUsernameMatches) {
+        const response = await buildUserResponse(
+          {
+            id: prismaSelfProfile.id,
+            username: prismaSelfProfile.username,
+            fullName: prismaSelfProfile.fullName,
+            avatarUrl: prismaSelfProfile.avatarUrl,
+            coverUrl: prismaSelfProfile.coverUrl,
+            bio: prismaSelfProfile.bio,
+            visibility: prismaSelfProfile.visibility ?? "PUBLIC",
+            padelLevel: prismaSelfProfile.padelLevel ?? null,
+            padelPreferredSide: prismaSelfProfile.padelPreferredSide ?? null,
+            gender: prismaSelfProfile.gender ?? null,
+            favouriteCategories: prismaSelfProfile.favouriteCategories ?? [],
+          },
+          viewerId,
+        );
+        if (response) return response;
+      }
+
       const response = await buildUserResponse(
         {
           id: supabaseSelfProfile.id,

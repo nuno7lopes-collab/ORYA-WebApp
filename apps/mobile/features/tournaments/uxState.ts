@@ -5,6 +5,8 @@ export type RegistrationPrimaryCta = "CREATE_AND_PAY" | "CREATE_AND_CONTINUE";
 export type RegistrationBlockReason =
   | "MISSING_CATEGORY"
   | "REGISTRATION_CLOSED"
+  | "MISSING_CATEGORY_TICKET"
+  | "CATEGORY_TICKET_UNAVAILABLE"
   | "MISSING_INVITE_CONTACT"
   | "BUSY"
   | "POLICY_LOCKED";
@@ -12,6 +14,8 @@ export type RegistrationBlockReason =
 type RegistrationBlockInput = {
   registrationOpen: boolean;
   hasCategory: boolean;
+  hasCategoryTicket: boolean;
+  hasCategoryPurchasableTicket: boolean;
   joinMode: PairingJoinMode;
   inviteContact: string;
   pairingBusy: boolean;
@@ -23,6 +27,8 @@ export const resolveRegistrationBlockReason = (
 ): RegistrationBlockReason | null => {
   if (!input.hasCategory) return "MISSING_CATEGORY";
   if (!input.registrationOpen) return "REGISTRATION_CLOSED";
+  if (!input.hasCategoryTicket) return "MISSING_CATEGORY_TICKET";
+  if (!input.hasCategoryPurchasableTicket) return "CATEGORY_TICKET_UNAVAILABLE";
   if (input.joinMode === "INVITE_PARTNER" && input.inviteContact.trim().length === 0) {
     return "MISSING_INVITE_CONTACT";
   }

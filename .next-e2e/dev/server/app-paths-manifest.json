@@ -1,21 +1,16 @@
 {
-  "/api/auth/me/route": "app/api/auth/me/route.js",
   "/api/explorar/list/route": "app/api/explorar/list/route.js",
   "/api/me/reservas/route": "app/api/me/reservas/route.js",
+  "/api/auth/me/route": "app/api/auth/me/route.js",
   "/login/page": "app/login/page.js",
   "/eventos/page": "app/eventos/page.js",
   "/descobrir/page": "app/descobrir/page.js",
-  "/admin/(protected)/page": "app/admin/(protected)/page.js",
-  "/me/settings/page": "app/me/settings/page.js",
   "/me/reservas/page": "app/me/reservas/page.js",
-  "/admin/(protected)/organizacoes/page": "app/admin/(protected)/organizacoes/page.js",
-  "/admin/(protected)/tickets/page": "app/admin/(protected)/tickets/page.js",
-  "/me/compras/loja/page": "app/me/compras/loja/page.js",
-  "/admin/(protected)/payments/page": "app/admin/(protected)/payments/page.js",
-  "/admin/(protected)/refunds/page": "app/admin/(protected)/refunds/page.js",
   "/admin/(protected)/finance/page": "app/admin/(protected)/finance/page.js",
   "/admin/(protected)/audit/page": "app/admin/(protected)/audit/page.js",
   "/admin/(protected)/infra/page": "app/admin/(protected)/infra/page.js",
   "/admin/(protected)/settings/page": "app/admin/(protected)/settings/page.js",
-  "/admin/(protected)/suporte/page": "app/admin/(protected)/suporte/page.js"
+  "/admin/(protected)/tickets/page": "app/admin/(protected)/tickets/page.js",
+  "/admin/(protected)/suporte/page": "app/admin/(protected)/suporte/page.js",
+  "/admin/(protected)/page": "app/admin/(protected)/page.js"
 }

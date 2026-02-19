@@ -12,6 +12,13 @@ type InfraStatus = {
   updatedAt?: string;
   outputs?: Record<string, string>;
   services?: Array<Record<string, unknown>>;
+  redis?: {
+    configured: boolean;
+    cacheName?: string | null;
+    status?: string | null;
+    endpoint?: string | null;
+    source?: "secretsmanager" | "secret-missing" | "error";
+  };
 };
 
 type ActionResult = {
@@ -139,7 +146,15 @@ export default function InfraClient({
           correlationId: json.correlationId,
           payload: json.ok ? json.data : { errorCode: json.errorCode, message: json.message },
         });
-        if (name === "deploy" || name === "start" || name === "resume" || name === "soft_pause" || name.startsWith("mode_")) {
+        if (
+          name === "deploy" ||
+          name === "start" ||
+          name === "resume" ||
+          name === "soft_pause" ||
+          name === "redis_start" ||
+          name === "redis_stop" ||
+          name.startsWith("mode_")
+        ) {
           await loadStatus();
         }
       } catch (err: any) {
@@ -262,6 +277,9 @@ export default function InfraClient({
               <p>ALB: {outputs.LoadBalancerDNS ?? "-"}</p>
               <p>WebURL: {outputs.WebURL ?? "-"}</p>
               <p>TaskRole: {outputs.TaskRoleArn ?? "-"}</p>
+              <p>Redis: {status.data?.redis?.configured ? "ON" : "OFF"}</p>
+              <p>Redis cache: {status.data?.redis?.cacheName ?? "-"}</p>
+              <p>Redis status: {status.data?.redis?.status ?? "-"}</p>
             </div>
           </div>
         </div>
@@ -488,6 +506,20 @@ export default function InfraClient({
             disabled={disableActionButtons}
           >
             Run Migrations
+          </button>
+          <button
+            className="rounded-xl border border-orange-400/40 bg-orange-500/10 px-3 py-2 text-sm text-orange-100 hover:bg-orange-500/20 disabled:opacity-60"
+            onClick={() => callAction("redis_stop", "/api/admin/infra/redis/stop")}
+            disabled={disableActionButtons}
+          >
+            Desligar Redis
+          </button>
+          <button
+            className="rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-500/20 disabled:opacity-60"
+            onClick={() => callAction("redis_start", "/api/admin/infra/redis/start")}
+            disabled={disableActionButtons}
+          >
+            Ligar Redis
           </button>
         </div>
 

@@ -103,13 +103,12 @@ const asPublicMatch = (match: Record<string, unknown>) => {
     pairingB: toPublicPairing(match.pairingB as Record<string, unknown> | null | undefined),
     participants: toPublicParticipants(match.participants),
   };
+  const status = typeof match.status === "string" ? match.status : null;
+  const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null;
   if (
     isPadelOfficialPublicResult({
-      status: typeof safeMatch.status === "string" ? safeMatch.status : null,
-      score:
-        safeMatch.score && typeof safeMatch.score === "object"
-          ? (safeMatch.score as Record<string, unknown>)
-          : null,
+      status,
+      score,
     })
   ) {
     return safeMatch;

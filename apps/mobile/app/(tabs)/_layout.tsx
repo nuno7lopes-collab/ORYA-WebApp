@@ -15,7 +15,7 @@ import { useTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider
 import { LocationPermissionModal } from "../../components/location/LocationPermissionModal";
 import { getLocationPermissionState, requestLocationConsent } from "../../lib/locationConsent";
 import { hasSeenLocationPrompt, markLocationPromptSeen } from "../../lib/locationPromptState";
-import { useTranslation } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 import {
   createMaterialTopTabNavigator,
   type MaterialTopTabBarProps,
@@ -31,6 +31,7 @@ const ExpoTopTabs = withLayoutContext<
   TabNavigationState<ParamListBase>,
   MaterialTopTabNavigationEventMap
 >(MaterialTopTabs.Navigator);
+const APP_BACKGROUND = tokens.colors.background;
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -172,7 +173,7 @@ export default function TabsLayout() {
   const { isBlocked } = useTabSwipeBlocker();
   const renderLazyPlaceholder = useCallback(
     () => (
-      <View style={{ flex: 1, backgroundColor: "#0b1014", alignItems: "center", justifyContent: "center" }}>
+      <View style={{ flex: 1, backgroundColor: APP_BACKGROUND, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color="rgba(255,255,255,0.7)" />
       </View>
     ),
@@ -216,7 +217,7 @@ export default function TabsLayout() {
 
   if (loading || gateStatus === "loading") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b1014" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: APP_BACKGROUND }}>
         <ActivityIndicator />
       </View>
     );
@@ -228,7 +229,7 @@ export default function TabsLayout() {
 
   if (gateStatus === "offline") {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0b1014" }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: APP_BACKGROUND }}>
         <View style={{ maxWidth: 320 }}>
           <Text style={{ color: "white", fontSize: 16, textAlign: "center", fontWeight: "600" }}>
             Precisas de internet para concluir o onboarding.
@@ -263,7 +264,7 @@ export default function TabsLayout() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#0b1014" }}>
+    <View style={{ flex: 1, backgroundColor: APP_BACKGROUND }}>
       <ExpoTopTabs
         id="main-tabs"
         tabBarPosition="bottom"

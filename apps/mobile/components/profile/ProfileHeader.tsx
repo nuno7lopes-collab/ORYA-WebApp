@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from "react-native";
 import type React from "react";
 import { Image } from "expo-image";
+import { AvatarCircle } from "../avatar/AvatarCircle";
 import { Ionicons } from "../icons/Ionicons";
 import { PROFILE_HEADER_TOKENS as T } from "./profileTokens";
 
@@ -115,20 +116,17 @@ export function ProfileHeader({
             style={{
               width: T.avatarSize,
               height: T.avatarSize,
-              borderRadius: T.avatarRadius,
-              borderWidth: 0,
-              borderColor: "transparent",
-              backgroundColor: T.avatarFallbackColor,
               alignItems: "center",
               justifyContent: "center",
-              overflow: "hidden",
             }}
           >
-            {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={{ width: T.avatarSize, height: T.avatarSize }} contentFit="cover" />
-            ) : (
-              <Ionicons name={isUser ? "person" : "business"} size={28} color="rgba(255,255,255,0.8)" />
-            )}
+            <AvatarCircle
+              size={T.avatarSize}
+              uri={avatarUrl}
+              iconName={isUser ? "person" : "business"}
+              borderColor="rgba(255,255,255,0.16)"
+              borderWidth={1}
+            />
             {avatarEditable ? (
               <View
                 pointerEvents="none"

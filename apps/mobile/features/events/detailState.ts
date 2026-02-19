@@ -9,11 +9,22 @@ type PullDismissInput = {
 type TicketSheetGateInput = {
   showStickyPurchaseBar: boolean;
   ticketMetaLength: number;
+  selectableTicketMetaLength: number;
   canAccessInvite: boolean;
   eventIsActive: boolean;
+  isPublicEvent: boolean;
 };
 
-export const IOS_PULL_DISMISS_THRESHOLD = -72;
+export type TicketSheetGateState = {
+  hasTicketTypes: boolean;
+  hasSelectableTickets: boolean;
+  eventEnded: boolean;
+  inviteLocked: boolean;
+  configInvalid: boolean;
+  canOpenSheet: boolean;
+};
+
+export const IOS_PULL_DISMISS_THRESHOLD = -64;
 
 export const shouldDismissByPullDown = ({
   platform,
@@ -27,13 +38,41 @@ export const shouldDismissByPullDown = ({
   !dismissInFlight &&
   offsetY <= threshold;
 
-export const resolveCanOpenTicketSheet = ({
+export const resolveTicketSheetGateState = ({
   showStickyPurchaseBar,
   ticketMetaLength,
+  selectableTicketMetaLength,
   canAccessInvite,
   eventIsActive,
-}: TicketSheetGateInput) =>
-  showStickyPurchaseBar &&
-  ticketMetaLength > 0 &&
-  canAccessInvite &&
-  eventIsActive;
+  isPublicEvent,
+}: TicketSheetGateInput): TicketSheetGateState => {
+  const hasTicketTypes = showStickyPurchaseBar && ticketMetaLength > 0;
+  const hasSelectableTickets =
+    showStickyPurchaseBar && selectableTicketMetaLength > 0;
+  const eventEnded = !eventIsActive;
+  const inviteLocked = !canAccessInvite;
+  const configInvalid =
+    showStickyPurchaseBar &&
+    isPublicEvent &&
+    eventIsActive &&
+    canAccessInvite &&
+    hasTicketTypes &&
+    !hasSelectableTickets;
+
+  return {
+    hasTicketTypes,
+    hasSelectableTickets,
+    eventEnded,
+    inviteLocked,
+    configInvalid,
+    canOpenSheet:
+      showStickyPurchaseBar &&
+      hasTicketTypes &&
+      hasSelectableTickets &&
+      canAccessInvite &&
+      eventIsActive,
+  };
+};
+
+export const resolveCanOpenTicketSheet = (input: TicketSheetGateInput) =>
+  resolveTicketSheetGateState(input).canOpenSheet;

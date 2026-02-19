@@ -424,6 +424,7 @@
       "public": "Perfil público",
       "followers": "Solo seguidores",
       "private": "Privado",
+      "privateFollowers": "Perfil privado (seguidores)",
       "save": "Guardar privacidad"
     },
     "interests": {
@@ -442,6 +443,10 @@
       "pushSubtitle": "Alertas en tiempo real en tu iPhone.",
       "pushActive": "Activas",
       "pushUnavailable": "No disponible",
+      "pushUnavailableSimulator": "Disponible solo en iPhone físico.",
+      "pushUnavailableExpoGo": "Disponible en build instalada (no en Expo Go).",
+      "pushUnavailablePlatform": "Disponible solo en iOS.",
+      "pushUnavailableUnknown": "No se puede activar push en este dispositivo ahora.",
       "pushOpenSettings": "Abrir ajustes",
       "pushEnable": "Activar push",
       "save": "Guardar notificaciones"
@@ -459,9 +464,13 @@
       "resetInvalidEmail": "Introduce un email válido para recuperar la contraseña.",
       "resetSent": "Enviamos un enlace para recuperar la contraseña.",
       "resetFailed": "No se pudo enviar el enlace de recuperación.",
+      "privacySaved": "Privacidad guardada.",
       "privacySaveFailed": "No se pudo guardar la privacidad.",
+      "interestsSaved": "Intereses guardados.",
       "interestsSaveFailed": "No se pudieron guardar los intereses.",
+      "notificationsSaved": "Notificaciones guardadas.",
       "notificationsSaveFailed": "No se pudieron guardar las notificaciones.",
+      "consentSaved": "Consentimiento guardado.",
       "consentSaveFailed": "No se pudo guardar el consentimiento.",
       "logoutFailed": "No se pudo cerrar la sesión.",
       "deleteFailed": "No se pudo marcar la cuenta para eliminación."
@@ -472,8 +481,13 @@
       "loading": "Cargando consentimientos...",
       "empty": "Sin organizaciones asociadas.",
       "orgFallback": "Organización",
+      "generalTitle": "Consentimiento general",
+      "generalUpdates": "Actualizaciones y próximos eventos",
+      "generalEmail": "Contacto por email",
+      "orgToggle": "Mostrar consentimientos por organización",
+      "orgToggleCount": "Organizaciones que sigues ({count})",
       "openOrg": "Abrir organización {name}",
-      "marketing": "Marketing",
+      "marketing": "Actualizaciones y próximos eventos",
       "contactEmail": "Contacto por email",
       "contactSms": "Contacto por SMS"
     },
@@ -628,6 +642,8 @@
       "closed": "Cerrado",
       "upcoming": "Próximamente",
       "soldOut": "Agotado",
+      "unavailableNow": "Entradas no disponibles en este momento.",
+      "configurationIssue": "Estamos corrigiendo la configuración de entradas de este evento. Inténtalo de nuevo en breve.",
       "lastSeats": "Últimas {count}",
       "remaining": "{count}+ plazas",
       "freeEntry": "Entrada libre"

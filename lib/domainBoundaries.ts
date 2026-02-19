@@ -21,6 +21,9 @@ export const FINANCE_ALLOWED_VIEWS = [
 export const POLICIES_ALLOWED_VIEWS = [
   "overview",
   "booking",
+  "crm",
+  "finance",
+  "padel",
   "terms",
   "store",
   "guardrails",

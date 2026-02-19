@@ -424,6 +424,7 @@
       "public": "Public profile",
       "followers": "Followers only",
       "private": "Private",
+      "privateFollowers": "Private profile (followers)",
       "save": "Save privacy"
     },
     "interests": {
@@ -442,6 +443,10 @@
       "pushSubtitle": "Real-time alerts on your iPhone.",
       "pushActive": "Active",
       "pushUnavailable": "Unavailable",
+      "pushUnavailableSimulator": "Push is available only on a physical iPhone.",
+      "pushUnavailableExpoGo": "Push requires an installed app build (not Expo Go).",
+      "pushUnavailablePlatform": "Push is currently available only on iOS.",
+      "pushUnavailableUnknown": "Push can't be enabled on this device right now.",
       "pushOpenSettings": "Open settings",
       "pushEnable": "Enable push",
       "save": "Save notifications"
@@ -459,9 +464,13 @@
       "resetInvalidEmail": "Enter a valid email to reset your password.",
       "resetSent": "We sent a password reset link.",
       "resetFailed": "Couldn't send the reset link.",
+      "privacySaved": "Privacy settings saved.",
       "privacySaveFailed": "Couldn't save privacy settings.",
+      "interestsSaved": "Interests saved.",
       "interestsSaveFailed": "Couldn't save interests.",
+      "notificationsSaved": "Notifications saved.",
       "notificationsSaveFailed": "Couldn't save notifications.",
+      "consentSaved": "Consent saved.",
       "consentSaveFailed": "Couldn't save consent.",
       "logoutFailed": "Couldn't sign out.",
       "deleteFailed": "Couldn't mark account for deletion."
@@ -472,8 +481,13 @@
       "loading": "Loading consents...",
       "empty": "No associated organizations.",
       "orgFallback": "Organization",
+      "generalTitle": "General consent",
+      "generalUpdates": "Updates and upcoming events",
+      "generalEmail": "Email contact",
+      "orgToggle": "Show organization-level consents",
+      "orgToggleCount": "Organizations you follow ({count})",
       "openOrg": "Open organization {name}",
-      "marketing": "Marketing",
+      "marketing": "Updates and upcoming events",
       "contactEmail": "Email contact",
       "contactSms": "SMS contact"
     },
@@ -628,6 +642,8 @@
       "closed": "Closed",
       "upcoming": "Coming soon",
       "soldOut": "Sold out",
+      "unavailableNow": "Tickets unavailable right now.",
+      "configurationIssue": "We're fixing this event's ticket setup. Please try again shortly.",
       "lastSeats": "Last {count}",
       "remaining": "{count}+ seats",
       "freeEntry": "Free entry"

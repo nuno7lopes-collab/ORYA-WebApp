@@ -5,8 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
-import { OrganizationMemberRole, OrganizationPolicyType } from "@prisma/client";
+import { OrganizationMemberRole } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -75,10 +74,6 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
-    }
 
     const existing = await prisma.organizationPolicy.findFirst({
       where: { id: policyId, organizationId: organization.id },
@@ -112,11 +107,8 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (payload?.noShowFeeCents !== undefined && Number(payload?.noShowFeeCents) !== 0) {
       return fail(400, "NO_SHOW_POLICY_LOCKED");
     }
-    if (typeof payload?.policyType === "string") {
-      const raw = payload.policyType.trim().toUpperCase();
-      if (Object.values(OrganizationPolicyType).includes(raw as OrganizationPolicyType)) {
-        updates.policyType = raw as OrganizationPolicyType;
-      }
+    if (Object.prototype.hasOwnProperty.call(payload, "policyType")) {
+      return fail(400, "O tipo da política é fixo.");
     }
 
     if (Object.keys(updates).length === 0) {
@@ -167,7 +159,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   }
 }
 
-async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function _DELETE(req: NextRequest) {
   const ctx = getRequestContext(req);
   const fail = (
     status: number,
@@ -179,12 +171,6 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     const resolvedCode = /^[A-Z0-9_]+$/.test(resolvedMessage) ? resolvedMessage : errorCode;
     return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
   };
-  const resolved = await params;
-  const policyId = parsePolicyId(resolved.id);
-  if (!policyId) {
-    return fail(400, "Política inválida.");
-  }
-
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
@@ -202,47 +188,13 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
-    const emailGate = ensureOrganizationEmailVerified(organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(ctx, { errorCode: emailGate.errorCode ?? "FORBIDDEN", message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.", retryable: false, details: emailGate }, { status: 403 });
-    }
 
-    const policy = await prisma.organizationPolicy.findFirst({
-      where: { id: policyId, organizationId: organization.id },
-      select: {
-        id: true,
-        policyType: true,
-        _count: { select: { bookingPolicyRefs: true, services: true } },
-      },
-    });
-    if (!policy) {
-      return fail(404, "Política não encontrada.");
-    }
-
-    if (policy.policyType !== OrganizationPolicyType.CUSTOM) {
-      return fail(400, "Só podes apagar políticas personalizadas.");
-    }
-
-    if (policy._count.bookingPolicyRefs > 0 || policy._count.services > 0) {
-      return fail(409, "Política em uso.");
-    }
-
-    await prisma.organizationPolicy.delete({ where: { id: policy.id } });
-
-    const { ip, userAgent } = getRequestMeta(req);
-    await recordOrganizationAudit(prisma, {
-      organizationId: organization.id,
-      actorUserId: profile.id,
-      action: "POLICY_DELETED",
-      metadata: {
-        policyId: policy.id,
-        policyType: policy.policyType,
-      },
-      ip,
-      userAgent,
-    });
-
-    return respondOk(ctx, {});
+    return fail(
+      403,
+      "Existe apenas uma política default de reservas. Não podes removê-la.",
+      "BOOKING_POLICY_SINGLE_DEFAULT",
+      false,
+    );
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");

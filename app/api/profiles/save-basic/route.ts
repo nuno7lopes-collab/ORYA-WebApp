@@ -65,9 +65,11 @@ async function _POST(req: NextRequest) {
     const rawBio = body.bio;
     const rawPadelLevel = body.padelLevel;
     const visibility =
-      body.visibility === "PRIVATE" || body.visibility === "PUBLIC" || body.visibility === "FOLLOWERS"
-        ? body.visibility
-        : undefined;
+      body.visibility === "PUBLIC"
+        ? "PUBLIC"
+        : body.visibility === "PRIVATE" || body.visibility === "FOLLOWERS"
+          ? "FOLLOWERS"
+          : undefined;
     const favouriteCategories = Array.isArray(body.favouriteCategories)
       ? normalizeInterestSelection(
           body.favouriteCategories.filter(

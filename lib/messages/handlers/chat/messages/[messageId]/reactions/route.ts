@@ -6,7 +6,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
-import { isChatRedisUnavailableError, publishChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACTIVE_MEMBER_FILTER = {
@@ -62,14 +62,18 @@ async function _POST(req: NextRequest, context: { params: { messageId: string } 
           user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
         },
       });
-      await publishChatEvent({
+      const warnings: string[] = [];
+      const published = await publishChatEvent({
         type: "reaction:update",
         organizationId: organization.id,
         conversationId: message.conversationId,
         messageId,
         reactions,
       });
-      return jsonWrap({ ok: true });
+      if (!published) {
+        warnings.push("REALTIME_DEGRADED");
+      }
+      return jsonWrap({ ok: true, ...(warnings.length ? { warnings } : {}) });
     }
 
     await prisma.chatMessageReaction.deleteMany({
@@ -92,24 +96,25 @@ async function _POST(req: NextRequest, context: { params: { messageId: string } 
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "reaction:update",
       organizationId: organization.id,
       conversationId: message.conversationId,
       messageId,
       reactions,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true });
+    return jsonWrap({ ok: true, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("POST /api/messages/messages/[id]/reactions error:", err);
     return jsonWrap({ ok: false, error: "Erro ao reagir." }, { status: 500 });
@@ -153,24 +158,25 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
         user: { select: { id: true, fullName: true, username: true, avatarUrl: true } },
       },
     });
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "reaction:update",
       organizationId: organization.id,
       conversationId: message.conversationId,
       messageId,
       reactions,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true });
+    return jsonWrap({ ok: true, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("DELETE /api/messages/messages/[id]/reactions error:", err);
     return jsonWrap({ ok: false, error: "Erro ao remover reacao." }, { status: 500 });

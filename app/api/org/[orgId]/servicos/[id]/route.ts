@@ -5,6 +5,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
+import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
 import {
@@ -100,6 +101,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    await ensureDefaultPolicies(prisma, organization.id);
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
       return fail(403, reservasAccess.error);
@@ -200,6 +202,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    await ensureDefaultPolicies(prisma, organization.id);
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
       return fail(403, reservasAccess.error);

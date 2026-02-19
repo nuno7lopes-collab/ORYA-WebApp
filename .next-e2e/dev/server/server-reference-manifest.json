@@ -1,9 +1,9 @@
 {
   "node": {
-    "009d8bcc2e91ee0d15c3c98885d94fddd994bd4a78": {
+    "00b28212f2952088fc4d74bb7f12738422d2f27b1a": {
       "workers": {
         "app/admin/(protected)/organizacoes/page": {
-          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fnuno%2Forya%2FORYA-WebApp%2Fapp%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%2C%5B%7B%22id%22%3A%22009d8bcc2e91ee0d15c3c98885d94fddd994bd4a78%22%2C%22exportedName%22%3A%22adminLoadOpsSummary%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%2C%7B%22id%22%3A%2240f04d17349db1e17d7b9776592edb1878137e8b2c%22%2C%22exportedName%22%3A%22adminReplayOutboxEvents%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%5D%5D%5D&__client_imported__=true!",
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fnuno%2Forya%2FORYA-WebApp%2Fapp%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%2C%5B%7B%22id%22%3A%2200b28212f2952088fc4d74bb7f12738422d2f27b1a%22%2C%22exportedName%22%3A%22adminLoadOpsSummary%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%2C%7B%22id%22%3A%2240b88cb48ffd4cbd4f809b5f9c373f5bb6da3ead6d%22%2C%22exportedName%22%3A%22adminReplayOutboxEvents%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%5D%5D%5D&__client_imported__=true!",
           "async": true
         }
       },
@@ -13,10 +13,10 @@
       "filename": "app/admin/(protected)/organizacoes/actions.ts",
       "exportedName": "adminLoadOpsSummary"
     },
-    "40f04d17349db1e17d7b9776592edb1878137e8b2c": {
+    "40b88cb48ffd4cbd4f809b5f9c373f5bb6da3ead6d": {
       "workers": {
         "app/admin/(protected)/organizacoes/page": {
-          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fnuno%2Forya%2FORYA-WebApp%2Fapp%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%2C%5B%7B%22id%22%3A%22009d8bcc2e91ee0d15c3c98885d94fddd994bd4a78%22%2C%22exportedName%22%3A%22adminLoadOpsSummary%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%2C%7B%22id%22%3A%2240f04d17349db1e17d7b9776592edb1878137e8b2c%22%2C%22exportedName%22%3A%22adminReplayOutboxEvents%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%5D%5D%5D&__client_imported__=true!",
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22%2FUsers%2Fnuno%2Forya%2FORYA-WebApp%2Fapp%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%2C%5B%7B%22id%22%3A%2200b28212f2952088fc4d74bb7f12738422d2f27b1a%22%2C%22exportedName%22%3A%22adminLoadOpsSummary%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%2C%7B%22id%22%3A%2240b88cb48ffd4cbd4f809b5f9c373f5bb6da3ead6d%22%2C%22exportedName%22%3A%22adminReplayOutboxEvents%22%2C%22filename%22%3A%22app%2Fadmin%2F(protected)%2Forganizacoes%2Factions.ts%22%7D%5D%5D%5D&__client_imported__=true!",
           "async": true
         }
       },
@@ -28,5 +28,5 @@
     }
   },
   "edge": {},
-  "encryptionKey": "rZLuI7bjrjkCAxK8UoOP3UmGW+XR/LxgyTJdRXJYuLI="
+  "encryptionKey": "O3ucg48e3ULO3RJ027cxm4M32xk7/YOVKCeTgzH76n4="
 }

@@ -77,7 +77,7 @@ export const fetchConsents = async (accessToken?: string | null): Promise<Consen
 
 export const updateConsent = async (
   organizationId: number,
-  type: "MARKETING" | "CONTACT_EMAIL" | "CONTACT_SMS",
+  type: "MARKETING" | "CONTACT_EMAIL",
   granted: boolean,
   accessToken?: string | null,
 ): Promise<void> => {

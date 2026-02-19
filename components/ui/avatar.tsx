@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -22,10 +23,12 @@ export type AvatarProps = {
   name?: string | null;
   alt?: string;
   version?: string | number | Date | null;
+  ring?: boolean;
   className?: string;
   imageClassName?: string;
   textClassName?: string;
   fallbackText?: string;
+  style?: CSSProperties;
   onError?: () => void;
 };
 
@@ -34,14 +37,16 @@ export function Avatar({
   name,
   alt,
   version,
+  ring = true,
   className,
   imageClassName,
   textClassName,
   fallbackText,
+  style,
   onError,
 }: AvatarProps) {
   const [hasError, setHasError] = useState(false);
-  const [fallbackSize, setFallbackSize] = useState<number | null>(null);
+  const [avatarSize, setAvatarSize] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const resolvedSrc = useMemo(() => {
     if (!src) return null;
@@ -67,7 +72,7 @@ export function Avatar({
 
     const updateSize = () => {
       const size = Math.min(node.offsetWidth, node.offsetHeight);
-      setFallbackSize(size > 0 ? size : null);
+      setAvatarSize(size > 0 ? size : null);
     };
 
     updateSize();
@@ -78,42 +83,79 @@ export function Avatar({
     return () => observer.disconnect();
   }, []);
 
+  const ringInset = useMemo(() => {
+    if (!ring) return 0;
+    if (!avatarSize) return 1.5;
+    if (avatarSize <= 36) return 1;
+    if (avatarSize <= 64) return 1.35;
+    if (avatarSize <= 96) return 1.75;
+    return 2;
+  }, [avatarSize, ring]);
+
   const fallbackFontSize = useMemo(() => {
-    if (!fallbackSize) return null;
-    return Math.max(6, Math.round(fallbackSize * 0.125));
-  }, [fallbackSize]);
+    if (!avatarSize) return null;
+    const innerSize = ring ? Math.max(0, avatarSize - ringInset * 2) : avatarSize;
+    return Math.max(6, Math.round(innerSize * 0.125));
+  }, [avatarSize, ring, ringInset]);
+
+  const ringGlow = useMemo(() => {
+    if (!ring) return 0;
+    if (!avatarSize) return 8;
+    if (avatarSize <= 36) return 6;
+    if (avatarSize <= 64) return 8;
+    if (avatarSize <= 96) return 10;
+    return 12;
+  }, [avatarSize, ring]);
+
+  const ringStyle = useMemo<CSSProperties>(() => {
+    if (!ring) return style ?? {};
+    return {
+      ...(style ?? {}),
+      ["--orya-avatar-ring-padding" as string]: `${ringInset}px`,
+      ["--orya-avatar-ring-glow" as string]: `${ringGlow}px`,
+    };
+  }, [ring, ringGlow, ringInset, style]);
 
   return (
     <div
       ref={containerRef}
       className={cn(
-        "relative flex items-center justify-center overflow-hidden rounded-full",
+        "relative inline-flex items-center justify-center rounded-full",
+        ring && "orya-avatar-ring",
         className,
-        !hasImage && "orya-avatar-fallback",
       )}
+      style={ringStyle}
     >
-      {hasImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={resolvedSrc ?? ""}
-          alt={alt ?? name ?? "Avatar"}
-          className={cn("h-full w-full object-cover", imageClassName)}
-          onError={() => {
-            setHasError(true);
-            onError?.();
-          }}
-        />
-      ) : (
-        <span
-          style={fallbackFontSize ? { fontSize: `${fallbackFontSize}px` } : undefined}
-          className={cn(
-            "font-semibold uppercase tracking-[0.08em] leading-none text-white/90 text-center",
-            textClassName,
-          )}
-        >
-          {initials}
-        </span>
-      )}
+      <div
+        className={cn(
+          "relative flex h-full w-full items-center justify-center overflow-hidden rounded-full",
+          ring && "border border-white/70",
+          !hasImage && "orya-avatar-fallback",
+        )}
+      >
+        {hasImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolvedSrc ?? ""}
+            alt={alt ?? name ?? "Avatar"}
+            className={cn("h-full w-full object-cover", imageClassName)}
+            onError={() => {
+              setHasError(true);
+              onError?.();
+            }}
+          />
+        ) : (
+          <span
+            style={fallbackFontSize ? { fontSize: `${fallbackFontSize}px` } : undefined}
+            className={cn(
+              "font-semibold uppercase tracking-[0.08em] leading-none text-white/90 text-center",
+              textClassName,
+            )}
+          >
+            {initials}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

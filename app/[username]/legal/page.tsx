@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
+import { ensureDefaultPoliciesSafe } from "@/lib/organizationPolicies";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,8 @@ export default async function OrganizationLegalPage({ params }: PageProps) {
   });
 
   if (!organization) notFound();
+
+  await ensureDefaultPoliciesSafe(organization.id);
 
   const [settings, policies] = await Promise.all([
     prisma.organizationSettings.findUnique({

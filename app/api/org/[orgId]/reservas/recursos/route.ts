@@ -43,6 +43,7 @@ async function _GET(req: NextRequest) {
   try {
     const includeCourts = (() => {
       const raw = req.nextUrl.searchParams.get("includeCourts");
+      if (raw == null || raw === "") return true;
       return raw === "1" || raw === "true";
     })();
     const supabase = await createSupabaseServer();

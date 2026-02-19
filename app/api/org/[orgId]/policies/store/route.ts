@@ -5,7 +5,6 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import {
@@ -123,20 +122,6 @@ async function _GET(req: NextRequest) {
       return fail(403, context.error);
     }
 
-    const emailGate = ensureOrganizationEmailVerified(context.organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(
-        ctx,
-        {
-          errorCode: emailGate.errorCode ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
-          retryable: false,
-          details: emailGate,
-        },
-        { status: 403 },
-      );
-    }
-
     const policy = resolveStorePolicy({
       settings: context.organizationSettings,
       fallbackSupportEmail: context.organization.officialEmail ?? null,
@@ -184,20 +169,6 @@ async function _PATCH(req: NextRequest) {
     const context = await getOrganizationContext(req, user.id, ROLE_ALLOWLIST_WRITE);
     if (!context.ok) {
       return fail(403, context.error);
-    }
-
-    const emailGate = ensureOrganizationEmailVerified(context.organization, { reasonCode: "POLICIES" });
-    if (!emailGate.ok) {
-      return respondError(
-        ctx,
-        {
-          errorCode: emailGate.errorCode ?? "FORBIDDEN",
-          message: emailGate.message ?? emailGate.errorCode ?? "Sem permissões.",
-          retryable: false,
-          details: emailGate,
-        },
-        { status: 403 },
-      );
     }
 
     const body = await req.json().catch(() => null);

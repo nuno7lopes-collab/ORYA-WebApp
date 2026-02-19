@@ -8,7 +8,6 @@ import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ensurePartnershipOrganization, parseOptionalDate } from "@/app/api/padel/partnerships/_shared";
-import { syncPartnerClubCourts } from "@/domain/padel/partnerCourtSync";
 
 async function _POST(req: NextRequest) {
   const agreementId = readNumericParam(undefined, req, "agreements");
@@ -47,74 +46,29 @@ async function _POST(req: NextRequest) {
   }
 
   const now = new Date();
+  const ownerClub = await prisma.padelClub.findUnique({
+    where: { id: agreement.ownerClubId },
+    select: { id: true },
+  });
+  if (!ownerClub) {
+    return jsonWrap({ ok: false, error: "OWNER_CLUB_NOT_FOUND" }, { status: 409 });
+  }
+
+  const partnerClub = await prisma.padelClub.findFirst({
+    where: {
+      organizationId: agreement.partnerOrganizationId,
+      kind: PadelClubKind.OWN,
+      deletedAt: null,
+      isActive: true,
+    },
+    select: { id: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (!partnerClub) {
+    return jsonWrap({ ok: false, error: "PARTNER_CLUB_NOT_FOUND" }, { status: 409 });
+  }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const ownerClub = await tx.padelClub.findUnique({
-      where: { id: agreement.ownerClubId },
-      select: {
-        id: true,
-        name: true,
-        shortName: true,
-        addressId: true,
-        courtsCount: true,
-      },
-    });
-    if (!ownerClub) {
-      throw new Error("OWNER_CLUB_NOT_FOUND");
-    }
-
-    let partnerClub = agreement.partnerClubId
-      ? await tx.padelClub.findFirst({
-          where: {
-            id: agreement.partnerClubId,
-            organizationId: agreement.partnerOrganizationId,
-            kind: PadelClubKind.PARTNER,
-            sourceClubId: ownerClub.id,
-            deletedAt: null,
-          },
-          select: { id: true },
-        })
-      : null;
-
-    if (!partnerClub) {
-      partnerClub =
-        (await tx.padelClub.findFirst({
-          where: {
-            organizationId: agreement.partnerOrganizationId,
-            kind: PadelClubKind.PARTNER,
-            sourceClubId: ownerClub.id,
-            deletedAt: null,
-          },
-          select: { id: true },
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        })) ??
-        (await tx.padelClub.create({
-          data: {
-            organizationId: agreement.partnerOrganizationId,
-            name: ownerClub.name,
-            shortName: ownerClub.shortName ?? ownerClub.name,
-            addressId: ownerClub.addressId,
-            kind: PadelClubKind.PARTNER,
-            sourceClubId: ownerClub.id,
-            courtsCount: Math.max(1, ownerClub.courtsCount ?? 1),
-            hours: null,
-            favoriteCategoryIds: [],
-            isActive: true,
-            isDefault: false,
-            slug: null,
-          },
-          select: { id: true },
-        }));
-    }
-
-    const synced = await syncPartnerClubCourts({
-      db: tx,
-      partnerOrganizationId: agreement.partnerOrganizationId,
-      partnerClubId: partnerClub.id,
-      sourceClubId: ownerClub.id,
-      fallbackCount: Math.max(1, ownerClub.courtsCount ?? 1),
-    });
-
     const nextAgreement = await tx.padelPartnershipAgreement.update({
       where: { id: agreement.id },
       data: {
@@ -130,7 +84,7 @@ async function _POST(req: NextRequest) {
     return {
       agreement: nextAgreement,
       partnerClubId: partnerClub.id,
-      partnerCourtSync: synced,
+      partnerCourtSync: null,
     };
   });
 

@@ -30,6 +30,28 @@ const PARTNERSHIP_STATUSES = new Set<PadelPartnershipStatus>([
   "EXPIRED",
 ]);
 
+async function resolvePartnerOrganization(params: {
+  partnerOrganizationId?: number | null;
+  partnerOrganizationUsername?: string | null;
+}) {
+  const byId = params.partnerOrganizationId ?? null;
+  if (byId) {
+    return prisma.organization.findUnique({
+      where: { id: byId },
+      select: { id: true, username: true, publicName: true, businessName: true },
+    });
+  }
+
+  const byUsername = params.partnerOrganizationUsername?.trim().toLowerCase() ?? "";
+  if (!byUsername) return null;
+  return prisma.organization.findFirst({
+    where: {
+      username: { equals: byUsername, mode: "insensitive" },
+    },
+    select: { id: true, username: true, publicName: true, businessName: true },
+  });
+}
+
 async function _GET(req: NextRequest) {
   const check = await ensurePartnershipOrganization({ req, required: "VIEW" });
   if (!check.ok) {
@@ -66,7 +88,7 @@ async function _GET(req: NextRequest) {
     new Set(
       items
         .flatMap((item) => [item.ownerClubId, item.partnerClubId ?? null])
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
+        .filter((id): id is number => typeof id === "number" && Number.isFinite(id) && id > 0),
     ),
   );
   const [policies, windows, grants, organizations, clubs] = agreementIds.length
@@ -96,7 +118,7 @@ async function _GET(req: NextRequest) {
   const organizationNameById = new Map(
     organizations.map((organization) => [
       organization.id,
-      organization.publicName || organization.businessName || organization.username || `Org #${organization.id}`,
+      organization.publicName || organization.businessName || organization.username || "Organização",
     ]),
   );
   const clubNameById = new Map(clubs.map((club) => [club.id, club.name]));
@@ -151,70 +173,55 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
 
-  const ownerClubId = parsePositiveInt(body.ownerClubId);
-  if (!ownerClubId) {
-    return jsonWrap({ ok: false, error: "OWNER_CLUB_REQUIRED" }, { status: 400 });
-  }
-
   const ownerClub = await prisma.padelClub.findFirst({
-    where: { id: ownerClubId, deletedAt: null, isActive: true },
+    where: {
+      organizationId: check.organization.id,
+      deletedAt: null,
+      isActive: true,
+      kind: PadelClubKind.OWN,
+    },
     select: { id: true, organizationId: true, kind: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   if (!ownerClub) {
     return jsonWrap({ ok: false, error: "OWNER_CLUB_NOT_FOUND" }, { status: 404 });
   }
-  if (ownerClub.kind !== PadelClubKind.OWN) {
-    return jsonWrap({ ok: false, error: "OWNER_CLUB_KIND_INVALID" }, { status: 400 });
-  }
 
   const ownerOrganizationId = ownerClub.organizationId;
   const requestedPartnerOrganizationId = parsePositiveInt(body.partnerOrganizationId);
-  const partnerOrganizationId = requestedPartnerOrganizationId ?? check.organization.id;
-
-  if (!partnerOrganizationId || partnerOrganizationId === ownerOrganizationId) {
-    return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_INVALID" }, { status: 400 });
-  }
-
-  if (check.organization.id !== ownerOrganizationId && check.organization.id !== partnerOrganizationId) {
-    return jsonWrap({ ok: false, error: "ORGANIZATION_SCOPE_MISMATCH" }, { status: 403 });
-  }
-
-  const partnerOrganization = await prisma.organization.findUnique({
-    where: { id: partnerOrganizationId },
-    select: { id: true },
+  const requestedPartnerOrganizationUsername =
+    typeof body.partnerOrganizationUsername === "string" ? body.partnerOrganizationUsername.trim() : "";
+  const partnerOrganization = await resolvePartnerOrganization({
+    partnerOrganizationId: requestedPartnerOrganizationId,
+    partnerOrganizationUsername: requestedPartnerOrganizationUsername || null,
   });
+
   if (!partnerOrganization) {
     return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_NOT_FOUND" }, { status: 404 });
   }
-
-  const requestedPartnerClubId = parsePositiveInt(body.partnerClubId);
-  const inferredPartnerClub = requestedPartnerClubId
-    ? await prisma.padelClub.findFirst({
-        where: {
-          id: requestedPartnerClubId,
-          organizationId: partnerOrganizationId,
-          kind: PadelClubKind.PARTNER,
-          sourceClubId: ownerClub.id,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-      })
-    : await prisma.padelClub.findFirst({
-        where: {
-          organizationId: partnerOrganizationId,
-          kind: PadelClubKind.PARTNER,
-          sourceClubId: ownerClub.id,
-          deletedAt: null,
-          isActive: true,
-        },
-        select: { id: true },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      });
-
-  if (requestedPartnerClubId && !inferredPartnerClub) {
-    return jsonWrap({ ok: false, error: "PARTNER_CLUB_NOT_FOUND" }, { status: 404 });
+  if (partnerOrganization.id === ownerOrganizationId) {
+    return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_INVALID" }, { status: 400 });
   }
+
+  if (check.organization.id !== ownerOrganizationId) {
+    return jsonWrap({ ok: false, error: "ORGANIZATION_SCOPE_MISMATCH" }, { status: 403 });
+  }
+
+  const partnerClub = await prisma.padelClub.findFirst({
+    where: {
+      organizationId: partnerOrganization.id,
+      deletedAt: null,
+      isActive: true,
+      kind: PadelClubKind.OWN,
+    },
+    select: { id: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (!partnerClub) {
+    return jsonWrap({ ok: false, error: "PARTNER_ORGANIZATION_CLUB_REQUIRED" }, { status: 400 });
+  }
+
+  const partnerOrganizationId = partnerOrganization.id;
 
   const startsAt = parseOptionalDate(body.startsAt);
   const endsAt = parseOptionalDate(body.endsAt);
@@ -267,7 +274,7 @@ async function _POST(req: NextRequest) {
         ownerOrganizationId,
         partnerOrganizationId,
         ownerClubId: ownerClub.id,
-        partnerClubId: inferredPartnerClub?.id ?? null,
+        partnerClubId: partnerClub.id,
         status,
         startsAt,
         endsAt,

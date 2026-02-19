@@ -1,12 +1,23 @@
 import { usePathname, useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
+import { tokens } from "@orya/shared";
+
+const APP_BACKGROUND = tokens.colors.background;
 
 export default function NotFoundScreen() {
   const router = useRouter();
   const pathname = usePathname();
 
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "#0b1014" }}>
+    <View
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        backgroundColor: APP_BACKGROUND,
+      }}
+    >
       <Text style={{ color: "white", fontSize: 20, fontWeight: "700", textAlign: "center" }}>
         Rota não encontrada
       </Text>

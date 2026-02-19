@@ -46,4 +46,8 @@ describe("isUnauthenticatedError", () => {
   it("throws AuthUnavailableError when passed auth-unavailable error", () => {
     expect(() => isUnauthenticatedError(new AuthUnavailableError())).toThrow(AuthUnavailableError);
   });
+
+  it("returns false for generic errors", () => {
+    expect(isUnauthenticatedError(new Error("generic"))).toBe(false);
+  });
 });

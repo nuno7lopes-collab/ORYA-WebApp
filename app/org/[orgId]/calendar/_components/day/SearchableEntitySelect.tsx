@@ -1,7 +1,7 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 export type SearchableEntityOption = {
@@ -284,18 +284,12 @@ export function SearchableEntitySelect({
                       isActive && "ring-1 ring-white/35",
                     )}
                   >
-                    {option.avatarUrl ? (
-                      <img
-                        src={option.avatarUrl}
-                        alt=""
-                        className="h-7 w-7 rounded-full border border-white/20 object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-white/10 text-[10px] uppercase text-white/70">
-                        {option.label.slice(0, 2)}
-                      </div>
-                    )}
+                    <Avatar
+                      src={option.avatarUrl}
+                      name={option.label}
+                      className="h-7 w-7"
+                      fallbackText={option.label.slice(0, 2)}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{option.label}</span>
                       {option.subtitle ? <span className="block truncate text-xs text-white/50">{option.subtitle}</span> : null}

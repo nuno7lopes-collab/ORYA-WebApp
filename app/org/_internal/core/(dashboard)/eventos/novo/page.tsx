@@ -251,7 +251,6 @@ export function NewOrganizationEventPage({
   const [padelCategoryIds, setPadelCategoryIds] = useState<number[]>([]);
   const [padelDefaultCategoryId, setPadelDefaultCategoryId] = useState<number | null>(null);
   const [padelCategoryConfigs, setPadelCategoryConfigs] = useState<Record<number, PadelCategoryConfig>>({});
-  const [padelSplitDeadlineHours, setPadelSplitDeadlineHours] = useState("48");
   const [padelWaitlistEnabled, setPadelWaitlistEnabled] = useState(false);
   const [padelRegistrationStartsAt, setPadelRegistrationStartsAt] = useState("");
   const [padelRegistrationEndsAt, setPadelRegistrationEndsAt] = useState("");
@@ -706,7 +705,6 @@ export function NewOrganizationEventPage({
     setPadelCategoryIds([]);
     setPadelDefaultCategoryId(null);
     setPadelCategoryConfigs({});
-    setPadelSplitDeadlineHours("48");
     setPadelWaitlistEnabled(false);
     setPadelRegistrationStartsAt("");
     setPadelRegistrationEndsAt("");
@@ -2109,7 +2107,6 @@ export function NewOrganizationEventPage({
               pricePerPlayer: ticketPriceByCategory.get(config.padelCategoryId) ?? 0,
               currency: "EUR",
             })),
-            splitDeadlineHours: padelSplitDeadlineHours ? Number(padelSplitDeadlineHours) : null,
             padelV2Enabled: true,
             advancedSettings: {
               courtsFromClubs: courtsFromClubs.length > 0 ? courtsFromClubs : null,
@@ -2216,7 +2213,6 @@ export function NewOrganizationEventPage({
     setPadelCategoryIds([]);
     setPadelDefaultCategoryId(null);
     setPadelCategoryConfigs({});
-    setPadelSplitDeadlineHours("48");
     setPadelAdvancedOpen(false);
     setPadelRulesOpen(false);
     setCreationSuccess(null);
@@ -3880,7 +3876,7 @@ export function NewOrganizationEventPage({
                       <div className="space-y-1">
                         <p className={labelClass}>Inscrições</p>
                         <p className="text-sm text-white/80">
-                          Split {padelSplitDeadlineHours || "48"}h · Total {padelMaxEntriesTotal || "—"}
+                          Split fixo 24h · Total {padelMaxEntriesTotal || "—"}
                         </p>
                       </div>
                       <span className="text-[12px] text-white/60">
@@ -3890,19 +3886,10 @@ export function NewOrganizationEventPage({
                     {padelRulesOpen && (
                       <div className="space-y-3 px-4 pb-4">
                         <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="text-[11px] text-white/70">
-                            Split (h)
-                            <input
-                              type="number"
-                              min={48}
-                              max={168}
-                              step="1"
-                              inputMode="numeric"
-                              value={padelSplitDeadlineHours}
-                              onChange={(e) => setPadelSplitDeadlineHours(normalizeIntegerInput(e.target.value))}
-                              className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-white/90 outline-none transition focus:border-[var(--orya-cyan)] focus:ring-2 focus:ring-[rgba(107,255,255,0.35)]"
-                            />
-                          </label>
+                          <div className="rounded-lg border border-white/15 bg-black/30 px-3 py-2">
+                            <p className="text-[11px] text-white/70">Split</p>
+                            <p className="mt-1 text-[12px] text-white/90">Fixo em 24h antes do inicio</p>
+                          </div>
                           <label className="text-[11px] text-white/70">
                             Total
                             <input

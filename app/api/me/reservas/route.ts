@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { decideCancellation } from "@/lib/bookingCancellation";
 import { normalizeEmail } from "@/lib/utils/email";
+import { ensureDefaultPoliciesSafe } from "@/lib/organizationPolicies";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import {
@@ -174,6 +175,9 @@ async function _GET(req: NextRequest) {
     });
 
     const organizationIds = Array.from(new Set(bookings.map((booking) => booking.organizationId)));
+    if (organizationIds.length > 0) {
+      await Promise.all(organizationIds.map((organizationId) => ensureDefaultPoliciesSafe(organizationId)));
+    }
     const defaults = organizationIds.length
       ? await prisma.organizationPolicy.findMany({
           where: {

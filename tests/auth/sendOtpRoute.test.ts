@@ -59,7 +59,7 @@ beforeEach(async () => {
   normalizeAndValidateUsername.mockReset();
   checkUsernameAvailability.mockReset();
 
-  rateLimit.mockResolvedValue({ allowed: true, retryAfter: 0, backend: "memory" });
+  rateLimit.mockResolvedValue({ allowed: true, retryAfter: 0, backend: "memory", degraded: true });
   isRateLimitBackendUnavailableError.mockReturnValue(false);
   isAppRequest.mockReturnValue(false);
   isSameOrigin.mockReturnValue(true);

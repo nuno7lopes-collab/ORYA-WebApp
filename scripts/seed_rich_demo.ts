@@ -15,8 +15,8 @@ const rng = seedrandom(RNG_SEED);
 const now = new Date();
 const FAST_MODE = process.env.SEED_FAST === "1";
 const SEED_VOLUME = {
-  standardEvents: FAST_MODE ? 12 : 20,
-  tournaments: FAST_MODE ? 12 : 20,
+  standardEvents: 20,
+  tournaments: 20,
   storeOrders: FAST_MODE ? 12 : 20,
   bookingDays: FAST_MODE ? 18 : 30,
   bookingsPerDay: FAST_MODE ? 3 : 4,
@@ -1651,54 +1651,6 @@ async function main() {
       }
     }
 
-    const seededEventsWithTickets = await prisma.event.findMany({
-      where: { slug: { startsWith: "seed-event-" } },
-      select: {
-        id: true,
-        slug: true,
-        ticketTypes: {
-          select: {
-            id: true,
-            status: true,
-            soldQuantity: true,
-            totalQuantity: true,
-            sortOrder: true,
-          },
-          orderBy: { sortOrder: "asc" },
-        },
-      },
-    });
-
-    let forcedOnSaleCount = 0;
-    for (const event of seededEventsWithTickets) {
-      const hasVendableTicket = event.ticketTypes.some((ticket) => {
-        const total = ticket.totalQuantity;
-        const sold = ticket.soldQuantity ?? 0;
-        const hasStock = total == null ? true : sold < total;
-        return ticket.status === "ON_SALE" && hasStock;
-      });
-      if (hasVendableTicket) continue;
-
-      const candidate = event.ticketTypes.find((ticket) => {
-        const total = ticket.totalQuantity;
-        const sold = ticket.soldQuantity ?? 0;
-        return total == null || sold < total;
-      });
-      if (!candidate) continue;
-
-      await prisma.ticketType.update({
-        where: { id: candidate.id },
-        data: { status: "ON_SALE" },
-      });
-      forcedOnSaleCount += 1;
-    }
-
-    if (forcedOnSaleCount > 0) {
-      console.log(
-        `[seed] ticket audit: forced ON_SALE on ${forcedOnSaleCount} seed events`,
-      );
-    }
-
     const categoryByOrg = new Map<number, Array<{ id: number; label: string }>>();
     const playerProfileCache = new Map<string, { id: number; organizationId: number; userId: string }>();
 
@@ -1922,7 +1874,7 @@ async function main() {
         ],
       });
 
-      await prisma.padelEventCategoryLink.create({
+      const categoryLink = await prisma.padelEventCategoryLink.create({
         data: {
           eventId: event.id,
           padelCategoryId: category.id,
@@ -1935,6 +1887,65 @@ async function main() {
           isHidden: false,
         },
       });
+
+      const registrationPrice = Math.max(categoryLink.pricePerPlayerCents ?? 0, 0);
+      const registrationStock =
+        categoryLink.capacityPlayers ?? categoryLink.capacityTeams ?? 96;
+      const tournamentTicketTypes: Array<{
+        name: string;
+        description: string;
+        price: number;
+        totalQuantity: number;
+        padelEventCategoryLinkId: number | null;
+      }> = [
+        {
+          name: "Inscrição Atleta",
+          description: `Inscrição oficial por atleta para ${event.title}.`,
+          price: registrationPrice,
+          totalQuantity: Math.max(registrationStock, 32),
+          padelEventCategoryLinkId: categoryLink.id,
+        },
+      ];
+
+      if (i % 4 === 0) {
+        tournamentTicketTypes.push({
+          name: "Entrada Público",
+          description: `Entrada de público para ${event.title}.`,
+          price: 800 + i * 10,
+          totalQuantity: 240,
+          padelEventCategoryLinkId: null,
+        });
+      }
+
+      if (i % 5 === 0) {
+        tournamentTicketTypes.push({
+          name: "Passe Staff",
+          description: `Passe gratuito de staff para ${event.title}.`,
+          price: 0,
+          totalQuantity: 40,
+          padelEventCategoryLinkId: null,
+        });
+      }
+
+      for (let ticketIndex = 0; ticketIndex < tournamentTicketTypes.length; ticketIndex += 1) {
+        const ticketType = tournamentTicketTypes[ticketIndex]!;
+        await prisma.ticketType.create({
+          data: {
+            eventId: event.id,
+            padelEventCategoryLinkId: ticketType.padelEventCategoryLinkId,
+            name: ticketType.name,
+            description: ticketType.description,
+            price: ticketType.price,
+            currency: "EUR",
+            totalQuantity: ticketType.totalQuantity,
+            soldQuantity: 0,
+            status: "ON_SALE",
+            sortOrder: ticketIndex,
+            startsAt: plusDays(startsAt, -30),
+            endsAt: plusMinutes(startsAt, -30),
+          },
+        });
+      }
 
       const pairingCount = i < 5 ? randInt(14, 18) : randInt(8, 12);
       const userPool = [...allUsers].sort(() => rand() - 0.5);
@@ -2211,6 +2222,167 @@ async function main() {
 
       tournamentEvents.push({ id: event.id, organizationId: org.id, startsAt, categoryId: category.id });
     }
+
+    const isTicketVendable = (ticket: {
+      status: string | null;
+      soldQuantity: number | null;
+      totalQuantity: number | null;
+    }) => {
+      const total = ticket.totalQuantity;
+      const sold = ticket.soldQuantity ?? 0;
+      const hasStock = total == null ? true : sold < total;
+      return ticket.status === "ON_SALE" && hasStock;
+    };
+
+    const ensureFallbackTicketType = async (event: {
+      id: number;
+      slug: string;
+      title: string;
+      templateType: string | null;
+      startsAt: Date;
+      endsAt: Date | null;
+      ticketTypes: Array<{ sortOrder: number | null }>;
+    }) => {
+      const fallbackName =
+        event.templateType === "PADEL" ? "Inscrição Geral" : "Entrada Geral";
+      const nextSortOrder =
+        event.ticketTypes.reduce(
+          (max, ticket) => Math.max(max, ticket.sortOrder ?? -1),
+          -1,
+        ) + 1;
+      const fallbackStart = plusDays(event.startsAt, -30);
+      const fallbackEnd = event.endsAt ?? plusDays(event.startsAt, 30);
+      await prisma.ticketType.create({
+        data: {
+          eventId: event.id,
+          name: fallbackName,
+          description: `Bilhete fallback gerado pelo seed para ${event.title}.`,
+          price: 0,
+          currency: "EUR",
+          totalQuantity: 200,
+          soldQuantity: 0,
+          status: "ON_SALE",
+          sortOrder: nextSortOrder,
+          startsAt: fallbackStart,
+          endsAt: fallbackEnd,
+        },
+      });
+    };
+
+    const seededEventsForTicketAudit = await prisma.event.findMany({
+      where: {
+        OR: [
+          { slug: { startsWith: "seed-event-" } },
+          { slug: { startsWith: "seed-tournament-" } },
+        ],
+      },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        status: true,
+        templateType: true,
+        startsAt: true,
+        endsAt: true,
+        ticketTypes: {
+          select: {
+            id: true,
+            status: true,
+            soldQuantity: true,
+            totalQuantity: true,
+            sortOrder: true,
+          },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    });
+
+    let createdFallbackTicketCount = 0;
+    let forcedOnSaleCount = 0;
+
+    for (const event of seededEventsForTicketAudit) {
+      if (event.ticketTypes.length === 0) {
+        await ensureFallbackTicketType(event);
+        createdFallbackTicketCount += 1;
+        continue;
+      }
+
+      const hasVendableTicket = event.ticketTypes.some(isTicketVendable);
+      const isFuturePublished =
+        event.status === "PUBLISHED" &&
+        (event.endsAt == null || event.endsAt.getTime() > now.getTime());
+
+      if (hasVendableTicket || !isFuturePublished) continue;
+
+      const candidate = event.ticketTypes.find((ticket) => {
+        const total = ticket.totalQuantity;
+        const sold = ticket.soldQuantity ?? 0;
+        return total == null || sold < total;
+      });
+
+      if (candidate) {
+        if (candidate.status !== "ON_SALE") {
+          await prisma.ticketType.update({
+            where: { id: candidate.id },
+            data: { status: "ON_SALE" },
+          });
+          forcedOnSaleCount += 1;
+        }
+        continue;
+      }
+
+      await ensureFallbackTicketType(event);
+      createdFallbackTicketCount += 1;
+    }
+
+    const finalTicketAudit = await prisma.event.findMany({
+      where: {
+        OR: [
+          { slug: { startsWith: "seed-event-" } },
+          { slug: { startsWith: "seed-tournament-" } },
+        ],
+      },
+      select: {
+        slug: true,
+        status: true,
+        endsAt: true,
+        ticketTypes: {
+          select: {
+            status: true,
+            soldQuantity: true,
+            totalQuantity: true,
+          },
+        },
+      },
+    });
+
+    const eventsWithoutTickets = finalTicketAudit
+      .filter((event) => event.ticketTypes.length === 0)
+      .map((event) => event.slug);
+    if (eventsWithoutTickets.length > 0) {
+      throw new Error(
+        `[seed] invalid seed data: events without ticket types -> ${eventsWithoutTickets.join(", ")}`,
+      );
+    }
+
+    const invalidFuturePublished = finalTicketAudit
+      .filter((event) => {
+        const isFuturePublished =
+          event.status === "PUBLISHED" &&
+          (event.endsAt == null || event.endsAt.getTime() > now.getTime());
+        if (!isFuturePublished) return false;
+        return !event.ticketTypes.some(isTicketVendable);
+      })
+      .map((event) => event.slug);
+    if (invalidFuturePublished.length > 0) {
+      throw new Error(
+        `[seed] invalid seed data: future published events without vendable ticket -> ${invalidFuturePublished.join(", ")}`,
+      );
+    }
+
+    console.log(
+      `[seed] ticket audit complete: fallbackCreated=${createdFallbackTicketCount}, forcedOnSale=${forcedOnSaleCount}`,
+    );
 
     const topPadelPlayers = await prisma.padelPlayerProfile.findMany({
       where: { organizationId: topPadelOrg.id },

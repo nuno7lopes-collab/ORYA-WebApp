@@ -265,15 +265,13 @@ export default function OrganizationProfileHeader({
   );
 
   const avatarSlot = (
-    <div className="relative inline-flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-tr from-[#FF00C8] via-[#6BFFFF] to-[#1646F5] p-[2px] shadow-[0_0_24px_rgba(255,0,200,0.26)] sm:h-28 sm:w-28">
-      <Avatar
-        src={avatar}
-        name={displayName}
-        className="h-full w-full"
-        textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
-        onError={handleAvatarError}
-      />
-    </div>
+    <Avatar
+      src={avatar}
+      name={displayName}
+      className="h-24 w-24 sm:h-28 sm:w-28"
+      textClassName="text-xs font-semibold uppercase tracking-[0.2em] text-white/80"
+      onError={handleAvatarError}
+    />
   );
 
   return (

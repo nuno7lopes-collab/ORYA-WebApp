@@ -33,7 +33,7 @@ export default function RecursosPage() {
   const canonicalOrganizationId = Number.isFinite(organizationId) && organizationId > 0 ? organizationId : null;
 
   const { data, mutate } = useSWR<{ ok: boolean; items: ResourceItem[] }>(
-    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos"),
+    resolveCanonicalOrgApiPath("/api/org/[orgId]/reservas/recursos?includeCourts=1"),
     fetcher,
   );
   const [label, setLabel] = useState("");

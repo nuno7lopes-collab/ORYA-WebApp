@@ -28,6 +28,14 @@ describe("ws handshake rate-limit guardrails", () => {
     expect(wsServer).toContain("type: \"handshake:error\"");
   });
 
+  it("mantém modo degradado sem shutdown quando redis está indisponível", () => {
+    const wsServer = readLocal("scripts/chat-ws-server.js");
+
+    expect(wsServer).toContain("[chat-ws] REDIS_URL em falta em produção. A correr em modo degradado");
+    expect(wsServer).toContain("[chat-ws] Redis indisponível em produção. A continuar em modo degradado.");
+    expect(wsServer).not.toContain('process.exit(1); // fail-fast in production for reliability');
+  });
+
   it("keeps client handling for RATE_LIMITED reconnect backoff", () => {
     const webChat = readLocal("app/org/_internal/core/(dashboard)/chat/ChatInternoV2Client.tsx");
     const webPreview = readLocal("app/org/_internal/core/(dashboard)/chat/preview/useChatPreviewData.ts");

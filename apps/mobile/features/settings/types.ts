@@ -21,9 +21,10 @@ export type ConsentItem = {
     username?: string | null;
     brandingAvatarUrl?: string | null;
   };
+  isFollowed?: boolean;
   consents: {
     MARKETING: boolean;
     CONTACT_EMAIL: boolean;
-    CONTACT_SMS: boolean;
+    CONTACT_SMS?: boolean;
   };
 };

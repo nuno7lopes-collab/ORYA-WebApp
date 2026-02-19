@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { Avatar } from "@/components/ui/avatar";
 import { getProfileCoverUrl } from "@/lib/profileCover";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
@@ -107,12 +108,7 @@ export default async function TrainerProfilePage({ params }: PageProps) {
       <div className="relative mx-auto max-w-5xl px-6 pb-16 pt-12">
         <div className="rounded-3xl border border-white/12 bg-white/5 p-6 shadow-[0_24px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="h-20 w-20 overflow-hidden rounded-full border border-white/15 bg-white/10">
-              {profile.user.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={profile.user.avatarUrl} alt={displayName} className="h-full w-full rounded-full object-cover" />
-              ) : null}
-            </div>
+            <Avatar src={profile.user.avatarUrl} name={displayName} className="h-20 w-20" />
             <div>
               <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Treinador</p>
               <h1 className="text-2xl font-semibold text-white">{displayName}</h1>

@@ -93,6 +93,7 @@ async function _GET(req: NextRequest) {
     if (!organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    await ensureDefaultPolicies(prisma, organization.id);
     const reservasAccess = await ensureReservasModuleAccess(organization);
     if (!reservasAccess.ok) {
       return fail(403, reservasAccess.error);

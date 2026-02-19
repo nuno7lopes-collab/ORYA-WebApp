@@ -39,7 +39,7 @@ beforeEach(async () => {
   getUser.mockReset();
 
   checkUsernameAvailability.mockResolvedValue({ ok: true, available: true, username: "joao" });
-  rateLimit.mockResolvedValue({ allowed: true, retryAfter: 0, backend: "memory" });
+  rateLimit.mockResolvedValue({ allowed: true, retryAfter: 0, backend: "memory", degraded: true });
   isRateLimitBackendUnavailableError.mockReturnValue(false);
   isAppRequest.mockReturnValue(false);
   isSameOrigin.mockImplementation((_req: NextRequest, options?: { allowMissing?: boolean }) =>
@@ -92,8 +92,8 @@ describe("POST /api/profiles/check-username", () => {
 
   it("devolve 429 quando rate limit por username é atingido", async () => {
     rateLimit
-      .mockResolvedValueOnce({ allowed: true, retryAfter: 0, backend: "memory" })
-      .mockResolvedValueOnce({ allowed: false, retryAfter: 42, backend: "memory" });
+      .mockResolvedValueOnce({ allowed: true, retryAfter: 0, backend: "memory", degraded: true })
+      .mockResolvedValueOnce({ allowed: false, retryAfter: 42, backend: "memory", degraded: true });
 
     const res = await POST(
       makeRequest({ username: "joao" }, { "x-client-platform": "mobile" }),

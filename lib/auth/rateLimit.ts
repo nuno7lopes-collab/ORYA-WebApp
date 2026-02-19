@@ -14,6 +14,7 @@ type RateLimitResult = {
   allowed: boolean;
   retryAfter: number;
   backend: "redis" | "memory";
+  degraded: boolean;
 };
 
 const buckets = new Map<string, number[]>();
@@ -35,18 +36,11 @@ function shouldFailFastDistributed(requireDistributed: boolean) {
   return requireDistributed && process.env.NODE_ENV === "production";
 }
 
-function unavailableError(message: string) {
-  return new RateLimitBackendUnavailableError(message);
-}
-
 export async function rateLimit(
   req: NextRequest,
   { windowMs, max, keyPrefix = "rl", identifier, requireDistributed = false }: RateLimitOptions
 ): Promise<RateLimitResult> {
   const mustUseDistributed = shouldFailFastDistributed(requireDistributed);
-  if (mustUseDistributed && !isRedisConfigured()) {
-    throw unavailableError("REDIS_URL missing for distributed rate limiting.");
-  }
 
   const ip = getClientIp(req);
   const keyParts = [keyPrefix, ip];
@@ -65,15 +59,15 @@ export async function rateLimit(
       const limitOk = count <= max;
       const effectiveTtl = ttl > 0 ? ttl : windowMs;
       const retryAfter = limitOk ? 0 : Math.max(1, Math.ceil(effectiveTtl / 1000));
-      return { allowed: limitOk, retryAfter, backend: "redis" };
+      return { allowed: limitOk, retryAfter, backend: "redis", degraded: false };
     } catch (err) {
-      if (mustUseDistributed) {
-        throw unavailableError("Distributed rate limiting backend unavailable.");
-      }
-      console.warn("[rateLimit] redis falhou, a usar memória.", err);
+      console.warn(
+        `[rateLimit] redis falhou${mustUseDistributed ? " (fallback distributed->memory)" : ""}, a usar memória.`,
+        err
+      );
     }
   } else if (mustUseDistributed) {
-    throw unavailableError("Distributed rate limiting backend unavailable.");
+    console.warn("[rateLimit] redis indisponível em produção; fallback para memória.");
   }
 
   const now = Date.now();
@@ -87,5 +81,5 @@ export async function rateLimit(
     ? 0
     : Math.max(1, Math.ceil((hits[0] + windowMs - now) / 1000));
 
-  return { allowed: limitOk, retryAfter, backend: "memory" };
+  return { allowed: limitOk, retryAfter, backend: "memory", degraded: true };
 }

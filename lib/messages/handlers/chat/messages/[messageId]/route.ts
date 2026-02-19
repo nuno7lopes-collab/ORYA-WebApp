@@ -7,7 +7,7 @@ import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { isUnauthenticatedError } from "@/lib/security";
 import { CHAT_MESSAGE_MAX_LENGTH } from "@/lib/chat/constants";
 import { OrganizationMemberRole } from "@prisma/client";
-import { isChatRedisUnavailableError, publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
+import { publishChatEvent, type ChatEvent } from "@/lib/chat/redis";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ACTIVE_MEMBER_FILTER = {
@@ -76,23 +76,24 @@ async function _PATCH(req: NextRequest, context: { params: { messageId: string }
       },
     });
 
-    await publishChatEvent({
+    const warnings: string[] = [];
+    const published = await publishChatEvent({
       type: "message:update",
       organizationId: organization.id,
       conversationId: updated.conversationId,
       message: updated,
     });
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true, message: updated });
+    return jsonWrap({ ok: true, message: updated, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("PATCH /api/messages/messages/[id] error:", err);
     return jsonWrap({ ok: false, error: "Erro ao editar mensagem." }, { status: 500 });
@@ -185,18 +186,19 @@ async function _DELETE(req: NextRequest, context: { params: { messageId: string 
         : null;
     }
 
-    await publishChatEvent(eventPayload);
+    const warnings: string[] = [];
+    const published = await publishChatEvent(eventPayload);
+    if (!published) {
+      warnings.push("REALTIME_DEGRADED");
+    }
 
-    return jsonWrap({ ok: true, deletedAt });
+    return jsonWrap({ ok: true, deletedAt, ...(warnings.length ? { warnings } : {}) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }
     if (err instanceof ChatContextError) {
       return jsonWrap({ ok: false, error: err.code }, { status: err.status });
-    }
-    if (isChatRedisUnavailableError(err)) {
-      return jsonWrap({ ok: false, error: err.code }, { status: 503 });
     }
     console.error("DELETE /api/messages/messages/[id] error:", err);
     return jsonWrap({ ok: false, error: "Erro ao apagar mensagem." }, { status: 500 });

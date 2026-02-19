@@ -47,7 +47,7 @@ export default function OrgBookingsAvailabilityPage() {
   const resourceIdParam = parsePositiveInt(searchParams.get("resourceId"));
 
   const professionalsKey = organizationId ? `/api/org/${organizationId}/reservas/profissionais` : null;
-  const resourcesKey = organizationId ? `/api/org/${organizationId}/reservas/recursos` : null;
+  const resourcesKey = organizationId ? `/api/org/${organizationId}/reservas/recursos?includeCourts=1` : null;
 
   const { data: professionalsData } = useSWR<{ ok: boolean; items?: ProfessionalItem[] }>(professionalsKey, fetcher);
   const { data: resourcesData } = useSWR<{ ok: boolean; items?: ResourceItem[] }>(resourcesKey, fetcher);
@@ -128,51 +128,66 @@ export default function OrgBookingsAvailabilityPage() {
         </div>
       </header>
 
-      <section className={cn(DASHBOARD_CARD, "p-4 space-y-3")}>
+      <section className={cn(DASHBOARD_CARD, "p-4 space-y-4")}>
         <div>
           <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Escopo</p>
           <p className="mt-1 text-sm text-white/70">
-            Escolhe Geral, um profissional ou um recurso para editar disponibilidade.
+            Seleciona onde queres editar disponibilidade: geral da operação, um profissional, ou um recurso/campo.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={buildOrgHref(organizationId, "/bookings/availability")}
-            className={cn(CHIP_BASE, resolvedScope.scopeType === "ORGANIZATION" && CHIP_ACTIVE)}
-          >
-            Geral
-          </Link>
-          {professionals.map((professional) => (
+        <div className="space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Geral</p>
+          <div className="flex flex-wrap items-center gap-2">
             <Link
-              key={`professional-${professional.id}`}
-              href={buildOrgHref(organizationId, "/bookings/availability", {
-                scopeType: "PROFESSIONAL",
-                scopeId: professional.id,
-              })}
-              className={cn(
-                CHIP_BASE,
-                resolvedScope.scopeType === "PROFESSIONAL" && resolvedScope.scopeId === professional.id && CHIP_ACTIVE,
-              )}
+              href={buildOrgHref(organizationId, "/bookings/availability")}
+              className={cn(CHIP_BASE, resolvedScope.scopeType === "ORGANIZATION" && CHIP_ACTIVE)}
             >
-              {professional.name}
+              Disponibilidade geral
             </Link>
-          ))}
-          {resources.map((resource) => (
-            <Link
-              key={`resource-${resource.id}`}
-              href={buildOrgHref(organizationId, "/bookings/availability", {
-                scopeType: "RESOURCE",
-                scopeId: resource.id,
-              })}
-              className={cn(
-                CHIP_BASE,
-                resolvedScope.scopeType === "RESOURCE" && resolvedScope.scopeId === resource.id && CHIP_ACTIVE,
-              )}
-            >
-              {resource.label}
-            </Link>
-          ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Profissionais</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {professionals.map((professional) => (
+              <Link
+                key={`professional-${professional.id}`}
+                href={buildOrgHref(organizationId, "/bookings/availability", {
+                  scopeType: "PROFESSIONAL",
+                  scopeId: professional.id,
+                })}
+                className={cn(
+                  CHIP_BASE,
+                  resolvedScope.scopeType === "PROFESSIONAL" && resolvedScope.scopeId === professional.id && CHIP_ACTIVE,
+                )}
+              >
+                {professional.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-white/50">Recursos e campos</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {resources.map((resource) => (
+              <Link
+                key={`resource-${resource.id}`}
+                href={buildOrgHref(organizationId, "/bookings/availability", {
+                  scopeType: "RESOURCE",
+                  scopeId: resource.id,
+                })}
+                className={cn(
+                  CHIP_BASE,
+                  resolvedScope.scopeType === "RESOURCE" && resolvedScope.scopeId === resource.id && CHIP_ACTIVE,
+                )}
+              >
+                {resource.label}
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 

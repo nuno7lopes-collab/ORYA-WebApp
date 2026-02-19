@@ -12,8 +12,6 @@ import * as ImagePicker from "expo-image-picker";
 import { useQueryClient } from "@tanstack/react-query";
 import { tokens, useTranslation } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../components/liquid/GlassCard";
-import { GlassSurface } from "../../components/glass/GlassSurface";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { SectionHeader } from "../../components/liquid/SectionHeader";
 import { Ionicons } from "../../components/icons/Ionicons";
@@ -120,6 +118,7 @@ export default function ProfileScreen() {
     PADEL_LEVELS.includes(profile.padelLevel as PadelLevel)
       ? (profile.padelLevel as PadelLevel)
       : null;
+  const hasPadelProfile = Boolean(normalizedPadelGender && normalizedPadelSide && normalizedPadelLevel);
   const padelGenderLabels = useMemo(
     () => ({
       MALE: t("onboarding:padel.genders.male"),
@@ -153,6 +152,13 @@ export default function ProfileScreen() {
     setPadelSide(normalizedPadelSide);
     setPadelLevel(normalizedPadelLevel);
   }, [normalizedPadelGender, normalizedPadelLevel, normalizedPadelSide]);
+
+  useEffect(() => {
+    if (!showPadel) return;
+    if (!hasPadelProfile) {
+      setPadelEditorOpen(true);
+    }
+  }, [hasPadelProfile, showPadel]);
 
   useEffect(() => {
     if (isFocused) {
@@ -568,11 +574,45 @@ export default function ProfileScreen() {
   const counts = publicProfile.data?.counts ?? { followers: 0, following: 0, events: totalTimelineItems };
   const agendaItems = useMemo(() => agenda.data?.items ?? [], [agenda.data?.items]);
   const timeline = useMemo(() => splitAgendaTimeline(agendaItems), [agendaItems]);
-  const activeTimelineItems = useMemo(() => timeline.active.slice(0, 4), [timeline.active]);
-  const historyTimelineItems = useMemo(() => timeline.history.slice(0, 4), [timeline.history]);
+  const activeTimelineItems = useMemo(() => timeline.active.slice(0, 6), [timeline.active]);
+  const historyTimelineItems = useMemo(() => timeline.history.slice(0, 8), [timeline.history]);
+  const selectedInterests = useMemo(
+    () => INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)),
+    [interests],
+  );
+  const featuredUpcomingItem = activeTimelineItems[0] ?? null;
+  const remainingUpcomingItems = featuredUpcomingItem ? activeTimelineItems.slice(1) : [];
 
-  const formatAgendaDate = (value: string) =>
-    new Date(value).toLocaleDateString("pt-PT", { day: "2-digit", month: "short" });
+  const formatAgendaDate = (value: string, long = false) =>
+    new Date(value).toLocaleDateString("pt-PT", long ? { weekday: "short", day: "2-digit", month: "long" } : { day: "2-digit", month: "short" });
+  const agendaTypeLabel = (item: AgendaItem) => {
+    switch (item.type) {
+      case "EVENTO":
+        return "Evento";
+      case "JOGO":
+        return "Jogo";
+      case "INSCRICAO":
+        return "Inscrição";
+      case "RESERVA":
+        return "Reserva";
+      default:
+        return "Agenda";
+    }
+  };
+  const agendaTypeColor = (item: AgendaItem) => {
+    switch (item.type) {
+      case "EVENTO":
+        return "rgba(111, 244, 255, 0.95)";
+      case "JOGO":
+        return "rgba(161, 255, 168, 0.95)";
+      case "INSCRICAO":
+        return "rgba(255, 213, 122, 0.95)";
+      case "RESERVA":
+        return "rgba(182, 192, 255, 0.95)";
+      default:
+        return "rgba(255,255,255,0.85)";
+    }
+  };
 
   const normalizeCoverUrl = (url?: string | null) => {
     if (!url) return null;
@@ -581,24 +621,34 @@ export default function ProfileScreen() {
     return `${base}${url.startsWith("/") ? "" : "/"}${url}`;
   };
 
-  const renderAgendaItem = (item: AgendaItem) => {
+  const renderAgendaItem = (item: AgendaItem, options?: { featured?: boolean; showDivider?: boolean }) => {
     const resolved = resolveMobileLink(item.ctaHref, { allowWeb: false });
     const target = resolved.kind === "native" ? resolved.path : null;
     const disabled = !target;
     const cover = normalizeCoverUrl(item.coverImageUrl);
+    const featured = options?.featured === true;
+    const showDivider = options?.showDivider ?? true;
+    const typeLabel = agendaTypeLabel(item);
+    const accentColor = agendaTypeColor(item);
     return (
       <Pressable
         key={item.id}
         onPress={() => (target ? router.push(target as any) : undefined)}
         disabled={disabled}
-        className="flex-row items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3"
-        style={disabled ? { opacity: 0.6 } : undefined}
+        className={
+          featured
+            ? "flex-row items-center gap-3 rounded-2xl border border-cyan-200/30 bg-cyan-300/10 px-3 py-3"
+            : showDivider
+              ? "flex-row items-center gap-3 border-b border-white/10 px-1 py-3"
+              : "flex-row items-center gap-3 px-1 py-3"
+        }
+        style={disabled ? { opacity: 0.6 } : featured ? { shadowColor: "#6FF4FF", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } } : undefined}
         accessibilityRole={disabled ? "text" : "button"}
         accessibilityLabel={item.title}
       >
         <View
-          className="overflow-hidden rounded-xl border border-white/15 bg-white/10"
-          style={{ width: 64, height: 46 }}
+          className="overflow-hidden rounded-xl border border-white/15 bg-white/8"
+          style={{ width: featured ? 84 : 64, height: featured ? 62 : 46 }}
         >
           {cover ? (
             <Image source={{ uri: cover }} contentFit="cover" style={{ width: "100%", height: "100%" }} />
@@ -607,15 +657,58 @@ export default function ProfileScreen() {
           )}
         </View>
         <View style={{ flex: 1 }}>
+          <Text className={featured ? "text-white text-base font-semibold" : "text-white text-sm font-semibold"} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <View className="mt-1 flex-row items-center gap-2">
+            <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" }}>
+              <Text style={{ color: accentColor, fontSize: 10, fontWeight: "700" }}>{typeLabel}</Text>
+            </View>
+            <Text className={featured ? "text-white/75 text-xs" : "text-white/60 text-xs"}>
+              {formatAgendaDate(item.startAt, featured)}
+            </Text>
+          </View>
+          {item.label ? (
+            <Text className={featured ? "text-white/62 text-xs mt-0.5" : "text-white/55 text-xs mt-0.5"} numberOfLines={1}>
+              {item.label}
+            </Text>
+          ) : null}
+        </View>
+        {!disabled ? <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" /> : null}
+      </Pressable>
+    );
+  };
+
+  const renderHistoryItem = (item: AgendaItem, index: number, total: number) => {
+    const resolved = resolveMobileLink(item.ctaHref, { allowWeb: false });
+    const target = resolved.kind === "native" ? resolved.path : null;
+    const disabled = !target;
+    const showDivider = index < total - 1;
+    const accentColor = agendaTypeColor(item);
+    return (
+      <Pressable
+        key={item.id}
+        onPress={() => (target ? router.push(target as any) : undefined)}
+        disabled={disabled}
+        className={showDivider ? "flex-row items-start gap-3 border-b border-white/10 py-3" : "flex-row items-start gap-3 py-3"}
+        style={disabled ? { opacity: 0.6 } : undefined}
+        accessibilityRole={disabled ? "text" : "button"}
+        accessibilityLabel={item.title}
+      >
+        <View className="items-center" style={{ width: 14 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 999, backgroundColor: accentColor, marginTop: 5 }} />
+          {showDivider ? <View style={{ width: 1, flex: 1, minHeight: 22, backgroundColor: "rgba(255,255,255,0.16)", marginTop: 6 }} /> : null}
+        </View>
+        <View style={{ flex: 1 }}>
           <Text className="text-white text-sm font-semibold" numberOfLines={1}>
             {item.title}
           </Text>
-          <Text className="text-white/60 text-xs">
-            {formatAgendaDate(item.startAt)}
+          <Text className="text-white/60 text-xs mt-1">
+            {agendaTypeLabel(item)} · {formatAgendaDate(item.startAt)}
             {item.label ? ` · ${item.label}` : ""}
           </Text>
         </View>
-        {!disabled ? <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.6)" /> : null}
+        {!disabled ? <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.55)" /> : null}
       </Pressable>
     );
   };
@@ -629,8 +722,8 @@ export default function ProfileScreen() {
         titleAlign="center"
         leftSlot={<TopTicketsButton />}
         rightSlot={topBarRight}
-        rightSlotMode="append"
-        showNotifications
+        rightSlotMode="replace"
+        showNotifications={false}
         showMessages={false}
       />
       <ScrollView
@@ -647,20 +740,18 @@ export default function ProfileScreen() {
             <GlassSkeleton height={120} />
           </View>
         ) : summary.isError || !profile ? (
-          <GlassCard intensity={54}>
-            <View className="gap-3">
-              <Text className="text-white text-sm font-semibold">Não foi possível carregar o perfil.</Text>
-              <Text className="text-white/70 text-xs">Tenta novamente para atualizar os teus dados.</Text>
-              <Pressable
-                onPress={() => summary.refetch()}
-                className="rounded-xl border border-white/15 bg-white/10 px-4 py-3"
-                accessibilityRole="button"
-                accessibilityLabel="Tentar novamente"
-              >
-                <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-              </Pressable>
-            </View>
-          </GlassCard>
+          <View className="gap-3 rounded-2xl border border-white/15 bg-white/[0.03] px-4 py-4">
+            <Text className="text-white text-sm font-semibold">Não foi possível carregar o perfil.</Text>
+            <Text className="text-white/75 text-xs">Tenta novamente para atualizar os teus dados.</Text>
+            <Pressable
+              onPress={() => summary.refetch()}
+              className="rounded-xl border border-white/20 bg-white/10 px-4 py-3"
+              accessibilityRole="button"
+              accessibilityLabel="Tentar novamente"
+            >
+              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+            </Pressable>
+          </View>
         ) : (
           <View className="gap-5">
             <ProfileHeader
@@ -725,27 +816,44 @@ export default function ProfileScreen() {
               </Text>
             ) : null}
 
-            <View className="flex-row justify-center gap-8">
+            <View className="flex-row items-center justify-center gap-2">
               <Pressable
-                onPress={() => setShowPadel((prev) => !prev)}
-                className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
-                accessibilityRole="button"
-                accessibilityLabel={
-                  showPadel ? t("events:padel.profile.toggleToBase") : t("events:padel.profile.toggleToPadel")
+                onPress={() => setShowPadel(false)}
+                className={
+                  !showPadel
+                    ? "rounded-full border border-white/30 bg-white/20 px-4 py-2"
+                    : "rounded-full border border-white/12 bg-white/5 px-4 py-2"
                 }
+                accessibilityRole="button"
+                accessibilityLabel={t("events:padel.profile.baseLabel")}
+                accessibilityState={{ selected: !showPadel }}
+              >
+                <Text className={!showPadel ? "text-white text-xs font-semibold" : "text-white/75 text-xs font-semibold"}>
+                  {t("events:padel.profile.baseLabel")}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowPadel(true)}
+                className={
+                  showPadel
+                    ? "rounded-full border border-cyan-200/40 bg-cyan-300/20 px-4 py-2"
+                    : "rounded-full border border-white/12 bg-white/5 px-4 py-2"
+                }
+                accessibilityRole="button"
+                accessibilityLabel={t("events:padel.profile.padelLabel")}
                 accessibilityState={{ selected: showPadel }}
               >
                 <View className="flex-row items-center gap-2">
-                  <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.85)" />
-                  <Text className="text-white text-xs font-semibold">
-                    {showPadel ? t("events:padel.profile.baseLabel") : t("events:padel.profile.padelLabel")}
+                  <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.9)" />
+                  <Text className={showPadel ? "text-white text-xs font-semibold" : "text-white/75 text-xs font-semibold"}>
+                    {t("events:padel.profile.padelLabel")}
                   </Text>
                 </View>
               </Pressable>
             </View>
 
             {showPadel ? (
-              <GlassCard intensity={54}>
+              <View className="gap-3 border-b border-white/12 pb-4">
                 <Text className="text-white text-sm font-semibold mb-2">{t("events:padel.profile.title")}</Text>
                 {profile?.padelLevel ? (
                   <Text className="text-white/70 text-sm">
@@ -766,16 +874,29 @@ export default function ProfileScreen() {
                 </Text>
                 <Pressable
                   onPress={() => setPadelEditorOpen((prev) => !prev)}
-                  className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                  className="mt-2 rounded-xl border border-white/15 bg-white/7 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel={
-                    padelEditorOpen ? "Fechar editor de perfil de padel" : t("events:padel.profile.completeProfile")
+                    padelEditorOpen
+                      ? "Fechar editor de perfil de padel"
+                      : hasPadelProfile
+                        ? "Editar perfil de padel"
+                        : t("events:padel.profile.completeProfile")
                   }
                 >
                   <Text className="text-white text-sm font-semibold text-center">
-                    {padelEditorOpen ? "Fechar edição" : t("events:padel.profile.completeProfile")}
+                    {padelEditorOpen
+                      ? "Fechar edição"
+                      : hasPadelProfile
+                        ? "Editar perfil Padel"
+                        : t("events:padel.profile.completeProfile")}
                   </Text>
                 </Pressable>
+                {!padelEditorOpen && hasPadelProfile ? (
+                  <Text className="text-white/60 text-xs">
+                    Perfil completo. Podes editar sempre que quiseres.
+                  </Text>
+                ) : null}
                 {padelEditorOpen ? (
                   <View className="mt-3 gap-3">
                     <Text className="text-white/70 text-xs uppercase tracking-[0.08em]">Género</Text>
@@ -869,7 +990,7 @@ export default function ProfileScreen() {
                 ) : null}
                 <Pressable
                   onPress={() => router.push("/padel")}
-                  className="mt-3 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
+                  className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel={t("common:actions.explore")}
                 >
@@ -877,11 +998,11 @@ export default function ProfileScreen() {
                     {t("common:actions.explore")}
                   </Text>
                 </Pressable>
-              </GlassCard>
+              </View>
             ) : (
-              <GlassCard intensity={52}>
-                <View className="gap-3">
-                  {editMode ? (
+              <View className="gap-3">
+                {editMode ? (
+                  <View className="gap-2">
                     <View className="flex-row flex-wrap gap-3">
                       {INTEREST_OPTIONS.map((interest) => {
                         const active = interests.includes(interest.id);
@@ -891,8 +1012,8 @@ export default function ProfileScreen() {
                             onPress={() => toggleInterest(interest.id)}
                             className={
                               active
-                                ? "rounded-full border border-white/25 bg-white/15 px-3 py-2"
-                                : "rounded-full border border-white/10 bg-white/5 px-3 py-2"
+                                ? "rounded-full border border-white/30 bg-white/16 px-3 py-2"
+                                : "rounded-full border border-white/12 bg-white/5 px-3 py-2"
                             }
                             accessibilityRole="button"
                             accessibilityLabel={`Interesse ${interest.label}`}
@@ -905,72 +1026,102 @@ export default function ProfileScreen() {
                         );
                       })}
                     </View>
-                  ) : (
-                    <View className="flex-row flex-wrap gap-2">
-                      {INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)).length === 0 ? (
-                        <Text className="text-white/55 text-xs">Sem interesses definidos.</Text>
-                      ) : (
-                        INTEREST_OPTIONS.filter((interest) => interests.includes(interest.id)).map((interest) => (
-                          <View
-                            key={interest.id}
-                            className="flex-row items-center gap-2 rounded-2xl border border-white/12 bg-white/8 px-3 py-2"
-                          >
-                            <Ionicons
-                              name={INTEREST_ICONS[interest.id] ?? "sparkles"}
-                              size={12}
-                              color="rgba(255,255,255,0.85)"
-                            />
-                            <Text className="text-white/85 text-xs font-semibold">{interest.label}</Text>
-                          </View>
-                        ))
-                      )}
-                    </View>
-                  )}
-                  {editMode && interestsError ? (
-                    <Text className="text-rose-200 text-[11px]">{interestsError}</Text>
-                  ) : null}
-                </View>
-              </GlassCard>
+                    <Text className="text-white/60 text-xs">{interests.length}/6 interesses selecionados</Text>
+                  </View>
+                ) : (
+                  <View className="flex-row flex-wrap gap-2">
+                    {selectedInterests.length === 0 ? (
+                      <View className="gap-2">
+                        <Text className="text-white/65 text-sm">Sem interesses definidos.</Text>
+                        <Pressable
+                          onPress={() => setEditMode(true)}
+                          className="self-start rounded-full border border-white/15 bg-white/8 px-3 py-2"
+                          accessibilityRole="button"
+                          accessibilityLabel="Definir interesses"
+                        >
+                          <Text className="text-white/90 text-xs font-semibold">Definir interesses</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      selectedInterests.map((interest) => (
+                        <View
+                          key={interest.id}
+                          className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/6 px-3 py-2"
+                        >
+                          <Ionicons
+                            name={INTEREST_ICONS[interest.id] ?? "sparkles"}
+                            size={12}
+                            color="rgba(255,255,255,0.9)"
+                          />
+                          <Text className="text-white/90 text-xs font-semibold">{interest.label}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                )}
+                {editMode && interestsError ? (
+                  <Text className="text-rose-200 text-[11px]">{interestsError}</Text>
+                ) : null}
+              </View>
             )}
 
-            <SectionHeader title="Timeline pessoal" subtitle="Reservas, bilhetes, inscrições e jogos." />
-            {agenda.isLoading ? (
-              <View className="gap-3">
-                <GlassSkeleton height={90} />
-              </View>
-            ) : (
-              <View className="gap-3">
-                <GlassSurface intensity={48}>
-                  <Text className="text-white/70 text-sm">
-                    Ativos: {timeline.active.length} · Histórico: {timeline.history.length}
-                  </Text>
-                </GlassSurface>
-                {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
-                  <GlassCard intensity={52}>
-                    <Text className="text-white/60 text-xs">Ainda não tens itens na tua timeline pessoal.</Text>
-                  </GlassCard>
+            {!showPadel ? (
+              <>
+                <SectionHeader title="Timeline pessoal" subtitle="Reservas, bilhetes, inscrições e jogos." />
+                {agenda.isLoading ? (
+                  <View className="gap-3">
+                    <GlassSkeleton height={90} />
+                  </View>
                 ) : (
-                  <>
-                    {activeTimelineItems.length > 0 ? (
-                      <GlassCard intensity={52}>
-                        <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">Ativos</Text>
-                          {activeTimelineItems.map(renderAgendaItem)}
-                        </View>
-                      </GlassCard>
-                    ) : null}
-                    {historyTimelineItems.length > 0 ? (
-                      <GlassCard intensity={48}>
-                        <View className="gap-3">
-                          <Text className="text-white/80 text-sm font-semibold">Histórico</Text>
-                          {historyTimelineItems.map(renderAgendaItem)}
-                        </View>
-                      </GlassCard>
-                    ) : null}
-                  </>
+                  <View className="gap-5">
+                    <View className="flex-row items-center justify-between border-b border-white/15 pb-2">
+                      <Text className="text-white/85 text-sm font-semibold">Próximos: {timeline.active.length}</Text>
+                      <Text className="text-white/65 text-sm">Passados: {timeline.history.length}</Text>
+                      <Text className="text-cyan-100/80 text-sm">Mês: {agendaStats.thisMonth}</Text>
+                    </View>
+                    {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
+                      <View className="gap-2">
+                        <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
+                        <Pressable
+                          onPress={() => router.push("/agora")}
+                          className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
+                          accessibilityRole="button"
+                          accessibilityLabel="Explorar eventos"
+                        >
+                          <Text className="text-cyan-50 text-xs font-semibold">Explorar eventos</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <>
+                        {activeTimelineItems.length > 0 ? (
+                          <View className="gap-2">
+                            <Text className="text-white text-base font-semibold">Próximos eventos</Text>
+                            {featuredUpcomingItem ? renderAgendaItem(featuredUpcomingItem, { featured: true }) : null}
+                            {remainingUpcomingItems.length > 0 ? (
+                              <View className="border-b border-cyan-200/20 pb-1">
+                                {remainingUpcomingItems.map((item, index) =>
+                                  renderAgendaItem(item, { showDivider: index < remainingUpcomingItems.length - 1 }),
+                                )}
+                              </View>
+                            ) : null}
+                          </View>
+                        ) : null}
+                        {historyTimelineItems.length > 0 ? (
+                          <View className="gap-2">
+                            <Text className="text-white/90 text-base font-semibold">Histórico</Text>
+                            <View className="border-b border-white/10 pb-1">
+                              {historyTimelineItems.map((item, index) =>
+                                renderHistoryItem(item, index, historyTimelineItems.length),
+                              )}
+                            </View>
+                          </View>
+                        ) : null}
+                      </>
+                    )}
+                  </View>
                 )}
-              </View>
-            )}
+              </>
+            ) : null}
 
           </View>
         )}

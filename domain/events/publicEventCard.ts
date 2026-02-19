@@ -219,7 +219,15 @@ export function toPublicEventCardWithPrice(params: {
   const { event, ownerProfile } = params;
   const ticketPrices = Array.isArray(event.ticketTypes)
     ? event.ticketTypes
-        .map((t) => (typeof t.price === "number" ? t.price : null))
+        .filter((ticket) => {
+          const status = (ticket.status ?? "").toUpperCase();
+          if (status && status !== "ON_SALE") return false;
+          const total = ticket.totalQuantity;
+          const sold = ticket.soldQuantity ?? 0;
+          if (typeof total === "number" && sold >= total) return false;
+          return true;
+        })
+        .map((t) => (typeof t.price === "number" ? Math.max(0, t.price) : null))
         .filter((p): p is number => p !== null)
     : [];
 
