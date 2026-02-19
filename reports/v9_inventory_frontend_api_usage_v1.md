@@ -1,6 +1,6 @@
 # V9 Inventory — Frontend API Usage
 
-Total endpoints referenced: 361
+Total endpoints referenced: 372
 
 ## /api/address/autocomplete
 - apps/mobile/features/discover/location.ts
@@ -107,6 +107,9 @@ Total endpoints referenced: 361
 ## /api/admin/organizacoes/verify-platform-email
 - app/admin/(protected)/organizacoes/page.tsx
 
+## /api/admin/padel/settings
+- app/admin/(protected)/settings/page.tsx
+
 ## /api/admin/payments/dispute
 - app/admin/(protected)/finance/page.tsx
 
@@ -157,20 +160,23 @@ Total endpoints referenced: 361
 ## /api/auth/apple/link
 - app/auth/callback/page.tsx
 
-## /api/auth/check-email
+## /api/auth/bootstrap
 - app/components/autenticação/AuthModal.tsx
+- app/hooks/useUser.ts
 
-## /api/auth/clear
+## /api/auth/check-email
 - app/components/autenticação/AuthModal.tsx
 
 ## /api/auth/login
 - app/components/autenticação/AuthModal.tsx
 - app/components/checkout/AuthWall.tsx
+- apps/mobile/app/auth/email.tsx
 
 ## /api/auth/logout
 - app/admin/components/AdminLayout.tsx
 - app/admin/forbidden/ForbiddenClient.tsx
 - app/components/Navbar.tsx
+- app/components/autenticação/AuthModal.tsx
 - app/me/settings/page.tsx
 - app/org/_internal/core/OrganizationTopBar.tsx
 
@@ -218,6 +224,9 @@ Total endpoints referenced: 361
 ## /api/cron/bookings/cleanup
 - lib/cron/jobs.ts
 
+## /api/cron/bookings/split-garantido
+- lib/cron/jobs.ts
+
 ## /api/cron/creditos/expire
 - lib/cron/jobs.ts
 
@@ -234,6 +243,9 @@ Total endpoints referenced: 361
 - lib/cron/jobs.ts
 
 ## /api/cron/operations
+- lib/cron/jobs.ts
+
+## /api/cron/padel/arbitration-compensation
 - lib/cron/jobs.ts
 
 ## /api/cron/padel/expire
@@ -303,18 +315,6 @@ Total endpoints referenced: 361
 ## /api/inscricoes/[param]/submit
 - app/inscricoes/[id]/FormSubmissionClient.tsx
 
-## /api/live/events/[param]
-- app/eventos/[slug]/EventLiveClient.tsx
-
-## /api/live/events/[param]/stream
-- app/eventos/[slug]/PadelPublicTablesClient.tsx
-- app/eventos/[slug]/monitor/PadelMonitorClient.tsx
-- app/eventos/[slug]/score/PadelScoreboardClient.tsx
-- app/widgets/padel/bracket/BracketWidgetClient.tsx
-- app/widgets/padel/calendar/CalendarWidgetClient.tsx
-- app/widgets/padel/next/NextMatchesWidgetClient.tsx
-- app/widgets/padel/standings/StandingsWidgetClient.tsx
-
 ## /api/location/ip
 - apps/mobile/features/onboarding/api.ts
 
@@ -347,6 +347,9 @@ Total endpoints referenced: 361
 ## /api/me/events/signals
 - app/descobrir/_explorar/eventSignals.ts
 - apps/mobile/features/events/signals.ts
+
+## /api/me/inscricoes/[param]
+- apps/mobile/features/tournaments/api.ts
 
 ## /api/me/location/consent
 - apps/mobile/features/onboarding/api.ts
@@ -397,6 +400,7 @@ Total endpoints referenced: 361
 
 ## /api/me/reservas
 - app/me/reservas/page.tsx
+- apps/mobile/features/bookings/api.ts
 
 ## /api/me/reservas/[param]
 - app/[username]/_components/ReservasBookingClient.tsx
@@ -405,9 +409,11 @@ Total endpoints referenced: 361
 ## /api/me/reservas/[param]/cancel
 - app/[username]/_components/ReservasBookingClient.tsx
 - app/me/reservas/page.tsx
+- apps/mobile/features/bookings/api.ts
 
 ## /api/me/reservas/[param]/cancel/preview
 - app/me/reservas/page.tsx
+- apps/mobile/features/bookings/api.ts
 
 ## /api/me/reservas/[param]/invites
 - app/me/reservas/page.tsx
@@ -417,6 +423,7 @@ Total endpoints referenced: 361
 
 ## /api/me/reservas/[param]/reschedule/respond
 - app/me/reservas/page.tsx
+- apps/mobile/features/bookings/api.ts
 
 ## /api/me/reservas/[param]/review
 - app/me/reservas/page.tsx
@@ -529,8 +536,44 @@ Total endpoints referenced: 361
 - apps/mobile/app/settings/index.tsx
 - apps/mobile/features/settings/api.ts
 
+## /api/org-hub/groups/[param]/[param]/email/confirm
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+- app/org/_internal/core/organizations/RequestEmailConfirmClient.tsx
+
+## /api/org-hub/groups/[param]/[param]/email/resend
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/[param]/generate-code
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/[param]/verify-codes
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/dashboard/agenda
+- app/org/_internal/core/organizations/GroupDashboardClient.tsx
+
+## /api/org-hub/groups/[param]/governance
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/governance/members
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/owner/transfer/cancel
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/[param]/owner/transfer/confirm
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+- app/org/_internal/core/organizations/OwnerTransferConfirmClient.tsx
+
 ## /api/org-hub/groups/[param]/owner/transfer/start
 - app/org/_internal/core/(dashboard)/staff/page.tsx
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/exit-requests
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
+
+## /api/org-hub/groups/join-requests
+- app/org/_internal/core/organizations/GroupsHubClient.tsx
 
 ## /api/org-hub/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
@@ -538,12 +581,16 @@ Total endpoints referenced: 361
 
 ## /api/org-hub/organizations
 - app/me/page.tsx
-- app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org-hub/organizations/[param]
 - app/org/_internal/core/(dashboard)/settings/page.tsx
+
+## /api/org-hub/organizations/[param]/suspend
+- app/org/_internal/core/(dashboard)/settings/page.tsx
+- app/org/_internal/core/DashboardClient.tsx
+- app/org/_internal/core/OrganizationDashboardShell.tsx
 
 ## /api/org-hub/organizations/leave
 - app/org/_internal/core/(dashboard)/staff/page.tsx
@@ -581,12 +628,15 @@ Total endpoints referenced: 361
 
 ## /api/org/[param]
 - app/components/checkin/CheckinScanner.tsx
-- app/eventos/[slug]/EventLiveClient.tsx
+- app/org/[orgId]/analytics/AnalyticsToolClient.tsx
+- app/org/[orgId]/finance/FinanceToolClient.tsx
+- app/org/[orgId]/policies/PoliciesToolClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - app/org/_internal/core/DashboardClient.tsx
 
 ## /api/org/[param]/agenda
+- app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
 - lib/canonicalOrgUiEndpointRegistry.ts
 
 ## /api/org/[param]/agenda/soft-blocks
@@ -595,8 +645,8 @@ Total endpoints referenced: 361
 ## /api/org/[param]/audit
 - app/org/_internal/core/(dashboard)/staff/page.tsx
 
-## /api/org/[param]/avaliacoes
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
+## /api/org/[param]/checkin/manual
+- app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
 
 ## /api/org/[param]/club/finance/overview
 - app/org/_internal/core/(dashboard)/clube/caixa/page.tsx
@@ -661,6 +711,9 @@ Total endpoints referenced: 361
 ## /api/org/[param]/crm/segmentos/[param]/preview
 - app/org/_internal/core/(dashboard)/crm/segmentos/[segmentId]/page.tsx
 
+## /api/org/[param]/dashboard/tools/visibility
+- app/org/_internal/core/DashboardClient.tsx
+
 ## /api/org/[param]/events/[param]/attendees
 - app/org/[orgId]/check-in/OrgCheckInOperationsClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/EventAttendeesPanel.tsx
@@ -683,17 +736,15 @@ Total endpoints referenced: 361
 
 ## /api/org/[param]/events/update
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
-- app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx
 
 ## /api/org/[param]/faturacao
 - lib/canonicalOrgUiEndpointRegistry.ts
 
-## /api/org/[param]/finance/reconciliation
-- app/org/_internal/core/pagamentos/ReconciliationPanel.tsx
+## /api/org/[param]/finance/payouts/list
+- app/org/_internal/core/pagamentos/PayoutsPanel.tsx
 
 ## /api/org/[param]/inscricoes
 - app/org/_internal/core/(dashboard)/inscricoes/page.tsx
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/inscricoes/[param]
 - app/org/_internal/core/(dashboard)/inscricoes/[id]/page.tsx
@@ -726,15 +777,10 @@ Total endpoints referenced: 361
 - app/org/_internal/core/DashboardClient.tsx
 - app/org/_internal/core/ObjectiveSubnav.tsx
 - app/org/_internal/core/OrganizationDashboardShell.tsx
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 - app/org/_internal/core/OrganizationTopBar.tsx
-- app/org/_internal/core/pagamentos/FinanceAlertsPanel.tsx
 
 ## /api/org/[param]/pagamentos/invoices
 - app/org/_internal/core/pagamentos/invoices/invoices-client.tsx
-
-## /api/org/[param]/payouts/list
-- app/org/_internal/core/pagamentos/PayoutsPanel.tsx
 
 ## /api/org/[param]/policies
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
@@ -787,32 +833,37 @@ Total endpoints referenced: 361
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 
 ## /api/org/[param]/reservas/disponibilidade
+- app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
 
 ## /api/org/[param]/reservas/disponibilidade/[param]
 - app/org/_internal/core/(dashboard)/reservas/_components/AvailabilityEditor.tsx
 
 ## /api/org/[param]/reservas/profissionais
+- app/org/[orgId]/bookings/availability/page.tsx
+- app/org/[orgId]/calendar/_components/WeekCalendarReadClient.tsx
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/profissionais/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/reservas/profissionais/[param]
 - app/org/_internal/core/(dashboard)/reservas/profissionais/page.tsx
 
 ## /api/org/[param]/reservas/recursos
+- app/org/[orgId]/bookings/availability/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/recursos/[id]/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 
 ## /api/org/[param]/reservas/recursos/[param]
 - app/org/_internal/core/(dashboard)/reservas/recursos/page.tsx
 
 ## /api/org/[param]/servicos
+- app/org/[orgId]/calendar/_components/day/DayCalendarReadClient.tsx
 - app/org/_internal/core/(dashboard)/reservas/novo/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/servicos/page.tsx
@@ -850,28 +901,15 @@ Total endpoints referenced: 361
 ## /api/org/[param]/store
 - app/org/[orgId]/store/OrgStoreToolClient.tsx
 
-## /api/org/[param]/store/preview
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
-
-## /api/org/[param]/tournaments/[param]
-- app/eventos/[slug]/EventLiveClient.tsx
-- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
-
-## /api/org/[param]/tournaments/[param]/live
-- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
-
 ## /api/org/[param]/tournaments/create
-- app/org/_internal/core/(dashboard)/eventos/EventLivePrepClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
-
-## /api/org/[param]/trainers
-- app/org/_internal/core/(dashboard)/staff/page.tsx
 
 ## /api/org/[param]/trainers/profile
 - app/org/_internal/core/(dashboard)/treinadores/page.tsx
 
 ## /api/org/[param]/username
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
+- app/org/_internal/core/(dashboard)/settings/page.tsx
 
 ## /api/org/[param]/venues/recent
 - lib/canonicalOrgUiEndpointRegistry.ts
@@ -914,6 +952,7 @@ Total endpoints referenced: 361
 ## /api/padel/clubs/[param]/staff
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/padel/clubs/[param]/staff/invites
 - app/convites/organizacoes/OrganizationInvitesClient.tsx
@@ -929,33 +968,44 @@ Total endpoints referenced: 361
 
 ## /api/padel/event-categories
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
-## /api/padel/matches
-- app/eventos/[slug]/EventLiveClient.tsx
-- app/eventos/[slug]/PadelPublicTablesClient.tsx
-- app/eventos/[slug]/monitor/PadelMonitorClient.tsx
+## /api/padel/formats/plan
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/widgets/padel/bracket/BracketWidgetClient.tsx
-- app/widgets/padel/calendar/CalendarWidgetClient.tsx
-- app/widgets/padel/next/NextMatchesWidgetClient.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+- app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
+
+## /api/padel/matches
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/matches/[param]/delay
-- app/eventos/[slug]/monitor/PadelMonitorClient.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/matches/[param]/dispute
 - app/[username]/padel/PadelDisputeButton.tsx
-- app/eventos/[slug]/EventLiveClient.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/matches/[param]/result/[param]
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
-## /api/padel/matches/[param]/undo
-- app/eventos/[slug]/EventLiveClient.tsx
+## /api/padel/matches/[param]/result/confirm
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/matches/[param]/result/reject
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/matches/[param]/result/reset-pending
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
+## /api/padel/matches/[param]/result/submit
+- app/[username]/padel/PadelResultSubmitCard.tsx
+- app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/[param]/walkover
-- app/eventos/[slug]/EventLiveClient.tsx
-- app/eventos/[slug]/monitor/PadelMonitorClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/matches/assign
@@ -965,12 +1015,15 @@ Total endpoints referenced: 361
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 
 ## /api/padel/me/history
+- app/me/page.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/me/matches
+- app/me/page.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/me/summary
+- app/me/page.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/onboarding
@@ -1033,11 +1086,11 @@ Total endpoints referenced: 361
 ## /api/padel/players
 - app/org/_internal/core/(dashboard)/padel/PadelHubSection.tsx
 
-## /api/padel/public/calendar
-- app/eventos/[slug]/calendario/page.tsx
-
 ## /api/padel/public/clubs
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
+
+## /api/padel/public/live
+- app/eventos/[slug]/monitor/MonitorClient.tsx
 
 ## /api/padel/public/open-pairings
 - app/padel/duplas/PadelOpenPairingsClient.tsx
@@ -1046,15 +1099,16 @@ Total endpoints referenced: 361
 ## /api/padel/rankings
 - app/padel/rankings/PadelRankingsClient.tsx
 
+## /api/padel/rounds/advance
+- app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
+
 ## /api/padel/rulesets
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/padel/torneios/novo/PadelTournamentWizardClient.tsx
 
 ## /api/padel/standings
-- app/eventos/[slug]/PadelPublicTablesClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
-- app/widgets/padel/standings/StandingsWidgetClient.tsx
 - apps/mobile/features/tournaments/api.ts
 
 ## /api/padel/teams
@@ -1069,7 +1123,6 @@ Total endpoints referenced: 361
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
 ## /api/padel/tournaments/config
-- app/eventos/[slug]/EventLiveClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx
 
@@ -1185,7 +1238,7 @@ Total endpoints referenced: 361
 
 ## /api/qr/[param]
 - app/components/tickets/TicketCard.tsx
-- app/components/tickets/TicketLiveQr.tsx
+- app/components/tickets/TicketDynamicQr.tsx
 - app/components/tickets/TicketQrBox.tsx
 
 ## /api/search
@@ -1196,6 +1249,7 @@ Total endpoints referenced: 361
 
 ## /api/servicos/[param]/calendario
 - app/[username]/_components/ReservasBookingClient.tsx
+- app/me/reservas/page.tsx
 - apps/mobile/app/service/[id]/booking.tsx
 
 ## /api/servicos/[param]/checkout
@@ -1207,8 +1261,6 @@ Total endpoints referenced: 361
 - apps/mobile/app/service/[id]/booking.tsx
 
 ## /api/servicos/[param]/slots
-- app/[username]/_components/ReservasBookingClient.tsx
-- app/me/reservas/page.tsx
 - apps/mobile/app/service/[id]/booking.tsx
 
 ## /api/servicos/list
@@ -1233,17 +1285,14 @@ Total endpoints referenced: 361
 ## /api/social/follow-organization
 - app/components/Navbar.tsx
 - app/components/profile/OrganizationFollowClient.tsx
-- app/eventos/[slug]/EventLiveClient.tsx
 - app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
 ## /api/social/follow-requests
-- app/org/[orgId]/profile/OrgProfileRequestsClient.tsx
 - app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
 ## /api/social/follow-requests/[param]
-- app/org/[orgId]/profile/OrgProfileRequestsClient.tsx
 - app/social/page.tsx
 
 ## /api/social/follow-requests/accept
@@ -1272,7 +1321,6 @@ Total endpoints referenced: 361
 
 ## /api/social/organization-followers
 - app/components/profile/OrganizationProfileHeader.tsx
-- app/org/[orgId]/profile/OrgProfileFollowersClient.tsx
 - apps/mobile/features/network/followLists.ts
 
 ## /api/social/suggestions
@@ -1290,7 +1338,6 @@ Total endpoints referenced: 361
 ## /api/social/unfollow-organization
 - app/components/Navbar.tsx
 - app/components/profile/OrganizationFollowClient.tsx
-- app/eventos/[slug]/EventLiveClient.tsx
 - app/social/page.tsx
 - apps/mobile/features/network/api.ts
 
@@ -1303,27 +1350,14 @@ Total endpoints referenced: 361
 ## /api/tickets/resale/list
 - apps/mobile/app/wallet/[entitlementId].tsx
 
-## /api/tournaments/[param]
-- apps/mobile/features/tournaments/api.ts
-
-## /api/tournaments/[param]/live
-- apps/mobile/features/tournaments/api.ts
-
-## /api/tournaments/[param]/structure
-- apps/mobile/features/tournaments/api.ts
-
-## /api/tournaments/list
-- apps/mobile/features/tournaments/api.ts
-
 ## /api/upload
 - app/components/profile/ProfileHeader.tsx
 - app/org/_internal/core/(dashboard)/eventos/EventEditClient.tsx
 - app/org/_internal/core/(dashboard)/eventos/[id]/PadelTournamentTabs.tsx
 - app/org/_internal/core/(dashboard)/eventos/novo/page.tsx
 - app/org/_internal/core/(dashboard)/reservas/[id]/page.tsx
-- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
+- app/org/_internal/core/(dashboard)/settings/page.tsx
 - app/org/_internal/core/(dashboard)/treinadores/page.tsx
-- app/org/_internal/core/OrganizationPublicProfilePanel.tsx
 - components/store/StoreProductImagesPanel.tsx
 - components/store/StoreProductsPanel.tsx
 
@@ -1331,15 +1365,10 @@ Total endpoints referenced: 361
 - app/components/autenticação/AuthModal.tsx
 - app/components/checkout/AuthWall.tsx
 - app/onboarding/perfil/page.tsx
-- app/org/_internal/core/organizations/OrganizationsHubClient.tsx
 - components/organization/BecomeOrganizationForm.tsx
 
 ## /api/users/search
 - app/components/Navbar.tsx
 - app/components/checkout/Step1Bilhete.tsx
-- app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx
 - app/social/page.tsx
 - apps/mobile/features/search/api.ts
-
-## /api/widgets/padel/calendar
-- app/widgets/padel/calendar/page.tsx

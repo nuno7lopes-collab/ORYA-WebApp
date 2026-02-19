@@ -348,17 +348,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         return respondOk(ctx, { schedule });
       }
 
-      const schedule = await prisma.availabilitySchedule.create({
-        data: {
-          organizationId: organization.id,
-          scopeType,
-          scopeId,
-          startDate: startInput.date,
-          endDate: endInput ? endInput.date : null,
-        },
-      });
-
       const cloneId = parseScopeId(payload?.cloneFromScheduleId);
+      let cloneTemplates: Array<{ dayOfWeek: number; intervals: Prisma.JsonValue }> = [];
       if (cloneId) {
         const cloneSchedule = await prisma.availabilitySchedule.findFirst({
           where: { id: cloneId, organizationId: organization.id, scopeType, scopeId },
@@ -367,20 +358,32 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         if (!cloneSchedule) {
           return fail(404, "Disponibilidade para copiar não encontrada.");
         }
-        const cloneTemplates = await prisma.weeklyAvailabilityTemplate.findMany({
+        cloneTemplates = await prisma.weeklyAvailabilityTemplate.findMany({
           where: { availabilityId: cloneSchedule.id },
           select: { dayOfWeek: true, intervals: true },
         });
+      }
+      const schedule = await prisma.$transaction(async (tx) => {
+        const created = await tx.availabilitySchedule.create({
+          data: {
+            organizationId: organization.id,
+            scopeType,
+            scopeId,
+            startDate: startInput.date,
+            endDate: endInput ? endInput.date : null,
+          },
+        });
         if (cloneTemplates.length) {
-          await prisma.weeklyAvailabilityTemplate.createMany({
+          await tx.weeklyAvailabilityTemplate.createMany({
             data: cloneTemplates.map((template) => ({
-              availabilityId: schedule.id,
+              availabilityId: created.id,
               dayOfWeek: template.dayOfWeek,
               intervals: toInputJson(template.intervals),
             })),
           });
         }
-      }
+        return created;
+      });
 
       await recordOrganizationAudit(prisma, {
         organizationId: organization.id,

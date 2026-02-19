@@ -270,11 +270,13 @@ export default function RegistrationDetailScreen() {
               <GlassCard intensity={52}>
                 <View className="gap-3">
                   <View className="flex-row items-center gap-2">
-                    <Ionicons
-                      name="people-outline"
-                      size={16}
-                      color="rgba(255,255,255,0.82)"
-                    />
+                    <View className="h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-white/10">
+                      <Ionicons
+                        name="people-outline"
+                        size={14}
+                        color="rgba(236,246,255,0.92)"
+                      />
+                    </View>
                     <Text className="text-white text-sm font-semibold">
                       Dupla e participação
                     </Text>

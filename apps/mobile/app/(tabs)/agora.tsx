@@ -32,10 +32,10 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
 
-const MAP_BUTTON_SIZE = 44;
+const MAP_BUTTON_SIZE = 50;
 const MAP_ICON_SIZE = 20;
 const MAP_ICON_NUDGE_Y = -1;
-const MAP_ICON_BOX = 26;
+const MAP_ICON_BOX = 28;
 const USE_GLASS_BLUR = Platform.OS === "ios";
 
 export default function AgoraScreen() {
@@ -287,6 +287,7 @@ export default function AgoraScreen() {
             ]}
           >
             <View style={styles.mapCircle}>
+              <View pointerEvents="none" style={styles.mapGlow} />
               <View pointerEvents="none" style={styles.mapFillWrap}>
                 {USE_GLASS_BLUR ? (
                   <BlurView
@@ -347,6 +348,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  mapGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: MAP_BUTTON_SIZE / 2,
+    borderWidth: 1,
+    borderColor: "rgba(190, 232, 255, 0.32)",
+  },
   mapFillWrap: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: MAP_BUTTON_SIZE / 2,
@@ -356,7 +363,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: MAP_BUTTON_SIZE / 2,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.16)",
   },
   mapIconBox: {
     width: MAP_ICON_BOX,
@@ -368,7 +375,7 @@ const styles = StyleSheet.create({
     transform: [{ translateY: MAP_ICON_NUDGE_Y }],
   },
   mapPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
 });

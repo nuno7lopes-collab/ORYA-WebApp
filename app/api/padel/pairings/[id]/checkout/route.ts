@@ -221,15 +221,6 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     }
     return fail(categoryAccess.code, "Categoria inválida.", 409);
   }
-  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
-    return fail(
-      "PADEL_ONBOARDING_REQUIRED",
-      "Onboarding Padel em falta.",
-      409,
-      false,
-      { missing: categoryAccess.missing },
-    );
-  }
 
   // Não permitir checkout se utilizador já tiver pairing ativo no torneio
   const existingActive = await prisma.padelPairing.findFirst({

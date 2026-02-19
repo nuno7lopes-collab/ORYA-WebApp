@@ -17,6 +17,8 @@ function toIso(value: Date | null | undefined) {
   return value ? value.toISOString() : null;
 }
 
+type WorkspaceViewerRole = "OWNER" | "PARTNER";
+
 async function _GET(req: NextRequest) {
   const agreementId = readNumericParam(undefined, req, "workspace");
   if (agreementId === null) {
@@ -48,6 +50,9 @@ async function _GET(req: NextRequest) {
   if (![agreement.ownerOrganizationId, agreement.partnerOrganizationId].includes(check.organization.id)) {
     return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   }
+  const viewerRole: WorkspaceViewerRole =
+    check.organization.id === agreement.ownerOrganizationId ? "OWNER" : "PARTNER";
+  const redactBlockDetails = viewerRole === "PARTNER";
 
   const now = new Date();
   const rangeStart = parseDate(req.nextUrl.searchParams.get("startAt"), new Date(now.getTime() - 4 * 60 * 60 * 1000));
@@ -170,8 +175,9 @@ async function _GET(req: NextRequest) {
       courtId: block.courtId,
       startAt: toIso(block.startAt),
       endAt: toIso(block.endAt),
-      label: block.label ?? block.note ?? block.kind ?? "Bloqueio",
-      eventId: block.eventId,
+      label: redactBlockDetails ? "Indisponível" : block.label ?? block.note ?? block.kind ?? "Bloqueio",
+      eventId: redactBlockDetails ? null : block.eventId,
+      redacted: redactBlockDetails,
     })),
     ...matches
       .filter((match) => match.event.organizationId === agreement.ownerOrganizationId)
@@ -209,12 +215,13 @@ async function _GET(req: NextRequest) {
     courtId: Number(claim.resourceId),
     startAt: toIso(claim.startsAt),
     endAt: toIso(claim.endsAt),
-    sourceType: claim.sourceType,
-    sourceId: claim.sourceId,
+    sourceType: redactBlockDetails ? null : claim.sourceType,
+    sourceId: redactBlockDetails ? null : claim.sourceId,
     organizationId: claim.organizationId,
     authorityOrgId: claim.authorityOrgId,
-    resourceKey: claim.resourceKey,
-    metadata: claim.metadata,
+    resourceKey: redactBlockDetails ? null : claim.resourceKey,
+    metadata: redactBlockDetails ? null : claim.metadata,
+    redacted: redactBlockDetails,
   }));
 
   return jsonWrap(
@@ -231,15 +238,20 @@ async function _GET(req: NextRequest) {
           id: claim.id,
           bundleId: claim.bundleId,
           status: claim.status,
-          sourceType: claim.sourceType,
-          sourceId: claim.sourceId,
+          sourceType: redactBlockDetails ? null : claim.sourceType,
+          sourceId: redactBlockDetails ? null : claim.sourceId,
           organizationId: claim.organizationId,
           authorityOrgId: claim.authorityOrgId,
-          resourceKey: claim.resourceKey,
+          resourceKey: redactBlockDetails ? null : claim.resourceKey,
           courtId: Number(claim.resourceId),
           startAt: toIso(claim.startsAt),
           endAt: toIso(claim.endsAt),
+          redacted: redactBlockDetails,
         })),
+        viewerRole,
+        privacy: {
+          redactBlockDetails,
+        },
       },
       range: {
         startAt: rangeStart.toISOString(),

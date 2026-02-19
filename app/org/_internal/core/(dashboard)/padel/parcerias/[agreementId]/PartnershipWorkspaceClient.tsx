@@ -67,27 +67,41 @@ type WorkspaceResponse = {
       id: string;
       bundleId: string | null;
       status: "CLAIMED" | "RELEASED" | "CANCELLED";
-      sourceType: string;
-      sourceId: string;
+      sourceType: string | null;
+      sourceId: string | null;
       courtId: number | null;
       startAt: string | null;
       endAt: string | null;
+      redacted?: boolean;
     }>;
     courts: Array<{ id: number; name: string }>;
+    viewerRole?: "OWNER" | "PARTNER";
+    privacy?: {
+      redactBlockDetails?: boolean;
+    };
   };
   calendar?: {
-    masterLane: Array<{ id: string; label: string; startAt: string | null; endAt: string | null; courtId: number | null }>;
+    masterLane: Array<{
+      id: string;
+      label: string;
+      startAt: string | null;
+      endAt: string | null;
+      courtId: number | null;
+      kind?: "BLOCK" | "MATCH" | string;
+      redacted?: boolean;
+    }>;
     partnerLane: Array<{ id: string; label: string; startAt: string | null; endAt: string | null; courtId: number | null }>;
     sharedLane: Array<{
       id: string;
       claimId?: string;
       bundleId?: string | null;
       status?: string;
-      sourceType?: string;
-      sourceId?: string;
+      sourceType?: string | null;
+      sourceId?: string | null;
       startAt: string | null;
       endAt: string | null;
       courtId: number | null;
+      redacted?: boolean;
     }>;
   };
   error?: string;
@@ -193,6 +207,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
   const cases = data?.workspace?.compensationCases ?? [];
   const claims = data?.workspace?.claims ?? [];
   const courts = data?.workspace?.courts ?? [];
+  const isRedactedForPartner = data?.workspace?.privacy?.redactBlockDetails === true;
   const calendar = data?.calendar ?? { masterLane: [], partnerLane: [], sharedLane: [] };
   const sharedCalendarRows = useMemo(
     () =>
@@ -609,13 +624,18 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
             <p className="text-sm text-white/70">Operação partilhada: acordo, janelas, permissões, exceções e calendário.</p>
           </div>
           <Link
-            href={appendOrganizationIdToHref("/org/padel/parcerias", organizationId)}
+            href={appendOrganizationIdToHref("/org/padel/clubs?tab=manage&section=padel-club&padel=partnerships", organizationId)}
             className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/85 hover:border-white/40"
           >
             Voltar
           </Link>
         </div>
         {actionFeedback && <p className="mt-2 text-sm text-white/80">{actionFeedback}</p>}
+        {isRedactedForPartner && (
+          <p className="mt-2 rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            Modo parceiro: bloqueios do clube dono aparecem apenas como indisponibilidade.
+          </p>
+        )}
       </header>
 
       {isLoading || !agreement ? (
@@ -939,7 +959,10 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                         Reivindicação #{claim.id} · Campo {claim.courtId ?? "—"} · {toStatusLabel(claim.status, CLAIM_STATUS_LABEL)}
                       </p>
                       <p className="text-white/70">
-                        {toLocalDateTime(claim.startAt)} → {toLocalDateTime(claim.endAt)} · origem {claim.sourceType}:{claim.sourceId}
+                        {toLocalDateTime(claim.startAt)} → {toLocalDateTime(claim.endAt)} ·{" "}
+                        {claim.redacted
+                          ? "origem indisponível"
+                          : `origem ${claim.sourceType ?? "—"}:${claim.sourceId ?? "—"}`}
                       </p>
                       <div className="mt-2 flex gap-2">
                         <button
@@ -1028,7 +1051,7 @@ export default function PartnershipWorkspaceClient({ agreementId, organizationId
                 <div className="space-y-2 text-xs">
                   {calendar.masterLane.map((row) => (
                     <div key={row.id} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1">
-                      <p>{row.label}</p>
+                      <p>{row.redacted ? "Indisponível" : row.label}</p>
                       <p className="text-white/70">{toLocalDateTime(row.startAt)} → {toLocalDateTime(row.endAt)}</p>
                     </div>
                   ))}

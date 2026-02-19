@@ -11,6 +11,7 @@ type ParsedAuth = {
   code?: string;
   accessToken?: string;
   refreshToken?: string;
+  type?: string;
   error?: string;
   errorDescription?: string;
 };
@@ -38,6 +39,7 @@ const parseAuthUrl = (url: string): ParsedAuth => {
     code: pick("code"),
     accessToken: pick("access_token"),
     refreshToken: pick("refresh_token"),
+    type: pick("type"),
     error: pick("error"),
     errorDescription: pick("error_description"),
   };
@@ -62,7 +64,16 @@ export default function AuthCallbackScreen() {
   }, [searchParams]);
   const [status, setStatus] = useState<"loading" | "error">("loading");
   const [message, setMessage] = useState("A confirmar o teu e-mail...");
+  const [recoveryFlowDetected, setRecoveryFlowDetected] = useState(false);
   const handledRef = useRef(false);
+  const recoveryQueryFlow = useMemo(() => {
+    const source = searchParams as Record<string, string | string[] | undefined>;
+    const rawType = source?.type;
+    const rawRecovery = source?.recovery;
+    const typeValue = Array.isArray(rawType) ? rawType[0] : rawType;
+    const recoveryValue = Array.isArray(rawRecovery) ? rawRecovery[0] : rawRecovery;
+    return typeValue === "recovery" || recoveryValue === "1";
+  }, [searchParams]);
 
   const fallbackUrl = useMemo(() => {
     const entries = Object.entries(searchParams ?? {});
@@ -84,7 +95,11 @@ export default function AuthCallbackScreen() {
       if (!url || handledRef.current) return;
       handledRef.current = true;
 
-      const { code, accessToken, refreshToken, error, errorDescription } = parseAuthUrl(url);
+      const { code, accessToken, refreshToken, type, error, errorDescription } = parseAuthUrl(url);
+      const isRecoveryFlow = type === "recovery" || recoveryQueryFlow;
+      if (isRecoveryFlow) {
+        setRecoveryFlowDetected(true);
+      }
       if (error) {
         trackEvent("auth_fail_email", { reason: error });
         setStatus("error");
@@ -107,6 +122,13 @@ export default function AuthCallbackScreen() {
         }
 
         trackEvent("auth_success_email", { mode: "confirm" });
+        if (isRecoveryFlow) {
+          router.replace({
+            pathname: "/auth/reset-password",
+            params: nextRoute ? { next: nextRoute } : {},
+          });
+          return;
+        }
         router.replace(nextRoute ?? "/");
       } catch (err: any) {
         trackEvent("auth_fail_email", { reason: "callback_error" });
@@ -131,9 +153,19 @@ export default function AuthCallbackScreen() {
       active = false;
       sub.remove();
     };
-  }, [fallbackUrl, router]);
+  }, [fallbackUrl, nextRoute, recoveryQueryFlow, router]);
 
   if (!authLoading && session) {
+    if (recoveryFlowDetected || recoveryQueryFlow) {
+      return (
+        <Redirect
+          href={{
+            pathname: "/auth/reset-password",
+            params: nextRoute ? { next: nextRoute } : {},
+          }}
+        />
+      );
+    }
     return <Redirect href={nextRoute ?? "/"} />;
   }
 

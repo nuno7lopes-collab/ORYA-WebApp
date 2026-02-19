@@ -35,6 +35,7 @@ import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
+import { GlassPill } from "../../components/liquid/GlassPill";
 import { GlassSurface } from "../../components/glass/GlassSurface";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
@@ -134,6 +135,7 @@ function MapEventThumb({ coverUri, isPadel }: MapEventThumbProps) {
           <Ionicons name="calendar-outline" size={20} color="rgba(255,255,255,0.55)" />
         </View>
       )}
+      <View pointerEvents="none" style={styles.eventThumbFrame} />
       {isPadel ? (
         <View style={styles.eventThumbTag}>
           <Text style={styles.eventThumbTagText}>TORNEIO</Text>
@@ -943,11 +945,13 @@ export default function MapScreen() {
                 <Text className="text-white text-sm font-semibold" numberOfLines={2}>
                   {event.title}
                 </Text>
-                {dateLabel ? (
-                  <Text className="text-white/60 text-xs" numberOfLines={1}>
-                    {dateLabel}
-                  </Text>
-                ) : null}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <GlassPill
+                    label={isPadel ? "TORNEIO" : "EVENTO"}
+                    variant={isPadel ? "accent" : "muted"}
+                  />
+                  {dateLabel ? <GlassPill label={dateLabel} variant="muted" /> : null}
+                </View>
                 {locationLabel ? (
                   <Text className="text-white/55 text-xs" numberOfLines={1}>
                     {locationLabel}
@@ -956,10 +960,10 @@ export default function MapScreen() {
                 {(priceLabel || distanceLabel) ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     {priceLabel ? (
-                      <Text className="text-white/80 text-xs font-semibold">{priceLabel}</Text>
+                      <Text className="text-white/82 text-xs font-semibold">{priceLabel}</Text>
                     ) : null}
                     {distanceLabel ? (
-                      <Text className="text-white/45 text-[11px]">· {distanceLabel}</Text>
+                      <Text className="text-white/55 text-[11px]">· {distanceLabel}</Text>
                     ) : null}
                   </View>
                 ) : null}
@@ -1136,29 +1140,35 @@ export default function MapScreen() {
             }
           }}
         >
-          {markerEvents.map((event) => (
-            <Marker
-              key={`marker-${event.id}`}
-              coordinate={{
-                latitude: event.location?.lat ?? 0,
-                longitude: event.location?.lng ?? 0,
-              }}
-              onPress={() => handleSelectEvent(event)}
-            >
-              <View
-                style={[
-                  styles.markerShell,
-                  event.id === selectedEventId ? styles.markerShellActive : null,
-                ]}
+          {markerEvents.map((event) => {
+            const isPadelMarker =
+              Boolean(event.tournament) ||
+              (event.categories ?? []).includes("PADEL");
+            const active = event.id === selectedEventId;
+            return (
+              <Marker
+                key={`marker-${event.id}`}
+                coordinate={{
+                  latitude: event.location?.lat ?? 0,
+                  longitude: event.location?.lng ?? 0,
+                }}
+                onPress={() => handleSelectEvent(event)}
               >
-                <Ionicons
-                  name="sparkles"
-                  size={16}
-                  color={event.id === selectedEventId ? "#0b101a" : "rgba(245,250,255,0.9)"}
-                />
-              </View>
-            </Marker>
-          ))}
+                <View
+                  style={[
+                    styles.markerShell,
+                    active ? styles.markerShellActive : null,
+                  ]}
+                >
+                  <Ionicons
+                    name={isPadelMarker ? "tennisball" : "sparkles"}
+                    size={16}
+                    color={active ? "#0b101a" : "rgba(245,250,255,0.9)"}
+                  />
+                </View>
+              </Marker>
+            );
+          })}
         </MapView>
 
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
@@ -1225,6 +1235,7 @@ export default function MapScreen() {
         >
           <GestureDetector gesture={sheetGesture}>
             <Animated.View style={[styles.sheetBackground, sheetAnimatedStyle]}>
+              <View pointerEvents="none" style={styles.sheetTopLine} />
               <View style={styles.sheetHandleContainer}>
                 <View style={styles.sheetHandleIndicator} />
               </View>
@@ -1314,8 +1325,13 @@ const styles = {
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(10,14,24,0.72)",
+    borderColor: "rgba(208,235,255,0.3)",
+    backgroundColor: "rgba(9,14,24,0.82)",
+    shadowColor: "rgba(0,0,0,0.5)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 4,
   },
   iconButton: {
     width: tokens.layout.touchTarget,
@@ -1324,8 +1340,8 @@ const styles = {
     alignItems: "center" as const,
     justifyContent: "center" as const,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(10,14,24,0.65)",
+    borderColor: "rgba(208,235,255,0.28)",
+    backgroundColor: "rgba(9,14,24,0.78)",
   },
   controlPressed: {
     opacity: 0.8,
@@ -1342,11 +1358,11 @@ const styles = {
     minHeight: tokens.layout.touchTarget,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(10,14,24,0.8)",
+    borderColor: "rgba(208,235,255,0.24)",
+    backgroundColor: "rgba(9,14,24,0.82)",
   },
   locationPromptLabel: {
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(236,246,255,0.9)",
     fontSize: 12,
     fontWeight: "600" as const,
   },
@@ -1354,10 +1370,20 @@ const styles = {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(10,14,24,0.92)",
+    borderColor: "rgba(198,230,255,0.18)",
+    backgroundColor: "rgba(8,13,23,0.95)",
     overflow: "hidden" as const,
     flex: 1,
+  },
+  sheetTopLine: {
+    position: "absolute" as const,
+    left: 16,
+    right: 16,
+    top: 0,
+    height: 1,
+    borderRadius: 999,
+    backgroundColor: "rgba(222,242,255,0.32)",
+    zIndex: 2,
   },
   sheetWrapper: {
     position: "absolute" as const,
@@ -1372,7 +1398,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.45)",
+    borderColor: "rgba(214,238,255,0.56)",
     backgroundColor: "rgba(12,18,30,0.88)",
     shadowColor: "#0b101a",
     shadowOpacity: 0.3,
@@ -1381,7 +1407,7 @@ const styles = {
   },
   markerShellActive: {
     backgroundColor: "rgba(255,255,255,0.92)",
-    borderColor: "rgba(255,255,255,0.95)",
+    borderColor: "rgba(188,229,255,0.98)",
     shadowOpacity: 0.45,
   },
   sheetHandleContainer: {
@@ -1396,15 +1422,15 @@ const styles = {
     width: 48,
     height: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(224,242,255,0.46)",
   },
   brandBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(208,235,255,0.28)",
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
   brandBadgeText: {
     color: "rgba(255,255,255,0.85)",
@@ -1420,9 +1446,9 @@ const styles = {
     justifyContent: "space-between" as const,
   },
   sheetHeaderSticky: {
-    backgroundColor: "rgba(10,14,24,0.96)",
+    backgroundColor: "rgba(8,13,23,0.97)",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.06)",
+    borderBottomColor: "rgba(206,233,255,0.12)",
     paddingTop: 4,
   },
   sheetHeaderInfo: {
@@ -1453,7 +1479,7 @@ const styles = {
     flexShrink: 1,
   },
   sheetSubtitle: {
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(231,244,255,0.68)",
     fontSize: 12,
     marginTop: 2,
     flexShrink: 1,
@@ -1464,13 +1490,13 @@ const styles = {
     minHeight: tokens.layout.touchTarget,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(208,235,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
   resetLabel: {
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(236,246,255,0.9)",
     fontSize: 12,
     fontWeight: "600" as const,
   },
@@ -1506,7 +1532,13 @@ const styles = {
     height: 72,
     borderRadius: 16,
     overflow: "hidden" as const,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  eventThumbFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
   },
   eventThumbFallback: {
     flex: 1,
@@ -1519,8 +1551,8 @@ const styles = {
     left: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.28)",
-    backgroundColor: "rgba(10,14,24,0.62)",
+    borderColor: "rgba(208,235,255,0.34)",
+    backgroundColor: "rgba(9,14,24,0.72)",
     paddingHorizontal: 7,
     paddingVertical: 3,
   },

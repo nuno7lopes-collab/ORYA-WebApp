@@ -3860,6 +3860,39 @@ model PadelPartnershipCompensationCase {
   @@schema("app_v3")
 }
 
+/// Pedido de aprovação pré-criação de torneio em clube parceiro
+model PadelPartnershipTournamentRequest {
+  env                   String                                 @default("prod")
+  id                    Int                                    @id @default(autoincrement())
+  agreementId           Int                                    @map("agreement_id")
+  ownerOrganizationId   Int                                    @map("owner_organization_id")
+  partnerOrganizationId Int                                    @map("partner_organization_id")
+  ownerClubId           Int                                    @map("owner_club_id")
+  partnerClubId         Int                                    @map("partner_club_id")
+  title                 String
+  startsAt              DateTime                               @map("starts_at") @db.Timestamptz(6)
+  endsAt                DateTime                               @map("ends_at") @db.Timestamptz(6)
+  requestedPayload      Json?                                  @default("{}") @map("requested_payload")
+  requestedByUserId     String?                                @map("requested_by_user_id") @db.Uuid
+  reviewedByUserId      String?                                @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt            DateTime?                              @map("reviewed_at") @db.Timestamptz(6)
+  status                PadelPartnershipTournamentRequestStatus @default(PENDING)
+  eventId               Int?                                   @map("event_id")
+  expiresAt             DateTime?                              @map("expires_at") @db.Timestamptz(6)
+  createdAt             DateTime                               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([agreementId], map: "padel_partnership_tournament_requests_agreement_idx")
+  @@index([ownerOrganizationId], map: "padel_partnership_tournament_requests_owner_org_idx")
+  @@index([partnerOrganizationId], map: "padel_partnership_tournament_requests_partner_org_idx")
+  @@index([ownerClubId], map: "padel_partnership_tournament_requests_owner_club_idx")
+  @@index([partnerClubId], map: "padel_partnership_tournament_requests_partner_club_idx")
+  @@index([status], map: "padel_partnership_tournament_requests_status_idx")
+  @@index([eventId], map: "padel_partnership_tournament_requests_event_idx")
+  @@map("padel_partnership_tournament_requests")
+  @@schema("app_v3")
+}
+
 /// Claim canónico de ocupação multi-recurso para agenda operacional
 model AgendaResourceClaim {
   env            String                    @default("prod")
@@ -6707,6 +6740,16 @@ enum PadelPartnershipCompensationStatus {
   PENDING_COMPENSATION
   MANUAL_RESOLVED
   CANCELLED
+
+  @@schema("app_v3")
+}
+
+enum PadelPartnershipTournamentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
 
   @@schema("app_v3")
 }

@@ -69,6 +69,7 @@ export type PadelPlanInput = {
   nonStopQueueRules?: PadelNonStopQueueRules | null;
   windowStart: Date | string;
   windowEnd: Date | string;
+  timeWindows?: Array<{ start: Date | string; end: Date | string }> | null;
   durationMinutes: number;
   bufferMinutes?: number | null;
   courtIds?: number[] | null;

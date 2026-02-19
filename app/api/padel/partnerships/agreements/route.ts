@@ -55,7 +55,21 @@ async function _GET(req: NextRequest) {
   });
 
   const agreementIds = items.map((item) => item.id);
-  const [policies, windows, grants] = agreementIds.length
+  const organizationIds = Array.from(
+    new Set(
+      items
+        .flatMap((item) => [item.ownerOrganizationId, item.partnerOrganizationId])
+        .filter((id): id is number => Number.isFinite(id) && id > 0),
+    ),
+  );
+  const clubIds = Array.from(
+    new Set(
+      items
+        .flatMap((item) => [item.ownerClubId, item.partnerClubId ?? null])
+        .filter((id): id is number => Number.isFinite(id) && id > 0),
+    ),
+  );
+  const [policies, windows, grants, organizations, clubs] = agreementIds.length
     ? await Promise.all([
         prisma.padelPartnershipBookingPolicy.findMany({
           where: { agreementId: { in: agreementIds } },
@@ -68,9 +82,24 @@ async function _GET(req: NextRequest) {
           where: { agreementId: { in: agreementIds } },
           select: { agreementId: true, isActive: true, revokedAt: true, expiresAt: true },
         }),
+        prisma.organization.findMany({
+          where: { id: { in: organizationIds } },
+          select: { id: true, publicName: true, businessName: true, username: true },
+        }),
+        prisma.padelClub.findMany({
+          where: { id: { in: clubIds }, deletedAt: null },
+          select: { id: true, name: true },
+        }),
       ])
-    : [[], [], []];
+    : [[], [], [], [], []];
   const policyByAgreementId = new Map(policies.map((policy) => [policy.agreementId, policy]));
+  const organizationNameById = new Map(
+    organizations.map((organization) => [
+      organization.id,
+      organization.publicName || organization.businessName || organization.username || `Org #${organization.id}`,
+    ]),
+  );
+  const clubNameById = new Map(clubs.map((club) => [club.id, club.name]));
   const windowsCountByAgreementId = new Map<number, number>();
   const activeWindowsCountByAgreementId = new Map<number, number>();
   windows.forEach((window) => {
@@ -99,6 +128,10 @@ async function _GET(req: NextRequest) {
       ok: true,
       items: items.map((item) => ({
         ...item,
+        ownerOrganizationName: organizationNameById.get(item.ownerOrganizationId) ?? null,
+        partnerOrganizationName: organizationNameById.get(item.partnerOrganizationId) ?? null,
+        ownerClubName: clubNameById.get(item.ownerClubId) ?? null,
+        partnerClubName: item.partnerClubId ? clubNameById.get(item.partnerClubId) ?? null : null,
         policy: policyByAgreementId.get(item.id) ?? null,
         windowsCount: windowsCountByAgreementId.get(item.id) ?? 0,
         activeWindowsCount: activeWindowsCountByAgreementId.get(item.id) ?? 0,

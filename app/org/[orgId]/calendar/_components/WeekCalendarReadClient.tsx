@@ -539,6 +539,37 @@ function formatHourMinute(date: Date, timezone: string) {
   return getHourMinuteFormatter(timezone).format(date);
 }
 
+function getAgendaItemIdentity(item: AgendaItem) {
+  if (item.kind === "RESERVATION" && Number.isFinite(item.reservationId) && Number(item.reservationId) > 0) {
+    return `RESERVATION-${Number(item.reservationId)}`;
+  }
+  if (item.kind === "EVENT" && Number.isFinite(item.eventId) && Number(item.eventId) > 0) {
+    return `EVENT-${Number(item.eventId)}`;
+  }
+  if (item.kind === "TOURNAMENT" && Number.isFinite(item.tournamentId) && Number(item.tournamentId) > 0) {
+    return `TOURNAMENT-${Number(item.tournamentId)}`;
+  }
+  return [
+    item.kind,
+    item.title,
+    item.startsAt,
+    item.endsAt,
+    item.status,
+    item.resourceId ?? "no-resource",
+    item.courtId ?? "no-court",
+    item.professionalId ?? "no-professional",
+  ].join("-");
+}
+
+function getProjectedEntryKey(entry: ProjectedAgendaItem, occurrenceIndex: number) {
+  return [
+    getAgendaItemIdentity(entry.item),
+    entry.start.toISOString(),
+    entry.end.toISOString(),
+    occurrenceIndex,
+  ].join("-");
+}
+
 function isTypingTarget(target: EventTarget | null) {
   const element = target as HTMLElement | null;
   if (!element) return false;
@@ -1315,9 +1346,9 @@ export default function WeekCalendarReadClient() {
                                     {formatHourMinute(aggregate.start, timezone)} - {formatHourMinute(aggregate.end, timezone)} ·{" "}
                                     {aggregate.items.length} {aggregate.items.length === 1 ? "ocupação" : "ocupações"}
                                   </p>
-                                  {aggregate.items.slice(0, 3).map((entry) => (
+                                  {aggregate.items.slice(0, 3).map((entry, index) => (
                                     <p
-                                      key={`${entry.item.kind}-${entry.item.title}-${entry.start.toISOString()}`}
+                                      key={getProjectedEntryKey(entry, index)}
                                       className="mt-0.5 truncate text-[10px] text-white/80"
                                     >
                                       {formatHourMinute(entry.start, timezone)} {entry.item.title}
@@ -1388,7 +1419,7 @@ export default function WeekCalendarReadClient() {
                 {focusedAggregate.items.length} {focusedAggregate.items.length === 1 ? "ocupação" : "ocupações"}
               </p>
               <div className="mt-2 space-y-2">
-                {focusedAggregate.items.map((entry) => {
+                {focusedAggregate.items.map((entry, index) => {
                   const resourceLabel = entry.item.resourceId ? resourcesById.get(entry.item.resourceId)?.label ?? null : null;
                   const courtLabel = entry.item.courtId ? courtsById.get(entry.item.courtId)?.label ?? null : null;
                   const professionalLabel = entry.item.professionalId
@@ -1396,7 +1427,7 @@ export default function WeekCalendarReadClient() {
                     : null;
                   return (
                     <div
-                      key={`${entry.item.kind}-${entry.item.title}-${entry.start.toISOString()}`}
+                      key={getProjectedEntryKey(entry, index)}
                       className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5"
                     >
                       <p className="truncate text-[11px] text-white/90">

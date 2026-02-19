@@ -44,8 +44,8 @@ export const TAB_BAR_HEIGHT = 50;
 const RIGHT_PILL_SIZE = 44;
 const ICON_SIZE = 22;
 const ICON_NUDGE_Y = -0.5;
-const ACTIVE_ICON_COLOR = "rgba(255,255,255,1)";
-const INACTIVE_ICON_COLOR = "rgba(235,242,255,0.78)";
+const ACTIVE_ICON_COLOR = "rgba(248,252,255,1)";
+const INACTIVE_ICON_COLOR = "rgba(228,240,255,0.8)";
 const TAB_SLOT_SIZE = 44;
 const SLOTS_SIDE_PADDING = 18;
 const BUBBLE_EXTRA = 30;
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
     height: TAB_BAR_HEIGHT,
     borderRadius: TAB_BAR_HEIGHT / 2,
     overflow: "hidden",
-    backgroundColor: "rgba(14,18,28,0.6)",
+    backgroundColor: "rgba(10,14,24,0.74)",
   },
   track: {
     flex: 1,
@@ -599,7 +599,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: TAB_BAR_HEIGHT / 2,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(208,235,255,0.24)",
   },
   pillFillWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: RIGHT_PILL_SIZE / 2,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(208,235,255,0.24)",
   },
   bubbleTrack: {
     position: "absolute",
@@ -635,9 +635,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(172,225,255,0.4)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.32)",
+    borderColor: "rgba(208,235,255,0.56)",
   },
   bubbleFillWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -679,8 +679,8 @@ const styles = StyleSheet.create({
     right: BUBBLE_GAP,
     borderRadius: 999,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.28)",
+    backgroundColor: "rgba(172,225,255,0.4)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.32)",
+    borderColor: "rgba(208,235,255,0.56)",
   },
 });

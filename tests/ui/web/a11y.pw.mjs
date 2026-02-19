@@ -29,15 +29,23 @@ function summarizeCritical(violations) {
 
 async function gotoRoute(page, route) {
   let lastError = null;
+  let lastResponse = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await page.goto(route, { waitUntil: "domcontentloaded" });
+      const response = await page.goto(route, { waitUntil: "domcontentloaded" });
+      lastResponse = response;
+      if (!response || response.status() < 500) {
+        return response;
+      }
+      if (attempt === 1) return response;
+      await page.waitForTimeout(500);
     } catch (error) {
       lastError = error;
       if (attempt === 1) throw error;
-      await page.waitForTimeout(250);
+      await page.waitForTimeout(500);
     }
   }
+  if (lastResponse) return lastResponse;
   throw lastError ?? new Error(`failed to navigate route=${route}`);
 }
 

@@ -92,7 +92,12 @@ async function _POST() {
       }
     }
 
-    const hasUserOnboardingData = Boolean(profile.fullName?.trim()) && Boolean(profile.username?.trim());
+    const hasPadelInterest = (profile.favouriteCategories ?? []).includes("padel");
+    const hasPadelProfileSignals = Boolean(profile.gender) && Boolean(profile.padelPreferredSide);
+    const hasUserOnboardingData =
+      Boolean(profile.fullName?.trim()) &&
+      Boolean(profile.username?.trim()) &&
+      (!hasPadelInterest || hasPadelProfileSignals);
     if (!profile.onboardingDone && hasUserOnboardingData) {
       try {
         profile = await prisma.profile.update({

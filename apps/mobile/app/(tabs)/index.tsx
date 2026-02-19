@@ -696,6 +696,38 @@ export default function DiscoverScreen() {
                   title={t("discover:sections.forYou")}
                   subtitle={activeKindMeta.subtitle}
                 />
+                {hasActiveFilters ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.activeFiltersRow}
+                    onScrollBeginDrag={handleWorldScrollStart}
+                    onScrollEndDrag={handleWorldScrollEnd}
+                    onMomentumScrollEnd={handleWorldScrollEnd}
+                  >
+                    {activeFilters.map((chip) => (
+                      <Pressable
+                        key={chip.key}
+                        onPress={chip.onPress}
+                        accessibilityRole="button"
+                        accessibilityLabel={chip.label}
+                        style={({ pressed }) => [
+                          styles.activeFilterChip,
+                          pressed ? styles.activeFilterChipPressed : null,
+                        ]}
+                      >
+                        <Text style={styles.activeFilterChipText} numberOfLines={1}>
+                          {chip.label}
+                        </Text>
+                        <Ionicons
+                          name="close"
+                          size={14}
+                          color="rgba(236,246,255,0.94)"
+                        />
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                ) : null}
               </View>
             </View>
           }
@@ -874,16 +906,16 @@ const styles = StyleSheet.create({
   },
   worldsRow: {
     gap: 10,
-    paddingBottom: 4,
+    paddingBottom: 6,
     paddingRight: 2,
   },
   worldPill: {
     minWidth: 108,
-    minHeight: 80,
-    borderRadius: 16,
+    minHeight: 84,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(204,233,255,0.24)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     paddingVertical: 12,
     paddingHorizontal: 10,
     alignItems: "center",
@@ -891,30 +923,30 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   worldPillActive: {
-    borderColor: "rgba(170, 220, 255, 0.72)",
-    backgroundColor: "rgba(255,255,255,0.24)",
-    shadowColor: "rgba(110, 205, 255, 0.5)",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: "rgba(175, 226, 255, 0.82)",
+    backgroundColor: "rgba(255,255,255,0.28)",
+    shadowColor: "rgba(118, 206, 255, 0.58)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.34,
+    shadowRadius: 16,
+    elevation: 4,
   },
   worldPillIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(216,238,255,0.3)",
+    backgroundColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
   worldPillIconWrapActive: {
-    borderColor: "rgba(195, 232, 255, 0.7)",
-    backgroundColor: "rgba(155, 215, 255, 0.22)",
+    borderColor: "rgba(206,236,255,0.76)",
+    backgroundColor: "rgba(164,221,255,0.28)",
   },
   worldPillText: {
-    color: "rgba(228, 241, 255, 0.8)",
+    color: "rgba(232, 244, 255, 0.86)",
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
@@ -926,37 +958,37 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   quickFiltersScroll: {
-    paddingBottom: 2,
+    paddingBottom: 4,
     gap: 8,
   },
   filtersButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10.5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(255,255,255,0.09)",
+    borderColor: "rgba(209,235,255,0.24)",
+    backgroundColor: "rgba(255,255,255,0.13)",
     minHeight: tokens.layout.touchTarget,
     justifyContent: "center",
   },
   filtersButtonActive: {
-    borderColor: "rgba(170, 220, 255, 0.55)",
-    backgroundColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(177, 226, 255, 0.75)",
+    backgroundColor: "rgba(255,255,255,0.25)",
   },
   filtersButtonText: {
-    color: "rgba(255,255,255,0.88)",
+    color: "rgba(248,252,255,0.96)",
     fontWeight: "600",
-    fontSize: 12,
+    fontSize: 12.5,
   },
   filtersBadge: {
     minWidth: 18,
     height: 18,
     paddingHorizontal: 5,
     borderRadius: 999,
-    backgroundColor: "rgba(142, 206, 255, 0.86)",
+    backgroundColor: "rgba(171, 225, 255, 0.94)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -966,7 +998,32 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   headerSectionWrap: {
-    paddingBottom: 4,
+    paddingBottom: 6,
+    gap: 10,
+  },
+  activeFiltersRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  activeFilterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(196,231,255,0.3)",
+    backgroundColor: "rgba(16, 27, 41, 0.66)",
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  activeFilterChipPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  activeFilterChipText: {
+    color: "rgba(236,246,255,0.94)",
+    fontSize: 11.5,
+    fontWeight: "600",
   },
   listFooter: {
     width: "100%",
@@ -1064,21 +1121,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 15,
     height: tokens.layout.touchTarget,
     minHeight: tokens.layout.touchTarget,
-    borderRadius: 21,
+    borderRadius: 23,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(208,234,255,0.28)",
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   searchBarPressed: {
-    opacity: 0.9,
+    opacity: 0.92,
   },
   searchPlaceholder: {
     flex: 1,
-    color: "rgba(235, 244, 255, 0.72)",
-    fontSize: 14,
+    color: "rgba(238, 246, 255, 0.82)",
+    fontSize: 14.5,
     fontWeight: "600",
   },
 });

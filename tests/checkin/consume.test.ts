@@ -37,11 +37,32 @@ import { POST } from "@/app/api/internal/checkin/consume/route";
 import { CheckinResultCode, EntitlementStatus, EntitlementType, CheckinMethod } from "@prisma/client";
 
 type CheckinRow = { resultCode: string; checkedInAt: Date };
+type ChatAccessGrantRow = {
+  id: string;
+  kind: string;
+  eventId: number | null;
+  entitlementId: string | null;
+  status: string;
+  threadId: string | null;
+  conversationId: string | null;
+  targetUserId: string | null;
+  expiresAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const { createNotificationMock, logErrorMock, logWarnMock } = vi.hoisted(() => ({
+  createNotificationMock: vi.fn(),
+  logErrorMock: vi.fn(),
+  logWarnMock: vi.fn(),
+}));
 
 let checkins: CheckinRow[] = [];
 let entitlementState: any = null;
 let policyState: any = null;
 let eventState: any = null;
+let chatAccessGrants: ChatAccessGrantRow[] = [];
+let failInviteLookup = false;
 
 vi.mock("@/lib/prisma", () => {
   const entitlementCheckin = {
@@ -71,11 +92,60 @@ vi.mock("@/lib/prisma", () => {
     findFirst: vi.fn(() => policyState),
     findUnique: vi.fn(() => policyState),
   };
+  const chatConversation = {
+    findFirst: vi.fn(() => {
+      if (failInviteLookup) throw new TypeError("chatConversation.findFirst unavailable");
+      return { id: "conv-1" };
+    }),
+  };
+  const chatAccessGrant = {
+    findFirst: vi.fn(({ where }: any) => {
+      const rows = chatAccessGrants.filter(
+        (row) =>
+          row.kind === (where?.kind ?? row.kind) &&
+          row.eventId === (where?.eventId ?? row.eventId) &&
+          row.entitlementId === (where?.entitlementId ?? row.entitlementId),
+      );
+      const row = rows[rows.length - 1] ?? null;
+      if (!row) return null;
+      return { id: row.id, status: row.status, threadId: row.threadId };
+    }),
+    update: vi.fn(({ where, data }: any) => {
+      const row = chatAccessGrants.find((item) => item.id === where?.id);
+      if (!row) throw new Error("chatAccessGrant not found");
+      row.status = data?.status ?? row.status;
+      row.threadId = data?.threadId ?? row.threadId;
+      row.conversationId = data?.conversationId ?? row.conversationId;
+      row.targetUserId = data?.targetUserId ?? row.targetUserId;
+      row.expiresAt = data?.expiresAt ?? row.expiresAt;
+      row.updatedAt = data?.updatedAt ?? new Date();
+      return row;
+    }),
+    create: vi.fn(({ data, select }: any) => {
+      const row: ChatAccessGrantRow = {
+        id: `grant-${chatAccessGrants.length + 1}`,
+        kind: data.kind,
+        eventId: data.eventId ?? null,
+        entitlementId: data.entitlementId ?? null,
+        status: data.status ?? "PENDING",
+        threadId: data.threadId ?? null,
+        conversationId: data.conversationId ?? null,
+        targetUserId: data.targetUserId ?? null,
+        expiresAt: data.expiresAt ?? null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      chatAccessGrants.push(row);
+      return select ? { id: row.id, threadId: row.threadId } : row;
+    }),
+  };
   const prisma = {
     entitlementCheckin,
     entitlementQrToken,
     event,
     eventAccessPolicy,
+    chatConversation,
+    chatAccessGrant,
     $transaction: async (fn: any) => fn(prisma),
   };
   return { prisma };
@@ -83,6 +153,15 @@ vi.mock("@/lib/prisma", () => {
 
 vi.mock("@/lib/organizationAudit", () => ({
   recordOrganizationAuditSafe: vi.fn(),
+}));
+
+vi.mock("@/lib/notifications", () => ({
+  createNotification: createNotificationMock,
+}));
+
+vi.mock("@/lib/observability/logger", () => ({
+  logError: logErrorMock,
+  logWarn: logWarnMock,
 }));
 
 function makeReq(body: Record<string, unknown>) {
@@ -100,18 +179,31 @@ describe("checkin.consume v7", () => {
   beforeEach(() => {
     process.env.ORYA_CRON_SECRET = "secret";
     checkins = [];
+    chatAccessGrants = [];
+    failInviteLookup = false;
+    createNotificationMock.mockReset();
+    logErrorMock.mockReset();
+    logWarnMock.mockReset();
     policyState = {
       eventId: 1,
       policyVersion: 2,
       checkinMethods: [CheckinMethod.QR_TICKET],
       requiresEntitlementForEntry: true,
     };
-    eventState = { id: 1, startsAt: new Date(Date.now() - 60_000), endsAt: new Date(Date.now() + 60_000), organizationId: 10 };
+    eventState = {
+      id: 1,
+      title: "Evento Teste",
+      slug: "evento-teste",
+      startsAt: new Date(Date.now() - 60_000),
+      endsAt: new Date(Date.now() + 60_000),
+      organizationId: 10,
+    };
     entitlementState = {
       id: "ent-1",
       eventId: 1,
       type: EntitlementType.EVENT_TICKET,
       status: EntitlementStatus.ACTIVE,
+      ownerUserId: "user-1",
       purchaseId: "p-1",
       policyVersionApplied: 2,
       checkins: [],
@@ -123,12 +215,30 @@ describe("checkin.consume v7", () => {
     const json1 = await res1.json();
     expect(json1.data.allow).toBe(true);
     expect(json1.data.entitlementId).toBe("ent-1");
+    expect(createNotificationMock).toHaveBeenCalledTimes(1);
     entitlementState.checkins = checkins;
 
     const res2 = await POST(makeReq({ qrPayload: "token", eventId: 1, deviceId: "dev-1" }) as any);
     const json2 = await res2.json();
     expect(json2.data.allow).toBe(false);
     expect(json2.data.reasonCode).toBe(CheckinResultCode.ALREADY_USED);
+    expect(createNotificationMock).toHaveBeenCalledTimes(1);
+    expect(logErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("não bloqueia o checkin quando o convite de chat falha", async () => {
+    failInviteLookup = true;
+
+    const res = await POST(makeReq({ qrPayload: "token", eventId: 1, deviceId: "dev-1" }) as any);
+    const json = await res.json();
+    expect(json.data.allow).toBe(true);
+    expect(json.data.entitlementId).toBe("ent-1");
+    expect(createNotificationMock).not.toHaveBeenCalled();
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "internal.checkin.invite_failed",
+      expect.any(Error),
+      expect.objectContaining({ requestId: expect.any(String) }),
+    );
   });
 
   it("policyVersionApplied obrigatório quando existe policy", async () => {

@@ -7,8 +7,12 @@ import {
 
 type CreateCheckoutInput = {
   slug: string;
-  ticketTypeId: number;
-  quantity: number;
+  ticketTypeId?: number;
+  quantity?: number;
+  items?: Array<{
+    ticketTypeId: number;
+    quantity: number;
+  }>;
   paymentMethod: CheckoutMethod;
   purchaseId?: string | null;
   idempotencyKey?: string | null;
@@ -65,11 +69,32 @@ const unwrapRawResponse = <T>(result: ApiRawResult<unknown>): T => {
 export const createCheckoutIntent = async (
   input: CreateCheckoutInput,
 ): Promise<CheckoutIntentResponse> => {
+  const items =
+    Array.isArray(input.items) && input.items.length > 0
+      ? input.items
+          .filter(
+            (item) =>
+              Number.isFinite(item.ticketTypeId) &&
+              Number.isFinite(item.quantity) &&
+              item.quantity > 0,
+          )
+          .map((item) => ({
+            ticketId: item.ticketTypeId,
+            quantity: Math.floor(item.quantity),
+          }))
+      : Number.isFinite(input.ticketTypeId) &&
+          Number.isFinite(input.quantity) &&
+          (input.quantity ?? 0) > 0
+        ? [{ ticketId: input.ticketTypeId as number, quantity: Math.floor(input.quantity as number) }]
+        : [];
+  if (items.length === 0) {
+    throw new ApiError(400, "Seleciona pelo menos um bilhete.");
+  }
   const response = await api.requestRaw<unknown>("/api/payments/intent", {
     method: "POST",
     body: JSON.stringify({
       slug: input.slug,
-      items: [{ ticketId: input.ticketTypeId, quantity: input.quantity }],
+      items,
       paymentMethod: toApiPaymentMethod(input.paymentMethod),
       paymentScenario: input.paymentScenario ?? "SINGLE",
       purchaseId: input.purchaseId ?? undefined,

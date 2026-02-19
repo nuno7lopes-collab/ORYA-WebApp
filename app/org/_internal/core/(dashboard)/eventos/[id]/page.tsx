@@ -421,7 +421,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
   const hubCalendarHref = hubBaseHref ? `${hubBaseHref}&padel=calendar&eventId=${event.id}` : null;
   const hubCalendarAutoHref = hubCalendarHref ? `${hubCalendarHref}#auto-schedule` : null;
   const hubClubHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
-  const hubCourtsHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=courts` : null;
+  const hubCourtsHref = isPadelEvent ? `/org/padel/clubs?section=padel-club&padel=clubs` : null;
   const hubCategoriesHref = hubBaseHref ? `${hubBaseHref}&padel=categories` : null;
 
   const activePadelLinks = isPadelEvent ? padelLinks.filter((link) => link.isEnabled !== false) : [];
@@ -1354,6 +1354,7 @@ export default async function OrganizationEventDetailPage({ params }: PageProps)
             eventSlug={event.slug}
             categoriesMeta={categoriesMeta}
             organizationId={event.organizationId}
+            coverImageUrl={event.coverImageUrl}
           />
         </section>
       )}

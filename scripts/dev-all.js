@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const net = require("net");
 const http = require("http");
 const https = require("https");
 const repoRoot = path.resolve(__dirname, "..");
@@ -150,6 +151,75 @@ function run(label, cmd, args, extraEnv) {
   });
 
   return child;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRedisTarget(redisUrl, fallbackPort = "6379") {
+  if (!redisUrl) return null;
+  try {
+    const parsed = new URL(redisUrl);
+    if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") return null;
+    const host = parsed.hostname || "127.0.0.1";
+    const port = Number(parsed.port || fallbackPort || "6379");
+    if (!Number.isFinite(port) || port <= 0) return null;
+    return { host, port };
+  } catch {
+    return null;
+  }
+}
+
+function isLocalHost(host) {
+  if (!host) return false;
+  return ["127.0.0.1", "localhost", "::1", "0.0.0.0"].includes(String(host).toLowerCase());
+}
+
+function canConnectTcp(host, port, timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+async function waitForRedisReady(redisUrl, options = {}) {
+  const target = parseRedisTarget(redisUrl, process.env.REDIS_PORT || "6379");
+  if (!target) return true;
+  if (!isLocalHost(target.host)) return true;
+
+  const timeoutMs = Number(options.timeoutMs || process.env.DEV_ALL_REDIS_WAIT_MS || 30000);
+  const intervalMs = Number(options.intervalMs || process.env.DEV_ALL_REDIS_WAIT_INTERVAL_MS || 500);
+  const deadline = Date.now() + Math.max(1000, timeoutMs);
+  const safeIntervalMs = Math.max(100, intervalMs);
+
+  console.log(
+    `[dev-all] Waiting for Redis at ${target.host}:${target.port} before starting chat-ws...`,
+  );
+
+  while (Date.now() < deadline) {
+    const ready = await canConnectTcp(target.host, target.port);
+    if (ready) {
+      console.log("[dev-all] Redis ready.");
+      return true;
+    }
+    await sleep(safeIntervalMs);
+  }
+
+  console.log(
+    `[dev-all] Redis not ready after ${timeoutMs}ms. Starting chat-ws anyway (may retry internally).`,
+  );
+  return false;
 }
 
 function runCmd(command) {
@@ -500,7 +570,7 @@ const children = [
 
 let deferredStarted = false;
 
-function startDeferredServices() {
+async function startDeferredServices() {
   if (deferredStarted) return;
   deferredStarted = true;
   console.log("[dev-all] Server ready. Starting cron/worker/services...");
@@ -563,6 +633,10 @@ function startDeferredServices() {
         ]),
       );
     }
+  }
+
+  if (startChatWs && process.env.REDIS_URL) {
+    await waitForRedisReady(process.env.REDIS_URL);
   }
 
   if (startChatWs) {
@@ -668,7 +742,9 @@ async function checkServerReady() {
 
 const skipWait = parseBool(process.env.DEV_ALL_SKIP_WAIT, false);
 if (skipWait) {
-  startDeferredServices();
+  startDeferredServices().catch((err) => {
+    console.error("[dev-all] Failed to start deferred services:", err?.message || err);
+  });
 } else {
   let logged = false;
   const intervalMs = Number(process.env.DEV_ALL_WAIT_INTERVAL_MS || 2000);
@@ -676,7 +752,9 @@ if (skipWait) {
     const ready = await checkServerReady();
     if (ready) {
       clearInterval(timer);
-      startDeferredServices();
+      startDeferredServices().catch((err) => {
+        console.error("[dev-all] Failed to start deferred services:", err?.message || err);
+      });
     } else if (!logged) {
       console.log("[dev-all] Waiting for server before starting cron/worker...");
       logged = true;

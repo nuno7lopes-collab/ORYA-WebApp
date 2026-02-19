@@ -1,7 +1,8 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { lockBodyScroll } from "@/lib/dom/bodyScrollLock";
 
 type Props = {
   open: boolean;
@@ -26,16 +27,27 @@ export function ConfirmDestructiveActionDialog({
   onConfirm,
   onClose,
 }: Props) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = original;
-    };
+    return lockBodyScroll();
   }, [open]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open || !mounted) return null;
 
   const tone =
     dangerLevel === "high"
@@ -44,7 +56,7 @@ export function ConfirmDestructiveActionDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-[190] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
       role="dialog"
       aria-modal="true"
       aria-label={title}

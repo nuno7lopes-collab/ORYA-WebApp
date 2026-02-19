@@ -266,8 +266,9 @@ export default function SettingsScreen() {
     setResetting(true);
     setEmailMessage(null);
     try {
+      const callbackUrl = Linking.createURL("auth/callback");
       await supabase.auth.resetPasswordForEmail(normalized, {
-        redirectTo: Linking.createURL("auth/callback"),
+        redirectTo: `${callbackUrl}${callbackUrl.includes("?") ? "&" : "?"}type=recovery`,
       });
       setEmailMessage(t("settings:messages.resetSent"));
     } catch {

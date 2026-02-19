@@ -159,6 +159,20 @@
         "sessionMissing": "Sessão não criada."
       }
     },
+    "resetPassword": {
+      "title": "Definir nova password",
+      "subtitle": "Cria uma nova password para voltares a entrar em segurança.",
+      "newPassword": "Nova password",
+      "confirmPassword": "Confirmar nova password",
+      "save": "Guardar password",
+      "successTitle": "Password atualizada",
+      "successBody": "Já podes continuar com a tua conta.",
+      "errors": {
+        "passwordMin": "A password deve ter pelo menos 6 caracteres.",
+        "passwordMismatch": "As passwords não coincidem.",
+        "updateFailed": "Não foi possível atualizar a password. Tenta novamente."
+      }
+    },
     "helpSheet": {
       "title": "Precisas de ajuda?",
       "body1": "Se o login falhar, confirma se já tens conta com o mesmo e-mail.",
@@ -634,7 +648,7 @@
       "chatOpen": "Abrir chat",
       "chatUnavailable": "Chat indisponível.",
       "ctaJoin": "Juntar-me",
-      "ctaBuy": "Comprar bilhete",
+      "ctaBuy": "Comprar bilhetes",
       "perPlayer": "por jogador",
       "vs": "vs",
       "categoryFallback": "Categoria",

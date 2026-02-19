@@ -92,6 +92,7 @@ const resolveStartStep = (draft: OnboardingDraft | null): OnboardingStep => {
 };
 
 const NETWORK_TIMEOUT_MS = 10_000;
+type FinalizeMode = "standard" | "padel-skip";
 
 const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout") => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -459,7 +460,7 @@ export default function OnboardingScreen() {
     fullName: string;
     username: string;
     interests: InterestId[];
-    padelLevel?: string | null;
+    padelLevel?: string | null | undefined;
   }) => {
     const summaryKey = ["profile", "summary", session?.user?.id ?? "anon"];
     queryClient.setQueryData<ProfileSummary | undefined>(summaryKey, (prev) => ({
@@ -469,7 +470,10 @@ export default function OnboardingScreen() {
       username: payload.username,
       avatarUrl: prev?.avatarUrl ?? null,
       bio: prev?.bio ?? null,
-      padelLevel: payload.padelLevel ?? prev?.padelLevel ?? null,
+      padelLevel:
+        payload.padelLevel !== undefined
+          ? payload.padelLevel
+          : (prev?.padelLevel ?? null),
       favouriteCategories: payload.interests,
       onboardingDone: true,
     }));
@@ -485,7 +489,7 @@ export default function OnboardingScreen() {
     }
   };
 
-  const finalizeOnboarding = async () => {
+  const finalizeOnboarding = async (mode: FinalizeMode = "standard") => {
     try {
       const usernameOk = await ensureUsernameAvailable();
       if (!usernameOk) {
@@ -495,6 +499,10 @@ export default function OnboardingScreen() {
         );
         return;
       }
+      const skipPadelDetails = mode === "padel-skip";
+      const shouldSavePadelDetails =
+        padelSelected && !skipPadelDetails && Boolean(padelGender && padelSide);
+      const shouldMarkOnboardingDoneInBasic = !padelSelected || skipPadelDetails;
       const accessToken = await resolveAccessToken();
       await withTimeout(
         saveBasicMutation.mutateAsync({
@@ -502,11 +510,12 @@ export default function OnboardingScreen() {
           username: normalizedUsername,
           favouriteCategories: interests,
           accessToken,
+          onboardingDone: shouldMarkOnboardingDoneInBasic,
         }),
         NETWORK_TIMEOUT_MS,
         "save_basic_timeout",
       );
-      if (padelSelected && padelGender && padelSide) {
+      if (shouldSavePadelDetails) {
         await withTimeout(
           savePadelMutation.mutateAsync({
             gender: padelGender,
@@ -518,11 +527,17 @@ export default function OnboardingScreen() {
           "save_padel_timeout",
         );
       }
+      const cachePadelLevel =
+        shouldSavePadelDetails
+          ? (padelLevel ?? null)
+          : skipPadelDetails
+            ? null
+            : undefined;
       updateProfileCache({
         fullName: fullName.trim(),
         username: normalizedUsername,
         interests,
-        padelLevel: padelLevel ?? null,
+        padelLevel: cachePadelLevel,
       });
       await setOnboardingDone(true);
       await clearOnboardingDraft();
@@ -604,7 +619,7 @@ export default function OnboardingScreen() {
       if (padelSelected) {
         setStep("padel");
       } else {
-        await finalizeOnboarding();
+        await finalizeOnboarding("standard");
       }
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
@@ -637,7 +652,7 @@ export default function OnboardingScreen() {
           skipped: false,
         },
       });
-      await finalizeOnboarding();
+      await finalizeOnboarding("standard");
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
@@ -669,7 +684,7 @@ export default function OnboardingScreen() {
           skipped: true,
         },
       });
-      await finalizeOnboarding();
+      await finalizeOnboarding("padel-skip");
     } catch (err: any) {
       const rawMessage = String(err?.message ?? "");
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {

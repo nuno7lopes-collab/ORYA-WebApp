@@ -306,6 +306,14 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
+        <LinearGradient
+          colors={["rgba(255,255,255,0.2)", "rgba(255,255,255,0.02)", "rgba(255,255,255,0)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topSheen}
+          pointerEvents="none"
+        />
+        <View pointerEvents="none" style={[styles.innerFrame, styles.innerFrameRow]} />
         {!hasCover ? (
           <View style={styles.rowFallbackIcon} pointerEvents="none">
             <Ionicons
@@ -395,6 +403,14 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      <LinearGradient
+        colors={["rgba(255,255,255,0.2)", "rgba(255,255,255,0.02)", "rgba(255,255,255,0)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.topSheen}
+        pointerEvents="none"
+      />
+      <View pointerEvents="none" style={styles.innerFrame} />
       {!hasCover ? (
         <View style={styles.fallbackContent} pointerEvents="none">
           <Ionicons
@@ -468,58 +484,74 @@ export const DiscoverGridCardSkeleton = memo(function DiscoverGridCardSkeleton({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 14,
+    borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    backgroundColor: "rgba(11, 16, 24, 0.55)",
-    shadowColor: "rgba(0, 0, 0, 0.4)",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    elevation: 3,
+    borderColor: "rgba(196, 230, 255, 0.24)",
+    backgroundColor: "rgba(10, 16, 26, 0.66)",
+    shadowColor: "rgba(0, 0, 0, 0.58)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    elevation: 4,
   },
   rowCard: {
-    borderRadius: 18,
+    borderRadius: 22,
   },
   cardPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.98 }],
   },
+  topSheen: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.66,
+  },
+  innerFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    margin: 1,
+    opacity: 0.72,
+  },
+  innerFrameRow: {
+    borderRadius: 22,
+  },
   badge: {
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
-    backgroundColor: "rgba(8, 12, 20, 0.55)",
+    borderColor: "rgba(210, 236, 255, 0.28)",
+    backgroundColor: "rgba(8, 13, 23, 0.62)",
     maxWidth: "90%",
   },
   badgePrice: {
-    backgroundColor: "rgba(14, 116, 144, 0.42)",
-    borderColor: "rgba(148, 214, 255, 0.35)",
+    backgroundColor: "rgba(91, 198, 255, 0.3)",
+    borderColor: "rgba(174, 227, 255, 0.54)",
   },
   badgeText: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 10,
+    color: "rgba(245,252,255,0.96)",
+    fontSize: 10.5,
     fontWeight: "700",
+    letterSpacing: 0.2,
   },
   badgeTop: {
     position: "absolute",
-    top: 8,
-    left: 8,
+    top: 10,
+    left: 10,
   },
   badgeBottom: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 10,
+    right: 10,
     alignItems: "flex-end",
   },
   bottomContent: {
     position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 10,
+    left: 11,
+    right: 11,
+    bottom: 11,
     gap: 3,
   },
   bottomContentCompact: {
@@ -538,6 +570,7 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 13,
     fontWeight: "700",
+    letterSpacing: 0.14,
   },
   titleCompact: {
     fontSize: 12,
@@ -552,9 +585,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   meta: {
-    color: "rgba(230, 242, 255, 0.75)",
+    color: "rgba(232, 244, 255, 0.8)",
     fontSize: 11,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   metaCompact: {
     fontSize: 10,
@@ -578,8 +611,8 @@ const styles = StyleSheet.create({
   rowContent: {
     flex: 1,
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     gap: 8,
   },
   rowTop: {
@@ -597,42 +630,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     fontWeight: "700",
+    letterSpacing: 0.2,
   },
   rowMeta: {
-    color: "rgba(233, 244, 255, 0.82)",
+    color: "rgba(236, 245, 255, 0.86)",
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "600",
   },
   rowSubMeta: {
-    color: "rgba(224, 238, 255, 0.66)",
+    color: "rgba(228, 239, 255, 0.72)",
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "500",
   },
   rowChevron: {
     position: "absolute",
-    right: 10,
-    bottom: 10,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    right: 12,
+    bottom: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(8, 12, 20, 0.35)",
+    borderColor: "rgba(214,236,255,0.3)",
+    backgroundColor: "rgba(8, 13, 24, 0.44)",
   },
   rowFallbackIcon: {
     position: "absolute",
-    right: 12,
-    top: 12,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    right: 13,
+    top: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(8,12,20,0.4)",
+    borderColor: "rgba(214,236,255,0.28)",
+    backgroundColor: "rgba(8,12,20,0.48)",
     alignItems: "center",
     justifyContent: "center",
   },

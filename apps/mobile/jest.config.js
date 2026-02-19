@@ -10,5 +10,5 @@ module.exports = {
     ".*/components/icons/Ionicons$": "<rootDir>/__mocks__/IoniconsMock.js",
   },
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
-  testPathIgnorePatterns: ["/node_modules/", "__tests__/username.test.ts"],
+  testPathIgnorePatterns: ["/node_modules/"],
 };

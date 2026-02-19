@@ -91,7 +91,7 @@ export function FavoriteToggle({
       <Ionicons
         name={isFavorite ? "heart" : "heart-outline"}
         size={size}
-        color={isFavorite ? "#ff6b6b" : "rgba(255,255,255,0.85)"}
+        color={isFavorite ? "#ff7a92" : "rgba(244,250,255,0.9)"}
       />
     </Pressable>
   );
@@ -104,27 +104,33 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(10, 14, 24, 0.55)",
+    backgroundColor: "rgba(8, 13, 23, 0.72)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(214,238,255,0.3)",
+    shadowColor: "rgba(0,0,0,0.45)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 3,
   },
   button: {
     minHeight: 52,
     paddingHorizontal: 18,
     borderRadius: 18,
-    backgroundColor: "#ffffff",
+    backgroundColor: "rgba(246,252,255,0.96)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
+    borderColor: "rgba(220,240,255,0.95)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "rgba(0,0,0,0.28)",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowColor: "rgba(0,0,0,0.34)",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 4,
   },
   buttonActive: {
-    backgroundColor: "#e2efff",
+    backgroundColor: "#dcefff",
+    borderColor: "rgba(170, 224, 255, 0.82)",
   },
   buttonContent: {
     flexDirection: "row",
@@ -135,6 +141,7 @@ const styles = StyleSheet.create({
     color: "#0b0f17",
     fontWeight: "700",
     fontSize: 15,
+    letterSpacing: 0.15,
   },
   pressed: {
     opacity: 0.9,

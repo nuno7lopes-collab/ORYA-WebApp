@@ -9,7 +9,6 @@ import { ConfirmDestructiveActionDialog } from "@/app/components/ConfirmDestruct
 import { trackEvent } from "@/lib/analytics";
 import { RoleBadge } from "../../RoleBadge";
 import { CTA_DANGER, CTA_GHOST, CTA_NEUTRAL, CTA_PRIMARY, CTA_SECONDARY, CTA_SUCCESS } from "@/app/org/_internal/core/dashboardUi";
-import { ActionBar } from "@/components/ui/action-bar";
 import { Avatar } from "@/components/ui/avatar";
 import { ViewState } from "@/components/ui/view-state";
 import { useToast } from "@/components/ui/toast-provider";
@@ -804,21 +803,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
   const wrapperClass = cn(
     embedded ? "space-y-6 text-white" : "w-full space-y-6 py-8 text-white",
   );
-  const permissionTabs: { key: StaffTabKey; label: string }[] = [
-    { key: "permissoes", label: "Permissões" },
-    { key: "auditoria", label: "Auditoria" },
-  ];
-  const staffTabs: { key: StaffTabKey; label: string }[] = [
-    { key: "membros", label: "Equipa" },
-    ...(canManagePermissions ? permissionTabs : []),
-  ];
-  const setStaffTab = (next: StaffTabKey) => {
-    const params = new URLSearchParams(searchParams?.toString());
-    if (next === "membros") params.delete("staff");
-    else params.set("staff", next);
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  };
 
   if (!isOrganizationProfile && !hasMembership) {
     return (
@@ -865,25 +849,6 @@ export default function OrganizationStaffPage({ embedded }: OrganizationStaffPag
             )}
           </div>
       </div>
-
-      <ActionBar role="tablist" aria-label="Navegação da equipa" className="text-sm">
-        {staffTabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setStaffTab(tab.key)}
-            role="tab"
-            aria-selected={activeStaffTab === tab.key}
-            className={`rounded-xl px-3 py-2 font-semibold transition ${
-              activeStaffTab === tab.key
-                ? "bg-gradient-to-r from-[#FF7AD1]/60 via-[#7FE0FF]/35 to-[#6A7BFF]/55 text-white shadow-[0_14px_36px_rgba(107,255,255,0.45)]"
-                : "text-white/80 hover:bg-white/10"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </ActionBar>
 
       {activeStaffTab === "permissoes" && (
         <>

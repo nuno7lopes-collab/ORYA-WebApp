@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { normalizeUsernameInput, sanitizeUsername, validateUsername } from "../lib/username";
+import {
+  normalizeUsernameInput,
+  sanitizeUsername,
+  validateUsername,
+} from "../../../packages/shared/src/usernamePolicy";
 
 describe("mobile username rules", () => {
   it("sanitizes accents, spaces, and invalid chars", () => {

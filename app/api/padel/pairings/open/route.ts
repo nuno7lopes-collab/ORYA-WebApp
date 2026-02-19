@@ -264,12 +264,6 @@ async function _POST(req: NextRequest) {
     }
     return jsonWrap({ ok: false, error: categoryAccess.code }, { status: 409 });
   }
-  if (categoryAccess.warning === "LEVEL_REQUIRED_FOR_CATEGORY") {
-    return jsonWrap(
-      { ok: false, error: "PADEL_ONBOARDING_REQUIRED", missing: categoryAccess.missing },
-      { status: 409 },
-    );
-  }
 
   const pendingSlot = pairing.slots.find((s) => s.slotStatus === "PENDING");
   if (!pendingSlot) {

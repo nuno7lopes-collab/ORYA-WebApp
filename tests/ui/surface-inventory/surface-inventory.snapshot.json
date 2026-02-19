@@ -255,6 +255,7 @@
     "apps/mobile/app/auth/callback.tsx",
     "apps/mobile/app/auth/email.tsx",
     "apps/mobile/app/auth/index.tsx",
+    "apps/mobile/app/auth/reset-password.tsx",
     "apps/mobile/app/checkout/index.tsx",
     "apps/mobile/app/checkout/success.tsx",
     "apps/mobile/app/convites/organizacoes.tsx",
@@ -534,7 +535,7 @@
   },
   "counts": {
     "webTotal": 237,
-    "mobileTotal": 42,
+    "mobileTotal": 43,
     "org": 78,
     "admin": 17,
     "user": 21,

@@ -26,6 +26,7 @@ export type PublicEventCard = {
   categories: string[];
   hostName: string | null;
   hostUsername: string | null;
+  hostAvatarUrl?: string | null;
   status: "ACTIVE" | "CANCELLED" | "PAST" | "DRAFT";
   isHighlighted: boolean;
   ticketTypes?: PublicEventTicketType[];
@@ -64,7 +65,12 @@ type PublicEventCardInput = {
   templateType: string | null;
   interestTags?: string[] | null;
   ownerUserId: string | null;
-  organization?: { publicName: string | null; businessName?: string | null; username?: string | null } | null;
+  organization?: {
+    publicName: string | null;
+    businessName?: string | null;
+    username?: string | null;
+    brandingAvatarUrl?: string | null;
+  } | null;
   addressId: string | null;
   addressRef?: {
     formattedAddress?: string | null;
@@ -109,6 +115,7 @@ type PublicEventCardIndexInput = {
   coverImageUrl: string | null;
   hostName: string | null;
   hostUsername: string | null;
+  hostAvatarUrl?: string | null;
   addressId: string | null;
   addressRef?: {
     formattedAddress?: string | null;
@@ -121,6 +128,7 @@ type PublicEventCardIndexInput = {
 type PublicEventOwnerProfile = {
   fullName: string | null;
   username: string | null;
+  avatarUrl?: string | null;
 };
 
 const pickCanonicalField = (canonical: Prisma.JsonValue | null, ...keys: string[]) => {
@@ -229,6 +237,8 @@ export function toPublicEventCardWithPrice(params: {
     ownerProfile?.fullName ??
     null;
   const hostUsername = event.organization?.username ?? ownerProfile?.username ?? null;
+  const hostAvatarUrl =
+    event.organization?.brandingAvatarUrl ?? ownerProfile?.avatarUrl ?? null;
 
   const categories = resolveEventCategories(event.templateType);
   const interestTags = Array.isArray(event.interestTags) ? event.interestTags : [];
@@ -291,6 +301,7 @@ export function toPublicEventCardWithPrice(params: {
     categories,
     hostName,
     hostUsername,
+    hostAvatarUrl,
     status: resolvePublicEventStatus({
       status: event.status,
       startsAt: normalizedStart,
@@ -357,6 +368,7 @@ export function toPublicEventCardFromIndex(input: PublicEventCardIndexInput): Pu
     interestTags: Array.isArray(input.interestTags) ? input.interestTags : [],
     hostName: input.hostName ?? null,
     hostUsername: input.hostUsername ?? null,
+    hostAvatarUrl: input.hostAvatarUrl ?? null,
     status: resolvePublicEventStatus({
       status: input.status,
       startsAt: normalizedStart,

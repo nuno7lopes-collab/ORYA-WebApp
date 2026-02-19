@@ -10,6 +10,8 @@ import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function isUnconfirmedError(err: unknown) {
   if (!err) return false;
   const anyErr = err as { message?: string; error_description?: string };
@@ -138,8 +140,23 @@ async function _POST(req: NextRequest) {
   }
 
   try {
-    let email = identifier.toLowerCase();
-    if (!email.includes("@")) {
+    const lowerIdentifier = identifier.toLowerCase();
+    let email = lowerIdentifier;
+    const isEmailIdentifier = EMAIL_REGEX.test(lowerIdentifier);
+
+    if (!isEmailIdentifier) {
+      // Suporte explícito para @username; bloqueia formatos ambíguos como "foo@bar".
+      if (identifier.includes("@") && !identifier.trim().startsWith("@")) {
+        return jsonWrap(
+          {
+            ok: false,
+            errorCode: "INVALID_CREDENTIALS",
+            message: "Credenciais inválidas.",
+          },
+          { status: 401 }
+        );
+      }
+
       const normalizedUsername = normalizeUsernameInput(identifier);
       if (!normalizedUsername) {
         return jsonWrap(

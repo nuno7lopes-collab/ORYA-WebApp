@@ -35,6 +35,34 @@ const parseDate = (value: Date | string) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const normalizeTimeWindows = (
+  windows: PadelPlanInput["timeWindows"],
+  fallbackStart: Date | null,
+  fallbackEnd: Date | null,
+) => {
+  const parsed =
+    Array.isArray(windows) && windows.length > 0
+      ? windows
+          .map((window) => {
+            const start = parseDate(window.start);
+            const end = parseDate(window.end);
+            if (!start || !end || end <= start) return null;
+            return { start, end };
+          })
+          .filter((window): window is { start: Date; end: Date } => Boolean(window))
+      : [];
+
+  if (parsed.length > 0) {
+    return parsed.sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+
+  if (fallbackStart && fallbackEnd && fallbackEnd > fallbackStart) {
+    return [{ start: fallbackStart, end: fallbackEnd }];
+  }
+
+  return [];
+};
+
 const toPositiveInt = (value: unknown, fallback = 0) => {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -429,6 +457,7 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
   const baseFormat = resolveFormat(input.format, padel_format.TODOS_CONTRA_TODOS);
   const windowStart = parseDate(input.windowStart);
   const windowEnd = parseDate(input.windowEnd);
+  const timeWindows = normalizeTimeWindows(input.timeWindows, windowStart, windowEnd);
   const durationMinutes = Math.max(1, toPositiveInt(input.durationMinutes, 60));
   const bufferMinutes = Math.max(0, toPositiveInt(input.bufferMinutes ?? 0, 0));
   const slotMinutes = Math.max(1, durationMinutes + bufferMinutes);
@@ -441,14 +470,14 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
 
-  if (!windowStart || !windowEnd || windowEnd <= windowStart) {
+  if (timeWindows.length === 0) {
     blockingReasons.push("INVALID_WINDOW");
   }
 
-  const windowMinutes =
-    windowStart && windowEnd && windowEnd > windowStart
-      ? Math.floor((windowEnd.getTime() - windowStart.getTime()) / 60000)
-      : 0;
+  const windowMinutes = timeWindows.reduce((acc, window) => {
+    const minutes = Math.floor((window.end.getTime() - window.start.getTime()) / 60000);
+    return acc + Math.max(0, minutes);
+  }, 0);
   const slotsPerCourt = windowMinutes > 0 ? Math.floor(windowMinutes / slotMinutes) : 0;
   const totalSlots = Math.max(0, slotsPerCourt * courtsUsed);
 

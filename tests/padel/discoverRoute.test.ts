@@ -60,4 +60,68 @@ describe("GET /api/padel/discover", () => {
       ]),
     );
   });
+
+  it("exclui eventos sem access policy pública", async () => {
+    prismaEventFindMany.mockResolvedValue([
+      {
+        id: 10,
+        slug: "open-event",
+        title: "Open",
+        startsAt: new Date("2026-03-01T10:00:00.000Z"),
+        endsAt: null,
+        coverImageUrl: null,
+        addressId: "addr_1",
+        addressRef: { formattedAddress: "Lisboa", canonical: null },
+        status: "PUBLISHED",
+        ticketTypes: [{ price: 0, status: "ACTIVE" }],
+        organization: { publicName: "Org A", username: "orga" },
+        padelTournamentConfig: {
+          format: "AMERICANO",
+          eligibilityType: null,
+          padelClubId: null,
+          advancedSettings: { competitionState: "PUBLIC" },
+          padelV2Enabled: true,
+          splitDeadlineHours: null,
+          lifecycleStatus: null,
+        },
+        accessPolicies: [{ mode: "PUBLIC" }],
+        padelCategoryLinks: [],
+      },
+      {
+        id: 11,
+        slug: "private-event",
+        title: "Private",
+        startsAt: new Date("2026-03-02T10:00:00.000Z"),
+        endsAt: null,
+        coverImageUrl: null,
+        addressId: "addr_2",
+        addressRef: { formattedAddress: "Porto", canonical: null },
+        status: "PUBLISHED",
+        ticketTypes: [{ price: 0, status: "ACTIVE" }],
+        organization: { publicName: "Org B", username: "orgb" },
+        padelTournamentConfig: {
+          format: "AMERICANO",
+          eligibilityType: null,
+          padelClubId: null,
+          advancedSettings: { competitionState: "PUBLIC" },
+          padelV2Enabled: true,
+          splitDeadlineHours: null,
+          lifecycleStatus: null,
+        },
+        accessPolicies: [{ mode: "INVITE_ONLY" }],
+        padelCategoryLinks: [],
+      },
+    ]);
+
+    const { GET } = await import("@/app/api/padel/discover/route");
+    const req = new NextRequest("http://localhost/api/padel/discover");
+    const res = await GET(req);
+    const body = await res.json();
+    const payload = body.result ?? body;
+    const items = payload.items ?? [];
+
+    expect(res.status).toBe(200);
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(10);
+  });
 });

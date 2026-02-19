@@ -10,6 +10,7 @@ import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
+import { dailyWindowsToIntervals, deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -118,14 +119,21 @@ async function _POST(req: NextRequest) {
 
   const advanced = eventDefaults?.advancedSettings ?? {};
   const scheduleDefaults = (advanced.scheduleDefaults ?? {}) as Record<string, unknown>;
+  const bodyDailyWindows = normalizePadelDailyWindows(body.dailyWindows);
+  const defaultsDailyWindows = normalizePadelDailyWindows(scheduleDefaults.dailyWindows);
+  const dailyWindows = bodyDailyWindows.length > 0 ? bodyDailyWindows : defaultsDailyWindows;
+  const dailyEnvelope = dailyWindows.length > 0 ? deriveEnvelopeFromDailyWindows(dailyWindows) : null;
+  const dailyIntervals = dailyWindowsToIntervals(dailyWindows);
 
   const windowStart =
     parseDate(body.windowStart ?? body.startAt) ??
+    (dailyEnvelope?.windowStart ? parseDate(dailyEnvelope.windowStart) : null) ??
     parseDate(scheduleDefaults.windowStart) ??
     eventDefaults?.startsAt ??
     null;
   const windowEnd =
     parseDate(body.windowEnd ?? body.endAt) ??
+    (dailyEnvelope?.windowEnd ? parseDate(dailyEnvelope.windowEnd) : null) ??
     parseDate(scheduleDefaults.windowEnd) ??
     eventDefaults?.endsAt ??
     null;
@@ -249,6 +257,10 @@ async function _POST(req: NextRequest) {
     teams: parseNumber(body.teams),
     windowStart,
     windowEnd,
+    timeWindows:
+      dailyIntervals.length > 0
+        ? dailyIntervals.map((interval) => ({ start: interval.start, end: interval.end }))
+        : undefined,
     durationMinutes,
     bufferMinutes,
     courtIds,

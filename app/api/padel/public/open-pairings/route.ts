@@ -9,6 +9,7 @@ import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { logError } from "@/lib/observability/logger";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 
 const DEFAULT_LIMIT = 12;
 
@@ -44,6 +45,7 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
     }
     const limit = clampLimit(params.get("limit"));
+    const queryTake = Math.min(limit * 3, 90);
     const now = new Date();
     const eventFilter: Prisma.PadelPairingWhereInput = {};
     if (typeof eventId === "number" && Number.isFinite(eventId)) {
@@ -100,10 +102,8 @@ async function _GET(req: NextRequest) {
           select: {
             id: true,
             slotStatus: true,
-            profileId: true,
             profile: {
               select: {
-                id: true,
                 fullName: true,
                 username: true,
                 avatarUrl: true,
@@ -111,10 +111,7 @@ async function _GET(req: NextRequest) {
             },
             playerProfile: {
               select: {
-                id: true,
                 level: true,
-                preferredSide: true,
-                gender: true,
               },
             },
           },
@@ -130,14 +127,22 @@ async function _GET(req: NextRequest) {
             addressRef: { select: { formattedAddress: true, canonical: true } },
             coverImageUrl: true,
             padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
+            accessPolicies: {
+              orderBy: { policyVersion: "desc" },
+              take: 1,
+              select: { mode: true },
+            },
           },
         },
       },
       orderBy: [{ eventId: "asc" }, { createdAt: "desc" }],
-      take: limit,
+      take: queryTake,
     });
 
     const filtered = pairings.filter((pairing) => {
+      const accessMode = resolveEventAccessMode(pairing.event.accessPolicies?.[0]);
+      if (!isPublicAccessMode(accessMode)) return false;
+
       const advanced = (pairing.event.padelTournamentConfig?.advancedSettings || {}) as {
         registrationStartsAt?: string | null;
         registrationEndsAt?: string | null;
@@ -165,40 +170,38 @@ async function _GET(req: NextRequest) {
     return jsonWrap(
       {
         ok: true,
-        items: filtered.map((pairing) => ({
-          seekingPlayers: pairing.slots
-            .filter((slot) => slot.slotStatus === "FILLED")
-            .map((slot) => ({
-              profileId: slot.profileId ?? slot.profile?.id ?? null,
-              playerProfileId: slot.playerProfile?.id ?? null,
-              displayName:
-                slot.profile?.fullName?.trim() ||
-                slot.profile?.username?.trim() ||
-                null,
-              username: slot.profile?.username ?? null,
-              avatarUrl: slot.profile?.avatarUrl ?? null,
-              level: slot.playerProfile?.level ?? null,
-              preferredSide: slot.playerProfile?.preferredSide ?? null,
-              gender: slot.playerProfile?.gender ?? null,
-            })),
-          isExpired: pairing.deadlineAt ? pairing.deadlineAt.getTime() < now.getTime() : false,
-          id: pairing.id,
-          paymentMode: pairing.payment_mode,
-          deadlineAt: pairing.deadlineAt?.toISOString() ?? null,
-          category: pairing.category
-            ? { id: pairing.category.id, label: pairing.category.label }
-            : null,
-          openSlots: pairing.slots.filter((s) => s.slotStatus === "PENDING").length,
-          event: {
-            id: pairing.event.id,
-            slug: pairing.event.slug,
-            title: pairing.event.title,
-            startsAt: pairing.event.startsAt?.toISOString() ?? null,
-            locationFormattedAddress: pairing.event.addressRef?.formattedAddress ?? null,
-            addressId: pairing.event.addressId ?? null,
-            coverImageUrl: pairing.event.coverImageUrl ?? null,
-          },
-        })),
+        items: filtered
+          .map((pairing) => ({
+            seekingPlayers: pairing.slots
+              .filter((slot) => slot.slotStatus === "FILLED")
+              .map((slot) => ({
+                displayName:
+                  slot.profile?.fullName?.trim() ||
+                  slot.profile?.username?.trim() ||
+                  null,
+                username: slot.profile?.username ?? null,
+                avatarUrl: slot.profile?.avatarUrl ?? null,
+                level: slot.playerProfile?.level ?? null,
+              })),
+            isExpired: pairing.deadlineAt ? pairing.deadlineAt.getTime() < now.getTime() : false,
+            id: pairing.id,
+            paymentMode: pairing.payment_mode,
+            deadlineAt: pairing.deadlineAt?.toISOString() ?? null,
+            category: pairing.category
+              ? { id: pairing.category.id, label: pairing.category.label }
+              : null,
+            openSlots: pairing.slots.filter((s) => s.slotStatus === "PENDING").length,
+            event: {
+              id: pairing.event.id,
+              slug: pairing.event.slug,
+              title: pairing.event.title,
+              startsAt: pairing.event.startsAt?.toISOString() ?? null,
+              locationFormattedAddress: pairing.event.addressRef?.formattedAddress ?? null,
+              addressId: pairing.event.addressId ?? null,
+              coverImageUrl: pairing.event.coverImageUrl ?? null,
+            },
+          }))
+          .slice(0, limit),
       },
       { status: 200 },
     );

@@ -40,6 +40,25 @@ describe("formatEngine capacity", () => {
     expect(plan.alternatives.length).toBeGreaterThan(0);
   });
 
+  it("soma capacidade de múltiplas janelas diárias", () => {
+    const plan = computePadelPlan({
+      format: "TODOS_CONTRA_TODOS",
+      teams: 6,
+      windowStart: "2026-02-17T09:00:00.000Z",
+      windowEnd: "2026-02-17T17:00:00.000Z",
+      timeWindows: [
+        { start: "2026-02-17T09:00:00.000Z", end: "2026-02-17T11:00:00.000Z" },
+        { start: "2026-02-17T15:00:00.000Z", end: "2026-02-17T17:00:00.000Z" },
+      ],
+      durationMinutes: 60,
+      bufferMinutes: 0,
+      courtsCount: 1,
+    });
+
+    expect(plan.windowMinutes).toBe(240);
+    expect(plan.totalSlots).toBe(4);
+  });
+
   it("summarizes unscheduled reasons", () => {
     const summary = summarizeScheduleFeasibility([
       { reason: "NO_SLOT_AVAILABLE" },

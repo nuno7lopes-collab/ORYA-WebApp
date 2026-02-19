@@ -1,11 +1,11 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-18T14:59:46.597Z
+Generated: 2026-02-19T00:13:00.773Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
-- API routes total: 530
-- Covered by UI: 385
+- API routes total: 533
+- Covered by UI: 388
 - Orphan (no UI): 0
 - Orphan allowlisted: 2
 - Exempt (internal/cron/webhook): 143

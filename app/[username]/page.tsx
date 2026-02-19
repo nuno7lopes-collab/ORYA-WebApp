@@ -756,6 +756,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const showAgendaSection = showAgenda && agendaTotal > 0;
     const showReservasSection = hasReservasModule && services.length > 0;
     const showFormsSection = hasInscricoes && publicForms.length > 0;
+    const showCommunitySection = true;
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
     const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
@@ -766,6 +767,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         showOnProfile: store?.showOnProfile ?? false,
         publicProductCount: storeProductsCount,
       });
+    const organizationSectionNav = [
+      showAgendaSection ? { id: "agenda-publica", label: "Agenda" } : null,
+      showReservasSection ? { id: "reservas", label: "Reservas" } : null,
+      showStoreSection ? { id: "loja", label: "Loja" } : null,
+      showFormsSection ? { id: "formularios", label: "Formulários" } : null,
+      showCommunitySection ? { id: "comunidade", label: "Comunidade" } : null,
+    ].filter(Boolean) as Array<{ id: string; label: string }>;
 
     const quickActionCards = [
       showAgendaSection
@@ -876,7 +884,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? {
             id: "reservas",
             content: (
-              <section className="space-y-4">
+              <section id="reservas" className="space-y-4">
                 <div className="rounded-3xl border border-white/12 bg-white/5 p-4 sm:p-5 shadow-[0_24px_70px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -927,7 +935,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
         ? {
             id: "formularios",
             content: (
-              <section className="rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+              <section id="formularios" className="rounded-3xl border border-white/12 bg-[#05070f]/80 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
                 <div className="space-y-2">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Formulários</p>
                   <h3 className="text-lg font-semibold text-white">{featuredForm!.title}</h3>
@@ -953,6 +961,36 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                       {publicForms.length > 1 ? "Ver formulários ativos" : "Abrir formulário ativo"}
                     </Link>
                   </div>
+                </div>
+              </section>
+            ),
+          }
+        : null,
+      showCommunitySection
+        ? {
+            id: "comunidade",
+            content: (
+              <section id="comunidade" className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Comunidade</p>
+                    <h3 className="text-lg font-semibold text-white">Grupos da organização</h3>
+                  </div>
+                  <span className="rounded-full border border-cyan-200/45 bg-cyan-500/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-cyan-100">
+                    Brevemente
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {[
+                    { id: "m2", title: "Grupo M2", subtitle: "Avisos, chamadas e mensagens rápidas." },
+                    { id: "m5", title: "Grupo M5", subtitle: "Comunicação operacional dos jogadores." },
+                    { id: "ferias-pascoa", title: "Férias da Páscoa", subtitle: "Coordenação de turmas e recados." },
+                  ].map((group) => (
+                    <article key={group.id} className="rounded-2xl border border-white/12 bg-black/25 p-3">
+                      <p className="text-sm font-semibold text-white">{group.title}</p>
+                      <p className="mt-1 text-[12px] text-white/70">{group.subtitle}</p>
+                    </article>
+                  ))}
                 </div>
               </section>
             ),
@@ -1012,8 +1050,25 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
 
           <div className="px-5 sm:px-8">
             <div className="orya-page-width flex flex-col gap-8">
+              {organizationSectionNav.length >= 2 ? (
+                <nav className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/12 bg-white/5 p-2 shadow-[0_12px_30px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+                  {organizationSectionNav.map((item) => (
+                    <a
+                      key={`profile-nav-${item.id}`}
+                      href={`#${item.id}`}
+                      className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-[11px] font-semibold text-white/80 transition hover:border-white/40 hover:text-white"
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </nav>
+              ) : null}
+
               {showStoreSection ? (
-                <section className="mx-auto w-full max-w-3xl rounded-3xl border border-white/12 bg-gradient-to-br from-[#0c1736]/88 via-[#101a37]/78 to-[#060b14]/95 p-5 text-center shadow-[0_20px_64px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:p-6">
+                <section
+                  id="loja"
+                  className="mx-auto w-full max-w-3xl rounded-3xl border border-white/12 bg-gradient-to-br from-[#0c1736]/88 via-[#101a37]/78 to-[#060b14]/95 p-5 text-center shadow-[0_20px_64px_rgba(0,0,0,0.6)] backdrop-blur-2xl sm:p-6"
+                >
                   <p className="text-[11px] uppercase tracking-[0.24em] text-white/60">Loja</p>
                   <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">Produtos oficiais da organização</h2>
                   <p className="mt-2 text-sm text-white/70">

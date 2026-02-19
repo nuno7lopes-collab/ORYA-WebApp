@@ -1,6 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LinearGradient } from "expo-linear-gradient";
 import {
   Animated,
   Pressable,
@@ -9,14 +8,16 @@ import {
   Text,
   View,
   Linking,
-  ActivityIndicator,
   Alert,
   TextInput,
-  useWindowDimensions,
+  Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  InteractionManager,
 } from "react-native";
-import { Image } from "expo-image";
 import { useNavigation } from "@react-navigation/native";
-import { GlassSurface } from "../../components/glass/GlassSurface";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
 import { tokens, useTranslation } from "@orya/shared";
@@ -31,7 +32,6 @@ import {
   buildCheckoutIdempotencyKey,
 } from "../../features/checkout/store";
 import {
-  createCheckoutIntent,
   createPairingCheckoutIntent,
 } from "../../features/checkout/api";
 import {
@@ -54,7 +54,7 @@ import {
 } from "../../features/tournaments/uxState";
 import { safeBack } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
-import { StickyCTA } from "../../components/events/StickyCTA";
+import { StickyPurchaseBar } from "../../components/events/detail/StickyPurchaseBar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
@@ -65,6 +65,20 @@ import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
 import * as Haptics from "expo-haptics";
+import {
+  resolveCanOpenTicketSheet,
+  shouldDismissByPullDown,
+} from "../../features/events/detailState";
+import { EventHeroSquare } from "../../components/events/detail/EventHeroSquare";
+import { EventHeaderMeta } from "../../components/events/detail/EventHeaderMeta";
+import { EventInfoAccordion } from "../../components/events/detail/EventInfoAccordion";
+import { EventLocationBlock } from "../../components/events/detail/EventLocationBlock";
+import { PadelSection } from "../../components/events/detail/PadelSection";
+import {
+  TicketSelectorItem,
+  TicketSelectorSheet,
+} from "../../components/events/detail/TicketSelectorSheet";
+import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -182,7 +196,9 @@ const resolvePairingLabel = (
   const names = pairing.slots
     .map(
       (slot: any) =>
-        slot?.playerProfile?.fullName || slot?.playerProfile?.username,
+        slot?.playerProfile?.displayName ||
+        slot?.playerProfile?.fullName ||
+        slot?.playerProfile?.username,
     )
     .filter(Boolean) as string[];
   if (names.length === 0) {
@@ -215,6 +231,182 @@ const mapInviteTokenReason = (
     default:
       return null;
   }
+};
+
+type Rgb = { r: number; g: number; b: number };
+type Gradient3 = [string, string, string];
+type Gradient4 = [string, string, string, string];
+
+type EventBackdropPalette = {
+  rootGradient: Gradient3;
+  topGradient: Gradient4;
+  blendGradient: Gradient4;
+  closeOrbFill: string;
+  closeOrbBorder: string;
+  closeOrbHighlight: string;
+  closeButtonShadow: string;
+};
+
+const ORYA_BLUE_PRIMARY: Rgb = { r: 10, g: 29, b: 72 };
+const ORYA_BLUE_DEEP: Rgb = { r: 4, g: 14, b: 40 };
+const ORYA_SKY_ACCENT: Rgb = { r: 120, g: 222, b: 255 };
+
+const clampChannel = (value: number) =>
+  Math.max(0, Math.min(255, Math.round(value)));
+const clampAlpha = (value: number) => Math.max(0, Math.min(1, value));
+
+const rgba = (color: Rgb, alpha: number) =>
+  `rgba(${clampChannel(color.r)}, ${clampChannel(color.g)}, ${clampChannel(
+    color.b,
+  )}, ${clampAlpha(alpha)})`;
+
+const parsePercentOrFloat = (token: string) => {
+  const raw = token.trim();
+  if (!raw) return Number.NaN;
+  if (raw.endsWith("%")) return Number.parseFloat(raw) / 100;
+  return Number.parseFloat(raw);
+};
+
+const hslToRgb = (h: number, s: number, l: number): Rgb => {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = Math.max(0, Math.min(1, s));
+  const lig = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * lig - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = lig - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) {
+    r = c;
+    g = x;
+  } else if (hue < 120) {
+    r = x;
+    g = c;
+  } else if (hue < 180) {
+    g = c;
+    b = x;
+  } else if (hue < 240) {
+    g = x;
+    b = c;
+  } else if (hue < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
+  return {
+    r: clampChannel((r + m) * 255),
+    g: clampChannel((g + m) * 255),
+    b: clampChannel((b + m) * 255),
+  };
+};
+
+const parseColorToRgb = (color: string): Rgb | null => {
+  const value = color.trim();
+  if (!value) return null;
+
+  const rgbaMatch = value.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgbaMatch) {
+    const parts = rgbaMatch[1].split(",").map((item) => item.trim());
+    if (parts.length >= 3) {
+      const parsed = parts.slice(0, 3).map((item) => Number.parseFloat(item));
+      if (parsed.every((item) => Number.isFinite(item))) {
+        const [r, g, b] = parsed;
+        return { r: clampChannel(r), g: clampChannel(g), b: clampChannel(b) };
+      }
+    }
+  }
+
+  const hslaMatch = value.match(/^hsla?\(([^)]+)\)$/i);
+  if (hslaMatch) {
+    const parts = hslaMatch[1].split(",").map((item) => item.trim());
+    if (parts.length >= 3) {
+      const h = Number.parseFloat(parts[0]);
+      const s = parsePercentOrFloat(parts[1]);
+      const l = parsePercentOrFloat(parts[2]);
+      if (Number.isFinite(h) && Number.isFinite(s) && Number.isFinite(l)) {
+        return hslToRgb(h, s, l);
+      }
+    }
+  }
+
+  const hexMatch = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    const raw = hexMatch[1];
+    const hex =
+      raw.length === 3
+        ? raw
+            .split("")
+            .map((char) => `${char}${char}`)
+            .join("")
+        : raw;
+    const parsed = Number.parseInt(hex, 16);
+    if (Number.isFinite(parsed)) {
+      return {
+        r: (parsed >> 16) & 0xff,
+        g: (parsed >> 8) & 0xff,
+        b: parsed & 0xff,
+      };
+    }
+  }
+  return null;
+};
+
+const mixRgb = (from: Rgb, to: Rgb, weight: number): Rgb => {
+  const safe = Math.max(0, Math.min(1, weight));
+  return {
+    r: clampChannel(from.r + (to.r - from.r) * safe),
+    g: clampChannel(from.g + (to.g - from.g) * safe),
+    b: clampChannel(from.b + (to.b - from.b) * safe),
+  };
+};
+
+const liftTintForBackdrop = (input: Rgb): Rgb => {
+  const luminance = input.r * 0.2126 + input.g * 0.7152 + input.b * 0.0722;
+  let output = input;
+  if (luminance < 74) {
+    const lift = Math.min(1, (74 - luminance) / 74);
+    output = mixRgb(output, ORYA_SKY_ACCENT, 0.24 + lift * 0.4);
+  } else if (luminance > 190) {
+    output = mixRgb(output, ORYA_BLUE_PRIMARY, 0.3);
+  }
+  return mixRgb(output, ORYA_BLUE_PRIMARY, 0.18);
+};
+
+const buildEventBackdropPalette = (tint: string): EventBackdropPalette => {
+  const parsedTint = parseColorToRgb(tint) ?? ORYA_BLUE_PRIMARY;
+  const liftedTint = liftTintForBackdrop(parsedTint);
+  const top = mixRgb(liftedTint, ORYA_SKY_ACCENT, 0.2);
+  const middle = mixRgb(liftedTint, ORYA_BLUE_PRIMARY, 0.46);
+  const deep = mixRgb(ORYA_BLUE_PRIMARY, ORYA_BLUE_DEEP, 0.52);
+  const closeOrb = mixRgb(top, ORYA_BLUE_PRIMARY, 0.5);
+  const closeEdge = mixRgb(top, { r: 255, g: 255, b: 255 }, 0.54);
+
+  return {
+    rootGradient: [
+      rgba(mixRgb(ORYA_BLUE_PRIMARY, liftedTint, 0.16), 1),
+      rgba(deep, 1),
+      rgba(ORYA_BLUE_DEEP, 1),
+    ],
+    topGradient: [
+      rgba(top, 0.92),
+      rgba(middle, 0.68),
+      rgba(mixRgb(middle, ORYA_BLUE_DEEP, 0.42), 0.28),
+      rgba(ORYA_BLUE_DEEP, 0),
+    ],
+    blendGradient: [
+      rgba(top, 0),
+      rgba(mixRgb(middle, ORYA_BLUE_PRIMARY, 0.36), 0.24),
+      rgba(mixRgb(ORYA_BLUE_PRIMARY, ORYA_BLUE_DEEP, 0.44), 0.76),
+      rgba(ORYA_BLUE_DEEP, 0.98),
+    ],
+    closeOrbFill: rgba(closeOrb, 0.34),
+    closeOrbBorder: rgba(closeEdge, 0.48),
+    closeOrbHighlight: rgba(mixRgb(closeEdge, { r: 255, g: 255, b: 255 }, 0.5), 0.2),
+    closeButtonShadow: rgba(mixRgb(closeEdge, ORYA_SKY_ACCENT, 0.26), 0.84),
+  };
 };
 
 export default function EventDetail() {
@@ -258,21 +450,11 @@ export default function EventDetail() {
     const raw = Array.isArray(value) ? value[0] : value ?? null;
     return resolveMediaUri(raw);
   }, [params.coverImageUrl]);
-  const previewDescription = useMemo(() => {
-    const value = params.shortDescription;
-    if (Array.isArray(value)) return value[0];
-    return value ?? null;
-  }, [params.shortDescription]);
   const previewStartsAt = useMemo(() => {
     const value = params.startsAt;
     if (Array.isArray(value)) return value[0];
     return value ?? null;
   }, [params.startsAt]);
-  const previewEndsAt = useMemo(() => {
-    const value = params.endsAt;
-    if (Array.isArray(value)) return value[0];
-    return value ?? null;
-  }, [params.endsAt]);
   const previewLocation = useMemo(() => {
     const value = params.locationLabel;
     if (Array.isArray(value)) return value[0];
@@ -317,23 +499,11 @@ export default function EventDetail() {
     if (Array.isArray(value)) return value[0];
     return value ?? null;
   }, [params.priceLabel]);
-  const previewCategory = useMemo(() => {
-    const value = params.categoryLabel;
-    if (Array.isArray(value)) return value[0];
-    return value ?? null;
-  }, [params.categoryLabel]);
   const previewHost = useMemo(() => {
     const value = params.hostName;
     if (Array.isArray(value)) return value[0];
     return value ?? null;
   }, [params.hostName]);
-  const previewImageTag = useMemo(() => {
-    const raw = Array.isArray(params.imageTag)
-      ? params.imageTag[0]
-      : params.imageTag;
-    const normalized = typeof raw === "string" ? raw.trim() : "";
-    return normalized ? normalized : null;
-  }, [params.imageTag]);
   const inviteTokenParam = useMemo(() => {
     const raw = params.inviteToken;
     if (Array.isArray(raw)) return raw[0] ?? null;
@@ -358,11 +528,6 @@ export default function EventDetail() {
   const setCheckoutDraft = useCheckoutStore((state) => state.setDraft);
   const setCheckoutIntent = useCheckoutStore((state) => state.setIntent);
   const insets = useSafeAreaInsets();
-  const { width: screenWidth } = useWindowDimensions();
-  const heroHeight = useMemo(
-    () => Math.max(236, Math.min(320, Math.round(screenWidth * 0.72))),
-    [screenWidth],
-  );
   const env = getMobileEnv();
   const transitionSource = params.source === "discover" ? "discover" : "direct";
   const fade = useRef(
@@ -371,10 +536,10 @@ export default function EventDetail() {
   const translate = useRef(
     new Animated.Value(transitionSource === "discover" ? 20 : 10),
   ).current;
-  const scrollY = useRef(new Animated.Value(0)).current;
   const viewSentRef = useRef(false);
-  const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
-  const [ticketQuantity, setTicketQuantity] = useState(1);
+  const [ticketSheetVisible, setTicketSheetVisible] = useState(false);
+  const [ticketQuantities, setTicketQuantities] = useState<Record<number, number>>({});
+  const [infoExpanded, setInfoExpanded] = useState(false);
   const [initiatingCheckout, setInitiatingCheckout] = useState(false);
   const [inviteTokenInput, setInviteTokenInput] = useState("");
   const [inviteState, setInviteState] = useState<{
@@ -400,6 +565,11 @@ export default function EventDetail() {
   const [inviteContact, setInviteContact] = useState("");
   const [pairingBusy, setPairingBusy] = useState(false);
   const [pairingActionBusy, setPairingActionBusy] = useState(false);
+  const dismissInFlightRef = useRef(false);
+  const scrollOffsetYRef = useRef(0);
+  const dismissResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const triggerLightHaptic = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(
@@ -426,10 +596,10 @@ export default function EventDetail() {
     };
   }, [data?.id]);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     triggerLightHaptic();
     safeBack(router, navigation, fallbackRoute);
-  };
+  }, [fallbackRoute, navigation, router, triggerLightHaptic]);
   const accessMode = data?.accessPolicy?.mode ?? null;
   const accessBadge = resolveAccessBadge(accessMode, t);
   const isInviteOnly = accessMode?.toUpperCase() === "INVITE_ONLY";
@@ -689,28 +859,77 @@ export default function EventDetail() {
     );
   }, [data?.ticketTypes, inviteTicketTypeId]);
 
-  const purchasableTickets = useMemo(() => {
-    return ticketTypes.filter((ticket) => {
-      const remaining =
-        ticket.totalQuantity != null
-          ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
-          : null;
-      const status = ticket.status ?? null;
-      if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING")
-        return false;
-      if (remaining === 0) return false;
-      return true;
-    });
-  }, [ticketTypes]);
-
+  const ticketMeta = useMemo(
+    () =>
+      ticketTypes.map((ticket) => {
+        const remaining =
+          ticket.totalQuantity != null
+            ? Math.max(ticket.totalQuantity - (ticket.soldQuantity ?? 0), 0)
+            : null;
+        const status = ticket.status ?? null;
+        const unavailable =
+          status === "CLOSED" ||
+          status === "SOLD_OUT" ||
+          status === "UPCOMING" ||
+          remaining === 0;
+        const maxQuantity = unavailable
+          ? 0
+          : ticket.price <= 0
+            ? Math.min(1, remaining ?? 1)
+            : remaining == null
+              ? 10
+              : Math.max(0, Math.min(10, remaining));
+        const availabilityLabel =
+          remaining != null
+            ? remaining <= 6
+              ? t("events:tickets.lastSeats", { count: remaining })
+              : t("events:tickets.remaining", { count: remaining })
+            : null;
+        return {
+          ...ticket,
+          remaining,
+          unavailable,
+          maxQuantity,
+          availabilityLabel,
+          statusLabel: resolveTicketStatusLabel(status, remaining, t),
+          currencyCode: ticket.currency?.toUpperCase() || "EUR",
+        };
+      }),
+    [t, ticketTypes],
+  );
+  const ticketMetaById = useMemo(
+    () => new Map(ticketMeta.map((ticket) => [ticket.id, ticket])),
+    [ticketMeta],
+  );
+  const purchasableTickets = useMemo(
+    () => ticketMeta.filter((ticket) => !ticket.unavailable),
+    [ticketMeta],
+  );
   const hasPurchasableTickets = purchasableTickets.length > 0;
 
   useEffect(() => {
-    if (ticketTypes.length === 0) return;
-    if (selectedTicketId !== null) return;
-    const firstAvailable = purchasableTickets[0] ?? ticketTypes[0];
-    setSelectedTicketId(firstAvailable?.id ?? null);
-  }, [purchasableTickets, selectedTicketId, ticketTypes]);
+    setTicketQuantities((current) => {
+      const allowed = new Set(ticketMeta.map((ticket) => ticket.id));
+      let changed = false;
+      const next: Record<number, number> = {};
+      for (const [rawId, rawQuantity] of Object.entries(current)) {
+        const id = Number(rawId);
+        if (!allowed.has(id)) {
+          changed = true;
+          continue;
+        }
+        const quantity = Number.isFinite(rawQuantity) ? rawQuantity : 0;
+        const max = ticketMetaById.get(id)?.maxQuantity ?? 0;
+        const safeQuantity = Math.max(0, Math.min(max, quantity));
+        if (safeQuantity !== quantity) changed = true;
+        if (safeQuantity > 0) next[id] = safeQuantity;
+      }
+      if (!changed && Object.keys(next).length === Object.keys(current).length) {
+        return current;
+      }
+      return next;
+    });
+  }, [ticketMeta, ticketMetaById]);
 
   useEffect(() => {
     if (!isPadelEvent) return;
@@ -730,39 +949,6 @@ export default function EventDetail() {
     visiblePadelCategories,
   ]);
 
-  const selectedTicket = useMemo(
-    () => ticketTypes.find((ticket) => ticket.id === selectedTicketId) ?? null,
-    [selectedTicketId, ticketTypes],
-  );
-
-  const ticketRemaining = useMemo(() => {
-    if (!selectedTicket) return null;
-    if (selectedTicket.totalQuantity == null) return null;
-    return Math.max(
-      selectedTicket.totalQuantity - (selectedTicket.soldQuantity ?? 0),
-      0,
-    );
-  }, [selectedTicket]);
-
-  const ticketStatusLabel = useMemo(
-    () =>
-      resolveTicketStatusLabel(
-        selectedTicket?.status ?? null,
-        ticketRemaining,
-        t,
-      ),
-    [selectedTicket?.status, t, ticketRemaining],
-  );
-  const ticketIsAvailable = useMemo(() => {
-    if (!selectedTicket) return false;
-    const status = selectedTicket.status ?? null;
-    if (status === "CLOSED" || status === "SOLD_OUT" || status === "UPCOMING")
-      return false;
-    if (ticketRemaining === 0) return false;
-    return true;
-  }, [selectedTicket, ticketRemaining]);
-
-  const isFreeTicket = selectedTicket?.price === 0;
   const eventIsActive = useMemo(() => {
     if (!data) return false;
     if (data.status !== "ACTIVE") return false;
@@ -770,21 +956,36 @@ export default function EventDetail() {
     if (endsAtMs == null || Number.isNaN(endsAtMs)) return true;
     return endsAtMs > Date.now();
   }, [data]);
-  const maxQuantity = useMemo(() => {
-    if (isFreeTicket) return 1;
-    if (ticketRemaining == null) return 10;
-    return Math.max(1, Math.min(ticketRemaining, 10));
-  }, [isFreeTicket, ticketRemaining]);
-
-  useEffect(() => {
-    if (ticketQuantity > maxQuantity) setTicketQuantity(maxQuantity);
-  }, [maxQuantity, ticketQuantity]);
-
-  useEffect(() => {
-    if (isFreeTicket && ticketQuantity !== 1) setTicketQuantity(1);
-  }, [isFreeTicket, ticketQuantity]);
-
-  const totalCents = selectedTicket ? selectedTicket.price * ticketQuantity : 0;
+  const selectedTicketItems = useMemo(
+    () =>
+      ticketMeta
+        .map((ticket) => {
+          const quantity = ticketQuantities[ticket.id] ?? 0;
+          return {
+            ticketTypeId: ticket.id,
+            ticketName: ticket.name,
+            quantity,
+            unitPriceCents: ticket.price,
+            lineTotalCents: ticket.price * quantity,
+            currency: ticket.currencyCode,
+          };
+        })
+        .filter((item) => item.quantity > 0),
+    [ticketMeta, ticketQuantities],
+  );
+  const selectedTicketQuantity = useMemo(
+    () =>
+      selectedTicketItems.reduce((total, item) => total + item.quantity, 0),
+    [selectedTicketItems],
+  );
+  const selectedTicketTotalCents = useMemo(
+    () =>
+      selectedTicketItems.reduce((total, item) => total + item.lineTotalCents, 0),
+    [selectedTicketItems],
+  );
+  const selectedItemsAreFree =
+    selectedTicketItems.length > 0 &&
+    selectedTicketItems.every((item) => item.unitPriceCents <= 0);
   const ticketInventory = useMemo(() => {
     const totals = ticketTypes
       .filter((ticket) => typeof ticket.totalQuantity === "number")
@@ -807,23 +1008,11 @@ export default function EventDetail() {
       });
     return t("events:tickets.remaining", { count: ticketInventory.remaining });
   }, [t, ticketInventory]);
-  const canInitiateCheckout =
-    Boolean(selectedTicket) &&
-    hasPurchasableTickets &&
-    ticketIsAvailable &&
-    !isLoading &&
-    !isError &&
-    canAccessInvite &&
-    eventIsActive;
-  const ctaLabel = isFreeTicket
-    ? t("events:detail.ctaJoin")
-    : t("events:detail.ctaBuy");
 
   const fallbackCover = data?.slug
     ? `https://picsum.photos/seed/orya-event-${encodeURIComponent(data.slug)}/1600/900`
     : null;
   const cover = resolveMediaUri(data?.coverImageUrl ?? fallbackCover ?? null);
-  const category = data?.categories?.[0] ?? null;
   const date = formatDateRange(data?.startsAt, data?.endsAt);
   const location =
     data?.location?.formattedAddress || data?.location?.city || null;
@@ -836,21 +1025,29 @@ export default function EventDetail() {
           })
       : null;
   const description = data?.description ?? data?.shortDescription ?? null;
-  const showPreview =
-    isLoading &&
-    !data &&
-    (eventTitleValue || previewCoverValue || previewDescription);
-  const previewDate = previewStartsAt
-    ? formatDateRange(previewStartsAt, previewEndsAt ?? undefined)
-    : date;
   const displayTitle = data?.title ?? eventTitleValue ?? null;
-  const displayCategory = data?.categories?.[0] ?? previewCategory ?? category;
   const displayCover = cover ?? previewCoverValue ?? null;
-  const displayDescription =
-    data?.shortDescription ??
-    data?.description ??
-    previewDescription ??
-    description;
+  const backdropSeed = useMemo(
+    () =>
+      String(
+        displayCover ??
+          data?.slug ??
+          slugValue ??
+          displayTitle ??
+          eventTitleValue ??
+          "orya-event",
+      ),
+    [data?.slug, displayCover, displayTitle, eventTitleValue, slugValue],
+  );
+  const fallbackBackdropTint = useMemo(
+    () => getFallbackTint(backdropSeed),
+    [backdropSeed],
+  );
+  const [backdropTint, setBackdropTint] = useState(fallbackBackdropTint);
+  const backdropPalette = useMemo(
+    () => buildEventBackdropPalette(backdropTint),
+    [backdropTint],
+  );
   const displayLocation =
     data?.location?.formattedAddress ||
     data?.location?.city ||
@@ -861,45 +1058,133 @@ export default function EventDetail() {
   const displayHost =
     data?.hostName ?? previewHost ?? data?.hostUsername ?? null;
   const hostUsername = data?.hostUsername ?? null;
+  const hostAvatar = resolveMediaUri(data?.hostAvatarUrl ?? null);
+  const startsAtLabel = useMemo(() => {
+    const startsAt = data?.startsAt ?? previewStartsAt;
+    if (!startsAt) return null;
+    try {
+      return `Começa às ${formatTime(new Date(startsAt))}`;
+    } catch {
+      return null;
+    }
+  }, [data?.startsAt, previewStartsAt]);
   const statusLabel = data ? resolveStatusLabel(data.status, t) : null;
+
+  useEffect(() => {
+    setBackdropTint(fallbackBackdropTint);
+  }, [fallbackBackdropTint]);
+
+  useEffect(() => {
+    let active = true;
+    if (!displayCover) {
+      return () => {
+        active = false;
+      };
+    }
+    const task = InteractionManager.runAfterInteractions(() => {
+      getDominantTint(displayCover, backdropSeed)
+        .then((resolved) => {
+          if (active) setBackdropTint(resolved);
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      active = false;
+      task?.cancel?.();
+    };
+  }, [backdropSeed, displayCover]);
+
   const handleHostPress = () => {
     if (hostUsername) {
       router.push(`/${hostUsername}`);
     }
   };
-  const displayImageTag =
-    previewImageTag ?? (data?.slug ? `event-${data.slug}` : null);
-  const showStickyCTA =
-    Boolean(data) &&
-    !isLoading &&
-    !isError &&
-    !isPadelEvent &&
-    canAccessInvite &&
-    eventIsActive;
-  const showFavoriteCTA = showStickyCTA && !hasPurchasableTickets;
-  const scrollBottomPadding = showStickyCTA
-    ? showFavoriteCTA
-      ? insets.bottom + 150
-      : insets.bottom + 180
-    : 36;
+  const showStickyPurchaseBar =
+    Boolean(data) && !isLoading && !isError && !isPadelEvent;
+  const canOpenTicketSheet = resolveCanOpenTicketSheet({
+    showStickyPurchaseBar,
+    ticketMetaLength: ticketMeta.length,
+    canAccessInvite,
+    eventIsActive,
+  });
+  const scrollBottomPadding = showStickyPurchaseBar ? insets.bottom + 190 : 36;
+  const ticketSheetCurrency =
+    selectedTicketItems[0]?.currency ??
+    ticketMeta[0]?.currencyCode ??
+    "EUR";
+  const ticketSelectorItems: TicketSelectorItem[] = useMemo(
+    () =>
+      ticketMeta.map((ticket) => {
+        const quantity = ticketQuantities[ticket.id] ?? 0;
+        const disabled = ticket.unavailable || !canAccessInvite || !eventIsActive;
+        return {
+          id: ticket.id,
+          name: ticket.name,
+          description: ticket.description ?? null,
+          priceCents: ticket.price,
+          currency: ticket.currencyCode,
+          quantity,
+          maxQuantity: ticket.maxQuantity,
+          availabilityLabel: ticket.availabilityLabel,
+          limitLabel:
+            ticket.price <= 0 && ticket.maxQuantity === 1
+              ? t("events:checkout.limitPerPerson", { count: 1 })
+              : null,
+          statusLabel: ticket.statusLabel,
+          disabled,
+        };
+      }),
+    [canAccessInvite, eventIsActive, t, ticketMeta, ticketQuantities],
+  );
+  const stickyPriceLabel =
+    selectedTicketQuantity > 0
+      ? formatTicketPrice(selectedTicketTotalCents, ticketSheetCurrency, t)
+      : displayPrice ??
+        (hasPurchasableTickets
+          ? formatTicketPrice(
+              purchasableTickets[0].price,
+              purchasableTickets[0].currencyCode,
+              t,
+            )
+          : t("events:tickets.comingSoon"));
+  const stickyHelperText = !canAccessInvite
+    ? t("events:invite.lockedTickets")
+    : !eventIsActive
+      ? t("events:status.ended")
+      : ticketMeta.length === 0
+        ? t("events:tickets.comingSoon")
+        : !session?.user?.id
+          ? t("events:detail.signInToContinue")
+          : null;
   const shareUrl =
     data?.slug && env.apiBaseUrl
       ? `${env.apiBaseUrl.replace(/\/$/, "")}/eventos/${data.slug}`
       : null;
-  const mapUrl = useMemo(() => {
+  const mapTargets = useMemo(() => {
     if (!data) return null;
+    const fallbackQuery =
+      data.location?.formattedAddress || data.location?.city || null;
     const lat = data.location?.lat ?? null;
     const lng = data.location?.lng ?? null;
     if (lat != null && lng != null) {
-      return `http://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(
-        data.title ?? t("events:detail.fallbackTitle"),
-      )}`;
+      const label = encodeURIComponent(data.title ?? "ORYA Event");
+      const coords = `${lat},${lng}`;
+      return {
+        apple: `http://maps.apple.com/?ll=${coords}&q=${label}`,
+        android: `geo:${coords}?q=${coords}(${label})`,
+        web: `https://www.google.com/maps/search/?api=1&query=${coords}`,
+      };
     }
-    if (location) {
-      return `http://maps.apple.com/?q=${encodeURIComponent(location)}`;
+    if (fallbackQuery) {
+      const query = encodeURIComponent(fallbackQuery);
+      return {
+        apple: `http://maps.apple.com/?q=${query}`,
+        android: `geo:0,0?q=${query}`,
+        web: `https://www.google.com/maps/search/?api=1&query=${query}`,
+      };
     }
     return null;
-  }, [data, location, t]);
+  }, [data]);
 
   const padelEventId = data?.id ?? null;
   const padelEnabled = isPadelEvent && Boolean(padelEventId);
@@ -978,13 +1263,164 @@ export default function EventDetail() {
   };
   const handleOpenMap = async () => {
     triggerLightHaptic();
-    if (!mapUrl) return;
+    if (!mapTargets) return;
     try {
-      await Linking.openURL(mapUrl);
+      const preferred = Platform.OS === "ios" ? mapTargets.apple : mapTargets.android;
+      const canOpenPreferred = await Linking.canOpenURL(preferred);
+      if (canOpenPreferred) {
+        await Linking.openURL(preferred);
+        return;
+      }
+      await Linking.openURL(mapTargets.web);
     } catch {
       // ignore
     }
   };
+
+  const handleIncrementTicket = useCallback(
+    (ticketId: number) => {
+      setTicketQuantities((current) => {
+        const meta = ticketMetaById.get(ticketId);
+        if (!meta) return current;
+        const disabled = meta.unavailable || !canAccessInvite || !eventIsActive;
+        if (disabled || meta.maxQuantity <= 0) return current;
+        const nextQuantity = Math.min(
+          meta.maxQuantity,
+          (current[ticketId] ?? 0) + 1,
+        );
+        if (nextQuantity === (current[ticketId] ?? 0)) return current;
+        return { ...current, [ticketId]: nextQuantity };
+      });
+    },
+    [canAccessInvite, eventIsActive, ticketMetaById],
+  );
+
+  const handleDecrementTicket = useCallback((ticketId: number) => {
+    setTicketQuantities((current) => {
+      const quantity = current[ticketId] ?? 0;
+      if (quantity <= 0) return current;
+      const nextQuantity = quantity - 1;
+      if (nextQuantity === 0) {
+        const next = { ...current };
+        delete next[ticketId];
+        return next;
+      }
+      return { ...current, [ticketId]: nextQuantity };
+    });
+  }, []);
+
+  const handleOpenTicketSheet = useCallback(() => {
+    triggerLightHaptic();
+    if (!canOpenTicketSheet) return;
+    setTicketSheetVisible(true);
+  }, [canOpenTicketSheet, triggerLightHaptic]);
+
+  const handleEventScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      scrollOffsetYRef.current = event.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
+
+  const handleEventScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (Platform.OS !== "ios") return;
+      if (ticketSheetVisible) return;
+      if (dismissInFlightRef.current) return;
+      const offsetY = event.nativeEvent.contentOffset.y;
+      scrollOffsetYRef.current = offsetY;
+      const shouldDismiss = shouldDismissByPullDown({
+        platform: Platform.OS,
+        offsetY,
+        ticketSheetVisible,
+        dismissInFlight: dismissInFlightRef.current,
+      });
+      if (!shouldDismiss || scrollOffsetYRef.current > 0) return;
+      dismissInFlightRef.current = true;
+      handleBack();
+      if (dismissResetTimerRef.current) {
+        clearTimeout(dismissResetTimerRef.current);
+      }
+      dismissResetTimerRef.current = setTimeout(() => {
+        dismissInFlightRef.current = false;
+        dismissResetTimerRef.current = null;
+      }, 420);
+    },
+    [handleBack, ticketSheetVisible],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (dismissResetTimerRef.current) {
+        clearTimeout(dismissResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCheckoutFromTickets = useCallback(async () => {
+    triggerLightHaptic();
+    if (!data) return;
+    if (!canAccessInvite || !eventIsActive) return;
+    if (selectedTicketItems.length === 0) return;
+    if (!session?.user?.id) {
+      openAuth();
+      return;
+    }
+    const firstItem = selectedTicketItems[0];
+    if (!firstItem) return;
+    const idempotencyKey = buildCheckoutIdempotencyKey();
+    setInitiatingCheckout(true);
+    try {
+      trackEvent("checkout_started", {
+        sourceType: "EVENT_TICKET",
+        eventId: data.id,
+        paymentScenario: selectedItemsAreFree ? "FREE_CHECKOUT" : "SINGLE",
+        itemCount: selectedTicketItems.length,
+        quantity: selectedTicketQuantity,
+      });
+      setCheckoutDraft({
+        slug: data.slug,
+        eventId: data.id,
+        eventTitle: data.title,
+        sourceType: "EVENT_TICKET",
+        items: selectedTicketItems,
+        ticketTypeId: firstItem.ticketTypeId,
+        ticketName: firstItem.ticketName,
+        quantity: selectedTicketQuantity,
+        unitPriceCents: firstItem.unitPriceCents,
+        totalCents: selectedTicketTotalCents,
+        currency: firstItem.currency,
+        paymentMethod: "card",
+        paymentScenario: selectedItemsAreFree ? "FREE_CHECKOUT" : "SINGLE",
+        inviteToken: inviteToken ?? null,
+        idempotencyKey,
+      });
+      setTicketSheetVisible(false);
+      router.push("/checkout");
+    } catch (err: any) {
+      Alert.alert(
+        t("common:labels.error"),
+        getUserFacingError(err, t("events:checkout.completeFailed")),
+      );
+    } finally {
+      setInitiatingCheckout(false);
+    }
+  }, [
+    canAccessInvite,
+    data,
+    eventIsActive,
+    inviteToken,
+    openAuth,
+    router,
+    selectedItemsAreFree,
+    selectedTicketItems,
+    selectedTicketQuantity,
+    selectedTicketTotalCents,
+    session?.user?.id,
+    setCheckoutDraft,
+    t,
+    triggerLightHaptic,
+  ]);
 
   const handleCreatePairing = async () => {
     triggerLightHaptic();
@@ -1230,378 +1666,52 @@ export default function EventDetail() {
       setPairingActionBusy(false);
     }
   }
-  const heroTranslate = scrollY.interpolate({
-    inputRange: [0, 220],
-    outputRange: [0, -24],
-    extrapolate: "clamp",
-  });
-  const heroScale = scrollY.interpolate({
-    inputRange: [-120, 0, 220],
-    outputRange: [1.1, 1, 0.96],
-    extrapolate: "clamp",
-  });
-  const compactHeaderOpacity = scrollY.interpolate({
-    inputRange: [130, 220],
-    outputRange: [0, 1],
-    extrapolate: "clamp",
-  });
-
   return (
     <>
       <Stack.Screen
-        options={{ headerShown: false, animation: "slide_from_right" }}
+        options={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+          gestureEnabled: true,
+        }}
       />
       <LiquidBackground variant="solid">
-        <Animated.View
-          pointerEvents="box-none"
-          style={{
-            position: "absolute",
-            zIndex: 50,
-            top: insets.top + 8,
-            left: 20,
-            right: 20,
-            opacity: compactHeaderOpacity,
-          }}
-        >
-          <GlassCard intensity={52} padding={10}>
-            <View className="flex-row items-center justify-between">
-              <Text
-                className="text-white text-sm font-semibold"
-                numberOfLines={1}
-                style={{ flex: 1 }}
-              >
-                {data?.title ??
-                  eventTitleValue ??
-                  t("events:detail.fallbackTitle")}
-              </Text>
-              <Ionicons
-                name="sparkles-outline"
-                size={16}
-                color="rgba(255,255,255,0.7)"
-              />
-            </View>
-          </GlassCard>
-        </Animated.View>
-
+        <View pointerEvents="none" style={styles.backdropLayer}>
+          <LinearGradient
+            colors={backdropPalette.rootGradient}
+            start={{ x: 0.12, y: 0 }}
+            end={{ x: 0.88, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={backdropPalette.topGradient}
+            start={{ x: 0.46, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.backdropTopWash}
+          />
+          <LinearGradient
+            colors={backdropPalette.blendGradient}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.backdropBlend}
+          />
+        </View>
         <Animated.ScrollView
           contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
-          onScroll={Animated.event(
-            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-            { useNativeDriver: true },
-          )}
+          showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
+          onScroll={handleEventScroll}
+          onScrollEndDrag={handleEventScrollEndDrag}
         >
-          <View className="px-5 pb-4" style={{ paddingTop: insets.top + 8 }}>
-            <View className="flex-row items-center justify-between">
-              <Pressable
-                onPress={handleBack}
-                accessibilityRole="button"
-                accessibilityLabel={t("common:actions.back")}
-                style={({ pressed }) => [
-                  {
-                    width: tokens.layout.touchTarget,
-                    height: tokens.layout.touchTarget,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  },
-                  pressed
-                    ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
-                    : null,
-                ]}
-              >
-                <Ionicons
-                  name="chevron-back"
-                  size={22}
-                  color={tokens.colors.text}
-                />
-              </Pressable>
-              <View className="flex-row items-center gap-2">
-                {data?.id ? (
-                  <FavoriteToggle
-                    eventId={data.id}
-                    size={18}
-                    style={{ width: 40, height: 40, borderRadius: 20 }}
-                  />
-                ) : null}
-                <Pressable
-                  onPress={handleShare}
-                  disabled={!data}
-                  className="h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10"
-                  style={({ pressed }) => [
-                    !data ? { opacity: 0.5 } : null,
-                    pressed && data
-                      ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
-                      : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common:actions.share")}
-                  accessibilityState={{ disabled: !data }}
-                >
-                  <Ionicons
-                    name="share-outline"
-                    size={16}
-                    color="rgba(255,255,255,0.88)"
-                  />
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
-          {showPreview ? (
-            <Animated.View
-              style={{ opacity: fade, transform: [{ translateY: translate }] }}
-            >
-              <View className="px-5">
-                <View className="overflow-hidden rounded-[28px] border border-white/10">
-                  {displayCover ? (
-                    <View
-                      style={{
-                        height: heroHeight,
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <Image
-                        source={{ uri: displayCover }}
-                        style={StyleSheet.absoluteFill}
-                        contentFit="cover"
-                        transition={240}
-                        cachePolicy="memory-disk"
-                        priority="high"
-                      />
-                      <LinearGradient
-                        colors={["rgba(0,0,0,0.1)", "rgba(0,0,0,0.7)"]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 0, y: 1 }}
-                        style={StyleSheet.absoluteFill}
-                      />
-                      <View className="flex-row items-center justify-between px-4 pt-4">
-                        <View className="flex-row items-center gap-2">
-                          {displayCategory ? (
-                            <GlassPill label={displayCategory} />
-                          ) : null}
-                          <GlassPill
-                            label={accessBadge.label}
-                            variant={accessBadge.variant}
-                          />
-                        </View>
-                      </View>
-                      <View className="px-4 pb-4 gap-2">
-                        {displayTitle ? (
-                          <Text className="text-white text-2xl font-semibold">
-                            {displayTitle}
-                          </Text>
-                        ) : null}
-                        {displayDescription ? (
-                          <Text className="text-white/75 text-sm">
-                            {displayDescription}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  ) : (
-                    <View
-                      style={{
-                        height: heroHeight,
-                        backgroundColor: "rgba(255,255,255,0.08)",
-                        justifyContent: "space-between",
-                        paddingHorizontal: tokens.spacing.lg,
-                        paddingVertical: tokens.spacing.lg,
-                      }}
-                    >
-                      <View className="flex-row items-center gap-2 self-start">
-                        {displayCategory ? (
-                          <GlassPill label={displayCategory} />
-                        ) : null}
-                        <GlassPill
-                          label={accessBadge.label}
-                          variant={accessBadge.variant}
-                        />
-                      </View>
-                    </View>
-                  )}
-                </View>
-
-                <View className="pt-6 gap-3">
-                  <GlassCard intensity={50}>
-                    <View className="gap-3">
-                      <Text className="text-white text-sm font-semibold">
-                        {t("events:detail.mainInfo")}
-                      </Text>
-                      <View className="flex-row flex-wrap gap-2">
-                        {previewDate ? (
-                          <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
-                            <Ionicons
-                              name="calendar-outline"
-                              size={14}
-                              color="rgba(255,255,255,0.8)"
-                            />
-                            <Text className="text-white/80 text-xs font-semibold">
-                              {previewDate}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {displayPrice ? (
-                          <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                            <Ionicons
-                              name="pricetag-outline"
-                              size={14}
-                              color="rgba(255,255,255,0.85)"
-                            />
-                            <Text className="text-white text-xs font-semibold">
-                              {displayPrice}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {displayLocation ? (
-                          <View className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                            <Ionicons
-                              name="location-outline"
-                              size={14}
-                              color="rgba(255,255,255,0.7)"
-                            />
-                            <Text
-                              className="text-white/70 text-xs"
-                              numberOfLines={1}
-                            >
-                              {displayLocation}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {statusLabel ? (
-                          <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                            <Ionicons
-                              name="sparkles-outline"
-                              size={14}
-                              color="rgba(255,255,255,0.86)"
-                            />
-                            <Text className="text-white text-xs font-semibold">
-                              {statusLabel}
-                            </Text>
-                          </View>
-                        ) : null}
-                        {ticketInventoryLabel ? (
-                          <View className="flex-row items-center gap-2 rounded-full border border-white/12 bg-white/6 px-3 py-2">
-                            <Ionicons
-                              name="ticket-outline"
-                              size={14}
-                              color="rgba(255,255,255,0.72)"
-                            />
-                            <Text className="text-white/75 text-xs">
-                              {ticketInventoryLabel}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      {displayHost ? (
-                        <Pressable
-                          onPress={handleHostPress}
-                          disabled={!hostUsername}
-                          className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                          style={({ pressed }) => [
-                            { minHeight: tokens.layout.touchTarget },
-                            pressed && hostUsername
-                              ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
-                              : null,
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityLabel={t("events:detail.openOrganizer", {
-                            name: displayHost,
-                          })}
-                          accessibilityState={{ disabled: !hostUsername }}
-                        >
-                          <View className="flex-row items-center gap-2">
-                            <Ionicons
-                              name="person-outline"
-                              size={16}
-                              color="rgba(255,255,255,0.7)"
-                            />
-                            <Text className="text-white/80 text-sm">
-                              {t("events:detail.organizer", {
-                                name: displayHost,
-                              })}
-                            </Text>
-                          </View>
-                          <Ionicons
-                            name="chevron-forward"
-                            size={16}
-                            color="rgba(255,255,255,0.5)"
-                          />
-                        </Pressable>
-                      ) : null}
-                      {mapUrl || data ? (
-                        <View className="flex-row flex-wrap gap-2">
-                          {mapUrl ? (
-                            <Pressable
-                              onPress={handleOpenMap}
-                              className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                              style={({ pressed }) => [
-                                { minHeight: tokens.layout.touchTarget },
-                                pressed
-                                  ? {
-                                      opacity: 0.9,
-                                      transform: [{ scale: 0.985 }],
-                                    }
-                                  : null,
-                              ]}
-                              accessibilityRole="button"
-                              accessibilityLabel={t("common:actions.openMap")}
-                            >
-                              <View className="flex-row items-center gap-2">
-                                <Ionicons
-                                  name="map-outline"
-                                  size={14}
-                                  color="rgba(255,255,255,0.85)"
-                                />
-                                <Text className="text-white/80 text-xs font-semibold">
-                                  {t("common:actions.openMap")}
-                                </Text>
-                              </View>
-                            </Pressable>
-                          ) : null}
-                          {data ? (
-                            <Pressable
-                              onPress={handleShare}
-                              className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                              style={({ pressed }) => [
-                                { minHeight: tokens.layout.touchTarget },
-                                pressed
-                                  ? {
-                                      opacity: 0.9,
-                                      transform: [{ scale: 0.985 }],
-                                    }
-                                  : null,
-                              ]}
-                              accessibilityRole="button"
-                              accessibilityLabel={t("common:actions.share")}
-                            >
-                              <View className="flex-row items-center gap-2">
-                                <Ionicons
-                                  name="share-outline"
-                                  size={14}
-                                  color="rgba(255,255,255,0.85)"
-                                />
-                                <Text className="text-white/80 text-xs font-semibold">
-                                  {t("common:actions.share")}
-                                </Text>
-                              </View>
-                            </Pressable>
-                          ) : null}
-                        </View>
-                      ) : null}
-                    </View>
-                  </GlassCard>
-                </View>
-              </View>
-            </Animated.View>
-          ) : isLoading ? (
-            <View className="px-5 gap-3">
-              <GlassSkeleton height={220} />
+          {isLoading && !data ? (
+            <View className="px-5 gap-3" style={{ paddingTop: insets.top + 16 }}>
+              <GlassSkeleton height={320} />
               <GlassSkeleton height={140} />
               <GlassSkeleton height={120} />
             </View>
           ) : isError || !data ? (
-            <View className="px-5">
-              <GlassSurface intensity={50}>
+            <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
+              <GlassCard intensity={50}>
                 <Text className="text-red-300 text-sm mb-3">
                   {error instanceof ApiError && error.status === 404
                     ? t("events:detail.notFound")
@@ -1618,294 +1728,85 @@ export default function EventDetail() {
                     {t("common:actions.retry")}
                   </Text>
                 </Pressable>
-              </GlassSurface>
+              </GlassCard>
             </View>
           ) : (
             <Animated.View
               style={{ opacity: fade, transform: [{ translateY: translate }] }}
             >
-              <View className="px-5">
-                <Animated.View
-                  style={{
-                    transform: [
-                      { translateY: heroTranslate },
-                      { scale: heroScale },
-                    ],
+              <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
+                <EventHeroSquare coverUri={displayCover} title={displayTitle} />
+                <EventHeaderMeta
+                  title={displayTitle}
+                  dateLabel={date}
+                  locationLabel={displayLocation}
+                  organizer={{
+                    name: displayHost,
+                    username: hostUsername,
+                    avatarUri: hostAvatar,
+                    onPress: handleHostPress,
+                    disabled: !hostUsername,
                   }}
                 >
-                  <View className="overflow-hidden rounded-[28px] border border-white/10">
-                    {cover ? (
-                      <View
-                        style={{
-                          height: heroHeight,
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <Image
-                          source={{ uri: cover }}
-                          style={StyleSheet.absoluteFill}
-                          contentFit="cover"
-                          transition={260}
-                          cachePolicy="memory-disk"
-                          priority="high"
-                        />
-                        <LinearGradient
-                          colors={["rgba(0,0,0,0.05)", "rgba(0,0,0,0.7)"]}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 0, y: 1 }}
-                          style={StyleSheet.absoluteFill}
-                        />
-                        <View className="flex-row items-center justify-between px-4 pt-4">
-                          <View className="flex-row items-center gap-2">
-                            {category ? <GlassPill label={category} /> : null}
-                            <GlassPill
-                              label={accessBadge.label}
-                              variant={accessBadge.variant}
-                            />
-                            {data.isHighlighted ? (
-                              <GlassPill
-                                label={t("events:badges.featured")}
-                                variant="accent"
-                              />
-                            ) : null}
-                          </View>
-                          <GlassPill
-                            label={resolveStatusLabel(data.status, t)}
-                            variant="muted"
-                          />
-                        </View>
-                        <View className="px-4 pb-4 gap-2">
-                          <Text className="text-white text-2xl font-semibold">
-                            {data.title}
-                          </Text>
-                          {data.shortDescription ? (
-                            <Text className="text-white/75 text-sm">
-                              {data.shortDescription}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    ) : (
-                      <View
-                        style={{
-                          height: heroHeight,
-                          backgroundColor: "rgba(255,255,255,0.08)",
-                          justifyContent: "space-between",
-                          paddingHorizontal: tokens.spacing.lg,
-                          paddingVertical: tokens.spacing.lg,
-                        }}
-                      >
-                        <View className="flex-row items-center gap-2 self-start">
-                          {category ? <GlassPill label={category} /> : null}
-                          <GlassPill
-                            label={accessBadge.label}
-                            variant={accessBadge.variant}
-                          />
-                          {data.isHighlighted ? (
-                            <GlassPill
-                              label={t("events:badges.featured")}
-                              variant="accent"
-                            />
-                          ) : null}
-                        </View>
-                        <View className="gap-2">
-                          <Text className="text-white text-2xl font-semibold">
-                            {data.title}
-                          </Text>
-                          {data.shortDescription ? (
-                            <Text className="text-white/75 text-sm">
-                              {data.shortDescription}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                </Animated.View>
+                  {data?.id ? (
+                    <FavoriteToggle
+                      eventId={data.id}
+                      size={18}
+                      style={{ width: 42, height: 42, borderRadius: 21 }}
+                    />
+                  ) : null}
+                  <Pressable
+                    onPress={handleShare}
+                    disabled={!data}
+                    className="h-[42px] min-w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/10 px-3"
+                    style={({ pressed }) => [
+                      !data ? { opacity: 0.5 } : null,
+                      pressed && data
+                        ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
+                        : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("common:actions.share")}
+                    accessibilityState={{ disabled: !data }}
+                  >
+                    <Ionicons
+                      name="share-outline"
+                      size={17}
+                      color="rgba(255,255,255,0.9)"
+                    />
+                  </Pressable>
+                </EventHeaderMeta>
               </View>
 
-              <View className="px-5 pt-6 gap-4">
-                <GlassCard intensity={60}>
-                  <View className="gap-3">
-                    <Text className="text-white text-sm font-semibold">
-                      {t("events:detail.mainInfo")}
-                    </Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {date ? (
-                        <View className="flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2">
-                          <Ionicons
-                            name="calendar-outline"
-                            size={14}
-                            color="rgba(255,255,255,0.8)"
-                          />
-                          <Text className="text-white/80 text-xs font-semibold">
-                            {date}
-                          </Text>
-                        </View>
-                      ) : null}
-                      {price ? (
-                        <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                          <Ionicons
-                            name="pricetag-outline"
-                            size={14}
-                            color="rgba(255,255,255,0.85)"
-                          />
-                          <Text className="text-white text-xs font-semibold">
-                            {price}
-                          </Text>
-                        </View>
-                      ) : null}
-                      {location ? (
-                        <View className="flex-row items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2">
-                          <Ionicons
-                            name="location-outline"
-                            size={14}
-                            color="rgba(255,255,255,0.7)"
-                          />
-                          <Text
-                            className="text-white/70 text-xs"
-                            numberOfLines={1}
-                          >
-                            {location}
-                          </Text>
-                        </View>
-                      ) : null}
-                      {statusLabel ? (
-                        <View className="flex-row items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2">
-                          <Ionicons
-                            name="sparkles-outline"
-                            size={14}
-                            color="rgba(255,255,255,0.85)"
-                          />
-                          <Text className="text-white text-xs font-semibold">
-                            {statusLabel}
-                          </Text>
-                        </View>
-                      ) : null}
-                      {ticketInventoryLabel ? (
-                        <View className="flex-row items-center gap-2 rounded-full border border-white/12 bg-white/6 px-3 py-2">
-                          <Ionicons
-                            name="ticket-outline"
-                            size={14}
-                            color="rgba(255,255,255,0.74)"
-                          />
-                          <Text className="text-white/75 text-xs">
-                            {ticketInventoryLabel}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    {displayHost ? (
-                      <Pressable
-                        onPress={handleHostPress}
-                        disabled={!hostUsername}
-                        className="flex-row items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                        style={({ pressed }) => [
-                          { minHeight: tokens.layout.touchTarget },
-                          pressed && hostUsername
-                            ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
-                            : null,
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel={t("events:detail.openOrganizer", {
-                          name: displayHost,
-                        })}
-                        accessibilityState={{ disabled: !hostUsername }}
-                      >
-                        <View className="flex-row items-center gap-2">
-                          <Ionicons
-                            name="person-outline"
-                            size={16}
-                            color="rgba(255,255,255,0.7)"
-                          />
-                          <Text className="text-white/80 text-sm">
-                            {t("events:detail.organizer", {
-                              name: displayHost,
-                            })}
-                          </Text>
-                        </View>
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color="rgba(255,255,255,0.5)"
-                        />
-                      </Pressable>
+              <View className="px-5 pt-5 gap-4">
+                <EventInfoAccordion
+                  expanded={infoExpanded}
+                  onToggle={() => setInfoExpanded(true)}
+                  description={description}
+                  title={t("events:detail.about")}
+                >
+                  <View className="flex-row flex-wrap gap-2">
+                    <GlassPill
+                      label={accessBadge.label}
+                      variant={accessBadge.variant}
+                    />
+                    {statusLabel ? (
+                      <GlassPill label={statusLabel} variant="muted" />
                     ) : null}
-                    {mapUrl || data ? (
-                      <View className="flex-row flex-wrap gap-2">
-                        {mapUrl ? (
-                          <Pressable
-                            onPress={handleOpenMap}
-                            className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                            style={({ pressed }) => [
-                              { minHeight: tokens.layout.touchTarget },
-                              pressed
-                                ? {
-                                    opacity: 0.9,
-                                    transform: [{ scale: 0.985 }],
-                                  }
-                                : null,
-                            ]}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("common:actions.openMap")}
-                          >
-                            <View className="flex-row items-center gap-2">
-                              <Ionicons
-                                name="map-outline"
-                                size={14}
-                                color="rgba(255,255,255,0.85)"
-                              />
-                              <Text className="text-white/80 text-xs font-semibold">
-                                {t("common:actions.openMap")}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        ) : null}
-                        {data ? (
-                          <Pressable
-                            onPress={handleShare}
-                            className="rounded-full border border-white/15 bg-white/5 px-3 py-2"
-                            style={({ pressed }) => [
-                              { minHeight: tokens.layout.touchTarget },
-                              pressed
-                                ? {
-                                    opacity: 0.9,
-                                    transform: [{ scale: 0.985 }],
-                                  }
-                                : null,
-                            ]}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("common:actions.share")}
-                          >
-                            <View className="flex-row items-center gap-2">
-                              <Ionicons
-                                name="share-outline"
-                                size={14}
-                                color="rgba(255,255,255,0.85)"
-                              />
-                              <Text className="text-white/80 text-xs font-semibold">
-                                {t("common:actions.share")}
-                              </Text>
-                            </View>
-                          </Pressable>
-                        ) : null}
-                      </View>
+                    {ticketInventoryLabel ? (
+                      <GlassPill label={ticketInventoryLabel} variant="muted" />
                     ) : null}
                   </View>
-                </GlassCard>
+                </EventInfoAccordion>
 
-                {description ? (
-                  <GlassCard intensity={54}>
-                    <View className="gap-2">
-                      <Text className="text-white text-sm font-semibold">
-                        {t("events:detail.about")}
-                      </Text>
-                      <Text className="text-white/75 text-sm">
-                        {description}
-                      </Text>
-                    </View>
-                  </GlassCard>
-                ) : null}
+                <EventLocationBlock
+                  startsAtLabel={startsAtLabel}
+                  locationLabel={displayLocation}
+                  latitude={data.location?.lat ?? null}
+                  longitude={data.location?.lng ?? null}
+                  onOpenMap={handleOpenMap}
+                  openMapLabel={t("common:actions.openMap")}
+                />
 
                 {isInviteOnly ? (
                   <GlassCard intensity={52}>
@@ -2033,7 +1934,7 @@ export default function EventDetail() {
                 {isPadelEvent ? (
                   <>
                     {gateLocked ? (
-                      <GlassCard intensity={50}>
+                      <PadelSection tone="soft">
                         <Text className="text-white/70 text-sm">
                           {t("events:padel.inviteOnly")}
                         </Text>
@@ -2042,10 +1943,10 @@ export default function EventDetail() {
                             {t("events:detail.signInToContinue")}
                           </Text>
                         ) : null}
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
 
-                    <GlassCard intensity={56}>
+                    <PadelSection tone="base">
                       <View className="gap-3">
                         <Text className="text-white text-sm font-semibold">
                           {t("events:padel.summaryTitle")}
@@ -2083,10 +1984,10 @@ export default function EventDetail() {
                           </View>
                         ) : null}
                       </View>
-                    </GlassCard>
+                    </PadelSection>
 
                     {padelSnapshot?.timeline?.length ? (
-                      <GlassCard intensity={52}>
+                      <PadelSection tone="soft">
                         <View className="gap-3">
                           <Text className="text-white text-sm font-semibold">
                             {t("events:padel.timelineTitle")}
@@ -2107,11 +2008,11 @@ export default function EventDetail() {
                             </View>
                           ))}
                         </View>
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
 
                     {visiblePadelCategories.length > 0 ? (
-                      <GlassCard intensity={54}>
+                      <PadelSection tone="base">
                         <View className="gap-3">
                           <Text className="text-white text-sm font-semibold">
                             {t("events:padel.categoriesTitle")}
@@ -2199,16 +2100,34 @@ export default function EventDetail() {
                             );
                           })}
                         </View>
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
 
-                    <GlassCard intensity={56}>
+                    <PadelSection tone="accent">
                       <View className="gap-4">
-                        <Text className="text-white text-sm font-semibold">
-                          {t("events:padel.registrationSection")}
-                        </Text>
+                        <View className="flex-row items-center justify-between">
+                          <View className="flex-row items-center gap-2">
+                            <View className="h-8 w-8 items-center justify-center rounded-full border border-sky-200/45 bg-sky-300/15">
+                              <Ionicons
+                                name="person-add-outline"
+                                size={15}
+                                color="rgba(213,240,255,0.94)"
+                              />
+                            </View>
+                            <Text className="text-white text-sm font-semibold">
+                              {t("events:padel.registrationSection")}
+                            </Text>
+                          </View>
+                          <GlassPill
+                            label={resolvePadelRegistrationLabel(
+                              padelMeta?.registrationStatus,
+                              t,
+                            )}
+                            variant="muted"
+                          />
+                        </View>
                         <View className="gap-2">
-                          <View className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+                          <View className="rounded-2xl border border-white/15 bg-white/8 px-3 py-3">
                             <Text className="text-white/70 text-[11px] uppercase tracking-[0.12em]">
                               {t("events:padel.registrationFlow.step1Title")}
                             </Text>
@@ -2220,7 +2139,7 @@ export default function EventDetail() {
                                 : t("events:padel.registrationFlow.step1Missing")}
                             </Text>
                           </View>
-                          <View className="rounded-2xl border border-sky-300/35 bg-sky-400/15 px-3 py-3">
+                          <View className="rounded-2xl border border-sky-200/45 bg-sky-300/20 px-3 py-3">
                             <Text className="text-sky-100/80 text-[11px] uppercase tracking-[0.12em]">
                               {t("events:padel.registrationFlow.step2Title")}
                             </Text>
@@ -2245,8 +2164,8 @@ export default function EventDetail() {
                                   onPress={() => setPaymentMode(mode)}
                                   className={
                                     active
-                                      ? "rounded-full bg-white/20 px-4 py-2"
-                                      : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                                      ? "rounded-full border border-sky-200/60 bg-sky-200/30 px-4 py-2"
+                                      : "rounded-full border border-white/15 bg-white/8 px-4 py-2"
                                   }
                                   style={{ minHeight: tokens.layout.touchTarget }}
                                   accessibilityRole="button"
@@ -2259,7 +2178,7 @@ export default function EventDetail() {
                                   <Text
                                     className={
                                       active
-                                        ? "text-white text-xs font-semibold"
+                                        ? "text-sky-50 text-xs font-semibold"
                                         : "text-white/70 text-xs"
                                     }
                                   >
@@ -2292,8 +2211,8 @@ export default function EventDetail() {
                                   onPress={() => setJoinMode(option.key)}
                                   className={
                                     active
-                                      ? "rounded-full bg-white/20 px-4 py-2"
-                                      : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                                      ? "rounded-full border border-sky-200/60 bg-sky-200/30 px-4 py-2"
+                                      : "rounded-full border border-white/15 bg-white/8 px-4 py-2"
                                   }
                                   style={{ minHeight: tokens.layout.touchTarget }}
                                   accessibilityRole="button"
@@ -2303,7 +2222,7 @@ export default function EventDetail() {
                                   <Text
                                     className={
                                       active
-                                        ? "text-white text-xs font-semibold"
+                                        ? "text-sky-50 text-xs font-semibold"
                                         : "text-white/70 text-xs"
                                     }
                                   >
@@ -2321,7 +2240,7 @@ export default function EventDetail() {
                             placeholder={t("events:padel.invitePlaceholder")}
                             placeholderTextColor="rgba(255,255,255,0.4)"
                             autoCapitalize="none"
-                            className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-white"
+                            className="rounded-2xl border border-white/18 bg-white/8 px-4 py-3 text-white"
                             accessibilityLabel={t(
                               "events:padel.invitePlaceholder",
                             )}
@@ -2330,7 +2249,7 @@ export default function EventDetail() {
                         {!session?.user?.id ? (
                           <Pressable
                             onPress={openAuth}
-                            className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3"
+                            className="rounded-2xl border border-white/20 bg-white/12 px-4 py-3"
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
                             accessibilityLabel={t(
@@ -2347,8 +2266,8 @@ export default function EventDetail() {
                             disabled={!canSubmitRegistration}
                             className={
                               !canSubmitRegistration
-                                ? "rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
-                                : "rounded-2xl border border-sky-200/40 bg-sky-100 px-4 py-3"
+                                ? "rounded-2xl border border-white/14 bg-white/8 px-4 py-3"
+                                : "rounded-2xl border border-sky-200/55 bg-sky-100 px-4 py-3"
                             }
                             style={{ minHeight: tokens.layout.touchTarget }}
                             accessibilityRole="button"
@@ -2373,24 +2292,41 @@ export default function EventDetail() {
                             </Text>
                           </Pressable>
                         )}
-                        <Text
+                        <View
                           className={
                             canSubmitRegistration
-                              ? "text-sky-100/80 text-xs"
-                              : "text-amber-200 text-xs"
+                              ? "rounded-xl border border-sky-200/30 bg-sky-300/12 px-3 py-2"
+                              : "rounded-xl border border-amber-200/35 bg-amber-200/12 px-3 py-2"
                           }
                         >
-                          {registrationHint}
-                        </Text>
+                          <Text
+                            className={
+                              canSubmitRegistration
+                                ? "text-sky-100/90 text-xs"
+                                : "text-amber-200 text-xs"
+                            }
+                          >
+                            {registrationHint}
+                          </Text>
+                        </View>
                       </View>
-                    </GlassCard>
+                    </PadelSection>
 
                     {showMyPairingCard ? (
-                      <GlassCard intensity={56}>
+                      <PadelSection tone="base">
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">
-                            {t("events:padel.myPairingTitle")}
-                          </Text>
+                          <View className="flex-row items-center gap-2">
+                            <View className="h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-white/10">
+                              <Ionicons
+                                name="people-outline"
+                                size={15}
+                                color="rgba(236,246,255,0.94)"
+                              />
+                            </View>
+                            <Text className="text-white text-sm font-semibold">
+                              {t("events:padel.myPairingTitle")}
+                            </Text>
+                          </View>
                           {myPairingsQuery.isLoading ? (
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.myPairingLoading")}
@@ -2416,15 +2352,18 @@ export default function EventDetail() {
                             );
                             return (
                               <View className="gap-3">
-                                <Text className="text-white/70 text-sm">
-                                  {pairing.category?.label ??
-                                    t("events:detail.categoryFallback")}{" "}
-                                  ·{" "}
-                                  {resolvePadelPaymentModeLabel(
-                                    pairing.paymentMode,
-                                    t,
-                                  )}
-                                </Text>
+                                <View className="rounded-2xl border border-white/14 bg-white/8 px-3 py-3">
+                                  <Text className="text-white/80 text-sm font-semibold">
+                                    {pairing.category?.label ??
+                                      t("events:detail.categoryFallback")}
+                                  </Text>
+                                  <Text className="text-white/65 text-xs mt-1">
+                                    {resolvePadelPaymentModeLabel(
+                                      pairing.paymentMode,
+                                      t,
+                                    )}
+                                  </Text>
+                                </View>
                                 {invitePending ? (
                                   <Text className="text-amber-200 text-xs">
                                     {t("events:padel.completeProfileToAccept")}
@@ -2438,7 +2377,7 @@ export default function EventDetail() {
                                           handleAcceptPairingInvite(pairing.id)
                                         }
                                         disabled={pairingActionBusy}
-                                        className="rounded-full bg-white/15 px-4 py-2"
+                                        className="rounded-full border border-sky-200/55 bg-sky-200/28 px-4 py-2"
                                         style={{
                                           minHeight: tokens.layout.touchTarget,
                                         }}
@@ -2450,7 +2389,7 @@ export default function EventDetail() {
                                           disabled: pairingActionBusy,
                                         }}
                                       >
-                                        <Text className="text-white text-xs font-semibold">
+                                        <Text className="text-sky-50 text-xs font-semibold">
                                           {t("events:padel.acceptInvite")}
                                         </Text>
                                       </Pressable>
@@ -2459,7 +2398,7 @@ export default function EventDetail() {
                                           handleDeclinePairingInvite(pairing.id)
                                         }
                                         disabled={pairingActionBusy}
-                                        className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                                        className="rounded-full border border-white/20 bg-white/10 px-4 py-2"
                                         style={{
                                           minHeight: tokens.layout.touchTarget,
                                         }}
@@ -2484,7 +2423,7 @@ export default function EventDetail() {
                                           pairing.inviteToken ?? "",
                                         )
                                       }
-                                      className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                                      className="rounded-full border border-white/20 bg-white/10 px-4 py-2"
                                       style={{
                                         minHeight: tokens.layout.touchTarget,
                                       }}
@@ -2511,7 +2450,7 @@ export default function EventDetail() {
                                         pairingActionBusy ||
                                         padelActionsDisabled
                                       }
-                                      className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
+                                      className="rounded-full border border-white/22 bg-white/16 px-4 py-2"
                                       style={{
                                         minHeight: tokens.layout.touchTarget,
                                       }}
@@ -2536,16 +2475,25 @@ export default function EventDetail() {
                           })()
                           )}
                         </View>
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
 
                     {showOpenPairingsCard ? (
-                      <GlassCard intensity={54}>
+                      <PadelSection tone="soft">
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">
-                            {t("events:padel.openPairingsTitle")}
-                          </Text>
-                          <Text className="text-white/60 text-xs">
+                          <View className="flex-row items-center gap-2">
+                            <View className="h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-white/10">
+                              <Ionicons
+                                name="flash-outline"
+                                size={15}
+                                color="rgba(236,246,255,0.94)"
+                              />
+                            </View>
+                            <Text className="text-white text-sm font-semibold">
+                              {t("events:padel.openPairingsTitle")}
+                            </Text>
+                          </View>
+                          <Text className="text-white/65 text-xs">
                             {t("events:padel.openPairingsSubtitle")}
                           </Text>
                           {openPairingsQuery.isLoading ? (
@@ -2556,7 +2504,7 @@ export default function EventDetail() {
                             openPairings.map((pairing) => (
                               <View
                                 key={`open-${pairing.id}`}
-                                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                                className="rounded-2xl border border-white/14 bg-white/8 px-4 py-3"
                               >
                                 <View className="flex-row items-center justify-between">
                                   {pairing.category?.label ? (
@@ -2601,7 +2549,7 @@ export default function EventDetail() {
                                       handleJoinOpenPairing(pairing.id)
                                     }
                                     disabled={padelActionsDisabled || pairingBusy}
-                                    className="self-start rounded-full border border-white/15 bg-white/10 px-3 py-2"
+                                    className="self-start rounded-full border border-sky-200/55 bg-sky-200/28 px-4 py-2"
                                     style={{
                                       minHeight: tokens.layout.touchTarget,
                                     }}
@@ -2612,7 +2560,7 @@ export default function EventDetail() {
                                         padelActionsDisabled || pairingBusy,
                                     }}
                                   >
-                                    <Text className="text-white text-xs font-semibold">
+                                    <Text className="text-sky-50 text-xs font-semibold">
                                       {t("common:actions.join")}
                                     </Text>
                                   </Pressable>
@@ -2621,15 +2569,27 @@ export default function EventDetail() {
                             ))
                           )}
                         </View>
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
 
                     {liveEnabled ? (
-                      <GlassCard intensity={54}>
+                      <PadelSection tone="live">
                         <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">
-                            {t("events:padel.liveTitle")}
-                          </Text>
+                          <View className="flex-row items-center justify-between">
+                            <View className="flex-row items-center gap-2">
+                              <View className="h-8 w-8 items-center justify-center rounded-full border border-rose-200/40 bg-rose-200/16">
+                                <Ionicons
+                                  name="radio-outline"
+                                  size={15}
+                                  color="rgba(255,227,235,0.95)"
+                                />
+                              </View>
+                              <Text className="text-white text-sm font-semibold">
+                                {t("events:padel.liveTitle")}
+                              </Text>
+                            </View>
+                            <GlassPill label="LIVE" variant="accent" />
+                          </View>
                           {standingsQuery.isLoading ? (
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.standingsLoading")}
@@ -2649,7 +2609,7 @@ export default function EventDetail() {
                               return (
                                 <View
                                   key={`standings-${groupLabel}`}
-                                  className="gap-2"
+                                  className="gap-2 rounded-2xl border border-white/14 bg-white/8 p-3"
                                 >
                                   <Text className="text-white/70 text-xs uppercase tracking-[0.12em]">
                                     {t("events:padel.groupLabel", {
@@ -2676,12 +2636,19 @@ export default function EventDetail() {
                                     return (
                                       <View
                                         key={`row-${groupLabel}-${row.entityId}`}
-                                        className="flex-row items-center justify-between"
+                                        className="flex-row items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
                                       >
-                                        <Text className="text-white/80 text-sm">
-                                          #{idx + 1} · {label}
-                                        </Text>
-                                        <Text className="text-white/60 text-xs">
+                                        <View className="flex-1 pr-2 flex-row items-center gap-2">
+                                          <View className="h-6 w-6 rounded-full border border-white/20 bg-white/10 items-center justify-center">
+                                            <Text className="text-white/85 text-[11px] font-semibold">
+                                              {idx + 1}
+                                            </Text>
+                                          </View>
+                                          <Text className="text-white/85 text-sm flex-1" numberOfLines={1}>
+                                            {label}
+                                          </Text>
+                                        </View>
+                                        <Text className="text-white/65 text-xs">
                                           {row.points}{" "}
                                           {t("events:padel.pointsShort")} ·{" "}
                                           {row.wins}
@@ -2696,7 +2663,7 @@ export default function EventDetail() {
                               );
                             })
                           )}
-                          <View className="h-px bg-white/10" />
+                          <View className="h-px bg-white/12" />
                           {matchesQuery.isLoading ? (
                             <Text className="text-white/60 text-sm">
                               {t("events:padel.matchesLoading")}
@@ -2711,7 +2678,7 @@ export default function EventDetail() {
                               .map((match: any) => (
                                 <View
                                   key={`match-${match.id}`}
-                                  className="gap-1"
+                                  className="gap-1 rounded-2xl border border-white/14 bg-white/8 px-3 py-3"
                                 >
                                   <Text className="text-white/70 text-xs">
                                     {match.groupLabel
@@ -2720,7 +2687,7 @@ export default function EventDetail() {
                                         })
                                       : t("events:padel.matchLabel")}
                                   </Text>
-                                  <Text className="text-white/80 text-sm">
+                                  <Text className="text-white/85 text-sm font-semibold">
                                     {resolvePairingLabel(match.pairingA, t)}{" "}
                                     {t("events:detail.vs")}{" "}
                                     {resolvePairingLabel(match.pairingB, t)}
@@ -2729,452 +2696,167 @@ export default function EventDetail() {
                               ))
                           )}
                         </View>
-                      </GlassCard>
+                      </PadelSection>
                     ) : null}
                   </>
-                ) : (
-                  <>
-                    {gateLocked ? (
-                      <GlassCard intensity={50}>
-                        <Text className="text-white/70 text-sm">
-                          {t("events:invite.lockedTickets")}
-                        </Text>
-                        {!session?.user?.id ? (
-                          <Text className="text-amber-200 text-xs">
-                            {t("events:detail.signInToContinue")}
-                          </Text>
-                        ) : null}
-                      </GlassCard>
-                    ) : (
-                      <>
-                        <View className="gap-3">
-                          <Text className="text-white text-sm font-semibold">
-                            {t("events:tickets.title")}
-                          </Text>
-                          {ticketTypes.length === 0 ? (
-                            <GlassCard intensity={50}>
-                              <Text className="text-white/70 text-sm">
-                                {t("events:tickets.comingSoon")}
-                              </Text>
-                            </GlassCard>
-                          ) : (
-                            ticketTypes.map((ticket) => {
-                              const remaining =
-                                ticket.totalQuantity != null
-                                  ? Math.max(
-                                      ticket.totalQuantity -
-                                        (ticket.soldQuantity ?? 0),
-                                      0,
-                                    )
-                                  : null;
-                              const status = ticket.status ?? null;
-                              const statusLabel = resolveTicketStatusLabel(
-                                status,
-                                remaining,
-                                t,
-                              );
-                              const isSelected = ticket.id === selectedTicketId;
-                              const isUnavailable =
-                                status === "CLOSED" ||
-                                status === "SOLD_OUT" ||
-                                status === "UPCOMING" ||
-                                remaining === 0;
-                              const disabled = isUnavailable;
-                              const availability =
-                                remaining != null
-                                  ? remaining <= 6
-                                    ? t("events:tickets.lastSeats", {
-                                        count: remaining,
-                                      })
-                                    : t("events:tickets.remaining", {
-                                        count: remaining,
-                                      })
-                                  : null;
-
-                              return (
-                                <Pressable
-                                  key={`ticket-${ticket.id}`}
-                                  disabled={disabled}
-                                  onPress={() => setSelectedTicketId(ticket.id)}
-                                  className={
-                                    isSelected ? "opacity-100" : "opacity-90"
-                                  }
-                                  accessibilityRole="button"
-                                  accessibilityLabel={t(
-                                    "events:tickets.selectTicket",
-                                    { name: ticket.name },
-                                  )}
-                                  accessibilityState={{
-                                    selected: isSelected,
-                                    disabled,
-                                  }}
-                                >
-                                  <GlassCard
-                                    intensity={isSelected ? 68 : 52}
-                                    highlight={isSelected}
-                                  >
-                                    <View className="gap-3">
-                                      <View className="flex-row items-center justify-between">
-                                        <View className="flex-1 pr-2">
-                                          <Text
-                                            className="text-white text-base font-semibold"
-                                            numberOfLines={1}
-                                          >
-                                            {ticket.name}
-                                          </Text>
-                                          {ticket.description ? (
-                                            <Text
-                                              className="text-white/65 text-xs mt-1"
-                                              numberOfLines={2}
-                                            >
-                                              {ticket.description}
-                                            </Text>
-                                          ) : null}
-                                        </View>
-                                        <GlassPill
-                                          label={formatTicketPrice(
-                                            ticket.price,
-                                            ticket.currency,
-                                            t,
-                                          )}
-                                          variant="muted"
-                                        />
-                                      </View>
-                                      <View className="flex-row items-center gap-2">
-                                        <GlassPill
-                                          label={statusLabel}
-                                          variant={
-                                            disabled ? "muted" : "accent"
-                                          }
-                                        />
-                                        {availability ? (
-                                          <Text className="text-[11px] uppercase tracking-[0.12em] text-white/45">
-                                            {availability}
-                                          </Text>
-                                        ) : null}
-                                      </View>
-                                    </View>
-                                  </GlassCard>
-                                </Pressable>
-                              );
-                            })
-                          )}
-                        </View>
-
-                        {selectedTicket && hasPurchasableTickets ? (
-                          <GlassCard intensity={60} highlight>
-                            <View className="gap-4">
-                              <Text className="text-white text-sm font-semibold">
-                                {t("events:checkout.summaryTitle")}
-                              </Text>
-                              <View className="flex-row items-center justify-between">
-                                <Text className="text-white/70 text-sm">
-                                  {selectedTicket.name}
-                                </Text>
-                                <Text className="text-white text-sm font-semibold">
-                                  {formatTicketPrice(
-                                    selectedTicket.price,
-                                    selectedTicket.currency,
-                                    t,
-                                  )}
-                                </Text>
-                              </View>
-                              <View className="flex-row items-center justify-between">
-                                <Text className="text-white/60 text-sm">
-                                  {t("events:checkout.quantity")}
-                                </Text>
-                                <View className="flex-row items-center gap-3">
-                                  <Pressable
-                                    onPress={() =>
-                                      setTicketQuantity((prev) =>
-                                        Math.max(1, prev - 1),
-                                      )
-                                    }
-                                    disabled={maxQuantity <= 1}
-                                    className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                                    style={{
-                                      minHeight: tokens.layout.touchTarget,
-                                      opacity: maxQuantity <= 1 ? 0.4 : 1,
-                                    }}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={t(
-                                      "events:checkout.decreaseQuantity",
-                                    )}
-                                    accessibilityState={{
-                                      disabled: maxQuantity <= 1,
-                                    }}
-                                  >
-                                    <Ionicons
-                                      name="remove"
-                                      size={16}
-                                      color="rgba(255,255,255,0.75)"
-                                    />
-                                  </Pressable>
-                                  <Text className="text-white text-base font-semibold">
-                                    {ticketQuantity}
-                                  </Text>
-                                  <Pressable
-                                    onPress={() =>
-                                      setTicketQuantity((prev) =>
-                                        Math.min(maxQuantity, prev + 1),
-                                      )
-                                    }
-                                    disabled={maxQuantity <= 1}
-                                    className="h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/10"
-                                    style={{
-                                      minHeight: tokens.layout.touchTarget,
-                                      opacity: maxQuantity <= 1 ? 0.4 : 1,
-                                    }}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={t(
-                                      "events:checkout.increaseQuantity",
-                                    )}
-                                    accessibilityState={{
-                                      disabled: maxQuantity <= 1,
-                                    }}
-                                  >
-                                    <Ionicons
-                                      name="add"
-                                      size={16}
-                                      color="rgba(255,255,255,0.85)"
-                                    />
-                                  </Pressable>
-                                </View>
-                              </View>
-                              {isFreeTicket ? (
-                                <Text className="text-white/55 text-xs">
-                                  {t("events:checkout.limitPerPerson", {
-                                    count: 1,
-                                  })}
-                                </Text>
-                              ) : null}
-                              <View className="flex-row items-center justify-between">
-                                <Text className="text-white/60 text-sm">
-                                  {t("events:checkout.total")}
-                                </Text>
-                                <Text className="text-white text-lg font-semibold">
-                                  {formatTicketPrice(
-                                    totalCents,
-                                    selectedTicket.currency,
-                                    t,
-                                  )}
-                                </Text>
-                              </View>
-                              {!session ? (
-                                <Text className="text-xs text-amber-200">
-                                  {t("events:checkout.signInToComplete")}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </GlassCard>
-                        ) : null}
-                      </>
-                    )}
-                  </>
-                )}
+                ) : null}
               </View>
             </Animated.View>
           )}
         </Animated.ScrollView>
-        {showStickyCTA ? (
-          <StickyCTA>
-            {showFavoriteCTA ? (
-              <View className="flex-row gap-3">
-                <FavoriteToggle
-                  eventId={data!.id}
-                  variant="button"
-                  label={t("common:actions.favorite")}
-                  style={{ flex: 1 }}
-                />
-                <Pressable
-                  onPress={handleShare}
-                  className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
-                  style={({ pressed }) => [
-                    { minHeight: tokens.layout.touchTarget },
-                    pressed
-                      ? { opacity: 0.9, transform: [{ scale: 0.985 }] }
-                      : null,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common:actions.share")}
-                >
-                  <Ionicons
-                    name="share-outline"
-                    size={18}
-                    color="rgba(255,255,255,0.9)"
-                  />
-                  <Text className="text-white text-sm font-semibold">
-                    {t("common:actions.share")}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable
-                disabled={!canInitiateCheckout || initiatingCheckout}
-                onPress={async () => {
-                  triggerLightHaptic();
-                  if (
-                    !selectedTicket ||
-                    !canInitiateCheckout ||
-                    initiatingCheckout
-                  )
-                    return;
-                  if (!session?.user?.id) {
-                    openAuth();
-                    return;
-                  }
-                  const idempotencyKey = buildCheckoutIdempotencyKey();
-                  if (selectedTicket.price <= 0) {
-                    setInitiatingCheckout(true);
-                    try {
-                      trackEvent("checkout_started", {
-                        sourceType: "EVENT_TICKET",
-                        eventId: data?.id ?? null,
-                        ticketTypeId: selectedTicket.id,
-                        paymentScenario: "FREE_CHECKOUT",
-                      });
-                      const response = await createCheckoutIntent({
-                        slug: data!.slug,
-                        ticketTypeId: selectedTicket.id,
-                        quantity: ticketQuantity,
-                        paymentMethod: "card",
-                        paymentScenario: "FREE_CHECKOUT",
-                        idempotencyKey,
-                        inviteToken: inviteToken ?? undefined,
-                      });
-                      const isFree =
-                        response.freeCheckout ||
-                        response.isGratisCheckout ||
-                        (response.amount ?? 0) <= 0;
-                      if (isFree) {
-                        router.push({
-                          pathname: "/checkout/success",
-                          params: {
-                            purchaseId: response.purchaseId ?? "",
-                            paymentIntentId: response.paymentIntentId ?? "",
-                            eventTitle: data?.title ?? displayTitle,
-                            slug: data?.slug ?? slugValue ?? "",
-                          },
-                        });
-                        return;
-                      }
-                      setCheckoutDraft({
-                        slug: data!.slug,
-                        eventId: data!.id,
-                        eventTitle: data!.title,
-                        sourceType: "EVENT_TICKET",
-                        ticketTypeId: selectedTicket.id,
-                        ticketName: selectedTicket.name,
-                        quantity: ticketQuantity,
-                        unitPriceCents: selectedTicket.price,
-                        totalCents:
-                          response.breakdown?.totalCents ?? totalCents,
-                        currency:
-                          response.currency ?? selectedTicket.currency ?? "EUR",
-                        paymentMethod: "card",
-                        paymentScenario: "FREE_CHECKOUT",
-                        inviteToken: inviteToken ?? null,
-                        idempotencyKey,
-                      });
-                      setCheckoutIntent({
-                        clientSecret: response.clientSecret ?? null,
-                        paymentIntentId: response.paymentIntentId ?? null,
-                        purchaseId: response.purchaseId ?? null,
-                        breakdown: response.breakdown ?? null,
-                        freeCheckout:
-                          response.freeCheckout ??
-                          response.isGratisCheckout ??
-                          false,
-                      });
-                      router.push("/checkout");
-                    } catch (err) {
-                      Alert.alert(
-                        t("common:labels.error"),
-                        getUserFacingError(
-                          err,
-                          t("events:checkout.completeFailed"),
-                        ),
-                      );
-                    } finally {
-                      setInitiatingCheckout(false);
-                    }
-                    return;
-                  }
-                  trackEvent("checkout_started", {
-                    sourceType: "EVENT_TICKET",
-                    eventId: data?.id ?? null,
-                    ticketTypeId: selectedTicket.id,
-                    paymentScenario: "SINGLE",
-                  });
-                  setCheckoutDraft({
-                    slug: data!.slug,
-                    eventId: data!.id,
-                    eventTitle: data!.title,
-                    sourceType: "EVENT_TICKET",
-                    ticketTypeId: selectedTicket.id,
-                    ticketName: selectedTicket.name,
-                    quantity: ticketQuantity,
-                    unitPriceCents: selectedTicket.price,
-                    totalCents,
-                    currency: selectedTicket.currency ?? "EUR",
-                    paymentMethod: "card",
-                    paymentScenario: "SINGLE",
-                    inviteToken: inviteToken ?? null,
-                    idempotencyKey,
-                  });
-                  router.push("/checkout");
-                }}
-                className={
-                  canInitiateCheckout
-                    ? "rounded-2xl bg-white/90 px-4 py-4"
-                    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
-                }
-                style={({ pressed }) => [
-                  {
-                    minHeight: tokens.layout.touchTarget,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  },
-                  pressed && canInitiateCheckout
-                    ? { opacity: 0.92, transform: [{ scale: 0.985 }] }
-                    : null,
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: 0,
+            zIndex: 120,
+            elevation: 120,
+          }}
+        >
+          <View
+            pointerEvents="box-none"
+            style={{
+              paddingTop: insets.top + 8,
+              paddingHorizontal: 20,
+              alignItems: "flex-end",
+            }}
+          >
+            <View
+              pointerEvents="none"
+              style={[
+                styles.closeOuterHalo,
+                {
+                  top: insets.top + 5,
+                  borderColor: backdropPalette.closeOrbBorder,
+                  backgroundColor: backdropPalette.closeOrbFill,
+                },
+              ]}
+            />
+            <Pressable
+              onPress={handleBack}
+              accessibilityRole="button"
+              accessibilityLabel={t("common:actions.back")}
+              style={({ pressed }) => [
+                styles.closeButton,
+                { shadowColor: backdropPalette.closeButtonShadow },
+                pressed ? styles.closeButtonPressed : null,
+              ]}
+            >
+              <BlurView
+                tint="dark"
+                intensity={82}
+                style={StyleSheet.absoluteFill}
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.closeButtonShade,
+                  { backgroundColor: backdropPalette.closeOrbFill },
                 ]}
-                accessibilityRole="button"
-                accessibilityLabel={ctaLabel}
-                accessibilityState={{
-                  disabled: !canInitiateCheckout || initiatingCheckout,
-                }}
-              >
-                {initiatingCheckout ? (
-                  <View className="flex-row items-center gap-2">
-                    <ActivityIndicator color="#0b101a" />
-                    <Text
-                      className="text-center text-sm font-semibold"
-                      style={{ color: "#0b101a" }}
-                    >
-                      {t("events:checkout.confirming")}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text
-                    className={`text-center text-sm font-semibold ${canInitiateCheckout ? "" : "text-white/50"}`}
-                    style={
-                      canInitiateCheckout ? { color: "#0b101a" } : undefined
-                    }
-                  >
-                    {ctaLabel}
-                  </Text>
-                )}
-              </Pressable>
-            )}
-            {!session?.user?.id && !showFavoriteCTA ? (
-              <Text className="text-white/55 text-xs text-center">
-                {t("events:detail.signInToContinue")}
-              </Text>
-            ) : null}
-          </StickyCTA>
+              />
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.closeButtonHighlight,
+                  { backgroundColor: backdropPalette.closeOrbHighlight },
+                ]}
+              />
+              <Ionicons
+                name="close"
+                size={22}
+                color="rgba(245,251,255,0.96)"
+              />
+            </Pressable>
+          </View>
+        </View>
+        {showStickyPurchaseBar ? (
+          <StickyPurchaseBar
+            priceLabel={stickyPriceLabel}
+            buttonLabel={t("events:detail.ctaBuy")}
+            disabled={!canOpenTicketSheet}
+            helperText={stickyHelperText}
+            onPress={handleOpenTicketSheet}
+          />
         ) : null}
+        <TicketSelectorSheet
+          visible={ticketSheetVisible && showStickyPurchaseBar}
+          title={t("events:tickets.title")}
+          items={ticketSelectorItems}
+          totalCents={selectedTicketTotalCents}
+          currency={ticketSheetCurrency}
+          canSubmit={
+            selectedTicketQuantity > 0 &&
+            canAccessInvite &&
+            eventIsActive &&
+            !initiatingCheckout
+          }
+          submitting={initiatingCheckout}
+          onClose={() => setTicketSheetVisible(false)}
+          onIncrement={handleIncrementTicket}
+          onDecrement={handleDecrementTicket}
+          onSubmit={handleCheckoutFromTickets}
+        />
       </LiquidBackground>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  backdropLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backdropTopWash: {
+    position: "absolute",
+    top: -40,
+    left: 0,
+    right: 0,
+    height: 560,
+  },
+  backdropBlend: {
+    position: "absolute",
+    top: 220,
+    left: 0,
+    right: 0,
+    bottom: -120,
+  },
+  closeOuterHalo: {
+    position: "absolute",
+    right: 17,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 1,
+  },
+  closeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(215,241,255,0.44)",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.34,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  closeButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.96 }],
+  },
+  closeButtonShade: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  closeButtonHighlight: {
+    position: "absolute",
+    top: 2,
+    left: 2,
+    right: 2,
+    height: 18,
+    borderRadius: 12,
+  },
+});

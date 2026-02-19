@@ -305,8 +305,8 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const revealTranslate = useRef(new Animated.Value(14)).current;
   const queryClient = useQueryClient();
   const router = useRouter();
-  const cardHeight = isFeatured ? 190 : 168;
-  const overlayHeight = Math.round(cardHeight * (isFeatured ? 0.3 : 0.25));
+  const cardHeight = isFeatured ? 202 : 176;
+  const overlayHeight = Math.round(cardHeight * (isFeatured ? 0.36 : 0.31));
   const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   const cardPrice = useMemo(
@@ -516,7 +516,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
             highlight={isHighlighted || isFeatured}
           >
             <View className="gap-3">
-              <View className="overflow-hidden rounded-2xl border border-white/10">
+              <View className="overflow-hidden rounded-2xl border border-white/14 bg-black/20">
                 {hasCover ? (
                   <View style={[styles.mediaContainer, { height: cardHeight }]}>
                     <Image
@@ -553,15 +553,23 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                     )}
                     <LinearGradient
                       colors={[
-                        withAlpha(tint, 0.05),
-                        withAlpha(tint, 0.45),
-                        withAlpha(tint, 0.85),
+                        withAlpha(tint, 0.0),
+                        withAlpha(tint, 0.48),
+                        withAlpha(tint, 0.96),
                       ]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 0, y: 1 }}
                       style={[styles.bottomGradient, { height: overlayHeight }]}
                       pointerEvents="none"
                     />
+                    <LinearGradient
+                      colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0.03)", "rgba(255,255,255,0)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.topSheen}
+                      pointerEvents="none"
+                    />
+                    <View pointerEvents="none" style={styles.innerFrame} />
                     <View className="flex-row items-center justify-between px-3 pt-3">
                       <View className="flex-row flex-wrap items-center gap-2">
                         <GlassPill label={category} />
@@ -577,6 +585,11 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                       {title ? (
                         <Text style={styles.overlayTitle} numberOfLines={2}>
                           {title}
+                        </Text>
+                      ) : null}
+                      {host ? (
+                        <Text style={styles.overlayHost} numberOfLines={1}>
+                          {host}
                         </Text>
                       ) : null}
                       {date ? (
@@ -628,7 +641,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                   <View
                     style={{
                       height: cardHeight,
-                      backgroundColor: "rgba(255,255,255,0.08)",
+                      backgroundColor: "rgba(255,255,255,0.1)",
                       justifyContent: "space-between",
                       paddingHorizontal: tokens.spacing.md,
                       paddingVertical: tokens.spacing.md,
@@ -674,6 +687,8 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
 const styles = StyleSheet.create({
   mediaContainer: {
     justifyContent: "flex-start",
+    borderRadius: 18,
+    overflow: "hidden",
   },
   bottomMask: {
     position: "absolute",
@@ -690,20 +705,38 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  topSheen: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.7,
+  },
+  innerFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    margin: 1,
+    borderRadius: 18,
+    opacity: 0.72,
+  },
   overlay: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
     justifyContent: "flex-end",
-    gap: 4,
+    gap: 5,
   },
   overlayTitle: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 16.5,
     fontWeight: "700",
+    letterSpacing: 0.16,
+  },
+  overlayHost: {
+    color: "rgba(235,246,255,0.84)",
+    fontSize: 12,
+    fontWeight: "600",
   },
   overlayRow: {
     flexDirection: "row",
@@ -711,16 +744,17 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   overlayMeta: {
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
     fontSize: 12,
+    fontWeight: "500",
   },
   overlayMetaMuted: {
-    color: "rgba(255,255,255,0.65)",
-    fontSize: 11,
+    color: "rgba(234,244,255,0.78)",
+    fontSize: 11.5,
     flexShrink: 1,
   },
   overlayFooter: {
-    marginTop: 4,
+    marginTop: 5,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -738,9 +772,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   overlayArrowText: {
-    color: "rgba(255,255,255,0.7)",
+    color: "rgba(239,248,255,0.78)",
     fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
   },
 });

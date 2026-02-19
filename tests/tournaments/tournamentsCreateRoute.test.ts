@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { deriveEnvelopeFromDailyWindows } from "@/lib/padel/scheduleWindows";
 
 const createSupabaseServer = vi.hoisted(() => vi.fn());
 const ensureAuthenticated = vi.hoisted(() => vi.fn());
@@ -191,6 +192,65 @@ describe("organization tournaments create route", () => {
     expect(body.data?.lifecycle?.status).toBe("DRAFT");
     expect(createTournamentForEventInTx).toHaveBeenCalledTimes(1);
     expect(createEventAccessPolicyVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it("aceita coverImageUrl no create de torneio", async () => {
+    const req = new NextRequest("http://localhost/api/org/12/tournaments/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        buildBaseBody({
+          coverImageUrl: "https://cdn.example.com/covers/padel.jpg",
+        }),
+      ),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.ok).toBe(true);
+    const eventCreateArg = tx.event.create.mock.calls[0]?.[0];
+    expect(eventCreateArg?.data?.coverImageUrl).toBe("https://cdn.example.com/covers/padel.jpg");
+  });
+
+  it("deriva windowStart/windowEnd a partir de dailyWindows no create", async () => {
+    const dailyWindows = [
+      { date: "2026-03-01", startTime: "09:00", endTime: "13:00" },
+      { date: "2026-03-02", startTime: "10:00", endTime: "18:00" },
+    ];
+    const req = new NextRequest("http://localhost/api/org/12/tournaments/create", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(
+        buildBaseBody({
+          padel: {
+            format: "TODOS_CONTRA_TODOS",
+            clubId: 7,
+            courtIds: [101],
+            categoryIds: [501],
+            categoryConfigs: [{ padelCategoryId: 501, capacityTeams: 12, pricePerPlayer: 0 }],
+            advancedSettings: {
+              scheduleDefaults: {
+                dailyWindows,
+              },
+            },
+          },
+        }),
+      ),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(body.ok).toBe(true);
+    const upsertArg = tx.padelTournamentConfig.upsert.mock.calls[0]?.[0];
+    expect(upsertArg).toBeTruthy();
+    const expectedEnvelope = deriveEnvelopeFromDailyWindows(dailyWindows);
+    expect(upsertArg.create.advancedSettings.scheduleDefaults.dailyWindows).toEqual(dailyWindows);
+    expect(upsertArg.create.advancedSettings.scheduleDefaults.windowStart).toBe(expectedEnvelope.windowStart);
+    expect(upsertArg.create.advancedSettings.scheduleDefaults.windowEnd).toBe(expectedEnvelope.windowEnd);
   });
 
   it("fails with INVALID_FORMAT when format is missing", async () => {

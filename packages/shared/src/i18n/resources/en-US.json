@@ -159,6 +159,20 @@
         "sessionMissing": "Session not created."
       }
     },
+    "resetPassword": {
+      "title": "Set a new password",
+      "subtitle": "Create a new password to sign in securely again.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "save": "Save password",
+      "successTitle": "Password updated",
+      "successBody": "You can continue with your account now.",
+      "errors": {
+        "passwordMin": "Password must be at least 6 characters.",
+        "passwordMismatch": "Passwords do not match.",
+        "updateFailed": "Couldn't update your password. Try again."
+      }
+    },
     "helpSheet": {
       "title": "Need help?",
       "body1": "If login fails, check whether you already have an account with the same email.",
@@ -634,7 +648,7 @@
       "chatOpen": "Open chat",
       "chatUnavailable": "Chat unavailable.",
       "ctaJoin": "Join",
-      "ctaBuy": "Buy ticket",
+      "ctaBuy": "Buy tickets",
       "perPlayer": "per player",
       "vs": "vs",
       "categoryFallback": "Category",

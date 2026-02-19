@@ -2,8 +2,9 @@
 
 ## users
 
-API routes (68):
+API routes (69):
 - /api/auth/apple/link
+- /api/auth/bootstrap
 - /api/auth/check-email
 - /api/auth/clear
 - /api/auth/login
@@ -94,6 +95,9 @@ Pages (16):
 
 API routes (198):
 - /api/org-hub/become
+- /api/org-hub/groups/[groupId]/dashboard/agenda
+- /api/org-hub/groups/[groupId]/governance
+- /api/org-hub/groups/[groupId]/governance/members
 - /api/org-hub/groups/[groupId]/owner/transfer/cancel
 - /api/org-hub/groups/[groupId]/owner/transfer/confirm
 - /api/org-hub/groups/[groupId]/owner/transfer/start
@@ -110,6 +114,7 @@ API routes (198):
 - /api/org-hub/invites
 - /api/org-hub/organizations
 - /api/org-hub/organizations/[id]
+- /api/org-hub/organizations/[id]/suspend
 - /api/org-hub/organizations/leave
 - /api/org-hub/organizations/members
 - /api/org-hub/organizations/members/invites
@@ -124,12 +129,16 @@ API routes (198):
 - /api/org/[orgId]/agenda
 - /api/org/[orgId]/agenda/soft-blocks
 - /api/org/[orgId]/analytics/buyers
+- /api/org/[orgId]/analytics/cohorts
+- /api/org/[orgId]/analytics/conversion
 - /api/org/[orgId]/analytics/dimensoes
+- /api/org/[orgId]/analytics/events
 - /api/org/[orgId]/analytics/overview
 - /api/org/[orgId]/analytics/time-series
 - /api/org/[orgId]/audit
 - /api/org/[orgId]/avaliacoes
 - /api/org/[orgId]/checkin
+- /api/org/[orgId]/checkin/manual
 - /api/org/[orgId]/checkin/preview
 - /api/org/[orgId]/club/finance/overview
 - /api/org/[orgId]/consentimentos
@@ -156,6 +165,7 @@ API routes (198):
 - /api/org/[orgId]/crm/segmentos
 - /api/org/[orgId]/crm/segmentos/[segmentId]
 - /api/org/[orgId]/crm/segmentos/[segmentId]/preview
+- /api/org/[orgId]/dashboard/tools/visibility
 - /api/org/[orgId]/events/[id]/attendees
 - /api/org/[orgId]/events/[id]/invite-token
 - /api/org/[orgId]/events/[id]/invites
@@ -170,6 +180,11 @@ API routes (198):
 - /api/org/[orgId]/finance/exports/payouts
 - /api/org/[orgId]/finance/invoicing
 - /api/org/[orgId]/finance/overview
+- /api/org/[orgId]/finance/payouts/connect
+- /api/org/[orgId]/finance/payouts/list
+- /api/org/[orgId]/finance/payouts/settings
+- /api/org/[orgId]/finance/payouts/status
+- /api/org/[orgId]/finance/payouts/summary
 - /api/org/[orgId]/finance/reconciliation
 - /api/org/[orgId]/inscricoes
 - /api/org/[orgId]/inscricoes/[id]
@@ -203,6 +218,7 @@ API routes (198):
 - /api/org/[orgId]/payouts/summary
 - /api/org/[orgId]/policies
 - /api/org/[orgId]/policies/[id]
+- /api/org/[orgId]/policies/store
 - /api/org/[orgId]/promo
 - /api/org/[orgId]/promo/[id]
 - /api/org/[orgId]/refunds/list
@@ -270,22 +286,7 @@ API routes (198):
 - /api/org/[orgId]/store/shipping/zones
 - /api/org/[orgId]/store/shipping/zones/[zoneId]
 - /api/org/[orgId]/store/shipping/zones/[zoneId]/methods
-- /api/org/[orgId]/tournaments/[id]
-- /api/org/[orgId]/tournaments/[id]/featured-match
-- /api/org/[orgId]/tournaments/[id]/finance
-- /api/org/[orgId]/tournaments/[id]/generate
-- /api/org/[orgId]/tournaments/[id]/live
-- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/edit
-- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/notify
-- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/result
-- /api/org/[orgId]/tournaments/[id]/matches/[matchId]/undo
-- /api/org/[orgId]/tournaments/[id]/matches/schedule
-- /api/org/[orgId]/tournaments/[id]/participants
-- /api/org/[orgId]/tournaments/[id]/rules
-- /api/org/[orgId]/tournaments/[id]/sponsors
-- /api/org/[orgId]/tournaments/[id]/structure
 - /api/org/[orgId]/tournaments/create
-- /api/org/[orgId]/tournaments/list
 - /api/org/[orgId]/trainers
 - /api/org/[orgId]/trainers/profile
 - /api/org/[orgId]/username
@@ -324,7 +325,7 @@ API routes (8):
 - /api/tickets/resale/cancel
 - /api/tickets/resale/list
 
-Pages (19):
+Pages (16):
 - /admin/eventos
 - /admin/tickets
 - /descobrir/eventos
@@ -332,17 +333,14 @@ Pages (19):
 - /eventos/[slug]
 - /eventos/[slug]/calendario
 - /eventos/[slug]/jogos/[matchId]
-- /eventos/[slug]/live
 - /eventos/[slug]/monitor
 - /eventos/[slug]/ranking
-- /eventos/[slug]/score
 - /eventos/nova
 - /guest/tickets/[token]
 - /me/bilhetes/[id]
 - /org/_internal/core/eventos
 - /org/_internal/core/eventos/[id]
 - /org/_internal/core/eventos/[id]/edit
-- /org/_internal/core/eventos/[id]/live
 - /org/_internal/core/eventos/novo
 
 ## store
@@ -363,7 +361,7 @@ Pages (10):
 
 ## padel
 
-API routes (79):
+API routes (80):
 - /api/padel/calendar
 - /api/padel/calendar/auto-schedule
 - /api/padel/calendar/claims/commit
@@ -377,13 +375,17 @@ API routes (79):
 - /api/padel/community/posts/[id]/reactions
 - /api/padel/discover
 - /api/padel/event-categories
+- /api/padel/formats/plan
 - /api/padel/live
-- /api/padel/live/timer/next-round
-- /api/padel/live/timer/start
-- /api/padel/live/timer/stop
+- /api/padel/live/raw
 - /api/padel/matches
 - /api/padel/matches/[id]/delay
 - /api/padel/matches/[id]/dispute
+- /api/padel/matches/[id]/result/confirm
+- /api/padel/matches/[id]/result/override
+- /api/padel/matches/[id]/result/reject
+- /api/padel/matches/[id]/result/reset-pending
+- /api/padel/matches/[id]/result/submit
 - /api/padel/matches/[id]/undo
 - /api/padel/matches/[id]/walkover
 - /api/padel/matches/assign
@@ -421,10 +423,12 @@ API routes (79):
 - /api/padel/players
 - /api/padel/public/calendar
 - /api/padel/public/clubs
+- /api/padel/public/live
 - /api/padel/public/open-pairings
 - /api/padel/rankings
 - /api/padel/rankings/rebuild
 - /api/padel/rankings/sanctions
+- /api/padel/rounds/advance
 - /api/padel/rulesets
 - /api/padel/standings
 - /api/padel/teams
@@ -438,13 +442,8 @@ API routes (79):
 - /api/padel/tournaments/tier-approvals/[id]/approve
 - /api/padel/tournaments/tier-approvals/[id]/reject
 - /api/padel/tournaments/tier-approvals/request
-- /api/tournaments/[id]
-- /api/tournaments/[id]/live
-- /api/tournaments/[id]/monitor
-- /api/tournaments/[id]/structure
-- /api/tournaments/list
 
-Pages (36):
+Pages (26):
 - /[username]/padel
 - /descobrir/torneios
 - /onboarding/padel
@@ -469,18 +468,8 @@ Pages (36):
 - /org/_internal/core/padel/parcerias/[agreementId]
 - /org/_internal/core/padel/torneios
 - /org/_internal/core/padel/torneios/novo
-- /org/_internal/core/torneios
-- /org/_internal/core/torneios/[id]
-- /org/_internal/core/torneios/[id]/edit
-- /org/_internal/core/torneios/[id]/live
-- /org/_internal/core/torneios/novo
 - /padel/duplas
 - /padel/rankings
-- /widgets/padel/bracket
-- /widgets/padel/calendar
-- /widgets/padel/inscricoes
-- /widgets/padel/next
-- /widgets/padel/standings
 
 ## reservas
 
@@ -548,15 +537,17 @@ Pages (18):
 
 ## ops_outbox
 
-API routes (44):
+API routes (46):
 - /api/cron/analytics/rollup
 - /api/cron/bookings/cleanup
+- /api/cron/bookings/split-garantido
 - /api/cron/creditos/expire
 - /api/cron/crm/campanhas
 - /api/cron/crm/rebuild
 - /api/cron/entitlements/qr-cleanup
 - /api/cron/loyalty/expire
 - /api/cron/operations
+- /api/cron/padel/arbitration-compensation
 - /api/cron/padel/expire
 - /api/cron/padel/matchmaking
 - /api/cron/padel/partnership-grants/revoke

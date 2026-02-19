@@ -34,6 +34,15 @@ export type CheckoutBreakdown = {
   paymentMethod?: "mbway" | "card";
 };
 
+export type CheckoutDraftItem = {
+  ticketTypeId: number;
+  ticketName: string;
+  quantity: number;
+  unitPriceCents: number;
+  lineTotalCents: number;
+  currency: string;
+};
+
 export type CheckoutDraft = {
   slug?: string;
   eventId?: number;
@@ -50,6 +59,7 @@ export type CheckoutDraft = {
   pairingSlotId?: number | null;
   inviteToken?: string | null;
   idempotencyKey?: string | null;
+  items?: CheckoutDraftItem[];
   ticketTypeId?: number;
   ticketName?: string;
   quantity: number;

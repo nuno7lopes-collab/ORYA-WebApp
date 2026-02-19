@@ -8,21 +8,27 @@ type GlassPillProps = PropsWithChildren<{
   variant?: "neutral" | "accent" | "muted";
 }>;
 
-const variants: Record<NonNullable<GlassPillProps["variant"]>, { bg: string; border: string; text: string }> = {
+const variants: Record<
+  NonNullable<GlassPillProps["variant"]>,
+  { bg: string; border: string; text: string; glow?: string }
+> = {
   neutral: {
-    bg: "rgba(0,0,0,0.35)",
-    border: "rgba(255,255,255,0.25)",
+    bg: "rgba(6,10,18,0.5)",
+    border: "rgba(255,255,255,0.26)",
     text: tokens.colors.text,
+    glow: "rgba(255,255,255,0.08)",
   },
   accent: {
-    bg: "rgba(14, 116, 144, 0.55)",
-    border: "rgba(148, 214, 255, 0.5)",
-    text: "#A7F3FF",
+    bg: "rgba(89, 198, 255, 0.24)",
+    border: "rgba(170, 227, 255, 0.75)",
+    text: "#E7F8FF",
+    glow: "rgba(122, 217, 255, 0.24)",
   },
   muted: {
-    bg: "rgba(255,255,255,0.08)",
-    border: "rgba(255,255,255,0.18)",
-    text: tokens.colors.textSubtle,
+    bg: "rgba(255,255,255,0.1)",
+    border: "rgba(255,255,255,0.2)",
+    text: "rgba(235,245,255,0.88)",
+    glow: "rgba(255,255,255,0.06)",
   },
 };
 
@@ -31,6 +37,7 @@ export function GlassPill({ label, variant = "neutral", children }: GlassPillPro
   const shouldBlur = Platform.OS === "ios";
   return (
     <View style={[styles.shell, { borderColor: palette.border, backgroundColor: palette.bg }]}>
+      <View pointerEvents="none" style={[styles.topLine, { backgroundColor: palette.glow }]} />
       {shouldBlur ? (
         <BlurView intensity={40} tint="dark" style={styles.blur}>
           {children}
@@ -51,17 +58,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 999,
     overflow: "hidden",
+    position: "relative",
+  },
+  topLine: {
+    position: "absolute",
+    left: 10,
+    right: 10,
+    top: 0,
+    height: 1,
+    borderRadius: 999,
+    opacity: 0.95,
   },
   blur: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6.5,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
   text: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: "700",
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
 });

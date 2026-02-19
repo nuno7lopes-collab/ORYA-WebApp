@@ -28,7 +28,14 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
       organization: { status: "ACTIVE" },
     },
     include: {
-      organization: { select: { publicName: true, businessName: true, username: true } },
+      organization: {
+        select: {
+          publicName: true,
+          businessName: true,
+          username: true,
+          brandingAvatarUrl: true,
+        },
+      },
       addressRef: {
         select: {
           formattedAddress: true,
@@ -105,7 +112,7 @@ async function _GET(req: NextRequest, context: { params: Params | Promise<Params
 
   const ownerProfile = await prisma.profile.findUnique({
     where: { id: event.ownerUserId },
-    select: { fullName: true, username: true },
+    select: { fullName: true, username: true, avatarUrl: true },
   });
 
   const card = toPublicEventCardWithPrice({

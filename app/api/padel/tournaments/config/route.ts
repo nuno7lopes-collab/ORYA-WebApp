@@ -21,6 +21,7 @@ import { ensurePadelRuleSetVersion } from "@/domain/padel/ruleSetSnapshot";
 import { filterPadelFormats, parsePadelFormat, PADEL_FORMAT_SET } from "@/domain/padel/formatCatalog";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { createTournamentForEvent, updateTournament } from "@/domain/tournaments/commands";
+import { deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows, type PadelDailyWindow } from "@/lib/padel/scheduleWindows";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
@@ -438,6 +439,7 @@ async function _POST(req: NextRequest) {
     | {
         windowStart: string | null;
         windowEnd: string | null;
+        dailyWindows: PadelDailyWindow[] | null;
         durationMinutes: number | null;
         slotMinutes: number | null;
         bufferMinutes: number | null;
@@ -456,11 +458,15 @@ async function _POST(req: NextRequest) {
       const bufferRaw = typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : Number(payload.bufferMinutes);
       const restRaw = typeof payload.minRestMinutes === "number" ? payload.minRestMinutes : Number(payload.minRestMinutes);
       const priorityRaw = typeof payload.priority === "string" ? payload.priority : null;
+      const dailyWindows = normalizePadelDailyWindows(payload.dailyWindows);
+      const dailyEnvelope = dailyWindows.length > 0 ? deriveEnvelopeFromDailyWindows(dailyWindows) : null;
 
       scheduleDefaults = {
-        windowStart:
-          windowStartRaw && !Number.isNaN(new Date(windowStartRaw).getTime()) ? windowStartRaw : null,
-        windowEnd: windowEndRaw && !Number.isNaN(new Date(windowEndRaw).getTime()) ? windowEndRaw : null,
+        windowStart: dailyEnvelope?.windowStart ??
+          (windowStartRaw && !Number.isNaN(new Date(windowStartRaw).getTime()) ? windowStartRaw : null),
+        windowEnd: dailyEnvelope?.windowEnd ??
+          (windowEndRaw && !Number.isNaN(new Date(windowEndRaw).getTime()) ? windowEndRaw : null),
+        dailyWindows: dailyWindows.length > 0 ? dailyWindows : null,
         durationMinutes: Number.isFinite(durationRaw) && durationRaw > 0 ? Math.round(durationRaw) : null,
         slotMinutes: Number.isFinite(slotRaw) && slotRaw > 0 ? Math.round(slotRaw) : null,
         bufferMinutes: Number.isFinite(bufferRaw) && bufferRaw >= 0 ? Math.round(bufferRaw) : null,

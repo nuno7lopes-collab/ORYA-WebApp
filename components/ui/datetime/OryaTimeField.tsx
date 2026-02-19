@@ -100,6 +100,7 @@ export function OryaTimeField({
     overlayRef,
     preferredWidth: 240,
     minWidth: 210,
+    maxWidth: 320,
     minHeight: 190,
     maxHeight: 420,
   });
@@ -202,7 +203,7 @@ export function OryaTimeField({
       aria-label={label ?? "Selecionar hora"}
       onKeyDown={handleKeyDown}
       className={cn(
-        "rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-4",
+        "max-h-[inherit] overflow-hidden rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-4",
         "shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl",
       )}
       style={isMobile ? undefined : overlayStyle ?? undefined}
@@ -217,7 +218,7 @@ export function OryaTimeField({
       <div
         ref={listRef}
         role="listbox"
-        className="max-h-[280px] space-y-1 overflow-y-auto rounded-2xl border border-white/12 bg-white/[0.03] p-2"
+        className="max-h-[280px] space-y-1 overflow-y-auto overscroll-contain rounded-2xl border border-white/12 bg-white/[0.03] p-2"
       >
         {validOptions.map((option) => {
           const selected = option === value;
@@ -234,7 +235,7 @@ export function OryaTimeField({
               onMouseEnter={() => setActive(option)}
               onClick={() => commit(option)}
               className={cn(
-                "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[26px] transition",
+                "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-[16px] transition",
                 selected
                   ? "bg-cyan-300 text-black shadow-[0_10px_24px_rgba(107,255,255,0.34)]"
                   : "text-white/86 hover:bg-white/10",
@@ -242,7 +243,7 @@ export function OryaTimeField({
               )}
             >
               <span>{option}</span>
-              {selected ? <span className="text-[22px]">✓</span> : null}
+              {selected ? <span className="text-sm">✓</span> : null}
             </button>
           );
         })}

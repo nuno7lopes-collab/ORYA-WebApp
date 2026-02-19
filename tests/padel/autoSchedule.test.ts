@@ -86,4 +86,48 @@ describe("padel auto-schedule", () => {
     expect(result.scheduled.length).toBe(1);
     expect(result.scheduled[0].start.toISOString()).toBe("2025-01-01T12:30:00.000Z");
   });
+
+  it("respeita múltiplas janelas sem atravessar períodos fechados", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 21,
+          sideAProfileIds: [901],
+          sideBProfileIds: [902],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+        {
+          id: 22,
+          sideAProfileIds: [903],
+          sideBProfileIds: [904],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }],
+      availabilities: [],
+      courtBlocks: [],
+      config: {
+        windowStart: new Date("2025-01-01T09:00:00Z"),
+        windowEnd: new Date("2025-01-01T17:00:00Z"),
+        timeWindows: [
+          { start: new Date("2025-01-01T09:00:00Z"), end: new Date("2025-01-01T11:00:00Z") },
+          { start: new Date("2025-01-01T13:00:00Z"), end: new Date("2025-01-01T15:00:00Z") },
+        ],
+        durationMinutes: 90,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled.length).toBe(2);
+    expect(result.scheduled[0].start.toISOString()).toBe("2025-01-01T09:00:00.000Z");
+    expect(result.scheduled[1].start.toISOString()).toBe("2025-01-01T13:00:00.000Z");
+  });
 });

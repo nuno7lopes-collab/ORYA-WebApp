@@ -153,4 +153,22 @@ describe("POST /api/padel/pairings/claim/[token]", () => {
       expect.objectContaining({ retroactiveClaimMonths: 6 }),
     );
   });
+
+  it("não bloqueia por warning de nível da categoria", async () => {
+    validatePadelCategoryAccess.mockReturnValueOnce({
+      ok: true,
+      warning: "LEVEL_REQUIRED_FOR_CATEGORY",
+      missing: { level: true },
+    });
+    const req = new NextRequest("http://localhost/api/padel/pairings/claim/token-1", {
+      method: "POST",
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ token: "token-1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(body.error).toBe("CLAIM_WINDOW_EXPIRED");
+    expect(ensurePadelPlayerProfileId).toHaveBeenCalledTimes(1);
+  });
 });

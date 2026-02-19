@@ -12,6 +12,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 import { PORTUGAL_CITIES } from "@/config/cities";
 import { logError } from "@/lib/observability/logger";
+import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 
 const DEFAULT_LIMIT = 12;
 
@@ -73,6 +74,7 @@ async function _GET(req: NextRequest) {
     const dateParam = params.get("date");
     const dayParam = params.get("day");
     const limit = clampLimit(params.get("limit"));
+    const queryTake = Math.min(limit * 3, 90);
     const priceMinParam = params.get("priceMin");
     const priceMaxParam = params.get("priceMax");
     const formatParam = params.get("format");
@@ -146,7 +148,7 @@ async function _GET(req: NextRequest) {
     const events = await prisma.event.findMany({
       where,
       orderBy: [{ startsAt: "asc" }, { id: "asc" }],
-      take: limit,
+      take: queryTake,
       select: {
         id: true,
         slug: true,
@@ -172,6 +174,11 @@ async function _GET(req: NextRequest) {
             lifecycleStatus: true,
           },
         },
+        accessPolicies: {
+          orderBy: { policyVersion: "desc" },
+          take: 1,
+          select: { mode: true },
+        },
         padelCategoryLinks: {
           where: { isEnabled: true },
           select: { padelCategoryId: true, category: { select: { id: true, label: true } } },
@@ -181,6 +188,8 @@ async function _GET(req: NextRequest) {
 
     const levelsMap = new Map<number, { id: number; label: string }>();
     const visibleEvents = events.filter((event) => {
+      const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
+      if (!isPublicAccessMode(accessMode)) return false;
       const competitionState = resolvePadelCompetitionState({
         eventStatus: event.status,
         competitionState: (event.padelTournamentConfig?.advancedSettings as any)?.competitionState ?? null,
@@ -254,7 +263,9 @@ async function _GET(req: NextRequest) {
       return true;
     });
 
-    const items = filtered.map(({ _priceFromCents, isGratis: _isGratis, ...rest }) => rest);
+    const items = filtered
+      .map(({ _priceFromCents, isGratis: _isGratis, ...rest }) => rest)
+      .slice(0, limit);
 
     return jsonWrap(
       {

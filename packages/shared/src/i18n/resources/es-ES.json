@@ -159,6 +159,20 @@
         "sessionMissing": "Sesión no creada."
       }
     },
+    "resetPassword": {
+      "title": "Define una nueva contraseña",
+      "subtitle": "Crea una nueva contraseña para volver a entrar con seguridad.",
+      "newPassword": "Nueva contraseña",
+      "confirmPassword": "Confirmar nueva contraseña",
+      "save": "Guardar contraseña",
+      "successTitle": "Contraseña actualizada",
+      "successBody": "Ya puedes continuar con tu cuenta.",
+      "errors": {
+        "passwordMin": "La contraseña debe tener al menos 6 caracteres.",
+        "passwordMismatch": "Las contraseñas no coinciden.",
+        "updateFailed": "No se pudo actualizar la contraseña. Inténtalo de nuevo."
+      }
+    },
     "helpSheet": {
       "title": "¿Necesitas ayuda?",
       "body1": "Si el inicio de sesión falla, comprueba si ya tienes una cuenta con el mismo email.",
@@ -634,7 +648,7 @@
       "chatOpen": "Abrir chat",
       "chatUnavailable": "Chat no disponible.",
       "ctaJoin": "Unirme",
-      "ctaBuy": "Comprar entrada",
+      "ctaBuy": "Comprar entradas",
       "perPlayer": "por jugador",
       "vs": "vs",
       "categoryFallback": "Categoría",

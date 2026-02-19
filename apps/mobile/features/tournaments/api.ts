@@ -10,14 +10,10 @@ export type PadelOpenPairing = {
   isExpired?: boolean;
   openSlots?: number;
   seekingPlayers?: Array<{
-    profileId?: string | null;
-    playerProfileId?: number | null;
     displayName?: string | null;
     username?: string | null;
     avatarUrl?: string | null;
     level?: string | null;
-    preferredSide?: string | null;
-    gender?: string | null;
   }>;
   category?: { id: number; label: string } | null;
   event?: {

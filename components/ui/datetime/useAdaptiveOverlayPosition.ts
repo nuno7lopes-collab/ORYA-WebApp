@@ -16,6 +16,7 @@ type Params = {
   overlayRef: RefObject<HTMLElement | null>;
   preferredWidth?: number;
   minWidth?: number;
+  maxWidth?: number;
   minHeight?: number;
   maxHeight?: number;
   gap?: number;
@@ -33,6 +34,7 @@ export function useAdaptiveOverlayPosition(params: Params): AdaptiveOverlayPosit
     overlayRef,
     preferredWidth = 320,
     minWidth = 200,
+    maxWidth = 420,
     minHeight = 220,
     maxHeight = 420,
     gap = 8,
@@ -52,9 +54,11 @@ export function useAdaptiveOverlayPosition(params: Params): AdaptiveOverlayPosit
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
 
-    const widthFromAnchor = Math.max(minWidth, rect.width);
-    const idealWidth = Math.max(widthFromAnchor, preferredWidth);
-    const width = clamp(idealWidth, minWidth, Math.max(minWidth, viewportW - viewportPadding * 2));
+    const viewportMaxWidth = Math.max(minWidth, viewportW - viewportPadding * 2);
+    const widthCap = Math.max(minWidth, Math.min(maxWidth, viewportMaxWidth));
+    const widthFromAnchor = clamp(rect.width, minWidth, widthCap);
+    const widthFromPreferred = clamp(preferredWidth, minWidth, widthCap);
+    const width = Math.max(widthFromAnchor, widthFromPreferred);
 
     const left = clamp(rect.left, viewportPadding, viewportW - width - viewportPadding);
 
@@ -81,7 +85,7 @@ export function useAdaptiveOverlayPosition(params: Params): AdaptiveOverlayPosit
         maxHeight: heightCap,
       },
     });
-  }, [anchorRef, gap, maxHeight, minHeight, minWidth, overlayRef, preferredWidth, viewportPadding]);
+  }, [anchorRef, gap, maxHeight, maxWidth, minHeight, minWidth, overlayRef, preferredWidth, viewportPadding]);
 
   useEffect(() => {
     if (!open) {

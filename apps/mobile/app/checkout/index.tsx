@@ -180,15 +180,66 @@ export default function CheckoutScreen() {
   const resolvedMethod =
     !allowApplePay && selectedMethod === "apple_pay" ? "card" : selectedMethod;
 
-  const totalLabel = formatMoney(draft?.totalCents ?? null, draft?.currency);
-  const isFreeCheckout = Boolean(draft && draft.totalCents <= 0);
+  const checkoutItems = useMemo(() => {
+    if (!draft) return [];
+    if (Array.isArray(draft.items) && draft.items.length > 0) {
+      return draft.items
+        .filter(
+          (item) =>
+            Number.isFinite(item.ticketTypeId) &&
+            Number.isFinite(item.quantity) &&
+            item.quantity > 0,
+        )
+        .map((item) => ({
+          ...item,
+          lineTotalCents: item.lineTotalCents ?? item.unitPriceCents * item.quantity,
+        }));
+    }
+    if (
+      Number.isFinite(draft.ticketTypeId) &&
+      Number.isFinite(draft.quantity) &&
+      (draft.quantity ?? 0) > 0
+    ) {
+      return [
+        {
+          ticketTypeId: draft.ticketTypeId as number,
+          ticketName: draft.ticketName ?? "Bilhete",
+          quantity: draft.quantity,
+          unitPriceCents: draft.unitPriceCents,
+          lineTotalCents: draft.unitPriceCents * draft.quantity,
+          currency: draft.currency,
+        },
+      ];
+    }
+    return [];
+  }, [draft]);
+  const totalQuantity = useMemo(
+    () => checkoutItems.reduce((sum, item) => sum + item.quantity, 0),
+    [checkoutItems],
+  );
+  const computedTotalCents = useMemo(
+    () => checkoutItems.reduce((sum, item) => sum + item.lineTotalCents, 0),
+    [checkoutItems],
+  );
+  const totalLabel = formatMoney(
+    draft?.totalCents ?? computedTotalCents ?? null,
+    draft?.currency ?? checkoutItems[0]?.currency,
+  );
+  const effectiveTotalCents =
+    typeof draft?.totalCents === "number" ? draft.totalCents : computedTotalCents;
+  const isFreeCheckout = Boolean(draft && effectiveTotalCents <= 0);
+  const allFreeItems =
+    checkoutItems.length > 0 &&
+    checkoutItems.every((item) => item.unitPriceCents <= 0);
   const isPadelRegistration = draft?.sourceType === "PADEL_REGISTRATION";
   const isServiceBooking = draft?.sourceType === "SERVICE_BOOKING";
   const itemLabel = isServiceBooking
     ? (draft?.ticketName ?? "Reserva")
     : isPadelRegistration
       ? (draft?.ticketName ?? "Inscrição")
-      : (draft?.ticketName ?? "Bilhete");
+      : checkoutItems.length > 1
+        ? `${checkoutItems.length} tipos de bilhete`
+        : (draft?.ticketName ?? checkoutItems[0]?.ticketName ?? "Bilhete");
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
   const missingStripeConfig = Boolean(draft && !isFreeCheckout && !stripeKey);
   const canPay = Boolean(
@@ -204,6 +255,7 @@ export default function CheckoutScreen() {
   useEffect(() => {
     if (!draft) return;
     if (!isFreeCheckout) return;
+    if (Array.isArray(draft.items) && draft.items.length > 0) return;
     if (draft.quantity === 1) return;
     const { createdAt: _createdAt, expiresAt: _expiresAt, ...payload } = draft;
     setDraft({
@@ -581,13 +633,20 @@ export default function CheckoutScreen() {
               })()
             : await createCheckoutIntent({
                 slug: draft.slug ?? "",
+                items:
+                  checkoutItems.length > 0
+                    ? checkoutItems.map((item) => ({
+                        ticketTypeId: item.ticketTypeId,
+                        quantity: item.quantity,
+                      }))
+                    : undefined,
                 ticketTypeId: draft.ticketTypeId ?? 0,
-                quantity: draft.quantity,
+                quantity: totalQuantity > 0 ? totalQuantity : draft.quantity,
                 paymentMethod: resolvedMethod,
                 purchaseId: draft.purchaseId ?? undefined,
                 paymentScenario:
                   draft.paymentScenario ??
-                  (draft.totalCents <= 0 ? "FREE_CHECKOUT" : "SINGLE"),
+                  (allFreeItems ? "FREE_CHECKOUT" : "SINGLE"),
                 idempotencyKey,
                 inviteToken: draft.inviteToken ?? undefined,
               });
@@ -978,8 +1037,25 @@ export default function CheckoutScreen() {
                   </Text>
                   <View className="flex-row items-center justify-between">
                     <Text className="text-white/70 text-sm">{itemLabel}</Text>
-                    <GlassPill label={`${draft.quantity}x`} variant="muted" />
+                    <GlassPill label={`${Math.max(totalQuantity, draft.quantity)}x`} variant="muted" />
                   </View>
+                  {checkoutItems.length > 1 ? (
+                    <View className="gap-1">
+                      {checkoutItems.map((item) => (
+                        <View
+                          key={`checkout-item-${item.ticketTypeId}`}
+                          className="flex-row items-center justify-between"
+                        >
+                          <Text className="text-white/62 text-xs flex-1 pr-2" numberOfLines={1}>
+                            {item.quantity}x {item.ticketName}
+                          </Text>
+                          <Text className="text-white/70 text-xs font-semibold">
+                            {formatMoney(item.lineTotalCents, item.currency)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                   <View className="flex-row items-center justify-between">
                     <Text className="text-white/60 text-sm">Total</Text>
                     {totalLabel ? (

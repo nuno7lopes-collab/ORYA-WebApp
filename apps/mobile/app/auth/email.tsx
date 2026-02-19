@@ -36,6 +36,11 @@ const isValidEmail = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim().toLowerCase());
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const buildRecoveryRedirect = () => {
+  const base = Linking.createURL("auth/callback");
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}type=recovery`;
+};
 
 const parseAuthError = (err: any, t: (key: string) => string) => {
   const message = String(err?.message ?? err ?? "");
@@ -87,7 +92,10 @@ export default function AuthEmailScreen() {
   const normalizedEmail = normalizeEmail(identifier);
   const normalizedUsername = normalizeUsernameInput(identifier);
   const emailValid = isValidEmail(normalizedEmail);
-  const signInIdentifierValid = emailValid || normalizedUsername.length >= 3;
+  const hasAtSymbol = normalizedIdentifier.includes("@");
+  const canBeUsernameIdentifier = !hasAtSymbol || normalizedIdentifier.startsWith("@");
+  const signInIdentifierValid =
+    emailValid || (canBeUsernameIdentifier && normalizedUsername.length >= 3);
   const identifierValid = isSignUp ? emailValid : signInIdentifierValid;
   const passwordValid = isSignUp ? password.length >= 6 : password.length > 0;
   const canSubmit = identifierValid && passwordValid;
@@ -184,7 +192,7 @@ export default function AuthEmailScreen() {
       const loginRaw = await api.requestRaw("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({
-          identifier: normalizedIdentifier.toLowerCase(),
+          identifier: emailValid ? normalizedEmail : normalizedUsername,
           password,
         }),
       });
@@ -256,7 +264,7 @@ export default function AuthEmailScreen() {
     setInfoMessage(null);
     try {
       await supabase.auth.resetPasswordForEmail(normalized, {
-        redirectTo: Linking.createURL("auth/callback"),
+        redirectTo: buildRecoveryRedirect(),
       });
       setInfoMessage(t("auth:email.errors.resetSent"));
     } catch {

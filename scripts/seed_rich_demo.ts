@@ -1645,12 +1645,58 @@ async function main() {
             status:
               (soldByType.get(type.id) ?? 0) >= type.totalQuantity
                 ? "SOLD_OUT"
-                : soldByType.get(type.id)
-                  ? "ON_SALE"
-                  : "UPCOMING",
+                : "ON_SALE",
           },
         });
       }
+    }
+
+    const seededEventsWithTickets = await prisma.event.findMany({
+      where: { slug: { startsWith: "seed-event-" } },
+      select: {
+        id: true,
+        slug: true,
+        ticketTypes: {
+          select: {
+            id: true,
+            status: true,
+            soldQuantity: true,
+            totalQuantity: true,
+            sortOrder: true,
+          },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    });
+
+    let forcedOnSaleCount = 0;
+    for (const event of seededEventsWithTickets) {
+      const hasVendableTicket = event.ticketTypes.some((ticket) => {
+        const total = ticket.totalQuantity;
+        const sold = ticket.soldQuantity ?? 0;
+        const hasStock = total == null ? true : sold < total;
+        return ticket.status === "ON_SALE" && hasStock;
+      });
+      if (hasVendableTicket) continue;
+
+      const candidate = event.ticketTypes.find((ticket) => {
+        const total = ticket.totalQuantity;
+        const sold = ticket.soldQuantity ?? 0;
+        return total == null || sold < total;
+      });
+      if (!candidate) continue;
+
+      await prisma.ticketType.update({
+        where: { id: candidate.id },
+        data: { status: "ON_SALE" },
+      });
+      forcedOnSaleCount += 1;
+    }
+
+    if (forcedOnSaleCount > 0) {
+      console.log(
+        `[seed] ticket audit: forced ON_SALE on ${forcedOnSaleCount} seed events`,
+      );
     }
 
     const categoryByOrg = new Map<number, Array<{ id: number; label: string }>>();

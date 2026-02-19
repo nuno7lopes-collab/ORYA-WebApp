@@ -74,6 +74,7 @@ export const saveBasicProfile = async (payload: {
   username: string;
   favouriteCategories: InterestId[];
   accessToken?: string | null;
+  onboardingDone?: boolean;
 }): Promise<void> => {
   await api.requestWithAccessToken("/api/profiles/save-basic", payload.accessToken, {
     method: "POST",
@@ -81,6 +82,9 @@ export const saveBasicProfile = async (payload: {
       fullName: payload.fullName,
       username: payload.username,
       favouriteCategories: payload.favouriteCategories,
+      ...(typeof payload.onboardingDone === "boolean"
+        ? { onboardingDone: payload.onboardingDone }
+        : {}),
     }),
   });
 };

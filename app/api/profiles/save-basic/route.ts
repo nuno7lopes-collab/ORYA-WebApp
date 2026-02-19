@@ -1,5 +1,5 @@
 // app/api/profiles/save-basic/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { prisma } from "@/lib/prisma";
@@ -23,6 +23,7 @@ interface SaveBasicBody {
   allowEmailNotifications?: boolean;
   allowEventReminders?: boolean;
   allowFollowRequests?: boolean;
+  onboardingDone?: boolean;
   followersCount?: number; // ignored for now (future-proof)
   followingCount?: number; // ignored for now (future-proof)
 }
@@ -78,6 +79,8 @@ async function _POST(req: NextRequest) {
     const allowEmailNotifications = typeof body.allowEmailNotifications === "boolean" ? body.allowEmailNotifications : undefined;
     const allowEventReminders = typeof body.allowEventReminders === "boolean" ? body.allowEventReminders : undefined;
     const allowFollowRequests = typeof body.allowFollowRequests === "boolean" ? body.allowFollowRequests : undefined;
+    const onboardingDoneRequested =
+      typeof body.onboardingDone === "boolean" ? body.onboardingDone : undefined;
 
     const fullName = rawFullName.trim();
     const username = rawUsername.trim();
@@ -139,6 +142,17 @@ async function _POST(req: NextRequest) {
     if (allowFollowRequests !== undefined) notificationUpdates.allowFollowRequests = allowFollowRequests;
 
     const profile = await prisma.$transaction(async (tx) => {
+      const existingProfile = await tx.profile.findUnique({
+        where: { id: userId },
+        select: { onboardingDone: true },
+      });
+      const shouldForceOnboardingDone =
+        onboardingDoneRequested === true ||
+        onboardingDoneRequested === undefined;
+      const shouldKeepIncomplete =
+        onboardingDoneRequested === false &&
+        existingProfile?.onboardingDone !== true;
+
       await setUsernameForOwner({
         username: usernameNormalized,
         ownerType: "user",
@@ -153,7 +167,11 @@ async function _POST(req: NextRequest) {
           fullName,
           username: usernameNormalized,
           ...(bio !== undefined ? { bio } : {}),
-          onboardingDone: true,
+          ...(shouldForceOnboardingDone
+            ? { onboardingDone: true }
+            : shouldKeepIncomplete
+              ? { onboardingDone: false }
+              : {}),
           ...(normalizedPhone !== undefined ? { contactPhone: normalizedPhone } : {}),
           ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || null } : {}),
           ...(coverUrl !== undefined ? { coverUrl: coverUrl || null } : {}),
@@ -166,7 +184,7 @@ async function _POST(req: NextRequest) {
           fullName,
           username: usernameNormalized,
           bio: bio ?? null,
-          onboardingDone: true,
+          onboardingDone: onboardingDoneRequested ?? true,
           roles: ["user"],
           contactPhone: normalizedPhone ?? null,
           avatarUrl: avatarUrl ?? null,

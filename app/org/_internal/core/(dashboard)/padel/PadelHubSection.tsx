@@ -68,11 +68,12 @@ type Props = {
   organizationId: number;
   organizationKind: string | null;
   toolMode: "CLUB" | "TOURNAMENTS";
+  canEditPadel: boolean;
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-export default function PadelHubSection({ organizationId, organizationKind, toolMode }: Props) {
+export default function PadelHubSection({ organizationId, organizationKind, toolMode, canEditPadel }: Props) {
   const clubsUrl = organizationId ? `/api/padel/clubs?includeInactive=1&organizationId=${organizationId}` : null;
   const playersUrl = organizationId ? `/api/padel/players?organizationId=${organizationId}` : null;
 
@@ -131,6 +132,7 @@ export default function PadelHubSection({ organizationId, organizationKind, tool
       organizationId={organizationId}
       organizationKind={organizationKind}
       toolMode={toolMode}
+      canEditPadel={canEditPadel}
       initialClubs={clubs}
       initialPlayers={players}
     />

@@ -71,6 +71,40 @@ describe("padel matches route", () => {
         status: "IN_PROGRESS",
         score: { teamA: 3, teamB: 2 },
         scoreSets: [{ teamA: 6, teamB: 4 }],
+        pairingA: {
+          id: 17,
+          slots: [
+            {
+              id: 900,
+              slot_role: "CAPTAIN",
+              slotStatus: "FILLED",
+              playerProfile: {
+                id: 301,
+                displayName: "Jogador A",
+                fullName: "Nome Completo A",
+                userId: "secret-user-id",
+              },
+            },
+          ],
+        },
+        participants: [
+          {
+            side: "A",
+            slotOrder: 1,
+            participantId: 5001,
+            participant: {
+              id: 5001,
+              sourcePairingId: 17,
+              playerProfileId: 301,
+              playerProfile: {
+                id: 301,
+                fullName: "Nome Completo A",
+                displayName: null,
+                userId: "secret-user-id",
+              },
+            },
+          },
+        ],
       },
       {
         id: 2,
@@ -94,9 +128,46 @@ describe("padel matches route", () => {
     expect(res.status).toBe(200);
     expect(items[0].score).toEqual({});
     expect(items[0].scoreSets).toBeNull();
+    expect(items[0].pairingA?.slots?.[0]?.playerProfile?.displayName).toBe("Jogador A");
+    expect(items[0].pairingA?.slots?.[0]).not.toHaveProperty("id");
+    expect(items[0].pairingA?.slots?.[0]?.playerProfile).not.toHaveProperty("fullName");
+    expect(items[0].pairingA?.slots?.[0]?.playerProfile).not.toHaveProperty("id");
+    expect(items[0].pairingA?.slots?.[0]?.playerProfile).not.toHaveProperty("userId");
+    expect(items[0].participants?.[0]?.participant?.playerProfile?.displayName).toBe("Nome Completo A");
+    expect(items[0].participants?.[0]).not.toHaveProperty("participantId");
+    expect(items[0].participants?.[0]?.participant).not.toHaveProperty("id");
+    expect(items[0].participants?.[0]?.participant).not.toHaveProperty("sourcePairingId");
+    expect(items[0].participants?.[0]?.participant).not.toHaveProperty("playerProfileId");
+    expect(items[0].participants?.[0]?.participant?.playerProfile).not.toHaveProperty("fullName");
+    expect(items[0].participants?.[0]?.participant?.playerProfile).not.toHaveProperty("id");
+    expect(items[0].participants?.[0]?.participant?.playerProfile).not.toHaveProperty("userId");
     expect(items[1].score).toEqual({});
     expect(items[1].scoreSets).toBeNull();
     expect(items[2].score).toEqual({ resultType: "WALKOVER" });
+  });
+
+  it("bloqueia leitura interna sem permissão VIEW do módulo", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.event.findUnique.mockResolvedValue({
+      organizationId: 99,
+      status: "PUBLISHED",
+      padelTournamentConfig: { advancedSettings: { competitionState: "DEVELOPMENT" }, lifecycleStatus: null },
+      accessPolicies: [{ mode: "INVITE_ONLY" }],
+    });
+    getActiveOrganizationForUser.mockResolvedValue({
+      organization: { id: 99 },
+      membership: { role: "STAFF", rolePack: null },
+    });
+    ensureMemberModuleAccess.mockResolvedValue({ ok: false });
+
+    const req = new NextRequest("http://localhost/api/padel/matches?eventId=10", { method: "GET" });
+    const res = await GET(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json.errorCode ?? json.error).toBe("FORBIDDEN");
   });
 
   it("rejeita sem autenticação", async () => {

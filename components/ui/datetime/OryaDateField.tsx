@@ -135,6 +135,7 @@ export function OryaDateField({
     overlayRef,
     preferredWidth: 320,
     minWidth: 280,
+    maxWidth: 360,
     minHeight: 250,
     maxHeight: 520,
   });
@@ -203,46 +204,58 @@ export function OryaDateField({
     buttonRef.current?.focus();
   };
 
+  const moveActiveDate = (resolver: (current: string) => string) => {
+    setActiveDate((current) => {
+      const next = resolver(current);
+      setMonthStart((currentMonthStart) => {
+        const currentMonthToken = currentMonthStart.slice(0, 7);
+        if (next.startsWith(currentMonthToken)) return currentMonthStart;
+        return monthStartFromDate(next);
+      });
+      return next;
+    });
+  };
+
   const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (isTypingTarget(event.target)) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setActiveDate((current) => addDaysToLocalDate(current, -1));
+      moveActiveDate((current) => addDaysToLocalDate(current, -1));
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      setActiveDate((current) => addDaysToLocalDate(current, 1));
+      moveActiveDate((current) => addDaysToLocalDate(current, 1));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveDate((current) => addDaysToLocalDate(current, -7));
+      moveActiveDate((current) => addDaysToLocalDate(current, -7));
       return;
     }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveDate((current) => addDaysToLocalDate(current, 7));
+      moveActiveDate((current) => addDaysToLocalDate(current, 7));
       return;
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setActiveDate((current) => startOfWeekLocalDate(current));
+      moveActiveDate((current) => startOfWeekLocalDate(current));
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
-      setActiveDate((current) => addDaysToLocalDate(startOfWeekLocalDate(current), 6));
+      moveActiveDate((current) => addDaysToLocalDate(startOfWeekLocalDate(current), 6));
       return;
     }
     if (event.key === "PageUp") {
       event.preventDefault();
-      setActiveDate((current) => addMonthsToLocalDate(current, -1));
+      moveActiveDate((current) => addMonthsToLocalDate(current, -1));
       return;
     }
     if (event.key === "PageDown") {
       event.preventDefault();
-      setActiveDate((current) => addMonthsToLocalDate(current, 1));
+      moveActiveDate((current) => addMonthsToLocalDate(current, 1));
       return;
     }
     if (event.key === "Enter" || event.key === " ") {
@@ -250,14 +263,6 @@ export function OryaDateField({
       commitDay(activeDate);
     }
   };
-
-  useEffect(() => {
-    if (!open) return;
-    const monthToken = monthStart.slice(0, 7);
-    if (!activeDate.startsWith(monthToken)) {
-      setMonthStart(monthStartFromDate(activeDate));
-    }
-  }, [activeDate, monthStart, open]);
 
   const panel = (
     <div
@@ -267,7 +272,7 @@ export function OryaDateField({
       aria-label={label ?? "Selecionar data"}
       onKeyDown={handleDialogKeyDown}
       className={cn(
-        "rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-3",
+        "max-h-[inherit] overflow-y-auto overscroll-contain rounded-3xl border border-white/15 bg-[linear-gradient(165deg,rgba(5,12,33,0.96),rgba(6,10,20,0.98))] p-3",
         "shadow-[0_28px_90px_rgba(0,0,0,0.55)] backdrop-blur-2xl",
       )}
       style={isMobile ? undefined : overlayStyle ?? undefined}
@@ -292,7 +297,7 @@ export function OryaDateField({
         >
           ‹
         </button>
-        <p className="text-xl font-semibold capitalize text-white">{monthLabel(monthStart)}</p>
+        <p className="text-lg font-semibold capitalize text-white">{monthLabel(monthStart)}</p>
         <button
           type="button"
           onClick={() => setMonthStart(nextMonthStart)}
@@ -330,7 +335,6 @@ export function OryaDateField({
                 aria-selected={selected}
                 aria-current={isToday ? "date" : undefined}
                 disabled={disabledDay}
-                onFocus={() => setActiveDate(cell.date)}
                 onClick={() => commitDay(cell.date)}
                 className={cn(
                   "relative h-9 rounded-2xl border text-xs transition",

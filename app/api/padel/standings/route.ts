@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
+import { OrganizationModule } from "@prisma/client";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { type PadelPointsTable } from "@/lib/padel/validation";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -144,11 +146,20 @@ async function _GET(req: NextRequest) {
 
     if (!isPublicEvent) {
       const authUser = user ?? (await ensureAuthenticated(supabase));
-      const { organization } = await getActiveOrganizationForUser(authUser.id, {
+      const { organization, membership } = await getActiveOrganizationForUser(authUser.id, {
         organizationId: event.organizationId,
         roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
       });
-      if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+      if (!organization || !membership) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
+      const permission = await ensureMemberModuleAccess({
+        organizationId: event.organizationId,
+        userId: authUser.id,
+        role: membership.role,
+        rolePack: membership.rolePack,
+        moduleKey: OrganizationModule.TORNEIOS,
+        required: "VIEW",
+      });
+      if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const format = event.padelTournamentConfig?.format ?? null;

@@ -34,18 +34,89 @@ const RESULT_WORKFLOW_STATUSES = new Set<padel_match_status>([
   padel_match_status.RETIRED,
 ]);
 
+const toPublicPairing = (pairing: Record<string, unknown> | null | undefined) => {
+  if (!pairing) return null;
+  const slots = Array.isArray(pairing.slots) ? pairing.slots : [];
+  return {
+    id: typeof pairing.id === "number" ? pairing.id : null,
+    slots: slots.map((slot) => {
+      const slotObject = slot && typeof slot === "object" ? (slot as Record<string, unknown>) : {};
+      const playerProfile =
+        slotObject.playerProfile && typeof slotObject.playerProfile === "object"
+          ? (slotObject.playerProfile as Record<string, unknown>)
+          : null;
+      return {
+        slotRole: typeof slotObject.slot_role === "string" ? slotObject.slot_role : null,
+        slotStatus: typeof slotObject.slotStatus === "string" ? slotObject.slotStatus : null,
+        playerProfile: playerProfile
+          ? {
+              displayName:
+                typeof playerProfile.displayName === "string"
+                  ? playerProfile.displayName
+                  : typeof playerProfile.fullName === "string"
+                    ? playerProfile.fullName
+                    : null,
+            }
+          : null,
+      };
+    }),
+  };
+};
+
+const toPublicParticipants = (participants: unknown) => {
+  if (!Array.isArray(participants)) return [];
+  return participants.map((row) => {
+    const rowObject = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const participant =
+      rowObject.participant && typeof rowObject.participant === "object"
+        ? (rowObject.participant as Record<string, unknown>)
+        : null;
+    const playerProfile =
+      participant?.playerProfile && typeof participant.playerProfile === "object"
+        ? (participant.playerProfile as Record<string, unknown>)
+        : null;
+    return {
+      side: typeof rowObject.side === "string" ? rowObject.side : null,
+      slotOrder: typeof rowObject.slotOrder === "number" ? rowObject.slotOrder : null,
+      participant: participant
+        ? {
+            playerProfile: playerProfile
+              ? {
+                  displayName:
+                    typeof playerProfile.displayName === "string"
+                      ? playerProfile.displayName
+                      : typeof playerProfile.fullName === "string"
+                        ? playerProfile.fullName
+                        : null,
+                }
+              : null,
+          }
+        : null,
+    };
+  });
+};
+
 const asPublicMatch = (match: Record<string, unknown>) => {
+  const safeMatch = {
+    ...match,
+    pairingA: toPublicPairing(match.pairingA as Record<string, unknown> | null | undefined),
+    pairingB: toPublicPairing(match.pairingB as Record<string, unknown> | null | undefined),
+    participants: toPublicParticipants(match.participants),
+  };
   if (
     isPadelOfficialPublicResult({
-      status: typeof match.status === "string" ? match.status : null,
-      score: match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null,
+      status: typeof safeMatch.status === "string" ? safeMatch.status : null,
+      score:
+        safeMatch.score && typeof safeMatch.score === "object"
+          ? (safeMatch.score as Record<string, unknown>)
+          : null,
     })
   ) {
-    return match;
+    return safeMatch;
   }
 
   return {
-    ...match,
+    ...safeMatch,
     score: {},
     scoreSets: null,
     winnerSide: null,
@@ -114,46 +185,168 @@ async function _GET(req: NextRequest) {
     ["PUBLISHED", "DATE_CHANGED", "FINISHED", "CANCELLED"].includes(event.status) &&
     competitionState === "PUBLIC";
 
+  let canReadInternal = false;
   if (!user && !isPublicEvent) {
     return fail(ctx, 401, "UNAUTHENTICATED");
   }
 
   if (user && !isPublicEvent) {
-    const { organization } = await getActiveOrganizationForUser(user.id, {
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
       organizationId: event.organizationId,
       roles: ROLE_ALLOWLIST,
     });
-    if (!organization) return fail(ctx, 403, "FORBIDDEN");
+    if (!organization || !membership) return fail(ctx, 403, "FORBIDDEN");
+    const permission = await ensureMemberModuleAccess({
+      organizationId: event.organizationId,
+      userId: user.id,
+      role: membership.role,
+      rolePack: membership.rolePack,
+      moduleKey: OrganizationModule.TORNEIOS,
+      required: "VIEW",
+    });
+    if (!permission.ok) return fail(ctx, 403, "FORBIDDEN");
+    canReadInternal = true;
+  } else if (user && isPublicEvent) {
+    const { organization, membership } = await getActiveOrganizationForUser(user.id, {
+      organizationId: event.organizationId,
+      roles: ROLE_ALLOWLIST,
+    });
+    if (organization && membership) {
+      const permission = await ensureMemberModuleAccess({
+        organizationId: event.organizationId,
+        userId: user.id,
+        role: membership.role,
+        rolePack: membership.rolePack,
+        moduleKey: OrganizationModule.TORNEIOS,
+        required: "VIEW",
+      });
+      canReadInternal = permission.ok;
+    }
   }
 
-  const matches = await prisma.eventMatchSlot.findMany({
-    where: { eventId, ...matchCategoryFilter },
-    include: {
-      pairingA: { include: { slots: { include: { playerProfile: true } } } },
-      pairingB: { include: { slots: { include: { playerProfile: true } } } },
-      participants: {
-        orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+  const matches = canReadInternal
+    ? await prisma.eventMatchSlot.findMany({
+        where: { eventId, ...matchCategoryFilter },
         include: {
-          participant: {
-            select: {
-              id: true,
-              playerProfileId: true,
-              sourcePairingId: true,
-              playerProfile: { select: { id: true, fullName: true, displayName: true } },
+          pairingA: { include: { slots: { include: { playerProfile: true } } } },
+          pairingB: { include: { slots: { include: { playerProfile: true } } } },
+          participants: {
+            orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+            include: {
+              participant: {
+                select: {
+                  id: true,
+                  playerProfileId: true,
+                  sourcePairingId: true,
+                  playerProfile: { select: { id: true, fullName: true, displayName: true } },
+                },
+              },
             },
           },
         },
-      },
-    },
-    orderBy: [
-      { roundType: "asc" },
-      { groupLabel: "asc" },
-      { startTime: "asc" },
-      { id: "asc" },
-    ],
-  });
+        orderBy: [
+          { roundType: "asc" },
+          { groupLabel: "asc" },
+          { startTime: "asc" },
+          { id: "asc" },
+        ],
+      })
+    : await prisma.eventMatchSlot.findMany({
+        where: { eventId, ...matchCategoryFilter },
+        select: {
+          id: true,
+          eventId: true,
+          categoryId: true,
+          status: true,
+          roundType: true,
+          roundLabel: true,
+          groupLabel: true,
+          courtId: true,
+          courtName: true,
+          courtNumber: true,
+          startTime: true,
+          plannedStartAt: true,
+          plannedEndAt: true,
+          actualStartAt: true,
+          actualEndAt: true,
+          plannedDurationMinutes: true,
+          score: true,
+          scoreSets: true,
+          winnerSide: true,
+          winnerPairingId: true,
+          winnerParticipantId: true,
+          pairingA: {
+            select: {
+              id: true,
+              slots: {
+                select: {
+                  id: true,
+                  slot_role: true,
+                  slotStatus: true,
+                  playerProfile: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                      displayName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          pairingB: {
+            select: {
+              id: true,
+              slots: {
+                select: {
+                  id: true,
+                  slot_role: true,
+                  slotStatus: true,
+                  playerProfile: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                      displayName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          participants: {
+            orderBy: [{ side: "asc" }, { slotOrder: "asc" }, { id: "asc" }],
+            select: {
+              side: true,
+              slotOrder: true,
+              participantId: true,
+              participant: {
+                select: {
+                  id: true,
+                  sourcePairingId: true,
+                  playerProfileId: true,
+                  playerProfile: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                      displayName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { roundType: "asc" },
+          { groupLabel: "asc" },
+          { startTime: "asc" },
+          { id: "asc" },
+        ],
+      });
 
-  const items = !user ? matches.map((match) => asPublicMatch(match as unknown as Record<string, unknown>)) : matches;
+  const items = canReadInternal
+    ? matches
+    : matches.map((match) => asPublicMatch(match as unknown as Record<string, unknown>));
   return respondOk(ctx, { items }, { status: 200 });
 }
 

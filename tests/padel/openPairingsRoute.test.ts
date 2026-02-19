@@ -37,5 +37,95 @@ describe("GET /api/padel/public/open-pairings", () => {
     const args = prismaPairingFindMany.mock.calls[0]?.[0];
     expect(args?.where?.event?.addressRef?.formattedAddress?.contains).toBe("Lisboa");
   });
-});
 
+  it("exclui eventos sem policy pública e sanitiza seekingPlayers", async () => {
+    prismaPairingFindMany.mockResolvedValue([
+      {
+        id: 101,
+        payment_mode: "SPLIT",
+        deadlineAt: new Date("2026-03-10T10:00:00.000Z"),
+        category: { id: 7, label: "M3" },
+        slots: [
+          {
+            id: 1,
+            slotStatus: "FILLED",
+            profile: { fullName: "Ana Silva", username: "ana", avatarUrl: null },
+            playerProfile: { level: "M3" },
+          },
+          {
+            id: 2,
+            slotStatus: "PENDING",
+            profile: null,
+            playerProfile: null,
+          },
+        ],
+        event: {
+          id: 900,
+          slug: "evento-publico",
+          title: "Evento Público",
+          startsAt: new Date("2026-04-01T10:00:00.000Z"),
+          status: "PUBLISHED",
+          addressId: "addr_1",
+          addressRef: { formattedAddress: "Lisboa", canonical: null },
+          coverImageUrl: null,
+          padelTournamentConfig: {
+            advancedSettings: { competitionState: "DEVELOPMENT" },
+            lifecycleStatus: null,
+          },
+          accessPolicies: [{ mode: "PUBLIC" }],
+        },
+      },
+      {
+        id: 102,
+        payment_mode: "SPLIT",
+        deadlineAt: new Date("2026-03-10T10:00:00.000Z"),
+        category: { id: 7, label: "M3" },
+        slots: [
+          {
+            id: 1,
+            slotStatus: "FILLED",
+            profile: { fullName: "Jogador Privado", username: "privado", avatarUrl: null },
+            playerProfile: { level: "M3" },
+          },
+        ],
+        event: {
+          id: 901,
+          slug: "evento-privado",
+          title: "Evento Privado",
+          startsAt: new Date("2026-04-01T10:00:00.000Z"),
+          status: "PUBLISHED",
+          addressId: "addr_2",
+          addressRef: { formattedAddress: "Porto", canonical: null },
+          coverImageUrl: null,
+          padelTournamentConfig: {
+            advancedSettings: { competitionState: "DEVELOPMENT" },
+            lifecycleStatus: null,
+          },
+          accessPolicies: [{ mode: "INVITE_ONLY" }],
+        },
+      },
+    ]);
+
+    const { GET } = await import("@/app/api/padel/public/open-pairings/route");
+    const req = new NextRequest("http://localhost/api/padel/public/open-pairings");
+    const res = await GET(req);
+    const body = await res.json();
+    const payload = body.result ?? body;
+    const items = payload.items ?? [];
+
+    expect(res.status).toBe(200);
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(101);
+    expect(items[0].seekingPlayers).toHaveLength(1);
+    expect(items[0].seekingPlayers[0]).toMatchObject({
+      displayName: "Ana Silva",
+      username: "ana",
+      avatarUrl: null,
+      level: "M3",
+    });
+    expect(items[0].seekingPlayers[0]).not.toHaveProperty("profileId");
+    expect(items[0].seekingPlayers[0]).not.toHaveProperty("playerProfileId");
+    expect(items[0].seekingPlayers[0]).not.toHaveProperty("preferredSide");
+    expect(items[0].seekingPlayers[0]).not.toHaveProperty("gender");
+  });
+});

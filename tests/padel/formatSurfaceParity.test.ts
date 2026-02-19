@@ -46,7 +46,7 @@ describe("padel format surface parity", () => {
     expect(tabsSource).toContain("selectedCategoryProfile?.format");
     expect(tabsSource).toContain("renderPlanningPreviewPanel");
     expect(tabsSource).toContain("/api/padel/formats/plan");
-    expect(tabsSource).toContain("Fila operacional live");
+    expect(tabsSource).toContain("Filtro live");
     expect(tabsSource).toContain("liveOpsFilter");
     expect(hubSource).toContain("saveRoundOpsFormatProfile");
     expect(hubSource).toContain("roundOpsPlanCategory");

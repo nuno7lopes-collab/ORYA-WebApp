@@ -722,6 +722,42 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../app/org-hub/groups/[groupId]/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/org-hub/groups/[groupId]">> = Specific
+  const handler = {} as typeof import("../../../app/org-hub/groups/[groupId]/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/org-hub/groups/owner-transfer/confirm/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/org-hub/groups/owner-transfer/confirm">> = Specific
+  const handler = {} as typeof import("../../../app/org-hub/groups/owner-transfer/confirm/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/org-hub/groups/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/org-hub/groups">> = Specific
+  const handler = {} as typeof import("../../../app/org-hub/groups/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/org-hub/groups/requests/confirm/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/org-hub/groups/requests/confirm">> = Specific
+  const handler = {} as typeof import("../../../app/org-hub/groups/requests/confirm/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../app/org-hub/organizations/page.tsx
 {
   type __IsExpected<Specific extends AppPageConfig<"/org-hub/organizations">> = Specific
@@ -834,6 +870,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends AppPageConfig<"/org/[orgId]/bookings/new">> = Specific
   const handler = {} as typeof import("../../../app/org/[orgId]/bookings/new/page.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/org/[orgId]/bookings/operations/page.tsx
+{
+  type __IsExpected<Specific extends AppPageConfig<"/org/[orgId]/bookings/operations">> = Specific
+  const handler = {} as typeof import("../../../app/org/[orgId]/bookings/operations/page.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
@@ -3372,6 +3417,33 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/org-hub/become">> = Specific
   const handler = {} as typeof import("../../../app/api/org-hub/become/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/org-hub/groups/[groupId]/dashboard/agenda/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/org-hub/groups/[groupId]/dashboard/agenda">> = Specific
+  const handler = {} as typeof import("../../../app/api/org-hub/groups/[groupId]/dashboard/agenda/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/org-hub/groups/[groupId]/governance/members/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/org-hub/groups/[groupId]/governance/members">> = Specific
+  const handler = {} as typeof import("../../../app/api/org-hub/groups/[groupId]/governance/members/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../app/api/org-hub/groups/[groupId]/governance/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/org-hub/groups/[groupId]/governance">> = Specific
+  const handler = {} as typeof import("../../../app/api/org-hub/groups/[groupId]/governance/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

@@ -127,6 +127,7 @@ export const PublicEventCardSchema = z.object({
   categories: z.array(z.string()).optional(),
   hostName: z.string().nullable().optional(),
   hostUsername: z.string().nullable().optional(),
+  hostAvatarUrl: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "CANCELLED", "PAST", "DRAFT"]).optional(),
   isHighlighted: z.boolean().optional(),
   location: PublicEventLocationSchema.optional(),

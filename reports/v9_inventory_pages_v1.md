@@ -1,10 +1,11 @@
 # V9 Inventory — Pages/Routes
 
-Total: 249
+Total: 237
 
 | Route | File | Group | Flow Tags |
 | --- | --- | --- | --- |
 | /[username] | app/[username]/page.tsx | - | public |
+| /[username]/legal | app/[username]/legal/page.tsx | - | public |
 | /[username]/loja | app/[username]/loja/page.tsx | - | loja |
 | /[username]/loja/carrinho | app/[username]/loja/carrinho/page.tsx | - | loja |
 | /[username]/loja/checkout | app/[username]/loja/checkout/page.tsx | - | checkout, loja |
@@ -47,10 +48,8 @@ Total: 249
 | /eventos/[slug] | app/eventos/[slug]/page.tsx | - | eventos |
 | /eventos/[slug]/calendario | app/eventos/[slug]/calendario/page.tsx | - | eventos |
 | /eventos/[slug]/jogos/[matchId] | app/eventos/[slug]/jogos/[matchId]/page.tsx | - | eventos |
-| /eventos/[slug]/live | app/eventos/[slug]/live/page.tsx | - | eventos |
 | /eventos/[slug]/monitor | app/eventos/[slug]/monitor/page.tsx | - | eventos |
 | /eventos/[slug]/ranking | app/eventos/[slug]/ranking/page.tsx | - | eventos |
-| /eventos/[slug]/score | app/eventos/[slug]/score/page.tsx | - | eventos |
 | /eventos/nova | app/eventos/nova/page.tsx | - | eventos |
 | /explorar | app/explorar/page.tsx | - | public |
 | /guest/tickets/[token] | app/guest/tickets/[token]/page.tsx | - | public |
@@ -61,7 +60,6 @@ Total: 249
 | /legal/privacidade | app/legal/privacidade/page.tsx | - | public |
 | /legal/reembolsos | app/legal/reembolsos/page.tsx | - | public |
 | /legal/termos | app/legal/termos/page.tsx | - | public |
-| /live/[id]/monitor | app/live/[id]/monitor/page.tsx | - | public |
 | /login | app/login/page.tsx | - | login |
 | /logo | app/logo/page.tsx | - | public |
 | /loja/seguimento | app/loja/seguimento/page.tsx | - | loja |
@@ -82,6 +80,10 @@ Total: 249
 | /onboarding/perfil | app/onboarding/perfil/page.tsx | - | onboarding |
 | /org-hub | app/org-hub/page.tsx | - | public |
 | /org-hub/create | app/org-hub/create/page.tsx | - | public |
+| /org-hub/groups | app/org-hub/groups/page.tsx | - | public |
+| /org-hub/groups/[groupId] | app/org-hub/groups/[groupId]/page.tsx | - | public |
+| /org-hub/groups/owner-transfer/confirm | app/org-hub/groups/owner-transfer/confirm/page.tsx | - | public |
+| /org-hub/groups/requests/confirm | app/org-hub/groups/requests/confirm/page.tsx | - | public |
 | /org-hub/organizations | app/org-hub/organizations/page.tsx | - | public |
 | /org/_internal/core | app/org/_internal/core/(dashboard)/page.tsx | (dashboard) | public |
 | /org/_internal/core/analyze | app/org/_internal/core/(dashboard)/analyze/page.tsx | (dashboard) | public |
@@ -105,7 +107,6 @@ Total: 249
 | /org/_internal/core/eventos | app/org/_internal/core/(dashboard)/eventos/page.tsx | (dashboard) | public |
 | /org/_internal/core/eventos/[id] | app/org/_internal/core/(dashboard)/eventos/[id]/page.tsx | (dashboard) | public |
 | /org/_internal/core/eventos/[id]/edit | app/org/_internal/core/(dashboard)/eventos/[id]/edit/page.tsx | (dashboard) | public |
-| /org/_internal/core/eventos/[id]/live | app/org/_internal/core/(dashboard)/eventos/[id]/live/page.tsx | (dashboard) | public |
 | /org/_internal/core/eventos/novo | app/org/_internal/core/(dashboard)/eventos/novo/page.tsx | (dashboard) | public |
 | /org/_internal/core/faturacao | app/org/_internal/core/faturacao/page.tsx | - | public |
 | /org/_internal/core/inscricoes | app/org/_internal/core/(dashboard)/inscricoes/page.tsx | (dashboard) | public |
@@ -140,13 +141,6 @@ Total: 249
 | /org/_internal/core/settings | app/org/_internal/core/(dashboard)/settings/page.tsx | (dashboard) | public |
 | /org/_internal/core/settings/verify | app/org/_internal/core/(dashboard)/settings/verify/page.tsx | (dashboard) | public |
 | /org/_internal/core/staff | app/org/_internal/core/(dashboard)/staff/page.tsx | (dashboard) | public |
-| /org/_internal/core/torneios | app/org/_internal/core/(dashboard)/torneios/page.tsx | (dashboard) | public |
-| /org/_internal/core/torneios/[id] | app/org/_internal/core/(dashboard)/torneios/[id]/page.tsx | (dashboard) | public |
-| /org/_internal/core/torneios/[id]/edit | app/org/_internal/core/(dashboard)/torneios/[id]/edit/page.tsx | (dashboard) | public |
-| /org/_internal/core/torneios/[id]/live | app/org/_internal/core/(dashboard)/torneios/[id]/live/page.tsx | (dashboard) | public |
-| /org/_internal/core/torneios/novo | app/org/_internal/core/(dashboard)/torneios/novo/page.tsx | (dashboard) | public |
-| /org/_internal/core/tournaments/[id]/finance | app/org/_internal/core/(dashboard)/tournaments/[id]/finance/page.tsx | (dashboard) | public |
-| /org/_internal/core/tournaments/[id]/live | app/org/_internal/core/(dashboard)/tournaments/[id]/live/page.tsx | (dashboard) | public |
 | /org/_internal/core/treinadores | app/org/_internal/core/(dashboard)/treinadores/page.tsx | (dashboard) | public |
 | /org/[orgId] | app/org/[orgId]/page.tsx | - | public |
 | /org/[orgId]/[...slug] | app/org/[orgId]/[...slug]/page.tsx | - | public |
@@ -161,13 +155,15 @@ Total: 249
 | /org/[orgId]/bookings/customers | app/org/[orgId]/bookings/customers/page.tsx | - | public |
 | /org/[orgId]/bookings/integrations | app/org/[orgId]/bookings/integrations/page.tsx | - | public |
 | /org/[orgId]/bookings/new | app/org/[orgId]/bookings/new/page.tsx | - | public |
+| /org/[orgId]/bookings/operations | app/org/[orgId]/bookings/operations/page.tsx | - | public |
 | /org/[orgId]/bookings/policies | app/org/[orgId]/bookings/policies/page.tsx | - | public |
 | /org/[orgId]/bookings/prices | app/org/[orgId]/bookings/prices/page.tsx | - | public |
 | /org/[orgId]/bookings/professionals | app/org/[orgId]/bookings/professionals/page.tsx | - | public |
 | /org/[orgId]/bookings/professionals/[id] | app/org/[orgId]/bookings/professionals/[id]/page.tsx | - | public |
 | /org/[orgId]/bookings/resources | app/org/[orgId]/bookings/resources/page.tsx | - | public |
 | /org/[orgId]/bookings/resources/[id] | app/org/[orgId]/bookings/resources/[id]/page.tsx | - | public |
-| /org/[orgId]/bookings/services | app/org/[orgId]/bookings/services/page.tsx | - | public |
+| /org/[orgId]/calendar | app/org/[orgId]/calendar/page.tsx | - | public |
+| /org/[orgId]/calendar/day | app/org/[orgId]/calendar/day/page.tsx | - | public |
 | /org/[orgId]/chat | app/org/[orgId]/chat/page.tsx | - | public |
 | /org/[orgId]/chat/preview | app/org/[orgId]/chat/preview/page.tsx | - | public |
 | /org/[orgId]/check-in | app/org/[orgId]/check-in/page.tsx | - | public |
@@ -188,7 +184,6 @@ Total: 249
 | /org/[orgId]/events | app/org/[orgId]/events/page.tsx | - | public |
 | /org/[orgId]/events/[id] | app/org/[orgId]/events/[id]/page.tsx | - | public |
 | /org/[orgId]/events/[id]/edit | app/org/[orgId]/events/[id]/edit/page.tsx | - | public |
-| /org/[orgId]/events/[id]/live | app/org/[orgId]/events/[id]/live/page.tsx | - | public |
 | /org/[orgId]/events/new | app/org/[orgId]/events/new/page.tsx | - | public |
 | /org/[orgId]/finance | app/org/[orgId]/finance/page.tsx | - | public |
 | /org/[orgId]/finance/dimensions | app/org/[orgId]/finance/dimensions/page.tsx | - | public |
@@ -219,14 +214,12 @@ Total: 249
 | /org/[orgId]/padel/tournaments/create | app/org/[orgId]/padel/tournaments/create/page.tsx | - | padel |
 | /org/[orgId]/padel/tournaments/players | app/org/[orgId]/padel/tournaments/players/page.tsx | - | padel |
 | /org/[orgId]/padel/tournaments/teams | app/org/[orgId]/padel/tournaments/teams/page.tsx | - | padel |
-| /org/[orgId]/profile | app/org/[orgId]/profile/page.tsx | - | public |
-| /org/[orgId]/profile/followers | app/org/[orgId]/profile/followers/page.tsx | - | public |
-| /org/[orgId]/profile/requests | app/org/[orgId]/profile/requests/page.tsx | - | public |
+| /org/[orgId]/policies | app/org/[orgId]/policies/page.tsx | - | public |
 | /org/[orgId]/settings | app/org/[orgId]/settings/page.tsx | - | public |
 | /org/[orgId]/settings/verify | app/org/[orgId]/settings/verify/page.tsx | - | public |
 | /org/[orgId]/store | app/org/[orgId]/store/page.tsx | - | public |
 | /org/[orgId]/team | app/org/[orgId]/team/page.tsx | - | public |
-| /org/[orgId]/treinadores | app/org/[orgId]/treinadores/page.tsx | - | public |
+| /org/[orgId]/team/trainers | app/org/[orgId]/team/trainers/page.tsx | - | public |
 | /organization-terms | app/organization-terms/page.tsx | - | public |
 | /padel/duplas | app/padel/duplas/page.tsx | - | padel |
 | /padel/rankings | app/padel/rankings/page.tsx | - | padel |
@@ -248,10 +241,5 @@ Total: 249
 | /termos | app/termos/page.tsx | - | public |
 | /termos-organizacao | app/termos-organizacao/page.tsx | - | public |
 | /terms | app/terms/page.tsx | - | public |
-| /widgets/padel/bracket | app/widgets/padel/bracket/page.tsx | - | padel |
-| /widgets/padel/calendar | app/widgets/padel/calendar/page.tsx | - | padel |
-| /widgets/padel/inscricoes | app/widgets/padel/inscricoes/page.tsx | - | padel |
-| /widgets/padel/next | app/widgets/padel/next/page.tsx | - | padel |
-| /widgets/padel/standings | app/widgets/padel/standings/page.tsx | - | padel |
 
 Flow tags: login, onboarding, organizacao, checkout, padel, loja, crm, reservas, admin, eventos, social, user, public.

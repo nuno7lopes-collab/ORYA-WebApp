@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useId, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { lockBodyScroll } from "@/lib/dom/bodyScrollLock";
 
 type ModalProps = {
   open: boolean;
@@ -24,8 +26,13 @@ export function Modal({
   bodyClassName,
   closeLabel = "Fechar",
 }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
   const titleId = useId();
   const descriptionId = useId();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -36,11 +43,16 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, open]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open || !mounted) return;
+    return lockBodyScroll();
+  }, [mounted, open]);
 
-  return (
+  if (!open || !mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[120] flex items-start justify-center bg-black/60 px-4 py-10"
+      className="fixed inset-0 z-[180] flex items-start justify-center bg-black/60 px-4 py-10"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -81,6 +93,7 @@ export function Modal({
         )}
         <div className={cn(bodyClassName)}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -27,6 +27,7 @@ import {
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { syncTournamentOperationalRolesFromClubStaff } from "@/lib/padel/tournamentStaffRoleSync";
+import { deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
 import {
   AddressSourceProvider,
   EventPricingMode,
@@ -53,6 +54,7 @@ type CreateTournamentCategoryConfigInput = {
 type CreateTournamentPadelInput = {
   clubId?: number | null;
   padelClubId?: number | null;
+  partnershipTournamentRequestId?: number | string | null;
   courtIds?: number[];
   staffIds?: number[];
   format?: string;
@@ -71,6 +73,7 @@ type CreateTournamentPadelInput = {
 type CreateTournamentBody = {
   title?: string;
   description?: string;
+  coverImageUrl?: string | null;
   startsAt?: string;
   endsAt?: string;
   timezone?: string;
@@ -311,6 +314,7 @@ async function _POST(req: NextRequest) {
 
     const title = body.title?.trim();
     const description = body.description?.trim() ?? "";
+    const coverImageUrl = typeof body.coverImageUrl === "string" ? body.coverImageUrl.trim() || null : null;
     const startsAtRaw = body.startsAt;
     const endsAtRaw = body.endsAt;
     const addressIdInput = typeof body.addressId === "string" ? body.addressId.trim() || null : null;
@@ -365,6 +369,7 @@ async function _POST(req: NextRequest) {
     const requestedCourtIds = normalizeListOfIds(padelInput?.courtIds);
     const requestedStaffIds = normalizeListOfIds(padelInput?.staffIds);
     const partnerClubIds = normalizeListOfIds(padelInput?.partnerClubIds);
+    const partnershipTournamentRequestId = parsePositiveInt(padelInput?.partnershipTournamentRequestId);
 
     const categoryConfigMap = new Map<number, CategoryConfigResolved>();
     const categoryConfigsRaw = Array.isArray(padelInput?.categoryConfigs) ? padelInput?.categoryConfigs : [];
@@ -504,6 +509,43 @@ async function _POST(req: NextRequest) {
       if (windowsCount === 0) {
         return fail(400, "CLUB_INVALID", "CLUB_INVALID", false);
       }
+
+      if (!partnershipTournamentRequestId) {
+        return fail(
+          409,
+          "PARTNERSHIP_TOURNAMENT_REQUEST_REQUIRED",
+          "PARTNERSHIP_TOURNAMENT_REQUEST_REQUIRED",
+          false,
+        );
+      }
+
+      const approvedRequest = await prisma.padelPartnershipTournamentRequest.findFirst({
+        where: {
+          id: partnershipTournamentRequestId,
+          status: "APPROVED",
+          eventId: null,
+          ownerClubId: club.sourceClubId,
+          partnerOrganizationId: organization.id,
+          partnerClubId: club.id,
+          startsAt: { lte: endsAt },
+          endsAt: { gte: startsAt },
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        select: { id: true },
+      });
+      if (!approvedRequest) {
+        return fail(
+          409,
+          "PARTNERSHIP_TOURNAMENT_REQUEST_REQUIRED",
+          "PARTNERSHIP_TOURNAMENT_REQUEST_REQUIRED",
+          false,
+        );
+      }
+    }
+
+    let consumedPartnershipRequestId: number | null = null;
+    if (club.kind === "PARTNER" && partnershipTournamentRequestId) {
+      consumedPartnershipRequestId = partnershipTournamentRequestId;
     }
 
     const activeCourts = await prisma.padelClubCourt.findMany({
@@ -605,9 +647,27 @@ async function _POST(req: NextRequest) {
     const baseSlug = slugify(title) || "torneio";
     const slug = await generateUniqueSlug(baseSlug);
 
+    const advancedSettingsResolved = { ...(advancedSettings ?? {}) };
+    const scheduleDefaultsRaw =
+      advancedSettingsResolved.scheduleDefaults &&
+      typeof advancedSettingsResolved.scheduleDefaults === "object" &&
+      !Array.isArray(advancedSettingsResolved.scheduleDefaults)
+        ? (advancedSettingsResolved.scheduleDefaults as Record<string, unknown>)
+        : null;
+    const normalizedDailyWindows = normalizePadelDailyWindows(scheduleDefaultsRaw?.dailyWindows);
+    if (scheduleDefaultsRaw && normalizedDailyWindows.length > 0) {
+      const envelope = deriveEnvelopeFromDailyWindows(normalizedDailyWindows);
+      advancedSettingsResolved.scheduleDefaults = {
+        ...scheduleDefaultsRaw,
+        dailyWindows: normalizedDailyWindows,
+        windowStart: envelope.windowStart,
+        windowEnd: envelope.windowEnd,
+      };
+    }
+
     const registrationEndsAtRaw =
-      advancedSettings && typeof advancedSettings.registrationEndsAt === "string"
-        ? advancedSettings.registrationEndsAt
+      typeof advancedSettingsResolved.registrationEndsAt === "string"
+        ? advancedSettingsResolved.registrationEndsAt
         : null;
     const inscriptionDeadlineAt =
       registrationEndsAtRaw && !Number.isNaN(new Date(registrationEndsAtRaw).getTime())
@@ -620,6 +680,7 @@ async function _POST(req: NextRequest) {
           slug,
           title,
           description,
+          coverImageUrl,
           type: "ORGANIZATION_EVENT",
           templateType: EventTemplateType.PADEL,
           ownerUserId: profile.id,
@@ -638,7 +699,7 @@ async function _POST(req: NextRequest) {
 
       const lifecycleNow = new Date();
       const computedCourts = Math.max(1, resolvedCourtIds.length);
-      const advancedSettingsBase = { ...(advancedSettings ?? {}) };
+      const advancedSettingsBase = { ...advancedSettingsResolved };
       if (!Object.prototype.hasOwnProperty.call(advancedSettingsBase, "competitionState")) {
         advancedSettingsBase.competitionState = "DEVELOPMENT";
       }
@@ -818,6 +879,19 @@ async function _POST(req: NextRequest) {
 
       return event;
     });
+
+    if (consumedPartnershipRequestId) {
+      await prisma.padelPartnershipTournamentRequest.updateMany({
+        where: {
+          id: consumedPartnershipRequestId,
+          status: "APPROVED",
+          eventId: null,
+        },
+        data: {
+          eventId: created.id,
+        },
+      });
+    }
 
     return respondOk(
       ctx,

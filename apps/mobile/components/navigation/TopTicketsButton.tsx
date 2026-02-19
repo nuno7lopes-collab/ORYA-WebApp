@@ -25,11 +25,16 @@ export function TopTicketsButton({ onPress, accessibilityLabel = "Bilhetes" }: T
           borderRadius: tokens.layout.touchTarget / 2,
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "rgba(255,255,255,0.1)",
+          backgroundColor: "rgba(255,255,255,0.14)",
           borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.18)",
+          borderColor: "rgba(208,235,255,0.28)",
+          shadowColor: "rgba(0,0,0,0.45)",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.18,
+          shadowRadius: 14,
+          elevation: 3,
         },
-        pressed ? { opacity: 0.92, backgroundColor: "rgba(255,255,255,0.18)" } : null,
+        pressed ? { opacity: 0.92, backgroundColor: "rgba(255,255,255,0.24)", transform: [{ scale: 0.97 }] } : null,
       ]}
     >
       <Ionicons name="ticket-outline" size={24} color="rgba(255,255,255,1)" />

@@ -170,6 +170,7 @@ export const EventCardSquare = memo(function EventCardSquare({
     event.location?.city ??
     event.location?.name ??
     null;
+  const host = event.hostName ?? event.hostUsername ?? null;
   const date = formatEventDate(event.startsAt, event.endsAt);
   const priceState = resolvePriceState(event, t);
   const countdownTag = showCountdown ? resolveCountdownTag(event, now, t) : null;
@@ -187,7 +188,7 @@ export const EventCardSquare = memo(function EventCardSquare({
     userLat ?? null,
     userLon ?? null,
   );
-  const overlayHeight = "44%";
+  const overlayHeight = "52%";
 
   const linkHref = useMemo(
     () => ({
@@ -344,13 +345,21 @@ export const EventCardSquare = memo(function EventCardSquare({
                 <LinearGradient
                   colors={[
                     withAlpha(tint, 0.0),
-                    withAlpha(tint, 0.55),
-                    withAlpha(tint, 0.95),
+                    withAlpha(tint, 0.42),
+                    withAlpha(tint, 0.98),
                   ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 0, y: 1 }}
                   style={[styles.bottomGradient, { height: overlayHeight }]}
                 />
+                <LinearGradient
+                  colors={["rgba(255,255,255,0.22)", "rgba(255,255,255,0.02)", "rgba(255,255,255,0)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.topSheen}
+                  pointerEvents="none"
+                />
+                <View pointerEvents="none" style={styles.innerFrame} />
                 <View style={styles.tagsRow}>
                   <View style={styles.tag}>
                     <Text style={styles.tagText}>{category}</Text>
@@ -373,6 +382,11 @@ export const EventCardSquare = memo(function EventCardSquare({
                   <Text style={styles.overlayTitle} numberOfLines={2}>
                     {event.title}
                   </Text>
+                  {host ? (
+                    <Text style={styles.overlayHost} numberOfLines={1}>
+                      {host}
+                    </Text>
+                  ) : null}
                   <View style={styles.overlayRow}>
                     {date ? (
                       <Text style={styles.overlayMeta} numberOfLines={1}>
@@ -417,12 +431,17 @@ export const EventCardSquareSkeleton = () => (
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: tokens.radius.xl,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(8, 12, 20, 0.55)",
+    borderColor: "rgba(191, 231, 255, 0.22)",
+    backgroundColor: "rgba(9, 14, 24, 0.68)",
     overflow: "hidden",
     marginBottom: 16,
+    shadowColor: "rgba(0,0,0,0.6)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    elevation: 5,
   },
   media: {
     width: "100%",
@@ -435,8 +454,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderBottomLeftRadius: tokens.radius.xl,
-    borderBottomRightRadius: tokens.radius.xl,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     overflow: "hidden",
   },
   bottomMaskFallback: {
@@ -447,26 +466,47 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderBottomLeftRadius: tokens.radius.xl,
-    borderBottomRightRadius: tokens.radius.xl,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+  },
+  topSheen: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.75,
+  },
+  innerFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    margin: 1,
+    opacity: 0.7,
   },
   overlay: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
     justifyContent: "flex-end",
-    gap: 4,
+    gap: 5,
   },
   overlayTitle: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     textShadowColor: "rgba(0,0,0,0.55)",
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 6,
+    letterSpacing: 0.15,
+  },
+  overlayHost: {
+    color: "rgba(233, 246, 255, 0.86)",
+    fontSize: 12,
+    fontWeight: "600",
+    textShadowColor: "rgba(0,0,0,0.45)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   overlayRow: {
     flexDirection: "row",
@@ -475,51 +515,52 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   overlayMeta: {
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.9)",
     fontSize: 12,
+    fontWeight: "500",
     textShadowColor: "rgba(0,0,0,0.45)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   overlayMetaMuted: {
-    color: "rgba(255,255,255,0.65)",
-    fontSize: 11,
+    color: "rgba(230,241,255,0.75)",
+    fontSize: 11.5,
     textShadowColor: "rgba(0,0,0,0.4)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
   tagsRow: {
     position: "absolute",
-    top: 10,
-    left: 10,
-    right: 10,
+    top: 12,
+    left: 12,
+    right: 12,
     flexDirection: "row",
-    gap: 8,
+    gap: 7,
     flexWrap: "wrap",
   },
   tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6.5,
     borderRadius: 999,
-    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    backgroundColor: "rgba(8, 13, 24, 0.62)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(207, 234, 255, 0.28)",
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
   tagSoon: {
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
-    borderColor: "rgba(210, 230, 255, 0.4)",
+    backgroundColor: "rgba(10, 17, 30, 0.76)",
+    borderColor: "rgba(210, 230, 255, 0.52)",
   },
   tagNow: {
-    borderColor: "rgba(255, 120, 120, 0.55)",
+    borderColor: "rgba(255, 142, 142, 0.8)",
   },
   tagText: {
     color: "#ffffff",
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: "600",
-    letterSpacing: 0.2,
+    letterSpacing: 0.35,
   },
   nowDot: {
     width: 6,
@@ -529,16 +570,16 @@ const styles = StyleSheet.create({
   },
   heart: {
     position: "absolute",
-    top: 10,
-    right: 10,
+    top: 12,
+    right: 12,
   },
   heartButton: {
-    backgroundColor: "rgba(10, 14, 24, 0.72)",
-    borderColor: "rgba(255,255,255,0.24)",
+    backgroundColor: "rgba(7, 13, 23, 0.74)",
+    borderColor: "rgba(233,246,255,0.28)",
     shadowColor: "rgba(0,0,0,0.5)",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4,
   },
 });

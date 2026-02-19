@@ -28,7 +28,7 @@ export function GlassCard({
       intensity={intensity}
       padding={padding}
       tint="dark"
-      style={[highlight ? styles.highlight : null, style]}
+      style={[styles.base, highlight ? styles.highlight : null, style]}
       contentStyle={contentStyle}
       withGradient
     >
@@ -38,11 +38,15 @@ export function GlassCard({
 }
 
 const styles = StyleSheet.create({
+  base: {
+    borderRadius: 22,
+  },
   highlight: {
-    borderColor: "rgba(148, 214, 255, 0.45)",
-    shadowColor: "rgba(148, 214, 255, 0.6)",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
+    borderColor: "rgba(167, 229, 255, 0.56)",
+    shadowColor: "rgba(128, 216, 255, 0.78)",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 6,
   },
 });

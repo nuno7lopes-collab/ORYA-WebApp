@@ -58,6 +58,7 @@ describe("resolveOrganizationTool", () => {
     expect(resolveOrganizationTool("/org/50/forms/responses")).toBe("forms");
     expect(resolveOrganizationTool("/org/50/chat/preview")).toBe("chat");
     expect(resolveOrganizationTool("/org/50/padel/clubs/players")).toBe("padel-club");
+    expect(resolveOrganizationTool("/org/50/padel/parcerias")).toBe("padel-club");
     expect(resolveOrganizationTool("/org/50/padel/tournaments/create")).toBe("padel-tournaments");
     expect(resolveOrganizationTool("/org/50/marketing/promos")).toBe("marketing");
     expect(resolveOrganizationTool("/org/50/settings/verify")).toBe("settings");

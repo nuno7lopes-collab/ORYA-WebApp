@@ -14,7 +14,8 @@ const TARGETS = [
 ];
 
 const ALLOWED_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-const TODO_RE = /\b(TODO|FIXME)\b/i;
+// Match only explicit TODO/FIXME tokens (uppercase) to avoid false positives in words like "Metodo".
+const TODO_RE = /(^|[^\p{L}\p{N}_])(TODO|FIXME)(?=$|[^\p{L}\p{N}_])/u;
 
 function listFiles(entry) {
   const full = path.join(ROOT, entry);

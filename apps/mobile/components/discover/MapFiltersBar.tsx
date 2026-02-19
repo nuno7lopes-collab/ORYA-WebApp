@@ -375,6 +375,10 @@ export function MapFiltersBar({
   };
 
   const monthCells = useMemo(() => buildMonthGrid(currentMonth), [currentMonth]);
+  const hasDateFilter = Boolean(rangeStart || rangeEnd);
+  const hasPriceFilter = priceMin > 0 || priceMax != null;
+  const hasTypeFilter = templateType !== "all";
+  const hasAnyFilter = hasDateFilter || hasPriceFilter || hasTypeFilter;
 
   const barWrapperStyle = compact ? [styles.barWrapper, styles.barWrapperCompact] : styles.barWrapper;
   const barScrollStyle = compact
@@ -393,38 +397,59 @@ export function MapFiltersBar({
         >
           <Pressable
             onPress={() => setDateOpen(true)}
-            style={chipStyle}
+            style={[chipStyle, hasDateFilter ? styles.chipActive : null]}
             accessibilityRole="button"
             accessibilityLabel="Filtrar data"
+            accessibilityState={{ selected: hasDateFilter }}
           >
-            <Ionicons name="calendar-outline" size={16} color="rgba(245,250,255,0.9)" />
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color={hasDateFilter ? "rgba(236,248,255,0.98)" : "rgba(245,250,255,0.9)"}
+            />
           </Pressable>
 
           <Pressable
             onPress={() => setPriceOpen(true)}
-            style={chipStyle}
+            style={[chipStyle, hasPriceFilter ? styles.chipActive : null]}
             accessibilityRole="button"
             accessibilityLabel="Filtrar preço"
+            accessibilityState={{ selected: hasPriceFilter }}
           >
-            <Ionicons name="cash-outline" size={16} color="rgba(245,250,255,0.9)" />
+            <Ionicons
+              name="cash-outline"
+              size={16}
+              color={hasPriceFilter ? "rgba(236,248,255,0.98)" : "rgba(245,250,255,0.9)"}
+            />
           </Pressable>
 
           <Pressable
             onPress={() => setTypeOpen(true)}
-            style={chipStyle}
+            style={[chipStyle, hasTypeFilter ? styles.chipActive : null]}
             accessibilityRole="button"
             accessibilityLabel="Filtrar tipo"
+            accessibilityState={{ selected: hasTypeFilter }}
           >
-            <Ionicons name="filter" size={16} color="rgba(245,250,255,0.9)" />
+            <Ionicons
+              name="filter"
+              size={16}
+              color={hasTypeFilter ? "rgba(236,248,255,0.98)" : "rgba(245,250,255,0.9)"}
+            />
           </Pressable>
 
           <Pressable
             onPress={onClear}
-            style={clearChipStyle}
+            disabled={!hasAnyFilter}
+            style={[clearChipStyle, hasAnyFilter ? styles.clearChipActive : null]}
             accessibilityRole="button"
             accessibilityLabel="Limpar filtros"
+            accessibilityState={{ disabled: !hasAnyFilter }}
           >
-            <Ionicons name="refresh" size={16} color="rgba(245,250,255,0.9)" />
+            <Ionicons
+              name="refresh"
+              size={16}
+              color={hasAnyFilter ? "rgba(236,248,255,0.96)" : "rgba(214,230,245,0.62)"}
+            />
           </Pressable>
         </ScrollView>
       </View>
@@ -624,11 +649,15 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(10,14,24,0.5)",
+    borderColor: "rgba(206,233,255,0.24)",
+    backgroundColor: "rgba(10,14,24,0.64)",
     alignItems: "center",
     justifyContent: "center",
     gap: 0,
+  },
+  chipActive: {
+    borderColor: "rgba(173,226,255,0.84)",
+    backgroundColor: "rgba(124,208,255,0.34)",
   },
   chipCompact: {
     minWidth: 32,
@@ -641,7 +670,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 0,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(206,233,255,0.3)",
+  },
+  clearChipActive: {
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   modalRoot: {
     flex: 1,
@@ -657,17 +689,23 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    backgroundColor: "rgba(10, 14, 24, 0.9)",
+    borderColor: "rgba(193,228,255,0.24)",
+    backgroundColor: "rgba(8, 13, 23, 0.94)",
+    shadowColor: "rgba(0,0,0,0.6)",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 26,
+    elevation: 8,
   },
   modalContent: {
     padding: 16,
   },
   modalTitle: {
     color: "#ffffff",
-    fontSize: 16,
+    fontSize: 16.5,
     fontWeight: "700",
     marginBottom: 14,
+    letterSpacing: 0.2,
   },
   priceLabelsRow: {
     flexDirection: "row",
@@ -686,7 +724,7 @@ const styles = StyleSheet.create({
   sliderTrack: {
     height: 4,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.22)",
     justifyContent: "center",
   },
   sliderRange: {
@@ -702,8 +740,10 @@ const styles = StyleSheet.create({
     borderRadius: SLIDER_THUMB_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
+    backgroundColor: "rgba(244,251,255,0.98)",
     top: -9,
+    borderWidth: 1,
+    borderColor: "rgba(183,226,255,0.62)",
   },
   sliderThumbInner: {
     width: 10,
@@ -746,7 +786,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: "rgba(110, 210, 255, 0.9)",
+    backgroundColor: "rgba(171, 225, 255, 0.92)",
   },
   primaryButtonLabel: {
     color: "#0b101a",
@@ -756,7 +796,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(206,233,255,0.22)",
   },
   secondaryButtonLabel: {
     color: "rgba(255,255,255,0.8)",
@@ -773,12 +815,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    backgroundColor: "rgba(255,255,255,0.04)",
+    borderColor: "rgba(206,233,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   typeRowActive: {
-    backgroundColor: "rgba(110, 210, 255, 0.9)",
-    borderColor: "rgba(110, 210, 255, 0.9)",
+    backgroundColor: "rgba(171, 225, 255, 0.92)",
+    borderColor: "rgba(171, 225, 255, 0.92)",
   },
   typeRowText: {
     color: "rgba(255,255,255,0.8)",
@@ -805,7 +847,9 @@ const styles = StyleSheet.create({
   calendarNav: {
     padding: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(206,233,255,0.2)",
   },
   weekRow: {
     flexDirection: "row",
@@ -832,10 +876,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   dayCellSelected: {
-    backgroundColor: "rgba(110, 210, 255, 0.95)",
+    backgroundColor: "rgba(171, 225, 255, 0.95)",
   },
   dayCellInRange: {
-    backgroundColor: "rgba(110, 210, 255, 0.25)",
+    backgroundColor: "rgba(171, 225, 255, 0.3)",
   },
   dayCellDisabled: {
     backgroundColor: "rgba(255,255,255,0.03)",

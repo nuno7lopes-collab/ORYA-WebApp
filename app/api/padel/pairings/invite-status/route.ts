@@ -208,22 +208,27 @@ async function _GET(req: NextRequest) {
     | "PROFILE_INCOMPLETE"
     | "GENDER_MISMATCH"
     | "CATEGORY_GENDER_MISMATCH"
-    | "LEVEL_REQUIRED_FOR_CATEGORY"
-    | "CATEGORY_LEVEL_MISMATCH"
     | null = null;
   let blockingDetails:
     | {
         reason:
           | "PROFILE_INCOMPLETE"
           | "GENDER_MISMATCH"
-          | "CATEGORY_GENDER_MISMATCH"
-          | "LEVEL_REQUIRED_FOR_CATEGORY"
-          | "CATEGORY_LEVEL_MISMATCH";
+          | "CATEGORY_GENDER_MISMATCH";
         message: string;
         captainGender?: Gender | null;
         partnerGender?: Gender | null;
         eligibilityType?: PadelEligibilityType | null;
         categoryRestriction?: string | null;
+        categoryMinLevel?: string | null;
+        categoryMaxLevel?: string | null;
+        partnerLevel?: string | null;
+      }
+    | null = null;
+  let levelWarning:
+    | {
+        code: "LEVEL_REQUIRED_FOR_CATEGORY" | "CATEGORY_LEVEL_MISMATCH";
+        message: string;
         categoryMinLevel?: string | null;
         categoryMaxLevel?: string | null;
         partnerLevel?: string | null;
@@ -317,8 +322,8 @@ async function _GET(req: NextRequest) {
             const partnerLevelLabel = (partnerProfile?.padelLevel ?? "").trim() || t("levelLabelUndefined", locale);
             const partnerLabel =
               viewerRole === "INVITED" ? t("pairingPartnerLabelSelf", locale) : t("pairingPartnerLabelPartner", locale);
-            blockingDetails = {
-              reason: categoryLevel.warning,
+            levelWarning = {
+              code: categoryLevel.warning,
               message:
                 categoryLevel.warning === "LEVEL_REQUIRED_FOR_CATEGORY"
                   ? viewerRole === "INVITED"
@@ -568,6 +573,7 @@ async function _GET(req: NextRequest) {
       requiredAction,
       blockingReason,
       blockingDetails,
+      warnings: levelWarning ? [levelWarning] : [],
       paymentMode: pairing.payment_mode,
       pairingJoinMode: pairing.pairingJoinMode,
       pairingStatus: pairing.pairingStatus,

@@ -45,6 +45,7 @@ export type AutoScheduleCourtBlock = {
 export type AutoScheduleConfig = {
   windowStart: Date;
   windowEnd: Date;
+  timeWindows?: Array<{ start: Date; end: Date }>;
   durationMinutes: number;
   slotMinutes: number;
   bufferMinutes: number;
@@ -66,6 +67,19 @@ export type AutoScheduleResult = {
 };
 
 type Interval = { start: Date; end: Date };
+
+const normalizeSchedulingWindows = (config: AutoScheduleConfig) => {
+  const windows =
+    Array.isArray(config.timeWindows) && config.timeWindows.length > 0
+      ? config.timeWindows
+          .filter((window) => window?.start instanceof Date && window?.end instanceof Date && window.end > window.start)
+          .map((window) => ({ start: window.start, end: window.end }))
+      : config.windowEnd > config.windowStart
+        ? [{ start: config.windowStart, end: config.windowEnd }]
+        : [];
+
+  return windows.sort((a, b) => a.start.getTime() - b.start.getTime());
+};
 
 const roundUpToSlot = (value: Date, slotMinutes: number) => {
   const d = new Date(value);
@@ -159,6 +173,7 @@ export function computeAutoSchedulePlan({
   const {
     windowStart,
     windowEnd,
+    timeWindows,
     durationMinutes,
     slotMinutes,
     bufferMinutes,
@@ -166,6 +181,17 @@ export function computeAutoSchedulePlan({
     priority,
     allowPlaceholderMatches = false,
   } = config;
+  const schedulingWindows = normalizeSchedulingWindows({
+    windowStart,
+    windowEnd,
+    timeWindows,
+    durationMinutes,
+    slotMinutes,
+    bufferMinutes,
+    minRestMinutes,
+    priority,
+    allowPlaceholderMatches,
+  });
 
   const courtIds = courts.map((court) => court.id);
   const courtIdSet = new Set(courtIds);
@@ -304,8 +330,9 @@ export function computeAutoSchedulePlan({
   });
 
   const nextStartByCourt = new Map<number, Date>();
+  const firstWindowStart = schedulingWindows[0]?.start ?? windowStart;
   courtIds.forEach((courtId) => {
-    nextStartByCourt.set(courtId, roundUpToSlot(windowStart, slotMinutes));
+    nextStartByCourt.set(courtId, roundUpToSlot(firstWindowStart, slotMinutes));
   });
 
   const scheduled: AutoScheduleResult["scheduled"] = [];
@@ -338,19 +365,29 @@ export function computeAutoSchedulePlan({
 
     let bestSlot: { start: Date; end: Date; courtId: number } | null = null;
     for (const courtId of candidateCourts) {
-      const baseStart = nextStartByCourt.get(courtId) ?? windowStart;
-      let candidate = roundUpToSlot(new Date(Math.max(baseStart.getTime(), windowStart.getTime())), slotMinutes);
+      const baseStart = nextStartByCourt.get(courtId) ?? firstWindowStart;
+      for (const window of schedulingWindows) {
+        if (window.end <= window.start) continue;
+        if (baseStart >= window.end) continue;
 
-      while (candidate.getTime() + matchDurationMs <= windowEnd.getTime()) {
-        const end = new Date(candidate.getTime() + matchDurationMs);
-        if (isCourtAvailable(courtId, candidate, end) && isPlayersAvailable(participants, candidate, end)) {
-          bestSlot =
-            !bestSlot || candidate.getTime() < bestSlot.start.getTime()
-              ? { start: candidate, end, courtId }
-              : bestSlot;
-          break;
+        let candidate = roundUpToSlot(
+          new Date(Math.max(baseStart.getTime(), window.start.getTime())),
+          slotMinutes,
+        );
+
+        while (candidate.getTime() + matchDurationMs <= window.end.getTime()) {
+          const end = new Date(candidate.getTime() + matchDurationMs);
+          if (isCourtAvailable(courtId, candidate, end) && isPlayersAvailable(participants, candidate, end)) {
+            bestSlot =
+              !bestSlot || candidate.getTime() < bestSlot.start.getTime()
+                ? { start: candidate, end, courtId }
+                : bestSlot;
+            break;
+          }
+          candidate = roundUpToSlot(new Date(candidate.getTime() + slotMinutes * 60 * 1000), slotMinutes);
         }
-        candidate = roundUpToSlot(new Date(candidate.getTime() + slotMinutes * 60 * 1000), slotMinutes);
+
+        if (bestSlot) break;
       }
     }
 

@@ -3969,6 +3969,7 @@ function OrganizacaoPageInner({
               organizationId={organization.id}
               organizationKind={organization.organizationKind ?? null}
               toolMode="CLUB"
+              canEditPadel={canAccessTorneios}
             />
           ) : (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">
@@ -3985,6 +3986,7 @@ function OrganizacaoPageInner({
               organizationId={organization.id}
               organizationKind={organization.organizationKind ?? null}
               toolMode="TOURNAMENTS"
+              canEditPadel={canAccessTorneios}
             />
           ) : (
             <div className="rounded-2xl border border-white/12 bg-white/5 px-4 py-6 text-sm text-white/70">

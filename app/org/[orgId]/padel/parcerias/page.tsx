@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 
-import PartnershipsPageClient from "@/app/org/_internal/core/(dashboard)/padel/parcerias/PartnershipsPageClient";
+import { redirect } from "next/navigation";
 
 export default async function OrgPadelPartnershipsPage({
   params,
@@ -8,6 +8,5 @@ export default async function OrgPadelPartnershipsPage({
   params: Promise<{ orgId: string }>;
 }) {
   const { orgId } = await params;
-  const organizationId = Number(orgId);
-  return <PartnershipsPageClient organizationId={Number.isFinite(organizationId) ? organizationId : null} />;
+  redirect(`/org/${orgId}/padel/clubs?tab=manage&section=padel-club&padel=partnerships`);
 }

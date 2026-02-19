@@ -23,6 +23,7 @@ import {
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
+import { dailyWindowsToIntervals, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
@@ -219,6 +220,7 @@ async function _POST(req: NextRequest) {
     scheduleDefaults?: {
       windowStart?: string | null;
       windowEnd?: string | null;
+      dailyWindows?: Array<{ date?: string; startTime?: string; endTime?: string }> | null;
       durationMinutes?: number | null;
       slotMinutes?: number | null;
       bufferMinutes?: number | null;
@@ -228,12 +230,21 @@ async function _POST(req: NextRequest) {
   };
 
   const scheduleDefaults = advanced.scheduleDefaults ?? {};
+  const bodyDailyWindows = normalizePadelDailyWindows(body.dailyWindows);
+  const defaultsDailyWindows = normalizePadelDailyWindows(scheduleDefaults.dailyWindows);
+  const resolvedDailyWindows = bodyDailyWindows.length > 0 ? bodyDailyWindows : defaultsDailyWindows;
+  const resolvedTimeWindows = dailyWindowsToIntervals(resolvedDailyWindows);
+  const dailyEnvelopeStart = resolvedTimeWindows[0]?.start ?? null;
+  const dailyEnvelopeEnd =
+    resolvedTimeWindows.length > 0 ? resolvedTimeWindows[resolvedTimeWindows.length - 1]?.end ?? null : null;
   const rawWindowStart =
     parseDate(body.startAt) ??
+    dailyEnvelopeStart ??
     (typeof scheduleDefaults.windowStart === "string" ? parseDate(scheduleDefaults.windowStart) : null) ??
     event.startsAt;
   const windowEnd =
     parseDate(body.endAt) ??
+    dailyEnvelopeEnd ??
     (typeof scheduleDefaults.windowEnd === "string" ? parseDate(scheduleDefaults.windowEnd) : null) ??
     event.endsAt;
   const windowStart = rawWindowStart
@@ -247,6 +258,16 @@ async function _POST(req: NextRequest) {
   if (windowEnd <= windowStart) {
     return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
   }
+  const timeWindows =
+    resolvedTimeWindows.length > 0
+      ? resolvedTimeWindows
+          .map((window) => {
+            if (!startFromNow) return window;
+            const start = new Date(Math.max(window.start.getTime(), Date.now()));
+            return { start, end: window.end };
+          })
+          .filter((window) => window.end > window.start)
+      : undefined;
 
   const durationFromBody = parseNumber(body.durationMinutes);
   const durationFromSettings =
@@ -552,6 +573,7 @@ async function _POST(req: NextRequest) {
       config: {
         windowStart,
         windowEnd,
+        ...(timeWindows ? { timeWindows } : {}),
         durationMinutes,
         slotMinutes,
         bufferMinutes,

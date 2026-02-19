@@ -221,10 +221,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   containerTransparent: {
-    backgroundColor: "rgba(6, 10, 18, 0.42)",
+    backgroundColor: "rgba(6, 11, 20, 0.52)",
   },
   containerElevated: {
-    backgroundColor: "rgba(6, 10, 18, 0.88)",
+    backgroundColor: "rgba(6, 11, 20, 0.9)",
   },
   gradient: {
     position: "absolute",
@@ -233,10 +233,10 @@ const styles = StyleSheet.create({
     top: 0,
   },
   blurFallback: {
-    backgroundColor: "rgba(6, 10, 18, 0.74)",
+    backgroundColor: "rgba(6, 11, 20, 0.78)",
   },
   blurFallbackElevated: {
-    backgroundColor: "rgba(6, 10, 18, 0.9)",
+    backgroundColor: "rgba(6, 11, 20, 0.92)",
   },
   inner: {
     height: TOP_APP_HEADER_HEIGHT,
@@ -288,10 +288,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brand: {
-    color: "rgba(255,255,255,1)",
+    color: "rgba(247,252,255,1)",
     fontSize: 20,
     fontWeight: "800",
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
   titleRow: {
     flexDirection: "row",
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    color: "rgba(255,255,255,1)",
+    color: "rgba(247,252,255,1)",
     fontSize: 19,
     fontWeight: "700",
   },
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     justifyContent: "flex-end",
     marginTop: 1,
   },
@@ -323,14 +323,14 @@ const styles = StyleSheet.create({
     borderRadius: tokens.layout.touchTarget / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.14)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(208,235,255,0.26)",
   },
   iconPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.97 }],
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.22)",
   },
   badge: {
     position: "absolute",
@@ -357,6 +357,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(207,234,255,0.14)",
   },
 });

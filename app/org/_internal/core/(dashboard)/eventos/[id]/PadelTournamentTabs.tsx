@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { formatCurrency, formatDateTime, resolveLocale, t } from "@/lib/i18n";
+import { formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import useSWR from "swr";
 import { DEFAULT_PADEL_SCORE_RULES, type PadelScoreRules } from "@/domain/padel/score";
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { OryaDateTimeField } from "@/components/ui/datetime";
+import { EventCoverLibraryPicker } from "@/app/org/_internal/core/(dashboard)/eventos/_components/EventCoverLibraryPicker";
+import { TournamentFormSurface } from "@/app/org/_internal/core/(dashboard)/padel/_components/TournamentFormSurface";
 
 type Pairing = {
   id: number;
@@ -331,11 +333,13 @@ export default function PadelTournamentTabs({
   eventSlug,
   categoriesMeta,
   organizationId,
+  coverImageUrl,
 }: {
   eventId: number;
   eventSlug: string;
   categoriesMeta?: CategoryMeta[];
   organizationId?: number | null;
+  coverImageUrl?: string | null;
 }) {
   const orgApi = (suffix: string, explicitOrgId?: number | null) =>
     resolveCanonicalOrgApiPath(`/api/org/[orgId]${suffix}`, explicitOrgId ?? null);
@@ -343,6 +347,8 @@ export default function PadelTournamentTabs({
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang"));
   const [tab, setTab] = useState<"duplas" | "grupos" | "eliminatorias">("duplas");
+  const [coverUrl, setCoverUrl] = useState<string | null>(coverImageUrl ?? null);
+  const [coverSaving, setCoverSaving] = useState(false);
   const [configMessage, setConfigMessage] = useState<string | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<"preview" | "import" | null>(null);
@@ -380,6 +386,41 @@ export default function PadelTournamentTabs({
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<string | null>(null);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCoverUrl(coverImageUrl ?? null);
+  }, [coverImageUrl]);
+
+  const saveCoverImage = useCallback(
+    async (nextCoverUrl: string | null) => {
+      setCoverUrl(nextCoverUrl);
+      if (!organizationId) return;
+      setCoverSaving(true);
+      try {
+        const res = await fetch(`/api/org/${organizationId}/events/update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventId,
+            coverImageUrl: nextCoverUrl,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          throw new Error(sanitizeUiErrorMessage(json?.error, "Falha ao atualizar capa do torneio."));
+        }
+        setConfigMessage("Capa atualizada.");
+      } catch (err) {
+        setConfigMessage(
+          err instanceof Error ? sanitizeUiErrorMessage(err.message, "Falha ao atualizar capa do torneio.") : "Falha ao atualizar capa do torneio.",
+        );
+      } finally {
+        setCoverSaving(false);
+      }
+    },
+    [eventId, organizationId],
+  );
+
   const { data: eventCategoriesRes } = useSWR<{ ok?: boolean; items?: PadelEventCategoryLink[] }>(
     eventId ? `/api/padel/event-categories?eventId=${eventId}` : null,
     fetcher,
@@ -476,10 +517,6 @@ export default function PadelTournamentTabs({
     orgIdForMe ? orgApi("/me", orgIdForMe) : null,
     fetcher,
   );
-  const { data: analyticsRes } = useSWR(
-    eventId ? orgApi(`/padel/analytics?eventId=${eventId}`) : null,
-    fetcher,
-  );
   const { data: auditRes } = useSWR(
     eventId ? orgApi(`/padel/audit?eventId=${eventId}&limit=25&actionPrefix=PADEL_`) : null,
     fetcher,
@@ -536,7 +573,6 @@ export default function PadelTournamentTabs({
   const advanced = (configRes?.config?.advancedSettings || {}) as Record<string, any>;
   const ruleSets = Array.isArray(ruleSetsRes?.items) ? (ruleSetsRes.items as PadelRuleSetSummary[]) : [];
   const activeRuleSet = configRes?.config?.ruleSet as PadelRuleSetSummary | undefined;
-  const analytics = analyticsRes?.ok ? analyticsRes : null;
   const auditItems: AuditItem[] =
     auditRes && auditRes.ok && Array.isArray(auditRes.items) ? (auditRes.items as AuditItem[]) : [];
   const memberRole = orgMeRes?.membershipRole ?? null;
@@ -747,9 +783,6 @@ export default function PadelTournamentTabs({
         ? `Rondas geradas ${amMxRoundsGenerated}${amMxRoundsTotal ? ` / ${amMxRoundsTotal}` : ""}.`
         : "Runtime AM/MX ainda não iniciado."
       : null;
-  const pendingWorkflowCount = matches.filter((match) =>
-    ["RESULT_SUBMITTED", "PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"].includes(match.status),
-  ).length;
   const filteredPrimaryRoundMatches = useMemo(
     () => primaryRoundMatches.filter((match) => doesMatchPassLiveOpsFilter(match, liveOpsFilter)),
     [liveOpsFilter, primaryRoundMatches],
@@ -789,78 +822,6 @@ export default function PadelTournamentTabs({
             : liveOpsFilter === "UNSCHEDULED"
               ? "sem horário"
               : "todos";
-  const actionItems = useMemo(() => {
-    const actions: Array<{ key: string; level: "critical" | "warn" | "info"; label: string; hint: string }> = [];
-    if (matches.length === 0) {
-      actions.push({
-        key: "generate",
-        level: "critical",
-        label: "Gerar jogos",
-        hint: supportsGroups
-          ? "Gera grupos primeiro para iniciar operação."
-          : "Gera a primeira ronda para iniciar operação.",
-      });
-    }
-    if (pendingWorkflowCount > 0) {
-      actions.push({
-        key: "workflow",
-        level: "warn",
-        label: "Rever resultados pendentes",
-        hint: `${pendingWorkflowCount} jogo(s) com confirmação/revisão em falta.`,
-      });
-    }
-    if (unscheduledMatchesCount > 0) {
-      actions.push({
-        key: "schedule",
-        level: "warn",
-        label: "Fechar calendário",
-        hint: `${unscheduledMatchesCount} jogo(s) ainda sem slot/campo.`,
-      });
-    }
-    if ((isNonStopFormat || isAmMxFormat) && matches.length > 0) {
-      actions.push({
-        key: "round-runtime",
-        level: "info",
-        label: "Operar avanço de ronda",
-        hint: "Usa o painel de calendário operacional para avançar ronda e auto-agendar.",
-      });
-    }
-    if (matches.length > 0 && pendingWorkflowCount === 0 && unscheduledMatchesCount === 0) {
-      actions.push({
-        key: "healthy",
-        level: "info",
-        label: "Operação estável",
-        hint: "Resultados e calendário estão consistentes.",
-      });
-    }
-    return actions;
-  }, [isAmMxFormat, isNonStopFormat, matches.length, pendingWorkflowCount, supportsGroups, unscheduledMatchesCount]);
-  const runActionItem = (key: string) => {
-    if (key === "workflow") {
-      setLiveOpsFilter("ACTION_REQUIRED");
-      if (showGroupsTab) setTab("grupos");
-      else if (showKnockoutTab) setTab("eliminatorias");
-      return;
-    }
-    if (key === "generate") {
-      if (showGroupsTab) setTab("grupos");
-      else if (showKnockoutTab) setTab("eliminatorias");
-      return;
-    }
-    if (key === "schedule") {
-      window.open(autoScheduleHref, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (key === "round-runtime") {
-      window.open(roundOpsHref, "_blank", "noopener,noreferrer");
-    }
-  };
-  const publicSurfaceLinks = [
-    { key: "public", label: "Página pública", href: `/eventos/${eventSlug}` },
-    { key: "calendar", label: "Calendário público", href: `/eventos/${eventSlug}/calendario` },
-    { key: "ranking", label: "Ranking público", href: `/eventos/${eventSlug}/ranking` },
-    { key: "monitor", label: "TV mode", href: `/eventos/${eventSlug}/monitor` },
-  ];
   const generationPlanAlternatives = useMemo(() => {
     if (!generationPlanDetails?.alternatives || generationPlanDetails.alternatives.length === 0) return [];
     return generationPlanDetails.alternatives
@@ -1136,69 +1097,6 @@ export default function PadelTournamentTabs({
     }, 0);
   }, [koRounds, liveOpsFilter, matchById]);
 
-  const categoryStats = useMemo(() => {
-    const metaMap = new Map<number | null, CategoryMeta>();
-    (categoriesMeta || []).forEach((meta) => {
-      const key = Number.isFinite(meta.categoryId as number) ? (meta.categoryId as number) : null;
-      metaMap.set(key, meta);
-    });
-    const fallbackByCategory = new Map<number | null, number>();
-    pairings.forEach((pairing) => {
-      const key = Number.isFinite(pairing.categoryId as number) ? (pairing.categoryId as number) : null;
-      fallbackByCategory.set(key, (fallbackByCategory.get(key) || 0) + 1);
-    });
-
-    const keys = new Set<number | null>([...fallbackByCategory.keys(), ...metaMap.keys()]);
-    eventCategoryLinks.forEach((link) => {
-      const categoryId =
-        typeof link.padelCategoryId === "number"
-          ? link.padelCategoryId
-          : typeof link.category?.id === "number"
-            ? link.category.id
-            : null;
-      keys.add(categoryId);
-    });
-
-    const rows: Array<{
-      key: number | null;
-      label: string;
-      count: number;
-      capacity: number | null;
-      confirmed: number;
-      complete: number;
-      active: number;
-      pending: number;
-    }> = [];
-    keys.forEach((key) => {
-      const link = key ? eventCategoryById.get(key) ?? null : null;
-      const meta = metaMap.get(key);
-      const fallbackTeams = fallbackByCategory.get(key) ?? 0;
-      const count = resolveCategoryTeamsForPlanning(link, fallbackTeams, planningStrategy);
-      const capacity = toPositiveInt(link?.capacityTeams) ?? meta?.capacity ?? null;
-      const label =
-        meta?.name ||
-        (key ? categoryLabelById.get(String(key)) : null) ||
-        link?.category?.label ||
-        (key === null ? "Categoria" : `Categoria #${key}`);
-      rows.push({
-        key,
-        label,
-        count,
-        capacity,
-        confirmed: toPositiveInt(link?.confirmedTeams) ?? 0,
-        complete: toPositiveInt(link?.completeTeams) ?? 0,
-        active: toPositiveInt(link?.activeTeams) ?? 0,
-        pending: toPositiveInt(link?.pendingTeams) ?? 0,
-      });
-    });
-    return rows.sort((a, b) => a.label.localeCompare(b.label, "pt-PT"));
-  }, [categoriesMeta, categoryLabelById, eventCategoryById, eventCategoryLinks, pairings, planningStrategy]);
-
-  const matchesSummary = {
-    pending: matches.filter((m) => m.status === "PENDING").length,
-    inProgress: matches.filter((m) => m.status === "IN_PROGRESS").length,
-    done: matches.filter((m) => ["OFFICIAL", "WALKOVER", "RETIRED"].includes(m.status)).length,
-  };
   const groupMatchesCount = matches.filter((m) => m.roundType === "GROUPS").length;
   const groupMatchesDone = matches.filter(
     (m) => m.roundType === "GROUPS" && ["OFFICIAL", "WALKOVER", "RETIRED"].includes(m.status),
@@ -1694,7 +1592,7 @@ export default function PadelTournamentTabs({
       nonStopMode: "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST";
       nonStopRounds: number | null;
     }>,
-    scope: "selected" | "global" = "selected",
+    _scope: "selected" | "global" = "selected",
   ) {
     const organizationId = configRes?.config?.organizationId;
     const format = formatRequested || formatEffective || "GRUPOS_ELIMINATORIAS";
@@ -1705,7 +1603,7 @@ export default function PadelTournamentTabs({
       return;
     }
 
-    const targetKey = scope === "global" ? "global" : runtimeCategoryKey;
+    const targetKey = "global";
     const nextProfiles = Object.entries(formatProfilesByCategory).reduce<Record<string, Record<string, unknown>>>(
       (acc, [key, value]) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
@@ -1779,7 +1677,7 @@ export default function PadelTournamentTabs({
       }),
     });
     if (res.ok) {
-      setConfigMessage(scope === "global" ? "Fallback global guardado." : `Perfil ${selectedCategoryLabel} guardado.`);
+      setConfigMessage("Formato do torneio guardado.");
       mutateConfig();
       setTimeout(() => setConfigMessage(null), 2000);
     } else {
@@ -3235,42 +3133,42 @@ export default function PadelTournamentTabs({
     );
   };
 
-  return (
-    <section className="rounded-2xl border border-white/10 bg-black/40 p-4 space-y-4 mt-6">
-      {categoryOptions.length > 1 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
-          <span className="uppercase tracking-[0.18em] text-[11px] text-white/60">Categoria ativa</span>
-          <select
-            value={selectedCategoryId ?? ""}
-            onChange={(e) => {
-              if (e.target.value) {
-                setPreferGlobalCategory(false);
-                setSelectedCategoryId(Number(e.target.value));
-                return;
-              }
-              setPreferGlobalCategory(true);
-              setSelectedCategoryId(null);
-            }}
-            className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80"
-          >
-            <option value="">Global / todas</option>
-            {categoryOptions.map((opt) => (
-              <option key={`padel-cat-${opt.id}`} value={String(opt.id)}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+  const surfaceTabs = [
+    { id: "tab-duplas", label: "Duplas", active: tab === "duplas", onClick: () => setTab("duplas" as const) },
+    ...(showGroupsTab
+      ? [{ id: "tab-grupos", label: groupsTabLabel, active: tab === "grupos", onClick: () => setTab("grupos" as const) }]
+      : []),
+    ...(showKnockoutTab
+      ? [{ id: "tab-eliminatorias", label: "Eliminatórias", active: tab === "eliminatorias", onClick: () => setTab("eliminatorias" as const) }]
+      : []),
+  ];
 
+  return (
+    <TournamentFormSurface
+      tabs={surfaceTabs}
+      leftColumn={
+        <div className="space-y-3">
+          <EventCoverLibraryPicker
+            value={coverUrl}
+            onChange={saveCoverImage}
+            organizationId={organizationId}
+            templateType="PADEL"
+            title="Capa"
+            subtitle="Editar capa do torneio"
+          />
+          {coverSaving ? <p className="text-[11px] text-white/60">A guardar capa...</p> : null}
+        </div>
+      }
+      rightColumn={
+        <section id="padel-config" className="space-y-4 rounded-2xl border border-white/10 bg-black/40 p-4">
       <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Perfil por formato</p>
-            <p className="text-[12px] text-white/70">Configuração efetiva da categoria ativa (com fallback global).</p>
+            <p className="text-[12px] text-white/70">Configuração global do torneio (sem overrides por categoria).</p>
           </div>
           <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-white/75">
-            {selectedCategoryLabel}
+            Global
           </span>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -3364,247 +3262,33 @@ export default function PadelTournamentTabs({
             </>
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-2">
-          <p className="text-[11px] text-white/65">
-            Fallback global aplicado quando a categoria não tiver override.
-          </p>
-          <button
-            type="button"
-            disabled={!isAdminRole}
-            onClick={() =>
-              saveFormatProfileConfig(
-                {
-                  format: generationFormat,
-                  amMxMode: isAmMxFormat ? selectedAmMxMode : undefined,
-                  amMxProgressionMode: isAmMxFormat ? "ROUND_BY_ROUND" : undefined,
-                  nonStopMode: isNonStopFormat ? selectedNonStopMode : undefined,
-                  nonStopRounds: isNonStopFormat ? selectedNonStopRounds : null,
-                },
-                "global",
-              )
-            }
-            className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10 disabled:opacity-60"
+      <div className="rounded-lg border border-white/10 bg-black/20 px-2 py-2 text-[11px] text-white/65">
+          Perfil único por torneio. Alterações aplicam-se a todas as categorias.
+        </div>
+      </div>
+      {categoryOptions.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] text-white/80">
+          <span className="uppercase tracking-[0.18em] text-[11px] text-white/60">Categoria ativa</span>
+          <select
+            value={selectedCategoryId ?? ""}
+            onChange={(e) => {
+              if (e.target.value) {
+                setPreferGlobalCategory(false);
+                setSelectedCategoryId(Number(e.target.value));
+                return;
+              }
+              setPreferGlobalCategory(true);
+              setSelectedCategoryId(null);
+            }}
+            className="rounded-full border border-white/15 bg-black/30 px-3 py-1 text-[12px] text-white/80"
           >
-            Copiar perfil para fallback global
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Inscrições Padel</p>
-          <p className="text-2xl font-semibold text-white">{pairings.length}</p>
-          <p className="text-[12px] text-white/70">
-            Completas: {pairings.filter((p) => p.pairingStatus === "COMPLETE").length} · Pendentes:{" "}
-            {pairings.filter((p) => p.pairingStatus !== "COMPLETE").length}
-          </p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-1">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Jogos</p>
-          <p className="text-2xl font-semibold text-white">{matches.length}</p>
-          <p className="text-[12px] text-white/70">
-            Pendentes {matchesSummary.pending} · Em curso {matchesSummary.inProgress} · Terminados {matchesSummary.done}
-          </p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Categorias</p>
-          <div className="space-y-1 text-[12px] text-white/75">
-            {categoryStats.length === 0 && <p className="text-white/60">Sem categorias.</p>}
-            {categoryStats.map((c) => {
-              const occupancy = c.capacity ? Math.min(100, Math.round((c.count / c.capacity) * 100)) : null;
-              return (
-                <div key={`${c.key ?? "default"}`} className="flex items-center justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <span className="text-white">{c.label}</span>
-                    <p className="text-[10px] text-white/55">
-                      Confirmadas {c.confirmed} · Completas {c.complete} · Ativas {c.active} · Pendentes {c.pending}
-                    </p>
-                  </div>
-                  <span className="text-right text-white/70">
-                    {c.count} equipa{c.count === 1 ? "" : "s"} {c.capacity ? `· ${occupancy}%` : ""}
-                    <span className="block text-[10px] text-white/50">
-                      {planningMode === "capacity" ? "base capacidade" : "base runtime"}
-                    </span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Centro de ação</p>
-            <span className="text-[11px] text-white/55">{actionItems.length} prioridade(s)</span>
-          </div>
-          <div className="space-y-2">
-            {actionItems.map((item) => (
-              <div
-                key={item.key}
-                className={`rounded-lg border px-3 py-2 ${
-                  item.level === "critical"
-                    ? "border-rose-300/40 bg-rose-500/10 text-rose-100"
-                    : item.level === "warn"
-                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
-                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">{item.label}</p>
-                  {item.key !== "healthy" && (
-                    <button
-                      type="button"
-                      onClick={() => runActionItem(item.key)}
-                      className="rounded-full border border-current/35 px-2.5 py-0.5 text-[10px] font-semibold hover:bg-white/10"
-                    >
-                      Abrir
-                    </button>
-                  )}
-                </div>
-                <p className="text-[11px] opacity-90">{item.hint}</p>
-              </div>
+            <option value="">Global / todas</option>
+            {categoryOptions.map((opt) => (
+              <option key={`padel-cat-${opt.id}`} value={String(opt.id)}>
+                {opt.label}
+              </option>
             ))}
-          </div>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
-          <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Perspetiva jogador</p>
-          <p className="text-white/70">Acede rapidamente às superfícies públicas para validar a experiência final.</p>
-          <div className="flex flex-wrap gap-2">
-            {publicSurfaceLinks.map((item) => (
-              <a
-                key={`surface-${item.key}`}
-                href={item.href}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/80 hover:bg-white/10"
-              >
-                {item.label}
-              </a>
-            ))}
-          </div>
-        </div>
-      </div>
-      {matches.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Fila operacional live</p>
-              <p className="text-white/70">
-                Filtra rapidamente jogos críticos para operação em tempo real.
-              </p>
-            </div>
-            <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[11px] text-white/70">
-              Filtro ativo: {liveOpsFilterLabel}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { key: "ALL" as LiveOpsFilter, label: "Todos", count: liveOpsCounters.all },
-              { key: "ACTION_REQUIRED" as LiveOpsFilter, label: "Ação", count: liveOpsCounters.actionRequired },
-              {
-                key: "PENDING_CONFIRMATION" as LiveOpsFilter,
-                label: "Pend. confirmação",
-                count: liveOpsCounters.pendingConfirmation,
-              },
-              {
-                key: "PENDING_REVIEW_EXPIRED" as LiveOpsFilter,
-                label: "Pend. expirado",
-                count: liveOpsCounters.pendingReviewExpired,
-              },
-              { key: "DISPUTED" as LiveOpsFilter, label: "Disputa", count: liveOpsCounters.disputed },
-              { key: "UNSCHEDULED" as LiveOpsFilter, label: "Sem horário", count: liveOpsCounters.unscheduled },
-            ].map((item) => (
-              <button
-                key={`live-filter-${item.key}`}
-                type="button"
-                onClick={() => setLiveOpsFilter(item.key)}
-                className={`rounded-full border px-3 py-1 text-[11px] ${
-                  liveOpsFilter === item.key
-                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
-                    : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
-                }`}
-              >
-                {item.label} ({item.count})
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {analytics && (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Analítica avançada</p>
-              <p className="text-white/70">
-                Ocupação {analytics.occupancy}% · Média {analytics.avgMatchMinutes} min · Atraso{" "}
-                {analytics.avgDelayMinutes ?? 0} min · Campos {analytics.courts}
-              </p>
-              <p className="text-white/60 text-[11px]">
-                Jogos {analytics.matches ?? matches.length} · Atrasados {analytics.delayedMatches ?? 0} · Janela{" "}
-                {analytics.windowMinutes ?? 0} min
-              </p>
-            </div>
-            <div className="text-right text-white/70">
-              <p>Receita {formatCurrency(analytics.payments?.totalCents ?? 0, "EUR")}</p>
-              <p>Taxa plataforma {formatCurrency(analytics.payments?.platformFeeCents ?? 0, "EUR")}</p>
-              <p>Taxa Stripe {formatCurrency(analytics.payments?.stripeFeeCents ?? 0, "EUR")}</p>
-              <p>Líquido {formatCurrency(analytics.payments?.netCents ?? 0, "EUR")}</p>
-            </div>
-          </div>
-          {Array.isArray(analytics.courtsBreakdown) && analytics.courtsBreakdown.length > 0 && (
-            <div className="grid gap-2 md:grid-cols-2">
-              {analytics.courtsBreakdown.slice(0, 6).map((court: any) => (
-                <div key={`court-${court.courtId}`} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                    Campo {court.name || court.courtId}
-                  </p>
-                  <p className="text-white/70">
-                    {court.matches} jogos · {court.minutes} min · {court.occupancy}% ocupação
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-          {Array.isArray(analytics.phaseStats) && analytics.phaseStats.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Fases</p>
-              <div className="grid gap-2 md:grid-cols-3">
-                {analytics.phaseStats.map((phase: any) => (
-                  <div
-                    key={`phase-${phase.phase}`}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">{phase.label}</p>
-                    <p className="text-white/70">
-                      {phase.matches} jogos · {phase.avgMatchMinutes} min · atraso {phase.avgDelayMinutes} min
-                    </p>
-                    <p className="text-[11px] text-white/60">Atrasados {phase.delayedMatches ?? 0}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {Array.isArray(analytics.courtDayBreakdown) && analytics.courtDayBreakdown.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">Ocupação por campo/dia</p>
-              <div className="grid gap-2 md:grid-cols-2">
-                {analytics.courtDayBreakdown.slice(0, 6).map((row: any) => (
-                  <div
-                    key={`court-day-${row.date}-${row.courtId}`}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.12em] text-white/60">
-                      {row.date} · Campo {row.courtName || row.courtId}
-                    </p>
-                    <p className="text-white/70">
-                      {row.matches} jogos · {row.minutes} min · {row.occupancy}% ocupação
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          </select>
         </div>
       )}
       <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-3">
@@ -3769,22 +3453,41 @@ export default function PadelTournamentTabs({
       </div>
 
       {renderPlanningPreviewPanel()}
-
-      <div className="flex items-center gap-2 text-[12px]">
-        {[
-          { key: "duplas", label: "Duplas" },
-          ...(showGroupsTab ? [{ key: "grupos", label: groupsTabLabel }] : []),
-          ...(showKnockoutTab ? [{ key: "eliminatorias", label: "Eliminatórias" }] : []),
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key as typeof tab)}
-            className={`rounded-full px-3 py-1 border ${tab === t.key ? "bg-white text-black font-semibold" : "border-white/20 text-white/75"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {matches.length > 0 && (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[12px] text-white/80 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-white/60">Filtro live</p>
+            <span className="text-[11px] text-white/60">Ativo: {liveOpsFilterLabel}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: "ALL" as LiveOpsFilter, label: "Todos", count: liveOpsCounters.all },
+              { key: "ACTION_REQUIRED" as LiveOpsFilter, label: "Ação", count: liveOpsCounters.actionRequired },
+              { key: "PENDING_CONFIRMATION" as LiveOpsFilter, label: "Pend. confirmação", count: liveOpsCounters.pendingConfirmation },
+              {
+                key: "PENDING_REVIEW_EXPIRED" as LiveOpsFilter,
+                label: "Pend. expirado",
+                count: liveOpsCounters.pendingReviewExpired,
+              },
+              { key: "DISPUTED" as LiveOpsFilter, label: "Disputa", count: liveOpsCounters.disputed },
+              { key: "UNSCHEDULED" as LiveOpsFilter, label: "Sem horário", count: liveOpsCounters.unscheduled },
+            ].map((item) => (
+              <button
+                key={`live-filter-${item.key}`}
+                type="button"
+                onClick={() => setLiveOpsFilter(item.key)}
+                className={`rounded-full border px-3 py-1 text-[11px] ${
+                  liveOpsFilter === item.key
+                    ? "border-sky-300/60 bg-sky-500/20 text-sky-100"
+                    : "border-white/20 bg-white/5 text-white/75 hover:bg-white/10"
+                }`}
+              >
+                {item.label} ({item.count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {tab === "grupos" && (
         <div className="rounded-xl border border-white/15 bg-white/5 p-3 text-sm space-y-2">
@@ -4844,6 +4547,8 @@ export default function PadelTournamentTabs({
         </div>
       )}
 
-    </section>
+        </section>
+      }
+    />
   );
 }

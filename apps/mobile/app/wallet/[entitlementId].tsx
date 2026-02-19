@@ -588,13 +588,22 @@ export default function WalletDetailScreen() {
                 <GlassCard intensity={48} className="mb-4">
                   <View className="gap-3">
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-white text-sm font-semibold">Dupla</Text>
+                      <View className="flex-row items-center gap-2">
+                        <View className="h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-white/10">
+                          <Ionicons
+                            name="people-outline"
+                            size={14}
+                            color="rgba(236,246,255,0.92)"
+                          />
+                        </View>
+                        <Text className="text-white text-sm font-semibold">Dupla</Text>
+                      </View>
                       {pairingPaymentLabel(data.pairing.paymentMode) ? (
                         <GlassPill label={pairingPaymentLabel(data.pairing.paymentMode) as string} variant="muted" />
                       ) : null}
                     </View>
                     {pairingLifecycleLabel(data.pairing.lifecycleStatus) ? (
-                      <Text className="text-white/70 text-sm">
+                      <Text className="text-white/72 text-sm">
                         {pairingLifecycleLabel(data.pairing.lifecycleStatus)}
                       </Text>
                     ) : null}
@@ -603,13 +612,13 @@ export default function WalletDetailScreen() {
                         <Pressable
                           onPress={handleAcceptInvite}
                           disabled={pairingAction !== null}
-                          className="rounded-full bg-white/15 px-4 py-2"
+                          className="rounded-full border border-sky-200/55 bg-sky-200/26 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Aceitar convite"
                           accessibilityState={{ disabled: pairingAction !== null }}
                         >
-                          <Text className="text-white text-xs font-semibold">
+                          <Text className="text-sky-50 text-xs font-semibold">
                             {pairingAction === "accept" ? "A aceitar..." : "Aceitar convite"}
                           </Text>
                         </Pressable>
@@ -618,7 +627,7 @@ export default function WalletDetailScreen() {
                         <Pressable
                           onPress={handleDeclineInvite}
                           disabled={pairingAction !== null}
-                          className="rounded-full border border-white/15 bg-white/5 px-4 py-2"
+                          className="rounded-full border border-white/20 bg-white/10 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Recusar convite"
@@ -633,7 +642,7 @@ export default function WalletDetailScreen() {
                         <Pressable
                           onPress={handlePayPairing}
                           disabled={pairingAction !== null}
-                          className="rounded-full border border-white/15 bg-white/10 px-4 py-2"
+                          className="rounded-full border border-white/22 bg-white/16 px-4 py-2"
                           style={{ minHeight: tokens.layout.touchTarget }}
                           accessibilityRole="button"
                           accessibilityLabel="Pagar inscrição"

@@ -59,6 +59,7 @@ export function resolveOrganizationTool(pathname: string | null): OrgToolKey | n
   if (rest.startsWith("/chat")) return "chat";
   if (rest.startsWith("/team")) return "team";
   if (rest.startsWith("/padel/clubs")) return "padel-club";
+  if (rest.startsWith("/padel/parcerias")) return "padel-club";
   if (rest.startsWith("/padel/tournaments")) return "padel-tournaments";
   if (rest.startsWith("/marketing")) return "marketing";
   if (rest.startsWith("/settings")) return "settings";
