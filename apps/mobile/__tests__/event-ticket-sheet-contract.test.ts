@@ -17,4 +17,12 @@ describe("event ticket sheet contract", () => {
     const file = readFileSync(eventDetailPath, "utf8");
     expect(file).toContain("hasSelection={selectedTicketQuantity > 0}");
   });
+
+  it("hides sticky purchase bar while ticket sheet is open", () => {
+    const file = readFileSync(eventDetailPath, "utf8");
+    expect(file).toContain(
+      "const showStickyPurchaseBarUi = showStickyPurchaseBar && !ticketSheetVisible;",
+    );
+    expect(file).toContain("{showStickyPurchaseBarUi ? (");
+  });
 });

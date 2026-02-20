@@ -70,8 +70,25 @@ export function TicketSelectorSheet({
     submitLabel ?? t("events:tickets.sheet.submit.default");
   const resolvedEmptyStateMessage =
     emptyStateMessage ?? t("events:tickets.unavailableNow");
-  const showSubmit = hasSelection;
-  const submitDisabled = submitting;
+  const selectedQuantity = items.reduce(
+    (total, item) => total + Math.max(0, item.quantity),
+    0,
+  );
+  const hasSelectionMismatch = hasSelection !== (selectedQuantity > 0);
+  const showSubmit = selectedQuantity > 0;
+  const submitDisabled = submitting || !showSubmit;
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    if (!hasSelectionMismatch) return;
+    console.warn(
+      "[tickets.sheet] hasSelection prop fora de sync com itens selecionados",
+      {
+        hasSelection,
+        selectedQuantity,
+      },
+    );
+  }, [hasSelection, hasSelectionMismatch, selectedQuantity]);
 
   useEffect(() => {
     if (!visible) return;
@@ -272,7 +289,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: "84%",
+    maxHeight: "86%",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     overflow: "hidden",
@@ -433,7 +450,7 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(255,255,255,0.12)",
     backgroundColor: "rgba(7,12,22,0.95)",
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 10,
     paddingBottom: 20,
     flexDirection: "column",
     alignItems: "stretch",

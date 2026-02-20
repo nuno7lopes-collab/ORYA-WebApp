@@ -9,8 +9,9 @@ const sheetPath = resolve(
 describe("ticket selector sheet CTA contract", () => {
   it("shows CTA only when there is at least one selected ticket", () => {
     const file = readFileSync(sheetPath, "utf8");
-    expect(file).toContain("const showSubmit = hasSelection");
-    expect(file).toContain("const submitDisabled = submitting");
+    expect(file).toContain("const selectedQuantity = items.reduce(");
+    expect(file).toContain("const showSubmit = selectedQuantity > 0");
+    expect(file).toContain("const submitDisabled = submitting || !showSubmit");
   });
 
   it("renders submit button as full-width in footer", () => {

@@ -18,7 +18,6 @@ type StickyPurchaseBarProps = {
   ctaLabel: string;
   disabled?: boolean;
   loading?: boolean;
-  helperText?: string | null;
   onPress: () => void;
 };
 
@@ -36,7 +35,6 @@ export function StickyPurchaseBar({
   ctaLabel,
   disabled = false,
   loading = false,
-  helperText = null,
   onPress,
 }: StickyPurchaseBarProps) {
   const { t } = useTranslation();
@@ -151,7 +149,6 @@ export function StickyPurchaseBar({
             </View>
           </Pressable>
         </View>
-        {helperText ? <Text style={styles.helper}>{helperText}</Text> : null}
       </View>
     </View>
   );
@@ -163,11 +160,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingTop: 18,
+    paddingTop: 16,
   },
   contentWrap: {
     paddingHorizontal: 20,
-    gap: 8,
   },
   content: {
     borderWidth: 1,
@@ -183,13 +179,13 @@ const styles = StyleSheet.create({
   },
   ctaRow: {
     width: "100%",
-    minHeight: 56,
+    minHeight: 54,
     borderRadius: 16,
     flexDirection: "row",
     flexWrap: "nowrap",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 5,
+    paddingVertical: 4,
     paddingHorizontal: 5,
     backgroundColor: "rgba(8,13,20,0.58)",
     borderWidth: 1,
@@ -198,13 +194,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   ctaRowCompact: {
-    minHeight: 52,
+    minHeight: 50,
     paddingVertical: 4,
     paddingHorizontal: 4,
   },
   ctaRowLarge: {
-    minHeight: 58,
-    paddingVertical: 6,
+    minHeight: 56,
+    paddingVertical: 5,
     paddingHorizontal: 5,
   },
   ctaRowDisabled: {
@@ -213,8 +209,9 @@ const styles = StyleSheet.create({
   priceWrap: {
     flex: 1,
     minWidth: 0,
+    flexShrink: 1,
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 2,
     alignItems: "flex-start",
     justifyContent: "center",
   },
@@ -240,9 +237,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   ctaChip: {
-    minWidth: 132,
-    maxWidth: "58%",
-    minHeight: 44,
+    minWidth: 136,
+    maxWidth: "56%",
+    minHeight: 42,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
@@ -253,12 +250,12 @@ const styles = StyleSheet.create({
   },
   ctaChipCompact: {
     paddingHorizontal: 10,
-    minWidth: 122,
+    minWidth: 120,
   },
   ctaChipUltraCompact: {
     paddingHorizontal: 8,
-    minWidth: 112,
-    maxWidth: "62%",
+    minWidth: 108,
+    maxWidth: "58%",
   },
   ctaChipLarge: {
     paddingHorizontal: 16,
@@ -302,10 +299,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  helper: {
-    color: "rgba(224,240,255,0.62)",
-    fontSize: 12,
-    textAlign: "center",
   },
 });

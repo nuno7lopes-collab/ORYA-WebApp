@@ -7,6 +7,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
+import { PaymentStatus, SourceType } from "@prisma/client";
 
 function parseId(value: string) {
   const parsed = Number(value);
@@ -44,61 +45,92 @@ async function _GET(
     if (!booking) {
       return jsonWrap({ ok: false, error: "Reserva não encontrada." }, { status: 404 });
     }
+    const bookingRecordId = booking.id;
 
     // Fallback de consistência: em dev/test pode haver sucesso no PaymentSheet sem webhook
-    // local ativo. Se o PI já estiver succeeded, tentamos concluir a reserva aqui.
-    if (
-      booking.paymentIntentId &&
-      PENDING_BOOKING_STATUSES.has(booking.status)
-    ) {
+    // local ativo. Se o PI (ou ledger) já estiver em estado pago, tentamos concluir a reserva aqui.
+    if (PENDING_BOOKING_STATUSES.has(booking.status)) {
       try {
-        const intent = await retrievePaymentIntent(booking.paymentIntentId, {
-          expand: ["latest_charge"],
+        const latestBookingPayment = await prisma.payment.findFirst({
+          where: {
+            sourceType: SourceType.BOOKING,
+            sourceId: String(booking.id),
+          },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, status: true },
         });
-        if (intent.status === "succeeded") {
+        const paidInLedger =
+          latestBookingPayment?.status === PaymentStatus.SUCCEEDED;
+        let candidatePaymentIntentId = booking.paymentIntentId ?? null;
+        if (!candidatePaymentIntentId) {
+          const eventOr: Array<{ purchaseId: string | { startsWith: string } }> = [
+            { purchaseId: { startsWith: `booking_${booking.id}_v` } },
+          ];
+          if (latestBookingPayment?.id) {
+            eventOr.unshift({ purchaseId: latestBookingPayment.id });
+          }
+          const latestEvent = await prisma.paymentEvent.findFirst({
+            where: {
+              OR: eventOr,
+              stripePaymentIntentId: { not: null },
+            },
+            orderBy: { updatedAt: "desc" },
+            select: { stripePaymentIntentId: true },
+          });
+          candidatePaymentIntentId = latestEvent?.stripePaymentIntentId ?? null;
+        }
+
+        let paymentIntentSucceeded = false;
+        if (candidatePaymentIntentId) {
+          const intent = await retrievePaymentIntent(candidatePaymentIntentId, {
+            expand: ["latest_charge"],
+          });
+          paymentIntentSucceeded = intent.status === "succeeded";
+          if (paymentIntentSucceeded) {
+            if (!booking.paymentIntentId) {
+              await prisma.booking.updateMany({
+                where: { id: booking.id, paymentIntentId: null },
+                data: { paymentIntentId: intent.id },
+              });
+            }
+            try {
+              await fulfillServiceBookingIntent(intent);
+            } catch (fulfillErr) {
+              // Mantém a rota resiliente: se o fulfillment completo falhar,
+              // tentamos uma confirmação mínima e idempotente da reserva.
+              console.warn(
+                "GET /api/me/reservas/[id] fulfill failed, trying fallback confirm:",
+                fulfillErr,
+              );
+            }
+          }
+        }
+
+        if (paidInLedger || paymentIntentSucceeded) {
           try {
-            await fulfillServiceBookingIntent(intent);
-          } catch (fulfillErr) {
-            // Mantém a rota resiliente: se o fulfillment completo falhar,
-            // tentamos uma confirmação mínima e idempotente da reserva.
+            await prisma.$transaction(async (tx) => {
+              const result = await confirmPendingBooking({
+                tx,
+                bookingId: bookingRecordId,
+                now: new Date(),
+                ignoreExpiry: true,
+                paymentMeta: null,
+              });
+              if (!result.ok && result.code !== "INVALID_STATUS") {
+                throw new Error(`BOOKING_CONFIRM_FALLBACK_FAILED:${result.code}`);
+              }
+            });
+          } catch (fallbackErr) {
             console.warn(
-              "GET /api/me/reservas/[id] fulfill failed, trying fallback confirm:",
-              fulfillErr,
+              "GET /api/me/reservas/[id] fallback confirm failed:",
+              fallbackErr,
             );
           }
 
-          let refreshed = await prisma.booking.findFirst({
+          const refreshed = await prisma.booking.findFirst({
             where: { id: bookingId, userId: user.id },
             select: BOOKING_SELECT,
           });
-
-          if (refreshed && PENDING_BOOKING_STATUSES.has(refreshed.status)) {
-            const fallbackBookingId = refreshed.id;
-            try {
-              await prisma.$transaction(async (tx) => {
-                const result = await confirmPendingBooking({
-                  tx,
-                  bookingId: fallbackBookingId,
-                  now: new Date(),
-                  ignoreExpiry: true,
-                  paymentMeta: null,
-                });
-                if (!result.ok && result.code !== "INVALID_STATUS") {
-                  throw new Error(`BOOKING_CONFIRM_FALLBACK_FAILED:${result.code}`);
-                }
-              });
-            } catch (fallbackErr) {
-              console.warn(
-                "GET /api/me/reservas/[id] fallback confirm failed:",
-                fallbackErr,
-              );
-            }
-            refreshed = await prisma.booking.findFirst({
-              where: { id: bookingId, userId: user.id },
-              select: BOOKING_SELECT,
-            });
-          }
-
           if (refreshed) booking = refreshed;
         }
       } catch (reconcileErr) {

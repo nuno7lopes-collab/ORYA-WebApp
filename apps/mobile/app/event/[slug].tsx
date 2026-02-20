@@ -1171,6 +1171,7 @@ export default function EventDetail() {
   };
   const showStickyPurchaseBar =
     Boolean(data) && !isLoading && !isError && !isPadelEvent;
+  const showStickyPurchaseBarUi = showStickyPurchaseBar && !ticketSheetVisible;
   const isPublicEventAccess = !isInviteOnly;
   const ticketGateState = resolveTicketSheetGateState({
     showStickyPurchaseBar,
@@ -1270,22 +1271,6 @@ export default function EventDetail() {
           })()
         : t("events:tickets.unavailableNow");
   const ticketSheetSubmitLabel = t("events:tickets.sheet.submit.default");
-  const stickyHelperText = ticketGateState.inviteLocked
-    ? t("events:invite.lockedTickets")
-    : ticketGateState.eventEnded
-      ? t("events:status.ended")
-      : hasPriceWithoutTicketTypes
-        ? t("events:tickets.configurationIssue")
-      : !ticketGateState.hasTicketTypes
-        ? t("events:tickets.comingSoon")
-        : ticketGateState.configInvalid
-          ? t("events:tickets.configurationIssue")
-          : !ticketGateState.hasSelectableTickets
-            ? t("events:tickets.unavailableNow")
-        : !session?.user?.id
-          ? t("events:detail.signInToContinue")
-          : null;
-
   useEffect(() => {
     if (!ticketGateState.configInvalid || !data?.id) return;
     trackEvent("event_ticket_config_invalid", {
@@ -3121,13 +3106,12 @@ export default function EventDetail() {
             </Pressable>
           </View>
         </View>
-        {showStickyPurchaseBar ? (
+        {showStickyPurchaseBarUi ? (
           <StickyPurchaseBar
             priceLabel={stickyPriceLabel}
             ctaState={ticketCtaState}
             ctaLabel={stickyCtaLabel}
             disabled={stickyCtaDisabled}
-            helperText={stickyHelperText}
             onPress={handleOpenTicketSheet}
           />
         ) : null}

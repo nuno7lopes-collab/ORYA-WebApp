@@ -97,8 +97,6 @@ const isCheckoutBlockedCode = (code: string | null) =>
 
 const CHECKOUT_CONFIG_ERROR =
   "Pagamentos indisponíveis neste momento. Falta configuração Stripe.";
-const CHECKOUT_MBWAY_UNAVAILABLE_ERROR =
-  "MBWay não está disponível no checkout in-app. Usa Cartão nesta versão da app.";
 const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
 const BOOKING_POLL_INTERVAL_MS = 1200;
 const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS = 1500;
@@ -189,6 +187,9 @@ export default function CheckoutScreen() {
   const bookingStatusInFlightBookingIdRef = useRef<number | null>(null);
   const bookingPollInFlightRef = useRef<Promise<void> | null>(null);
   const bookingTimeoutTrackedRef = useRef(false);
+  const bookingPollNonceRef = useRef(0);
+  const activeBookingIdRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
   const returnUrl = useMemo(() => buildReturnUrl("checkout/success"), []);
 
   const draft = useCheckoutStore((state) => state.draft);
@@ -212,6 +213,25 @@ export default function CheckoutScreen() {
       });
     return () => {
       mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    activeBookingIdRef.current = draft?.bookingId ?? null;
+    bookingPollNonceRef.current += 1;
+    bookingPollInFlightRef.current = null;
+    bookingStatusInFlightRef.current = null;
+    bookingStatusInFlightBookingIdRef.current = null;
+  }, [draft?.bookingId]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      bookingPollNonceRef.current += 1;
+      bookingPollInFlightRef.current = null;
+      bookingStatusInFlightRef.current = null;
+      bookingStatusInFlightBookingIdRef.current = null;
     };
   }, []);
 
@@ -243,15 +263,13 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
-  const allowMbwayInApp = false;
+  const allowMbwayInApp = true;
   const selectedMethod =
     draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
   const resolvedMethod =
     !allowApplePay && selectedMethod === "apple_pay"
       ? "card"
-      : !allowMbwayInApp && selectedMethod === "mbway"
-        ? "card"
-        : selectedMethod;
+      : selectedMethod;
 
   const checkoutItems = useMemo(() => {
     if (!draft) return [];
@@ -402,14 +420,6 @@ export default function CheckoutScreen() {
     recoveredTrackedRef.current = false;
   }, [draft?.paymentMethod]);
 
-  useEffect(() => {
-    if (!draft?.paymentMethod) return;
-    if (!allowMbwayInApp && draft.paymentMethod === "mbway") {
-      setPaymentMethod("card");
-      setError(CHECKOUT_MBWAY_UNAVAILABLE_ERROR);
-    }
-  }, [allowMbwayInApp, draft?.paymentMethod, setPaymentMethod]);
-
   const applyCheckoutStatus = useCallback((status: CheckoutStatusResponse) => {
     setCheckoutStatus(status);
     setError(null);
@@ -466,17 +476,23 @@ export default function CheckoutScreen() {
   );
 
   const fetchBookingStatus = useCallback(async () => {
-    if (!draft?.bookingId) return null;
+    const bookingId = draft?.bookingId ?? null;
+    if (!bookingId) return null;
     if (
       bookingStatusInFlightRef.current &&
-      bookingStatusInFlightBookingIdRef.current === draft.bookingId
+      bookingStatusInFlightBookingIdRef.current === bookingId
     ) {
       return bookingStatusInFlightRef.current;
     }
     const task = (async () => {
-      setBookingChecking(true);
+      if (
+        isMountedRef.current &&
+        activeBookingIdRef.current === bookingId
+      ) {
+        setBookingChecking(true);
+      }
       try {
-        const endpoint = `/api/me/reservas/${draft.bookingId}`;
+        const endpoint = `/api/me/reservas/${bookingId}`;
         const result = await api.requestRaw<{
           ok: boolean;
           booking?: { status?: string };
@@ -492,20 +508,35 @@ export default function CheckoutScreen() {
           );
         }
         const status = json.booking?.status as string | undefined;
-        setBookingStatus(status ?? null);
-        setBookingError(null);
+        if (
+          isMountedRef.current &&
+          activeBookingIdRef.current === bookingId
+        ) {
+          setBookingStatus(status ?? null);
+          setBookingError(null);
+        }
         return status ?? null;
       } catch (err) {
-        setBookingError(
-          getUserFacingError(err, "Não foi possível verificar a reserva."),
-        );
+        if (
+          isMountedRef.current &&
+          activeBookingIdRef.current === bookingId
+        ) {
+          setBookingError(
+            getUserFacingError(err, "Não foi possível verificar a reserva."),
+          );
+        }
         return null;
       } finally {
-        setBookingChecking(false);
+        if (
+          isMountedRef.current &&
+          activeBookingIdRef.current === bookingId
+        ) {
+          setBookingChecking(false);
+        }
       }
     })();
     bookingStatusInFlightRef.current = task;
-    bookingStatusInFlightBookingIdRef.current = draft.bookingId;
+    bookingStatusInFlightBookingIdRef.current = bookingId;
     try {
       return await task;
     } finally {
@@ -517,27 +548,49 @@ export default function CheckoutScreen() {
   }, [draft?.bookingId]);
 
   const pollBookingStatus = useCallback(async () => {
-    if (!draft?.bookingId) return;
+    const bookingId = draft?.bookingId ?? null;
+    if (!bookingId) return;
     if (bookingPollInFlightRef.current) {
       await bookingPollInFlightRef.current;
       return;
     }
+    const runNonce = bookingPollNonceRef.current;
     const task = (async () => {
-      setBookingTimedOut(false);
-      bookingTimeoutTrackedRef.current = false;
+      if (
+        isMountedRef.current &&
+        activeBookingIdRef.current === bookingId &&
+        bookingPollNonceRef.current === runNonce
+      ) {
+        setBookingTimedOut(false);
+        bookingTimeoutTrackedRef.current = false;
+      }
       for (let attempt = 0; attempt < 12; attempt += 1) {
+        if (
+          !isMountedRef.current ||
+          activeBookingIdRef.current !== bookingId ||
+          bookingPollNonceRef.current !== runNonce
+        ) {
+          return;
+        }
         const status = await fetchBookingStatus();
         if (isBookingTerminalStatus(status)) return;
         await new Promise((resolve) =>
           setTimeout(resolve, BOOKING_POLL_INTERVAL_MS),
         );
       }
+      if (
+        !isMountedRef.current ||
+        activeBookingIdRef.current !== bookingId ||
+        bookingPollNonceRef.current !== runNonce
+      ) {
+        return;
+      }
       setBookingTimedOut(true);
       if (!bookingTimeoutTrackedRef.current) {
         bookingTimeoutTrackedRef.current = true;
         trackEvent("booking_confirm_timeout", {
-          bookingId: draft.bookingId,
-          sourceType: draft.sourceType ?? null,
+          bookingId,
+          sourceType: draft?.sourceType ?? null,
         });
       }
     })();
@@ -549,7 +602,7 @@ export default function CheckoutScreen() {
         bookingPollInFlightRef.current = null;
       }
     }
-  }, [draft?.bookingId, fetchBookingStatus]);
+  }, [draft?.bookingId, draft?.sourceType, fetchBookingStatus]);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -676,11 +729,6 @@ export default function CheckoutScreen() {
       openAuth();
       return;
     }
-    if (resolvedMethod === "mbway") {
-      setError(CHECKOUT_MBWAY_UNAVAILABLE_ERROR);
-      return;
-    }
-
     setError(null);
     setCheckoutStatus(null);
     setCheckoutPollingStartedAt(null);
@@ -929,10 +977,14 @@ export default function CheckoutScreen() {
           ) {
             setError(null);
           } else {
+            const paymentSheetFallbackMessage =
+              resolvedMethod === "mbway"
+                ? "Não foi possível confirmar MBWay. Confirma se o método está ativo na Stripe (teste/prod) e tenta novamente."
+                : "Não foi possível confirmar o pagamento.";
             setError(
               getUserFacingError(
                 presented.error,
-                "Não foi possível confirmar o pagamento.",
+                paymentSheetFallbackMessage,
               ),
             );
             trackEvent("checkout_payment_failed", {
@@ -1071,6 +1123,8 @@ export default function CheckoutScreen() {
           secondaryAction: () => pollBookingStatus(),
         };
       }
+      const shouldShowBookingSpinner =
+        isServiceBooking && !isBookingTerminalStatus(bookingStatus);
       return {
         tone: "success" as const,
         title: "Pagamento confirmado",
@@ -1086,7 +1140,7 @@ export default function CheckoutScreen() {
           clearDraft();
           router.replace("/tickets");
         },
-        showSpinner: isServiceBooking,
+        showSpinner: shouldShowBookingSpinner,
       };
     }
     if (
@@ -1332,6 +1386,11 @@ export default function CheckoutScreen() {
                             key: "apple_pay",
                             label: "Apple Pay",
                             enabled: allowApplePay,
+                          },
+                          {
+                            key: "mbway",
+                            label: "MBWay",
+                            enabled: allowMbwayInApp,
                           },
                           { key: "card", label: "Cartão", enabled: true },
                         ] as const
