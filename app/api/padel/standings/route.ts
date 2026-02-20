@@ -23,6 +23,7 @@ import { logError } from "@/lib/observability/logger";
 import { resolvePadelRuleSetSnapshotForEvent } from "@/domain/padel/ruleSetSnapshot";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type StandingsApiRow = {
   groupLabel: string;
   rank: number;
@@ -94,7 +95,7 @@ async function _GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     const eventId = Number(req.nextUrl.searchParams.get("eventId"));
     const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
     if (!Number.isFinite(eventId)) {

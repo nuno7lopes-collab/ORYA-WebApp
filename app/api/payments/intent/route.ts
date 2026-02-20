@@ -58,7 +58,9 @@ import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
+import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const ORYA_CARD_FEE_BPS = 100;
 const INTENT_BUILD_FINGERPRINT = "INTENT_PATCH_v2";
@@ -237,9 +239,45 @@ function normalizePaymentMethod(raw: unknown): "mbway" | "card" {
   return "mbway";
 }
 
+function isStripeDestinationConfigError(err: unknown) {
+  if (!(err instanceof Error)) return false;
+  const raw = err as Error & {
+    code?: string;
+    type?: string;
+    param?: string;
+    statusCode?: number;
+  };
+  const code = typeof raw.code === "string" ? raw.code.toLowerCase() : "";
+  const param = typeof raw.param === "string" ? raw.param : "";
+  const statusCode = typeof raw.statusCode === "number" ? raw.statusCode : null;
+  const message = raw.message.toLowerCase();
+
+  if (code === "account_invalid") return true;
+  if (code === "resource_missing" && param === "transfer_data[destination]") return true;
+  if (code === "resource_missing" && statusCode === 404) return true;
+  if (code === "invalid_request_error" && message.includes("transfer_data[destination]")) return true;
+  if (message.includes("does not have access to account")) return true;
+  if (message.includes("no such account")) return true;
+  return false;
+}
+
+function resolveStripeRuntimePayloadForMode(mode: "prod" | "test") {
+  const stripePublishableKey = tryGetStripePublishableKeyForEnv(mode);
+  return stripePublishableKey
+    ? { stripeMode: mode, stripePublishableKey }
+    : { stripeMode: mode };
+}
+
+function resolveStripeRuntimePayload(livemode: boolean | null | undefined) {
+  if (typeof livemode === "boolean") {
+    return resolveStripeRuntimePayloadForMode(livemode ? "prod" : "test");
+  }
+  return resolveStripeRuntimePayloadForMode(getStripeEnv());
+}
+
 async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
   const supabase = await createSupabaseServer();
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   const userId = userData?.user?.id ?? null;
   if (!userId) {
     return intentError("AUTH_REQUIRED", "Inicia sessão para concluir o pagamento.", {
@@ -681,6 +719,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
         paymentMethod,
       }),
       idempotencyKey: clientIdempotencyKey ?? checkoutIdempotencyKey,
+      ...resolveStripeRuntimePayload(null),
     });
   }
 
@@ -825,6 +864,7 @@ async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
       paymentMethod,
     }),
     idempotencyKey: clientIdempotencyKey ?? checkoutIdempotencyKey,
+    ...resolveStripeRuntimePayload(paymentIntent.livemode),
   });
 }
 
@@ -935,14 +975,7 @@ async function _POST(req: NextRequest) {
       paymentScenario: rawScenario,
       idempotencyKey: bodyIdemKey,
     } = body;
-    const paymentMethodRaw =
-      typeof body?.paymentMethod === "string" ? body.paymentMethod.trim().toLowerCase() : null;
-    const paymentMethod: "mbway" | "card" =
-      paymentMethodRaw === "card"
-        ? "card"
-        : paymentMethodRaw === "mb_way" || paymentMethodRaw === "mbway"
-          ? "mbway"
-          : "mbway";
+    const paymentMethod = normalizePaymentMethod(body?.paymentMethod);
     const inviteToken =
       typeof (body as { inviteToken?: unknown })?.inviteToken === "string"
         ? (body as { inviteToken?: string }).inviteToken!.trim()
@@ -968,7 +1001,7 @@ async function _POST(req: NextRequest) {
     // Validar que o evento existe (fetch raw para evitar issues com enum "ADDED")
     // Autenticação do utilizador
     const supabase = await createSupabaseServer();
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     const userId = userData?.user?.id ?? null;
 
     // Regra PADEL: pagar só a tua parte (capitão / split) exige conta
@@ -2275,6 +2308,7 @@ async function _POST(req: NextRequest) {
                 }),
                 intentFingerprint,
                 idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+                ...resolveStripeRuntimePayload(pi.livemode),
               },
               { status: 200 },
             );
@@ -2446,6 +2480,7 @@ async function _POST(req: NextRequest) {
             }),
             intentFingerprint,
             idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+            ...resolveStripeRuntimePayload(null),
           });
         }
 
@@ -2495,6 +2530,7 @@ async function _POST(req: NextRequest) {
           }),
           intentFingerprint,
           idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+          ...resolveStripeRuntimePayload(null),
         });
       }
 
@@ -2580,6 +2616,7 @@ async function _POST(req: NextRequest) {
         }),
         intentFingerprint,
         idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+        ...resolveStripeRuntimePayload(null),
       });
     }
     const metadata: Record<string, string> = {
@@ -2712,6 +2749,19 @@ async function _POST(req: NextRequest) {
           });
           continue;
         }
+        if (isStripeDestinationConfigError(e)) {
+          return intentError(
+            "ORGANIZATION_STRIPE_NOT_CONNECTED",
+            "Pagamentos desativados para este evento. Para ativar, liga a tua conta Stripe.",
+            {
+              httpStatus: 409,
+              status: "FAILED",
+              retryable: false,
+              nextAction: "CONNECT_STRIPE",
+              extra: { missingEmail: false, missingStripe: true },
+            },
+          );
+        }
         throw e;
       }
     }
@@ -2769,8 +2819,22 @@ async function _POST(req: NextRequest) {
       }),
       intentFingerprint,
       idempotencyKey: clientIdempotencyKey ?? effectiveDedupeKey,
+      ...resolveStripeRuntimePayload(paymentIntent.livemode),
     });
   } catch (err) {
+    if (isStripeDestinationConfigError(err) || isFinanceConnectNotReadyError(err)) {
+      return intentError(
+        "ORGANIZATION_STRIPE_NOT_CONNECTED",
+        "Pagamentos desativados para este evento. Para ativar, liga a tua conta Stripe.",
+        {
+          httpStatus: 409,
+          status: "FAILED",
+          retryable: false,
+          nextAction: "CONNECT_STRIPE",
+          extra: { missingEmail: false, missingStripe: true },
+        },
+      );
+    }
     logFinanceError("checkout", err, { route: "/api/payments/intent" });
     return jsonWrap(
       { ok: false, error: "Erro ao criar PaymentIntent." },

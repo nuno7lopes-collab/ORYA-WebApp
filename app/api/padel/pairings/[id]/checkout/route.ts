@@ -22,6 +22,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const pairingSelect = {
   id: true,
   eventId: true,
@@ -65,7 +66,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return fail("UNAUTHENTICATED", "Sessão inválida.", 401);
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

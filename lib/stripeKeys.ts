@@ -16,6 +16,15 @@ function ensureStripeKeyMatchesEnv(key: string, env: "prod" | "test", label: str
   }
 }
 
+function ensureStripePublishableKeyMatchesEnv(key: string, env: "prod" | "test", label: string) {
+  if (env === "test" && key.startsWith("pk_live")) {
+    throw new Error(`${label} is live but APP_ENV=test`);
+  }
+  if (env === "prod" && key.startsWith("pk_test")) {
+    throw new Error(`${label} is test but APP_ENV=prod`);
+  }
+}
+
 export function getStripeEnv(): AppEnv {
   const override = normalizeAppEnv(process.env.STRIPE_MODE ?? process.env.STRIPE_ENV ?? null);
   if (override) return override;
@@ -32,6 +41,39 @@ export function getStripeSecretKeyForEnv(env: AppEnv) {
 
 export function getStripeSecretKey() {
   return getStripeSecretKeyForEnv(getStripeEnv());
+}
+
+export function getStripePublishableKeyForEnv(env: AppEnv) {
+  const live =
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ||
+    process.env.STRIPE_PUBLISHABLE_KEY_LIVE ||
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+    process.env.STRIPE_PUBLISHABLE_KEY;
+  const test =
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ||
+    process.env.STRIPE_PUBLISHABLE_KEY_TEST ||
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
+    process.env.STRIPE_PUBLISHABLE_KEY;
+  const value =
+    env === "test"
+      ? requireValue(test, "STRIPE_PUBLISHABLE_KEY_TEST")
+      : requireValue(live, "STRIPE_PUBLISHABLE_KEY_LIVE");
+  ensureStripePublishableKeyMatchesEnv(value, env, "STRIPE_PUBLISHABLE_KEY");
+  return value;
+}
+
+export function tryGetStripePublishableKeyForEnv(env: AppEnv): string | null {
+  try {
+    return getStripePublishableKeyForEnv(env);
+  } catch {
+    return null;
+  }
+}
+
+export function getStripePublishableKey() {
+  return getStripePublishableKeyForEnv(getStripeEnv());
 }
 
 export function getStripeWebhookSecret() {

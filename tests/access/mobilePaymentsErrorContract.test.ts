@@ -27,6 +27,7 @@ describe("mobile payments backend/frontend contract", () => {
     expect(mobileErrors).toContain("PAYMENTS_NOT_READY");
     expect(mobileErrors).toContain("PAYMENT_INTENT_TERMINAL");
     expect(mobileErrors).toContain("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH");
+    expect(mobileErrors).toContain("STRIPE_KEY_MODE_MISMATCH");
     expect(storeErrors).toContain("PAYMENTS_NOT_READY");
     expect(storeErrors).toContain("CHECKOUT_UNAVAILABLE");
   });

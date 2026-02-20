@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "../../icons/Ionicons";
 import { formatCurrency } from "../../../lib/formatters";
 import { tokens, useTranslation } from "@orya/shared";
@@ -35,7 +36,7 @@ type TicketSelectorSheetProps = {
   items: TicketSelectorItem[];
   totalCents: number;
   currency: string;
-  canSubmit: boolean;
+  hasSelection: boolean;
   submitting: boolean;
   submitLabel?: string;
   onClose: () => void;
@@ -51,7 +52,7 @@ export function TicketSelectorSheet({
   items,
   totalCents,
   currency,
-  canSubmit,
+  hasSelection,
   submitting,
   submitLabel,
   onClose,
@@ -61,6 +62,7 @@ export function TicketSelectorSheet({
   emptyStateMessage,
 }: TicketSelectorSheetProps) {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const translateY = useRef(new Animated.Value(380)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const resolvedTitle = title ?? t("events:tickets.title");
@@ -68,8 +70,9 @@ export function TicketSelectorSheet({
     submitLabel ?? t("events:tickets.sheet.submit.default");
   const resolvedEmptyStateMessage =
     emptyStateMessage ?? t("events:tickets.unavailableNow");
-  const submitDisabled = !canSubmit || submitting;
-  const submitMuted = !canSubmit && !submitting;
+  const submitDisabled = !hasSelection || submitting;
+  const submitMuted = !hasSelection && !submitting;
+  const showSubmit = hasSelection || submitting;
 
   useEffect(() => {
     if (!visible) return;
@@ -208,50 +211,57 @@ export function TicketSelectorSheet({
             ))
           )}
         </ScrollView>
-        <View style={styles.footer}>
-          <View>
+        <View
+          style={[
+            styles.footer,
+            { paddingBottom: Math.max(18, insets.bottom + 8) },
+          ]}
+        >
+          <View style={styles.footerTopRow}>
             <Text style={styles.footerHint}>Total</Text>
             <Text style={styles.footerTotal}>
               {formatCurrency(totalCents / 100, currency)}
             </Text>
           </View>
-          <Pressable
-            onPress={onSubmit}
-            disabled={submitDisabled}
-            accessibilityRole="button"
-            accessibilityLabel={resolvedSubmitLabel}
-            accessibilityState={{ disabled: submitDisabled }}
-            style={({ pressed }) => [
-              styles.submitBtn,
-              submitMuted ? styles.submitBtnDisabled : null,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            {submitting ? (
-              <View style={styles.submitBusy}>
-                <ActivityIndicator size="small" color="#0a1018" />
-                <Text style={styles.submitText}>
-                  {t("events:tickets.cta.processing")}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.submitReady}>
-                <Text
-                  style={[
-                    styles.submitText,
-                    submitMuted ? styles.submitTextMuted : null,
-                  ]}
-                >
-                  {resolvedSubmitLabel}
-                </Text>
-                <Ionicons
-                  name="arrow-forward"
-                  size={18}
-                  color={submitMuted ? "rgba(234,244,255,0.72)" : "#0A1018"}
-                />
-              </View>
-            )}
-          </Pressable>
+          {showSubmit ? (
+            <Pressable
+              onPress={onSubmit}
+              disabled={submitDisabled}
+              accessibilityRole="button"
+              accessibilityLabel={resolvedSubmitLabel}
+              accessibilityState={{ disabled: submitDisabled }}
+              style={({ pressed }) => [
+                styles.submitBtn,
+                submitMuted ? styles.submitBtnDisabled : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              {submitting ? (
+                <View style={styles.submitBusy}>
+                  <ActivityIndicator size="small" color="#0a1018" />
+                  <Text style={styles.submitText}>
+                    {t("events:tickets.cta.processing")}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.submitReady}>
+                  <Text
+                    style={[
+                      styles.submitText,
+                      submitMuted ? styles.submitTextMuted : null,
+                    ]}
+                  >
+                    {resolvedSubmitLabel}
+                  </Text>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color={submitMuted ? "rgba(234,244,255,0.92)" : "#0A1018"}
+                  />
+                </View>
+              )}
+            </Pressable>
+          ) : null}
         </View>
       </Animated.View>
     </Modal>
@@ -434,10 +444,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 20,
+    flexDirection: "column",
+    alignItems: "stretch",
+    justifyContent: "flex-start",
+    gap: 12,
+  },
+  footerTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
   },
   footerHint: {
     color: "rgba(221,238,255,0.66)",
@@ -457,13 +472,14 @@ const styles = StyleSheet.create({
     borderColor: "rgba(238,250,68,0.9)",
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
   submitBtnDisabled: {
     opacity: 1,
-    backgroundColor: "rgba(226,242,92,0.3)",
-    borderColor: "rgba(232,246,128,0.54)",
+    backgroundColor: "rgba(228,241,255,0.12)",
+    borderColor: "rgba(228,241,255,0.32)",
   },
   submitText: {
     color: "#0A1018",
@@ -471,7 +487,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   submitTextMuted: {
-    color: "rgba(234,244,255,0.9)",
+    color: "rgba(234,244,255,0.96)",
   },
   submitBusy: {
     flexDirection: "row",

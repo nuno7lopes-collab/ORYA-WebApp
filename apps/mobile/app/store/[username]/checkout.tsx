@@ -23,6 +23,12 @@ import {
 import { getStoreErrorMessage } from "../../../features/store/errors";
 import { buildReturnUrl, resolveAppScheme } from "../../../lib/deeplink";
 import { getMobileEnv } from "../../../lib/env";
+import {
+  detectStripeModeFromPublishableKey,
+  normalizeStripeMode,
+  resolveStripeRuntimeKey,
+  stripeModeLabel,
+} from "../../../lib/stripeRuntime";
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
@@ -216,9 +222,19 @@ export default function StoreCheckoutScreen() {
         return;
       }
 
-      const runtimeStripeKey = (result.stripePublishableKey ?? "").trim() || fallbackStripeKey;
+      const runtimeStripeKey = resolveStripeRuntimeKey({
+        runtimePublishableKey: result.stripePublishableKey,
+        fallbackPublishableKey: fallbackStripeKey,
+      });
       if (!runtimeStripeKey) {
         throw new Error("Configuracao de pagamentos indisponivel.");
+      }
+      const expectedMode = normalizeStripeMode(result.stripeMode);
+      const keyMode = detectStripeModeFromPublishableKey(runtimeStripeKey);
+      if (expectedMode && keyMode && expectedMode !== keyMode) {
+        throw new Error(
+          `Configuração Stripe inconsistente: servidor em ${stripeModeLabel(expectedMode)} e app em ${stripeModeLabel(keyMode)}.`,
+        );
       }
       await initStripe({
         publishableKey: runtimeStripeKey,

@@ -17,6 +17,8 @@ const BUSINESS_ERROR_COPY: Record<string, string> = {
   CHECKOUT_UNAVAILABLE: "O checkout não está disponível neste momento.",
   PAYMENT_CONFIGURATION_MISSING:
     "Pagamentos indisponíveis neste momento. Tenta novamente mais tarde.",
+  STRIPE_KEY_MODE_MISMATCH:
+    "Configuração de pagamentos inconsistente entre app e servidor. Fecha e volta a abrir a app.",
   UNAUTHENTICATED: "Inicia sessão para continuar.",
   CHAT_BLOCKED: "Esta conversa está bloqueada.",
   BANNED: "Acesso bloqueado a esta conversa.",

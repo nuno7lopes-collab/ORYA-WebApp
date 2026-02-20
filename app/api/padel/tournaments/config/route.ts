@@ -24,6 +24,7 @@ import { createTournamentForEvent, updateTournament } from "@/domain/tournaments
 import { deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows, type PadelDailyWindow } from "@/lib/padel/scheduleWindows";
 import { FIXED_SPLIT_DEADLINE_HOURS } from "@/domain/padelDeadlines";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 const TOURNAMENT_CONFIG_SELECT = {
@@ -106,7 +107,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
@@ -195,7 +196,7 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

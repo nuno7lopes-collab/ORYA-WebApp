@@ -17,6 +17,7 @@ import { INACTIVE_REGISTRATION_STATUSES, mapRegistrationToPairingLifecycle, upse
 import { readNumericParam } from "@/lib/routeParams";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const pairingSelect = {
   id: true,
   organizationId: true,
@@ -54,7 +55,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const pairing = await prisma.padelPairing.findUnique({

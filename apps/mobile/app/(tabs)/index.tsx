@@ -442,7 +442,7 @@ export default function DiscoverScreen() {
           ipLocation.city;
         setLocation({
           city: cityFromCanonical ?? "",
-          label: details.formattedAddress || ipLocation.city,
+          label: details.formattedAddress ?? ipLocation.city ?? "",
           addressId: details.addressId,
           lat: typeof details.lat === "number" ? details.lat : null,
           lng: typeof details.lng === "number" ? details.lng : null,
@@ -523,7 +523,7 @@ export default function DiscoverScreen() {
     [cardLayout, gridItemHeight, gridItemWidth],
   );
   const getItemLayout = useCallback(
-    (_data: DiscoverListItem[] | null | undefined, index: number) => ({
+    (_data: ArrayLike<DiscoverListItem> | null | undefined, index: number) => ({
       length: gridItemHeight + GRID_GAP,
       offset: (gridItemHeight + GRID_GAP) * index,
       index,

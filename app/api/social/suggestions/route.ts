@@ -6,6 +6,7 @@ import { getUserFollowingSet } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 export const runtime = "nodejs";
 
 const clampLimit = (value: number) => Math.min(Math.max(value, 1), 12);
@@ -19,7 +20,7 @@ async function _GET(req: NextRequest) {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

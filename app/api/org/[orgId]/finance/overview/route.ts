@@ -15,6 +15,7 @@ import {
 } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Aggregate = {
   grossCents: number;
   netCents: number;
@@ -28,7 +29,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

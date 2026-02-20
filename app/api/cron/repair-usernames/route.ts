@@ -258,7 +258,7 @@ async function _POST(req: NextRequest) {
       let cursor: string | null = null;
       let exhausted = false;
       while (!exhausted) {
-        const batch = await prisma.profile.findMany({
+        const batch: Array<{ id: string; username: string | null }> = await prisma.profile.findMany({
           select: { id: true, username: true },
           orderBy: { id: "asc" },
           take: pageSize,
@@ -298,7 +298,7 @@ async function _POST(req: NextRequest) {
 
     let orgCursor: number | null = null;
     while (true) {
-      const orgBatch = await prisma.organization.findMany({
+      const orgBatch: Array<{ id: number; username: string | null }> = await prisma.organization.findMany({
         select: { id: true, username: true },
         orderBy: { id: "asc" },
         take: pageSize,

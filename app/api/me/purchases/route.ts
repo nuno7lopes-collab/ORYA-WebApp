@@ -6,6 +6,7 @@ import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type PurchaseStatus = "PAID" | "PROCESSING" | "REFUNDED" | "DISPUTED" | "FAILED";
 
 function mapCheckoutStatus(status: CheckoutStatus): PurchaseStatus {
@@ -25,7 +26,7 @@ function mapCheckoutStatus(status: CheckoutStatus): PurchaseStatus {
 
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }

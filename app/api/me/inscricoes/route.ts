@@ -5,12 +5,13 @@ import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

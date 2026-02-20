@@ -20,6 +20,7 @@ import { logError } from "@/lib/observability/logger";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function isStripeResourceMissing(err: unknown) {
   const anyErr = err as { code?: string; statusCode?: number };
   return anyErr?.code === "resource_missing" || anyErr?.statusCode === 404;
@@ -32,7 +33,7 @@ async function _POST(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return respondError(

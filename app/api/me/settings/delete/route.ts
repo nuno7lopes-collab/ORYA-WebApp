@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import {
   countEffectiveOrganizationMembersByRole,
   listEffectiveOrganizationMembershipsForUser,
@@ -16,7 +17,7 @@ async function _POST() {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });

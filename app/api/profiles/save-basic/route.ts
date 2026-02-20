@@ -10,6 +10,7 @@ import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/intere
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 interface SaveBasicBody {
   fullName?: string;
   username?: string;
@@ -35,7 +36,7 @@ async function _POST(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap(

@@ -9,6 +9,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ORG_GRANT_KINDS = new Set<string>([
   "ORG_CONTACT_REQUEST",
@@ -55,7 +56,7 @@ async function canAccessEventGrant(params: {
   return Boolean(entitlement);
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   context: { params: Promise<{ grantId: string }> | { grantId: string } },
 ) {
@@ -160,3 +161,5 @@ export async function POST(
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const POST = withApiEnvelope(_POST);

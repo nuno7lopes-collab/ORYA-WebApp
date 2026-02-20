@@ -117,10 +117,11 @@ export function useStoreCartMutations(storeId: number | null) {
       await queryClient.cancelQueries({ queryKey: cartKey(storeId) });
       const previous = queryClient.getQueryData<StoreCartResponse>(cartKey(storeId));
       if (typeof input.quantity === "number") {
+        const normalizedQuantity = Math.max(1, Math.floor(input.quantity));
         updateCachedCart((cart) => ({
           ...cart,
           items: cart.items.map((item) =>
-            item.id === input.itemId ? { ...item, quantity: Math.max(1, Math.floor(input.quantity)) } : item,
+            item.id === input.itemId ? { ...item, quantity: normalizedQuantity } : item,
           ),
         }));
       }

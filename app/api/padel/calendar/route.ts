@@ -25,6 +25,7 @@ import { isPadelLockedForReschedule } from "@/domain/padel/liveStatus";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
 const LOCK_TTL_SECONDS = 45;
@@ -99,11 +100,18 @@ const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
   SOFT_BLOCK: "bloqueio suave",
 };
 
+function resolveAgendaTypeLabel(type: AgendaCandidateType | string, fallback: string) {
+  if (type in AGENDA_TYPE_LABEL) {
+    return AGENDA_TYPE_LABEL[type as AgendaCandidateType];
+  }
+  return fallback;
+}
+
 function buildAgendaWarning(decision: ConflictDecision, candidateType: AgendaCandidateType) {
   if (!decision.allowed || decision.conflicts.length === 0) return null;
   const primary = decision.conflicts[0];
-  const candidateLabel = AGENDA_TYPE_LABEL[candidateType] ?? "agendamento";
-  const conflictLabel = AGENDA_TYPE_LABEL[primary.withType] ?? "registo";
+  const candidateLabel = resolveAgendaTypeLabel(candidateType, "agendamento");
+  const conflictLabel = resolveAgendaTypeLabel(primary.withType, "registo");
   return {
     message: `Aviso: ${candidateLabel} sobrepõe-se a ${conflictLabel}.`,
     details: {
@@ -234,7 +242,7 @@ async function ensureOrganization(req: NextRequest, required: "VIEW" | "EDIT" = 
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return { error: "UNAUTHENTICATED" as const, status: 401 };
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);

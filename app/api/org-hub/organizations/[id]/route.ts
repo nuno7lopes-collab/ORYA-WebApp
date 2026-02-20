@@ -16,6 +16,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
   if (status === 403) return "FORBIDDEN";
@@ -44,7 +45,7 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(401, "UNAUTHENTICATED");

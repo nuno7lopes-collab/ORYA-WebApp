@@ -8,6 +8,7 @@ import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_PAGE = 100;
 
 function buildCursor(payload: { snapshotStartAt: string; entitlementId: string }) {
@@ -86,7 +87,7 @@ async function ensureOrganization(userId: string, eventId: number) {
 
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }

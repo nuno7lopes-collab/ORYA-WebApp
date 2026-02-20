@@ -9,6 +9,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type PrefillResponse = {
   ok: boolean;
   customer?: { name: string | null; email: string | null; phone: string | null };
@@ -113,7 +114,7 @@ async function _GET(req: NextRequest) {
     }
 
     const supabase = await createSupabaseServer();
-    const { data } = await supabase.auth.getUser();
+    const { data } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
     const user = data?.user;
     if (!user) {
       return fail(401, "UNAUTHENTICATED");

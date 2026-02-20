@@ -18,6 +18,7 @@ import { ensureEventChatInvite } from "@/lib/chat/invites";
 import { createNotification } from "@/lib/notifications";
 import { logWarn } from "@/lib/observability/logger";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = {
   eventId?: number;
   entitlementId?: string;
@@ -106,7 +107,7 @@ async function _POST(req: NextRequest) {
   }
 
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return fail(401, "Not authenticated");
   }

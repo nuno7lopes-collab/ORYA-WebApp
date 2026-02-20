@@ -48,8 +48,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Typecheck mobile
+        run: npm run typecheck:mobile
+
       - name: API contract gate
         run: npm run gate:api-contract
+
+      - name: Auth verified gate
+        run: npm run gate:auth-verified
 
       - name: Internal secret gate
         run: npm run gate:internal-secret
@@ -79,6 +85,9 @@ jobs:
 
       - name: Tests (core)
         run: npx vitest run tests/contracts tests/access tests/ops
+
+      - name: Tests (auth + observability)
+        run: npx vitest run tests/security tests/access tests/observability
 
       - name: Guardrails (rg)
         run: |

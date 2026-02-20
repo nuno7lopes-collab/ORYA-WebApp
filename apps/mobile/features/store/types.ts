@@ -306,6 +306,7 @@ export type StoreCheckoutResponse = {
   paymentIntentId: string;
   clientSecret: string | null;
   stripePublishableKey?: string | null;
+  stripeMode?: "test" | "prod" | string | null;
   amountCents: number;
   discountCents: number;
   currency: string;

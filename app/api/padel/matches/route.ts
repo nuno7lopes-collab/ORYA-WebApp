@@ -21,6 +21,7 @@ import { getRequestContext, type RequestContext } from "@/lib/http/requestContex
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const adminRoles = new Set<OrganizationMemberRole>(["OWNER", "CO_OWNER", "ADMIN"]);
 const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
@@ -144,7 +145,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
   const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
@@ -357,7 +358,7 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return fail(ctx, 401, "UNAUTHENTICATED");
 

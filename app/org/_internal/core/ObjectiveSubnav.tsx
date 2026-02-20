@@ -28,7 +28,7 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const OBJECTIVE_LABELS: Record<ObjectiveTab, string> = {
   create: "Criar",
   manage: "Gerir",
-  promote: "Promoções",
+  promote: "Marketing",
   analyze: "Analisar",
 };
 

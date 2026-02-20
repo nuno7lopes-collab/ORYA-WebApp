@@ -9,11 +9,12 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { CrmInteractionSource, CrmInteractionType } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as {

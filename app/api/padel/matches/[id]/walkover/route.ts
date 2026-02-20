@@ -15,6 +15,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { buildIdempotencyScope, readIdempotencyReplay, writeIdempotencyRecord } from "@/domain/padel/resultWorkflow";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const SPECIAL_RESULT_TYPES = new Set(["WALKOVER", "RETIREMENT", "INJURY"]);
 
@@ -37,8 +38,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (matchId === null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const { data: authData, error: authError } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (authError || !authData?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  const authUser = authData.user;
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
@@ -105,7 +107,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     tournamentId: match.eventId,
     matchId,
     action,
-    actorId: authData.user.id,
+    actorId: authUser.id,
     clientRequestId,
   });
 
@@ -130,7 +132,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     );
   }
 
-  const { organization, membership } = await getActiveOrganizationForUser(authData.user.id, {
+  const { organization, membership } = await getActiveOrganizationForUser(authUser.id, {
     organizationId,
     roles: ROLE_ALLOWLIST,
   });
@@ -139,7 +141,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   }
   const permission = await ensureMemberModuleAccess({
     organizationId,
-    userId: authData.user.id,
+    userId: authUser.id,
     role: membership.role,
     rolePack: membership.rolePack,
     moduleKey: OrganizationModule.TORNEIOS,
@@ -151,7 +153,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const authority = await resolveIncidentAuthority({
     eventId: match.eventId,
     organizationId,
-    actorUserId: authData.user.id,
+    actorUserId: authUser.id,
     membershipRole: membership.role,
     roundType: match.roundType,
     roundLabel: match.roundLabel,
@@ -207,13 +209,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     incidentConfirmedByRole: authority.confirmedByRole,
     incidentConfirmationSource: authority.confirmationSource,
     incidentConfirmedAt: nowIso,
-    incidentConfirmedBy: authData.user.id,
+    incidentConfirmedBy: authUser.id,
   } as Record<string, unknown>;
   const persistedScore = writeIdempotencyRecord({
     score: scoreWithIncident,
     scopeKey,
     action,
-    actorId: authData.user.id,
+    actorId: authUser.id,
     status: terminalStatus,
   });
 
@@ -223,7 +225,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       matchId,
       eventId: match.eventId,
       organizationId,
-      actorUserId: authData.user.id,
+      actorUserId: authUser.id,
       beforeStatus: match.status ?? null,
       data: {
         status: terminalStatus,
@@ -238,7 +240,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   await recordOrganizationAuditSafe({
     organizationId: match.event.organizationId,
-    actorUserId: authData.user.id,
+    actorUserId: authUser.id,
     action: "PADEL_MATCH_WALKOVER",
     metadata: {
       matchId,
@@ -255,7 +257,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const directorUserIds = await listTournamentDirectorUserIds({
       eventId: match.eventId,
       organizationId,
-      excludeUserId: authData.user.id,
+      excludeUserId: authUser.id,
     });
     for (const directorUserId of directorUserIds) {
       const allow = await shouldNotify(directorUserId, "SYSTEM_ANNOUNCE");

@@ -2,11 +2,35 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "strict": false,
+    "noImplicitReturns": false,
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@orya/shared": ["../../packages/shared/src/index.ts"]
+      "@orya/shared": [
+        "../../packages/shared/src/index.ts"
+      ]
     }
   },
-  "exclude": ["node_modules", "**/__tests__/**", "**/*.test.*", "jest.setup.ts"]
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "features/**/*.ts",
+    "features/**/*.tsx",
+    "lib/**/*.ts",
+    "lib/**/*.tsx",
+    "*.ts",
+    "*.tsx",
+    "*.d.ts",
+    "nativewind-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".expo",
+    "**/__tests__/**",
+    "**/*.test.*",
+    "jest.setup.ts"
+  ]
 }

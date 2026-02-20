@@ -20,6 +20,7 @@ import { createNotification, shouldNotify } from "@/lib/notifications";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { buildIdempotencyScope, readIdempotencyReplay, writeIdempotencyRecord } from "@/domain/padel/resultWorkflow";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const RESOLUTION_STATUSES = new Set(["CONFIRMED", "CORRECTED", "VOIDED"]);
@@ -74,7 +75,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -256,7 +257,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const match = await prisma.eventMatchSlot.findUnique({

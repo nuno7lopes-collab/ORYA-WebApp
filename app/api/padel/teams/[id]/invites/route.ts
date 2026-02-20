@@ -19,6 +19,7 @@ import { createNotification } from "@/lib/notifications";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const INVITE_EXPIRY_DAYS = 14;
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
@@ -53,7 +54,7 @@ async function resolveTeam(req: NextRequest, teamId: number): Promise<ResolveTea
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) {
     return { ok: false, response: jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 }) as Response };
   }

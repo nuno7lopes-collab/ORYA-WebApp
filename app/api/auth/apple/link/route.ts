@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveOrganizationIdForUser } from "@/lib/organizationContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type AppleLinkBody = { idToken?: string | null };
 
 function extractAppleIdentityFromSupabaseUser(user: { identities?: Array<any> }) {
@@ -26,7 +27,7 @@ function extractAppleIdentityFromSupabaseUser(user: { identities?: Array<any> })
 
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return jsonWrap(
       { ok: false, errorCode: "UNAUTHENTICATED", message: "Sessao invalida." },

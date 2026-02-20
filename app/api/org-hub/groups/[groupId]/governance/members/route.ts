@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { requireUser } from "@/lib/auth/requireUser";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { prisma } from "@/lib/prisma";
 import { OrganizationMemberRole } from "@prisma/client";
 import { resolveUserIdentifier } from "@/lib/userResolver";
@@ -92,6 +92,13 @@ async function _POST(req: NextRequest, context: { params: Promise<{ groupId: str
 
     return respondOk(ctx, { ok: true }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return respondError(
+        ctx,
+        { errorCode: err.code, message: err.code, retryable: false },
+        { status: err.status ?? 401 },
+      );
+    }
     console.error("[org-hub/groups/governance/members][POST]", err);
     return respondError(
       ctx,
@@ -149,6 +156,13 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ groupId: st
 
     return respondOk(ctx, { ok: true }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return respondError(
+        ctx,
+        { errorCode: err.code, message: err.code, retryable: false },
+        { status: err.status ?? 401 },
+      );
+    }
     if (err instanceof Error && err.message === "GROUP_MEMBER_NOT_FOUND") {
       return respondError(
         ctx,
@@ -206,6 +220,13 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ groupId: s
 
     return respondOk(ctx, { ok: true }, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return respondError(
+        ctx,
+        { errorCode: err.code, message: err.code, retryable: false },
+        { status: err.status ?? 401 },
+      );
+    }
     if (err instanceof Error && err.message === "GROUP_MEMBER_NOT_FOUND") {
       return respondError(
         ctx,

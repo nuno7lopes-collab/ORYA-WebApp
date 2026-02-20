@@ -9,6 +9,63 @@ type MobileEnv = {
   appleMerchantId?: string;
 };
 
+const readString = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+const normalizeStripeMode = (
+  value: string | undefined,
+): "test" | "prod" | null => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === "test" ||
+    normalized === "testing" ||
+    normalized === "staging" ||
+    normalized === "dev" ||
+    normalized === "development"
+  ) {
+    return "test";
+  }
+  if (normalized === "prod" || normalized === "production" || normalized === "live") {
+    return "prod";
+  }
+  return null;
+};
+
+const pickStripePublishableKey = (
+  extra: Record<string, unknown>,
+  appEnvRaw: string,
+) => {
+  const override =
+    normalizeStripeMode(readString(extra.EXPO_PUBLIC_STRIPE_MODE)) ??
+    normalizeStripeMode(process.env.EXPO_PUBLIC_STRIPE_MODE) ??
+    normalizeStripeMode(process.env.NEXT_PUBLIC_STRIPE_MODE);
+  const mode = override ?? normalizeStripeMode(appEnvRaw) ?? "prod";
+
+  const live =
+    readString(extra.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ??
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ??
+    process.env.STRIPE_PUBLISHABLE_KEY_LIVE ??
+    readString(extra.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const test =
+    readString(extra.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ??
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ??
+    process.env.STRIPE_PUBLISHABLE_KEY_TEST ??
+    readString(extra.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) ??
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+  const key = (mode === "test" ? test : live)?.trim() ?? "";
+  if (!key) return undefined;
+  if (mode === "test" && key.startsWith("pk_live")) return undefined;
+  if (mode === "prod" && key.startsWith("pk_test")) return undefined;
+  return key;
+};
+
 const getExtra = () => {
   const expoConfig = Constants?.expoConfig as { extra?: Record<string, unknown> } | undefined;
   const manifest = (Constants as any)?.manifest as { extra?: Record<string, unknown> } | undefined;
@@ -72,35 +129,32 @@ export const getMobileEnv = (): MobileEnv => {
   const extra = getExtra();
 
   const appEnv =
-    extra.EXPO_PUBLIC_APP_ENV ??
+    readString(extra.EXPO_PUBLIC_APP_ENV) ??
     process.env.EXPO_PUBLIC_APP_ENV ??
     process.env.NEXT_PUBLIC_APP_ENV ??
     "prod";
 
   const apiBaseUrl =
-    extra.EXPO_PUBLIC_API_BASE_URL ??
+    readString(extra.EXPO_PUBLIC_API_BASE_URL) ??
     process.env.EXPO_PUBLIC_API_BASE_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??
     "https://orya.pt";
 
   const supabaseUrl =
-    extra.EXPO_PUBLIC_SUPABASE_URL ??
+    readString(extra.EXPO_PUBLIC_SUPABASE_URL) ??
     process.env.EXPO_PUBLIC_SUPABASE_URL ??
     process.env.NEXT_PUBLIC_SUPABASE_URL;
 
   const supabaseAnonKey =
-    extra.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+    readString(extra.EXPO_PUBLIC_SUPABASE_ANON_KEY) ??
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
     process.env.SUPABASE_ANON_KEY;
 
-  const stripePublishableKey =
-    extra.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
-    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const stripePublishableKey = pickStripePublishableKey(extra, appEnv);
 
   const appleMerchantId =
-    extra.EXPO_PUBLIC_APPLE_MERCHANT_ID ??
+    readString(extra.EXPO_PUBLIC_APPLE_MERCHANT_ID) ??
     process.env.EXPO_PUBLIC_APPLE_MERCHANT_ID ??
     process.env.NEXT_PUBLIC_APPLE_MERCHANT_ID;
 

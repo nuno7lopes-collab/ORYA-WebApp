@@ -7,6 +7,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
 import { normalizeAndValidateUsername, setUsernameForOwner } from "@/lib/globalUsernames";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 // Tipagem simples devolvida ao frontend
 interface SupabaseUser {
   id: string;
@@ -26,7 +27,7 @@ async function _GET(req: Request) {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     // 🔹 Caso típico: sem sessão → devolver 401 sem lançar 500
     if (userError) {

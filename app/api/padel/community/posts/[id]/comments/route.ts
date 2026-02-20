@@ -8,6 +8,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { OrganizationMemberRole } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
@@ -23,7 +24,7 @@ async function resolvePost(
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) {
     const error = jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 }) as Response;
     return { error };

@@ -7,6 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelMatchStats } from "@/domain/padel/score";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 50;
 const ATTENTION_STATUS_FILTER = ["IN_PROGRESS", "RESULT_SUBMITTED", "PENDING_CONFIRMATION", "PENDING_REVIEW_EXPIRED", "DISPUTED"] as const;
 const SCOPES = new Set(["all", "upcoming", "past", "attention"]);
@@ -163,7 +164,7 @@ async function _GET(req: NextRequest) {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

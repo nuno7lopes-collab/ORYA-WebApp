@@ -10,6 +10,7 @@ import { pickCanonicalField } from "@/lib/location/eventLocation";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const normalizeVisibility = (value: unknown) =>
   value === "PUBLIC" || value === "PRIVATE" || value === "FOLLOWERS" ? value : "PUBLIC";
 
@@ -138,7 +139,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
   const viewerId = user?.id ?? null;
 
   const resolved = await resolveUsernameOwner(username, {

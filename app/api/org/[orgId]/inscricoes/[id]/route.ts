@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { OrganizationFormFieldType } from "@prisma/client";
-import { requireUser } from "@/lib/auth/requireUser";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -141,6 +141,9 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return fail(ctx, err.status ?? 401, err.code);
+    }
     console.error("[organização/inscricoes][GET:id]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
@@ -319,6 +322,9 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ id: string 
 
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return fail(ctx, err.status ?? 401, err.code);
+    }
     console.error("[organização/inscricoes][PATCH:id]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
   }
@@ -361,6 +367,9 @@ async function _DELETE(req: NextRequest, context: { params: Promise<{ id: string
 
     return respondOk(ctx, {}, { status: 200 });
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return fail(ctx, err.status ?? 401, err.code);
+    }
     console.error("[organização/inscricoes][DELETE:id]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
   }

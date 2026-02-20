@@ -16,6 +16,7 @@ import {
 } from "@/domain/events/publicEventCard";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_PAGE_SIZE = 12;
 const CACHE_TTL_MS = 30 * 1000;
 const MAP_MODE_LIMIT = 50;
@@ -500,7 +501,7 @@ async function _GET(req: NextRequest) {
       const supabase = await createSupabaseServer();
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
       viewerId = user?.id ?? null;
       if (viewerId) {
         const profile = await prisma.profile.findUnique({

@@ -8,6 +8,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { toPublicEventCardWithPrice, isPublicEventCardComplete } from "@/domain/events/publicEventCard";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type FeedItem = {
   id: string;
   kind: "event";
@@ -41,7 +42,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }

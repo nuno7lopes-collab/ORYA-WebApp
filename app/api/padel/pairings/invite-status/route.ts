@@ -20,6 +20,7 @@ import { validatePadelCategoryLevel } from "@/domain/padelCategoryLevel";
 import { mapRegistrationToPairingLifecycle } from "@/domain/padelRegistration";
 import { PadelRegistrationStatus } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type InviteState =
   | "AWAITING_PAYMENT"
   | "AWAITING_ACCEPT"
@@ -85,7 +86,7 @@ async function _GET(req: NextRequest) {
   }
 
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }

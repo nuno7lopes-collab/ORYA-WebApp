@@ -5,6 +5,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getNotificationPrefs } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type ApiAuthMeResponse = {
   user: {
     id: string;
@@ -39,11 +40,11 @@ type ApiAuthMeResponse = {
 
 async function _GET() {
   try {
-    const supabase = await createSupabaseServer();
+    const supabase = await createSupabaseServer({ allowUnverifiedEmail: true });
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_unverified_ok", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap(

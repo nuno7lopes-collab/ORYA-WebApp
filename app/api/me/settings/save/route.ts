@@ -7,6 +7,7 @@ import { getNotificationPrefs } from "@/lib/notifications";
 import { INTEREST_MAX_SELECTION, normalizeInterestSelection } from "@/lib/interests";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = {
   visibility?: "PUBLIC" | "PRIVATE" | "FOLLOWERS";
   favouriteCategories?: string[];
@@ -29,7 +30,7 @@ async function _PATCH(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });

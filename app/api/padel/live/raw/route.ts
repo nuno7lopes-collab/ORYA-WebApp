@@ -15,6 +15,7 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
 
@@ -82,7 +83,7 @@ async function _GET(req: NextRequest) {
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (userError || !user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
   }

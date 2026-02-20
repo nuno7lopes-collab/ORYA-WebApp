@@ -17,6 +17,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function ensureOrganizationAccess(userId: string, eventId: number) {
   const evt = await prisma.event.findUnique({
     where: { id: eventId },
@@ -59,7 +60,7 @@ async function _POST(req: NextRequest) {
   };
 
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) return fail(401, "UNAUTHENTICATED");
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

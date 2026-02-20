@@ -16,6 +16,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { buildOrgHref } from "@/lib/organizationIdUtils";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
   OrganizationMemberRole.CO_OWNER,
@@ -68,7 +69,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(ctx, 401, "UNAUTHENTICATED");
@@ -130,7 +131,7 @@ async function _PATCH(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(ctx, 401, "UNAUTHENTICATED");

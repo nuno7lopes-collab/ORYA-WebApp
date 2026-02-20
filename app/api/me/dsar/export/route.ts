@@ -6,6 +6,7 @@ import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DSAR_DUE_DAYS = 30;
 
 function getRequestMeta(req: NextRequest) {
@@ -20,7 +21,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

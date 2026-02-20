@@ -6,13 +6,14 @@ import { logAccountEvent } from "@/lib/accountEvents";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { DsarCaseStatus, DsarCaseType } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _POST(_req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

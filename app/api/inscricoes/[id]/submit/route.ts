@@ -6,6 +6,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const COUNTED_STATUSES: OrganizationFormSubmissionStatus[] = [
   "SUBMITTED",
@@ -40,7 +41,7 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
     const supabase = await createSupabaseServer();
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") {

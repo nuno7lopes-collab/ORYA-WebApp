@@ -4,6 +4,7 @@ import { cookies, headers } from "next/headers";
 import { env } from "@/lib/env";
 import { cache } from "react";
 import { getRequestAuthHeader } from "@/lib/http/authContext";
+import { EmailNotVerifiedError, isUserEmailVerified } from "@/lib/security";
 
 function decodeBase64Cookie(raw: string) {
   const BASE64_PREFIX = "base64-";
@@ -63,12 +64,23 @@ function isSecureCookieRuntime() {
  * - Prevents JSON parse errors
  * - No profile fetching here
  */
-export async function createSupabaseServer() {
+type CreateSupabaseServerOptions = {
+  allowUnverifiedEmail?: boolean;
+};
+
+function shouldEnforceVerifiedEmail(options?: CreateSupabaseServerOptions) {
+  if (options?.allowUnverifiedEmail) return false;
+  const stack = new Error().stack ?? "";
+  return stack.includes("/app/api/");
+}
+
+export async function createSupabaseServer(options?: CreateSupabaseServerOptions) {
   const cookieStore = (await cookies());
   const headersStore = await headers();
   const hostHeader = headersStore.get("host");
   const rawAuthHeader = headersStore.get("authorization") ?? getRequestAuthHeader();
   const bearerToken = extractBearerToken(rawAuthHeader);
+  const enforceVerifiedEmail = shouldEnforceVerifiedEmail(options);
   const cookieDomain =
     env.supabaseCookieDomain || resolveCookieDomainFromHost(hostHeader);
   const isLocalhostDomain =
@@ -131,14 +143,19 @@ export async function createSupabaseServer() {
     }
   );
 
-  // If we have a bearer token (mobile app), ensure auth.getUser() uses it.
-  if (bearerToken) {
-    const authAny = supabase.auth as typeof supabase.auth & {
-      getUser: (jwt?: string) => ReturnType<typeof supabase.auth.getUser>;
-    };
-    const originalGetUser = authAny.getUser.bind(authAny);
-    authAny.getUser = (jwt?: string) => originalGetUser(jwt ?? bearerToken);
-  }
+  const authAny = supabase.auth as typeof supabase.auth & {
+    getUser: (jwt?: string) => ReturnType<typeof supabase.auth.getUser>;
+  };
+  const originalGetUser = authAny.getUser.bind(authAny);
+  authAny.getUser = async (jwt?: string) => {
+    const response = await originalGetUser(jwt ?? bearerToken ?? undefined);
+    if (!enforceVerifiedEmail) return response;
+    const resolvedUser = response.data?.user;
+    if (resolvedUser && !isUserEmailVerified(resolvedUser)) {
+      throw new EmailNotVerifiedError();
+    }
+    return response;
+  };
 
   return supabase;
 }

@@ -96,7 +96,8 @@ async function _GET() {
     return respondOk(ctx, { items }, { status: 200 });
   } catch (err) {
     if (err instanceof AuthRequiredError || (err instanceof Error && err.name === "AuthRequiredError")) {
-      return fail(ctx, 401, "UNAUTHENTICATED");
+      const authErr = err as AuthRequiredError;
+      return fail(ctx, authErr.status ?? 401, authErr.code ?? "UNAUTHENTICATED");
     }
     console.error("[org-hub/organizations][GET]", err);
     return fail(ctx, 500, "INTERNAL_ERROR");
@@ -148,7 +149,8 @@ async function _POST(req: NextRequest) {
     );
   } catch (err) {
     if (err instanceof AuthRequiredError || (err instanceof Error && err.name === "AuthRequiredError")) {
-      return fail(ctx, 401, "UNAUTHENTICATED");
+      const authErr = err as AuthRequiredError;
+      return fail(ctx, authErr.status ?? 401, authErr.code ?? "UNAUTHENTICATED");
     }
     if (err instanceof UsernameTakenError) {
       return fail(ctx, 409, "USERNAME_TAKEN");

@@ -6,6 +6,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 
 type Status = CheckoutStatus;
 
@@ -14,6 +15,75 @@ type CheckoutStatusV1 = "PENDING" | "PROCESSING" | "REQUIRES_ACTION" | "SUCCEEDE
 const FINAL_STATUSES: Status[] = ["PAID", "FAILED", "REFUNDED", "DISPUTED", "CANCELED"];
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
+
+function mapStripeIntentToCheckout(intent: {
+  status?: string | null;
+  last_payment_error?: { message?: string | null } | null;
+}): Status | null {
+  switch (intent.status) {
+    case "succeeded":
+      return "PAID";
+    case "processing":
+      return "PROCESSING";
+    case "requires_action":
+    case "requires_confirmation":
+      return "REQUIRES_ACTION";
+    case "requires_payment_method":
+      // Estado inicial comum antes de o utilizador confirmar o método.
+      // Só marcamos falha quando existe erro efetivo devolvido pela Stripe.
+      return intent.last_payment_error?.message ? "FAILED" : "REQUIRES_ACTION";
+    case "canceled":
+      return "CANCELED";
+    case "requires_capture":
+      return "PROCESSING";
+    default:
+      return null;
+  }
+}
+
+function resolveNextActionForStatus(status: Status): string {
+  if (status === "REQUIRES_ACTION") return "PAY_NOW";
+  if (status === "FAILED" || status === "CANCELED") return "PAY_NOW";
+  return "NONE";
+}
+
+function resolveRetryableForStatus(status: Status): boolean {
+  if (status === "FAILED" || status === "CANCELED") return true;
+  return status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+}
+
+async function resolveStatusFromStripeIntent(params: {
+  paymentIntentId: string | null;
+  purchaseId: string | null;
+}) {
+  if (!params.paymentIntentId) return null;
+  try {
+    const intent = await retrievePaymentIntent(params.paymentIntentId);
+    const status = mapStripeIntentToCheckout({
+      status: intent?.status ?? null,
+      last_payment_error: intent?.last_payment_error
+        ? { message: intent.last_payment_error.message ?? null }
+        : null,
+    });
+    if (!status) return null;
+    const final = FINAL_STATUSES.includes(status);
+    const errorMessage =
+      status === "FAILED"
+        ? intent?.last_payment_error?.message ?? null
+        : null;
+    return buildStatusPayload({
+      status,
+      final,
+      purchaseId: params.purchaseId,
+      paymentIntentId: params.paymentIntentId,
+      retryable: resolveRetryableForStatus(status),
+      nextAction: resolveNextActionForStatus(status),
+      errorMessage,
+    });
+  } catch {
+    return null;
+  }
+}
 
 function normalizeStatusV1(status: Status): CheckoutStatusV1 {
   if (status === "PAID") return "SUCCEEDED";
@@ -101,9 +171,22 @@ async function _GET(req: NextRequest) {
           ledgerEntries,
         });
         const final = FINAL_STATUSES.includes(status);
-        const nextAction =
-          status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
-        const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+        const stripeFallback =
+          !final && paymentIntentId
+            ? await resolveStatusFromStripeIntent({
+                paymentIntentId,
+                purchaseId: payment.id,
+              })
+            : null;
+        if (
+          stripeFallback &&
+          (stripeFallback.final || stripeFallback.status === "REQUIRES_ACTION")
+        ) {
+          return respondOk(ctx, stripeFallback, {
+            status: 200,
+            headers: NO_STORE_HEADERS,
+          });
+        }
         return respondOk(
           ctx,
           buildStatusPayload({
@@ -111,8 +194,8 @@ async function _GET(req: NextRequest) {
             final,
             purchaseId: payment.id,
             paymentIntentId,
-            retryable,
-            nextAction,
+            retryable: resolveRetryableForStatus(status),
+            nextAction: resolveNextActionForStatus(status),
             errorMessage: null,
           }),
           { status: 200, headers: NO_STORE_HEADERS },
@@ -129,9 +212,22 @@ async function _GET(req: NextRequest) {
           ledgerEntries: [],
         });
         const final = FINAL_STATUSES.includes(status);
-        const nextAction =
-          status === "REQUIRES_ACTION" ? "PAY_NOW" : status === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
-        const retryable = status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+        const stripeFallback =
+          !final && paymentIntentId
+            ? await resolveStatusFromStripeIntent({
+                paymentIntentId,
+                purchaseId: resolvedPaymentId,
+              })
+            : null;
+        if (
+          stripeFallback &&
+          (stripeFallback.final || stripeFallback.status === "REQUIRES_ACTION")
+        ) {
+          return respondOk(ctx, stripeFallback, {
+            status: 200,
+            headers: NO_STORE_HEADERS,
+          });
+        }
         return respondOk(
           ctx,
           buildStatusPayload({
@@ -139,12 +235,25 @@ async function _GET(req: NextRequest) {
             final,
             purchaseId: resolvedPaymentId,
             paymentIntentId,
-            retryable,
-            nextAction,
+            retryable: resolveRetryableForStatus(status),
+            nextAction: resolveNextActionForStatus(status),
             errorMessage: null,
           }),
           { status: 200, headers: NO_STORE_HEADERS },
         );
+      }
+    }
+
+    if (paymentIntentId) {
+      const stripeFallback = await resolveStatusFromStripeIntent({
+        paymentIntentId,
+        purchaseId: resolvedPaymentId ?? purchaseId,
+      });
+      if (stripeFallback) {
+        return respondOk(ctx, stripeFallback, {
+          status: 200,
+          headers: NO_STORE_HEADERS,
+        });
       }
     }
 

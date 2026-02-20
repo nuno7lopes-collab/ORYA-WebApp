@@ -7,6 +7,7 @@ import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function isMobileClientRequest(req: NextRequest) {
   const platform =
     req.headers.get("x-client-platform") ||
@@ -84,7 +85,7 @@ async function _POST(req: NextRequest) {
     let allowReservedForEmail: string | null = null;
     try {
       const supabase = await createSupabaseServer();
-      const { data } = await supabase.auth.getUser();
+      const { data } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
       allowReservedForEmail = data?.user?.email ?? null;
     } catch {}
 

@@ -10,6 +10,8 @@ export type ApiClient = {
   request<T>(path: string, init?: RequestInit): Promise<T>;
 };
 
+const HTML_START_PATTERN = /^\s*<(?:!doctype\s+html|html)\b/i;
+
 const hasAuthorizationHeader = (headers: RequestInit["headers"]): boolean => {
   if (!headers) return false;
   if (headers instanceof Headers) {
@@ -19,6 +21,21 @@ const hasAuthorizationHeader = (headers: RequestInit["headers"]): boolean => {
     return headers.some(([key]) => key.toLowerCase() === "authorization");
   }
   return Object.keys(headers).some((key) => key.toLowerCase() === "authorization");
+};
+
+const sanitizeErrorBody = (rawBody: string, contentType: string | null): string => {
+  const body = rawBody.trim();
+  if (!body) return "";
+  const isHtml =
+    (contentType?.toLowerCase().includes("text/html") ?? false) ||
+    HTML_START_PATTERN.test(body);
+  if (isHtml) {
+    return "Resposta HTML inesperada do servidor.";
+  }
+  if (body.length > 420) {
+    return `${body.slice(0, 417)}...`;
+  }
+  return body;
 };
 
 export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
@@ -50,7 +67,8 @@ export const createApiClient = (options: ApiClientOptions = {}): ApiClient => {
     const res = await fetch(url, { ...init, headers });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`API ${res.status}: ${text || res.statusText}`);
+      const summary = sanitizeErrorBody(text, res.headers.get("content-type"));
+      throw new Error(`API ${res.status}: ${summary || res.statusText}`);
     }
     const json = await res.json().catch(() => null);
     return json as T;

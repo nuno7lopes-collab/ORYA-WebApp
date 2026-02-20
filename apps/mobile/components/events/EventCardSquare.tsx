@@ -337,7 +337,7 @@ export const EventCardSquare = memo(function EventCardSquare({
             <View style={styles.media}>
                 {hasCover ? (
                   <Image
-                    source={{ uri: cover }}
+                    source={{ uri: cover ?? undefined }}
                     style={StyleSheet.absoluteFill}
                     contentFit="cover"
                     transition={CARD_IMAGE_TRANSITION_MS}

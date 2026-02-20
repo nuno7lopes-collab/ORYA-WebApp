@@ -8,7 +8,7 @@ const isPushSupported = () => {
   if (Platform.OS !== "ios") return { supported: false, reason: "not_ios" as const };
   if (!Constants.isDevice) return { supported: false, reason: "simulator" as const };
   if (Constants.appOwnership === "expo") return { supported: false, reason: "expo_go" as const };
-  return { supported: true, reason: null as const };
+  return { supported: true, reason: null };
 };
 
 const normalizeStatus = (status?: string | null): PushPermissionStatus => {

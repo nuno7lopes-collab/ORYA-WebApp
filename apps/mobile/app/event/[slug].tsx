@@ -1269,10 +1269,7 @@ export default function EventDetail() {
               : t("common:price.free");
           })()
         : t("events:tickets.unavailableNow");
-  const ticketSheetSubmitLabel =
-    selectedTicketQuantity <= 0
-      ? t("events:tickets.sheet.submit.select")
-      : t("events:tickets.sheet.submit.default");
+  const ticketSheetSubmitLabel = t("events:tickets.sheet.submit.default");
   const stickyHelperText = ticketGateState.inviteLocked
     ? t("events:invite.lockedTickets")
     : ticketGateState.eventEnded
@@ -1553,7 +1550,7 @@ export default function EventDetail() {
   const handleEventScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset.y;
-      const isDragging = event.nativeEvent.isDragging;
+      const isDragging = dragStartedAtTopRef.current;
       scrollOffsetYRef.current = offsetY;
       if (isDragging && dragStartedAtTopRef.current) {
         dragMinOffsetRef.current = Math.min(dragMinOffsetRef.current, offsetY);
@@ -1601,7 +1598,20 @@ export default function EventDetail() {
   const handleCheckoutFromTickets = useCallback(async () => {
     triggerLightHaptic();
     if (!data) return;
-    if (!canAccessInvite || !eventIsActive) return;
+    if (!canAccessInvite) {
+      Alert.alert(
+        t("common:labels.error"),
+        t("events:invite.lockedTickets"),
+      );
+      return;
+    }
+    if (!eventIsActive) {
+      Alert.alert(
+        t("common:labels.error"),
+        t("events:status.ended"),
+      );
+      return;
+    }
     if (selectedTicketItems.length === 0) return;
     if (!session?.user?.id) {
       openAuth();
@@ -2986,7 +2996,7 @@ export default function EventDetail() {
                                       row.label ||
                                       (row.players || [])
                                         .map(
-                                          (player) =>
+                                          (player: { name?: string | null; username?: string | null } | null | undefined) =>
                                             player?.name || player?.username,
                                         )
                                         .filter(Boolean)
@@ -3127,17 +3137,12 @@ export default function EventDetail() {
           items={ticketSelectorItems}
           totalCents={selectedTicketTotalCents}
           currency={ticketSheetCurrency}
+          hasSelection={selectedTicketQuantity > 0}
           submitLabel={ticketSheetSubmitLabel}
           emptyStateMessage={
             ticketGateState.hasTicketTypes
               ? t("events:tickets.unavailableNow")
               : t("events:tickets.comingSoon")
-          }
-          canSubmit={
-            selectedTicketQuantity > 0 &&
-            canAccessInvite &&
-            eventIsActive &&
-            !initiatingCheckout
           }
           submitting={initiatingCheckout}
           onClose={() => setTicketSheetVisible(false)}
@@ -3209,7 +3214,7 @@ export default function EventDetail() {
                 }
                 style={({ pressed }) => [
                   styles.freeSuccessCta,
-                  pressed ? styles.pressed : null,
+                  pressed ? { opacity: 0.86 } : null,
                 ]}
               >
                 <Text style={styles.freeSuccessCtaText}>

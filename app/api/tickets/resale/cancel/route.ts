@@ -6,6 +6,7 @@ import { TicketStatus, ResaleStatus, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError, logWarn } from "@/lib/observability/logger";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const resaleSelect = {
   id: true,
   sellerUserId: true,
@@ -29,7 +30,7 @@ async function _POST(req: NextRequest) {
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (authError) {
       logWarn("tickets.resale_cancel_auth_failed", { error: authError });

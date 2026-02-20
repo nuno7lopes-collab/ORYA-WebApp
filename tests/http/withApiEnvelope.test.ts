@@ -11,6 +11,7 @@ vi.mock("@/lib/http/requestContext", () => ({
 }));
 
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { AuthUnavailableError, EmailNotVerifiedError, UnauthenticatedError } from "@/lib/security";
 
 describe("withApiEnvelope", () => {
   it("does not double-wrap v9 envelopes", async () => {
@@ -101,5 +102,50 @@ describe("withApiEnvelope", () => {
     expect(res.headers.get("x-correlation-id")).toBe("corr_test");
     const body = await res.text();
     expect(body).toBe("raw-body");
+  });
+
+  it("mapeia UNAUTHENTICATED para 401 canónico", async () => {
+    const handler = withApiEnvelope(async () => {
+      throw new UnauthenticatedError();
+    });
+
+    const res = await handler(new Request("http://localhost/auth-required"));
+    const body = await res.json();
+
+    expect(res.status).toBe(401);
+    expect(body).toMatchObject({
+      ok: false,
+      errorCode: "UNAUTHENTICATED",
+    });
+  });
+
+  it("mapeia EMAIL_NOT_VERIFIED para 403 canónico", async () => {
+    const handler = withApiEnvelope(async () => {
+      throw new EmailNotVerifiedError();
+    });
+
+    const res = await handler(new Request("http://localhost/email-not-verified"));
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body).toMatchObject({
+      ok: false,
+      errorCode: "EMAIL_NOT_VERIFIED",
+    });
+  });
+
+  it("mapeia AUTH_UNAVAILABLE para 503 canónico", async () => {
+    const handler = withApiEnvelope(async () => {
+      throw new AuthUnavailableError();
+    });
+
+    const res = await handler(new Request("http://localhost/auth-unavailable"));
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body).toMatchObject({
+      ok: false,
+      errorCode: "AUTH_UNAVAILABLE",
+    });
   });
 });

@@ -40,6 +40,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const PENDING_HOLD_MINUTES = 10;
@@ -131,7 +132,7 @@ async function _POST(
 
   try {
     const supabase = await createSupabaseServer();
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
     const phoneOptions = resolvePhoneNormalizationOptions({ headers: req.headers });

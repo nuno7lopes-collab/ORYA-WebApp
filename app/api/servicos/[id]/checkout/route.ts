@@ -39,11 +39,21 @@ import {
 } from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
 import { finalizeFreeServiceBooking } from "@/domain/finance/freeServiceCheckout";
+import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const HOLD_MINUTES = 10;
 const ORYA_CARD_FEE_BPS = 100;
+
+function resolveStripeRuntimePayload(
+  livemode: boolean | null | undefined,
+): { stripeMode: "prod" | "test"; stripePublishableKey?: string } {
+  const stripeMode = livemode == null ? getStripeEnv() : livemode ? "prod" : "test";
+  const stripePublishableKey = tryGetStripePublishableKeyForEnv(stripeMode);
+  return stripePublishableKey ? { stripeMode, stripePublishableKey } : { stripeMode };
+}
 
 function normalizeCheckoutPaymentMethod(raw: unknown): "mbway" | "card" | null {
   const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
@@ -78,7 +88,7 @@ async function _POST(
 
   try {
     const supabase = await createSupabaseServer();
-    const { data: userData } = await supabase.auth.getUser();
+    const { data: userData } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
     const phoneOptions = resolvePhoneNormalizationOptions({
@@ -455,6 +465,7 @@ async function _POST(
         freeCheckout: true,
         status: "PAID",
         final: true,
+        ...resolveStripeRuntimePayload(null),
       });
     }
 
@@ -578,6 +589,7 @@ async function _POST(
       freeCheckout: false,
       status: "REQUIRES_ACTION",
       final: false,
+      ...resolveStripeRuntimePayload(intent.livemode),
     });
   } catch (err) {
     if (isUnauthenticatedError(err)) {

@@ -10,6 +10,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import {
   deactivateReservationResourcesForCourts,
   syncReservationResourceForCourt,
@@ -23,7 +24,7 @@ async function _GET(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });
@@ -67,7 +68,7 @@ async function _POST(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -171,7 +172,7 @@ async function _DELETE(req: NextRequest) {
   if (clubId === null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { user } } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });

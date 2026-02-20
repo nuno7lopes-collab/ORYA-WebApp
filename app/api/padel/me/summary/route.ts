@@ -12,6 +12,7 @@ import {
 import { computeUserPadelStats } from "@/domain/padel/userStats";
 import { PadelPairingSlotStatus, Prisma } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_PAIRINGS = 20;
 const MAX_WAITLIST = 10;
 const MAX_MATCHES = 120;
@@ -21,7 +22,7 @@ async function _GET() {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

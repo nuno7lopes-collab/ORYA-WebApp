@@ -8,8 +8,11 @@ const isDev = typeof __DEV__ !== "undefined" && __DEV__;
 const REQUEST_TIMEOUT_MS = isDev ? 20_000 : 12_000;
 const SLOW_REQUEST_MS = 1500;
 const OFFLINE_COOLDOWN_MS = 8000;
+const DEV_WARNING_DEDUPE_MS = 15_000;
+const DEV_WARNING_CACHE_MAX = 220;
 let offlineUntil = 0;
 const MOBILE_CLIENT_PLATFORM = "mobile";
+const devWarningCache = new Map<string, number>();
 
 const resolveMobileAppVersion = () => {
   const fromExpoConfig = Constants.expoConfig?.version;
@@ -97,6 +100,28 @@ const shouldSuppressDevWarning = (path: string, message: string) =>
   isStorePaymentsNotReadyError(path, message) ||
   isExpectedBusinessConflictErrorMessage(message);
 
+const shouldLogDevWarning = (
+  method: string,
+  path: string,
+  message: string,
+) => {
+  const normalized = message.replace(/\s+/g, " ").trim().slice(0, 220).toLowerCase();
+  const key = `${method.toUpperCase()}|${path}|${normalized}`;
+  const now = Date.now();
+  const lastLoggedAt = devWarningCache.get(key) ?? 0;
+  if (lastLoggedAt > 0 && now - lastLoggedAt < DEV_WARNING_DEDUPE_MS) {
+    return false;
+  }
+  devWarningCache.set(key, now);
+  if (devWarningCache.size > DEV_WARNING_CACHE_MAX) {
+    const oldestKey = devWarningCache.keys().next().value;
+    if (typeof oldestKey === "string") {
+      devWarningCache.delete(oldestKey);
+    }
+  }
+  return true;
+};
+
 const hasAuthorizationHeader = (headers?: RequestInit["headers"]) => {
   if (!headers) return false;
   if (headers instanceof Headers) {
@@ -148,11 +173,16 @@ const withClientHeaders = (headers?: RequestInit["headers"]): Headers => {
   return next;
 };
 
+const normalizeSignal = (
+  signal?: AbortSignal | null,
+): AbortSignal | undefined => signal ?? undefined;
+
 const withTimeout = async <T>(
   fn: (signal?: AbortSignal) => Promise<T>,
-  signal?: AbortSignal,
+  signal?: AbortSignal | null,
 ) => {
-  if (signal) return fn(signal);
+  const resolvedSignal = normalizeSignal(signal);
+  if (resolvedSignal) return fn(resolvedSignal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -221,7 +251,7 @@ export const api = {
       console.info(`[api] ${method} ${path} start`);
     }
     try {
-      const result = await withTimeout(
+      const result = await withTimeout<T>(
         (signal) =>
           baseApi.request<T>(path, {
             ...init,
@@ -244,7 +274,10 @@ export const api = {
       }
       if (isDev) {
         const duration = Date.now() - startedAt;
-        if (!shouldSuppressDevWarning(path, errorMessage)) {
+        if (
+          !shouldSuppressDevWarning(path, errorMessage) &&
+          shouldLogDevWarning(method, path, errorMessage)
+        ) {
           console.warn(
             `[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`,
           );
@@ -262,7 +295,7 @@ export const api = {
         ? { ...init, headers: stripAuthorizationHeader(init.headers) }
         : undefined;
       try {
-        const result = await withTimeout(
+        const result = await withTimeout<T>(
           (signal) =>
             baseApi.request<T>(path, {
               ...retryInit,
@@ -287,7 +320,10 @@ export const api = {
         }
         if (isDev) {
           const duration = Date.now() - startedAt;
-          if (!shouldSuppressDevWarning(path, retryMessage)) {
+          if (
+            !shouldSuppressDevWarning(path, retryMessage) &&
+            shouldLogDevWarning(method, path, retryMessage)
+          ) {
             console.warn(
               `[api] ${method} ${path} retry failed in ${duration}ms: ${retryMessage}`,
             );
@@ -331,7 +367,7 @@ export const api = {
       console.info(`[api] ${method} ${path} start`);
     }
     try {
-      const result = await withTimeout(
+      const result = await withTimeout<ApiRawResult<T>>(
         (signal) =>
           requestRawOnce<T>(path, { ...init, signal: init?.signal ?? signal }),
         init?.signal,
@@ -358,7 +394,7 @@ export const api = {
       const retryInit = init
         ? { ...init, headers: stripAuthorizationHeader(init.headers) }
         : undefined;
-      const retryResult = await withTimeout(
+      const retryResult = await withTimeout<ApiRawResult<T>>(
         (signal) =>
           requestRawOnce<T>(path, {
             ...retryInit,
@@ -387,7 +423,10 @@ export const api = {
       }
       if (isDev) {
         const duration = Date.now() - startedAt;
-        if (!shouldSuppressDevWarning(path, errorMessage)) {
+        if (
+          !shouldSuppressDevWarning(path, errorMessage) &&
+          shouldLogDevWarning(method, path, errorMessage)
+        ) {
           console.warn(
             `[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`,
           );

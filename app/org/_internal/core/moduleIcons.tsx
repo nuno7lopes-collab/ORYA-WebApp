@@ -158,10 +158,19 @@ function IconDefault(props: IconProps) {
 
 function IconToolEventos(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M4 9a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V9z" />
-      <path d="M12 7v10" />
-      <path d="M9 11h6" />
+    <svg viewBox="0 0 120 120" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <g stroke="#F9FAFF" strokeWidth="6.5">
+        <rect x="22" y="24" width="76" height="74" rx="18" />
+        <path d="M38 17v15M82 17v15M22 43h76" />
+        <path d="M40 60h40M40 76h40M60 54v28M76 54v28" />
+      </g>
+      <circle cx="93" cy="56" r="13" fill="#FF7A59" fillOpacity="0.35" />
+      <path
+        d="M93 45.5l3.9 7.9 8.7 1.3-6.3 6.1 1.5 8.7-7.8-4.2-7.8 4.2 1.5-8.7-6.3-6.1 8.7-1.3z"
+        fill="#FFFFFF"
+        stroke="#FF7A59"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }

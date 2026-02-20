@@ -7,6 +7,7 @@ import { sanitizeProfileVisibility } from "@/lib/profileVisibility";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
 type InviteType = "ORGANIZATION_MEMBER" | "CLUB_STAFF" | "TEAM_MEMBER";
 
@@ -301,7 +302,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

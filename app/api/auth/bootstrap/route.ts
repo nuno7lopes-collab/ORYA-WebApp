@@ -9,6 +9,7 @@ import { normalizeProfileAvatarUrl } from "@/lib/profileMedia";
 import { linkPendingWorkforceInvitesToUser } from "@/lib/workforceInvites";
 import { claimIdentity } from "@/lib/ownership/claimIdentity";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type SupabaseUserMetadata = {
   full_name?: string;
   name?: string;
@@ -18,11 +19,11 @@ type SupabaseUserMetadata = {
 
 async function _POST() {
   try {
-    const supabase = await createSupabaseServer();
+    const supabase = await createSupabaseServer({ allowUnverifiedEmail: true });
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_unverified_ok", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, errorCode: "UNAUTHENTICATED", message: "Não autenticado." }, { status: 401 });

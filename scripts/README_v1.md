@@ -16,7 +16,10 @@ node scripts/diagnoseTournamentsMissingEventId.js --format csv --out /tmp/diagno
 Nota sobre TLS (importante):
 
 - Preferido: usar `DATABASE_URL` a apontar para um proxy/endpoint com CA correta (cadeia valida).
-- Ultimo recurso (apenas em sandbox local): `NODE_TLS_REJECT_UNAUTHORIZED=0` para contornar certificados self-signed.
+- Em `npm run dev` / `npm run dev:fast`, TLS inseguro é opt-in explícito:
+  - `ORYA_DEV_INSECURE_TLS=1 npm run dev`
+  - quando ativo, o wrapper define `NODE_TLS_REJECT_UNAUTHORIZED=0` e mostra aviso no arranque.
+- Fora desse opt-in local, evitar `NODE_TLS_REJECT_UNAUTHORIZED=0`.
 
 Exemplo (estrutura do output JSON):
 

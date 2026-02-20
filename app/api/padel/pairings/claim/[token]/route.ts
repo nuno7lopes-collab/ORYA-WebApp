@@ -30,6 +30,7 @@ import { validatePadelCategoryAccess } from "@/domain/padelCategoryAccess";
 import { ensurePadelPlayerProfileId, isPadelClaimWindowExpiredError } from "@/domain/padel/playerProfile";
 import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ensurePlayerProfile = (params: {
   organizationId: number;
   userId: string;
@@ -188,7 +189,7 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

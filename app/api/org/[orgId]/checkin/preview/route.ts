@@ -22,6 +22,7 @@ import { parseQrToken } from "@/lib/qr";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logWarn } from "@/lib/observability/logger";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = { qrToken?: string; eventId?: number };
 
 function hashToken(token: string) {
@@ -93,7 +94,7 @@ async function _POST(req: NextRequest) {
     );
   };
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return fail(401, "Not authenticated");
   }

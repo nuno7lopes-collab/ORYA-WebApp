@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { getRequestContext } from "@/lib/http/requestContext";
-import { requireUser } from "@/lib/auth/requireUser";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { prisma } from "@/lib/prisma";
 import { SourceType, OrganizationMemberRole } from "@prisma/client";
 import { buildAgendaOverlapFilter } from "@/domain/agendaReadModel/overlap";
@@ -174,6 +174,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return respondError(
+        ctx,
+        { errorCode: err.code, message: err.code, retryable: false },
+        { status: err.status ?? 401 },
+      );
+    }
     console.error("[org-hub/groups/dashboard/agenda][GET]", err);
     return respondError(
       ctx,

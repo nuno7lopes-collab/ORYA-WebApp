@@ -1,5 +1,6 @@
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system";
+import * as LegacyFileSystem from "expo-file-system/legacy";
 import { Buffer } from "buffer";
 import UPNG from "upng-js";
 
@@ -189,7 +190,7 @@ const resolveLocalUri = async (uri: string): Promise<string> => {
     const ext = resolveFileExtension(uri);
     const cacheUri = `${baseDir}dominant-color-${hashSeed(uri).toString(36)}${ext}`;
     try {
-      const info = await FileSystem.getInfoAsync(cacheUri);
+      const info = await LegacyFileSystem.getInfoAsync(cacheUri);
       if (info.exists) {
         localUriCache.set(uri, cacheUri);
         return cacheUri;
@@ -197,7 +198,7 @@ const resolveLocalUri = async (uri: string): Promise<string> => {
     } catch {
       // ignore getInfo failures and try download
     }
-    const result = await FileSystem.downloadAsync(uri, cacheUri);
+    const result = await LegacyFileSystem.downloadAsync(uri, cacheUri);
     localUriCache.set(uri, result.uri);
     return result.uri;
   })()
@@ -240,7 +241,7 @@ const extractDominantRgb = async (uri: string): Promise<Rgb> => {
   } catch {
     if (sourceUri !== uri) {
       try {
-        await FileSystem.deleteAsync(sourceUri, { idempotent: true });
+        await LegacyFileSystem.deleteAsync(sourceUri, { idempotent: true });
       } catch {
         // ignore cache cleanup failures
       }
@@ -410,10 +411,10 @@ export const getDominantColor = async (
   if (uriKey && failedAt && Date.now() - failedAt < FAILED_RETRY_MS) {
     const fallback = resolveFailureFallbackRgb(seedKey || key);
     reportDevExtractionStats({ durationMs: 0, usedFallback: true });
-    return { ...fallback, hex: rgbToHex(fallback), source: "fallback" };
+    return { ...fallback, hex: rgbToHex(fallback), source: "fallback" } as DominantColor;
   }
 
-  const promise = (async () => {
+  const promise: Promise<DominantColor> = (async (): Promise<DominantColor> => {
     const startedAt = Date.now();
     try {
       if (!uriKey) throw new Error("NO_URI");
@@ -442,7 +443,7 @@ export const getDominantColor = async (
         console.info(`[imageTint] dominant fallback (${message}) for ${key}`);
       }
       const fallback = resolveFailureFallbackRgb(seedKey || key);
-      return { ...fallback, hex: rgbToHex(fallback), source: "fallback" };
+      return { ...fallback, hex: rgbToHex(fallback), source: "fallback" } as DominantColor;
     } finally {
       colorInflight.delete(key);
     }

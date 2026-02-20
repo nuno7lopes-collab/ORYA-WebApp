@@ -81,6 +81,8 @@ export type CheckoutIntentResponse = {
   clientSecret?: string;
   paymentIntentId?: string;
   purchaseId?: string;
+  stripePublishableKey?: string | null;
+  stripeMode?: "test" | "prod" | string | null;
   paymentScenario?: string;
   breakdown?: CheckoutBreakdown;
   freeCheckout?: boolean;

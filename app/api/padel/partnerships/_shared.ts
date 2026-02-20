@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdStrict } from "@/lib/organizationId";
@@ -35,7 +36,7 @@ export async function ensurePartnershipOrganization(
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return { ok: false, status: 401, error: "UNAUTHENTICATED" };
 
   const orgResolution = resolveOrganizationIdStrict({

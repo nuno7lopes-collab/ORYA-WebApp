@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth/requireUser";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
@@ -95,6 +95,9 @@ async function _GET(req: NextRequest) {
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return fail(err.status ?? 401, err.code);
+    }
     console.error("[organização/inscricoes][GET]", err);
     return fail(500, "INTERNAL_ERROR");
   }
@@ -208,6 +211,9 @@ async function _POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return fail(err.status ?? 401, err.code);
+    }
     console.error("[organização/inscricoes][POST]", err);
     return fail(500, "INTERNAL_ERROR");
   }

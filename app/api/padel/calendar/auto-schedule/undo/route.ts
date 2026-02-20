@@ -13,6 +13,7 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 import { isPadelLockedForReschedule } from "@/domain/padel/liveStatus";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 const sameDate = (a: Date | null, b: Date | null) => {
@@ -30,7 +31,7 @@ async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return { error: "UNAUTHENTICATED" as const, status: 401 };
 
   const parsedOrgId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);

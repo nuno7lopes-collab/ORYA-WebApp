@@ -12,6 +12,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
 const DEFAULT_DELAY_POLICY: DelayPolicy = "CASCADE_SAME_COURT";
@@ -38,7 +39,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

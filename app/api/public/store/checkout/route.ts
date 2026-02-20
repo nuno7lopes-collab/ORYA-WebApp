@@ -23,10 +23,11 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { finalizeFreeStoreCheckout } from "@/domain/finance/freeStoreCheckout";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
-import { getStripeEnv } from "@/lib/stripeKeys";
+import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
 import { buildStorePolicySnapshot, STORE_POLICY_SNAPSHOT_VERSION } from "@/lib/store/policySnapshot";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const CART_SESSION_COOKIE = "orya_store_cart";
 
 const addressSchema = z.object({
@@ -57,34 +58,6 @@ function parseStoreId(req: NextRequest) {
     return { ok: false as const, error: "Store invalida." };
   }
   return { ok: true as const, storeId };
-}
-
-function normalizeStripePublishableKey(value: string | null | undefined) {
-  if (!value) return "";
-  return value.trim();
-}
-
-function resolveCheckoutStripePublishableKey() {
-  const env = getStripeEnv();
-  const live = normalizeStripePublishableKey(
-    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ||
-      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      process.env.STRIPE_PUBLISHABLE_KEY_LIVE ||
-      process.env.STRIPE_PUBLISHABLE_KEY,
-  );
-  const test = normalizeStripePublishableKey(
-    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ||
-      process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      process.env.STRIPE_PUBLISHABLE_KEY_TEST ||
-      process.env.STRIPE_PUBLISHABLE_KEY,
-  );
-  const resolved = env === "test" ? test : live;
-  if (!resolved) return null;
-  if (env === "test" && resolved.startsWith("pk_live")) return null;
-  if (env === "prod" && resolved.startsWith("pk_test")) return null;
-  return resolved;
 }
 
 async function resolveCart(storeId: number, userId: string | null, sessionId: string | null) {
@@ -157,7 +130,8 @@ async function resolveCheckoutAddress(
 
 async function _POST(req: NextRequest) {
   const ctx = getRequestContext(req);
-  const stripePublishableKey = resolveCheckoutStripePublishableKey();
+  const stripeMode = getStripeEnv();
+  const stripePublishableKey = tryGetStripePublishableKeyForEnv(stripeMode);
   const fail = (errorCode: string, message: string, status: number, retryable = false, details?: Record<string, unknown>) =>
     respondError(ctx, { errorCode, message, retryable, ...(details ? { details } : {}) }, { status });
   let lockedCartId: string | null = null;
@@ -245,7 +219,7 @@ async function _POST(req: NextRequest) {
     const idempotencyKeyHeader = req.headers.get("Idempotency-Key");
     const idempotencyKey = (payload.idempotencyKey ?? idempotencyKeyHeader ?? "").trim() || null;
     const supabase = await createSupabaseServer();
-    const { data } = await supabase.auth.getUser();
+    const { data } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
     const userId = data?.user?.id ?? null;
 
     const cookieSession = req.cookies.get(CART_SESSION_COOKIE)?.value ?? null;
@@ -930,6 +904,7 @@ async function _POST(req: NextRequest) {
         status: "PAID",
         final: true,
         ...(stripePublishableKey ? { stripePublishableKey } : {}),
+        stripeMode,
       });
     }
 
@@ -1059,6 +1034,7 @@ async function _POST(req: NextRequest) {
       status: "REQUIRES_ACTION",
       final: false,
       ...(stripePublishableKey ? { stripePublishableKey } : {}),
+      stripeMode: intent.livemode ? "prod" : "test",
     });
   } catch (err) {
     if (createdOrderId) {

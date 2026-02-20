@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/auth/requireUser";
+import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationFormSubmissionStatus } from "@prisma/client";
@@ -109,6 +109,9 @@ async function _GET(req: NextRequest, context: { params: Promise<{ id: string }>
       { status: 200 },
     );
   } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      return jsonWrap({ ok: false, error: err.code }, { status: err.status ?? 401 });
+    }
     console.error("[organização/inscricoes][GET:summary]", err);
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }

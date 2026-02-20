@@ -12,6 +12,7 @@ import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { applyPadelRatingSanction } from "@/domain/padel/ratingEngine";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function parsePositiveInt(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   if (!Number.isFinite(parsed)) return null;
@@ -31,7 +32,7 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

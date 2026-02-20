@@ -10,11 +10,12 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildPadelLiveReadModel } from "@/domain/padel/liveReadModel";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

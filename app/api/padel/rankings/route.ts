@@ -19,6 +19,7 @@ import {
 } from "@/domain/padel/ratingEngine";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 50;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const COUNTED_STATUSES = ["OFFICIAL", "WALKOVER", "RETIRED"] as const;
@@ -45,7 +46,7 @@ async function ensureUser() {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   return user;
 }
 

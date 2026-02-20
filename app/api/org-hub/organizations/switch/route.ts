@@ -7,6 +7,7 @@ import { OrganizationStatus } from "@prisma/client";
 import { setActiveOrganizationForUser } from "@/lib/organizationContext";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const COOKIE_NAME = "orya_organization";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
 
@@ -32,7 +33,7 @@ async function _POST(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

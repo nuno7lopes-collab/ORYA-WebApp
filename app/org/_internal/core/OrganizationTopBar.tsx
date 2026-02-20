@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type SyntheticEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import useSWR from "swr";
@@ -12,7 +13,6 @@ import { NotificationBell } from "@/app/components/notifications/NotificationBel
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationMemberRole } from "@prisma/client";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
-import { ModuleIcon } from "@/app/org/_internal/core/moduleIcons";
 import { normalizeOrganizationPathname, resolveOrganizationTool, type OrgToolKey } from "@/app/org/_internal/core/topbarRouteUtils";
 import { buildOrgHref, buildOrgHubHref } from "@/lib/organizationIdUtils";
 import EventsSubnav from "@/app/org/_components/subnav/EventsSubnav";
@@ -89,40 +89,44 @@ type OrganizationMeResponse = {
   paymentsMode?: "CONNECT" | "PLATFORM";
 };
 
-const TOOL_META: Record<OrgToolKey, { label: string; moduleKey: string | null }> = {
-  dashboard: { label: "Painel", moduleKey: null },
-  events: { label: "Eventos", moduleKey: "EVENTOS" },
-  bookings: { label: "Reservas", moduleKey: "RESERVAS" },
-  calendar: { label: "Calendário", moduleKey: "RESERVAS" },
-  "check-in": { label: "Check-in", moduleKey: "CHECKIN" },
-  policies: { label: "Políticas", moduleKey: "DEFINICOES" },
-  finance: { label: "Finanças", moduleKey: "FINANCEIRO" },
-  analytics: { label: "Análises", moduleKey: "ANALYTICS" },
-  crm: { label: "CRM", moduleKey: "CRM" },
-  store: { label: "Loja", moduleKey: "LOJA" },
-  forms: { label: "Formulários", moduleKey: "INSCRICOES" },
-  chat: { label: "Chat interno", moduleKey: "MENSAGENS" },
-  team: { label: "Equipa", moduleKey: "STAFF" },
-  "padel-club": { label: "Gestão de Clube Padel", moduleKey: "TORNEIOS" },
-  "padel-tournaments": { label: "Torneios de Padel", moduleKey: "TORNEIOS" },
-  marketing: { label: "Promoções", moduleKey: "MARKETING" },
-  settings: { label: "Definições", moduleKey: "DEFINICOES" },
+const TOOL_META: Record<OrgToolKey, { label: string }> = {
+  dashboard: { label: "Painel" },
+  events: { label: "Eventos" },
+  bookings: { label: "Reservas" },
+  calendar: { label: "Calendário" },
+  "check-in": { label: "Check-in" },
+  policies: { label: "Políticas" },
+  finance: { label: "Finanças" },
+  analytics: { label: "Análises" },
+  crm: { label: "CRM" },
+  store: { label: "Loja" },
+  forms: { label: "Formulários" },
+  chat: { label: "Mensagens" },
+  team: { label: "Equipa" },
+  "padel-club": { label: "Gestão de Clube Padel" },
+  "padel-tournaments": { label: "Torneios de Padel" },
+  marketing: { label: "Marketing" },
+  settings: { label: "Definições" },
 };
 
-const MODULE_ICON_GRADIENTS: Record<string, string> = {
-  EVENTOS: "from-[#FF7AD1]/45 via-[#7FE0FF]/35 to-[#6A7BFF]/45",
-  RESERVAS: "from-[#6BFFFF]/40 via-[#6A7BFF]/30 to-[#0EA5E9]/40",
-  TORNEIOS: "from-[#F59E0B]/35 via-[#FF7AD1]/35 to-[#6A7BFF]/35",
-  CHECKIN: "from-[#22D3EE]/35 via-[#60A5FA]/30 to-[#A78BFA]/35",
-  INSCRICOES: "from-[#34D399]/35 via-[#6BFFFF]/30 to-[#7FE0FF]/35",
-  MENSAGENS: "from-[#A78BFA]/35 via-[#7FE0FF]/30 to-[#34D399]/35",
-  STAFF: "from-[#60A5FA]/35 via-[#7FE0FF]/30 to-[#F59E0B]/35",
-  FINANCEIRO: "from-[#F97316]/35 via-[#F59E0B]/30 to-[#FF7AD1]/35",
-  ANALYTICS: "from-[#22D3EE]/35 via-[#6A7BFF]/30 to-[#A78BFA]/35",
-  CRM: "from-[#F97316]/35 via-[#38BDF8]/30 to-[#22D3EE]/35",
-  MARKETING: "from-[#FF7AD1]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
-  LOJA: "from-[#F97316]/35 via-[#FB7185]/30 to-[#F59E0B]/35",
-  DEFINICOES: "from-[#94A3B8]/35 via-[#64748B]/25 to-[#94A3B8]/35",
+const TOPBAR_CUSTOM_ICON_BY_TOOL: Record<OrgToolKey, string | null> = {
+  dashboard: null,
+  events: "/icons/tools/eventos.png",
+  bookings: "/icons/tools/reservas.png",
+  calendar: "/icons/tools/calendario.png",
+  "check-in": "/icons/tools/checkin.png",
+  policies: "/icons/tools/politicas.png",
+  finance: "/icons/tools/financas.png",
+  analytics: "/icons/tools/analises.png",
+  crm: "/icons/tools/crm.png",
+  store: "/icons/tools/loja.png",
+  forms: "/icons/tools/formularios.png",
+  chat: "/icons/tools/mensagens.png",
+  team: "/icons/tools/equipa.png",
+  "padel-club": "/icons/tools/padel-club.png",
+  "padel-tournaments": "/icons/tools/padel-tournaments.png",
+  marketing: "/icons/tools/marketing.png",
+  settings: "/icons/tools/definicoes.png",
 };
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -162,9 +166,7 @@ export default function OrganizationTopBar({
     [normalizedPathname],
   );
   const currentApp = TOOL_META[activeTool] ?? TOOL_META.dashboard;
-  const currentIconGradient = currentApp.moduleKey
-    ? MODULE_ICON_GRADIENTS[currentApp.moduleKey] ?? "from-white/15 via-white/5 to-white/10"
-    : null;
+  const currentAppIcon = TOPBAR_CUSTOM_ICON_BY_TOOL[activeTool] ?? null;
   const resolvedToolSubnav = useMemo(() => {
     const orgId = activeOrg?.id ?? null;
     if (!orgId || activeTool === "dashboard") return null;
@@ -477,20 +479,15 @@ export default function OrganizationTopBar({
           <div className="flex min-w-0 items-center gap-2">
             <Link
               href={dashboardHref}
-              className="group flex h-10 min-w-0 shrink-0 items-center gap-2 rounded-full border border-white/22 bg-black/25 px-3 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
+              className="group flex h-10 min-w-0 shrink-0 items-center gap-2.5 rounded-full border border-white/22 bg-black/25 px-3.5 text-sm text-white shadow-[0_12px_38px_rgba(0,0,0,0.36)] transition hover:border-[#22D3EE]/45 hover:bg-[#22D3EE]/12"
               aria-label={`Voltar ao painel (${currentApp.label})`}
             >
-              {currentApp.moduleKey ? (
-                <span
-                  className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-full border border-white/22 text-white",
-                    currentIconGradient ? `bg-gradient-to-br ${currentIconGradient}` : "bg-white/10",
-                  )}
-                >
-                  <ModuleIcon moduleKey={currentApp.moduleKey} className="h-4 w-4" aria-hidden="true" />
+              {currentAppIcon ? (
+                <span className="relative h-7 w-7 shrink-0 overflow-hidden">
+                  <Image src={currentAppIcon} alt="" fill sizes="28px" className="object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.35)]" aria-hidden="true" />
                 </span>
               ) : null}
-              <span className="max-w-[180px] truncate text-[13px] font-semibold text-white">
+              <span className="max-w-[190px] truncate text-[13px] font-semibold tracking-[0.01em] text-white">
                 {currentApp.label}
               </span>
             </Link>

@@ -6,6 +6,7 @@ import { isSameOriginOrApp } from "@/lib/auth/requestValidation";
 import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET(req: NextRequest) {
   try {
     if (!isSameOriginOrApp(req)) {
@@ -39,7 +40,7 @@ async function _GET(req: NextRequest) {
     let allowReservedForEmail: string | null = null;
     try {
       const supabase = await createSupabaseServer();
-      const { data } = await supabase.auth.getUser();
+      const { data } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
       if (ownerType !== "organization") {
         allowReservedForEmail = data?.user?.email ?? null;
       }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isUnauthenticatedError } from "@/lib/security";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type PushTokenBody = {
   token?: string;
   platform?: "ios";
@@ -13,7 +14,7 @@ type PushTokenBody = {
 async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     if (error || !data?.user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
     }

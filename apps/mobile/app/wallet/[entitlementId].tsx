@@ -30,6 +30,7 @@ import { acceptInvite, declineInvite } from "../../features/tournaments/api";
 import { useMessageInvites, useMessagesInbox } from "../../features/messages/hooks";
 import { acceptMessageInvite } from "../../features/messages/api";
 import * as FileSystem from "expo-file-system";
+import * as LegacyFileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
 const WALLET_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
@@ -283,7 +284,7 @@ export default function WalletDetailScreen() {
         return;
       }
       const fileUri = `${baseDir}orya-${data?.entitlementId}.pkpass`;
-      const result = await FileSystem.downloadAsync(passUrl, fileUri, {
+      const result = await LegacyFileSystem.downloadAsync(passUrl, fileUri, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },

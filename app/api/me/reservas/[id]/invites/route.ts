@@ -187,7 +187,7 @@ async function _POST(
         const message = typeof invite?.message === "string" ? invite.message.trim() : "";
         return { contact, name, message };
       })
-      .filter((invite) => invite.contact.length >= 3);
+      .filter((invite: NormalizedInvite) => invite.contact.length >= 3);
 
     if (invites.length === 0) {
       return fail(422, "Contactos inválidos.");

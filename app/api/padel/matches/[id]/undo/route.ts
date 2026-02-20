@@ -12,6 +12,7 @@ import { extractBracketPrefix, sortRoundsBySize } from "@/domain/padel/knockoutA
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const UNDO_WINDOW_MS = 60 * 1000;
 const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
@@ -38,7 +39,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

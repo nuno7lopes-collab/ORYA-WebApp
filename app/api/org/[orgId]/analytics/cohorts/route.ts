@@ -9,6 +9,7 @@ import { EventTemplateType, OrganizationModule, SaleSummaryStatus } from "@prism
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { Prisma } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type CohortRetentionRow = {
   monthOffset: number;
   retainedBuyers: number;
@@ -110,7 +111,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

@@ -24,6 +24,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { enqueueOperation } from "@/lib/operations/enqueue";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type ClaimInput = {
   resourceType: AgendaResourceClaimType;
   resourceId: string;
@@ -334,7 +335,7 @@ async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return { ok: false as const, status: 401, error: "UNAUTHENTICATED" };
 
   const organizationId = resolveOrganizationIdFromParams(req.nextUrl.searchParams);

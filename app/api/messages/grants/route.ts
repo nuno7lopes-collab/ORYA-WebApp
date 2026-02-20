@@ -9,6 +9,7 @@ import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scope";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 type GrantListItem = {
   id: string;
@@ -267,7 +268,7 @@ async function buildB2CGrantVisibility(userId: string, email: string | null) {
   } satisfies Prisma.ChatAccessGrantWhereInput;
 }
 
-export async function GET(req: NextRequest) {
+async function _GET(req: NextRequest) {
   try {
     const mobileGate = enforceB2CMobileOnly(req);
     if (mobileGate) return mobileGate;
@@ -336,3 +337,5 @@ export async function GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const GET = withApiEnvelope(_GET);

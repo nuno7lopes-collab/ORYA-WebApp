@@ -31,6 +31,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function errorCodeForStatus(status: number) {
   if (status === 401) return "UNAUTHENTICATED";
   if (status === 403) return "FORBIDDEN";
@@ -153,7 +154,7 @@ async function _GET(req: NextRequest) {
   };
   try {
     const supabase = await createSupabaseServer();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const { data: { user }, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     if (!user || error) {
       return respondError(
         ctx,
@@ -426,7 +427,7 @@ async function _PATCH(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (!user || error) {
       return fail(401, "Não autenticado.");

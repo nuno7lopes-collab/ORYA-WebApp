@@ -8,6 +8,7 @@ import { parseOrganizationId } from "@/lib/organizationId";
 import { isOrganizationFollowed } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET(req: NextRequest) {
   const organizationId = parseOrganizationId(req.nextUrl.searchParams.get("organizationId"));
   if (!organizationId) {
@@ -17,7 +18,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const organization = await prisma.organization.findFirst({

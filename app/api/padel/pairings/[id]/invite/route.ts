@@ -13,6 +13,7 @@ import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const pairingSelect = {
   id: true,
   organizationId: true,
@@ -44,7 +45,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

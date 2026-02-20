@@ -16,6 +16,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_EXPIRATION_MS = 1000 * 60 * 60 * 24; // 24h
 const STATUS_PENDING = "PENDING";
 const STATUS_CANCELLED = "CANCELLED";
@@ -159,7 +160,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(401, "UNAUTHENTICATED");
@@ -215,7 +216,7 @@ async function _POST(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(401, "UNAUTHENTICATED");
@@ -361,7 +362,7 @@ async function _DELETE(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return fail(401, "UNAUTHENTICATED");

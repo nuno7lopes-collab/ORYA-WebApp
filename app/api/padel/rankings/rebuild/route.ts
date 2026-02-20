@@ -10,11 +10,12 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { rebuildPadelRatingsForEvent } from "@/domain/padel/ratingEngine";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

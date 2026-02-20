@@ -613,8 +613,8 @@ export default function MinhasReservasPage() {
       if (!res.ok || !json?.ok) {
         throw new Error(json?.message || json?.error || "Erro ao carregar convites.");
       }
-      const inviteItems = Array.isArray(json?.data?.items)
-        ? json.data.items.map((invite: any) => ({
+      const inviteItems: BookingInviteItem[] = Array.isArray(json?.data?.items)
+        ? json.data.items.map((invite: any): BookingInviteItem => ({
             id: invite.id,
             token: invite.token,
             targetName: invite.targetName ?? null,
@@ -665,7 +665,7 @@ export default function MinhasReservasPage() {
       const split = splitJson?.data?.split ?? null;
       const baseTotal = split?.baseTotalCents ?? booking.price ?? 0;
       const paidCents = split?.paidCents ?? 0;
-      const participants: SplitParticipantForm[] = inviteItems.map((invite) => {
+      const participants: SplitParticipantForm[] = inviteItems.map((invite: BookingInviteItem) => {
         const label = invite.targetName || invite.targetContact || "Convidado";
         const splitParticipant = split?.participants?.find((item: any) => item.inviteId === invite.id);
         const baseShare = splitParticipant?.baseShareCents ?? 0;

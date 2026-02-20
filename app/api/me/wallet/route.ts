@@ -11,6 +11,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 import { isWalletPassEnabled } from "@/lib/wallet/pass";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_PAGE = 50;
 
 type CursorPayload = { snapshotStartAt: string; entitlementId: string };
@@ -40,12 +41,13 @@ function hashToken(token: string) {
 async function _GET(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     if (error || !data?.user) {
       return jsonWrap({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const userId = data.user.id;
+    const user = data.user;
+    const userId = user.id;
     const profile = await prisma.profile.findUnique({
       where: { id: userId },
       select: { roles: true },
@@ -245,7 +247,7 @@ async function _GET(req: NextRequest) {
           checkins: entitlementCheckins,
           checkinWindow,
           outsideWindow,
-          emailVerified: Boolean(data.user.email_confirmed_at),
+          emailVerified: Boolean(user.email_confirmed_at),
           isGuestOwner: false,
         });
         const passAvailable =

@@ -12,6 +12,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 import { dailyWindowsToIntervals, deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
 const parseNumber = (value: unknown) => {
@@ -36,7 +37,7 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 

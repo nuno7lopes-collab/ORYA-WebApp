@@ -9,9 +9,10 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET(_req: NextRequest) {
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const organizationId = resolveOrganizationIdFromRequest(_req);

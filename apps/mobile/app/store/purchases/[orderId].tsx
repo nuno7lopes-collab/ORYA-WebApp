@@ -12,6 +12,7 @@ import { getStoreErrorMessage } from "../../../features/store/errors";
 import { useStorePurchase, useStoreReceiptMutation } from "../../../features/store/hooks";
 import { getMobileEnv } from "../../../lib/env";
 import * as FileSystem from "expo-file-system";
+import * as LegacyFileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { safePush } from "../../../lib/navigation";
 
@@ -76,7 +77,7 @@ export default function StorePurchaseDetailScreen() {
       if (!baseDir) throw new Error("Não foi possível preparar o ficheiro da fatura.");
       const output = `${baseDir}store-invoice-${orderId}.pdf`;
 
-      const result = await FileSystem.downloadAsync(url, output, {
+      const result = await LegacyFileSystem.downloadAsync(url, output, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },

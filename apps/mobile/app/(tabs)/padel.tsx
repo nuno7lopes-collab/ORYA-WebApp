@@ -30,7 +30,7 @@ import { useAuth } from "../../lib/auth";
 import { useAgoraFeed } from "../../features/agora/hooks";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useIpLocation } from "../../features/onboarding/hooks";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 
 type ClubCard = {
   key: string;

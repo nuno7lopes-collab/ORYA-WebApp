@@ -11,6 +11,7 @@ import {
 import { NON_HIDEABLE_DASHBOARD_TOOL_IDS } from "@/lib/organizationDashboardTools";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const NON_HIDEABLE_TOOL_IDS = Array.from(NON_HIDEABLE_DASHBOARD_TOOL_IDS).sort();
 
 const canEditDashboardVisibility = (role: string | null | undefined) =>
@@ -21,7 +22,7 @@ async function resolveOrgAccess(req: NextRequest) {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return { ok: false as const, status: 401, error: "UNAUTHENTICATED" };

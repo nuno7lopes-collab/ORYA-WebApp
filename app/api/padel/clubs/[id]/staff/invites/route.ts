@@ -16,6 +16,7 @@ import { normalizeEmail } from "@/lib/utils/email";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { PADEL_CLUB_STAFF_ROLES, normalizePadelClubStaffRole } from "@/lib/padel/clubStaffRole";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const INVITE_EXPIRY_DAYS = 14;
 
 type InviteStatus = "PENDING" | "EXPIRED" | "ACCEPTED" | "DECLINED" | "CANCELLED";
@@ -83,7 +84,7 @@ async function resolveContext(req: NextRequest, clubId: number) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return { ok: false as const, response: jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 }) };
 
   const orgResolution = resolveOrganizationIdStrict({ req, allowFallback: false });

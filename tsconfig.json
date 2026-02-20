@@ -49,6 +49,19 @@
   ],
   "exclude": [
     "node_modules",
-    ".next"
+    "**/node_modules",
+    ".next",
+    "**/.next",
+    "apps/mobile/dist",
+    "apps/mobile/__tests__",
+    "dist",
+    "coverage",
+    "output",
+    "tmp",
+    "tests",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }

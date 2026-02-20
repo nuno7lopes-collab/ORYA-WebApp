@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tokens, useTranslation } from "@orya/shared";
+import { useTranslation } from "@orya/shared";
 import { Ionicons } from "../../icons/Ionicons";
 import type { TicketCtaState } from "../../../features/events/detailState";
 
@@ -50,6 +50,8 @@ export function StickyPurchaseBar({
   const iconName = resolveCtaIconName(ctaState);
   const safeLabel = ctaLabel?.trim() || t("events:tickets.cta.state.ready");
   const iconColor = isReady ? "#0A1018" : "#EAF63A";
+  const ctaMinWidth = isUltraCompact ? 118 : isCompact ? 132 : isLarge ? 172 : 156;
+  const ctaMaxWidth = isUltraCompact ? 148 : isCompact ? 170 : isLarge ? 210 : 188;
 
   return (
     <View style={[styles.wrapper, { paddingBottom: insets.bottom + 12 }]}>
@@ -98,10 +100,10 @@ export function StickyPurchaseBar({
                 {priceLabel}
               </Text>
             </View>
-            <View style={styles.divider} />
             <View
               style={[
                 styles.ctaChip,
+                { minWidth: ctaMinWidth, maxWidth: ctaMaxWidth },
                 isLarge ? styles.ctaChipLarge : null,
                 isCompact ? styles.ctaChipCompact : null,
                 isUltraCompact ? styles.ctaChipUltraCompact : null,
@@ -164,7 +166,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    paddingTop: 22,
+    paddingTop: 18,
   },
   contentWrap: {
     paddingHorizontal: 20,
@@ -173,9 +175,9 @@ const styles = StyleSheet.create({
   content: {
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.14)",
-    borderRadius: 22,
-    backgroundColor: "rgba(10, 15, 25, 0.82)",
-    padding: 10,
+    borderRadius: 20,
+    backgroundColor: "rgba(9, 14, 24, 0.88)",
+    padding: 8,
     shadowColor: "rgba(0,0,0,0.6)",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.22,
@@ -184,26 +186,28 @@ const styles = StyleSheet.create({
   },
   ctaRow: {
     width: "100%",
-    minHeight: tokens.layout.touchTarget,
+    minHeight: 56,
     borderRadius: 16,
     flexDirection: "row",
     flexWrap: "nowrap",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    backgroundColor: "rgba(8,13,20,0.48)",
+    paddingVertical: 5,
+    paddingHorizontal: 5,
+    backgroundColor: "rgba(8,13,20,0.58)",
     borderWidth: 1,
     borderColor: "rgba(220,238,255,0.18)",
     overflow: "hidden",
+    gap: 8,
   },
   ctaRowCompact: {
-    paddingVertical: 3,
-    paddingHorizontal: 3,
+    minHeight: 52,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   ctaRowLarge: {
-    minHeight: 54,
-    paddingVertical: 5,
+    minHeight: 58,
+    paddingVertical: 6,
     paddingHorizontal: 5,
   },
   ctaRowDisabled: {
@@ -215,13 +219,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     alignItems: "flex-start",
+    justifyContent: "center",
   },
   priceWrapCompact: {
-    paddingHorizontal: 10,
-    maxWidth: "46%",
+    paddingHorizontal: 9,
   },
   priceWrapLarge: {
-    maxWidth: "52%",
     paddingHorizontal: 14,
   },
   price: {
@@ -239,42 +242,24 @@ const styles = StyleSheet.create({
   priceLarge: {
     fontSize: 20,
   },
-  divider: {
-    width: 1,
-    alignSelf: "stretch",
-    marginVertical: 4,
-    backgroundColor: "rgba(228,241,255,0.2)",
-  },
   ctaChip: {
     minHeight: 44,
-    minWidth: 162,
-    maxWidth: 190,
     borderRadius: 14,
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
-    flexShrink: 1,
+    flexShrink: 0,
   },
   ctaChipCompact: {
-    minWidth: 138,
-    maxWidth: 174,
-    paddingHorizontal: 12,
-    marginRight: 8,
+    paddingHorizontal: 10,
   },
   ctaChipUltraCompact: {
-    minWidth: 124,
-    maxWidth: 160,
-    paddingHorizontal: 10,
-    marginRight: 6,
+    paddingHorizontal: 8,
   },
   ctaChipLarge: {
-    minWidth: 176,
-    maxWidth: 206,
     paddingHorizontal: 16,
-    marginRight: 11,
   },
   ctaChipReady: {
     backgroundColor: "#EAF63A",
@@ -293,6 +278,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0.2,
     flexShrink: 1,
+    minWidth: 0,
   },
   buttonTextCompact: {
     fontSize: 14,
@@ -307,7 +293,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 7,
     minWidth: 0,
   },
   loadingWrap: {

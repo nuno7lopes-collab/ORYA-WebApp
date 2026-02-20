@@ -10,6 +10,7 @@ const TECHNICAL_ERROR_CODES = new Set([
 ]);
 
 const FUNCTIONAL_ERROR_MESSAGES: Record<string, string> = {
+  EMAIL_NOT_VERIFIED: "Confirma o teu email para continuar.",
   AUTO_SCHEDULE_INFEASIBLE: "Auto-agendamento inviável para os critérios selecionados.",
   NO_COURTS_CONFIGURED: "Não existem campos configurados para este torneio.",
   INVALID_DATE_RANGE: "Janela temporal inválida.",

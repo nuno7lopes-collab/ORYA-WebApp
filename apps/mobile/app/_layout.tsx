@@ -56,6 +56,7 @@ const installWarnFilter = () => {
 installWarnFilter();
 
 LogBox.ignoreLogs([
+  "SafeAreaView",
   "SafeAreaView has been deprecated",
   "SafeAreaView has been deprecated and will be removed in a future release",
   "SafeAreaView is deprecated",

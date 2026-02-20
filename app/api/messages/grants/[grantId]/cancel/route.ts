@@ -7,6 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { enforceB2CMobileOnly } from "@/app/api/messages/_scope";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function canAccessEventGrant(params: {
   userId: string;
@@ -37,7 +38,7 @@ async function canAccessEventGrant(params: {
   return Boolean(entitlement);
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   context: { params: Promise<{ grantId: string }> | { grantId: string } },
 ) {
@@ -124,3 +125,5 @@ export async function POST(
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const POST = withApiEnvelope(_POST);

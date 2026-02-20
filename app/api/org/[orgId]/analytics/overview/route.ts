@@ -13,6 +13,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { Prisma } from "@prisma/client";
 import { PUBLIC_EVENT_DISCOVER_STATUSES } from "@/domain/events/publicStatus";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const LISBON_TZ = "Europe/Lisbon";
 
 function toUtcDate(value: Date) {
@@ -92,7 +93,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error: authError,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (authError) {
       console.error("[organização/overview] Erro ao obter user:", authError);

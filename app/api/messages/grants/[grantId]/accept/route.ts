@@ -10,6 +10,7 @@ import { enforceB2CMobileOnly, getMessagesScope } from "@/app/api/messages/_scop
 import { ChatContextError, requireChatContext } from "@/lib/chat/context";
 import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/access";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 function buildDmContextId(userA: string, userB: string) {
   return [userA, userB].sort().join(":");
@@ -262,7 +263,7 @@ async function ensureOrgOrServiceConversation(params: {
   }
 }
 
-export async function POST(
+async function _POST(
   req: NextRequest,
   context: { params: Promise<{ grantId: string }> | { grantId: string } },
 ) {
@@ -693,3 +694,5 @@ export async function POST(
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const POST = withApiEnvelope(_POST);

@@ -10,6 +10,7 @@ import PDFDocument from "pdfkit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { OrganizationModule } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const pairingLabel = (
   slots?: Array<{ playerProfile?: { displayName?: string | null; fullName?: string | null } | null }>,
 ) => {
@@ -151,7 +152,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));

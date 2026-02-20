@@ -9,7 +9,11 @@ import {
 } from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
-import { useStripe, isPlatformPaySupported } from "@stripe/stripe-react-native";
+import {
+  initStripe,
+  isPlatformPaySupported,
+  useStripe,
+} from "@stripe/stripe-react-native";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassPill } from "../../components/liquid/GlassPill";
@@ -33,7 +37,13 @@ import { safeBack, safePush } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
 import { api, ApiError } from "../../lib/api";
-import { buildReturnUrl } from "../../lib/deeplink";
+import { buildReturnUrl, resolveAppScheme } from "../../lib/deeplink";
+import {
+  detectStripeModeFromPublishableKey,
+  normalizeStripeMode,
+  resolveStripeRuntimeKey,
+  stripeModeLabel,
+} from "../../lib/stripeRuntime";
 
 const formatMoney = (
   cents: number | null | undefined,
@@ -86,12 +96,20 @@ const isCheckoutBlockedCode = (code: string | null) =>
   Boolean(code && CHECKOUT_BLOCKED_CODES.has(code));
 
 const CHECKOUT_CONFIG_ERROR =
-  "Pagamentos indisponíveis neste momento. A chave Stripe da app não está configurada.";
+  "Pagamentos indisponíveis neste momento. Falta configuração Stripe.";
+const CHECKOUT_MBWAY_UNAVAILABLE_ERROR =
+  "MBWay não está disponível no checkout in-app. Usa Cartão nesta versão da app.";
 const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
 const BOOKING_POLL_INTERVAL_MS = 1200;
 const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS = 1500;
 const CHECKOUT_POLL_INTERVAL_PENDING_MS = 4000;
 const CHECKOUT_SETTLEMENT_POLL_MS = 1200;
+
+const buildStripeModeMismatchMessage = (
+  expected: "test" | "prod",
+  actual: "test" | "prod" | null,
+) =>
+  `Configuração Stripe inconsistente: servidor em ${stripeModeLabel(expected)} e app em ${stripeModeLabel(actual)}.`;
 
 const isPaymentSettled = (status?: string | null) =>
   status === "PAID" || status === "SUCCEEDED";
@@ -135,6 +153,7 @@ export default function CheckoutScreen() {
   const env = getMobileEnv();
   const stripeKey = env.stripePublishableKey ?? "";
   const merchantId = env.appleMerchantId ?? null;
+  const appScheme = useMemo(() => resolveAppScheme(), []);
   const [applePaySupported, setApplePaySupported] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +170,7 @@ export default function CheckoutScreen() {
   >(null);
   const [checkoutPollingTimedOut, setCheckoutPollingTimedOut] = useState(false);
   const recoveredTrackedRef = useRef(false);
+  const statusCheckInFlightRef = useRef<Promise<CheckoutStatusResponse | null> | null>(null);
   const returnUrl = useMemo(() => buildReturnUrl("checkout/success"), []);
 
   const draft = useCheckoutStore((state) => state.draft);
@@ -201,10 +221,15 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
+  const allowMbwayInApp = false;
   const selectedMethod =
     draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
   const resolvedMethod =
-    !allowApplePay && selectedMethod === "apple_pay" ? "card" : selectedMethod;
+    !allowApplePay && selectedMethod === "apple_pay"
+      ? "card"
+      : !allowMbwayInApp && selectedMethod === "mbway"
+        ? "card"
+        : selectedMethod;
 
   const checkoutItems = useMemo(() => {
     if (!draft) return [];
@@ -267,10 +292,28 @@ export default function CheckoutScreen() {
         ? `${checkoutItems.length} tipos de bilhete`
         : (draft?.ticketName ?? checkoutItems[0]?.ticketName ?? "Bilhete");
   const showPaymentMethods = Boolean(draft) && !isFreeCheckout;
-  const missingStripeConfig = Boolean(draft && !isFreeCheckout && !stripeKey);
-  const canPay = Boolean(
-    draft && session?.user?.id && (stripeKey || isFreeCheckout),
+  const canPay = Boolean(draft && session?.user?.id);
+  const currentCheckoutStatus = checkoutStatus?.status ?? null;
+  const isStatusPolling = isCheckoutPollingState(currentCheckoutStatus);
+  const isSettled = isPaymentSettled(currentCheckoutStatus);
+  const hasRetryableFailure = Boolean(
+    currentCheckoutStatus &&
+      ["FAILED", "CANCELED", "CANCELLED", "EXPIRED"].includes(currentCheckoutStatus),
   );
+  const payButtonVisible =
+    !isSettled &&
+    (!currentCheckoutStatus ||
+      currentCheckoutStatus === "REQUIRES_ACTION" ||
+      hasRetryableFailure);
+  const payButtonDisabled =
+    !canPay || processing || checkingStatus || bookingChecking || isStatusPolling;
+  const payButtonLabel = isStatusPolling
+    ? "A confirmar pagamento..."
+    : hasRetryableFailure
+      ? "Tentar novamente"
+      : effectiveTotalCents <= 0
+        ? "Confirmar inscrição"
+        : "Pagar agora";
   const openAuth = useCallback(() => {
     safePush(router, { pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
@@ -337,6 +380,14 @@ export default function CheckoutScreen() {
     recoveredTrackedRef.current = false;
   }, [draft?.paymentMethod]);
 
+  useEffect(() => {
+    if (!draft?.paymentMethod) return;
+    if (!allowMbwayInApp && draft.paymentMethod === "mbway") {
+      setPaymentMethod("card");
+      setError(CHECKOUT_MBWAY_UNAVAILABLE_ERROR);
+    }
+  }, [allowMbwayInApp, draft?.paymentMethod, setPaymentMethod]);
+
   const applyCheckoutStatus = useCallback((status: CheckoutStatusResponse) => {
     setCheckoutStatus(status);
     setError(null);
@@ -354,26 +405,39 @@ export default function CheckoutScreen() {
       purchaseId?: string | null;
       paymentIntentId?: string | null;
     }) => {
-      if (!draft) return null;
-      const purchaseId = params?.purchaseId ?? draft.purchaseId ?? null;
-      const paymentIntentId =
-        params?.paymentIntentId ?? draft.paymentIntentId ?? null;
-      if (!purchaseId && !paymentIntentId) return null;
-      setCheckingStatus(true);
+      if (statusCheckInFlightRef.current) {
+        return statusCheckInFlightRef.current;
+      }
+      const task = (async () => {
+        if (!draft) return null;
+        const purchaseId = params?.purchaseId ?? draft.purchaseId ?? null;
+        const paymentIntentId =
+          params?.paymentIntentId ?? draft.paymentIntentId ?? null;
+        if (!purchaseId && !paymentIntentId) return null;
+        setCheckingStatus(true);
+        try {
+          const status = await fetchCheckoutStatus({
+            purchaseId,
+            paymentIntentId,
+          });
+          applyCheckoutStatus(status);
+          return status;
+        } catch (err: any) {
+          setError(
+            getUserFacingError(err, "Não foi possível verificar o pagamento."),
+          );
+          return null;
+        } finally {
+          setCheckingStatus(false);
+        }
+      })();
+      statusCheckInFlightRef.current = task;
       try {
-        const status = await fetchCheckoutStatus({
-          purchaseId,
-          paymentIntentId,
-        });
-        applyCheckoutStatus(status);
-        return status;
-      } catch (err: any) {
-        setError(
-          getUserFacingError(err, "Não foi possível verificar o pagamento."),
-        );
-        return null;
+        return await task;
       } finally {
-        setCheckingStatus(false);
+        if (statusCheckInFlightRef.current === task) {
+          statusCheckInFlightRef.current = null;
+        }
       }
     },
     [applyCheckoutStatus, draft],
@@ -551,8 +615,8 @@ export default function CheckoutScreen() {
       openAuth();
       return;
     }
-    if (!stripeKey && !isFreeCheckout) {
-      setError(CHECKOUT_CONFIG_ERROR);
+    if (resolvedMethod === "mbway") {
+      setError(CHECKOUT_MBWAY_UNAVAILABLE_ERROR);
       return;
     }
 
@@ -575,6 +639,8 @@ export default function CheckoutScreen() {
       let clientSecret = draft.clientSecret ?? null;
       let purchaseId = draft.purchaseId ?? null;
       let paymentIntentId = draft.paymentIntentId ?? null;
+      let checkoutStripePublishableKey: string | null = null;
+      let checkoutStripeMode: "test" | "prod" | null = null;
 
       if (needsNewIntent) {
         const idempotencyKey =
@@ -593,6 +659,8 @@ export default function CheckoutScreen() {
             freeCheckout?: boolean;
             amountCents?: number | null;
             currency?: string | null;
+            stripePublishableKey?: string | null;
+            stripeMode?: string | null;
             message?: string;
             error?: string;
           }>(`/api/servicos/${draft.serviceId}/checkout`, {
@@ -614,7 +682,13 @@ export default function CheckoutScreen() {
             );
           }
           clientSecret = json.clientSecret ?? null;
+          purchaseId = json.purchaseId ?? null;
           paymentIntentId = json.paymentIntentId ?? null;
+          checkoutStripePublishableKey =
+            typeof json.stripePublishableKey === "string"
+              ? json.stripePublishableKey
+              : null;
+          checkoutStripeMode = normalizeStripeMode(json.stripeMode);
           setIntent({
             clientSecret,
             paymentIntentId,
@@ -679,6 +753,11 @@ export default function CheckoutScreen() {
           clientSecret = response.clientSecret ?? null;
           purchaseId = response.purchaseId ?? null;
           paymentIntentId = response.paymentIntentId ?? null;
+          checkoutStripePublishableKey =
+            typeof response.stripePublishableKey === "string"
+              ? response.stripePublishableKey
+              : null;
+          checkoutStripeMode = normalizeStripeMode(response.stripeMode);
           setIntent({
             clientSecret,
             paymentIntentId,
@@ -706,6 +785,42 @@ export default function CheckoutScreen() {
         return;
       }
 
+      const runtimeStripeKey = resolveStripeRuntimeKey({
+        runtimePublishableKey: checkoutStripePublishableKey,
+        fallbackPublishableKey: stripeKey,
+      });
+      if (!runtimeStripeKey) {
+        setError(CHECKOUT_CONFIG_ERROR);
+        setProcessing(false);
+        return;
+      }
+      const runtimeStripeKeyMode =
+        detectStripeModeFromPublishableKey(runtimeStripeKey);
+      if (
+        checkoutStripeMode &&
+        runtimeStripeKeyMode &&
+        checkoutStripeMode !== runtimeStripeKeyMode
+      ) {
+        const mismatchMessage = buildStripeModeMismatchMessage(
+          checkoutStripeMode,
+          runtimeStripeKeyMode,
+        );
+        setError(mismatchMessage);
+        trackEvent("checkout_payment_blocked", {
+          sourceType: draft.sourceType ?? null,
+          method: resolvedMethod,
+          code: "STRIPE_KEY_MODE_MISMATCH",
+        });
+        setProcessing(false);
+        return;
+      }
+
+      await initStripe({
+        publishableKey: runtimeStripeKey,
+        ...(merchantId ? { merchantIdentifier: merchantId } : {}),
+        urlScheme: appScheme,
+      });
+
       const init = await initPaymentSheet({
         merchantDisplayName: "ORYA",
         paymentIntentClientSecret: clientSecret,
@@ -731,13 +846,41 @@ export default function CheckoutScreen() {
       });
       const presented = await presentPaymentSheet();
       if (presented.error) {
-        if (presented.error.code !== "Canceled") {
-          setError(getUserFacingError(presented.error, "Pagamento cancelado."));
-          trackEvent("checkout_payment_failed", {
-            sourceType: draft.sourceType ?? null,
-            method: resolvedMethod,
-            code: presented.error.code ?? null,
-          });
+        const presentedCode = presented.error.code ?? "Failed";
+        const presentedMessage =
+          typeof presented.error.message === "string"
+            ? presented.error.message
+            : "";
+        const messageLower = presentedMessage.toLowerCase();
+        const userLikelyCancelled =
+          presentedCode === "Canceled" ||
+          messageLower.includes("cancel") ||
+          messageLower.includes("cancelad");
+        if (!userLikelyCancelled) {
+          let recoveredStatus: CheckoutStatusResponse | null = null;
+          if (purchaseId || paymentIntentId) {
+            recoveredStatus = await runStatusCheck({ purchaseId, paymentIntentId });
+          }
+          if (
+            recoveredStatus &&
+            (isPaymentSettled(recoveredStatus.status) ||
+              isCheckoutPollingState(recoveredStatus.status))
+          ) {
+            setError(null);
+          } else {
+            setError(
+              getUserFacingError(
+                presented.error,
+                "Não foi possível confirmar o pagamento.",
+              ),
+            );
+            trackEvent("checkout_payment_failed", {
+              sourceType: draft.sourceType ?? null,
+              method: resolvedMethod,
+              code: presentedCode,
+              message: presentedMessage || null,
+            });
+          }
         }
         setProcessing(false);
         return;
@@ -1001,6 +1144,7 @@ export default function CheckoutScreen() {
     router,
     runStatusCheck,
   ]);
+  const renderBottomPayButton = payButtonVisible && !statusMeta;
 
   return (
     <>
@@ -1065,34 +1209,47 @@ export default function CheckoutScreen() {
                   >
                     {draft.eventTitle ?? draft.serviceTitle ?? "Checkout"}
                   </Text>
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-white/70 text-sm">{itemLabel}</Text>
-                    <GlassPill label={`${Math.max(totalQuantity, draft.quantity)}x`} variant="muted" />
-                  </View>
-                  {checkoutItems.length > 1 ? (
-                    <View className="gap-1">
-                      {checkoutItems.map((item) => (
-                        <View
-                          key={`checkout-item-${item.ticketTypeId}`}
-                          className="flex-row items-center justify-between"
-                        >
-                          <Text className="text-white/62 text-xs flex-1 pr-2" numberOfLines={1}>
-                            {item.quantity}x {item.ticketName}
-                          </Text>
-                          <Text className="text-white/70 text-xs font-semibold">
-                            {formatMoney(item.lineTotalCents, item.currency)}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-white/60 text-sm">Total</Text>
-                    {totalLabel ? (
-                      <Text className="text-white text-xl font-semibold">
-                        {totalLabel}
+                  <View className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3 gap-2">
+                    <View className="flex-row items-center justify-between">
+                      <Text style={{ color: "rgba(238,246,255,0.94)", fontSize: 14, fontWeight: "600" }}>
+                        {itemLabel}
                       </Text>
+                      <GlassPill label={`${Math.max(totalQuantity, draft.quantity)}x`} variant="muted" />
+                    </View>
+                    {checkoutItems.length > 0 ? (
+                      <View className="gap-1">
+                        {checkoutItems.map((item) => (
+                          <View
+                            key={`checkout-item-${item.ticketTypeId}`}
+                            className="flex-row items-center justify-between"
+                          >
+                            <Text
+                              style={{
+                                color: "rgba(226,238,252,0.8)",
+                                fontSize: 12,
+                                flex: 1,
+                                paddingRight: 8,
+                              }}
+                              numberOfLines={1}
+                            >
+                              {item.quantity}x {item.ticketName}
+                            </Text>
+                            <Text style={{ color: "rgba(238,246,255,0.9)", fontSize: 12, fontWeight: "600" }}>
+                              {formatMoney(item.lineTotalCents, item.currency)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
                     ) : null}
+                    <View className="h-px bg-white/10" />
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-white/60 text-sm">Total</Text>
+                      {totalLabel ? (
+                        <Text className="text-white text-2xl font-semibold">
+                          {totalLabel}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                   {isFreeCheckout ? (
                     <Text className="text-white/55 text-xs">
@@ -1108,7 +1265,7 @@ export default function CheckoutScreen() {
                     <Text className="text-white text-sm font-semibold">
                       Método de pagamento
                     </Text>
-                    <View className="flex-row flex-wrap gap-2">
+                    <View className="gap-2">
                       {(
                         [
                           {
@@ -1117,7 +1274,11 @@ export default function CheckoutScreen() {
                             enabled: allowApplePay,
                           },
                           { key: "card", label: "Cartão", enabled: true },
-                          { key: "mbway", label: "MBWay", enabled: true },
+                          {
+                            key: "mbway",
+                            label: "MBWay (indisponível)",
+                            enabled: allowMbwayInApp,
+                          },
                         ] as const
                       ).map((option) => {
                         if (!option.enabled) return null;
@@ -1126,25 +1287,35 @@ export default function CheckoutScreen() {
                           <Pressable
                             key={option.key}
                             onPress={() => setPaymentMethod(option.key)}
-                            className={
-                              active
-                                ? "rounded-full bg-white/20 px-4 py-2"
-                                : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
-                            }
-                            style={{ minHeight: tokens.layout.touchTarget }}
+                            className={active
+                              ? "rounded-2xl border border-cyan-200/55 bg-cyan-200/14 px-4 py-3"
+                              : "rounded-2xl border border-white/12 bg-white/5 px-4 py-3"}
+                            style={{
+                              minHeight: tokens.layout.touchTarget,
+                              justifyContent: "center",
+                            }}
                             accessibilityRole="button"
                             accessibilityLabel={`Selecionar ${option.label}`}
                             accessibilityState={{ selected: active }}
                           >
-                            <Text
-                              className={
-                                active
-                                  ? "text-white text-sm font-semibold"
-                                  : "text-white/70 text-sm"
-                              }
-                            >
-                              {option.label}
-                            </Text>
+                            <View className="flex-row items-center justify-between gap-3">
+                              <Text
+                                className={
+                                  active
+                                    ? "text-white text-sm font-semibold"
+                                    : "text-white/80 text-sm font-medium"
+                                }
+                              >
+                                {option.label}
+                              </Text>
+                              <View
+                                className={
+                                  active
+                                    ? "h-5 w-5 rounded-full border border-cyan-100 bg-cyan-200/80"
+                                    : "h-5 w-5 rounded-full border border-white/35 bg-transparent"
+                                }
+                              />
+                            </View>
                           </Pressable>
                         );
                       })}
@@ -1242,60 +1413,50 @@ export default function CheckoutScreen() {
                 </GlassCard>
               ) : null}
 
-              {missingStripeConfig ? (
-                <GlassCard intensity={50}>
-                  <Text className="text-amber-200 text-sm">
-                    {CHECKOUT_CONFIG_ERROR}
-                  </Text>
-                </GlassCard>
-              ) : null}
-
               {error ? (
                 <GlassCard intensity={50}>
                   <Text className="text-red-300 text-sm">{error}</Text>
                 </GlassCard>
               ) : null}
 
-              <Pressable
-                disabled={!canPay || processing}
-                onPress={handlePay}
-                className={
-                  canPay
-                    ? "rounded-2xl bg-white/15 px-4 py-4"
-                    : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
-                }
-                style={{
-                  minHeight: tokens.layout.touchTarget,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  draft.totalCents <= 0 ? "Confirmar inscrição" : "Pagar agora"
-                }
-                accessibilityState={{ disabled: !canPay || processing }}
-              >
-                {processing ? (
-                  <View className="flex-row items-center gap-2">
-                    <ActivityIndicator color="white" />
-                    <Text className="text-white text-sm font-semibold">
-                      A processar...
+              {renderBottomPayButton ? (
+                <Pressable
+                  disabled={payButtonDisabled}
+                  onPress={handlePay}
+                  className={
+                    !payButtonDisabled
+                      ? "rounded-2xl bg-[#EAF63A] px-4 py-4"
+                      : "rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
+                  }
+                  style={{
+                    minHeight: tokens.layout.touchTarget,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={payButtonLabel}
+                  accessibilityState={{ disabled: payButtonDisabled }}
+                >
+                  {processing ? (
+                    <View className="flex-row items-center gap-2">
+                      <ActivityIndicator color="#0A1018" />
+                      <Text className="text-[#0A1018] text-sm font-semibold">
+                        A processar...
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      className={
+                        !payButtonDisabled
+                          ? "text-center text-[#0A1018] text-sm font-semibold"
+                          : "text-center text-white/50 text-sm font-semibold"
+                      }
+                    >
+                      {payButtonLabel}
                     </Text>
-                  </View>
-                ) : (
-                  <Text
-                    className={
-                      canPay
-                        ? "text-center text-white text-sm font-semibold"
-                        : "text-center text-white/50 text-sm font-semibold"
-                    }
-                  >
-                    {draft.totalCents <= 0
-                      ? "Confirmar inscrição"
-                      : "Pagar agora"}
-                  </Text>
-                )}
-              </Pressable>
+                  )}
+                </Pressable>
+              ) : null}
             </>
           )}
         </View>

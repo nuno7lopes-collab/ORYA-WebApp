@@ -8,6 +8,7 @@ import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { EventTemplateType, OrganizationModule, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function parseTemplateType(raw: string | null) {
   if (!raw) return null;
   const normalized = raw.trim().toUpperCase();
@@ -28,7 +29,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });

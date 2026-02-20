@@ -13,6 +13,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { buildWalletPass, isWalletPassEnabled } from "@/lib/wallet/pass";
 import { signTicketToORYA2 } from "@/lib/qr";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Params = { entitlementId: string };
 
 function hashToken(token: string) {
@@ -30,7 +31,7 @@ async function _GET(_: Request, context: { params: Params | Promise<Params> }) {
   }
 
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) {
     return jsonWrap({ error: "Not authenticated" }, { status: 401 });
   }

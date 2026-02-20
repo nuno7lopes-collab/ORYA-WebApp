@@ -8,6 +8,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationModule, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const resolveOrganizationId = (req: NextRequest) => {
   const organizationId = resolveOrganizationIdFromRequest(req);
   return { organizationId };
@@ -18,7 +19,7 @@ async function requireOrganization(req: NextRequest) {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return { error: "UNAUTHENTICATED" as const };

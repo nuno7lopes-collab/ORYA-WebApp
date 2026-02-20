@@ -3,6 +3,7 @@
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import NextLink from "next/link";
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
@@ -484,6 +485,24 @@ const MODULE_ICON_BG_STYLES: Record<string, string> = {
   TOOL_EQUIPA: "linear-gradient(145deg, rgba(96,165,250,0.82) 0%, rgba(34,211,238,0.72) 46%, rgba(245,158,11,0.78) 100%)",
   TOOL_DEFINICOES: "linear-gradient(145deg, rgba(148,163,184,0.82) 0%, rgba(100,116,139,0.68) 46%, rgba(96,165,250,0.74) 100%)",
   TOOL_POLITICAS: "linear-gradient(145deg, rgba(96,165,250,0.86) 0%, rgba(34,211,238,0.72) 44%, rgba(167,139,250,0.8) 100%)",
+};
+const TOOL_CUSTOM_ICON_BY_ID: Record<string, string> = {
+  eventos: "/icons/tools/eventos.png",
+  reservas: "/icons/tools/reservas.png",
+  calendar: "/icons/tools/calendario.png",
+  "padel-club": "/icons/tools/padel-club.png",
+  "padel-tournaments": "/icons/tools/padel-tournaments.png",
+  checkin: "/icons/tools/checkin.png",
+  inscricoes: "/icons/tools/formularios.png",
+  mensagens: "/icons/tools/mensagens.png",
+  financeiro: "/icons/tools/financas.png",
+  analytics: "/icons/tools/analises.png",
+  marketing: "/icons/tools/marketing.png",
+  crm: "/icons/tools/crm.png",
+  loja: "/icons/tools/loja.png",
+  staff: "/icons/tools/equipa.png",
+  politicas: "/icons/tools/politicas.png",
+  settings: "/icons/tools/definicoes.png",
 };
 
 const OBJECTIVE_TABS: ObjectiveTab[] = ["create", "manage", "promote", "analyze"];
@@ -2346,7 +2365,7 @@ function OrganizacaoPageInner({
               id: "mensagens",
               moduleKey: "MENSAGENS",
               iconKey: "TOOL_CHAT_INTERNO",
-              title: "Chat interno",
+              title: "Mensagens",
               summary: "Canal privado entre membros da organização.",
               bullets: ["Conversas da equipa", "Canais internos", "Histórico completo"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/chat` : undefined,
@@ -2382,7 +2401,7 @@ function OrganizacaoPageInner({
               id: "marketing",
               moduleKey: "MARKETING",
               iconKey: "TOOL_PROMOCOES",
-              title: "Promoções",
+              title: "Marketing",
               summary: "Códigos, parcerias e partilha.",
               bullets: ["Códigos promocionais", "Promotores e parcerias", "Links + QR"],
               href: scopedOrganizationId ? `/org/${scopedOrganizationId}/marketing` : undefined,
@@ -2603,7 +2622,12 @@ function OrganizacaoPageInner({
     marketingParamRaw,
   ]);
   const [fadeIn, setFadeIn] = useState(true);
+  const hasMountedFadeRef = useRef(false);
   useEffect(() => {
+    if (!hasMountedFadeRef.current) {
+      hasMountedFadeRef.current = true;
+      return;
+    }
     setFadeIn(false);
     const id = requestAnimationFrame(() => setFadeIn(true));
     return () => cancelAnimationFrame(id);
@@ -2648,12 +2672,21 @@ function OrganizacaoPageInner({
       MODULE_ICON_SURFACE_GLOWS[tool.iconKey] ??
       "shadow-[inset_0_1px_0_rgba(255,255,255,0.48),0_22px_42px_rgba(107,255,255,0.34)]";
     const canHide = canCustomizeTools && !NON_HIDEABLE_DASHBOARD_TOOL_IDS.has(tool.id);
+    const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
+    const isCustomAppIcon = Boolean(customAppIconSrc);
     const cardInner = (
-      <div className="group relative flex min-h-[172px] flex-col items-center justify-center gap-3 overflow-hidden rounded-[26px] border border-white/22 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.03)_48%,rgba(20,20,20,0.88))] px-3 py-4 text-center shadow-[0_24px_70px_rgba(0,0,0,0.6)] transition hover:-translate-y-0.5 hover:border-[#22D3EE]/42 hover:shadow-[0_28px_78px_rgba(0,0,0,0.68)] sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5">
+      <div
+        className={cn(
+          "group relative flex min-h-[172px] flex-col items-center justify-center gap-3 px-3 py-4 text-center sm:min-h-[192px] sm:gap-4 sm:px-4 sm:py-5",
+          isCustomAppIcon
+            ? "w-full min-h-[214px] gap-1 overflow-visible py-1 sm:min-h-[248px] sm:gap-2"
+            : "overflow-hidden rounded-[26px] border border-white/22 bg-[linear-gradient(180deg,rgba(255,255,255,0.11),rgba(255,255,255,0.03)_48%,rgba(20,20,20,0.88))] shadow-[0_24px_70px_rgba(0,0,0,0.6)] transition hover:-translate-y-0.5 hover:border-[#22D3EE]/42 hover:shadow-[0_28px_78px_rgba(0,0,0,0.68)]",
+        )}
+      >
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/35 to-transparent" />
+          {!isCustomAppIcon && <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/35 to-transparent" />}
         </div>
-        {canHide && (
+        {canHide && !isCustomAppIcon && (
           <button
             type="button"
             onClick={(event) => {
@@ -2662,32 +2695,79 @@ function OrganizacaoPageInner({
               setPendingToolVisibilityRemoval(tool);
             }}
             aria-label="Ocultar ferramenta"
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
+            className="absolute right-2 top-2 z-[1] flex h-6 w-6 items-center justify-center rounded-full border border-white/20 bg-black/30 text-[14px] text-white/80 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
           >
             ×
           </button>
         )}
-        <div
+        {customAppIconSrc ? (
+          <div className="relative mx-auto flex items-center justify-center transition-transform duration-300 ease-out group-hover:-translate-y-1">
+            <span className="pointer-events-none absolute inset-0 scale-[0.86] rounded-full bg-[radial-gradient(circle,rgba(148,190,255,0.26)_0%,rgba(148,190,255,0.08)_48%,transparent_74%)] opacity-0 blur-xl transition-opacity duration-300 ease-out group-hover:opacity-100" />
+            {canHide && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setPendingToolVisibilityRemoval(tool);
+                }}
+                aria-label="Ocultar ferramenta"
+                className="absolute -right-2 -top-2 z-[2] flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-black/45 text-[14px] text-white/85 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-white/10"
+              >
+                ×
+              </button>
+            )}
+            <Image
+              src={customAppIconSrc}
+              alt=""
+              aria-hidden="true"
+              width={1024}
+              height={1024}
+              priority
+              className="tool-custom-icon pointer-events-none h-[188px] w-[188px] select-none object-contain [transform:translateZ(0)] drop-shadow-[0_12px_20px_rgba(0,0,0,0.38)] transition-all duration-300 ease-out group-hover:scale-[1.085] group-hover:brightness-110 group-hover:drop-shadow-[0_18px_28px_rgba(0,0,0,0.48)] sm:h-[220px] sm:w-[220px]"
+              draggable={false}
+            />
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "relative flex items-center justify-center border border-white/32 text-white transition-transform duration-200 group-hover:scale-[1.04]",
+              "h-[84px] w-[84px] rounded-full sm:h-[102px] sm:w-[102px]",
+              iconGradient,
+              iconSurfaceGlow,
+            )}
+            style={{ background: iconBgStyle }}
+          >
+            <span className="pointer-events-none absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.34),rgba(255,255,255,0.1)_40%,rgba(255,255,255,0)_70%)]" />
+            <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_55%,rgba(8,12,20,0.12),rgba(8,12,20,0.28)_72%,rgba(6,10,18,0.38)_100%)]" />
+            <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
+            <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/35 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
+            <ModuleIcon moduleKey={tool.iconKey} className="relative h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
+          </div>
+        )}
+        <span
           className={cn(
-                "relative flex h-[84px] w-[84px] items-center justify-center rounded-full border border-white/32 text-white transition-transform duration-200 group-hover:scale-[1.04] sm:h-[102px] sm:w-[102px]",
-                iconGradient,
-                iconSurfaceGlow,
-              )}
-          style={{ background: iconBgStyle }}
+            "relative mx-auto leading-tight text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)]",
+            isCustomAppIcon
+              ? "max-w-[220px] text-[15px] font-semibold sm:max-w-[250px] sm:text-[17px]"
+              : "text-[14px] font-extrabold sm:text-[16px]",
+          )}
         >
-          <span className="pointer-events-none absolute inset-[2px] rounded-full bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.34),rgba(255,255,255,0.1)_40%,rgba(255,255,255,0)_70%)]" />
-          <span className="pointer-events-none absolute inset-[8px] rounded-full bg-[radial-gradient(circle_at_50%_55%,rgba(8,12,20,0.12),rgba(8,12,20,0.28)_72%,rgba(6,10,18,0.38)_100%)]" />
-          <span className="pointer-events-none absolute inset-[10px] rounded-full border border-white/18" />
-          <span className="pointer-events-none absolute inset-x-5 top-2 h-4 rounded-full bg-white/35 blur-[6px] sm:inset-x-6 sm:top-2.5 sm:h-5" />
-          <ModuleIcon moduleKey={tool.iconKey} className="relative h-9 w-9 sm:h-11 sm:w-11" aria-hidden="true" />
-        </div>
-        <span className="relative text-[14px] font-extrabold leading-tight text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.62)] sm:text-[16px]">{tool.title}</span>
+          {tool.title}
+        </span>
       </div>
     );
 
     if (tool.href) {
       return (
-        <Link key={tool.id} href={tool.href} className="block rounded-[24px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]">
+        <Link
+          key={tool.id}
+          href={tool.href}
+          className={cn(
+            "block rounded-[24px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#22D3EE]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b1014]",
+            isCustomAppIcon && "rounded-[32px] transition-transform duration-300 ease-out hover:-translate-y-0.5",
+          )}
+        >
           {cardInner}
         </Link>
       );
@@ -2718,6 +2798,7 @@ function OrganizacaoPageInner({
 
   const renderToolPickerCard = (tool: DashboardToolCard) => {
     const iconGradient = MODULE_ICON_GRADIENTS[tool.iconKey] ?? MODULE_ICON_GRADIENTS[tool.moduleKey] ?? "from-white/15 via-white/5 to-white/10";
+    const customAppIconSrc = TOOL_CUSTOM_ICON_BY_ID[tool.id];
     return (
       <div
         key={`picker-${tool.id}`}
@@ -2725,14 +2806,20 @@ function OrganizacaoPageInner({
       >
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-3">
-            <div
-              className={cn(
-                "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
-                iconGradient,
-              )}
-            >
-              <ModuleIcon moduleKey={tool.iconKey} className="h-6 w-6" aria-hidden="true" />
-            </div>
+            {customAppIconSrc ? (
+              <div className="relative h-14 w-14 overflow-hidden rounded-[16px] border border-white/20 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_12px_28px_rgba(0,0,0,0.32)]">
+                <Image src={customAppIconSrc} alt="" fill sizes="56px" className="object-cover" aria-hidden="true" />
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "flex h-14 w-14 items-center justify-center rounded-[16px] border border-white/20 bg-gradient-to-br text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_12px_28px_rgba(0,0,0,0.32)]",
+                  iconGradient,
+                )}
+              >
+                <ModuleIcon moduleKey={tool.iconKey} className="h-6 w-6" aria-hidden="true" />
+              </div>
+            )}
             <div className="flex-1 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -2804,7 +2891,6 @@ function OrganizacaoPageInner({
                     <div key={group.flow} className="space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="text-[11px] uppercase tracking-[0.24em] text-white/50">{group.flow}</p>
-                        <span className="text-[11px] text-white/40">{group.tools.length} ferramentas</span>
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
                         {group.tools.map((tool) => renderToolPickerCard(tool))}
@@ -3170,14 +3256,16 @@ function OrganizacaoPageInner({
               {toolVisibilityError && (
                 <p className="mt-3 text-[12px] text-amber-200">{toolVisibilityError}</p>
               )}
-              <div className="mt-4 space-y-5">
+              <div className="mt-4 space-y-4">
                 {toolGroups.map((group) => (
-                  <div key={`flow-${group.flow}`} className="space-y-2">
-                    <div className="flex items-center justify-between text-[11px] text-white/50">
-                      <span className="uppercase tracking-[0.22em]">{group.flow}</span>
-                      <span>{group.tools.length} ferramentas</span>
+                  <div key={`flow-${group.flow}`} className="space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex rounded-full border border-white/14 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/68">
+                        {group.flow}
+                      </span>
+                      <span className="h-px flex-1 bg-gradient-to-r from-white/16 to-transparent" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+                    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
                       {group.tools.map((tool) => renderToolCard(tool))}
                       {canCustomizeTools && hasHiddenTools && group.flow === "Operações" && renderAddToolGhostCard()}
                     </div>

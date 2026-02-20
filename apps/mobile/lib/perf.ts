@@ -15,6 +15,7 @@ export const perfMeasure = (label: string, startMark: string, endMark?: string) 
   const start = marks.get(startMark)?.at;
   const end = endMark ? marks.get(endMark)?.at : Date.now();
   if (!start) return;
+  if (typeof end !== "number") return;
   const duration = Math.max(0, end - start);
   console.info(`[perf] ${label}: ${duration}ms`);
 };

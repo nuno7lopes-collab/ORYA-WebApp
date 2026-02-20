@@ -5,10 +5,11 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { prisma } from "@/lib/prisma";
 import { LocationConsent, LocationGranularity } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _POST(req: NextRequest) {
   try {
     const supabase = await createSupabaseServer();
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     if (error || !data?.user) {
       return jsonWrap({ error: "Not authenticated" }, { status: 401 });
     }

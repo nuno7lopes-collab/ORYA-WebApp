@@ -464,7 +464,7 @@ export default function MapScreen() {
             : null) ?? details.city ?? ipLocation.city;
         setLocation({
           city: cityFromCanonical ?? "",
-          label: details.formattedAddress || ipLocation.city,
+          label: details.formattedAddress ?? ipLocation.city ?? "",
           addressId: details.addressId,
           lat: typeof details.lat === "number" ? details.lat : null,
           lng: typeof details.lng === "number" ? details.lng : null,
@@ -1333,7 +1333,7 @@ export default function MapScreen() {
                   coordinate={{ latitude: marker.lat, longitude: marker.lng }}
                   onPress={() => handleClusterPress(marker)}
                 >
-                  <View style={styles.clusterShell}>
+                  <View style={styles.clusterShell as any}>
                     <Text style={styles.clusterCount}>{marker.count}</Text>
                   </View>
                 </Marker>

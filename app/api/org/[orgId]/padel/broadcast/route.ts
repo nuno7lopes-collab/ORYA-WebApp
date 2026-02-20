@@ -12,6 +12,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_TITLE_LENGTH = 80;
 const MAX_MESSAGE_LENGTH = 600;
 
@@ -57,7 +58,7 @@ async function _POST(req: NextRequest) {
   };
 
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase.auth.getUser();
+  const { data, error } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !data?.user) return fail(401, "UNAUTHENTICATED");
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

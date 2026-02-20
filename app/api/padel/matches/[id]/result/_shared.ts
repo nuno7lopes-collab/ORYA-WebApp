@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { updatePadelMatch } from "@/domain/padel/matches/commands";
@@ -252,7 +253,7 @@ export async function requireAuthenticatedUser() {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   if (error || !user) {
     return fail("UNAUTHENTICATED", 401);

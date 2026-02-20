@@ -4,7 +4,7 @@ import { isAppRequest, isSameOrigin } from "@/lib/auth/requestValidation";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
-import { isAuthUnavailableError } from "@/lib/security";
+import { isAuthUnavailableError, isEmailNotVerifiedError, UnauthenticatedError } from "@/lib/security";
 
 const JSON_CONTENT_TYPE = "application/json";
 const DOWNLOAD_CONTENT_TYPES = [
@@ -340,6 +340,54 @@ export function withApiEnvelope<Req extends Request, Args extends any[]>(
           },
           { fallbackToRequestContext: false },
         );
+        return respondError(
+          ctx,
+          {
+            errorCode: "AUTH_UNAVAILABLE",
+            message: "Autenticacao indisponivel.",
+            retryable: true,
+          },
+          { status: 503 },
+        );
+      }
+      if (isEmailNotVerifiedError(err) || (err instanceof Error && (err as { code?: string }).code === "EMAIL_NOT_VERIFIED")) {
+        logError(
+          "auth.email_not_verified",
+          err,
+          {
+            requestId: ctx.requestId,
+            correlationId: ctx.correlationId,
+            path: "url" in req ? (req as Request).url : undefined,
+            method: (req as Request).method,
+          },
+          { fallbackToRequestContext: false },
+        );
+        return respondError(
+          ctx,
+          {
+            errorCode: "EMAIL_NOT_VERIFIED",
+            message: "Email por verificar.",
+            retryable: false,
+          },
+          { status: 403 },
+        );
+      }
+      if (
+        err instanceof UnauthenticatedError ||
+        (err instanceof Error &&
+          (err.message === "UNAUTHENTICATED" || (err as { code?: string }).code === "UNAUTHENTICATED"))
+      ) {
+        return respondError(
+          ctx,
+          {
+            errorCode: "UNAUTHENTICATED",
+            message: "Autenticacao obrigatoria.",
+            retryable: false,
+          },
+          { status: 401 },
+        );
+      }
+      if (err instanceof Error && (err as { code?: string }).code === "AUTH_UNAVAILABLE") {
         return respondError(
           ctx,
           {

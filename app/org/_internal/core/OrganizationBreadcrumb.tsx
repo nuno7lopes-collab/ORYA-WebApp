@@ -34,7 +34,7 @@ const SECTION_LABELS: Record<string, string> = {
   checkin: "Check-in",
   staff: "Equipa",
   settings: "Definições",
-  marketing: "Promoções",
+  marketing: "Marketing",
   promos: "Códigos promocionais",
   promoters: "Promotores e parcerias",
   content: "Conteúdos e kits",
@@ -46,7 +46,7 @@ const SECTION_LABELS: Record<string, string> = {
 const OBJECTIVE_LABELS: Record<string, string> = {
   create: "Painel",
   manage: "Gerir",
-  promote: "Promoções",
+  promote: "Marketing",
   analyze: "Analisar",
 };
 
@@ -64,7 +64,7 @@ function resolveLabel(
   }
   if (pathname.startsWith("/org/events/new")) return preset === "padel" ? "Criar torneio" : "Criar evento";
   if (/^\/org\/\d+\/chat(?:\/|$)/.test(pathname)) {
-    return "Chat interno";
+    return "Mensagens";
   }
   if (pathname.startsWith("/org/padel/tournaments/") && pathname.endsWith("/edit")) {
     return "Editar torneio";

@@ -412,6 +412,8 @@ Conjunto canónico mínimo para endpoints de autenticação:
 - `INVALID_EMAIL`
 - `RATE_LIMITED`
 - `UNAUTHENTICATED`
+- `EMAIL_NOT_VERIFIED`
+- `AUTH_UNAVAILABLE`
 - `MISSING_CREDENTIALS`
 - `INVALID_CREDENTIALS`
 - `EMAIL_NOT_CONFIRMED`
@@ -437,6 +439,7 @@ Regra:
 - Mapeamentos canónicos obrigatórios no escopo auth:
   - `THROTTLED` e `RATE_LIMIT_ERROR` => `RATE_LIMITED`
   - `INTERNAL_ERROR` => `SERVER_ERROR`
+  - sessão existente com email por verificar => `EMAIL_NOT_VERIFIED` (`HTTP 403`)
 
 ⸻
 
@@ -770,6 +773,9 @@ These controls are normative and apply to public authentication flows.
 - Canonical auth/session reads and writes:
   - `GET /api/auth/me` is the canonical read of auth/profile session state.
   - `POST /api/auth/refresh` is the canonical token->HttpOnly cookie synchronization path.
+- Política de sessão verificada (strict total):
+  - em rotas autenticadas, se existir sessão e o email não estiver confirmado, a resposta canónica é `403 EMAIL_NOT_VERIFIED`.
+  - em rotas públicas com auth opcional, sessão ausente mantém comportamento público; sessão existente mas pendente NÃO pode cair em fallback guest.
 - Auth errors exposed to clients MUST comply with `errorCode` envelope rules in `03 Canonical Vocabulary`.
 
 ---
@@ -1276,9 +1282,11 @@ Regras:
 			–	cookies de contexto UI (`orya_organization`, `lastUsedOrg`): `HttpOnly=false`, `Secure=true` em `stage/prod`, nunca usados para autorização;
 			–	cookies de carrinho/preferências: `HttpOnly=false`, `Secure=true` em `stage/prod`, sem acesso a decisões de authz;
 			–	qualquer divergência da matriz por ambiente é drift normativo e bloqueia release.
-		•	Mapeamentos canónicos obrigatórios em auth scope:
-			–	`THROTTLED`/`RATE_LIMIT_ERROR` -> `RATE_LIMITED`
-			–	`INTERNAL_ERROR` -> `SERVER_ERROR`
+			•	Mapeamentos canónicos obrigatórios em auth scope:
+				–	`THROTTLED`/`RATE_LIMIT_ERROR` -> `RATE_LIMITED`
+				–	`INTERNAL_ERROR` -> `SERVER_ERROR`
+				–	rotas autenticadas com sessão pendente -> `EMAIL_NOT_VERIFIED` (`403`)
+				–	indisponibilidade do provider auth -> `AUTH_UNAVAILABLE` (`503`)
 		•	Tabela oficial endpoint -> status -> errorCode canónico:
 			–	`POST /api/auth/login`: `200/400/401/403/429/500` | `MISSING_CREDENTIALS`, `INVALID_CREDENTIALS`, `EMAIL_NOT_CONFIRMED`, `FORBIDDEN`, `RATE_LIMITED`, `SERVER_ERROR`
 			–	`POST /api/auth/send-otp`: `200/400/429/500` | `INVALID_EMAIL`, `RATE_LIMITED`, `OTP_GENERATION_FAILED`, `EMAIL_SEND_FAILED`, `SERVER_ERROR`

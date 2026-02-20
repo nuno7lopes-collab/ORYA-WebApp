@@ -18,6 +18,7 @@ import { readNumericParam } from "@/lib/routeParams";
 import { upsertActiveHold } from "@/domain/padelPairingHold";
 import { queuePairingInvite } from "@/domain/notifications/splitPayments";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import {
   INACTIVE_REGISTRATION_STATUSES,
   mapRegistrationToPairingLifecycle,
@@ -70,7 +71,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;

@@ -7,6 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { listUserFollowers } from "@/domain/social/follows";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 async function _GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get("userId")?.trim();
   const limitRaw = Number(req.nextUrl.searchParams.get("limit"));
@@ -27,7 +28,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   const viewerId = user?.id ?? null;
 
   if (profile.visibility !== "PUBLIC") {

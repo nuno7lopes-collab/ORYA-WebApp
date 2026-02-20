@@ -11,6 +11,7 @@ import { buildEntitlementOwnerClauses, getUserIdentityIds } from "@/lib/chat/acc
 import { listEffectiveOrganizationMembers } from "@/lib/organizationMembers";
 import { requireChatContext, ChatContextError } from "@/lib/chat/context";
 import { publishChatEvent } from "@/lib/chat/redis";
+import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   enforceMobileClientRequest,
   getMessagesScope,
@@ -322,7 +323,7 @@ async function resolveEventGrantForUser(eventId: number, userId: string, email: 
   };
 }
 
-export async function POST(req: NextRequest) {
+async function _POST(req: NextRequest) {
   try {
     const payload = (await req.json().catch(() => null)) as ResolvePayload | null;
     const contextTypeRaw = typeof payload?.contextType === "string" ? payload.contextType.trim().toUpperCase() : "";
@@ -797,3 +798,5 @@ export async function POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INTERNAL_ERROR" }, { status: 500 });
   }
 }
+
+export const POST = withApiEnvelope(_POST);

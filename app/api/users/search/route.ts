@@ -6,6 +6,7 @@ import { getUserFollowingSet, getUserFollowRequestSet } from "@/domain/social/fo
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 export const runtime = "nodejs";
 
 function normalizeSearchTerm(raw: string) {
@@ -29,7 +30,7 @@ async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   try {
     const results = await prisma.profile.findMany({

@@ -4,6 +4,8 @@ import { respondError } from "@/lib/http/envelope";
 const ERROR_STATUS_MAP: Record<string, number> = {
   UNAUTHENTICATED: 401,
   AUTH_REQUIRED: 401,
+  AUTH_UNAVAILABLE: 503,
+  EMAIL_NOT_VERIFIED: 403,
   FORBIDDEN: 403,
   ONLY_GROUP_OWNER: 403,
   TOKEN_USER_MISMATCH: 403,

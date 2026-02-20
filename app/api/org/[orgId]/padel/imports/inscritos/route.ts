@@ -39,6 +39,7 @@ import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePhoneNormalizationOptions } from "@/lib/phone";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 
 const asString = (value: unknown) => {
@@ -111,7 +112,7 @@ async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return fail(401, "UNAUTHENTICATED");
 
   const formData =

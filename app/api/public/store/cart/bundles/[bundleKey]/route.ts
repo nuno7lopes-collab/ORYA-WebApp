@@ -8,6 +8,7 @@ import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { z } from "zod";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const CART_SESSION_COOKIE = "orya_store_cart";
 
 const updateBundleSchema = z
@@ -115,7 +116,7 @@ async function _PATCH(
     }
 
     const supabase = await createSupabaseServer();
-    const { data } = await supabase.auth.getUser();
+    const { data } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
     const userId = data?.user?.id ?? null;
 
     const cookieSession = req.cookies.get(CART_SESSION_COOKIE)?.value ?? null;
@@ -225,7 +226,7 @@ async function _DELETE(
     }
 
     const supabase = await createSupabaseServer();
-    const { data } = await supabase.auth.getUser();
+    const { data } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
     const userId = data?.user?.id ?? null;
 
     const cookieSession = req.cookies.get(CART_SESSION_COOKIE)?.value ?? null;

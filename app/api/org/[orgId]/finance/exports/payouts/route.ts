@@ -13,6 +13,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function parseRange(req: NextRequest) {
   const from = req.nextUrl.searchParams.get("from");
   const to = req.nextUrl.searchParams.get("to");
@@ -53,7 +54,7 @@ async function _GET(req: NextRequest) {
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
+  } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (error || !user) return fail(401, "UNAUTHENTICATED");
 
   const organizationId = resolveOrganizationIdFromRequest(req);

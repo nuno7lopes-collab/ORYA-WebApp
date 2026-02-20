@@ -11,6 +11,7 @@ import { resolveEventLocation } from "@/lib/location/eventLocation";
 import { listEffectiveOrganizationMembershipsForUser } from "@/lib/organizationMembers";
 import { OrganizationStatus } from "@prisma/client";
 
+import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type AgendaItem = {
   id: string;
   type: "EVENTO" | "JOGO" | "INSCRICAO" | "RESERVA";
@@ -111,7 +112,7 @@ async function _GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
     if (error || !user) {
       return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
