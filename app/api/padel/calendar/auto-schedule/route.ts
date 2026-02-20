@@ -8,7 +8,12 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
-import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
+import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
+import type {
+  PadelExecutionMode,
+  PadelPartialMode,
+  PadelScheduleStrategy,
+} from "@/domain/padel/schedulerV2/types";
 import { resolvePartnershipScheduleConstraints } from "@/domain/padel/partnershipSchedulePolicy";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { appendEventLog } from "@/domain/eventLog/append";
@@ -24,6 +29,8 @@ import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 import { dailyWindowsToIntervals, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
+import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
+import { handlePadelOutboxEvent } from "@/domain/padel/outbox";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const DEFAULT_DURATION_MINUTES = 60;
@@ -181,10 +188,23 @@ async function _POST(req: NextRequest) {
   }
   const dryRun = body.dryRun === true;
   const startFromNow = body.startFromNow === true;
+  const partialMode: PadelPartialMode = body.partialMode === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+  const executionMode: PadelExecutionMode = body.executionMode === "ASYNC" ? "ASYNC" : "SYNC";
+  const strategy: PadelScheduleStrategy =
+    body.strategy === "GROUPS_FIRST" || body.strategy === "KNOCKOUT_FIRST" || body.strategy === "BALANCED_BY_CATEGORY"
+      ? body.strategy
+      : "BALANCED_BY_CATEGORY";
   const matchIds = Array.isArray(body.matchIds)
     ? body.matchIds.filter((id) => typeof id === "number" && Number.isFinite(id)).map((id) => Math.floor(id))
     : [];
   const targetMatchIds = matchIds.length > 0 ? matchIds : null;
+  const categoryIds = Array.isArray(body.categoryIds)
+    ? body.categoryIds
+        .map((id) => (typeof id === "number" ? id : Number(id)))
+        .filter((id): id is number => Number.isFinite(id) && id > 0)
+        .map((id) => Math.floor(id))
+    : [];
+  const targetCategoryIds = categoryIds.length > 0 ? Array.from(new Set(categoryIds)) : null;
 
   const event = await prisma.event.findFirst({
     where: { id: eventId, organizationId: organization.id },
@@ -204,6 +224,22 @@ async function _POST(req: NextRequest) {
   });
   if (!event) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
+
+  if (targetCategoryIds && targetCategoryIds.length > 0) {
+    const available = await prisma.padelEventCategoryLink.findMany({
+      where: {
+        eventId: event.id,
+        isEnabled: true,
+        padelCategoryId: { in: targetCategoryIds },
+      },
+      select: { padelCategoryId: true },
+    });
+    const found = new Set(available.map((row) => row.padelCategoryId));
+    const missing = targetCategoryIds.filter((id) => !found.has(id));
+    if (missing.length > 0) {
+      return jsonWrap({ ok: false, error: "CATEGORY_NOT_AVAILABLE", missing }, { status: 409 });
+    }
   }
 
   const advanced = (event.padelTournamentConfig?.advancedSettings || {}) as {
@@ -352,6 +388,7 @@ async function _POST(req: NextRequest) {
       where: {
         eventId: event.id,
         status: "PENDING",
+        ...(targetCategoryIds ? { categoryId: { in: targetCategoryIds } } : {}),
         ...(targetMatchIds
           ? { id: { in: targetMatchIds } }
           : {
@@ -361,6 +398,7 @@ async function _POST(req: NextRequest) {
       },
       select: {
         id: true,
+        categoryId: true,
         plannedDurationMinutes: true,
         courtId: true,
         roundLabel: true,
@@ -392,6 +430,7 @@ async function _POST(req: NextRequest) {
       sideAEmails: resolveSideEmails(match.participants, "A"),
       sideBEmails: resolveSideEmails(match.participants, "B"),
     }));
+    const hasNonStopRows = unscheduledMatchesRaw.some((match) => match.groupLabel === "NS");
 
     if (targetMatchIds) {
       const foundIds = new Set(unscheduledMatchesRaw.map((m) => m.id));
@@ -406,58 +445,25 @@ async function _POST(req: NextRequest) {
 
     if (unscheduledMatchesRaw.length === 0) {
       return jsonWrap(
-        { ok: true, scheduledCount: 0, skippedCount: 0, skipped: [], unscheduledByReason: {} },
+        {
+          ok: true,
+          runId: null,
+          scheduledCount: 0,
+          skippedCount: 0,
+          skipped: [],
+          unscheduledByReason: {},
+          byCategory: [],
+          dryRun,
+          strategy,
+          partialMode,
+          executionMode,
+          queued: false,
+          applied: false,
+          warnings: [],
+        },
         { status: 200 },
       );
     }
-
-    const roundTypeOrder = (roundType?: string | null) => {
-      if (priority === "KNOCKOUT_FIRST") {
-        if (roundType === "KNOCKOUT") return 0;
-        if (roundType === "GROUPS") return 1;
-        return 2;
-      }
-      if (roundType === "GROUPS") return 0;
-      if (roundType === "KNOCKOUT") return 1;
-      return 2;
-    };
-    const parseRoundLabel = (label?: string | null) => {
-      if (!label) return { prefix: "", size: null, label: "" };
-      const trimmed = label.trim();
-      const prefix = trimmed.startsWith("A ") ? "A" : trimmed.startsWith("B ") ? "B" : "";
-      const base = prefix ? trimmed.slice(2).trim() : trimmed;
-      let size: number | null = null;
-      if (base.startsWith("R")) {
-        const parsed = Number(base.slice(1));
-        size = Number.isFinite(parsed) ? parsed : null;
-      } else if (base === "QUARTERFINAL") size = 8;
-      else if (base === "SEMIFINAL") size = 4;
-      else if (base === "FINAL") size = 2;
-      return { prefix, size, label: base };
-    };
-    const prefixOrder = (prefix: string) => (prefix === "A" ? 0 : prefix === "B" ? 1 : 2);
-
-    const sortedUnscheduledMatches = [...unscheduledMatches].sort((a, b) => {
-      const typeDiff = roundTypeOrder(a.roundType) - roundTypeOrder(b.roundType);
-      if (typeDiff !== 0) return typeDiff;
-      if (a.roundType === "KNOCKOUT" || b.roundType === "KNOCKOUT") {
-        const aMeta = parseRoundLabel(a.roundLabel);
-        const bMeta = parseRoundLabel(b.roundLabel);
-        if (prefixOrder(aMeta.prefix) !== prefixOrder(bMeta.prefix)) {
-          return prefixOrder(aMeta.prefix) - prefixOrder(bMeta.prefix);
-        }
-        if (aMeta.size !== null && bMeta.size !== null && aMeta.size !== bMeta.size) {
-          return bMeta.size - aMeta.size;
-        }
-      }
-      if (a.groupLabel && b.groupLabel && a.groupLabel !== b.groupLabel) {
-        return a.groupLabel.localeCompare(b.groupLabel);
-      }
-      if (a.roundLabel && b.roundLabel && a.roundLabel !== b.roundLabel) {
-        return a.roundLabel.localeCompare(b.roundLabel);
-      }
-      return a.id - b.id;
-    });
 
     const scheduledMatches = await prisma.eventMatchSlot.findMany({
       where: {
@@ -560,12 +566,14 @@ async function _POST(req: NextRequest) {
       select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
     });
 
-    const allowPlaceholderMatches =
-      event.padelTournamentConfig?.format === "NON_STOP" ||
-      sortedUnscheduledMatches.some((match) => match.groupLabel === "NS");
+    const allowPlaceholderMatches = resolveAllowPlaceholderMatches({
+      tournamentFormat: event.padelTournamentConfig?.format ?? null,
+      unscheduledMatches,
+    });
 
-    const scheduleResult = computeAutoSchedulePlan({
-      unscheduledMatches: sortedUnscheduledMatches,
+    const scheduleResult = computeSchedulerV2Plan({
+      strategy,
+      unscheduledMatches,
       scheduledMatches: normalizedScheduledMatches,
       courts,
       availabilities,
@@ -574,6 +582,7 @@ async function _POST(req: NextRequest) {
         windowStart,
         windowEnd,
         ...(timeWindows ? { timeWindows } : {}),
+        ...(priorityOrder.length > 0 ? { courtPriorityOrder: priorityOrder } : {}),
         durationMinutes,
         slotMinutes,
         bufferMinutes,
@@ -583,8 +592,7 @@ async function _POST(req: NextRequest) {
       },
     });
     const unscheduledByReason = scheduleResult.unscheduledByReason;
-    const shouldHardBlockAutoSchedule = advanced.capacityPolicy?.hardBlockAutoSchedule !== false;
-    if (shouldHardBlockAutoSchedule && !dryRun && scheduleResult.skipped.length > 0) {
+    if (partialMode === "REQUIRE_FULL" && !dryRun && scheduleResult.skipped.length > 0) {
       return jsonWrap(
         {
           ok: false,
@@ -594,10 +602,7 @@ async function _POST(req: NextRequest) {
           skipped: scheduleResult.skipped,
           unscheduledByReason,
           suggestions: {
-            addWindowHours:
-              courts.length > 0
-                ? Math.ceil((scheduleResult.skipped.length * (durationMinutes + bufferMinutes)) / (courts.length * 60))
-                : null,
+            addWindowHours: courts.length > 0 ? Math.ceil((scheduleResult.skipped.length * (durationMinutes + bufferMinutes)) / (courts.length * 60)) : null,
             addCourts:
               Math.max(
                 1,
@@ -765,36 +770,134 @@ async function _POST(req: NextRequest) {
       bucket.push(candidate);
     }
 
-    let outboxEventId: string | null = null;
-    if (!dryRun && scheduledUpdates.length > 0) {
-      const outbox = await prisma.$transaction(async (tx) => {
-        const payload = {
-          eventId: event.id,
-          organizationId: organization.id,
-          actorUserId: check.userId,
-          scheduledUpdates: scheduledUpdates.map((update) => ({
-            matchId: update.matchId,
-            courtId: update.courtId,
-            start: update.start.toISOString(),
-            end: update.end.toISOString(),
-            durationMinutes: update.durationMinutes,
-            score: (update.score ?? null) as Prisma.InputJsonValue,
-          })),
-          skipped,
-          unscheduledByReason,
-          matchIds: targetMatchIds ?? null,
-          requestedAt: new Date().toISOString(),
-          requestMeta: getRequestMeta(req),
-        } as Prisma.InputJsonValue;
+    const runId = crypto.randomUUID();
+    const requestMeta = {
+      ...getRequestMeta(req),
+      hasNonStopRows,
+    };
+    const queued = !dryRun && executionMode === "ASYNC" && scheduledUpdates.length > 0;
+    const nowTs = new Date();
+    const initialRunStatus =
+      dryRun || scheduledUpdates.length === 0 ? "DONE" : queued ? "QUEUED" : "RUNNING";
 
+    const categoryByMatchId = new Map(unscheduledMatches.map((match) => [match.id, match.categoryId ?? null]));
+
+    await prisma.padelScheduleRun.create({
+      data: {
+        id: runId,
+        eventId: event.id,
+        organizationId: organization.id,
+        status: initialRunStatus,
+        strategy,
+        partialMode,
+        executionMode,
+        dryRun,
+        requestedByUserId: check.userId,
+        requestedAt: nowTs,
+        startedAt: initialRunStatus === "RUNNING" ? nowTs : null,
+        finishedAt: initialRunStatus === "DONE" ? nowTs : null,
+        scheduledCount: scheduledUpdates.length,
+        skippedCount: skipped.length,
+        unscheduledByReason: unscheduledByReason as Prisma.InputJsonValue,
+        byCategory: scheduleResult.byCategory as Prisma.InputJsonValue,
+        warnings: warnings as Prisma.InputJsonValue,
+        categoryIds: (targetCategoryIds ?? []) as Prisma.InputJsonValue,
+        matchIds: (targetMatchIds ?? []) as Prisma.InputJsonValue,
+        requestMeta: requestMeta as Prisma.InputJsonValue,
+        applied: dryRun || scheduledUpdates.length === 0 ? false : executionMode === "SYNC",
+        queued,
+      },
+    });
+
+    const decisions: Prisma.PadelScheduleRunDecisionCreateManyInput[] = [
+      ...scheduledUpdates.map((update) => ({
+        runId,
+        eventId: event.id,
+        organizationId: organization.id,
+        matchId: update.matchId,
+        categoryId: categoryByMatchId.get(update.matchId) ?? null,
+        decisionType: "SCHEDULED",
+        reason: null,
+        courtId: update.courtId,
+        startsAt: update.start,
+        endsAt: update.end,
+        details: {
+          durationMinutes: update.durationMinutes,
+        } as Prisma.InputJsonValue,
+      })),
+      ...skipped.map((item) => ({
+        runId,
+        eventId: event.id,
+        organizationId: organization.id,
+        matchId: item.matchId,
+        categoryId: categoryByMatchId.get(item.matchId) ?? null,
+        decisionType: "SKIPPED",
+        reason: item.reason,
+        courtId: null,
+        startsAt: null,
+        endsAt: null,
+        details: Prisma.JsonNull,
+      })),
+      ...warnings.map((warning) => ({
+        runId,
+        eventId: event.id,
+        organizationId: organization.id,
+        matchId: warning.matchId,
+        categoryId: categoryByMatchId.get(warning.matchId) ?? null,
+        decisionType: "WARNING",
+        reason: "AGENDA_WARNING",
+        courtId: null,
+        startsAt: null,
+        endsAt: null,
+        details: (warning.details ?? { message: warning.message }) as Prisma.InputJsonValue,
+      })),
+    ];
+    if (decisions.length > 0) {
+      await prisma.padelScheduleRunDecision.createMany({ data: decisions });
+    }
+
+    let outboxEventId: string | null = null;
+    const schedulePayloadObject = {
+      runId,
+      eventId: event.id,
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      scheduledUpdates: scheduledUpdates.map((update) => ({
+        matchId: update.matchId,
+        courtId: update.courtId,
+        start: update.start.toISOString(),
+        end: update.end.toISOString(),
+        durationMinutes: update.durationMinutes,
+        score: (update.score ?? null) as Prisma.InputJsonValue,
+      })),
+      skipped,
+      unscheduledByReason,
+      byCategory: scheduleResult.byCategory,
+      matchIds: targetMatchIds ?? null,
+      categoryIds: targetCategoryIds ?? null,
+      strategy,
+      partialMode,
+      executionMode,
+      requestedAt: nowTs.toISOString(),
+      requestMeta,
+    };
+    const schedulePayloadForOutbox = schedulePayloadObject as Prisma.InputJsonValue;
+    const schedulePayloadForHandler = schedulePayloadObject as Prisma.JsonValue;
+
+    if (!dryRun && scheduledUpdates.length > 0 && executionMode === "ASYNC") {
+      const outbox = await prisma.$transaction(async (tx) => {
         const dedupeSnapshot = {
           eventId: event.id,
+          runId,
           scheduledUpdates,
           skipped,
           unscheduledByReason,
           matchIds: targetMatchIds ?? null,
+          categoryIds: targetCategoryIds ?? null,
           priority,
           minRestMinutes,
+          strategy,
+          partialMode,
         } as Record<string, unknown>;
         const dedupeKey = `padel_auto_schedule:${event.id}:${hashPayload(dedupeSnapshot)}`;
 
@@ -802,7 +905,7 @@ async function _POST(req: NextRequest) {
           {
             eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
             dedupeKey,
-            payload,
+            payload: schedulePayloadForOutbox,
           },
           tx,
         );
@@ -817,11 +920,16 @@ async function _POST(req: NextRequest) {
             sourceId: String(event.id),
             correlationId: outbox.eventId,
             payload: {
+              runId,
               eventId: event.id,
               scheduledCount: scheduledUpdates.length,
               skippedCount: skipped.length,
               unscheduledByReason,
+              byCategory: scheduleResult.byCategory,
               matchIds: targetMatchIds ?? null,
+              categoryIds: targetCategoryIds ?? null,
+              strategy,
+              partialMode,
             },
           },
           tx,
@@ -829,40 +937,68 @@ async function _POST(req: NextRequest) {
         return outbox;
       });
       outboxEventId = outbox.eventId;
-      await recordOrganizationAuditSafe({
-        organizationId: organization.id,
-        actorUserId: check.userId,
-        action: "PADEL_AUTO_SCHEDULE",
-        metadata: {
-          eventId: event.id,
-          scheduledCount: scheduledUpdates.length,
-          skippedCount: skipped.length,
-          unscheduledByReason,
-          matchIds: targetMatchIds ?? null,
-          priority,
-          minRestMinutes,
-          courtIds: courts.map((court) => court.id),
-          courtPriorityOrder: priorityOrder,
+      await prisma.padelScheduleRun.update({
+        where: { id: runId },
+        data: {
+          outboxEventId,
+          queued: true,
+          applied: false,
+          status: "QUEUED",
         },
-        ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
-        userAgent: req.headers.get("user-agent") || null,
+      });
+    } else if (!dryRun && scheduledUpdates.length > 0 && executionMode === "SYNC") {
+      await handlePadelOutboxEvent({
+        eventType: "PADEL_AUTO_SCHEDULE_REQUESTED",
+        payload: schedulePayloadForHandler,
       });
     }
+
+    await recordOrganizationAuditSafe({
+      organizationId: organization.id,
+      actorUserId: check.userId,
+      action: "PADEL_AUTO_SCHEDULE",
+      metadata: {
+        runId,
+        eventId: event.id,
+        scheduledCount: scheduledUpdates.length,
+        skippedCount: skipped.length,
+        unscheduledByReason,
+        byCategory: scheduleResult.byCategory,
+        matchIds: targetMatchIds ?? null,
+        categoryIds: targetCategoryIds ?? null,
+        priority,
+        minRestMinutes,
+        strategy,
+        partialMode,
+        executionMode,
+        courtIds: courts.map((court) => court.id),
+        courtPriorityOrder: priorityOrder,
+      },
+      ip: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+      userAgent: req.headers.get("user-agent") || null,
+    });
 
     return jsonWrap(
       {
         ok: true,
+        runId,
         scheduledCount: scheduledUpdates.length,
         skippedCount: skipped.length,
         skipped,
         unscheduledByReason,
+        byCategory: scheduleResult.byCategory,
         dryRun,
         priority,
+        strategy,
+        partialMode,
+        executionMode,
         minRestMinutes,
         courtIds: courts.map((court) => court.id),
         courtPriorityOrder: priorityOrder,
-        queued: !dryRun && scheduledUpdates.length > 0,
-        eventId: outboxEventId,
+        queued: !dryRun && executionMode === "ASYNC" && scheduledUpdates.length > 0,
+        applied: !dryRun && executionMode === "SYNC",
+        eventId: event.id,
+        outboxEventId,
         warnings,
         scheduled: dryRun
           ? scheduledUpdates.map((update) => ({

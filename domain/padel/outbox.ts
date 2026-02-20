@@ -17,11 +17,18 @@ type DelayPolicy = "SINGLE_MATCH" | "CASCADE_SAME_COURT" | "GLOBAL_REPLAN";
 const DEFAULT_DELAY_POLICY: DelayPolicy = "CASCADE_SAME_COURT";
 
 type AutoScheduleRequestedPayload = {
+  runId?: string | null;
   eventId: number;
   organizationId: number;
   actorUserId: string;
   skipped?: Array<{ matchId: number; reason: string }>;
   unscheduledByReason?: Record<string, number>;
+  byCategory?: Array<{
+    categoryId: number | null;
+    scheduledCount: number;
+    skippedCount: number;
+    unscheduledByReason: Record<string, number>;
+  }>;
   scheduledUpdates: Array<{
     matchId: number;
     courtId: number;
@@ -204,39 +211,109 @@ async function handleRatingRebuildRequested(payload: RatingRebuildRequestedPaylo
 }
 
 async function handleAutoScheduleRequested(payload: AutoScheduleRequestedPayload) {
-  if (!payload?.scheduledUpdates?.length) return { ok: true } as const;
-  await prisma.$transaction(async (tx) => {
-    for (const update of payload.scheduledUpdates) {
-      await updatePadelMatch({
-        tx,
-        matchId: update.matchId,
-        eventId: payload.eventId,
-        organizationId: payload.organizationId,
-        actorUserId: payload.actorUserId,
-        eventType: SYSTEM_MATCH_EVENT,
+  const runId = typeof payload?.runId === "string" && payload.runId.trim().length > 0 ? payload.runId : null;
+  if (!payload?.scheduledUpdates?.length) {
+    if (runId) {
+      await prisma.padelScheduleRun.update({
+        where: { id: runId },
         data: {
-          plannedStartAt: new Date(update.start),
-          plannedEndAt: new Date(update.end),
-          plannedDurationMinutes: update.durationMinutes,
-          courtId: update.courtId,
-          ...(update.score ? { score: update.score as Prisma.InputJsonValue } : {}),
+          status: "DONE",
+          finishedAt: new Date(),
+          scheduledCount: 0,
+          skippedCount: Array.isArray(payload?.skipped) ? payload.skipped.length : 0,
+          unscheduledByReason: (payload?.unscheduledByReason ?? {}) as Prisma.InputJsonValue,
+          byCategory: (payload?.byCategory ?? []) as Prisma.InputJsonValue,
+          applied: false,
+          queued: false,
         },
       });
     }
-  });
-  await recordOrganizationAuditSafe({
-    organizationId: payload.organizationId,
-    actorUserId: payload.actorUserId,
-    action: "PADEL_CALENDAR_AUTO_SCHEDULE",
-    metadata: {
-      eventId: payload.eventId,
-      scheduledCount: payload.scheduledUpdates.length,
-      matchIds: payload.scheduledUpdates.map((u) => u.matchId),
-      skippedCount: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
-      unscheduledByReason: payload.unscheduledByReason ?? {},
-    },
-  });
-  return { ok: true } as const;
+    return { ok: true } as const;
+  }
+
+  try {
+    if (runId) {
+      await prisma.padelScheduleRun.update({
+        where: { id: runId },
+        data: {
+          status: "RUNNING",
+          startedAt: new Date(),
+          errorCode: null,
+        },
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const update of payload.scheduledUpdates) {
+        await updatePadelMatch({
+          tx,
+          matchId: update.matchId,
+          eventId: payload.eventId,
+          organizationId: payload.organizationId,
+          actorUserId: payload.actorUserId,
+          eventType: SYSTEM_MATCH_EVENT,
+          data: {
+            plannedStartAt: new Date(update.start),
+            plannedEndAt: new Date(update.end),
+            plannedDurationMinutes: update.durationMinutes,
+            courtId: update.courtId,
+            ...(update.score ? { score: update.score as Prisma.InputJsonValue } : {}),
+          },
+        });
+      }
+    });
+
+    if (runId) {
+      await prisma.padelScheduleRun.update({
+        where: { id: runId },
+        data: {
+          status: "DONE",
+          finishedAt: new Date(),
+          scheduledCount: payload.scheduledUpdates.length,
+          skippedCount: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+          unscheduledByReason: (payload.unscheduledByReason ?? {}) as Prisma.InputJsonValue,
+          byCategory: (payload.byCategory ?? []) as Prisma.InputJsonValue,
+          applied: true,
+          queued: false,
+        },
+      });
+    }
+
+    await recordOrganizationAuditSafe({
+      organizationId: payload.organizationId,
+      actorUserId: payload.actorUserId,
+      action: "PADEL_CALENDAR_AUTO_SCHEDULE",
+      metadata: {
+        runId,
+        eventId: payload.eventId,
+        scheduledCount: payload.scheduledUpdates.length,
+        matchIds: payload.scheduledUpdates.map((u) => u.matchId),
+        skippedCount: Array.isArray(payload.skipped) ? payload.skipped.length : 0,
+        unscheduledByReason: payload.unscheduledByReason ?? {},
+        byCategory: payload.byCategory ?? [],
+      },
+    });
+    return { ok: true } as const;
+  } catch (err) {
+    if (runId) {
+      const code =
+        err && typeof err === "object" && "code" in err && typeof (err as { code?: unknown }).code === "string"
+          ? (err as { code: string }).code
+          : err instanceof Error
+            ? err.name
+            : "UNKNOWN";
+      await prisma.padelScheduleRun.update({
+        where: { id: runId },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          errorCode: code,
+          queued: false,
+        },
+      });
+    }
+    throw err;
+  }
 }
 
 async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
@@ -524,6 +601,9 @@ async function handleMatchDelayRequested(payload: MatchDelayRequestedPayload) {
         config: {
           windowStart,
           windowEnd,
+          ...(courts.length > 0
+            ? { courtPriorityOrder: courts.map((court) => court.id) }
+            : {}),
           durationMinutes,
           slotMinutes,
           bufferMinutes,

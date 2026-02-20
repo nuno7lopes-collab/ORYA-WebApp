@@ -1,5 +1,6 @@
 export type AutoScheduleMatch = {
   id: number;
+  categoryId?: number | null;
   plannedDurationMinutes: number | null;
   courtId: number | null;
   sideAProfileIds: number[];
@@ -46,12 +47,14 @@ export type AutoScheduleConfig = {
   windowStart: Date;
   windowEnd: Date;
   timeWindows?: Array<{ start: Date; end: Date }>;
+  courtPriorityOrder?: number[];
   durationMinutes: number;
   slotMinutes: number;
   bufferMinutes: number;
   minRestMinutes: number;
   priority: "GROUPS_FIRST" | "KNOCKOUT_FIRST";
   allowPlaceholderMatches?: boolean;
+  preserveInputOrder?: boolean;
 };
 
 export type AutoScheduleResult = {
@@ -91,6 +94,13 @@ const roundUpToSlot = (value: Date, slotMinutes: number) => {
     d.setSeconds(0, 0);
   }
   return d;
+};
+
+const compareRoundLabels = (a?: string | null, b?: string | null) => {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return a.localeCompare(b, "pt-PT", { numeric: true, sensitivity: "base" });
 };
 
 const overlapsWithBuffer = (start: Date, end: Date, interval: Interval, bufferMs: number) => {
@@ -174,12 +184,14 @@ export function computeAutoSchedulePlan({
     windowStart,
     windowEnd,
     timeWindows,
+    courtPriorityOrder,
     durationMinutes,
     slotMinutes,
     bufferMinutes,
     minRestMinutes,
     priority,
     allowPlaceholderMatches = false,
+    preserveInputOrder = false,
   } = config;
   const schedulingWindows = normalizeSchedulingWindows({
     windowStart,
@@ -193,8 +205,16 @@ export function computeAutoSchedulePlan({
     allowPlaceholderMatches,
   });
 
-  const courtIds = courts.map((court) => court.id);
+  const courtIdsRaw = courts.map((court) => court.id);
+  const configuredCourtPriority = Array.isArray(courtPriorityOrder)
+    ? courtPriorityOrder.filter((courtId) => typeof courtId === "number" && Number.isFinite(courtId))
+    : [];
+  const courtIds = [
+    ...configuredCourtPriority.filter((courtId) => courtIdsRaw.includes(courtId)),
+    ...courtIdsRaw.filter((courtId) => !configuredCourtPriority.includes(courtId)),
+  ];
   const courtIdSet = new Set(courtIds);
+  const courtRankById = new Map(courtIds.map((courtId, idx) => [courtId, idx]));
   const bufferMs = bufferMinutes * 60 * 1000;
   const restMs = minRestMinutes * 60 * 1000;
 
@@ -213,7 +233,9 @@ export function computeAutoSchedulePlan({
   });
 
   const occupiedByCourt = new Map<number, Interval[]>();
+  const scheduledCountByCourt = new Map<number, number>();
   courtIds.forEach((id) => occupiedByCourt.set(id, []));
+  courtIds.forEach((id) => scheduledCountByCourt.set(id, 0));
   const globalBlocks: Interval[] = [];
 
   const busyByProfile = new Map<number, Interval[]>();
@@ -277,6 +299,7 @@ export function computeAutoSchedulePlan({
     if (!window) return;
     if (match.courtId && courtIdSet.has(match.courtId)) {
       addInterval(occupiedByCourt, match.courtId, { start: window.start, end: window.end });
+      scheduledCountByCourt.set(match.courtId, (scheduledCountByCourt.get(match.courtId) ?? 0) + 1);
     }
     addBusy(resolveMatchParticipants(match), { start: window.start, end: window.end });
   });
@@ -307,27 +330,29 @@ export function computeAutoSchedulePlan({
     return true;
   };
 
-  const sortedMatches = [...unscheduledMatches].sort((a, b) => {
-    const typeDiff = roundTypeOrder(a.roundType, priority) - roundTypeOrder(b.roundType, priority);
-    if (typeDiff !== 0) return typeDiff;
-    if (a.roundType === "KNOCKOUT" || b.roundType === "KNOCKOUT") {
-      const aMeta = parseRoundLabel(a.roundLabel);
-      const bMeta = parseRoundLabel(b.roundLabel);
-      if (prefixOrder(aMeta.prefix) !== prefixOrder(bMeta.prefix)) {
-        return prefixOrder(aMeta.prefix) - prefixOrder(bMeta.prefix);
-      }
-      if (aMeta.size !== null && bMeta.size !== null && aMeta.size !== bMeta.size) {
-        return bMeta.size - aMeta.size;
-      }
-    }
-    if (a.groupLabel && b.groupLabel && a.groupLabel !== b.groupLabel) {
-      return a.groupLabel.localeCompare(b.groupLabel);
-    }
-    if (a.roundLabel && b.roundLabel && a.roundLabel !== b.roundLabel) {
-      return a.roundLabel.localeCompare(b.roundLabel);
-    }
-    return a.id - b.id;
-  });
+  const sortedMatches = preserveInputOrder
+    ? [...unscheduledMatches]
+    : [...unscheduledMatches].sort((a, b) => {
+        const typeDiff = roundTypeOrder(a.roundType, priority) - roundTypeOrder(b.roundType, priority);
+        if (typeDiff !== 0) return typeDiff;
+        if (a.roundType === "KNOCKOUT" || b.roundType === "KNOCKOUT") {
+          const aMeta = parseRoundLabel(a.roundLabel);
+          const bMeta = parseRoundLabel(b.roundLabel);
+          if (prefixOrder(aMeta.prefix) !== prefixOrder(bMeta.prefix)) {
+            return prefixOrder(aMeta.prefix) - prefixOrder(bMeta.prefix);
+          }
+          if (aMeta.size !== null && bMeta.size !== null && aMeta.size !== bMeta.size) {
+            return bMeta.size - aMeta.size;
+          }
+        }
+        if (a.groupLabel && b.groupLabel && a.groupLabel !== b.groupLabel) {
+          return a.groupLabel.localeCompare(b.groupLabel);
+        }
+        if (a.roundLabel && b.roundLabel && a.roundLabel !== b.roundLabel) {
+          return compareRoundLabels(a.roundLabel, b.roundLabel);
+        }
+        return a.id - b.id;
+      });
 
   const nextStartByCourt = new Map<number, Date>();
   const firstWindowStart = schedulingWindows[0]?.start ?? windowStart;
@@ -364,6 +389,8 @@ export function computeAutoSchedulePlan({
     }
 
     let bestSlot: { start: Date; end: Date; courtId: number } | null = null;
+    let hasAnyCourtWindow = false;
+    let hasAnyPlayerWindow = false;
     for (const courtId of candidateCourts) {
       const baseStart = nextStartByCourt.get(courtId) ?? firstWindowStart;
       for (const window of schedulingWindows) {
@@ -377,22 +404,41 @@ export function computeAutoSchedulePlan({
 
         while (candidate.getTime() + matchDurationMs <= window.end.getTime()) {
           const end = new Date(candidate.getTime() + matchDurationMs);
-          if (isCourtAvailable(courtId, candidate, end) && isPlayersAvailable(participants, candidate, end)) {
-            bestSlot =
-              !bestSlot || candidate.getTime() < bestSlot.start.getTime()
-                ? { start: candidate, end, courtId }
-                : bestSlot;
+          const courtAvailable = isCourtAvailable(courtId, candidate, end);
+          const playersAvailable = isPlayersAvailable(participants, candidate, end);
+          if (courtAvailable) hasAnyCourtWindow = true;
+          if (playersAvailable) hasAnyPlayerWindow = true;
+          if (courtAvailable && playersAvailable) {
+            const candidateRank = courtRankById.get(courtId) ?? Number.MAX_SAFE_INTEGER;
+            const bestRank = bestSlot ? courtRankById.get(bestSlot.courtId) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+            const candidateLoad = scheduledCountByCourt.get(courtId) ?? 0;
+            const bestLoad = bestSlot ? scheduledCountByCourt.get(bestSlot.courtId) ?? 0 : Number.MAX_SAFE_INTEGER;
+            if (
+              !bestSlot ||
+              candidate.getTime() < bestSlot.start.getTime() ||
+              (candidate.getTime() === bestSlot.start.getTime() && candidateLoad < bestLoad) ||
+              (candidate.getTime() === bestSlot.start.getTime() && candidateLoad === bestLoad && candidateRank < bestRank) ||
+              (candidate.getTime() === bestSlot.start.getTime() &&
+                candidateLoad === bestLoad &&
+                candidateRank === bestRank &&
+                courtId < bestSlot.courtId)
+            ) {
+              bestSlot = { start: candidate, end, courtId };
+            }
             break;
           }
           candidate = roundUpToSlot(new Date(candidate.getTime() + slotMinutes * 60 * 1000), slotMinutes);
         }
-
-        if (bestSlot) break;
       }
     }
 
     if (!bestSlot) {
-      skipped.push({ matchId: match.id, reason: "NO_SLOT_AVAILABLE" });
+      const reason = !hasAnyCourtWindow
+        ? "NO_COURT_WINDOW"
+        : !hasAnyPlayerWindow
+          ? "PLAYER_UNAVAILABLE"
+          : "NO_SLOT_AVAILABLE";
+      skipped.push({ matchId: match.id, reason });
       continue;
     }
 
@@ -405,6 +451,7 @@ export function computeAutoSchedulePlan({
     });
 
     addInterval(occupiedByCourt, bestSlot.courtId, { start: bestSlot.start, end: bestSlot.end });
+    scheduledCountByCourt.set(bestSlot.courtId, (scheduledCountByCourt.get(bestSlot.courtId) ?? 0) + 1);
     addBusy(participants, { start: bestSlot.start, end: bestSlot.end });
     const nextStart = roundUpToSlot(new Date(bestSlot.end.getTime() + bufferMs), slotMinutes);
     nextStartByCourt.set(bestSlot.courtId, nextStart);

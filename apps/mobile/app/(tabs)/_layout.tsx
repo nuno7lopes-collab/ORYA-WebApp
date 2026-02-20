@@ -3,14 +3,14 @@ import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { ActivityIndicator, Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useCallback, useEffect, useState } from "react";
-import { FloatingTabBar, TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
+import { FloatingTabBar } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
 import { isAuthError, resolveOnboardingGate } from "../../lib/onboardingGate";
 import { supabase } from "../../lib/supabase";
 import { getOnboardingDraft } from "../../lib/onboardingDraft";
 import { useFavoritesSync } from "../../features/favorites/hooks";
 import { CachedProfile, getProfileCache, setProfileCache } from "../../lib/profileCache";
-import { TAB_ORDER, type TabKey } from "../../components/navigation/tabOrder";
+import { type TabKey } from "../../components/navigation/tabOrder";
 import { useTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
 import { LocationPermissionModal } from "../../components/location/LocationPermissionModal";
 import { getLocationPermissionState, requestLocationConsent } from "../../lib/locationConsent";
@@ -32,6 +32,7 @@ const ExpoTopTabs = withLayoutContext<
   MaterialTopTabNavigationEventMap
 >(MaterialTopTabs.Navigator);
 const APP_BACKGROUND = tokens.colors.background;
+const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["agora", "network", "messages", "profile", "index"];
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -181,24 +182,16 @@ export default function TabsLayout() {
   );
   const renderTabBar = useCallback((props: MaterialTopTabBarProps) => {
     const activeRoute = props.state.routes[props.state.index]?.name ?? "agora";
-    const activeKey = ((TAB_ORDER as readonly string[]).includes(activeRoute) ? activeRoute : "agora") as TabKey;
-    const pagerProgress = Animated.subtract(props.position, 1);
-    const tabBarOpacity = props.position.interpolate({
-      inputRange: [0, 0.35, 1],
-      outputRange: [0, 0.55, 1],
-      extrapolate: "clamp",
-    });
-    const tabBarTranslateY = props.position.interpolate({
-      inputRange: [0, 1],
-      outputRange: [TAB_BAR_HEIGHT + 56, 0],
-      extrapolate: "clamp",
-    });
+    if (activeRoute === "padel") {
+      return null;
+    }
+    const activeKey = (VISIBLE_TAB_KEYS.includes(activeRoute as TabKey) ? activeRoute : "agora") as TabKey;
     return (
       <Animated.View
-        pointerEvents={activeRoute === "wallet" ? "none" : "box-none"}
+        pointerEvents="box-none"
         style={[
           StyleSheet.absoluteFillObject,
-          { opacity: tabBarOpacity, transform: [{ translateY: tabBarTranslateY }] },
+          { opacity: 1, transform: [{ translateY: 0 }] },
         ]}
       >
         <FloatingTabBar
@@ -209,7 +202,6 @@ export default function TabsLayout() {
               props.navigation.navigate(route.name);
             }
           }}
-          pagerProgress={pagerProgress}
         />
       </Animated.View>
     );
@@ -283,7 +275,7 @@ export default function TabsLayout() {
           lazyPlaceholder: renderLazyPlaceholder,
         }}
       >
-        <ExpoTopTabs.Screen name="wallet" options={{ title: "Bilhetes" }} />
+        <ExpoTopTabs.Screen name="padel" options={{ title: "Padel" }} />
         <ExpoTopTabs.Screen name="agora" options={{ title: "Agora" }} />
         <ExpoTopTabs.Screen name="network" options={{ title: "Rede" }} />
         <ExpoTopTabs.Screen name="messages" options={{ title: "Mensagens" }} />

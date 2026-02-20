@@ -1,13 +1,19 @@
 import { Image } from "expo-image";
 import { Ionicons } from "../../icons/Ionicons";
 import { StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 
 type EventHeroSquareProps = {
   coverUri: string | null;
   title: string | null;
+  overlayTint?: string | null;
 };
 
-export function EventHeroSquare({ coverUri, title }: EventHeroSquareProps) {
+export function EventHeroSquare({
+  coverUri,
+  title,
+  overlayTint = null,
+}: EventHeroSquareProps) {
   return (
     <View style={styles.shell}>
       {coverUri ? (
@@ -26,6 +32,17 @@ export function EventHeroSquare({ coverUri, title }: EventHeroSquareProps) {
           </Text>
         </View>
       )}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[
+          "rgba(4,8,14,0)",
+          overlayTint ?? "rgba(8,12,20,0.42)",
+          "rgba(7,11,18,0.82)",
+        ]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={styles.bottomOverlay}
+      />
       <View pointerEvents="none" style={styles.innerFrame} />
     </View>
   );
@@ -61,5 +78,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.05)",
   },
+  bottomOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "64%",
+  },
 });
-

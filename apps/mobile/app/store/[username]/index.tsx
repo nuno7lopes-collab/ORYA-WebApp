@@ -4,7 +4,6 @@ import { Image } from "expo-image";
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../components/liquid/GlassCard";
 import { useStoreBundles, useStoreCatalog, useStoreCart } from "../../../features/store/hooks";
 import { useStoreCartStore } from "../../../features/store/cartStore";
 import { getStoreErrorMessage } from "../../../features/store/errors";
@@ -126,25 +125,28 @@ export default function StorefrontScreen() {
             <ActivityIndicator color="white" />
           </View>
         ) : catalog.isError ? (
-          <GlassCard intensity={54}>
+          <View className="gap-2 border-b border-rose-200/30 pb-4">
             <Text className="text-red-300 text-sm mb-3">{getStoreErrorMessage(catalog.error)}</Text>
             <Pressable
               onPress={() => catalog.refetch()}
-              className="rounded-xl bg-white/10 px-4 py-3"
+              className="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
-              <Text className="text-center text-sm font-semibold text-white">Tentar novamente</Text>
+              <Text className="text-xs font-semibold text-white">Tentar novamente</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-5">
             {bundles.length ? (
               <View className="gap-3">
                 <Text className="text-white text-base font-semibold">Packs</Text>
-                {bundles.map((bundle) => (
-                  <GlassCard key={`bundle-${bundle.id}`} intensity={48}>
-                    <View className="gap-2">
+                <View className="gap-1 border-b border-white/12 pb-2">
+                  {bundles.map((bundle, index) => (
+                    <View
+                      key={`bundle-${bundle.id}`}
+                      className={index < bundles.length - 1 ? "gap-2 border-b border-white/10 pb-3 pt-1" : "gap-2 pb-1 pt-1"}
+                    >
                       <Text className="text-white text-sm font-semibold">{bundle.name}</Text>
                       {bundle.description ? (
                         <Text className="text-white/65 text-xs">{bundle.description}</Text>
@@ -156,8 +158,8 @@ export default function StorefrontScreen() {
                         Poupa {formatMoney(bundle.discountCents, bundle.currency)}
                       </Text>
                     </View>
-                  </GlassCard>
-                ))}
+                  ))}
+                </View>
               </View>
             ) : null}
 
@@ -180,7 +182,7 @@ export default function StorefrontScreen() {
                       asChild
                     >
                       <Pressable
-                        className="overflow-hidden rounded-2xl border border-white/12 bg-white/5"
+                        className="overflow-hidden rounded-xl border border-white/12 bg-white/[0.04]"
                         accessibilityRole="button"
                         accessibilityLabel={`Ver produto ${product.name}`}
                       >
@@ -207,9 +209,9 @@ export default function StorefrontScreen() {
                   );
                 })
               ) : (
-                <GlassCard intensity={46}>
+                <View className="border-b border-white/12 pb-3">
                   <Text className="text-white/65 text-sm">Sem produtos públicos neste momento.</Text>
-                </GlassCard>
+                </View>
               )}
             </View>
           </View>

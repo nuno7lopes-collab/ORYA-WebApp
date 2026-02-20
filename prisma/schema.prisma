@@ -272,6 +272,8 @@ model Organization {
   padelTournamentRoleAssignments                                           PadelTournamentRoleAssignment[]
   padelCourtBlocks                                                         CalendarBlock[]
   padelAvailabilities                                                      CalendarAvailability[]
+  padelScheduleRuns                                                        PadelScheduleRun[]
+  padelScheduleRunDecisions                                                PadelScheduleRunDecision[]
   padelWaitlistEntries                                                     PadelWaitlistEntry[]
   organizationPolicies                                                     OrganizationPolicy[]
   userEventSignals                                                         UserEventSignal[]
@@ -1810,6 +1812,8 @@ model Event {
   padelPlayerHistoryProjections  PadelPlayerHistoryProjection[]
   padelCourtBlocks               CalendarBlock[]
   padelAvailabilities            CalendarAvailability[]
+  padelScheduleRuns              PadelScheduleRun[]
+  padelScheduleRunDecisions      PadelScheduleRunDecision[]
   padelWaitlistEntries           PadelWaitlistEntry[]
   padelTeamEntries               PadelTeamEntry[]
   tournamentEntries              TournamentEntry[]
@@ -5316,6 +5320,75 @@ model ScheduleDelay {
   @@index([organizationId, scopeType, scopeId])
   @@index([organizationId, effectiveFrom])
   @@map("schedule_delays")
+  @@schema("app_v3")
+}
+
+model PadelScheduleRun {
+  env                 String       @default("prod")
+  id                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId             Int          @map("event_id")
+  organizationId      Int          @map("organization_id")
+  status              String       @default("QUEUED")
+  strategy            String       @default("BALANCED_BY_CATEGORY")
+  partialMode         String       @default("ALLOW_PARTIAL") @map("partial_mode")
+  executionMode       String       @default("SYNC") @map("execution_mode")
+  dryRun              Boolean      @default(false) @map("dry_run")
+  scheduledCount      Int          @default(0) @map("scheduled_count")
+  skippedCount        Int          @default(0) @map("skipped_count")
+  unscheduledByReason Json?        @map("unscheduled_by_reason")
+  byCategory          Json?        @map("by_category")
+  warnings            Json?
+  errorCode           String?      @map("error_code")
+  requestedByUserId   String?      @map("requested_by_user_id") @db.Uuid
+  requestedAt         DateTime     @default(now()) @map("requested_at") @db.Timestamptz(6)
+  startedAt           DateTime?    @map("started_at") @db.Timestamptz(6)
+  finishedAt          DateTime?    @map("finished_at") @db.Timestamptz(6)
+  applied             Boolean      @default(false)
+  queued              Boolean      @default(false)
+  outboxEventId       String?      @unique(map: "padel_schedule_runs_outbox_event_id_key") @map("outbox_event_id")
+  categoryIds         Json?        @map("category_ids")
+  matchIds            Json?        @map("match_ids")
+  requestMeta         Json?        @map("request_meta")
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event         Event                   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  decisions     PadelScheduleRunDecision[]
+
+  @@index([eventId], map: "padel_schedule_runs_event_idx")
+  @@index([organizationId], map: "padel_schedule_runs_org_idx")
+  @@index([status], map: "padel_schedule_runs_status_idx")
+  @@index([requestedAt], map: "padel_schedule_runs_requested_at_idx")
+  @@map("padel_schedule_runs")
+  @@schema("app_v3")
+}
+
+model PadelScheduleRunDecision {
+  env            String            @default("prod")
+  id             Int               @id @default(autoincrement())
+  runId          String            @map("run_id") @db.Uuid
+  eventId        Int               @map("event_id")
+  organizationId Int               @map("organization_id")
+  matchId        Int?              @map("match_id")
+  categoryId     Int?              @map("category_id")
+  decisionType   String            @map("decision_type")
+  reason         String?
+  courtId        Int?              @map("court_id")
+  startsAt       DateTime?         @map("starts_at") @db.Timestamptz(6)
+  endsAt         DateTime?         @map("ends_at") @db.Timestamptz(6)
+  details        Json?
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run          PadelScheduleRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  event        Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([runId], map: "padel_schedule_run_decisions_run_idx")
+  @@index([eventId], map: "padel_schedule_run_decisions_event_idx")
+  @@index([organizationId], map: "padel_schedule_run_decisions_org_idx")
+  @@index([matchId], map: "padel_schedule_run_decisions_match_idx")
+  @@map("padel_schedule_run_decisions")
   @@schema("app_v3")
 }
 

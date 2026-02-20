@@ -480,6 +480,7 @@
       "subtitle": "Control how each organization contacts you.",
       "loading": "Loading consents...",
       "empty": "No associated organizations.",
+      "emptyFollowed": "Follow organizations to customize consents.",
       "orgFallback": "Organization",
       "generalTitle": "General consent",
       "generalUpdates": "Updates and upcoming events",
@@ -495,6 +496,8 @@
       "signOut": "Sign out",
       "delete": "Delete account",
       "deleteHint": "This action is permanent.",
+      "deleteWarningTitle": "Warning: irreversible action",
+      "deleteWarningBody": "Deleting your account removes all data. You'll always need to confirm with \"{phrase}\".",
       "deleteTitle": "Delete account",
       "deleteBody": "To confirm, type your email.",
       "deleteInput": "Email",
@@ -646,7 +649,51 @@
       "configurationIssue": "We're fixing this event's ticket setup. Please try again shortly.",
       "lastSeats": "Last {count}",
       "remaining": "{count}+ seats",
-      "freeEntry": "Free entry"
+      "freeEntry": "Free entry",
+      "cta": {
+        "processing": "Processing…",
+        "accessibility": "Tickets: {label}. Price: {price}",
+        "state": {
+          "ready": "Buy ticket",
+          "inviteLocked": "Invite-only access",
+          "ended": "Event ended",
+          "comingSoon": "Tickets soon",
+          "unavailable": "No tickets available"
+        }
+      },
+      "sheet": {
+        "closeSelection": "Close ticket selection",
+        "increment": "Add ticket {name}",
+        "decrement": "Remove ticket {name}",
+        "submit": {
+          "default": "Complete purchase",
+          "select": "Choose tickets",
+          "freeSingle": "Claim free ticket",
+          "freePlural": "Claim free tickets",
+          "pay": "Pay {price}"
+        }
+      },
+      "freeSuccess": {
+        "eventFallback": "this event",
+        "kicker": {
+          "single": "YOU'RE IN",
+          "plural": "YOU'RE ALL IN"
+        },
+        "title": {
+          "single": "Registration confirmed",
+          "plural": "Registrations confirmed"
+        },
+        "message": {
+          "single": "Your free ticket for {event} is confirmed.",
+          "plural": "You secured {count} free tickets for {event}.",
+          "default": "Your free ticket for this event is confirmed."
+        },
+        "cta": {
+          "single": "View ticket",
+          "plural": "View tickets",
+          "accessibility": "View ticket"
+        }
+      }
     },
     "attendance": {
       "registered": "{sold}/{total} attending",
@@ -779,6 +826,7 @@
       "pairingCreateFailed": "Couldn't create the pair.",
       "pairingTitle": "Pairs",
       "joinSuccess": "You're in. You'll receive confirmation soon.",
+      "joinAlreadyActive": "You already have an active pair in this category.",
       "joinFailed": "Couldn't join the pair.",
       "invalidCategoryPayment": "Invalid category for payment.",
       "openPairingsSubtitle": "Players and pairs with open slots and compatible competitive profile.",

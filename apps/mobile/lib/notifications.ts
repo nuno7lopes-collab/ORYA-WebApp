@@ -1,14 +1,13 @@
-import {
-  resolveNotificationLink,
-  type ResolvedNotificationLink,
-} from "../../../lib/mobile/notifications";
+import type { Router } from "expo-router";
+import { resolveNotificationLink, type ResolvedNotificationLink } from "../../../lib/mobile/notifications";
+import { safePush } from "./navigation";
 
-type RouterLike = { push: (href: string) => void };
+type RouterLike = Pick<Router, "push">;
 
 export const openNotificationLink = async (router: RouterLike, input?: string | null) => {
   const resolved = resolveNotificationLink(input);
   if (resolved.kind === "native") {
-    router.push(resolved.path);
+    safePush(router, resolved.path);
     return;
   }
   if (resolved.kind === "web") {

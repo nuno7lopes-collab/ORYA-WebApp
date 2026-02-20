@@ -21,6 +21,14 @@ const buildPreviewRegion = (
   longitudeDelta: 0.01,
 });
 
+const isFiniteCoordinate = (latitude: number, longitude: number) =>
+  Number.isFinite(latitude) &&
+  Number.isFinite(longitude) &&
+  latitude >= -90 &&
+  latitude <= 90 &&
+  longitude >= -180 &&
+  longitude <= 180;
+
 export function EventLocationBlock({
   startsAtLabel,
   locationLabel,
@@ -29,10 +37,15 @@ export function EventLocationBlock({
   onOpenMap,
   openMapLabel = "Abrir no mapa",
 }: EventLocationBlockProps) {
-  const hasCoordinates =
-    Number.isFinite(latitude) && Number.isFinite(longitude);
+  const parsedLatitude =
+    typeof latitude === "number" ? latitude : Number(latitude ?? Number.NaN);
+  const parsedLongitude =
+    typeof longitude === "number"
+      ? longitude
+      : Number(longitude ?? Number.NaN);
+  const hasCoordinates = isFiniteCoordinate(parsedLatitude, parsedLongitude);
   const region = hasCoordinates
-    ? buildPreviewRegion(latitude as number, longitude as number)
+    ? buildPreviewRegion(parsedLatitude, parsedLongitude)
     : null;
 
   return (
@@ -66,28 +79,31 @@ export function EventLocationBlock({
         </Pressable>
       ) : null}
 
-      <Pressable
-        onPress={onOpenMap}
-        accessibilityRole="button"
-        accessibilityLabel={openMapLabel}
-        style={({ pressed }) => [
-          styles.previewShell,
-          pressed ? styles.pressed : null,
-        ]}
-      >
-        {region ? (
+      {region ? (
+        <Pressable
+          onPress={onOpenMap}
+          accessibilityRole="button"
+          accessibilityLabel={openMapLabel}
+          style={({ pressed }) => [
+            styles.previewShell,
+            pressed ? styles.pressed : null,
+          ]}
+        >
           <MapView
+            key={`event-map-${region.latitude}-${region.longitude}`}
             provider={PROVIDER_DEFAULT}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
             initialRegion={region}
-            region={region}
-            mapType="mutedStandard"
+            mapType="standard"
             showsPointsOfInterest={false}
             showsBuildings={false}
             showsTraffic={false}
             showsCompass={false}
             showsScale={false}
+            showsIndoors={false}
+            showsMyLocationButton={false}
+            loadingEnabled
             toolbarEnabled={false}
             rotateEnabled={false}
             scrollEnabled={false}
@@ -101,27 +117,8 @@ export function EventLocationBlock({
               }}
             />
           </MapView>
-        ) : (
-          <View style={styles.previewFallback}>
-            <Ionicons
-              name="map-outline"
-              size={26}
-              color="rgba(228,244,255,0.84)"
-            />
-            <Text style={styles.previewFallbackText} numberOfLines={2}>
-              Preview de mapa indisponivel para este evento.
-            </Text>
-          </View>
-        )}
-        <View style={styles.previewOverlay}>
-          <Ionicons
-            name="open-outline"
-            size={19}
-            color="rgba(246,252,255,0.96)"
-          />
-        </View>
-      </Pressable>
-
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -158,33 +155,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.18)",
     backgroundColor: "rgba(14,22,33,0.92)",
-  },
-  previewFallback: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 24,
-  },
-  previewFallbackText: {
-    textAlign: "center",
-    color: "rgba(226,240,255,0.72)",
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: "600",
-  },
-  previewOverlay: {
-    position: "absolute",
-    right: 12,
-    bottom: 12,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    backgroundColor: "rgba(10,15,24,0.68)",
-    alignItems: "center",
-    justifyContent: "center",
   },
   pressed: {
     opacity: 0.88,

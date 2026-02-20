@@ -197,6 +197,23 @@ const parseItems = <T>(payload: unknown, key: string): T[] => {
   return Array.isArray(raw) ? (raw as T[]) : [];
 };
 
+const resolveApiErrorCode = (error: unknown): string | null => {
+  if (error instanceof ApiError && error.code) {
+    return error.code.trim().toUpperCase();
+  }
+  if (!(error instanceof Error)) return null;
+  const message = error.message ?? "";
+  const jsonCodeMatch = message.match(/"errorCode"\s*:\s*"([^"]+)"/i);
+  if (jsonCodeMatch?.[1]) {
+    return jsonCodeMatch[1].trim().toUpperCase();
+  }
+  const codeMatch = message.match(/"code"\s*:\s*"([^"]+)"/i);
+  if (codeMatch?.[1]) {
+    return codeMatch[1].trim().toUpperCase();
+  }
+  return null;
+};
+
 export const fetchPadelStandings = async (
   eventId: number,
   categoryId?: number | null,
@@ -280,12 +297,23 @@ export const createPairing = async (payload: {
   };
 };
 
-export const joinOpenPairing = async (pairingId: number) => {
-  const response = await api.request<unknown>("/api/padel/pairings/open", {
-    method: "POST",
-    body: JSON.stringify({ pairingId }),
-  });
-  return unwrapApiResponse(response);
+export const joinOpenPairing = async (
+  pairingId: number,
+): Promise<{ alreadyActive: boolean }> => {
+  try {
+    const response = await api.request<unknown>("/api/padel/pairings/open", {
+      method: "POST",
+      body: JSON.stringify({ pairingId }),
+    });
+    unwrapApiResponse(response);
+    return { alreadyActive: false };
+  } catch (error) {
+    const code = resolveApiErrorCode(error);
+    if (code === "PAIRING_ALREADY_ACTIVE") {
+      return { alreadyActive: true };
+    }
+    throw error;
+  }
 };
 
 export const acceptInvite = async (pairingId: number) => {

@@ -488,6 +488,23 @@ async function _POST(req: NextRequest) {
             const parsedFormat = parsePadelFormat(payload.format);
             if (parsedFormat) parsed.format = parsedFormat;
           }
+          if (
+            payload.drawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS" ||
+            payload.drawPolicy === "RANDOM_ONLY" ||
+            payload.drawPolicy === "SEEDED_ONLY"
+          ) {
+            parsed.drawPolicy = payload.drawPolicy;
+          }
+          if (
+            payload.seedSource === "TOURNAMENT_CONFIG" ||
+            payload.seedSource === "RANKING_SNAPSHOT" ||
+            payload.seedSource === "NONE"
+          ) {
+            parsed.seedSource = payload.seedSource;
+          }
+          if (typeof payload.drawSeed === "string" || typeof payload.drawSeed === "number") {
+            parsed.drawSeed = payload.drawSeed;
+          }
           if (payload.amMxMode === "FIXED_PAIR" || payload.amMxMode === "INDIVIDUAL_ROTATION") {
             parsed.amMxMode = payload.amMxMode;
           }

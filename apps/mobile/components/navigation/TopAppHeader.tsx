@@ -10,6 +10,7 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useNotificationsUnread } from "../../features/notifications/hooks";
 import { useAuth } from "../../lib/auth";
+import { safePush } from "../../lib/navigation";
 import type { TopBarScrollState } from "./useTopBarScroll";
 import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
 
@@ -89,7 +90,7 @@ export function TopAppHeader({
         {renderNotifications ? (
           <View style={styles.iconWrap}>
             <Pressable
-              onPress={() => router.push("/notifications")}
+              onPress={() => safePush(router, "/notifications")}
               accessibilityRole="button"
               accessibilityLabel="Notificações"
               hitSlop={10}
@@ -106,7 +107,7 @@ export function TopAppHeader({
         ) : null}
         {renderMessages ? (
           <Pressable
-            onPress={() => router.push("/messages")}
+            onPress={() => safePush(router, "/messages")}
             accessibilityRole="button"
             accessibilityLabel="Mensagens"
             hitSlop={10}

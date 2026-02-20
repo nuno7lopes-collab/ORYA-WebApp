@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { safePush } from "../../lib/navigation";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Linking from "expo-linking";
@@ -257,7 +258,7 @@ export default function AuthGatewayScreen() {
     await triggerHaptic();
     trackEvent("auth_tap_email");
     setLastMethod("email").catch(() => undefined);
-    router.push({ pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
+    safePush(router, { pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
     if (emailTimeoutRef.current) {
       clearTimeout(emailTimeoutRef.current);
     }
@@ -268,7 +269,7 @@ export default function AuthGatewayScreen() {
 
   const handleLinkContinue = () => {
     setLinkModalVisible(false);
-    router.push({ pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
+    safePush(router, { pathname: "/auth/email", params: nextRoute ? { next: nextRoute } : {} });
   };
 
   if (loading) {

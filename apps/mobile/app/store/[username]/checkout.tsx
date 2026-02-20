@@ -5,7 +5,6 @@ import { useNavigation } from "@react-navigation/native";
 import { initStripe, useStripe } from "@stripe/stripe-react-native";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../../components/navigation/useTopBarScroll";
@@ -295,28 +294,28 @@ export default function StoreCheckoutScreen() {
         scrollEventThrottle={16}
       >
         {!session?.user?.id ? (
-          <GlassCard intensity={52}>
+          <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-base font-semibold">Inicia sessão para concluir a compra</Text>
             <Pressable
               onPress={openAuth}
-              className="mt-4 rounded-xl bg-white px-4 py-3"
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
             >
-              <Text className="text-center text-sm font-semibold text-black">Iniciar sessão</Text>
+              <Text className="text-xs font-semibold text-black">Iniciar sessão</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : cart.isLoading ? (
           <View className="py-8">
             <ActivityIndicator color="white" />
           </View>
         ) : cart.isError ? (
-          <GlassCard intensity={54}>
+          <View className="border-b border-rose-200/30 pb-3">
             <Text className="text-red-300 text-sm">{getStoreErrorMessage(cart.error)}</Text>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-4">
-            <GlassCard intensity={46}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-sm font-semibold mb-3">Dados de contacto</Text>
               <View className="gap-3">
                 <TextInput
@@ -344,10 +343,10 @@ export default function StoreCheckoutScreen() {
                   className="rounded-xl border border-white/15 bg-white/5 px-3 py-3 text-white text-sm"
                 />
               </View>
-            </GlassCard>
+            </View>
 
             {totals.requiresShipping ? (
-              <GlassCard intensity={46}>
+              <View className="border-b border-white/12 pb-4">
                 <AddressPicker
                   label="Morada de envio"
                   value={shippingAddress}
@@ -433,10 +432,10 @@ export default function StoreCheckoutScreen() {
                     O envio será calculado automaticamente no checkout.
                   </Text>
                 )}
-              </GlassCard>
+              </View>
             ) : null}
 
-            <GlassCard intensity={50}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-sm font-semibold">Resumo</Text>
               <View className="mt-3 flex-row items-center justify-between">
                 <Text className="text-white/70 text-xs">Subtotal</Text>
@@ -475,7 +474,7 @@ export default function StoreCheckoutScreen() {
                   {submitting || checkout.isPending ? "A processar..." : "Pagar"}
                 </Text>
               </Pressable>
-            </GlassCard>
+            </View>
           </View>
         )}
       </ScrollView>

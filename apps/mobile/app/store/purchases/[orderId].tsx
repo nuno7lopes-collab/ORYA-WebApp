@@ -3,7 +3,6 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View, Linking } from "r
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../../components/navigation/useTopBarScroll";
@@ -14,6 +13,7 @@ import { useStorePurchase, useStoreReceiptMutation } from "../../../features/sto
 import { getMobileEnv } from "../../../lib/env";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import { safePush } from "../../../lib/navigation";
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
@@ -126,28 +126,28 @@ export default function StorePurchaseDetailScreen() {
         scrollEventThrottle={16}
       >
         {!session?.user?.id ? (
-          <GlassCard intensity={52}>
+          <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-base font-semibold">Inicia sessão para ver o detalhe</Text>
             <Pressable
               onPress={openAuth}
-              className="mt-4 rounded-xl bg-white px-4 py-3"
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
             >
-              <Text className="text-center text-sm font-semibold text-black">Iniciar sessão</Text>
+              <Text className="text-xs font-semibold text-black">Iniciar sessão</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : detail.isLoading ? (
           <View className="py-8">
             <ActivityIndicator color="white" />
           </View>
         ) : detail.isError || !detail.data ? (
-          <GlassCard intensity={52}>
+          <View className="border-b border-rose-200/30 pb-3">
             <Text className="text-red-300 text-sm">{getStoreErrorMessage(detail.error)}</Text>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-4">
-            <GlassCard intensity={50}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-base font-semibold">{detail.data.store.displayName}</Text>
               <Text className="mt-1 text-white/65 text-xs">{detail.data.orderNumber ?? `#${detail.data.id}`}</Text>
               <View className="mt-3 flex-row items-center justify-between">
@@ -163,13 +163,16 @@ export default function StorePurchaseDetailScreen() {
               {detail.data.createdAt ? (
                 <Text className="mt-2 text-white/60 text-xs">{formatDate(detail.data.createdAt)}</Text>
               ) : null}
-            </GlassCard>
+            </View>
 
-            <GlassCard intensity={46}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-sm font-semibold">Linhas</Text>
               <View className="mt-3 gap-3">
-                {detail.data.lines.map((line) => (
-                  <View key={`line-${line.id}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                {detail.data.lines.map((line, index, list) => (
+                  <View
+                    key={`line-${line.id}`}
+                    className={index < list.length - 1 ? "border-b border-white/10 pb-3" : "pb-1"}
+                  >
                     <Text className="text-white text-sm font-semibold">{line.name}</Text>
                     <View className="mt-1 flex-row items-center justify-between">
                       <Text className="text-white/65 text-xs">Qtd {line.quantity}</Text>
@@ -180,9 +183,9 @@ export default function StorePurchaseDetailScreen() {
                   </View>
                 ))}
               </View>
-            </GlassCard>
+            </View>
 
-            <GlassCard intensity={46}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-sm font-semibold">Ações</Text>
               <View className="mt-3 gap-2">
                 <Pressable
@@ -208,7 +211,7 @@ export default function StorePurchaseDetailScreen() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => router.push("/store/downloads")}
+                  onPress={() => safePush(router, "/store/downloads")}
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel="Ir para descargas"
@@ -217,7 +220,7 @@ export default function StorePurchaseDetailScreen() {
                 </Pressable>
               </View>
               {inlineError ? <Text className="mt-3 text-rose-200 text-xs">{inlineError}</Text> : null}
-            </GlassCard>
+            </View>
           </View>
         )}
       </ScrollView>

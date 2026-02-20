@@ -318,7 +318,27 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
-  const [blocks, availabilities, matches, resourceClaims] = await Promise.all([
+  const [courts, blocks, availabilities, matches, resourceClaims] = await Promise.all([
+    prisma.padelClubCourt.findMany({
+      where: {
+        deletedAt: null,
+        ...(resolvedCourtId ? { id: resolvedCourtId } : {}),
+        club: {
+          organizationId: organization.id,
+          deletedAt: null,
+          ...(resolvedClubId ? { id: resolvedClubId } : {}),
+        },
+      },
+      orderBy: [{ padelClubId: "asc" }, { displayOrder: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        padelClubId: true,
+        isActive: true,
+        displayOrder: true,
+        club: { select: { name: true } },
+      },
+    }),
     prisma.calendarBlock.findMany({
       where: {
         organizationId: organization.id,
@@ -362,10 +382,10 @@ async function _GET(req: NextRequest) {
         eventId,
         ...(resolvedCourtId ? { courtId: resolvedCourtId } : {}),
         ...(resolvedClubId && !resolvedCourtId ? { court: { padelClubId: resolvedClubId } } : {}),
-        OR: [{ startTime: { not: null } }, { plannedStartAt: { not: null } }],
       },
       select: {
         id: true,
+        categoryId: true,
         startTime: true,
         plannedStartAt: true,
         plannedEndAt: true,
@@ -530,6 +550,7 @@ async function _GET(req: NextRequest) {
   return jsonWrap(
     {
       ok: true,
+      courts,
       blocks,
       availabilities,
       matches,

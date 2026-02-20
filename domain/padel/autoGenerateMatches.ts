@@ -17,6 +17,7 @@ import { getPadelRuleSetSnapshot } from "@/domain/padel/ruleSetSnapshot";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
+import type { PadelDrawPolicy, PadelSeedSource } from "@/domain/padel/schedulerV2/types";
 import {
   buildMexicanoRoundRelations,
   deriveMexicanoRoundEntries,
@@ -49,6 +50,10 @@ type AutoGenerateInput = {
   courtPriorityOrder?: number[] | null;
   actorUserId?: string | null;
   auditAction?: "PADEL_MATCHES_GENERATED" | "PADEL_MATCHES_AUTO_GENERATED";
+  drawPolicy?: PadelDrawPolicy;
+  seedSource?: PadelSeedSource;
+  drawSeed?: string | number | null;
+  seedRanks?: Record<number, number> | null;
 };
 
 type AutoGenerateResult = {
@@ -76,6 +81,12 @@ type AutoGenerateResult = {
     isExtra?: boolean;
   }>;
   koOverride?: boolean;
+  categoryId?: number | null;
+  drawPolicy?: PadelDrawPolicy;
+  seedSource?: PadelSeedSource;
+  drawSeed?: string | number | null;
+  drawApplied?: boolean;
+  seedApplied?: boolean;
 };
 
 function shuffle<T>(arr: T[], rng: () => number): T[] {
@@ -169,6 +180,15 @@ function chunkArray<T>(values: T[], size: number) {
   return chunks;
 }
 
+function normalizeDrawSeed(value: unknown): string | number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+}
+
 async function createMatchList(params: {
   matches: Array<Prisma.EventMatchSlotCreateManyInput>;
   participantAssignments?: Map<number, { sideA: number[]; sideB: number[] }>;
@@ -240,6 +260,10 @@ export async function autoGeneratePadelMatches({
   courtPriorityOrder = null,
   actorUserId = null,
   auditAction = "PADEL_MATCHES_AUTO_GENERATED",
+  drawPolicy: drawPolicyInput,
+  seedSource: seedSourceInput,
+  drawSeed: drawSeedInput = null,
+  seedRanks: seedRanksOverride = null,
 }: AutoGenerateInput): Promise<AutoGenerateResult> {
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
@@ -296,6 +320,9 @@ export async function autoGeneratePadelMatches({
     formatProfilesByCategory?: Record<string, unknown>;
     nonStopRuntimeByCategory?: Record<string, unknown>;
     amMxRuntimeByCategory?: Record<string, unknown>;
+    drawPolicyByCategory?: Record<string, unknown>;
+    drawSeedByCategory?: Record<string, unknown>;
+    seedSourceByCategory?: Record<string, unknown>;
   };
   const scoreRules = normalizePadelScoreRules(advanced.scoreRules);
 
@@ -381,36 +408,6 @@ export async function autoGeneratePadelMatches({
     },
     orderBy: { createdAt: "asc" },
   });
-  const seedRanksRaw = advanced.seedRanks ?? {};
-  const seedRanks = new Map<number, number>();
-  Object.entries(seedRanksRaw).forEach(([key, value]) => {
-    const id = Number(key);
-    const rank = typeof value === "number" ? value : Number(value);
-    if (Number.isFinite(id) && Number.isFinite(rank) && rank > 0) {
-      seedRanks.set(id, Math.round(rank));
-    }
-  });
-  const hasSeedRanks = seedRanks.size > 0;
-  const sortedPairings = [...pairings].sort((a, b) => {
-    const seedA = seedRanks.get(a.id);
-    const seedB = seedRanks.get(b.id);
-    if (seedA != null && seedB != null && seedA !== seedB) return seedA - seedB;
-    if (seedA != null && seedB == null) return -1;
-    if (seedA == null && seedB != null) return 1;
-    return a.createdAt.getTime() - b.createdAt.getTime();
-  });
-  const pairingIds = sortedPairings.map((p) => p.id);
-  const pairingIdSet = new Set(pairingIds);
-  const userIds = Array.from(
-    new Set(
-      pairings
-        .flatMap((p) => p.slots)
-        .map((s) => s.profileId)
-        .filter(Boolean) as string[],
-    ),
-  );
-  if (pairingIds.length < 2) return { ok: false, error: "NEED_PAIRINGS" };
-
   const formatProfilesByCategory =
     advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
       ? (advanced.formatProfilesByCategory as Record<string, unknown>)
@@ -426,26 +423,155 @@ export async function autoGeneratePadelMatches({
           typeof formatProfilesByCategory.global === "object"
         ? (formatProfilesByCategory.global as Record<string, unknown>)
         : null;
+  const drawCategoryKey = resolvedCategoryId ? String(resolvedCategoryId) : "global";
+  const drawPolicyByCategory =
+    advanced.drawPolicyByCategory && typeof advanced.drawPolicyByCategory === "object"
+      ? (advanced.drawPolicyByCategory as Record<string, unknown>)
+      : {};
+  const drawSeedByCategory =
+    advanced.drawSeedByCategory && typeof advanced.drawSeedByCategory === "object"
+      ? (advanced.drawSeedByCategory as Record<string, unknown>)
+      : {};
+  const seedSourceByCategory =
+    advanced.seedSourceByCategory && typeof advanced.seedSourceByCategory === "object"
+      ? (advanced.seedSourceByCategory as Record<string, unknown>)
+      : {};
+  const categoryDrawPolicy =
+    categoryProfile && typeof categoryProfile.drawPolicy === "string" ? categoryProfile.drawPolicy : null;
+  const configDrawPolicy =
+    typeof drawPolicyByCategory[drawCategoryKey] === "string"
+      ? drawPolicyByCategory[drawCategoryKey]
+      : typeof drawPolicyByCategory.global === "string"
+        ? drawPolicyByCategory.global
+        : null;
+  const drawPolicy: PadelDrawPolicy =
+    drawPolicyInput === "RANDOM_ONLY" || drawPolicyInput === "SEEDED_ONLY" || drawPolicyInput === "RANDOM_WITH_OPTIONAL_SEEDS"
+      ? drawPolicyInput
+      : categoryDrawPolicy === "RANDOM_ONLY" || categoryDrawPolicy === "SEEDED_ONLY" || categoryDrawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS"
+        ? (categoryDrawPolicy as PadelDrawPolicy)
+        : configDrawPolicy === "RANDOM_ONLY" || configDrawPolicy === "SEEDED_ONLY" || configDrawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS"
+          ? (configDrawPolicy as PadelDrawPolicy)
+          : "RANDOM_WITH_OPTIONAL_SEEDS";
+  const categorySeedSource =
+    categoryProfile && typeof categoryProfile.seedSource === "string" ? categoryProfile.seedSource : null;
+  const configSeedSource =
+    typeof seedSourceByCategory[drawCategoryKey] === "string"
+      ? seedSourceByCategory[drawCategoryKey]
+      : typeof seedSourceByCategory.global === "string"
+        ? seedSourceByCategory.global
+        : null;
+  const seedSource: PadelSeedSource =
+    seedSourceInput === "NONE" || seedSourceInput === "RANKING_SNAPSHOT" || seedSourceInput === "TOURNAMENT_CONFIG"
+      ? seedSourceInput
+      : categorySeedSource === "NONE" || categorySeedSource === "RANKING_SNAPSHOT" || categorySeedSource === "TOURNAMENT_CONFIG"
+        ? (categorySeedSource as PadelSeedSource)
+        : configSeedSource === "NONE" || configSeedSource === "RANKING_SNAPSHOT" || configSeedSource === "TOURNAMENT_CONFIG"
+          ? (configSeedSource as PadelSeedSource)
+          : "TOURNAMENT_CONFIG";
+  const drawSeed = normalizeDrawSeed(
+    drawSeedInput != null
+      ? drawSeedInput
+      : drawSeedByCategory[drawCategoryKey] != null
+        ? drawSeedByCategory[drawCategoryKey]
+        : drawSeedByCategory.global,
+  );
+
+  const seedRanksSourceRaw =
+    seedSource === "NONE"
+      ? {}
+      : seedSource === "RANKING_SNAPSHOT" && seedRanksOverride && typeof seedRanksOverride === "object"
+        ? seedRanksOverride
+        : advanced.seedRanks ?? {};
+  const seedRanks = new Map<number, number>();
+  Object.entries(seedRanksSourceRaw as Record<string, unknown>).forEach(([key, value]) => {
+    const id = Number(key);
+    const rank = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(id) && Number.isFinite(rank) && rank > 0) {
+      seedRanks.set(id, Math.round(rank));
+    }
+  });
+  const hasSeedRanks = seedRanks.size > 0;
+  if (drawPolicy === "SEEDED_ONLY" && !hasSeedRanks) {
+    return { ok: false, error: "SEEDS_REQUIRED" };
+  }
+  const shouldUseSeeds = drawPolicy !== "RANDOM_ONLY" && hasSeedRanks;
+  const sortedPairings = [...pairings].sort((a, b) => {
+    const seedA = seedRanks.get(a.id);
+    const seedB = seedRanks.get(b.id);
+    if (seedA != null && seedB != null && seedA !== seedB) return seedA - seedB;
+    if (seedA != null && seedB == null) return -1;
+    if (seedA == null && seedB != null) return 1;
+    return a.createdAt.getTime() - b.createdAt.getTime();
+  });
+  const pairingIds = (shouldUseSeeds ? sortedPairings : pairings).map((p) => p.id);
+  const pairingIdSet = new Set(pairingIds);
+  const userIds = Array.from(
+    new Set(
+      pairings
+        .flatMap((p) => p.slots)
+        .map((s) => s.profileId)
+        .filter(Boolean) as string[],
+    ),
+  );
+  if (pairingIds.length < 2) return { ok: false, error: "NEED_PAIRINGS" };
   const formatFromCategoryProfile =
     categoryProfile && typeof categoryProfile.format === "string" ? parsePadelFormat(categoryProfile.format) : null;
   const formatEffective = formatFromCategoryProfile ?? format ?? config?.format ?? padel_format.TODOS_CONTRA_TODOS;
   const phaseEffective = phase ?? "GROUPS";
-  const seedSource = [
+  const seedSourceRaw = [
     eventId,
     resolvedCategoryId ?? "",
     formatEffective,
     phaseEffective,
     advanced.generationVersion ?? "",
+    drawPolicy,
+    seedSource,
+    drawSeed != null ? String(drawSeed) : "",
     pairingIds.join(","),
   ].join("|");
-  const seedHash = crypto.createHash("sha256").update(seedSource).digest("hex");
+  const seedHash = crypto.createHash("sha256").update(seedSourceRaw).digest("hex");
   const rngFor = (tag: string) => seededRng(hashSeed(`${seedHash}|${tag}`));
+  const drawApplied =
+    drawPolicy === "RANDOM_ONLY" || (drawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS" && !shouldUseSeeds);
+  const seedApplied = shouldUseSeeds;
   const amMxMode = categoryProfile?.amMxMode === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION";
   const amMxProgressionMode = categoryProfile?.amMxProgressionMode === "ROUND_BY_ROUND" ? "ROUND_BY_ROUND" : null;
   const nonStopMode =
     categoryProfile?.nonStopMode === "ACTIVE_QUEUE" || categoryProfile?.nonStopMode === "HARD_CAP_WAITLIST"
       ? (categoryProfile.nonStopMode as "ACTIVE_QUEUE" | "HARD_CAP_WAITLIST")
       : "HARD_CAP_WAITLIST";
+
+  if (config) {
+    const nextDrawPolicyByCategory = {
+      ...(advanced.drawPolicyByCategory && typeof advanced.drawPolicyByCategory === "object"
+        ? (advanced.drawPolicyByCategory as Record<string, unknown>)
+        : {}),
+      [drawCategoryKey]: drawPolicy,
+    };
+    const nextSeedSourceByCategory = {
+      ...(advanced.seedSourceByCategory && typeof advanced.seedSourceByCategory === "object"
+        ? (advanced.seedSourceByCategory as Record<string, unknown>)
+        : {}),
+      [drawCategoryKey]: seedSource,
+    };
+    const nextDrawSeedByCategory = {
+      ...(advanced.drawSeedByCategory && typeof advanced.drawSeedByCategory === "object"
+        ? (advanced.drawSeedByCategory as Record<string, unknown>)
+        : {}),
+      [drawCategoryKey]: drawSeed,
+    };
+    await prisma.padelTournamentConfig.update({
+      where: { eventId },
+      data: {
+        advancedSettings: {
+          ...(config.advancedSettings as Record<string, unknown>),
+          drawPolicyByCategory: nextDrawPolicyByCategory,
+          seedSourceByCategory: nextSeedSourceByCategory,
+          drawSeedByCategory: nextDrawSeedByCategory,
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
 
   if (formatEffective === "GRUPOS_ELIMINATORIAS" && phaseEffective !== "KNOCKOUT") {
     const existingGroupMatch = await prisma.eventMatchSlot.findFirst({
@@ -468,7 +594,18 @@ export async function autoGeneratePadelMatches({
           actorUserId,
         });
       } else {
-        return { ok: true, skipped: true, stage: "GROUPS" };
+        return {
+          ok: true,
+          skipped: true,
+          stage: "GROUPS",
+          categoryId: resolvedCategoryId ?? null,
+          formatEffective,
+          drawPolicy,
+          seedSource,
+          drawSeed,
+          drawApplied,
+          seedApplied,
+        };
       }
     }
 
@@ -594,6 +731,7 @@ export async function autoGeneratePadelMatches({
       ok: true,
       stage: "GROUPS",
       matches: matchesToCreate.length,
+      categoryId: resolvedCategoryId ?? null,
       groups: groups.map((ids, idx) => ({
         label: String.fromCharCode("A".charCodeAt(0) + idx),
         size: ids.length,
@@ -601,6 +739,11 @@ export async function autoGeneratePadelMatches({
       qualifyPerGroup,
       extraQualifiers,
       formatEffective,
+      drawPolicy,
+      seedSource,
+      drawSeed,
+      drawApplied,
+      seedApplied,
       generationVersion: advanced.generationVersion ?? "v1-groups-ko",
     };
   }
@@ -626,7 +769,18 @@ export async function autoGeneratePadelMatches({
           actorUserId,
         });
       } else {
-        return { ok: true, skipped: true, stage: "KNOCKOUT" };
+        return {
+          ok: true,
+          skipped: true,
+          stage: "KNOCKOUT",
+          categoryId: resolvedCategoryId ?? null,
+          formatEffective,
+          drawPolicy,
+          seedSource,
+          drawSeed,
+          drawApplied,
+          seedApplied,
+        };
       }
     }
 
@@ -908,7 +1062,13 @@ export async function autoGeneratePadelMatches({
       stage: "KNOCKOUT",
       matches: matchCreateData.length,
       qualifiers: qualifiers.length,
+      categoryId: resolvedCategoryId ?? null,
       formatEffective,
+      drawPolicy,
+      seedSource,
+      drawSeed,
+      drawApplied,
+      seedApplied,
       generationVersion: advanced.generationVersion ?? "v1-groups-ko",
       koGeneratedAt,
       koSeedSnapshot: qualifiers,
@@ -936,11 +1096,21 @@ export async function autoGeneratePadelMatches({
         actorUserId,
       });
     } else {
-      return { ok: true, skipped: true };
+      return {
+        ok: true,
+        skipped: true,
+        categoryId: resolvedCategoryId ?? null,
+        formatEffective,
+        drawPolicy,
+        seedSource,
+        drawSeed,
+        drawApplied,
+        seedApplied,
+      };
     }
   }
 
-  const drawPairingIds = hasSeedRanks ? pairingIds : shuffle(pairingIds, rngFor("draw"));
+  const drawPairingIds = drawApplied ? shuffle(pairingIds, rngFor("draw")) : pairingIds;
   const isDoubleElim = formatEffective === "DUPLA_ELIMINACAO";
   const isKnockout =
     formatEffective === "QUADRO_ELIMINATORIO" || formatEffective === "QUADRO_AB" || isDoubleElim;
@@ -1619,7 +1789,13 @@ export async function autoGeneratePadelMatches({
     ok: true,
     stage: isKnockout ? "KNOCKOUT" : "ROUND_ROBIN",
     matches: matchCreateData.length,
+    categoryId: resolvedCategoryId ?? null,
     formatEffective,
+    drawPolicy,
+    seedSource,
+    drawSeed,
+    drawApplied,
+    seedApplied,
     generationVersion: advanced.generationVersion ?? "v1-groups-ko",
   };
 }

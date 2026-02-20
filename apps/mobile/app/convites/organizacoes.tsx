@@ -14,7 +14,7 @@ import { fetchOrganizationInvites, respondWorkforceInvite } from "../../features
 import type { OrganizationInvite } from "../../features/notifications/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { tokens } from "@orya/shared";
 import { useAuth } from "../../lib/auth";
 
@@ -166,7 +166,7 @@ export default function OrganizationInvitesScreen() {
             <Pressable
               onPress={() => {
                 if (orgUsername) {
-                  router.push({ pathname: "/[username]", params: { username: orgUsername } });
+                  safePush(router, { pathname: "/[username]", params: { username: orgUsername } });
                 }
               }}
               disabled={!orgUsername}
@@ -187,7 +187,7 @@ export default function OrganizationInvitesScreen() {
               <Pressable
                 onPress={() => {
                   if (orgUsername) {
-                    router.push({ pathname: "/[username]", params: { username: orgUsername } });
+                    safePush(router, { pathname: "/[username]", params: { username: orgUsername } });
                   }
                 }}
                 disabled={!orgUsername}

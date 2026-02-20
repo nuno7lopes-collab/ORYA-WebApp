@@ -11,6 +11,7 @@ import { autoGeneratePadelMatches } from "@/domain/padel/autoGenerateMatches";
 import { syncPadelCompetitiveCore } from "@/domain/padel/competitiveCoreSync";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { computePadelPlan } from "@/domain/padel/formatEngine/capacity";
+import type { PadelDrawPolicy, PadelSeedSource } from "@/domain/padel/schedulerV2/types";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
@@ -48,6 +49,27 @@ async function _POST(req: NextRequest) {
   const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
   const format = parsePadelFormat(body.format);
   const allowIncomplete = body.allowIncomplete === true;
+  const drawPolicy: PadelDrawPolicy =
+    body.drawPolicy === "RANDOM_ONLY" || body.drawPolicy === "SEEDED_ONLY" || body.drawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS"
+      ? (body.drawPolicy as PadelDrawPolicy)
+      : "RANDOM_WITH_OPTIONAL_SEEDS";
+  const seedSource: PadelSeedSource =
+    body.seedSource === "NONE" || body.seedSource === "RANKING_SNAPSHOT" || body.seedSource === "TOURNAMENT_CONFIG"
+      ? (body.seedSource as PadelSeedSource)
+      : "TOURNAMENT_CONFIG";
+  const drawSeed =
+    typeof body.drawSeed === "string" || typeof body.drawSeed === "number" ? body.drawSeed : null;
+  const seedRanks =
+    body.seedRanks && typeof body.seedRanks === "object"
+      ? Object.entries(body.seedRanks as Record<string, unknown>).reduce<Record<number, number>>((acc, [key, value]) => {
+          const pairingId = Number(key);
+          const rank = typeof value === "number" ? value : Number(value);
+          if (Number.isFinite(pairingId) && Number.isFinite(rank) && rank > 0) {
+            acc[Math.floor(pairingId)] = Math.floor(rank);
+          }
+          return acc;
+        }, {})
+      : null;
 
   if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   if (!format) return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
@@ -279,10 +301,17 @@ async function _POST(req: NextRequest) {
     courtPriorityOrder: resolvedCourtSelection.courtPriorityOrder,
     actorUserId: user.id,
     auditAction: "PADEL_MATCHES_GENERATED",
+    drawPolicy,
+    seedSource,
+    drawSeed,
+    seedRanks,
   });
 
   if (!result.ok) {
     if (result.error === "INTERCLUB_TEAM_ENGINE_REQUIRED") {
+      return jsonWrap({ ok: false, error: result.error }, { status: 409 });
+    }
+    if (result.error === "SEEDS_REQUIRED") {
       return jsonWrap({ ok: false, error: result.error }, { status: 409 });
     }
     return jsonWrap({ ok: false, error: result.error ?? "GENERATION_FAILED" }, { status: 400 });
@@ -308,11 +337,17 @@ async function _POST(req: NextRequest) {
       {
         ok: true,
         stage: "GROUPS",
+        categoryId: resolvedCategoryId ?? null,
         groups: result.groups ?? [],
         qualifyPerGroup: result.qualifyPerGroup ?? 2,
         extraQualifiers: result.extraQualifiers ?? 0,
         matches: result.matches ?? 0,
         formatEffective: result.formatEffective ?? format,
+        drawPolicy: result.drawPolicy ?? drawPolicy,
+        seedSource: result.seedSource ?? seedSource,
+        drawSeed: result.drawSeed ?? drawSeed,
+        drawApplied: result.drawApplied ?? true,
+        seedApplied: result.seedApplied ?? false,
         generationVersion: result.generationVersion ?? "v1-groups-ko",
       },
       { status: 200 },
@@ -324,9 +359,15 @@ async function _POST(req: NextRequest) {
       {
         ok: true,
         stage: "KNOCKOUT",
+        categoryId: resolvedCategoryId ?? null,
         qualifiers: result.qualifiers ?? 0,
         matches: result.matches ?? 0,
         formatEffective: result.formatEffective ?? format,
+        drawPolicy: result.drawPolicy ?? drawPolicy,
+        seedSource: result.seedSource ?? seedSource,
+        drawSeed: result.drawSeed ?? drawSeed,
+        drawApplied: result.drawApplied ?? true,
+        seedApplied: result.seedApplied ?? false,
         generationVersion: result.generationVersion ?? "v1-groups-ko",
         koGeneratedAt: result.koGeneratedAt ?? null,
         koSeedSnapshot: result.koSeedSnapshot ?? [],
@@ -340,6 +381,19 @@ async function _POST(req: NextRequest) {
     orderBy: [{ startTime: "asc" }, { id: "asc" }],
   });
 
-  return jsonWrap({ ok: true, matches }, { status: 200 });
+  return jsonWrap(
+    {
+      ok: true,
+      matches,
+      categoryId: resolvedCategoryId ?? null,
+      formatEffective: result.formatEffective ?? format,
+      drawPolicy: result.drawPolicy ?? drawPolicy,
+      seedSource: result.seedSource ?? seedSource,
+      drawSeed: result.drawSeed ?? drawSeed,
+      drawApplied: result.drawApplied ?? true,
+      seedApplied: result.seedApplied ?? false,
+    },
+    { status: 200 },
+  );
 }
 export const POST = withApiEnvelope(_POST);

@@ -3,7 +3,6 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../components/icons/Ionicons";
 import { LiquidBackground } from "../components/liquid/LiquidBackground";
-import { GlassCard } from "../components/liquid/GlassCard";
 import { GlassSkeleton } from "../components/glass/GlassSkeleton";
 import { useAuth } from "../lib/auth";
 import { usePublicOrganizationAgenda, usePublicProfile, usePublicProfileEvents } from "../features/profile/hooks";
@@ -13,7 +12,7 @@ import { TopAppHeader } from "../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../components/navigation/useTopBarScroll";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { safeBack } from "../lib/navigation";
+import { safeBack, safePush } from "../lib/navigation";
 import { tokens } from "@orya/shared";
 import { SectionHeader } from "../components/liquid/SectionHeader";
 import { EventCardSquare, EventCardSquareSkeleton } from "../components/events/EventCardSquare";
@@ -180,19 +179,20 @@ export default function PublicProfileScreen() {
             <GlassSkeleton height={140} />
           </View>
         ) : !profile || profileQuery.isError ? (
-          <GlassCard intensity={50}>
-            <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o perfil.</Text>
+          <View className="gap-3 border-b border-rose-200/30 pb-4">
+            <Text className="text-rose-200 text-sm font-semibold">Não foi possível carregar o perfil.</Text>
+            <Text className="text-white/70 text-xs">Tenta novamente para atualizar os dados deste utilizador.</Text>
             <Pressable
               onPress={() => profileQuery.refetch()}
-              className="rounded-xl bg-white/10 px-4 py-3"
+              className="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
-              <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
+              <Text className="text-white text-xs font-semibold">Tentar novamente</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : (
-          <View className="gap-4">
+          <View className="gap-5">
             <ProfileHeader
               isUser={isUser}
               coverUrl={coverUrl}
@@ -240,7 +240,7 @@ export default function PublicProfileScreen() {
 
             {organizationStoreHref ? (
               <Pressable
-                onPress={() => router.push(organizationStoreHref)}
+                onPress={() => safePush(router, organizationStoreHref)}
                 className="rounded-2xl border border-emerald-300/40 bg-emerald-400/15 px-4 py-3"
                 accessibilityRole="button"
                 accessibilityLabel="Ver loja"
@@ -250,48 +250,49 @@ export default function PublicProfileScreen() {
             ) : null}
 
             {!isUser && canView ? (
-              <GlassCard intensity={46}>
-                <View className="gap-2">
-                  <Text className="text-white text-sm font-semibold">Agenda pública</Text>
-                  {publicAgendaQuery.isLoading ? (
-                    <Text className="text-white/60 text-xs">A carregar agenda…</Text>
-                  ) : publicAgendaQuery.isError ? (
-                    <Text className="text-white/55 text-xs">Agenda indisponível neste momento.</Text>
-                  ) : (publicAgendaQuery.data?.length ?? 0) > 0 ? (
-                    publicAgendaQuery.data!.slice(0, 3).map((item) => (
+              <View className="gap-2 border-b border-white/12 pb-4">
+                <Text className="text-white text-sm font-semibold">Agenda pública</Text>
+                {publicAgendaQuery.isLoading ? (
+                  <Text className="text-white/60 text-xs">A carregar agenda…</Text>
+                ) : publicAgendaQuery.isError ? (
+                  <Text className="text-white/55 text-xs">Agenda indisponível neste momento.</Text>
+                ) : (publicAgendaQuery.data?.length ?? 0) > 0 ? (
+                  <View className="gap-1.5">
+                    {publicAgendaQuery.data!.slice(0, 4).map((item, index, list) => (
                       <View
                         key={`agenda-${item.id}`}
-                        className="rounded-xl border border-white/12 bg-white/6 px-3 py-3"
+                        className={index < list.length - 1 ? "gap-1 border-b border-white/10 pb-2.5" : "gap-1 pb-0.5"}
                       >
-                        <Text className="text-white text-sm font-semibold">{item.title}</Text>
-                        <Text className="text-white/60 text-xs">
+                        <View className="flex-row items-center gap-2">
+                          <View className="h-1.5 w-1.5 rounded-full bg-cyan-200/90" />
+                          <Text className="flex-1 text-white text-sm font-semibold" numberOfLines={1}>
+                            {item.title}
+                          </Text>
+                        </View>
+                        <Text className="pl-3.5 text-white/62 text-xs">
                           {new Date(item.startsAt).toLocaleString("pt-PT")} · {item.sourceType}
                         </Text>
                       </View>
-                    ))
-                  ) : (
-                    <Text className="text-white/55 text-xs">Sem itens de agenda para os próximos dias.</Text>
-                  )}
-                </View>
-              </GlassCard>
+                    ))}
+                  </View>
+                ) : (
+                  <Text className="text-white/55 text-xs">Sem itens de agenda para os próximos dias.</Text>
+                )}
+              </View>
             ) : null}
 
             {isLocked ? (
-              <GlassCard intensity={48} className="mt-2">
-                <View className="items-center gap-3 py-3">
-                  <View className="h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/5">
-                    <Ionicons name="lock-closed" size={20} color="rgba(255,255,255,0.9)" />
-                  </View>
-                  <View className="gap-1">
-                    <Text className="text-white text-sm font-semibold text-center">
-                      Esta conta é privada
-                    </Text>
-                    <Text className="text-white/60 text-xs text-center">
-                      Segue para veres publicações, eventos e detalhes de padel.
-                    </Text>
-                  </View>
+              <View className="mt-1 flex-row items-start gap-3 rounded-2xl border border-white/14 bg-white/[0.03] px-4 py-4">
+                <View className="h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5">
+                  <Ionicons name="lock-closed" size={18} color="rgba(255,255,255,0.9)" />
                 </View>
-              </GlassCard>
+                <View className="flex-1 gap-1">
+                  <Text className="text-white text-sm font-semibold">Esta conta é privada</Text>
+                  <Text className="text-white/60 text-xs">
+                    Segue para veres publicações, eventos e detalhes de padel.
+                  </Text>
+                </View>
+              </View>
             ) : (
               <View className="pt-2">
                 <SectionHeader title="Eventos" subtitle="Próximos e anteriores" />
@@ -301,13 +302,23 @@ export default function PublicProfileScreen() {
                     <EventCardSquareSkeleton />
                   </View>
                 ) : eventsQuery.isError ? (
-                  <GlassCard intensity={50} className="mt-3">
-                    <Text className="text-white/70 text-sm">
-                      Não foi possível carregar os eventos deste perfil.
-                    </Text>
-                  </GlassCard>
+                  <View className="mt-3 border-b border-white/12 pb-3">
+                    <Text className="text-white/70 text-sm">Não foi possível carregar os eventos deste perfil.</Text>
+                  </View>
                 ) : (
                   <View className="pt-3 gap-3">
+                    <View className="flex-row flex-wrap gap-2">
+                      <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
+                        <Text className="text-cyan-50 text-xs font-semibold">
+                          Próximos {(eventsQuery.data?.upcoming ?? []).length}
+                        </Text>
+                      </View>
+                      <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
+                        <Text className="text-white/80 text-xs font-semibold">
+                          Passados {(eventsQuery.data?.past ?? []).length}
+                        </Text>
+                      </View>
+                    </View>
                     {(eventsQuery.data?.upcoming ?? []).length > 0 ? (
                       <View>
                         <Text className="text-white/70 text-xs mb-2">Próximos</Text>
@@ -316,9 +327,9 @@ export default function PublicProfileScreen() {
                         ))}
                       </View>
                     ) : (
-                      <GlassCard intensity={46}>
+                      <View className="border-b border-white/12 pb-3">
                         <Text className="text-white/60 text-sm">Sem eventos próximos.</Text>
-                      </GlassCard>
+                      </View>
                     )}
 
                     {(eventsQuery.data?.past ?? []).length > 0 ? (

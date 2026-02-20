@@ -48,7 +48,7 @@ import { LocationPermissionModal } from "../../components/location/LocationPermi
 import { getLocationPermissionState, requestLocationConsent } from "../../lib/locationConsent";
 import { formatDistanceKm, getDistanceKm } from "../../lib/geo";
 import { resolveMediaUri } from "../../lib/media";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import type { PublicEventCard } from "@orya/shared";
 import { MapFiltersBar, type MapTemplateFilter } from "../../components/discover/MapFiltersBar";
 
@@ -73,6 +73,10 @@ const RANGE_DATE_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
 
 const SHEET_HANDLE_HEIGHT = 28;
 const SHEET_HANDLE_DRAG_AREA = SHEET_HANDLE_HEIGHT + 18;
+const MAP_CARD_SPACING = 18;
+const MAP_CLUSTER_MIN_EVENTS = 10;
+const MAP_CLUSTER_MIN_DELTA = 0.18;
+const MAP_CLUSTER_MIN_POINTS_PER_CELL = 3;
 
 const formatEventDate = (startsAt?: string | null, endsAt?: string | null) => {
   if (!startsAt) return null;
@@ -105,6 +109,80 @@ const clampWorklet = (value: number, min: number, max: number) => {
 type MapListItem =
   | { type: "skeleton"; key: string }
   | { type: "event"; event: PublicEventCard };
+
+type MapMarkerItem =
+  | { type: "event"; event: PublicEventCard; lat: number; lng: number }
+  | { type: "cluster"; key: string; lat: number; lng: number; count: number; events: PublicEventCard[] };
+
+const buildClusteredMarkers = (events: PublicEventCard[], region: Region | null): MapMarkerItem[] => {
+  const points = events
+    .map((event) => {
+      const lat = event.location?.lat;
+      const lng = event.location?.lng;
+      if (typeof lat !== "number" || typeof lng !== "number") return null;
+      return { event, lat, lng };
+    })
+    .filter((item): item is { event: PublicEventCard; lat: number; lng: number } => item !== null);
+
+  const singleMarkers = points.map((point) => ({ type: "event" as const, ...point }));
+
+  if (!region || points.length <= 1) {
+    return singleMarkers;
+  }
+
+  const viewportArea = Math.max(region.latitudeDelta * region.longitudeDelta, 0.0001);
+  const density = points.length / viewportArea;
+  const shouldClusterByZoom =
+    region.latitudeDelta >= MAP_CLUSTER_MIN_DELTA ||
+    region.longitudeDelta >= MAP_CLUSTER_MIN_DELTA;
+  const shouldClusterByDensity = density >= 240;
+
+  if (
+    points.length < MAP_CLUSTER_MIN_EVENTS ||
+    (!shouldClusterByZoom && !shouldClusterByDensity)
+  ) {
+    return singleMarkers;
+  }
+
+  const cellsByKey = new Map<string, Array<{ event: PublicEventCard; lat: number; lng: number }>>();
+  const gridDivisor =
+    region.longitudeDelta >= 0.9 ? 7 : region.longitudeDelta >= 0.4 ? 8 : 9;
+  const latStep = Math.max(region.latitudeDelta / gridDivisor, 0.028);
+  const lngStep = Math.max(region.longitudeDelta / gridDivisor, 0.028);
+
+  for (const point of points) {
+    const latBucket = Math.floor(point.lat / latStep);
+    const lngBucket = Math.floor(point.lng / lngStep);
+    const key = `${latBucket}:${lngBucket}`;
+    const list = cellsByKey.get(key) ?? [];
+    list.push(point);
+    cellsByKey.set(key, list);
+  }
+
+  const markers: MapMarkerItem[] = [];
+  for (const [cellKey, clusterPoints] of cellsByKey.entries()) {
+    if (clusterPoints.length < MAP_CLUSTER_MIN_POINTS_PER_CELL) {
+      for (const single of clusterPoints) {
+        markers.push({ type: "event", event: single.event, lat: single.lat, lng: single.lng });
+      }
+      continue;
+    }
+    const avgLat =
+      clusterPoints.reduce((acc, item) => acc + item.lat, 0) / clusterPoints.length;
+    const avgLng =
+      clusterPoints.reduce((acc, item) => acc + item.lng, 0) / clusterPoints.length;
+    markers.push({
+      type: "cluster",
+      key: `cluster-${cellKey}-${clusterPoints.length}`,
+      lat: avgLat,
+      lng: avgLng,
+      count: clusterPoints.length,
+      events: clusterPoints.map((item) => item.event),
+    });
+  }
+
+  return markers;
+};
 
 type MapEventThumbProps = {
   coverUri: string | null;
@@ -170,10 +248,15 @@ export default function MapScreen() {
   const [rangeStart, setRangeStart] = useState<Date | null>(null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(null);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(true);
+  const [isSheetInteracting, setIsSheetInteracting] = useState(false);
+  const [isMapInteractionLocked, setIsMapInteractionLocked] = useState(false);
 
   const mapRef = useRef<MapView | null>(null);
   const listRef = useRef<FlatList<MapListItem> | null>(null);
   const centerModeRef = useRef<"none" | "ip" | "device">("none");
+  const interactionIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mapStopTimestampRef = useRef<number | null>(null);
+  const pendingStabilityMetricRef = useRef(false);
 
   const city = useDiscoverStore((state) => state.city);
   const locationAddressId = useDiscoverStore((state) => state.locationAddressId);
@@ -204,7 +287,7 @@ export default function MapScreen() {
   const templateTypesParam = templateType === "all" ? null : templateType;
   const priceMinParam = priceMin > 0 ? priceMin : null;
   const priceMaxParam = priceMax != null ? priceMax : null;
-  const debouncedRegion = useDebouncedValue(mapRegion, 700);
+  const debouncedRegion = useDebouncedValue(mapRegion, 250);
 
   const bounds = useMemo(() => {
     if (!debouncedRegion) return null;
@@ -257,6 +340,8 @@ export default function MapScreen() {
       south: bounds?.south ?? undefined,
       east: bounds?.east ?? undefined,
       west: bounds?.west ?? undefined,
+      lat: debouncedRegion?.latitude ?? mapRegion?.latitude ?? undefined,
+      lng: debouncedRegion?.longitude ?? mapRegion?.longitude ?? undefined,
     },
     queryEnabled,
   );
@@ -326,6 +411,24 @@ export default function MapScreen() {
     () => filteredEvents.filter((event) => event.location?.lat != null && event.location?.lng != null),
     [filteredEvents],
   );
+  const clusteredMarkers = useMemo(
+    () => buildClusteredMarkers(markerEvents, debouncedRegion ?? mapRegion),
+    [debouncedRegion, mapRegion, markerEvents],
+  );
+
+  useEffect(() => {
+    if (!pendingStabilityMetricRef.current) return;
+    if (discoverQuery.isFetching) return;
+    if (mapStopTimestampRef.current == null) return;
+    const durationMs = Date.now() - mapStopTimestampRef.current;
+    pendingStabilityMetricRef.current = false;
+    mapStopTimestampRef.current = null;
+    console.info("[metric] map_stop_to_content_stable_ms", {
+      durationMs,
+      events: filteredEvents.length,
+      markers: clusteredMarkers.length,
+    });
+  }, [clusteredMarkers.length, discoverQuery.isFetching, filteredEvents.length]);
 
   const selectedEvent = useMemo(
     () => filteredEvents.find((event) => event.id === selectedEventId) ?? null,
@@ -545,6 +648,33 @@ export default function MapScreen() {
     animateToRegion(DEFAULT_REGION.latitude, DEFAULT_REGION.longitude, DEFAULT_REGION.latitudeDelta);
   }, [animateToRegion, deviceCoords, ipLat, ipLng]);
 
+  const markSheetInteractionStart = useCallback(() => {
+    if (interactionIdleTimerRef.current) {
+      clearTimeout(interactionIdleTimerRef.current);
+      interactionIdleTimerRef.current = null;
+    }
+    setIsSheetInteracting(true);
+  }, []);
+
+  const markSheetInteractionEnd = useCallback((delayMs = 120) => {
+    if (interactionIdleTimerRef.current) {
+      clearTimeout(interactionIdleTimerRef.current);
+    }
+    interactionIdleTimerRef.current = setTimeout(() => {
+      setIsSheetInteracting(false);
+      interactionIdleTimerRef.current = null;
+    }, delayMs);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (interactionIdleTimerRef.current) {
+        clearTimeout(interactionIdleTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const bottomInset = Platform.OS === "ios" ? Math.max(insets.bottom + 14, 24) : 0;
   const isLandscape = height < 520;
   const sheetMaxHeight = Math.min(Math.max(height * (isLandscape ? 0.7 : 0.82), 300), height - 120);
@@ -564,6 +694,7 @@ export default function MapScreen() {
     (index: number) => {
       lastSnapRef.current = index;
       setIsSheetCollapsed(index === 0);
+      setIsMapInteractionLocked(index === 2);
       if (index === 0) {
         scrollY.value = 0;
       }
@@ -600,6 +731,7 @@ export default function MapScreen() {
       if (collapsed && lastSnapRef.current !== 0) {
         lastSnapRef.current = 0;
         lastSnapIndex.value = 0;
+        setIsMapInteractionLocked(false);
         scrollY.value = 0;
       }
     },
@@ -690,6 +822,18 @@ export default function MapScreen() {
   const scrollGesture = useMemo(() => Gesture.Native(), []);
 
   const scrollHandler = useAnimatedScrollHandler({
+    onBeginDrag: () => {
+      runOnJS(markSheetInteractionStart)();
+    },
+    onEndDrag: () => {
+      runOnJS(markSheetInteractionEnd)();
+    },
+    onMomentumBegin: () => {
+      runOnJS(markSheetInteractionStart)();
+    },
+    onMomentumEnd: () => {
+      runOnJS(markSheetInteractionEnd)();
+    },
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
     },
@@ -700,19 +844,17 @@ export default function MapScreen() {
       Gesture.Pan()
         .activeOffsetY([-8, 8])
         .simultaneousWithExternalGesture(scrollGesture)
-        .onStart(() => {
+        .onStart((event) => {
           cancelAnimation(sheetHeight);
           gestureStart.value = sheetHeight.value;
-          startedInHandle.value = false;
+          startedInHandle.value = event.y <= SHEET_HANDLE_DRAG_AREA;
+          if (startedInHandle.value) {
+            runOnJS(markSheetInteractionStart)();
+          }
         })
         .onUpdate((event) => {
-          if (startedInHandle.value === false) {
-            startedInHandle.value = event.y <= SHEET_HANDLE_DRAG_AREA;
-          }
-          const atTop = scrollY.value <= 0;
-          const canDrag = atTop || startedInHandle.value;
           const atMax = sheetHeight.value >= maxHeight.value - 1;
-          if (!canDrag) return;
+          if (!startedInHandle.value) return;
           if (atMax && event.translationY < 0) return;
           const next = clampWorklet(
             gestureStart.value - event.translationY,
@@ -722,7 +864,10 @@ export default function MapScreen() {
           sheetHeight.value = next;
         })
         .onEnd((event) => {
+          const canSnap = startedInHandle.value;
           startedInHandle.value = false;
+          runOnJS(markSheetInteractionEnd)();
+          if (!canSnap) return;
           const projected = clampWorklet(
             sheetHeight.value - event.velocityY * 0.2,
             minHeight.value,
@@ -752,6 +897,10 @@ export default function MapScreen() {
             runOnJS(setLastSnap)(nextIndex);
             runOnJS(triggerHaptic)(nextIndex);
           }
+        })
+        .onFinalize(() => {
+          startedInHandle.value = false;
+          runOnJS(markSheetInteractionEnd)();
         }),
     [
       gestureStart,
@@ -760,6 +909,8 @@ export default function MapScreen() {
       midHeight,
       isEmpty,
       lastSnapIndex,
+      markSheetInteractionEnd,
+      markSheetInteractionStart,
       scrollGesture,
       scrollY,
       setLastSnap,
@@ -865,11 +1016,11 @@ export default function MapScreen() {
 
 
   const listData: MapListItem[] = useMemo(() => {
-    if (!queryEnabled || discoverQuery.isLoading) {
+    if (!queryEnabled || (discoverQuery.isLoading && !discoverQuery.data)) {
       return Array.from({ length: 4 }, (_, index) => ({ type: "skeleton" as const, key: `skeleton-${index}` }));
     }
     return filteredEvents.map((event) => ({ type: "event" as const, event }));
-  }, [discoverQuery.isLoading, filteredEvents, queryEnabled]);
+  }, [discoverQuery.data, discoverQuery.isLoading, filteredEvents, queryEnabled]);
 
   const allowListScroll = !isSheetCollapsed && !isEmpty;
 
@@ -888,10 +1039,23 @@ export default function MapScreen() {
     [animateToRegion, filteredEvents, openSheet],
   );
 
+  const handleClusterPress = useCallback(
+    (cluster: Extract<MapMarkerItem, { type: "cluster" }>) => {
+      const nextDelta = Math.max((mapRegion?.latitudeDelta ?? 0.12) * 0.55, 0.02);
+      animateToRegion(cluster.lat, cluster.lng, nextDelta);
+      const firstEvent = cluster.events[0];
+      if (firstEvent) {
+        setSelectedEventId(firstEvent.id);
+      }
+      openSheet();
+    },
+    [animateToRegion, mapRegion?.latitudeDelta, openSheet],
+  );
+
   const handleOpenEvent = useCallback(
     (event: PublicEventCard) => {
       handleSelectEvent(event);
-      router.push({
+      safePush(router, {
         pathname: "/event/[slug]",
         params: {
           slug: event.slug,
@@ -913,7 +1077,13 @@ export default function MapScreen() {
   const renderItem = useCallback(
     ({ item }: { item: MapListItem }) => {
       if (item.type === "skeleton") {
-        return <GlassSurface intensity={50} style={{ marginBottom: 12, height: 84 }} />;
+        return (
+          <GlassSurface
+            intensity={50}
+            blurEnabled={!isSheetInteracting}
+            style={{ marginBottom: MAP_CARD_SPACING, height: 84 }}
+          />
+        );
       }
       const event = item.event;
       const isSelected = event.id === selectedEventId;
@@ -934,14 +1104,19 @@ export default function MapScreen() {
           accessibilityRole="button"
           accessibilityLabel={`Abrir evento ${event.title}`}
           style={({ pressed }) => [
-            { marginBottom: 12 },
+            { marginBottom: MAP_CARD_SPACING },
             pressed ? { opacity: 0.85, transform: [{ scale: 0.99 }] } : null,
           ]}
         >
-          <GlassCard intensity={isSelected ? 64 : 54} highlight={isSelected} padding={12}>
+          <GlassCard
+            intensity={isSelected ? 64 : 54}
+            highlight={isSelected}
+            padding={12}
+            blurEnabled={!isSheetInteracting}
+          >
             <View style={{ flexDirection: "row", gap: 12 }}>
               <MapEventThumb coverUri={coverUri} isPadel={isPadel} />
-              <View style={{ flex: 1, gap: 6 }}>
+              <View style={{ flex: 1, gap: 8 }}>
                 <Text className="text-white text-sm font-semibold" numberOfLines={2}>
                   {event.title}
                 </Text>
@@ -976,12 +1151,12 @@ export default function MapScreen() {
         </Pressable>
       );
     },
-    [distanceOrigin, handleOpenEvent, selectedEventId],
+    [distanceOrigin, handleOpenEvent, isSheetInteracting, selectedEventId],
   );
 
-  const keyExtractor = useCallback((item: MapListItem, index: number) => {
+  const keyExtractor = useCallback((item: MapListItem) => {
     if (item.type === "skeleton") return item.key;
-    return `event-${item.event.id}-${index}`;
+    return `event-${item.event.id}`;
   }, []);
 
   const handleScrollToIndexFailed = useCallback(() => {
@@ -996,6 +1171,10 @@ export default function MapScreen() {
           data={listData}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          updateCellsBatchingPeriod={40}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: bottomPadding }}
           ListHeaderComponent={
             <View>
@@ -1126,6 +1305,10 @@ export default function MapScreen() {
           initialRegion={initialRegion}
           mapType="mutedStandard"
           style={{ flex: 1 }}
+          scrollEnabled={!isMapInteractionLocked}
+          zoomEnabled={!isMapInteractionLocked}
+          rotateEnabled={!isMapInteractionLocked}
+          pitchEnabled={!isMapInteractionLocked}
           showsPointsOfInterest={false}
           showsBuildings={false}
           showsTraffic={false}
@@ -1136,11 +1319,28 @@ export default function MapScreen() {
           onMapReady={() => setMapReady(true)}
           onRegionChangeComplete={(region) => {
             if (shouldUpdateRegion(region)) {
+              mapStopTimestampRef.current = Date.now();
+              pendingStabilityMetricRef.current = true;
               setMapRegion(region);
             }
           }}
         >
-          {markerEvents.map((event) => {
+          {clusteredMarkers.map((marker) => {
+            if (marker.type === "cluster") {
+              return (
+                <Marker
+                  key={marker.key}
+                  coordinate={{ latitude: marker.lat, longitude: marker.lng }}
+                  onPress={() => handleClusterPress(marker)}
+                >
+                  <View style={styles.clusterShell}>
+                    <Text style={styles.clusterCount}>{marker.count}</Text>
+                  </View>
+                </Marker>
+              );
+            }
+
+            const event = marker.event;
             const isPadelMarker =
               Boolean(event.tournament) ||
               (event.categories ?? []).includes("PADEL");
@@ -1149,8 +1349,8 @@ export default function MapScreen() {
               <Marker
                 key={`marker-${event.id}`}
                 coordinate={{
-                  latitude: event.location?.lat ?? 0,
-                  longitude: event.location?.lng ?? 0,
+                  latitude: marker.lat,
+                  longitude: marker.lng,
                 }}
                 onPress={() => handleSelectEvent(event)}
               >
@@ -1240,7 +1440,11 @@ export default function MapScreen() {
                 <View style={styles.sheetHandleIndicator} />
               </View>
             <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFillObject, blurAnimatedStyle]}>
-              <BlurView tint="dark" intensity={30} style={StyleSheet.absoluteFillObject} />
+              <BlurView
+                tint="dark"
+                intensity={isSheetInteracting ? 14 : 30}
+                style={StyleSheet.absoluteFillObject}
+              />
             </Animated.View>
               <GestureDetector gesture={scrollGesture}>
                 <Animated.FlatList
@@ -1259,11 +1463,16 @@ export default function MapScreen() {
                   contentContainerStyle={{
                     paddingHorizontal: 20,
                     paddingBottom: Math.max(insets.bottom + 16, 20),
-                    paddingTop: 0,
+                    paddingTop: 10,
                     flexGrow: 1,
                     justifyContent: isEmpty ? "center" : "flex-start",
                   }}
                   showsVerticalScrollIndicator={false}
+                  initialNumToRender={8}
+                  maxToRenderPerBatch={8}
+                  windowSize={7}
+                  updateCellsBatchingPeriod={40}
+                  removeClippedSubviews
                   ListHeaderComponent={sheetHeader}
                   stickyHeaderIndices={[0]}
                   ListEmptyComponent={
@@ -1409,6 +1618,26 @@ const styles = {
     backgroundColor: "rgba(255,255,255,0.92)",
     borderColor: "rgba(188,229,255,0.98)",
     shadowOpacity: 0.45,
+  },
+  clusterShell: {
+    minWidth: 36,
+    height: 36,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(188,229,255,0.96)",
+    backgroundColor: "rgba(22,42,64,0.92)",
+    shadowColor: "#0b101a",
+    shadowOpacity: 0.38,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 5 },
+  },
+  clusterCount: {
+    color: "#eef8ff",
+    fontSize: 12,
+    fontWeight: "700" as const,
   },
   sheetHandleContainer: {
     height: SHEET_HANDLE_HEIGHT,

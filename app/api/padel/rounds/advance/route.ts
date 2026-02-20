@@ -10,8 +10,10 @@ import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolvePadelCourtSelection } from "@/domain/padel/courtSelection";
 import { isPadelOfficialStatus } from "@/domain/padel/liveStatus";
-import { computeAutoSchedulePlan } from "@/domain/padel/autoSchedule";
 import { parsePadelFormat } from "@/domain/padel/formatCatalog";
+import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
+import type { PadelExecutionMode, PadelPartialMode, PadelScheduleStrategy } from "@/domain/padel/schedulerV2/types";
+import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
 import {
   buildMexicanoRoundRelations,
   deriveMexicanoRoundEntries,
@@ -107,10 +109,18 @@ async function tryAutoScheduleGenerated(params: {
   categoryId: number | null;
   createdMatchIds: number[];
   dryRun: boolean;
+  strategy: PadelScheduleStrategy;
+  partialMode: PadelPartialMode;
+  executionMode: PadelExecutionMode;
 }) {
-  const { event, categoryId, createdMatchIds, dryRun } = params;
+  const { event, categoryId, createdMatchIds, dryRun, strategy, partialMode, executionMode } = params;
   if (createdMatchIds.length === 0) {
-    return { scheduled: 0, unscheduledByReason: {} as Record<string, number> };
+    return {
+      scheduled: 0,
+      unscheduledByReason: {} as Record<string, number>,
+      byCategory: [] as Array<Record<string, unknown>>,
+      executionMode,
+    };
   }
 
   const advanced = (event.padelTournamentConfig?.advancedSettings ?? {}) as Record<string, unknown>;
@@ -136,6 +146,8 @@ async function tryAutoScheduleGenerated(params: {
     return {
       scheduled: 0,
       unscheduledByReason: { INVALID_WINDOW: createdMatchIds.length },
+      byCategory: [],
+      executionMode,
     };
   }
 
@@ -154,6 +166,8 @@ async function tryAutoScheduleGenerated(params: {
     return {
       scheduled: 0,
       unscheduledByReason: { NO_COURTS_CONFIGURED: createdMatchIds.length },
+      byCategory: [],
+      executionMode,
     };
   }
 
@@ -168,6 +182,7 @@ async function tryAutoScheduleGenerated(params: {
     },
     select: {
       id: true,
+      categoryId: true,
       plannedDurationMinutes: true,
       courtId: true,
       roundLabel: true,
@@ -184,7 +199,7 @@ async function tryAutoScheduleGenerated(params: {
   });
 
   if (unscheduledMatchesRaw.length === 0) {
-    return { scheduled: 0, unscheduledByReason: {} };
+    return { scheduled: 0, unscheduledByReason: {}, byCategory: [], executionMode };
   }
 
   const normalizeParticipantSide = (side: "A" | "B", rows: typeof unscheduledMatchesRaw[number]["participants"]) =>
@@ -200,6 +215,7 @@ async function tryAutoScheduleGenerated(params: {
 
   const unscheduledMatches = unscheduledMatchesRaw.map((match) => ({
     id: match.id,
+    categoryId: match.categoryId ?? null,
     plannedDurationMinutes: match.plannedDurationMinutes,
     courtId: match.courtId,
     roundLabel: match.roundLabel,
@@ -255,11 +271,13 @@ async function tryAutoScheduleGenerated(params: {
     select: { courtId: true, startAt: true, endAt: true },
   });
 
-  const allowPlaceholderMatches =
-    event.padelTournamentConfig?.format === "NON_STOP" ||
-    unscheduledMatchesRaw.some((match) => match.groupLabel === "NS");
+  const allowPlaceholderMatches = resolveAllowPlaceholderMatches({
+    tournamentFormat: event.padelTournamentConfig?.format ?? null,
+    unscheduledMatches,
+  });
 
-  const scheduleResult = computeAutoSchedulePlan({
+  const scheduleResult = computeSchedulerV2Plan({
+    strategy,
     unscheduledMatches,
     scheduledMatches,
     courts,
@@ -268,6 +286,9 @@ async function tryAutoScheduleGenerated(params: {
     config: {
       windowStart,
       windowEnd,
+      ...(courtSelection.courtPriorityOrder.length > 0
+        ? { courtPriorityOrder: courtSelection.courtPriorityOrder }
+        : {}),
       durationMinutes,
       slotMinutes,
       bufferMinutes,
@@ -276,6 +297,17 @@ async function tryAutoScheduleGenerated(params: {
       allowPlaceholderMatches,
     },
   });
+
+  if (partialMode === "REQUIRE_FULL" && !dryRun && scheduleResult.skipped.length > 0) {
+    return {
+      scheduled: scheduleResult.scheduled.length,
+      skipped: scheduleResult.skipped.length,
+      unscheduledByReason: scheduleResult.unscheduledByReason,
+      byCategory: scheduleResult.byCategory,
+      executionMode,
+      error: "AUTO_SCHEDULE_INFEASIBLE",
+    };
+  }
 
   if (!dryRun) {
     const courtById = new Map(courtSelection.courts.map((court) => [court.id, court]));
@@ -298,6 +330,8 @@ async function tryAutoScheduleGenerated(params: {
   return {
     scheduled: scheduleResult.scheduled.length,
     unscheduledByReason: scheduleResult.unscheduledByReason,
+    byCategory: scheduleResult.byCategory,
+    executionMode,
   };
 }
 
@@ -315,6 +349,18 @@ async function _POST(req: NextRequest) {
   const categoryIdRaw = parseNumber(body.categoryId);
   const categoryId = categoryIdRaw && categoryIdRaw > 0 ? categoryIdRaw : null;
   const dryRun = body.dryRun === true;
+  const autoScheduleInput =
+    body.autoSchedule && typeof body.autoSchedule === "object" ? (body.autoSchedule as Record<string, unknown>) : {};
+  const autoScheduleStrategy: PadelScheduleStrategy =
+    autoScheduleInput.strategy === "GROUPS_FIRST" ||
+    autoScheduleInput.strategy === "KNOCKOUT_FIRST" ||
+    autoScheduleInput.strategy === "BALANCED_BY_CATEGORY"
+      ? (autoScheduleInput.strategy as PadelScheduleStrategy)
+      : "BALANCED_BY_CATEGORY";
+  const autoSchedulePartialMode: PadelPartialMode =
+    autoScheduleInput.partialMode === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+  const autoScheduleExecutionMode: PadelExecutionMode =
+    autoScheduleInput.executionMode === "ASYNC" ? "ASYNC" : "SYNC";
   if (!eventId || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
@@ -415,7 +461,7 @@ async function _POST(req: NextRequest) {
     }
 
     const labels = Array.from({ length: activeCourtsCount }, (_, idx) => roundLabelFor(currentRound, idx + 1));
-    const currentRoundMatches = await prisma.eventMatchSlot.findMany({
+    const currentRoundMatchesRaw = await prisma.eventMatchSlot.findMany({
       where: {
         eventId,
         roundType: "GROUPS",
@@ -426,6 +472,7 @@ async function _POST(req: NextRequest) {
       select: {
         id: true,
         roundLabel: true,
+        groupLabel: true,
         status: true,
         pairingAId: true,
         pairingBId: true,
@@ -435,6 +482,9 @@ async function _POST(req: NextRequest) {
         courtName: true,
       },
     });
+    const currentRoundMatches = currentRoundMatchesRaw.filter(
+      (match) => match.groupLabel === "NS" || match.groupLabel == null,
+    );
     const matchByLabel = new Map(
       currentRoundMatches
         .filter((match) => typeof match.roundLabel === "string")
@@ -805,6 +855,11 @@ async function _POST(req: NextRequest) {
         generated: createdMatches.length,
         scheduled: 0,
         unscheduledByReason: {},
+        autoSchedule: {
+          strategy: autoScheduleStrategy,
+          partialMode: autoSchedulePartialMode,
+          executionMode: autoScheduleExecutionMode,
+        },
         roundState: {
           format: formatEffective,
           categoryId,
@@ -871,7 +926,25 @@ async function _POST(req: NextRequest) {
     categoryId,
     createdMatchIds,
     dryRun: false,
+    strategy: autoScheduleStrategy,
+    partialMode: autoSchedulePartialMode,
+    executionMode: autoScheduleExecutionMode,
   });
+
+  if (scheduled.error === "AUTO_SCHEDULE_INFEASIBLE") {
+    return jsonWrap(
+      {
+        ok: false,
+        error: "AUTO_SCHEDULE_INFEASIBLE",
+        generated: createdMatchIds.length,
+        scheduled: scheduled.scheduled,
+        skipped: typeof scheduled.skipped === "number" ? scheduled.skipped : null,
+        unscheduledByReason: scheduled.unscheduledByReason,
+        byCategory: scheduled.byCategory ?? [],
+      },
+      { status: 409 },
+    );
+  }
 
   await recordOrganizationAuditSafe({
     organizationId: event.organizationId,
@@ -884,6 +957,12 @@ async function _POST(req: NextRequest) {
       generated: createdMatchIds.length,
       scheduled: scheduled.scheduled,
       unscheduledByReason: scheduled.unscheduledByReason,
+      byCategory: scheduled.byCategory ?? [],
+      autoSchedule: {
+        strategy: autoScheduleStrategy,
+        partialMode: autoSchedulePartialMode,
+        executionMode: autoScheduleExecutionMode,
+      },
     },
   });
 
@@ -893,6 +972,12 @@ async function _POST(req: NextRequest) {
       generated: createdMatchIds.length,
       scheduled: scheduled.scheduled,
       unscheduledByReason: scheduled.unscheduledByReason,
+      byCategory: scheduled.byCategory ?? [],
+      autoSchedule: {
+        strategy: autoScheduleStrategy,
+        partialMode: autoSchedulePartialMode,
+        executionMode: scheduled.executionMode ?? autoScheduleExecutionMode,
+      },
       roundState: {
         format: formatEffective,
         categoryId,

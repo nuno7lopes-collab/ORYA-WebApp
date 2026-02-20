@@ -23,7 +23,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useWalletDetail } from "../../features/wallet/hooks";
 import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import { getMobileEnv } from "../../lib/env";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { getUserFacingError } from "../../lib/errors";
 import { acceptInvite, declineInvite } from "../../features/tournaments/api";
@@ -166,7 +166,7 @@ export default function WalletDetailScreen() {
   );
   const nextRoute = useMemo(() => (entitlementId ? `/wallet/${entitlementId}` : "/tickets"), [entitlementId]);
   const openAuth = useCallback(() => {
-    router.push({ pathname: "/auth", params: { next: nextRoute } });
+    safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
   const { data, isLoading, isFetching, isError, error, refetch } = useWalletDetail(entitlementId);
   const fade = useRef(new Animated.Value(0)).current;
@@ -246,7 +246,7 @@ export default function WalletDetailScreen() {
       await Promise.all([inviteQuery.refetch(), inboxQuery.refetch()]);
       const conversationId = result?.conversationId ?? pendingInvite.conversationId ?? null;
       if (conversationId) {
-        router.push({
+        safePush(router, {
           pathname: "/messages/[threadId]",
           params: {
             threadId: conversationId,
@@ -347,7 +347,7 @@ export default function WalletDetailScreen() {
 
   const handlePayPairing = () => {
     if (!data?.event?.slug || !data?.pairing?.id) return;
-    router.push({
+    safePush(router, {
       pathname: "/event/[slug]",
       params: { slug: data.event.slug, pairingId: String(data.pairing.id) },
     });
@@ -528,7 +528,7 @@ export default function WalletDetailScreen() {
 
               {data.event?.slug ? (
                 <Pressable
-                  onPress={() => router.push({ pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
+                  onPress={() => safePush(router, { pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
                   className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4 mb-4"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"
@@ -562,7 +562,7 @@ export default function WalletDetailScreen() {
                 ) : eventConversation?.conversationId ? (
                   <Pressable
                     onPress={() =>
-                      router.push({
+                      safePush(router, {
                         pathname: "/messages/[threadId]",
                         params: {
                           threadId: eventConversation.conversationId,

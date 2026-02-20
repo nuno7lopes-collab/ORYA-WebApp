@@ -4,6 +4,7 @@ import { AvatarCircle } from "../avatar/AvatarCircle";
 import { GlassCard } from "../liquid/GlassCard";
 import { useRouter } from "expo-router";
 import { FollowListItem } from "../../features/network/types";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   open: boolean;
@@ -63,7 +64,7 @@ export function FollowListModal({
                     onPress={() => {
                       if (item.username) {
                         onClose();
-                        router.push({ pathname: "/[username]", params: { username: item.username } });
+                        safePush(router, { pathname: "/[username]", params: { username: item.username } });
                       }
                     }}
                     className="flex-row items-center gap-3 py-2"

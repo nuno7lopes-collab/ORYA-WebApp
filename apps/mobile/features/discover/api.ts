@@ -12,6 +12,7 @@ type DiscoverParams = {
   q?: string;
   type?: DiscoverPriceFilter;
   kind?: DiscoverKind;
+  mode?: "map";
   date?: DiscoverDateFilter;
   city?: string;
   startDate?: string;
@@ -23,8 +24,11 @@ type DiscoverParams = {
   south?: number;
   east?: number;
   west?: number;
+  lat?: number;
+  lng?: number;
   cursor?: string | null;
   limit?: number;
+  signal?: AbortSignal;
 };
 
 export type DiscoverPage = {
@@ -52,6 +56,7 @@ const DEFAULT_LIMIT = 12;
 
 const toEventQueryString = (params: DiscoverParams): string => {
   const query = new URLSearchParams();
+  if (params.mode) query.set("mode", params.mode);
   if (params.q) query.set("q", params.q);
   if (params.city) query.set("city", params.city);
   if (params.kind === "padel") query.set("categories", "PADEL");
@@ -64,6 +69,8 @@ const toEventQueryString = (params: DiscoverParams): string => {
   if (typeof params.south === "number") query.set("south", String(params.south));
   if (typeof params.east === "number") query.set("east", String(params.east));
   if (typeof params.west === "number") query.set("west", String(params.west));
+  if (typeof params.lat === "number") query.set("lat", String(params.lat));
+  if (typeof params.lng === "number") query.set("lng", String(params.lng));
   if (params.type === "free" && typeof params.priceMin !== "number" && typeof params.priceMax !== "number") {
     query.set("priceMax", "0");
   }
@@ -138,7 +145,9 @@ const mapServiceOffers = (items: DiscoverServiceCard[]): DiscoverOfferCard[] =>
   }));
 
 const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
-  const response = await api.request<unknown>(`/api/explorar/list?${toEventQueryString(params)}`);
+  const response = await api.request<unknown>(`/api/explorar/list?${toEventQueryString(params)}`, {
+    signal: params.signal,
+  });
   const meta = response && typeof response === "object"
     ? {
         requestId: (response as any).requestId ?? null,
@@ -171,7 +180,9 @@ const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOff
 };
 
 const fetchServices = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
-  const response = await api.request<unknown>(`/api/servicos/list?${toServiceQueryString(params)}`);
+  const response = await api.request<unknown>(`/api/servicos/list?${toServiceQueryString(params)}`, {
+    signal: params.signal,
+  });
   const unwrapped = unwrapApiResponse<unknown>(response);
   const parsed = parseServiceResponse(unwrapped);
 

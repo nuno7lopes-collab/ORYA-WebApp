@@ -10,6 +10,7 @@ import { getFallbackTint } from "../../lib/imageTint";
 import { GlassSkeleton } from "../glass/GlassSkeleton";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { resolveMediaUri } from "../../lib/media";
+import { safePush } from "../../lib/navigation";
 
 type DiscoverGridCardProps = {
   offer: DiscoverOfferCard;
@@ -230,7 +231,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
     [eventPreviewParams, isService, servicePreviewParams],
   );
   const handlePress = useCallback(() => {
-    router.push(linkHref as any);
+    safePush(router, linkHref as any);
   }, [linkHref, router]);
 
   const accessibilityLabel = event?.title ?? service?.title ?? t("discover:offer");

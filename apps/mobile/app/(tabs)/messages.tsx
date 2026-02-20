@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useEffect, useMemo, useState } from "react";
+import { safePush } from "../../lib/navigation";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
@@ -22,7 +23,7 @@ import { createMessageRequest } from "../../features/messages/api";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
-import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
+import { TopPadelButton } from "../../components/navigation/TopPadelButton";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { formatDate } from "../../lib/formatters";
 import { useIsFocused } from "@react-navigation/native";
@@ -60,7 +61,7 @@ export default function MessagesTabScreen() {
   const topBar = useTopBarScroll({ hideOnScroll: false });
   const router = useRouter();
   const openAuth = () => {
-    router.push({ pathname: "/auth", params: { next: "/messages" } });
+    safePush(router, { pathname: "/auth", params: { next: "/messages" } });
   };
   const { session } = useAuth();
   const isFocused = useIsFocused();
@@ -176,7 +177,7 @@ export default function MessagesTabScreen() {
       closeComposer();
       await Promise.all([inboxQuery.refetch(), requestsQuery.refetch()]);
       if (response.conversationId) {
-        router.push({
+        safePush(router, {
           pathname: "/messages/[threadId]",
           params: { threadId: response.conversationId, source: "conversation" },
         });
@@ -211,7 +212,7 @@ export default function MessagesTabScreen() {
       closeComposer();
       await Promise.all([inboxQuery.refetch(), requestsQuery.refetch()]);
       if (response.conversationId) {
-        router.push({
+        safePush(router, {
           pathname: "/messages/[threadId]",
           params: { threadId: response.conversationId, source: "conversation" },
         });
@@ -241,7 +242,7 @@ export default function MessagesTabScreen() {
   const openThread = (item: InboxItem) => {
     const isEvent = item.kind === "EVENT";
     if (isEvent && item.conversationId && item.event) {
-      router.push({
+      safePush(router, {
         pathname: "/messages/[threadId]",
         params: {
           threadId: item.conversationId,
@@ -257,7 +258,7 @@ export default function MessagesTabScreen() {
       return;
     }
     if (item.conversationId) {
-      router.push({
+      safePush(router, {
         pathname: "/messages/[threadId]",
         params: {
           threadId: item.conversationId,
@@ -276,7 +277,7 @@ export default function MessagesTabScreen() {
         variant="title"
         title={t("messages:title")}
         titleAlign="center"
-        leftSlot={<TopTicketsButton />}
+        leftSlot={<TopPadelButton />}
         rightSlotMode="append"
         rightSlot={
           session?.user?.id ? (
@@ -291,7 +292,7 @@ export default function MessagesTabScreen() {
             </Pressable>
           ) : null
         }
-        showNotifications
+        showNotifications={false}
         showMessages={false}
       />
       <SafeFlashList
@@ -319,7 +320,7 @@ export default function MessagesTabScreen() {
             {session?.user?.id ? (
               <GlassCard intensity={46} padding={10}>
                 <Pressable
-                  onPress={() => router.push("/messages/requests")}
+                  onPress={() => safePush(router, "/messages/requests")}
                   className="rounded-2xl px-2 py-2"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

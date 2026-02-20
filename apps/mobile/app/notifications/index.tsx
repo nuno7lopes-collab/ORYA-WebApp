@@ -16,7 +16,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { useAuth } from "../../lib/auth";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import {
   invalidateNotificationsAll,
   invalidateNotificationsUnread,
@@ -217,7 +217,7 @@ export default function NotificationsScreen() {
   );
   const topBarRight = (
     <Pressable
-      onPress={() => router.push("/settings")}
+      onPress={() => safePush(router, "/settings")}
       style={({ pressed }) => [
         styles.settingsButton,
         pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
@@ -383,7 +383,7 @@ export default function NotificationsScreen() {
         if (resolved.kind === "native") {
           const targetPath = resolved.path.split("?")[0];
           if (targetPath && targetPath !== pathname) {
-            router.push(resolved.path);
+            safePush(router, resolved.path);
           }
         } else if (resolved.kind === "web") {
           await openNotificationLink(router, item.ctaUrl);
@@ -689,7 +689,7 @@ export default function NotificationsScreen() {
             if (resolved.kind === "native") {
               const targetPath = resolved.path.split("?")[0];
               if (targetPath && targetPath !== pathname) {
-                router.push(resolved.path);
+                safePush(router, resolved.path);
               }
             } else if (resolved.kind === "web") {
               await openNotificationLink(router, url);
@@ -743,7 +743,7 @@ export default function NotificationsScreen() {
       const primaryActor = notification.actors[0];
       const handleAvatarPress = primaryActor?.username
         ? () => {
-            router.push(`/${primaryActor.username}`);
+            safePush(router, `/${primaryActor.username}`);
           }
         : undefined;
 
@@ -911,7 +911,7 @@ export default function NotificationsScreen() {
       <Text style={styles.emptyTitle}>Inicia sessão</Text>
       <Text style={styles.emptyText}>Entra na tua conta para veres as notificações.</Text>
       <Pressable
-        onPress={() => router.push({ pathname: "/auth", params: { next: "/notifications" } })}
+        onPress={() => safePush(router, { pathname: "/auth", params: { next: "/notifications" } })}
         className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
         style={{ minHeight: tokens.layout.touchTarget }}
         accessibilityRole="button"

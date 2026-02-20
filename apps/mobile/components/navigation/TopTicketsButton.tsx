@@ -2,6 +2,7 @@ import { Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
+import { safePush } from "../../lib/navigation";
 
 type TopTicketsButtonProps = {
   onPress?: () => void;
@@ -10,7 +11,7 @@ type TopTicketsButtonProps = {
 
 export function TopTicketsButton({ onPress, accessibilityLabel = "Bilhetes" }: TopTicketsButtonProps) {
   const router = useRouter();
-  const handlePress = onPress ?? (() => router.push("/wallet"));
+  const handlePress = onPress ?? (() => safePush(router, "/tickets"));
 
   return (
     <Pressable

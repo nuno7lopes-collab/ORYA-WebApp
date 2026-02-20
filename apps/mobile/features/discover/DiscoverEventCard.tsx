@@ -202,6 +202,29 @@ const withAlpha = (color: string, alpha: number) => {
   return `rgba(12, 16, 24, ${alpha})`;
 };
 
+const clampAlpha = (value: number) => Math.max(0, Math.min(1, value));
+
+const resolveTintGradientAlphas = (color: string) => {
+  const rgbaMatch = color.match(/rgba?\(([^)]+)\)/i);
+  if (!rgbaMatch) {
+    return { middle: 0.58, bottom: 0.96 };
+  }
+  const [rRaw, gRaw, bRaw] = rgbaMatch[1].split(",").map((part) => part.trim());
+  const r = Number.parseFloat(rRaw);
+  const g = Number.parseFloat(gRaw);
+  const b = Number.parseFloat(bRaw);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+    return { middle: 0.58, bottom: 0.96 };
+  }
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const brightBoost = Math.max(0, (luminance - 0.56) * 0.24);
+  const darkRelief = Math.max(0, (0.28 - luminance) * 0.14);
+  return {
+    middle: clampAlpha(0.58 + brightBoost - darkRelief * 0.7),
+    bottom: clampAlpha(0.96 + brightBoost * 0.4 - darkRelief * 0.2),
+  };
+};
+
 const resolveAttendanceSummary = (
   ticketTypes: PublicEventCard["ticketTypes"] | undefined,
   t: (key: string, options?: any) => string,
@@ -287,11 +310,20 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
   const [coverFailed, setCoverFailed] = useState(false);
   const hasCover = Boolean(coverImage) && !coverFailed;
   const tintSeed = useMemo(
-    () => String(coverImage ?? event?.slug ?? service?.id ?? title ?? "orya"),
-    [coverImage, event?.slug, service?.id, title],
+    () =>
+      String(
+        isService
+          ? service?.id ?? title ?? "orya-service"
+          : event?.slug ?? event?.id ?? title ?? "orya-event",
+      ),
+    [event?.id, event?.slug, isService, service?.id, title],
   );
   const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
   const [tint, setTint] = useState(fallbackTint);
+  const tintGradientAlphas = useMemo(
+    () => resolveTintGradientAlphas(tint),
+    [tint],
+  );
   const transitionTag = isService
     ? service?.id
       ? `service-${service.id}`
@@ -554,8 +586,8 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
                     <LinearGradient
                       colors={[
                         withAlpha(tint, 0.0),
-                        withAlpha(tint, 0.48),
-                        withAlpha(tint, 0.96),
+                        withAlpha(tint, tintGradientAlphas.middle),
+                        withAlpha(tint, tintGradientAlphas.bottom),
                       ]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 0, y: 1 }}

@@ -1,4 +1,4 @@
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import { EventFeedbackSheet } from "./EventFeedbackSheet";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { resolveMediaUri } from "../../lib/media";
+import { safePush } from "../../lib/navigation";
 
 const USE_GLASS_BLUR = Platform.OS === "ios";
 const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
@@ -123,6 +124,29 @@ const withAlpha = (color: string, alpha: number) => {
   return `rgba(12, 16, 24, ${alpha})`;
 };
 
+const clampAlpha = (value: number) => Math.max(0, Math.min(1, value));
+
+const resolveTintGradientAlphas = (color: string) => {
+  const rgbaMatch = color.match(/rgba?\(([^)]+)\)/i);
+  if (!rgbaMatch) {
+    return { middle: 0.58, bottom: 0.96 };
+  }
+  const [rRaw, gRaw, bRaw] = rgbaMatch[1].split(",").map((part) => part.trim());
+  const r = Number.parseFloat(rRaw);
+  const g = Number.parseFloat(gRaw);
+  const b = Number.parseFloat(bRaw);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+    return { middle: 0.58, bottom: 0.96 };
+  }
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  const brightBoost = Math.max(0, (luminance - 0.56) * 0.24);
+  const darkRelief = Math.max(0, (0.28 - luminance) * 0.14);
+  return {
+    middle: clampAlpha(0.58 + brightBoost - darkRelief * 0.7),
+    bottom: clampAlpha(0.96 + brightBoost * 0.4 - darkRelief * 0.2),
+  };
+};
+
 export const EventCardSquare = memo(function EventCardSquare({
   event,
   index = 0,
@@ -160,11 +184,15 @@ export const EventCardSquare = memo(function EventCardSquare({
   const [coverFailed, setCoverFailed] = useState(false);
   const hasCover = Boolean(cover) && !coverFailed;
   const tintSeed = useMemo(
-    () => cover ?? event.slug ?? event.title ?? "orya",
-    [cover, event.slug, event.title],
+    () => String(event.slug ?? event.id ?? event.title ?? "orya"),
+    [event.id, event.slug, event.title],
   );
   const fallbackTint = useMemo(() => getFallbackTint(tintSeed), [tintSeed]);
   const [tint, setTint] = useState(fallbackTint);
+  const tintGradientAlphas = useMemo(
+    () => resolveTintGradientAlphas(tint),
+    [tint],
+  );
   const location =
     event.location?.formattedAddress ??
     event.location?.city ??
@@ -280,33 +308,33 @@ export const EventCardSquare = memo(function EventCardSquare({
 
   return (
     <>
-      <Link href={linkHref} asChild push>
-        <Pressable
-          onPressIn={() => {
-            Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, friction: 7 }).start();
+      <Pressable
+        onPressIn={() => {
+          Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, friction: 7 }).start();
+        }}
+        onPressOut={() => {
+          Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
+        }}
+        onPress={() => {
+          safePush(router, linkHref as any);
+          InteractionManager.runAfterInteractions(() => {
+            sendEventSignal({ eventId: event.id, signalType: "CLICK" });
+            router.prefetch?.(linkHref);
+          });
+        }}
+        onLongPress={() => setFeedbackVisible(true)}
+        delayLongPress={260}
+        accessibilityRole="button"
+        accessibilityLabel={`Abrir evento ${event.title}`}
+      >
+        <Animated.View
+          style={{
+            opacity: fade,
+            transform: [{ translateY: translate }, { scale }],
           }}
-          onPressOut={() => {
-            Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
-          }}
-          onPress={() => {
-            InteractionManager.runAfterInteractions(() => {
-              sendEventSignal({ eventId: event.id, signalType: "CLICK" });
-              router.prefetch?.(linkHref);
-            });
-          }}
-          onLongPress={() => setFeedbackVisible(true)}
-          delayLongPress={260}
-          accessibilityRole="button"
-          accessibilityLabel={`Abrir evento ${event.title}`}
         >
-          <Animated.View
-            style={{
-              opacity: fade,
-              transform: [{ translateY: translate }, { scale }],
-            }}
-          >
-            <View style={styles.card}>
-              <View style={styles.media}>
+          <View style={styles.card}>
+            <View style={styles.media}>
                 {hasCover ? (
                   <Image
                     source={{ uri: cover }}
@@ -345,8 +373,8 @@ export const EventCardSquare = memo(function EventCardSquare({
                 <LinearGradient
                   colors={[
                     withAlpha(tint, 0.0),
-                    withAlpha(tint, 0.42),
-                    withAlpha(tint, 0.98),
+                    withAlpha(tint, tintGradientAlphas.middle),
+                    withAlpha(tint, tintGradientAlphas.bottom),
                   ]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 0, y: 1 }}
@@ -409,8 +437,7 @@ export const EventCardSquare = memo(function EventCardSquare({
               </View>
             </View>
           </Animated.View>
-        </Pressable>
-      </Link>
+      </Pressable>
       <EventFeedbackSheet
         visible={feedbackVisible}
         event={event}

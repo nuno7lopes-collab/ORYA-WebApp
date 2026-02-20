@@ -11,7 +11,7 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { usePadelMyRegistrationDetail } from "../../features/tournaments/hooks";
 import * as Haptics from "expo-haptics";
@@ -156,7 +156,7 @@ export default function RegistrationDetailScreen() {
               <Pressable
                 onPress={() =>
                   handleActionPress(() =>
-                    router.push({
+                    safePush(router, {
                       pathname: "/auth",
                       params: {
                         next:
@@ -312,7 +312,7 @@ export default function RegistrationDetailScreen() {
                   onPress={() => {
                     if (!canOpenEvent || !eventSlug) return;
                     handleActionPress(() =>
-                      router.push({
+                      safePush(router, {
                         pathname: "/event/[slug]",
                         params: { slug: eventSlug },
                       }),

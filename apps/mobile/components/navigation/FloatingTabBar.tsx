@@ -34,8 +34,8 @@ const RIGHT_TAB = {
 };
 const TAB_LABELS: Record<string, string> = {
   agora: "Agora",
-  messages: "Mensagens",
   network: "Rede",
+  messages: "Mensagens",
   profile: "Perfil",
   index: "Descobrir",
 };

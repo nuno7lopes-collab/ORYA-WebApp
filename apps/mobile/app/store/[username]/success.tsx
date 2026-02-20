@@ -1,7 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../components/liquid/GlassCard";
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return null;
@@ -27,7 +26,7 @@ export default function StoreCheckoutSuccessScreen() {
   return (
     <LiquidBackground variant="solid">
       <View className="flex-1 justify-center px-5">
-        <GlassCard intensity={62}>
+        <View className="gap-2 border-b border-white/14 pb-5">
           <Text className="text-white text-2xl font-semibold">Compra confirmada</Text>
           <Text className="mt-2 text-white/70 text-sm">
             A tua encomenda foi registada e já está disponível na carteira de compras.
@@ -64,7 +63,7 @@ export default function StoreCheckoutSuccessScreen() {
               <Text className="text-center text-sm font-semibold text-white">Voltar à loja</Text>
             </Pressable>
           </View>
-        </GlassCard>
+        </View>
       </View>
     </LiquidBackground>
   );

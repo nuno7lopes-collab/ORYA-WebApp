@@ -23,7 +23,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Image } from "expo-image";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import {
   fetchConversationMessages,
@@ -142,12 +142,12 @@ export default function ChatThreadScreen() {
 
   const nextRoute = useMemo(() => (threadId ? `/messages/${threadId}` : "/messages"), [threadId]);
   const openAuth = useCallback(() => {
-    router.push({ pathname: "/auth", params: { next: nextRoute } });
+    safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
   const openSenderProfile = useCallback(
     (username?: string | null) => {
       if (!username) return;
-      router.push({ pathname: "/[username]", params: { username } });
+      safePush(router, { pathname: "/[username]", params: { username } });
     },
     [router],
   );
@@ -605,7 +605,7 @@ export default function ChatThreadScreen() {
                 {eventSlug ? (
                   <Pressable
                     onPress={() =>
-                      router.push({
+                      safePush(router, {
                         pathname: "/event/[slug]",
                         params: { slug: eventSlug, source: "messages" },
                       })

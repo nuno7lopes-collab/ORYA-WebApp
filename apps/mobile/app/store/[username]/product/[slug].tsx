@@ -5,11 +5,10 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../../../components/navigation/useTopBarScroll";
-import { safeBack } from "../../../../lib/navigation";
+import { safeBack, safePush } from "../../../../lib/navigation";
 import { tokens } from "@orya/shared";
 import { useAuth } from "../../../../lib/auth";
 import { useStoreCartMutations, useStoreProduct } from "../../../../features/store/hooks";
@@ -51,7 +50,7 @@ export default function StoreProductScreen() {
 
   const openAuth = () => {
     const next = `/store/${encodeURIComponent(username)}/product/${encodeURIComponent(slug)}`;
-    router.push({ pathname: "/auth", params: { next } });
+    safePush(router, { pathname: "/auth", params: { next } });
   };
 
   const addToCart = async () => {
@@ -73,7 +72,7 @@ export default function StoreProductScreen() {
         quantity,
         personalization: {},
       });
-      router.push({ pathname: "/store/[username]/cart", params: { username, storeId: String(resolvedStoreId) } });
+      safePush(router, { pathname: "/store/[username]/cart", params: { username, storeId: String(resolvedStoreId) } });
     } catch (error) {
       setInlineError(getStoreErrorMessage(error));
     } finally {
@@ -116,17 +115,17 @@ export default function StoreProductScreen() {
             <ActivityIndicator color="white" />
           </View>
         ) : query.isError || !query.data ? (
-          <GlassCard intensity={54}>
+          <View className="gap-2 border-b border-rose-200/30 pb-4">
             <Text className="text-red-300 text-sm mb-3">{getStoreErrorMessage(query.error)}</Text>
             <Pressable
               onPress={() => query.refetch()}
-              className="rounded-xl bg-white/10 px-4 py-3"
+              className="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
-              <Text className="text-center text-sm font-semibold text-white">Tentar novamente</Text>
+              <Text className="text-xs font-semibold text-white">Tentar novamente</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-4">
             {query.data.product.images?.[0]?.url ? (
@@ -137,7 +136,7 @@ export default function StoreProductScreen() {
               />
             ) : null}
 
-            <GlassCard intensity={48}>
+            <View className="border-b border-white/12 pb-4">
               <Text className="text-white text-lg font-semibold">{query.data.product.name}</Text>
               {query.data.product.shortDescription ? (
                 <Text className="mt-1 text-white/65 text-sm">{query.data.product.shortDescription}</Text>
@@ -153,10 +152,10 @@ export default function StoreProductScreen() {
               {query.data.product.description ? (
                 <Text className="mt-3 text-white/70 text-sm">{query.data.product.description}</Text>
               ) : null}
-            </GlassCard>
+            </View>
 
             {variants.length > 0 ? (
-              <GlassCard intensity={42}>
+              <View className="border-b border-white/12 pb-4">
                 <Text className="text-white text-sm font-semibold mb-2">Variantes</Text>
                 <View className="flex-row flex-wrap gap-2">
                   {variants.map((variant) => {
@@ -176,10 +175,10 @@ export default function StoreProductScreen() {
                     );
                   })}
                 </View>
-              </GlassCard>
+              </View>
             ) : null}
 
-            <GlassCard intensity={42}>
+            <View className="border-b border-white/12 pb-4">
               <View className="flex-row items-center justify-between">
                 <Text className="text-white text-sm font-semibold">Quantidade</Text>
                 <View className="flex-row items-center gap-2">
@@ -218,7 +217,7 @@ export default function StoreProductScreen() {
                   {submitting ? "A adicionar..." : "Adicionar ao carrinho"}
                 </Text>
               </Pressable>
-            </GlassCard>
+            </View>
           </View>
         )}
       </ScrollView>

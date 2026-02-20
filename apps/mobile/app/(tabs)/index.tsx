@@ -42,6 +42,7 @@ import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useGlobalSearchParams, useRouter } from "expo-router";
 import { useScopedTabSwipeBlocker } from "../../components/navigation/TabSwipeProvider";
 import { useIsFocused } from "@react-navigation/native";
+import { safePush } from "../../lib/navigation";
 
 if (
   Platform.OS === "android" &&
@@ -473,12 +474,12 @@ export default function DiscoverScreen() {
       const nextRoute = query
         ? ({ pathname: "/search", params: { q: query } } as const)
         : ({ pathname: "/search" } as const);
-      router.push(nextRoute);
+      safePush(router, nextRoute);
     }
   }, [params.q, params.search, params.world, router, setWorlds]);
 
   const handleOpenSearch = useCallback(() => {
-    router.push("/search");
+    safePush(router, "/search");
   }, [router]);
 
   const handleRefresh = useCallback(() => {
@@ -809,7 +810,7 @@ export default function DiscoverScreen() {
                               }
                             >
                               <Pressable
-                                onPress={() => router.push("/map")}
+                                onPress={() => safePush(router, "/map")}
                                 style={({ pressed }) => [
                                   styles.emptyCtaIcon,
                                   styles.emptyCtaSecondary,

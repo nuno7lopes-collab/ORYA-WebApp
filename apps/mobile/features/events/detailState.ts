@@ -24,7 +24,14 @@ export type TicketSheetGateState = {
   canOpenSheet: boolean;
 };
 
-export const IOS_PULL_DISMISS_THRESHOLD = -64;
+export type TicketCtaState =
+  | "READY"
+  | "INVITE_LOCKED"
+  | "ENDED"
+  | "COMING_SOON"
+  | "UNAVAILABLE";
+
+export const IOS_PULL_DISMISS_THRESHOLD = -86;
 
 export const shouldDismissByPullDown = ({
   platform,
@@ -76,3 +83,13 @@ export const resolveTicketSheetGateState = ({
 
 export const resolveCanOpenTicketSheet = (input: TicketSheetGateInput) =>
   resolveTicketSheetGateState(input).canOpenSheet;
+
+export const resolveTicketCtaState = (
+  gateState: TicketSheetGateState,
+): TicketCtaState => {
+  if (gateState.canOpenSheet) return "READY";
+  if (gateState.inviteLocked) return "INVITE_LOCKED";
+  if (gateState.eventEnded) return "ENDED";
+  if (!gateState.hasTicketTypes) return "COMING_SOON";
+  return "UNAVAILABLE";
+};

@@ -480,6 +480,7 @@
       "subtitle": "Controla como cada organização comunica contigo.",
       "loading": "A carregar consentimentos...",
       "empty": "Sem organizações associadas.",
+      "emptyFollowed": "Segue organizações para personalizar os consentimentos.",
       "orgFallback": "Organização",
       "generalTitle": "Consentimento geral",
       "generalUpdates": "Atualizações e próximos eventos",
@@ -495,6 +496,8 @@
       "signOut": "Terminar sessão",
       "delete": "Eliminar conta",
       "deleteHint": "Esta ação é permanente.",
+      "deleteWarningTitle": "Atenção: ação irreversível",
+      "deleteWarningBody": "Ao eliminar a conta, todos os dados são removidos. Terás sempre de confirmar com \"{phrase}\".",
       "deleteTitle": "Eliminar conta",
       "deleteBody": "Para confirmar, escreve o teu email.",
       "deleteInput": "Email",
@@ -646,7 +649,51 @@
       "configurationIssue": "Estamos a corrigir os bilhetes deste evento. Tenta novamente em instantes.",
       "lastSeats": "Últimos {count}",
       "remaining": "{count}+ lugares",
-      "freeEntry": "Entrada livre"
+      "freeEntry": "Entrada livre",
+      "cta": {
+        "processing": "A processar…",
+        "accessibility": "Bilhetes: {label}. Preço: {price}",
+        "state": {
+          "ready": "Comprar bilhete",
+          "inviteLocked": "Acesso por convite",
+          "ended": "Evento terminado",
+          "comingSoon": "Bilhetes em breve",
+          "unavailable": "Sem bilhetes disponíveis"
+        }
+      },
+      "sheet": {
+        "closeSelection": "Fechar seleção de bilhetes",
+        "increment": "Adicionar bilhete {name}",
+        "decrement": "Remover bilhete {name}",
+        "submit": {
+          "default": "Finalizar compra",
+          "select": "Escolher bilhetes",
+          "freeSingle": "Garantir bilhete grátis",
+          "freePlural": "Garantir bilhetes grátis",
+          "pay": "Pagar {price}"
+        }
+      },
+      "freeSuccess": {
+        "eventFallback": "este evento",
+        "kicker": {
+          "single": "JÁ ESTÁS DENTRO",
+          "plural": "JÁ ESTÃO DENTRO"
+        },
+        "title": {
+          "single": "Inscrição confirmada",
+          "plural": "Inscrições confirmadas"
+        },
+        "message": {
+          "single": "O teu bilhete grátis para {event} está garantido.",
+          "plural": "Garantiste {count} bilhetes grátis para {event}.",
+          "default": "Garantimos o teu bilhete grátis para este evento."
+        },
+        "cta": {
+          "single": "Ver bilhete",
+          "plural": "Ver bilhetes",
+          "accessibility": "Ver bilhete"
+        }
+      }
     },
     "attendance": {
       "registered": "{sold}/{total} inscritos",
@@ -779,6 +826,7 @@
       "pairingCreateFailed": "Não foi possível criar a dupla.",
       "pairingTitle": "Duplas",
       "joinSuccess": "Pedido enviado. Vais receber confirmação em breve.",
+      "joinAlreadyActive": "Já tens uma dupla ativa nesta categoria.",
       "joinFailed": "Não foi possível juntar-te.",
       "invalidCategoryPayment": "Categoria inválida para pagamento.",
       "openPairingsSubtitle": "Jogadores e duplas com vaga aberta e perfil competitivo compatível.",

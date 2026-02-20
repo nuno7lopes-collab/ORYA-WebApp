@@ -13,7 +13,6 @@ import type { GeoDetailsItem } from "@/lib/geo/types";
 import { Avatar } from "@/components/ui/avatar";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ContextDrawer } from "@/components/ui/context-drawer";
-import { OryaDateField, OryaDateTimeField } from "@/components/ui/datetime";
 import { useToast } from "@/components/ui/toast-provider";
 import { CTA_PRIMARY, CTA_SECONDARY } from "@/app/org/_internal/core/dashboardUi";
 import {
@@ -27,6 +26,12 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { sanitizeUiErrorMessage } from "@/lib/uiErrorMessage";
 import { lockBodyScroll } from "@/lib/dom/bodyScrollLock";
 import PartnershipsPageClient from "./parcerias/PartnershipsPageClient";
+import { ClubsManagementPanel } from "./clubs-v2/ClubsManagementPanel";
+import { CalendarControls } from "./calendar-v2/CalendarControls";
+import { CalendarExportPanel } from "./calendar-v2/CalendarExportPanel";
+import { CalendarMatrixPanel } from "./calendar-v2/CalendarMatrixPanel";
+import { CalendarManualAdjustmentsPanel } from "./calendar-v2/CalendarManualAdjustmentsPanel";
+import { CalendarMatchAdjustmentsPanel } from "./calendar-v2/CalendarMatchAdjustmentsPanel";
 
 type PadelClub = {
   id: number;
@@ -330,6 +335,15 @@ type CalendarBlock = {
   updatedAt?: string | Date | null;
 };
 
+type CalendarCourt = {
+  id: number;
+  name: string;
+  padelClubId?: number | null;
+  isActive?: boolean;
+  displayOrder?: number | null;
+  club?: { name?: string | null } | null;
+};
+
 type CalendarAvailability = {
   id: number;
   startAt: string | Date;
@@ -343,6 +357,7 @@ type CalendarAvailability = {
 
 type CalendarMatch = {
   id: number;
+  categoryId?: number | null;
   startTime?: string | Date | null;
   plannedStartAt?: string | Date | null;
   plannedEndAt?: string | Date | null;
@@ -368,6 +383,7 @@ type CalendarConflict = {
 
 type CalendarResponse = {
   ok: boolean;
+  courts?: CalendarCourt[];
   blocks: CalendarBlock[];
   availabilities: CalendarAvailability[];
   matches: CalendarMatch[];
@@ -376,6 +392,30 @@ type CalendarResponse = {
   eventEndsAt?: string | Date | null;
   eventTimezone?: string | null;
   bufferMinutes?: number | null;
+};
+
+type AutoScheduleRunCategorySummary = {
+  categoryId: number | null;
+  scheduledCount: number;
+  skippedCount: number;
+  unscheduledByReason?: Record<string, number>;
+};
+
+type AutoScheduleRunData = {
+  id: string;
+  status: string;
+  scheduledCount: number;
+  skippedCount: number;
+  applied?: boolean;
+  queued?: boolean;
+  errorCode?: string | null;
+  byCategory?: AutoScheduleRunCategorySummary[] | null;
+};
+
+type AutoScheduleRunResponse = {
+  ok?: boolean;
+  run?: AutoScheduleRunData;
+  error?: string;
 };
 
 type LiveOpsMatchItem = {
@@ -883,17 +923,6 @@ const liveIncidentActionErrorMessage = (errorCode: string | null, fallback: stri
   }
 };
 
-const getDelayInfo = (match: CalendarMatch) => {
-  const score =
-    match.score && typeof match.score === "object" && !Array.isArray(match.score)
-      ? (match.score as Record<string, unknown>)
-      : {};
-  const statusRaw = typeof score.delayStatus === "string" ? score.delayStatus : null;
-  const status = statusRaw === "DELAYED" || statusRaw === "RESCHEDULED" ? statusRaw : null;
-  const reason = typeof score.delayReason === "string" ? score.delayReason : null;
-  return { status, reason };
-};
-
 const parsePositiveInt = (value: unknown) => {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
@@ -938,392 +967,6 @@ const resolveCategoryTeamsForPlanning = (
   if (capacity > 0) return capacity;
   if (pending > 0) return pending;
   return 0;
-};
-
-type TimelineItem = {
-  id: string;
-  kind: "match" | "block" | "availability";
-  label: string;
-  start: Date;
-  end: Date;
-  laneKey: string;
-  laneLabel: string;
-  courtId?: number | null;
-  version?: string | Date | null;
-  color: string;
-};
-
-type CalendarListItem = {
-  id: string;
-  kind: "match" | "block" | "availability";
-  label: string;
-  detail?: string | null;
-  start: Date;
-  end: Date;
-  courtLabel?: string | null;
-  conflict?: boolean;
-  meta?: Record<string, string | null>;
-};
-
-const overlaps = (a: { start: Date; end: Date }, b: { start: Date; end: Date }) =>
-  a.start < b.end && b.start < a.end;
-
-const TimelineView = ({
-  blocks,
-  availabilities,
-  matches,
-  timezone,
-  dayStart,
-  dayLabel,
-  onDrop,
-  laneHints = [],
-  conflictMap,
-  slotMinutes,
-}: {
-  blocks: CalendarBlock[];
-  availabilities: CalendarAvailability[];
-  matches: CalendarMatch[];
-  timezone: string;
-  dayStart: Date | null;
-  dayLabel?: string | null;
-  laneHints?: Array<{ key: string; label: string; courtId?: number | null }>;
-  onDrop?: (payload: { id: string; kind: TimelineItem["kind"]; start: Date; end: Date; courtId?: number | null }) => void;
-  conflictMap: Map<string, string[]>;
-  slotMinutes: number;
-}) => {
-  if (!dayStart) {
-    return <p className="text-[12px] text-white/60">Seleciona uma data válida.</p>;
-  }
-  const laneWidth = 100; // percent
-  const dayLength = 24 * 60 * 60 * 1000;
-  const startDay = new Date(dayStart);
-  startDay.setHours(0, 0, 0, 0);
-  const endDay = new Date(startDay.getTime() + dayLength);
-
-  const toDate = (value?: string | Date | null) => {
-    if (!value) return null;
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  };
-
-  const items: TimelineItem[] = [];
-  const lanesSeed = laneHints.reduce<Record<string, { key: string; label: string; courtId?: number | null; items: TimelineItem[] }>>(
-    (acc, hint) => {
-      acc[hint.key] = { ...hint, items: [] };
-      return acc;
-    },
-    {},
-  );
-
-  for (const b of blocks) {
-    const s = toDate(b.startAt);
-    const e = toDate(b.endAt);
-    if (!s || !e) continue;
-    const laneKey = b.courtId ? `court-${b.courtId}` : "block-generic";
-    const laneLabel = b.courtName || (b.courtId ? `Campo ${b.courtId}` : "Campo");
-    items.push({
-      id: `block-${b.id}`,
-      kind: "block",
-      label: b.label || "Bloqueio",
-      start: s,
-      end: e,
-      laneKey,
-      laneLabel,
-      courtId: b.courtId ?? null,
-      version: b.updatedAt,
-      color: "from-[#7b7bff]/25 to-[#7cf2ff]/30 border-white/20",
-    });
-  }
-  for (const av of availabilities) {
-    const s = toDate(av.startAt);
-    const e = toDate(av.endAt);
-    if (!s || !e) continue;
-    const laneKey = "player-availability";
-    const laneLabel = "Jogadores";
-    items.push({
-      id: `availability-${av.id}`,
-      kind: "availability",
-      label: av.playerName || av.playerEmail || "Jogador",
-      start: s,
-      end: e,
-      laneKey,
-      laneLabel,
-      version: av.updatedAt,
-      color: "from-[#f59e0b]/25 to-[#fde68a]/20 border-amber-200/40",
-    });
-  }
-  for (const m of matches) {
-    const s = toDate(m.startTime || m.plannedStartAt);
-    if (!s) continue;
-    const plannedEnd = toDate(m.plannedEndAt);
-    const durationMinutes = Number.isFinite(m.plannedDurationMinutes) ? m.plannedDurationMinutes : 60;
-    const e = plannedEnd || new Date(s.getTime() + (durationMinutes || 60) * 60 * 1000); // assume 1h se não houver fim
-    const laneKey = m.courtId ? `court-${m.courtId}` : m.courtName ? `court-name-${m.courtName}` : m.courtNumber ? `court-num-${m.courtNumber}` : "match-generic";
-    const laneLabel = m.courtName || (m.courtNumber ? `Campo ${m.courtNumber}` : m.courtId ? `Campo ${m.courtId}` : "Campo");
-    items.push({
-      id: `match-${m.id}`,
-      kind: "match",
-      label: `Jogo #${m.id}`,
-      start: s,
-      end: e,
-      laneKey,
-      laneLabel,
-      courtId: m.courtId ?? null,
-      version: m.updatedAt,
-      color: "from-[#34d399]/25 to-[#059669]/25 border-emerald-200/40",
-    });
-  }
-
-  const grouped = items.reduce<Record<string, { key: string; label: string; courtId?: number | null; items: TimelineItem[] }>>((acc, item) => {
-    const existing = acc[item.laneKey] || lanesSeed[item.laneKey];
-    if (!existing) {
-      acc[item.laneKey] = { key: item.laneKey, label: item.laneLabel, courtId: item.courtId, items: [item] };
-    } else {
-      acc[item.laneKey] = { ...existing, items: [...(existing.items || []), item] };
-    }
-    return acc;
-  }, lanesSeed);
-
-  const lanes = Object.values(grouped).map((lane) => ({
-    court: lane.label,
-    courtId: lane.courtId,
-    key: lane.key,
-    items: (lane.items || []).sort((a, b) => a.start.getTime() - b.start.getTime()),
-  }));
-
-  const clampPercent = (value: number) => Math.min(100, Math.max(0, value));
-  const snapToSlot = (date: Date) => {
-    const minutes = date.getMinutes();
-    const snapped = Math.round(minutes / slotMinutes) * slotMinutes;
-    date.setMinutes(snapped, 0, 0);
-    return date;
-  };
-
-  const formatTime = (d: Date) =>
-    new Intl.DateTimeFormat("pt-PT", { hour: "2-digit", minute: "2-digit", timeZone: timezone }).format(d);
-
-  return (
-    <div className="space-y-2">
-      {lanes.length === 0 && <p className="text-[12px] text-white/60">Sem registos para hoje.</p>}
-      {lanes.map((lane) => (
-        <div
-          key={lane.key || lane.court}
-          className="space-y-1 rounded-xl border border-white/10 bg-white/5 p-3"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            if (!onDrop) return;
-            e.preventDefault();
-            const payload = e.dataTransfer.getData("application/json");
-            try {
-                    const parsed = JSON.parse(payload);
-                    const duration = parsed.durationMs ?? 0;
-                    const rect = (e.currentTarget.querySelector(".timeline-lane") as HTMLElement)?.getBoundingClientRect();
-                    if (!rect) return;
-                    const relX = (e.clientX - rect.left) / rect.width;
-              const newStart = snapToSlot(new Date(startDay.getTime() + relX * (endDay.getTime() - startDay.getTime())));
-              const newEnd = new Date(newStart.getTime() + duration);
-              onDrop({
-                id: parsed.id,
-                kind: parsed.kind,
-                start: newStart,
-                end: newEnd,
-                courtId: lane.courtId,
-              });
-            } catch {
-              // ignore
-            }
-          }}
-        >
-          <div className="flex items-center justify-between text-[12px] text-white/70">
-            <span className="font-semibold">{lane.court}</span>
-            <span className="text-white/50">{dayLabel || "Hoje"}</span>
-          </div>
-          <div className="timeline-lane relative h-16 overflow-hidden rounded-lg border border-white/10 bg-black/30">
-            {lane.items.map((item) => {
-              const left =
-                clampPercent(((item.start.getTime() - startDay.getTime()) / (endDay.getTime() - startDay.getTime())) * laneWidth);
-              const width =
-                clampPercent(((item.end.getTime() - item.start.getTime()) / (endDay.getTime() - startDay.getTime())) * laneWidth);
-            return (
-              <div
-                key={item.id}
-                className={`absolute top-1 h-12 rounded-lg border px-2 py-1 text-[11px] text-white shadow ${item.color} bg-gradient-to-r ${
-                  lane.items.length > 1 && lane.items.some((other) => other !== item && other.laneKey === item.laneKey && overlaps(item, other))
-                    ? "ring-2 ring-red-400/70"
-                    : ""
-                } ${conflictMap.get(item.id)?.length ? "border-red-300/70 shadow-[0_0_0_2px_rgba(248,113,113,0.35)]" : ""}`}
-                style={{ left: `${left}%`, width: `${Math.max(width, 6)}%` }}
-                title={`${item.label} · ${formatTime(item.start)} - ${formatTime(item.end)}`}
-                draggable
-                onDragStart={(e) => {
-                    e.dataTransfer.setData(
-                      "application/json",
-                      JSON.stringify({
-                        id: item.id,
-                        kind: item.kind,
-                        durationMs: item.end.getTime() - item.start.getTime(),
-                        version: item.version,
-                      }),
-                    );
-                }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  if (!onDrop) return;
-                  e.preventDefault();
-                  const payload = e.dataTransfer.getData("application/json");
-                  try {
-                    const parsed = JSON.parse(payload);
-                    if (parsed.id !== item.id) return;
-                    // simple drop keeps duration, aligns start to cursor
-                    const rect = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
-                    const relX = (e.clientX - rect.left) / rect.width;
-                    const newStart = snapToSlot(new Date(startDay.getTime() + relX * (endDay.getTime() - startDay.getTime())));
-                    const duration = item.end.getTime() - item.start.getTime();
-                    const newEnd = new Date(newStart.getTime() + duration);
-                    onDrop({
-                      id: item.id,
-                      kind: item.kind,
-                        start: newStart,
-                        end: newEnd,
-                        courtId: lane.courtId,
-                      });
-                    } catch {
-                      // ignore
-                    }
-                  }}
-              >
-                  <p className="font-semibold leading-tight">{item.label}</p>
-                  <p className="text-white/70">{formatTime(item.start)} - {formatTime(item.end)}</p>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex justify-between text-[11px] text-white/50">
-            <span>00:00</span>
-            <span>12:00</span>
-            <span>24:00</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-const CalendarListView = ({
-  items,
-  timezone,
-  onEditBlock,
-  onEditAvailability,
-  onDeleteBlock,
-  onDeleteAvailability,
-}: {
-  items: CalendarListItem[];
-  timezone: string;
-  onEditBlock?: (id: string) => void;
-  onEditAvailability?: (id: string) => void;
-  onDeleteBlock?: (id: string) => void;
-  onDeleteAvailability?: (id: string) => void;
-}) => {
-  if (!items.length) return <p className="text-[12px] text-white/60">Sem registos para este periodo.</p>;
-
-  const formatDayKey = (date: Date) =>
-    new Intl.DateTimeFormat("pt-PT", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
-  const formatDayLabel = (date: Date) =>
-    new Intl.DateTimeFormat("pt-PT", { timeZone: timezone, weekday: "long", day: "2-digit", month: "short" }).format(date);
-  const formatTime = (date: Date) =>
-    new Intl.DateTimeFormat("pt-PT", { timeZone: timezone, hour: "2-digit", minute: "2-digit" }).format(date);
-
-  const groups: Array<{ key: string; label: string; items: CalendarListItem[] }> = [];
-  items.forEach((item) => {
-    const key = formatDayKey(item.start);
-    const last = groups[groups.length - 1];
-    if (!last || last.key !== key) {
-      groups.push({ key, label: formatDayLabel(item.start), items: [item] });
-    } else {
-      last.items.push(item);
-    }
-  });
-
-  return (
-    <div className="space-y-3">
-      {groups.map((group) => (
-        <div key={group.key} className="rounded-2xl border border-white/12 bg-white/5 p-3">
-          <div className="flex items-center justify-between">
-            <p className="text-[12px] uppercase tracking-[0.16em] text-white/60">{group.label}</p>
-            <span className="text-[11px] text-white/50">{group.items.length} itens</span>
-          </div>
-          <div className="mt-2 max-h-72 space-y-2 overflow-auto pr-1">
-            {group.items.map((item) => (
-              <div
-                key={item.id}
-                className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[12px] ${
-                  item.conflict
-                    ? "border-rose-400/60 bg-rose-500/10"
-                    : "border-white/10 bg-black/30"
-                }`}
-              >
-                <div>
-                  <p className="text-sm font-semibold text-white">{item.label}</p>
-                  <p className="text-[11px] text-white/60">
-                    {formatTime(item.start)} — {formatTime(item.end)}
-                  </p>
-                  {item.detail && <p className="text-[11px] text-white/50">{item.detail}</p>}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {item.courtLabel && (
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-1 text-[10px] text-white/70">
-                      {item.courtLabel}
-                    </span>
-                  )}
-                  {item.conflict && (
-                    <span className="rounded-full border border-rose-300/70 bg-rose-400/10 px-2 py-1 text-[10px] text-rose-100">
-                      Conflito
-                    </span>
-                  )}
-                  {item.kind === "block" && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => onEditBlock?.(item.id)}
-                        className="rounded-full border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/40"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteBlock?.(item.id)}
-                        className="rounded-full border border-rose-300/60 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-100 hover:border-rose-200/70"
-                      >
-                        Apagar
-                      </button>
-                    </>
-                  )}
-                  {item.kind === "availability" && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => onEditAvailability?.(item.id)}
-                        className="rounded-full border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/40"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteAvailability?.(item.id)}
-                        className="rounded-full border border-rose-300/60 bg-rose-500/10 px-2 py-1 text-[10px] text-rose-100 hover:border-rose-200/70"
-                      >
-                        Apagar
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
 };
 
 const fetchCourtsForClub = async (clubId: number): Promise<PadelClubCourt[]> => {
@@ -1443,9 +1086,7 @@ export default function PadelHubClient({
   const [historyFilter, setHistoryFilter] = useState<"ALL" | "WITH" | "NONE">("ALL");
   const [noShowFilter, setNoShowFilter] = useState<"ALL" | "WITH" | "NONE">("ALL");
   const [calendarScope, setCalendarScope] = useState<"week" | "day">("week");
-  const [calendarView, setCalendarView] = useState<"timeline" | "list">("timeline");
   const [calendarDataView, setCalendarDataView] = useState<"complete" | "games">("complete");
-  const [calendarViewTouched, setCalendarViewTouched] = useState(false);
   const [calendarFilter, setCalendarFilter] = useState<"all" | "club">("all");
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [calendarMessage, setCalendarMessage] = useState<string | null>(null);
@@ -1463,7 +1104,17 @@ export default function PadelHubClient({
   const [autoScheduleCourtIds, setAutoScheduleCourtIds] = useState<number[]>([]);
   const [autoScheduleCourtPriorityOrder, setAutoScheduleCourtPriorityOrder] = useState<number[]>([]);
   const [autoScheduling, setAutoScheduling] = useState(false);
+  const [lastAutoScheduleRunId, setLastAutoScheduleRunId] = useState<string | null>(null);
   const [autoScheduleSummary, setAutoScheduleSummary] = useState<string | null>(null);
+  const [autoScheduleUnscheduledByReason, setAutoScheduleUnscheduledByReason] = useState<Record<string, number>>({});
+  const [autoScheduleByCategory, setAutoScheduleByCategory] = useState<
+    Array<{
+      categoryId: number | null;
+      scheduledCount: number;
+      skippedCount: number;
+      unscheduledByReason: Record<string, number>;
+    }>
+  >([]);
   const [autoSchedulePreview, setAutoSchedulePreview] = useState<
     Array<{ matchId: number; courtId: number; start: string; end: string }> | null
   >(null);
@@ -1522,8 +1173,15 @@ export default function PadelHubClient({
   });
   const [editingAvailabilityId, setEditingAvailabilityId] = useState<number | null>(null);
   const [editingAvailabilityVersion, setEditingAvailabilityVersion] = useState<string | Date | null>(null);
+  const [editingMatchId, setEditingMatchId] = useState<number | null>(null);
+  const [editingMatchVersion, setEditingMatchVersion] = useState<string | Date | null>(null);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<number[]>([]);
+  const [matchForm, setMatchForm] = useState({
+    start: "",
+    end: "",
+    courtId: "",
+  });
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const [delayBusyMatchId, setDelayBusyMatchId] = useState<number | null>(null);
 
   const [clubForm, setClubForm] = useState(DEFAULT_FORM);
   const [clubModalOpen, setClubModalOpen] = useState(false);
@@ -1587,12 +1245,6 @@ export default function PadelHubClient({
     if (!operationModeReady || typeof window === "undefined") return;
     window.localStorage.setItem(OPERATION_MODE_STORAGE_KEY, operationMode);
   }, [operationMode, operationModeReady]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || calendarViewTouched) return;
-    const prefersList = window.matchMedia("(max-width: 900px)").matches;
-    setCalendarView(prefersList ? "list" : "timeline");
-  }, [calendarViewTouched]);
 
   const toolClubHref = organizationId ? buildOrgHref(organizationId, "/padel/clubs") : buildOrgHubHref("/organizations");
   const toolTournamentsHref = organizationId
@@ -1681,6 +1333,17 @@ export default function PadelHubClient({
     eventId ? `/api/padel/ops/summary?eventId=${eventId}` : null,
     fetcher,
     { revalidateOnFocus: false },
+  );
+  const autoScheduleRunKey = lastAutoScheduleRunId
+    ? `/api/padel/calendar/auto-schedule/runs/${lastAutoScheduleRunId}`
+    : null;
+  const { data: autoScheduleRunRes, mutate: mutateAutoScheduleRun } = useSWR<AutoScheduleRunResponse>(
+    autoScheduleRunKey,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      refreshInterval: lastAutoScheduleRunId ? 2000 : 0,
+    },
   );
   const { data: liveOpsMatchesRes, isLoading: liveOpsMatchesLoading, mutate: mutateLiveOpsMatches } = useSWR<{
     ok?: boolean;
@@ -3362,6 +3025,7 @@ export default function PadelHubClient({
   const showCourtsPanel = isClubsTab;
   const showClubStaffPanel = SHOW_CLUB_STAFF_PANEL;
   const courtsPanelReadOnly = isPadelReadOnly;
+  const calendarCourtsRaw: CalendarCourt[] = Array.isArray(calendarData?.courts) ? calendarData.courts : [];
   const calendarBlocksRaw: CalendarBlock[] = calendarData?.blocks ?? [];
   const calendarAvailabilitiesRaw: CalendarAvailability[] = calendarData?.availabilities ?? [];
   const calendarMatchesRaw: CalendarMatch[] = calendarData?.matches ?? [];
@@ -3370,6 +3034,17 @@ export default function PadelHubClient({
   const calendarEventEnd = calendarData?.eventEndsAt ?? null;
   const calendarTimezone = calendarData?.eventTimezone ?? "Europe/Lisbon";
   const calendarBuffer = calendarData?.bufferMinutes ?? 5;
+  const calendarCourts = useMemo(() => {
+    if (calendarCourtsRaw.length > 0) return calendarCourtsRaw;
+    return autoScheduleCourtOptions.map((court, idx) => ({
+      id: court.id,
+      name: court.name,
+      padelClubId: null,
+      isActive: true,
+      displayOrder: Number.isFinite(court.displayOrder) ? court.displayOrder : idx,
+      club: court.clubName ? { name: court.clubName } : null,
+    }));
+  }, [autoScheduleCourtOptions, calendarCourtsRaw]);
   const tournamentFormatRaw = typeof padelConfig?.format === "string" ? padelConfig.format : null;
   const tournamentFormatLabel = tournamentFormatRaw
     ? PADEL_FORMAT_LABELS[tournamentFormatRaw] ?? tournamentFormatRaw
@@ -4147,6 +3822,14 @@ export default function PadelHubClient({
     setSelectedDay(d.toISOString().slice(0, 10));
   }, [calendarEventStart, calendarDayTouched]);
 
+  useEffect(() => {
+    setLastAutoScheduleRunId(null);
+    setEditingMatchId(null);
+    setEditingMatchVersion(null);
+    setSelectedMatchIds([]);
+    setMatchForm({ start: "", end: "", courtId: "" });
+  }, [eventId]);
+
   const isWithinDay = (date: string | Date) => {
     if (!startOfDay || !endOfDay) return true;
     const d = new Date(date);
@@ -4178,96 +3861,90 @@ export default function PadelHubClient({
     if (!start) return false;
     return isWithinRange(start);
   };
+  const matchMatchesCategory = (match: CalendarMatch) => {
+    if (!roundOpsCategoryId) return true;
+    const categoryId = parsePositiveInt(match.categoryId);
+    return categoryId === roundOpsCategoryId;
+  };
+  const calendarMatchesByCategory = calendarMatchesRaw.filter((match) => matchMatchesCategory(match));
   const calendarMatches =
     calendarScope === "day" || calendarScope === "week"
-      ? calendarMatchesRaw.filter((m) => matchStartsWithinDay(m))
-      : calendarMatchesRaw;
-  const matchesById = useMemo(() => {
-    const map = new Map<number, CalendarMatch>();
-    calendarMatchesRaw.forEach((m) => map.set(m.id, m));
-    return map;
-  }, [calendarMatchesRaw]);
-  const calendarConflictMap = useMemo(() => {
-    return new Map(
-      calendarConflicts.map((c) => [
-        `${c.type === "block_block" || c.type === "block_match" ? "block" : c.type === "availability_match" ? "availability" : "match"}-${c.aId}`,
-        [c.type],
-      ]),
-    );
-  }, [calendarConflicts]);
-  const calendarListItems = useMemo(() => {
-    const items: CalendarListItem[] = [];
-    const toDate = (value?: string | Date | null) => {
-      if (!value) return null;
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? null : d;
+      ? calendarMatchesByCategory.filter((m) => matchStartsWithinDay(m))
+      : calendarMatchesByCategory;
+  useEffect(() => {
+    setSelectedMatchIds((prev) => {
+      if (prev.length === 0) return prev;
+      const visibleIds = new Set(calendarMatches.map((match) => match.id));
+      const next = prev.filter((matchId) => visibleIds.has(matchId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [calendarMatches]);
+  const v2UnscheduledRows = useMemo(
+    () =>
+      Object.entries(autoScheduleUnscheduledByReason).map(([label, value]) => ({
+        label: label.toLowerCase().replace(/_/g, " "),
+        value,
+      })),
+    [autoScheduleUnscheduledByReason],
+  );
+  const v2Warnings = useMemo(() => {
+    const items: string[] = [];
+    if (calendarWarning) items.push(calendarWarning);
+    if (calendarError) items.push(calendarError);
+    return items;
+  }, [calendarError, calendarWarning]);
+  const latestAutoScheduleRun = useMemo(() => {
+    if (!autoScheduleRunRes?.ok || !autoScheduleRunRes.run) return null;
+    const run = autoScheduleRunRes.run;
+    const byCategoryRaw = Array.isArray(run.byCategory) ? run.byCategory : [];
+    const byCategory = byCategoryRaw
+      .map((row) => ({
+        categoryId: row.categoryId ?? null,
+        categoryLabel:
+          row.categoryId === null
+            ? "global"
+            : eventCategoryLabelById.get(Number(row.categoryId)) || `#${row.categoryId}`,
+        scheduledCount: Number(row.scheduledCount ?? 0),
+        skippedCount: Number(row.skippedCount ?? 0),
+      }))
+      .slice(0, 8);
+    return {
+      id: run.id,
+      status: run.status || "DONE",
+      scheduledCount: Number(run.scheduledCount ?? 0),
+      skippedCount: Number(run.skippedCount ?? 0),
+      applied: run.applied === true,
+      queued: run.queued === true,
+      errorCode: run.errorCode ?? null,
+      byCategory,
     };
-    calendarBlocks.forEach((block) => {
-      const start = toDate(block.startAt);
-      const end = toDate(block.endAt);
-      if (!start || !end) return;
-      items.push({
-        id: `block-${block.id}`,
-        kind: "block",
-        label: block.label || "Bloqueio",
-        detail: block.note || null,
-        start,
-        end,
-        courtLabel: block.courtName || (block.courtId ? `Campo ${block.courtId}` : null),
-        conflict: calendarConflictMap.has(`block-${block.id}`),
-      });
-    });
-    calendarAvailabilities.forEach((availability) => {
-      const start = toDate(availability.startAt);
-      const end = toDate(availability.endAt);
-      if (!start || !end) return;
-      items.push({
-        id: `availability-${availability.id}`,
-        kind: "availability",
-        label: availability.playerName || availability.playerEmail || "Jogador",
-        detail: availability.note || null,
-        start,
-        end,
-        conflict: calendarConflictMap.has(`availability-${availability.id}`),
-      });
-    });
-    calendarMatches.forEach((match) => {
-      const start = toDate(match.startTime || match.plannedStartAt);
-      if (!start) return;
-      const plannedEnd = toDate(match.plannedEndAt);
-      const durationMinutes = Number.isFinite(match.plannedDurationMinutes) ? match.plannedDurationMinutes : 60;
-      const end = plannedEnd || new Date(start.getTime() + (durationMinutes || 60) * 60 * 1000);
-      const delayInfo = getDelayInfo(match);
-      const metaParts = [
-        match.groupLabel ? `Grupo ${match.groupLabel}` : null,
-        match.roundLabel ? match.roundLabel : null,
-        match.status ? match.status : null,
-        delayInfo.status ? `Delay ${delayInfo.status}` : null,
-      ].filter(Boolean);
-      items.push({
-        id: `match-${match.id}`,
-        kind: "match",
-        label: `Jogo #${match.id}`,
-        detail: metaParts.length ? metaParts.join(" · ") : null,
-        start,
-        end,
-        courtLabel: match.courtName || (match.courtNumber ? `Campo ${match.courtNumber}` : null),
-        conflict: calendarConflictMap.has(`match-${match.id}`),
-      });
-    });
-    return items.sort((a, b) => a.start.getTime() - b.start.getTime());
-  }, [calendarBlocks, calendarAvailabilities, calendarMatches, calendarConflictMap]);
-  const timelineLabel =
-    calendarScope === "day"
-      ? selectedDay
-      : weekStart
-        ? `Semana ${formatShortDate(weekStart)}`
-        : "Semana";
-  const getItemVersion = (kind: "block" | "availability" | "match", id: number) => {
-    if (kind === "block") return calendarBlocks.find((block) => block.id === id)?.updatedAt;
-    if (kind === "availability") return calendarAvailabilities.find((availability) => availability.id === id)?.updatedAt;
-    return calendarMatchesRaw.find((match) => match.id === id)?.updatedAt;
-  };
+  }, [autoScheduleRunRes, eventCategoryLabelById]);
+  const calendarExportLinks = [
+    {
+      key: "pdf" as const,
+      label: "PDF",
+      href: eventId ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "pdf" }) || "#" : "#",
+      external: false,
+    },
+    {
+      key: "html" as const,
+      label: "HTML",
+      href: eventId ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "html" }) || "#" : "#",
+      external: true,
+    },
+    {
+      key: "csv" as const,
+      label: "CSV",
+      href: eventId ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "csv" }) || "#" : "#",
+      external: false,
+    },
+    {
+      key: "ics" as const,
+      label: "ICS",
+      href: eventId ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "ics" }) || "#" : "#",
+      external: false,
+    },
+  ];
 
   const resetCalendarForms = () => {
     setBlockForm({ start: "", end: "", label: "", note: "" });
@@ -4277,6 +3954,12 @@ export default function PadelHubClient({
     setEditingBlockVersion(null);
     setEditingAvailabilityVersion(null);
     setCalendarMessage(null);
+  };
+
+  const resetMatchScheduleForm = () => {
+    setEditingMatchId(null);
+    setEditingMatchVersion(null);
+    setMatchForm({ start: "", end: "", courtId: "" });
   };
 
   const saveCalendarItem = async (type: "block" | "availability") => {
@@ -4362,6 +4045,8 @@ export default function PadelHubClient({
 
   const handleEditBlock = (block: CalendarBlock) => {
     setEditingAvailabilityId(null);
+    setEditingMatchId(null);
+    setEditingMatchVersion(null);
     setEditingBlockId(block.id);
     setEditingBlockVersion(block.updatedAt || null);
     setBlockForm({
@@ -4374,6 +4059,8 @@ export default function PadelHubClient({
 
   const handleEditAvailability = (av: CalendarAvailability) => {
     setEditingBlockId(null);
+    setEditingMatchId(null);
+    setEditingMatchVersion(null);
     setEditingAvailabilityId(av.id);
     setEditingAvailabilityVersion(av.updatedAt || null);
     setAvailabilityForm({
@@ -4385,11 +4072,278 @@ export default function PadelHubClient({
     });
   };
 
+  const resolveCalendarMatchWindow = (match: CalendarMatch) => {
+    const start = match.plannedStartAt || match.startTime || null;
+    const end =
+      match.plannedEndAt ||
+      (start && match.plannedDurationMinutes
+        ? new Date(new Date(start).getTime() + Number(match.plannedDurationMinutes) * 60_000)
+        : null);
+    return { start, end };
+  };
+
+  const handleEditMatch = (match: CalendarMatch) => {
+    const { start, end } = resolveCalendarMatchWindow(match);
+    if (!start || !end) {
+      setCalendarError("O jogo não tem janela válida para editar.");
+      return;
+    }
+    setEditingBlockId(null);
+    setEditingAvailabilityId(null);
+    setEditingMatchId(match.id);
+    setEditingMatchVersion(match.updatedAt || null);
+    setMatchForm({
+      start: formatDateTimeLocal(start),
+      end: formatDateTimeLocal(end),
+      courtId: match.courtId ? String(match.courtId) : "",
+    });
+  };
+
   const applyCalendarWarning = (warning: any) => {
     const message = typeof warning?.message === "string" ? warning.message : null;
     if (!message) return;
     setCalendarWarning(message);
     toast(message, "warn");
+  };
+
+  const patchCalendarMatchSchedule = async (params: {
+    matchId: number;
+    startIso: string;
+    endIso: string;
+    durationMinutes: number;
+    courtId: number;
+    version?: string | Date | null;
+  }) => {
+    const version =
+      typeof params.version === "string"
+        ? params.version
+        : params.version instanceof Date
+          ? params.version.toISOString()
+          : undefined;
+    const res = await fetch("/api/padel/calendar", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "match",
+        id: params.matchId,
+        startAt: params.startIso,
+        endAt: params.endIso,
+        plannedDurationMinutes: params.durationMinutes,
+        courtId: params.courtId,
+        ...(version ? { version } : {}),
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.ok === false) {
+      const errorCode = typeof json?.error === "string" ? json.error : "UPDATE_FAILED";
+      return {
+        ok: false as const,
+        errorCode,
+        errorMessage: sanitizeUiErrorMessage(json?.error, "Não foi possível atualizar o jogo."),
+      };
+    }
+    return {
+      ok: true as const,
+      warningMessage: typeof json?.warning?.message === "string" ? json.warning.message : null,
+    };
+  };
+
+  const saveCalendarMatchSchedule = async () => {
+    if (!eventId) {
+      setCalendarError("Abre a partir de um torneio para editar o calendário.");
+      return;
+    }
+    if (!editingMatchId) {
+      setCalendarError("Seleciona um jogo para editar.");
+      return;
+    }
+    const startIso = toIsoFromLocalInput(matchForm.start);
+    const endIso = toIsoFromLocalInput(matchForm.end);
+    if (!startIso || !endIso) {
+      setCalendarError("Indica início e fim para o jogo.");
+      return;
+    }
+    if (new Date(endIso) <= new Date(startIso)) {
+      setCalendarError("A janela do jogo é inválida.");
+      return;
+    }
+    const fallbackMatch = calendarMatchesRaw.find((item) => item.id === editingMatchId);
+    const courtIdRaw =
+      matchForm.courtId && Number.isFinite(Number(matchForm.courtId))
+        ? Number(matchForm.courtId)
+        : fallbackMatch?.courtId ?? null;
+    if (!courtIdRaw) {
+      setCalendarError("Seleciona um campo para o jogo.");
+      return;
+    }
+    const durationMinutes = Math.max(
+      1,
+      Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000),
+    );
+
+    setSavingCalendar(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const result = await patchCalendarMatchSchedule({
+        matchId: editingMatchId,
+        startIso,
+        endIso,
+        durationMinutes,
+        courtId: courtIdRaw,
+        version: editingMatchVersion,
+      });
+      if (!result.ok) {
+        setCalendarError(result.errorMessage);
+        return;
+      }
+      setCalendarMessage(`Jogo #${editingMatchId} atualizado.`);
+      toast("Jogo atualizado", "ok");
+      if (result.warningMessage) applyCalendarWarning({ message: result.warningMessage });
+      resetMatchScheduleForm();
+      mutateCalendar();
+    } catch (err) {
+      console.error("[padel/calendar] save match", err);
+      setCalendarError("Erro inesperado ao atualizar o jogo.");
+    } finally {
+      setSavingCalendar(false);
+    }
+  };
+
+  const quickMoveCalendarMatch = async (matchId: number, targetCourtId: number) => {
+    if (!eventId || !Number.isFinite(matchId) || !Number.isFinite(targetCourtId)) return;
+    if (savingCalendar) return;
+    const match = calendarMatchesRaw.find((item) => item.id === matchId);
+    if (!match) return;
+    if ((match.courtId ?? null) === targetCourtId) return;
+    const { start, end } = resolveCalendarMatchWindow(match);
+    if (!start || !end) {
+      setCalendarError("O jogo não tem janela válida para mover.");
+      return;
+    }
+
+    const startIso = new Date(start).toISOString();
+    const endIso = new Date(end).toISOString();
+    const durationMinutes = Math.max(1, Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000));
+
+    setSavingCalendar(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const result = await patchCalendarMatchSchedule({
+        matchId,
+        startIso,
+        endIso,
+        durationMinutes,
+        courtId: targetCourtId,
+        version: match.updatedAt ?? null,
+      });
+      if (!result.ok) {
+        setCalendarError(result.errorMessage);
+        toast(result.errorMessage, "err");
+        return;
+      }
+      if (result.warningMessage) {
+        setCalendarWarning(result.warningMessage);
+        toast(result.warningMessage, "warn");
+      } else {
+        setCalendarMessage(`Jogo #${matchId} movido para campo ${targetCourtId}.`);
+      }
+      if (editingMatchId === matchId) {
+        setMatchForm((prev) => ({ ...prev, courtId: String(targetCourtId) }));
+      }
+      mutateCalendar();
+    } catch (err) {
+      console.error("[padel/calendar] quick move", err);
+      setCalendarError("Erro ao mover jogo entre campos.");
+    } finally {
+      setSavingCalendar(false);
+    }
+  };
+
+  const bulkMoveSelectedMatches = async (targetCourtId: number) => {
+    if (!eventId || !Number.isFinite(targetCourtId) || targetCourtId <= 0) return;
+    const targets = [...selectedMatchIds];
+    if (targets.length === 0) return;
+
+    setSavingCalendar(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      let updated = 0;
+      const reasonCount: Record<string, number> = {};
+      const updatedIds = new Set<number>();
+
+      for (const matchId of targets) {
+        const match = calendarMatchesRaw.find((item) => item.id === matchId);
+        if (!match) {
+          reasonCount.MATCH_NOT_FOUND = (reasonCount.MATCH_NOT_FOUND ?? 0) + 1;
+          continue;
+        }
+        if ((match.courtId ?? null) === targetCourtId) {
+          reasonCount.ALREADY_ON_COURT = (reasonCount.ALREADY_ON_COURT ?? 0) + 1;
+          continue;
+        }
+        const { start, end } = resolveCalendarMatchWindow(match);
+        if (!start || !end) {
+          reasonCount.NO_MATCH_WINDOW = (reasonCount.NO_MATCH_WINDOW ?? 0) + 1;
+          continue;
+        }
+        const startIso = new Date(start).toISOString();
+        const endIso = new Date(end).toISOString();
+        const durationMinutes = Math.max(
+          1,
+          Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60_000),
+        );
+        const result = await patchCalendarMatchSchedule({
+          matchId,
+          startIso,
+          endIso,
+          durationMinutes,
+          courtId: targetCourtId,
+          version: match.updatedAt ?? null,
+        });
+        if (!result.ok) {
+          reasonCount[result.errorCode] = (reasonCount[result.errorCode] ?? 0) + 1;
+          continue;
+        }
+        updated += 1;
+        updatedIds.add(matchId);
+      }
+
+      const requested = targets.length;
+      const skipped = requested - updated;
+      const skippedSummary = formatUnscheduledSummary(reasonCount);
+
+      if (updated > 0) {
+        setCalendarMessage(`Lote aplicado: ${updated}/${requested} jogos atualizados.`);
+        if (skipped > 0) {
+          setCalendarWarning(
+            skippedSummary
+              ? `Atualizados ${updated}/${requested}. ${skippedSummary}`
+              : `Atualizados ${updated}/${requested}.`,
+          );
+          toast("Lote aplicado parcialmente", "warn");
+        } else {
+          toast("Lote aplicado", "ok");
+        }
+        setSelectedMatchIds((prev) => prev.filter((id) => !updatedIds.has(id)));
+        mutateCalendar();
+      } else {
+        const failMsg = skippedSummary || "Nenhum jogo foi atualizado no lote.";
+        setCalendarError(failMsg);
+        toast(failMsg, "err");
+      }
+    } catch (err) {
+      console.error("[padel/calendar] bulk move", err);
+      setCalendarError("Erro inesperado ao aplicar lote.");
+      toast("Erro no lote de jogos", "err");
+    } finally {
+      setSavingCalendar(false);
+    }
   };
 
   const handleDeleteCalendarItem = async (type: "block" | "availability", id: number) => {
@@ -4419,60 +4373,82 @@ export default function PadelHubClient({
     }
   };
 
-  const delayAndRescheduleMatch = async (match: CalendarMatch) => {
-    if (!eventId) {
-      setCalendarError("Abre a partir de um torneio para reagendar.");
-      pushOpsLive("warn", "Reagendamento indisponível", "Seleciona um torneio para reagendar jogos.");
-      return;
-    }
-    const reason = window.prompt("Motivo do atraso? (opcional)") ?? "";
-    setDelayBusyMatchId(match.id);
-    setCalendarError(null);
+  const undoCalendarAction = async (type: "block" | "availability") => {
+    if (!lastAction || lastAction.type !== type) return;
     setCalendarMessage(null);
     setCalendarWarning(null);
+    setCalendarError(null);
+    setSavingCalendar(true);
     try {
-      const delayRes = await fetch(`/api/padel/matches/${match.id}/delay`, {
-        method: "POST",
+      const payload =
+        type === "block"
+          ? {
+              type: "block",
+              id: lastAction.id,
+              startAt: lastAction.prevStart,
+              endAt: lastAction.prevEnd,
+              courtId: lastAction.prevCourtId ?? undefined,
+              version: lastAction.version ?? undefined,
+            }
+          : {
+              type: "availability",
+              id: lastAction.id,
+              startAt: lastAction.prevStart,
+              endAt: lastAction.prevEnd,
+              version: lastAction.version ?? undefined,
+            };
+      const res = await fetch("/api/padel/calendar", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason, clearSchedule: true, autoReschedule: true }),
+        body: JSON.stringify(payload),
       });
-      const delayJson = await delayRes.json().catch(() => null);
-      if (!delayRes.ok || delayJson?.ok === false) {
-        const errMsg = sanitizeUiErrorMessage(delayJson?.error, "Não foi possível marcar atraso.");
-        setCalendarError(errMsg);
-        toast(errMsg, "err");
-        pushOpsLive("err", "Falha ao marcar atraso", errMsg);
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const message = sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer.");
+        setCalendarError(message);
+        toast(message, "err");
         return;
       }
-
-      if (delayJson?.rescheduled) {
-        const msg = "Reagendado automaticamente.";
-        setCalendarMessage(msg);
-        toast(msg, "ok");
-        pushOpsLive("ok", "Jogo reagendado automaticamente", `Jogo #${match.id}.`);
-      } else {
-        const errCode = typeof delayJson?.rescheduleError === "string" ? delayJson.rescheduleError : null;
-        const msg =
-          errCode === "NO_COURTS"
-            ? "Atraso marcado, sem campos configurados."
-            : errCode === "INVALID_WINDOW"
-              ? "Atraso marcado, mas a janela é inválida."
-              : errCode
-                ? "Atraso marcado, sem slot disponível."
-                : "Atraso marcado, sem slot automático.";
-        setCalendarWarning(msg);
-        toast(msg, "warn");
-        pushOpsLive("warn", "Jogo marcado como atrasado", `Jogo #${match.id} · ${msg}`);
-      }
+      setCalendarMessage("Desfeito.");
+      toast("Desfeito", "ok");
+      setLastAction(null);
       mutateCalendar();
     } catch (err) {
-      console.error("[padel/calendar] delay", err);
-      setCalendarError("Erro inesperado ao reagendar.");
-      toast("Erro ao reagendar", "err");
-      pushOpsLive("err", "Erro ao reagendar jogo", `Jogo #${match.id}.`);
+      console.error("[padel/calendar] undo", err);
+      setCalendarError("Erro ao desfazer.");
     } finally {
-      setDelayBusyMatchId(null);
+      setSavingCalendar(false);
     }
+  };
+
+  const handleEditBlockById = (blockId: number) => {
+    const block = calendarBlocks.find((item) => item.id === blockId);
+    if (!block) return;
+    handleEditBlock(block);
+  };
+
+  const handleEditAvailabilityById = (availabilityId: number) => {
+    const availability = calendarAvailabilities.find((item) => item.id === availabilityId);
+    if (!availability) return;
+    handleEditAvailability(availability);
+  };
+
+  const handleEditMatchById = (matchId: number) => {
+    const match = calendarMatchesRaw.find((item) => item.id === matchId);
+    if (!match) return;
+    handleEditMatch(match);
+  };
+
+  const toggleSelectedMatch = (matchId: number) => {
+    if (!Number.isFinite(matchId)) return;
+    setSelectedMatchIds((prev) => {
+      if (prev.includes(matchId)) return prev.filter((id) => id !== matchId);
+      return [...prev, matchId];
+    });
+  };
+
+  const clearSelectedMatches = () => {
+    setSelectedMatchIds([]);
   };
 
   const autoScheduleEffectiveCourtIds = useMemo(() => {
@@ -4519,11 +4495,21 @@ export default function PadelHubClient({
     WINDOW_NOT_SET: "janela não definida",
     NO_COURTS_CONFIGURED: "sem campos configurados",
     NO_SLOT_IN_WINDOW: "sem slot na janela",
+    NO_COURT_WINDOW: "sem janela disponível nos campos",
     COURT_BLOCKED: "campo bloqueado",
     PLAYER_UNAVAILABLE: "jogador indisponível",
     REST_CONFLICT: "descanso mínimo",
     OVERLAP_CONFLICT: "conflito de sobreposição",
     NO_PARTICIPANTS: "jogo sem participantes",
+    MISSING_PARTICIPANTS: "jogo sem participantes",
+    COURT_NOT_AVAILABLE: "campo indisponível",
+    NO_SLOT_AVAILABLE: "sem slot viável",
+    MATCH_CHANGED: "jogo alterado manualmente",
+    MATCH_LOCKED: "jogo bloqueado",
+    MATCH_NOT_FOUND: "jogo não encontrado",
+    ALREADY_ON_COURT: "já no campo alvo",
+    NO_MATCH_WINDOW: "jogo sem janela válida",
+    UPDATE_FAILED: "falha de atualização",
   };
 
   const formatUnscheduledSummary = (value: Record<string, unknown> | null | undefined) => {
@@ -4548,6 +4534,114 @@ export default function PadelHubClient({
         ? crypto.randomUUID()
         : `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     setOpsLiveFeed((prev) => [{ id, level, title, detail: detail ?? null, at }, ...prev].slice(0, 14));
+  };
+
+  const generateCalendarMatches = async () => {
+    if (!eventId) {
+      setCalendarError("Seleciona um torneio para gerar jogos.");
+      pushOpsLive("warn", "Geração indisponível", "Seleciona um torneio antes de gerar jogos.");
+      return;
+    }
+
+    const activeCategoryIds = eventCategories
+      .filter((link) => link.isEnabled !== false)
+      .map((link) =>
+        typeof link.padelCategoryId === "number"
+          ? link.padelCategoryId
+          : typeof link.category?.id === "number"
+            ? link.category.id
+            : null,
+      )
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id) && id > 0);
+    const uniqueCategoryIds = Array.from(new Set(activeCategoryIds));
+    const resolvedCategoryId =
+      roundOpsCategoryId ??
+      (uniqueCategoryIds.length === 1 ? uniqueCategoryIds[0] : null);
+
+    if (!resolvedCategoryId && uniqueCategoryIds.length > 1) {
+      const message = "Seleciona uma categoria para gerar jogos sem misturar inscrições.";
+      setCalendarError(message);
+      toast(message, "warn");
+      pushOpsLive("warn", "Categoria obrigatória", message);
+      return;
+    }
+
+    const formatRaw =
+      (resolvedCategoryId ? eventCategoryFormatById.get(resolvedCategoryId) : null) ??
+      roundOpsFormatValue ??
+      tournamentFormatRaw ??
+      "GRUPOS_ELIMINATORIAS";
+    const formatValue = PADEL_FORMAT_KEYS.includes(formatRaw)
+      ? formatRaw
+      : "GRUPOS_ELIMINATORIAS";
+
+    const payload: Record<string, unknown> = {
+      eventId,
+      format: formatValue,
+      drawPolicy: "RANDOM_WITH_OPTIONAL_SEEDS",
+      seedSource: "TOURNAMENT_CONFIG",
+    };
+    if (resolvedCategoryId) payload.categoryId = resolvedCategoryId;
+    if (formatValue === "GRUPOS_ELIMINATORIAS") payload.phase = "GROUPS";
+
+    setAutoScheduling(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const res = await fetch("/api/padel/matches/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const errorCode = typeof json?.error === "string" ? json.error : null;
+        const knownMessage =
+          errorCode === "GROUPS_ALREADY_GENERATED"
+            ? "Os jogos de grupos já foram gerados para esta categoria."
+            : errorCode === "KNOCKOUT_ALREADY_GENERATED"
+              ? "As eliminatórias já foram geradas para esta categoria."
+              : errorCode === "SEEDS_REQUIRED"
+                ? "Este perfil exige seeds válidas para gerar jogos."
+                : errorCode === "NEED_PAIRINGS"
+                  ? "Não existem duplas completas suficientes para gerar jogos."
+                  : null;
+        const errMsg = knownMessage ?? sanitizeUiErrorMessage(json?.error, "Não foi possível gerar jogos.");
+        setCalendarError(errMsg);
+        toast(errMsg, "err");
+        pushOpsLive("err", "Falha na geração de jogos", errMsg);
+        return;
+      }
+
+      const generated = Number(json?.matches ?? 0);
+      const stage = typeof json?.stage === "string" ? json.stage : null;
+      const drawApplied = json?.drawApplied !== false;
+      const seedApplied = json?.seedApplied === true;
+      const categoryLabel = resolvedCategoryId
+        ? eventCategoryLabelById.get(resolvedCategoryId) ?? `Categoria #${resolvedCategoryId}`
+        : "Global";
+      const drawLabel = seedApplied ? "draw com seeds" : drawApplied ? "draw aleatório" : "draw aplicado";
+      const summary =
+        stage === "GROUPS"
+          ? `${categoryLabel}: gerados ${generated} jogos de grupos (${drawLabel}).`
+          : stage === "KNOCKOUT"
+            ? `${categoryLabel}: geradas eliminatórias (${generated} jogos, ${drawLabel}).`
+            : `${categoryLabel}: gerados ${generated} jogos (${drawLabel}).`;
+      setCalendarMessage(summary);
+      toast("Jogos gerados", "ok");
+      pushOpsLive("ok", "Jogos gerados", summary);
+      mutateCalendar();
+      mutatePadelConfig();
+      mutateLiveOpsMatches();
+    } catch (err) {
+      console.error("[padel/calendar] generate matches", err);
+      setCalendarError("Erro inesperado ao gerar jogos.");
+      toast("Erro ao gerar jogos", "err");
+      pushOpsLive("err", "Erro na geração", "Erro inesperado durante geração de jogos.");
+    } finally {
+      setAutoScheduling(false);
+    }
   };
 
   const runAutoSchedule = async () => {
@@ -4580,12 +4674,18 @@ export default function PadelHubClient({
     if (autoScheduleEffectivePriorityOrder.length > 0) {
       payload.courtPriorityOrder = autoScheduleEffectivePriorityOrder;
     }
+    payload.strategy = "BALANCED_BY_CATEGORY";
+    payload.partialMode = "ALLOW_PARTIAL";
+    payload.executionMode = "SYNC";
+    if (roundOpsCategoryId) payload.categoryIds = [roundOpsCategoryId];
 
     setAutoScheduling(true);
     setCalendarError(null);
     setCalendarMessage(null);
     setCalendarWarning(null);
     setAutoScheduleSummary(null);
+    setAutoScheduleUnscheduledByReason({});
+    setAutoScheduleByCategory([]);
     setAutoSchedulePreview(null);
     try {
       const res = await fetch("/api/padel/calendar/auto-schedule", {
@@ -4617,12 +4717,32 @@ export default function PadelHubClient({
 
       const scheduledCount = Number(json?.scheduledCount ?? 0);
       const skippedCount = Number(json?.skippedCount ?? 0);
+      const runId = typeof json?.runId === "string" ? json.runId : null;
+      if (runId) setLastAutoScheduleRunId(runId);
       const unscheduledByReason =
         json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
           ? (json.unscheduledByReason as Record<string, unknown>)
           : null;
+      const byCategory = Array.isArray(json?.byCategory)
+        ? (json.byCategory as Array<{
+            categoryId: number | null;
+            scheduledCount: number;
+            skippedCount: number;
+            unscheduledByReason: Record<string, number>;
+          }>)
+        : [];
+      setAutoScheduleByCategory(byCategory);
       const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
-      const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
+      setAutoScheduleUnscheduledByReason(
+        unscheduledByReason
+          ? Object.entries(unscheduledByReason).reduce<Record<string, number>>((acc, [key, value]) => {
+              const numeric = Number(value);
+              acc[key] = Number.isFinite(numeric) ? numeric : 0;
+              return acc;
+            }, {})
+          : {},
+      );
+      const summary = `Agendados ${scheduledCount} jogos${skippedCount ? ` · ${skippedCount} sem slot` : ""}${runId ? ` · run ${runId}` : ""}.`;
       setAutoScheduleSummary(summary);
       if (skippedCount > 0) {
         setCalendarWarning(unscheduledSummary ? `${summary} ${unscheduledSummary}` : summary);
@@ -4647,6 +4767,63 @@ export default function PadelHubClient({
       setCalendarError("Erro inesperado ao auto-agendar.");
       toast("Erro ao auto-agendar", "err");
       pushOpsLive("err", "Erro no auto-agendamento", "Erro inesperado durante execução.");
+    } finally {
+      setAutoScheduling(false);
+    }
+  };
+
+  const undoAutoScheduleRun = async () => {
+    if (!eventId) {
+      setCalendarError("Abre a partir de um torneio para desfazer o lote.");
+      return;
+    }
+    if (!lastAutoScheduleRunId) {
+      setCalendarError("Sem lote recente para desfazer.");
+      return;
+    }
+
+    setAutoScheduling(true);
+    setCalendarError(null);
+    setCalendarMessage(null);
+    setCalendarWarning(null);
+    try {
+      const res = await fetch("/api/padel/calendar/auto-schedule/undo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: lastAutoScheduleRunId, eventId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer o último lote.");
+        setCalendarError(errMsg);
+        toast(errMsg, "err");
+        pushOpsLive("err", "Falha ao desfazer lote", errMsg);
+        return;
+      }
+      const undoneCount = Number(json?.undoneCount ?? 0);
+      const requestedCount = Number(json?.requestedCount ?? 0);
+      const skippedByReason =
+        json?.skippedByReason && typeof json.skippedByReason === "object"
+          ? (json.skippedByReason as Record<string, unknown>)
+          : null;
+      const skippedSummary = formatUnscheduledSummary(skippedByReason);
+      const message = `Desfazer lote: ${undoneCount}/${requestedCount} jogos revertidos.`;
+      if (skippedSummary) {
+        setCalendarWarning(`${message} ${skippedSummary}`);
+        toast("Desfazer parcial", "warn");
+        pushOpsLive("warn", "Desfazer parcial", skippedSummary);
+      } else {
+        setCalendarMessage(message);
+        toast("Lote desfeito", "ok");
+        pushOpsLive("ok", "Lote desfeito", message);
+      }
+      mutateAutoScheduleRun();
+      mutateCalendar();
+    } catch (err) {
+      console.error("[padel/calendar] undo run", err);
+      setCalendarError("Erro inesperado ao desfazer lote.");
+      toast("Erro ao desfazer lote", "err");
+      pushOpsLive("err", "Erro ao desfazer lote", "Erro inesperado durante rollback.");
     } finally {
       setAutoScheduling(false);
     }
@@ -4682,12 +4859,18 @@ export default function PadelHubClient({
     if (autoScheduleEffectivePriorityOrder.length > 0) {
       payload.courtPriorityOrder = autoScheduleEffectivePriorityOrder;
     }
+    payload.strategy = "BALANCED_BY_CATEGORY";
+    payload.partialMode = "ALLOW_PARTIAL";
+    payload.executionMode = "SYNC";
+    if (roundOpsCategoryId) payload.categoryIds = [roundOpsCategoryId];
 
     setAutoScheduling(true);
     setCalendarError(null);
     setCalendarMessage(null);
     setCalendarWarning(null);
     setAutoScheduleSummary(null);
+    setAutoScheduleUnscheduledByReason({});
+    setAutoScheduleByCategory([]);
     setAutoSchedulePreview(null);
     try {
       const res = await fetch("/api/padel/calendar/auto-schedule", {
@@ -4705,12 +4888,31 @@ export default function PadelHubClient({
       }
       const scheduledCount = Number(json?.scheduledCount ?? 0);
       const skippedCount = Number(json?.skippedCount ?? 0);
+      const runId = typeof json?.runId === "string" ? json.runId : null;
       const unscheduledByReason =
         json?.unscheduledByReason && typeof json.unscheduledByReason === "object"
           ? (json.unscheduledByReason as Record<string, unknown>)
           : null;
+      const byCategory = Array.isArray(json?.byCategory)
+        ? (json.byCategory as Array<{
+            categoryId: number | null;
+            scheduledCount: number;
+            skippedCount: number;
+            unscheduledByReason: Record<string, number>;
+          }>)
+        : [];
+      setAutoScheduleByCategory(byCategory);
       const unscheduledSummary = formatUnscheduledSummary(unscheduledByReason);
-      const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}.`;
+      setAutoScheduleUnscheduledByReason(
+        unscheduledByReason
+          ? Object.entries(unscheduledByReason).reduce<Record<string, number>>((acc, [key, value]) => {
+              const numeric = Number(value);
+              acc[key] = Number.isFinite(numeric) ? numeric : 0;
+              return acc;
+            }, {})
+          : {},
+      );
+      const summary = `Simulação: ${scheduledCount} jogos cabem${skippedCount ? ` · ${skippedCount} sem slot` : ""}${runId ? ` · run ${runId}` : ""}.`;
       setAutoScheduleSummary(summary);
       setAutoSchedulePreview(Array.isArray(json?.scheduled) ? json.scheduled : []);
       if (skippedCount > 0) {
@@ -4834,7 +5036,8 @@ export default function PadelHubClient({
       pushOpsLive("warn", "Perfil não guardado", "Configuração de torneio indisponível.");
       return;
     }
-    const targetKey = "global";
+    const targetKey =
+      _scope === "global" ? "global" : roundOpsCategoryId !== null ? String(roundOpsCategoryId) : "global";
     const nextProfiles = Object.entries(formatProfilesByCategory).reduce<Record<string, Record<string, unknown>>>(
       (acc, [key, value]) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return acc;
@@ -4917,7 +5120,13 @@ export default function PadelHubClient({
       }
       setRoundOpsMessage("Formato do torneio atualizado.");
       toast("Perfil de formato guardado", "ok");
-      pushOpsLive("ok", "Perfil por formato atualizado", "Perfil global atualizado para todas as categorias.");
+      pushOpsLive(
+        "ok",
+        "Perfil por formato atualizado",
+        targetKey === "global"
+          ? "Perfil global atualizado para todas as categorias."
+          : `Perfil atualizado para ${roundOpsCategoryLabel}.`,
+      );
       mutatePadelConfig();
     } catch (err) {
       console.error("[padel/round-ops] save profile", err);
@@ -5387,2070 +5596,209 @@ export default function PadelHubClient({
 
       {!switchingTab && activeTab === "calendar" && (
         <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)] transition-all duration-250 ease-out opacity-100 translate-y-0">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="space-y-1">
-              <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Calendário de jogos</p>
-              <p className="text-sm text-white/70">Visual por campo: jogos e bloqueios.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80">
-                <span className="text-white/50">Torneio</span>
-                <select
-                  value={eventId ? String(eventId) : ""}
-                  onChange={(e) => setPadelEventId(e.target.value ? Number(e.target.value) : null)}
-                  className="min-w-[180px] bg-transparent text-white/90 outline-none"
-                  disabled={padelEventsLoading}
-                >
-                  <option value="">
-                    {padelEventsLoading
-                      ? "A carregar torneios..."
-                      : padelEvents.length > 0
-                        ? "Seleciona um torneio"
-                        : "Sem torneios de padel"}
-                  </option>
-                  {padelEvents.map((event) => (
-                    <option key={`padel-event-${event.id}`} value={event.id}>
-                      {(event.title || `Torneio ${event.id}`).trim()}
-                      {event.startsAt ? ` · ${formatShortDate(event.startsAt)}` : ""}
-                      {event.padelClubName ? ` · ${event.padelClubName}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/75">
-                Fuso: {calendarTimezone}
-              </span>
-              <span className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/75">
-                Buffer: {calendarBuffer} min
-              </span>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
-                {["week", "day"].map((scope) => (
-                  <button
-                    key={scope}
-                    onClick={() => setCalendarScope(scope as "week" | "day")}
-                    className={`rounded-full px-3 py-1 font-semibold transition ${
-                      calendarScope === scope ? "bg-white text-black shadow" : "text-white/75"
-                    }`}
-                    disabled={switchingTab}
-                  >
-                    {scope === "week" ? "Semana" : "Dia"}
-                  </button>
-                ))}
-              </div>
-              <OryaDateField
-                value={selectedDay}
-                onChange={(next) => {
-                  setCalendarDayTouched(true);
-                  setSelectedDay(next);
-                }}
-                className="min-w-[150px]"
-                buttonClassName="h-8 rounded-full text-[12px]"
-              />
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
-                {[
-                  { key: "all", label: "Todos os clubes" },
-                  { key: "club", label: "Clube selecionado" },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setCalendarFilter(opt.key as "all" | "club")}
-                    className={`rounded-full px-3 py-1 font-semibold transition ${
-                      calendarFilter === opt.key ? "bg-white text-black shadow" : "text-white/75"
-                    }`}
-                    disabled={switchingTab}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
-                {[15, 30].map((slot) => (
-                  <button
-                    key={slot}
-                    onClick={() => setSlotMinutes(slot)}
-                    className={`rounded-full px-3 py-1 font-semibold transition ${
-                      slotMinutes === slot ? "bg-white text-black shadow" : "text-white/75"
-                    }`}
-                    disabled={switchingTab}
-                  >
-                    Slot {slot}m
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
-                {[
-                  { key: "timeline", label: "Timeline" },
-                  { key: "list", label: "Lista" },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => {
-                      setCalendarView(opt.key as "timeline" | "list");
-                      setCalendarViewTouched(true);
-                    }}
-                    className={`rounded-full px-3 py-1 font-semibold transition ${
-                      calendarView === opt.key ? "bg-white text-black shadow" : "text-white/75"
-                    }`}
-                    disabled={switchingTab}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div className="inline-flex rounded-full border border-white/15 bg-white/5 p-1 text-[12px]">
-                {[
-                  { key: "complete", label: "Completo" },
-                  { key: "games", label: "Jogos do torneio" },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setCalendarDataView(opt.key as "complete" | "games")}
-                    className={`rounded-full px-3 py-1 font-semibold transition ${
-                      calendarDataView === opt.key ? "bg-white text-black shadow" : "text-white/75"
-                    }`}
-                    disabled={switchingTab}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <CalendarControls
+            eventId={eventId}
+            onEventChange={setPadelEventId}
+            padelEventsLoading={padelEventsLoading}
+            padelEvents={padelEvents}
+            categoryKey={roundOpsCategoryKey}
+            categoryOptions={runtimeCategoryKeys.map((key) => ({
+              key,
+              label: formatRuntimeCategoryLabel(key),
+            }))}
+            onCategoryChange={setRoundOpsCategoryKey}
+            formatShortDate={formatShortDate}
+            calendarTimezone={calendarTimezone}
+            calendarBuffer={calendarBuffer}
+            calendarScope={calendarScope}
+            onCalendarScopeChange={setCalendarScope}
+            switchingTab={switchingTab}
+            selectedDay={selectedDay}
+            onSelectedDayChange={(next) => {
+              setCalendarDayTouched(true);
+              setSelectedDay(next);
+            }}
+            calendarFilter={calendarFilter}
+            onCalendarFilterChange={setCalendarFilter}
+            slotMinutes={slotMinutes}
+            onSlotMinutesChange={setSlotMinutes}
+            calendarDataView={calendarDataView}
+            onCalendarDataViewChange={setCalendarDataView}
+          />
 
           <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-            <div className="h-[420px] rounded-2xl border border-dashed border-white/15 bg-black/25 p-4 text-white/70">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-white">
-                  {calendarView === "timeline" ? "Timeline" : "Lista"}
-                </p>
-                {isCalendarLoading && <span className="text-[11px] text-white/60 animate-pulse">A carregar…</span>}
-              </div>
-              {!eventId && (
-                <div className="mt-2 space-y-1 text-[12px] text-white/60">
-                  <p>Seleciona um torneio para carregar o calendário.</p>
-                  {!padelEventsLoading && padelEvents.length === 0 && (
-                    <p className="text-white/50">
-                      Ainda não tens torneios de padel.{" "}
-                      <Link href={tournamentsCreateHref} className="text-white underline">
-                        Criar torneio
-                      </Link>
-                      .
-                    </p>
-                  )}
-                  {padelEventsError && <p className="text-red-200">{padelEventsError}</p>}
-                </div>
-              )}
-              {eventId && !padelEventsLoading && !selectedEvent && (
-                <p className="mt-2 text-[12px] text-amber-200">
-                  Torneio indisponível para esta organização.
-                </p>
-              )}
-              {eventId && !isCalendarLoading && calendarError && (
-                <p className="mt-2 text-[12px] text-red-200">{calendarError}</p>
-              )}
-              {eventId && !isCalendarLoading && calendarWarning && (
-                <p className="mt-2 text-[12px] text-amber-200">{calendarWarning}</p>
-              )}
-              {eventId && !isCalendarLoading && calendarMessage && (
-                <p className="mt-2 text-[12px] text-emerald-200">{calendarMessage}</p>
-              )}
-              {eventId && calendarScope === "day" && !isCalendarLoading && !calendarError && startOfDay && (
-                <p className="mt-2 text-[12px] text-white/60">
-                  A mostrar registos de {selectedDay} ({formatZoned(startOfDay, calendarTimezone)}).
-                </p>
-              )}
-              {eventId && !isCalendarLoading && !calendarError && (
-                <div className="mt-3 space-y-3">
-                  {calendarView === "timeline" ? (
-                    <>
-                      <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/25 p-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-                        <p className="mb-2 text-[12px] uppercase tracking-[0.16em] text-white/55">
-                          Visão rápida
-                        </p>
-                        <TimelineView
-                          blocks={calendarBlocks}
-                          availabilities={calendarAvailabilities}
-                          matches={calendarMatches}
-                          timezone={calendarTimezone}
-                          dayStart={startOfDay}
-                          dayLabel={timelineLabel}
-                          conflictMap={calendarConflictMap}
-                          slotMinutes={slotMinutes}
-                          onDrop={async (payload) => {
-                            // Persistir drop no servidor (mantendo duração). Usa PATCH no tipo certo.
-                            if (!eventId) return;
-                            const [kind, rawId] = payload.id.split("-");
-                            const parsedId = Number(rawId);
-                            if (!Number.isFinite(parsedId)) return;
-                            if (kind === "match") {
-                              const match = matchesById.get(parsedId);
-                              if (!match?.courtId) {
-                                setCalendarWarning("Define primeiro o campo do jogo para o mover.");
-                                toast("Define o campo do jogo antes de mover", "warn");
-                                return;
-                              }
-                            }
-                            setSavingCalendar(true);
-                            setCalendarError(null);
-                            setCalendarMessage(null);
-                            setCalendarWarning(null);
-                            try {
-                              const currentVersion = getItemVersion(kind as any, parsedId);
-                              const prevMatch = kind === "match" ? matchesById.get(parsedId) : null;
-                              const res = await fetch("/api/padel/calendar", {
-                                method: "PATCH",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({
-                                  type:
-                                    kind === "block"
-                                      ? "block"
-                                      : kind === "availability"
-                                        ? "availability"
-                                        : kind === "match"
-                                          ? "match"
-                                          : null,
-                                  id: parsedId,
-                                  startAt: payload.start.toISOString(),
-                                  endAt: payload.end.toISOString(),
-                                  ...(currentVersion ? { version: currentVersion } : {}),
-                                  ...(payload.courtId ? { courtId: payload.courtId } : {}),
-                                }),
-                              });
-                              const json = await res.json().catch(() => null);
-                              if (!res.ok || json?.ok === false) {
-                                const errMsg = sanitizeUiErrorMessage(json?.error, "Não foi possível mover.");
-                                if (res.status === 409 || errMsg.toLowerCase().includes("conflito")) {
-                                  setCalendarWarning(errMsg);
-                                  toast(errMsg, "warn");
-                                } else if (res.status === 423 || errMsg.toLowerCase().includes("lock")) {
-                                  setCalendarWarning("Outro admin está a editar este slot.");
-                                  toast("Outro admin a editar este slot.", "warn");
-                                } else if (res.status === 409 && errMsg.toLowerCase().includes("stale")) {
-                                  setCalendarWarning("Atualiza a página, houve edição em paralelo.");
-                                  toast("Edição desatualizada, atualiza a página.", "warn");
-                                } else {
-                                  setCalendarError(errMsg);
-                                  toast(errMsg, "err");
-                                }
-                              } else {
-                                setCalendarMessage("Atualizado via drag & drop.");
-                                toast("Atualizado via drag & drop", "ok");
-                                applyCalendarWarning(json?.warning);
-                                if (kind === "block") {
-                                  const prev = calendarBlocks.find((block) => block.id === parsedId);
-                                  if (prev) {
-                                    setLastAction({
-                                      type: "block",
-                                      id: parsedId,
-                                      prevStart: prev.startAt,
-                                      prevEnd: prev.endAt,
-                                      prevCourtId: prev.courtId ?? null,
-                                      version: prev.updatedAt ?? null,
-                                    });
-                                  }
-                                } else if (kind === "availability") {
-                                  const prev = calendarAvailabilities.find(
-                                    (availability) => availability.id === parsedId,
-                                  );
-                                  if (prev) {
-                                    setLastAction({
-                                      type: "availability",
-                                      id: parsedId,
-                                      prevStart: prev.startAt,
-                                      prevEnd: prev.endAt,
-                                      version: prev.updatedAt ?? null,
-                                    });
-                                  }
-                                } else if (kind === "match" && prevMatch) {
-                                  const start = prevMatch.startTime || prevMatch.plannedStartAt;
-                                  if (start) {
-                                    const end =
-                                      prevMatch.plannedEndAt ||
-                                      (prevMatch.plannedDurationMinutes
-                                        ? new Date(
-                                            new Date(start).getTime() +
-                                              prevMatch.plannedDurationMinutes * 60 * 1000,
-                                          ).toISOString()
-                                        : start);
-                                    setLastAction({
-                                      type: "match",
-                                      id: parsedId,
-                                      prevStart: start,
-                                      prevEnd: end,
-                                      prevCourtId: prevMatch.courtId ?? null,
-                                      prevDuration: prevMatch.plannedDurationMinutes ?? null,
-                                      version: prevMatch.updatedAt ?? null,
-                                    });
-                                  }
-                                }
-                                mutateCalendar();
-                              }
-                            } catch (err) {
-                              console.error("[padel/calendar] drag-drop update", err);
-                              setCalendarError("Erro ao mover.");
-                              toast("Erro ao mover", "err");
-                            } finally {
-                              setSavingCalendar(false);
-                            }
-                          }}
-                        />
-                      </div>
-                      <div className="grid gap-2 lg:grid-cols-2">
-                        <div className="space-y-2">
-                          <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Bloqueios</p>
-                          {calendarBlocks.length === 0 && (
-                            <p className="text-[12px] text-white/55">Sem bloqueios.</p>
-                          )}
-                          {[...calendarBlocks]
-                            .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-                            .slice(0, 6)
-                            .map((block) => (
-                              <div
-                                key={`block-${block.id}`}
-                                className="space-y-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[12px]"
-                              >
-                                <p className="font-semibold text-white">
-                                  Bloqueio {block.label || `#${block.id}`}
-                                </p>
-                                <p className="text-white/65">
-                                  {formatZoned(block.startAt, calendarTimezone)} →{" "}
-                                  {formatZoned(block.endAt, calendarTimezone)}
-                                </p>
-                                {block.note && <p className="text-white/55">Nota: {block.note}</p>}
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditBlock(block)}
-                                    className="rounded-full border border-white/20 px-2 py-[5px] text-[11px] text-white hover:border-white/35"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteCalendarItem("block", block.id)}
-                                    className="rounded-full border border-red-300/60 bg-red-500/15 px-2 py-[5px] text-[11px] text-red-50 hover:border-red-200/70"
-                                  >
-                                    Apagar
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">
-                            Indisponibilidades
-                          </p>
-                          {calendarAvailabilities.length === 0 && (
-                            <p className="text-[12px] text-white/55">Sem indisponibilidades.</p>
-                          )}
-                          {[...calendarAvailabilities]
-                            .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
-                            .slice(0, 6)
-                            .map((av) => (
-                              <div
-                                key={`av-${av.id}`}
-                                className="space-y-1 rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-[12px] text-white"
-                              >
-                                <p className="font-semibold">{av.playerName || av.playerEmail || "Jogador"}</p>
-                                <p className="text-white/70">
-                                  {formatZoned(av.startAt, calendarTimezone)} →{" "}
-                                  {formatZoned(av.endAt, calendarTimezone)}
-                                </p>
-                                {av.note && <p className="text-white/65">Nota: {av.note}</p>}
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditAvailability(av)}
-                                    className="rounded-full border border-white/30 px-2 py-[5px] text-[11px] text-white hover:border-white/45"
-                                  >
-                                    Editar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteCalendarItem("availability", av.id)}
-                                    className="rounded-full border border-red-300/60 bg-red-500/15 px-2 py-[5px] text-[11px] text-red-50 hover:border-red-200/70"
-                                  >
-                                    Apagar
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                        <div className="space-y-2 lg:col-span-2">
-                          <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Jogos agendados</p>
-                          {calendarMatches.length === 0 && (
-                            <p className="text-[12px] text-white/55">Sem jogos com horário definido.</p>
-                          )}
-                          {[...calendarMatches]
-                            .sort(
-                              (a, b) =>
-                                new Date(a.startTime || a.plannedStartAt || 0).getTime() -
-                                new Date(b.startTime || b.plannedStartAt || 0).getTime(),
-                            )
-                            .slice(0, 6)
-                            .map((m) => {
-                              const matchStart = m.startTime || m.plannedStartAt;
-                              const matchStartLabel = matchStart ? formatZoned(matchStart, calendarTimezone) : "—";
-                              const delayInfo = getDelayInfo(m);
-                              const isDelayed = delayInfo.status === "DELAYED";
-                              const isRescheduled = delayInfo.status === "RESCHEDULED";
-                              return (
-                                <div
-                                  key={`match-${m.id}`}
-                                  className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-[12px] text-white shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
-                                    calendarConflicts.some(
-                                      (c) => c.aId === m.id && c.type !== "outside_event_window",
-                                    )
-                                      ? "border-red-400/70 bg-red-500/10"
-                                      : calendarConflicts.some(
-                                            (c) => c.aId === m.id && c.type === "outside_event_window",
-                                          )
-                                        ? "border-amber-300/60 bg-amber-500/10"
-                                        : "border-white/12 bg-gradient-to-r from-white/8 via-[#0f1c3d]/50 to-[#050912]/80"
-                                  }`}
-                                >
-                                  <div className="space-y-1">
-                                    <p className="font-semibold">Jogo #{m.id}</p>
-                                    <p className="text-white/70">
-                                      {matchStartLabel} · Campo{" "}
-                                      {m.courtName || m.courtNumber || m.courtId || "—"}
-                                    </p>
-                                    <p className="text-white/60">{m.roundLabel || m.groupLabel || "Fase"}</p>
-                                    {isDelayed && (
-                                      <p className="text-[11px] text-amber-200">
-                                        Atrasado{delayInfo.reason ? `: ${delayInfo.reason}` : "."}
-                                      </p>
-                                    )}
-                                    {isRescheduled && (
-                                      <p className="text-[11px] text-emerald-200">Reagendado.</p>
-                                    )}
-                                    <div className="flex flex-wrap gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          const start = m.startTime || m.plannedStartAt;
-                                          const end =
-                                            m.plannedEndAt ||
-                                            (start && m.plannedDurationMinutes
-                                              ? new Date(
-                                                  new Date(start).getTime() +
-                                                    m.plannedDurationMinutes * 60 * 1000,
-                                                ).toISOString()
-                                              : null);
-                                          if (!start || !end) return;
-                                          const newEnd = new Date(
-                                            new Date(end).getTime() - slotMinutes * 60 * 1000,
-                                          );
-                                          setSavingCalendar(true);
-                                          try {
-                                            const res = await fetch("/api/padel/calendar", {
-                                              method: "PATCH",
-                                              headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({
-                                                type: "match",
-                                                id: m.id,
-                                                startAt: start,
-                                                endAt: newEnd.toISOString(),
-                                                version: m.updatedAt,
-                                              }),
-                                            });
-                                            const json = await res.json().catch(() => null);
-                                            if (!res.ok || json?.ok === false) {
-                                              setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."));
-                                              toast(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."), "err");
-                                            } else {
-                                              setLastAction({
-                                                type: "match",
-                                                id: m.id,
-                                                prevStart: start,
-                                                prevEnd: end,
-                                                prevCourtId: m.courtId ?? null,
-                                                prevDuration: m.plannedDurationMinutes ?? null,
-                                                version: m.updatedAt ?? null,
-                                              });
-                                              toast("Ajustado -1 slot", "ok");
-                                              applyCalendarWarning(json?.warning);
-                                              mutateCalendar();
-                                            }
-                                          } finally {
-                                            setSavingCalendar(false);
-                                          }
-                                        }}
-                                        className="rounded-full border border-white/20 px-2 py-[2px] text-[11px] text-white hover:border-white/35"
-                                      >
-                                        -{slotMinutes}m
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={async () => {
-                                          const start = m.startTime || m.plannedStartAt;
-                                          const end =
-                                            m.plannedEndAt ||
-                                            (start && m.plannedDurationMinutes
-                                              ? new Date(
-                                                  new Date(start).getTime() +
-                                                    m.plannedDurationMinutes * 60 * 1000,
-                                                ).toISOString()
-                                              : null);
-                                          if (!start || !end) return;
-                                          const newEnd = new Date(
-                                            new Date(end).getTime() + slotMinutes * 60 * 1000,
-                                          );
-                                          setSavingCalendar(true);
-                                          try {
-                                            const res = await fetch("/api/padel/calendar", {
-                                              method: "PATCH",
-                                              headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({
-                                                type: "match",
-                                                id: m.id,
-                                                startAt: start,
-                                                endAt: newEnd.toISOString(),
-                                                version: m.updatedAt,
-                                              }),
-                                            });
-                                            const json = await res.json().catch(() => null);
-                                            if (!res.ok || json?.ok === false) {
-                                              setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."));
-                                              toast(sanitizeUiErrorMessage(json?.error, "Não foi possível ajustar."), "err");
-                                            } else {
-                                              setLastAction({
-                                                type: "match",
-                                                id: m.id,
-                                                prevStart: start,
-                                                prevEnd: end,
-                                                prevCourtId: m.courtId ?? null,
-                                                prevDuration: m.plannedDurationMinutes ?? null,
-                                                version: m.updatedAt ?? null,
-                                              });
-                                              toast("Ajustado +1 slot", "ok");
-                                              applyCalendarWarning(json?.warning);
-                                              mutateCalendar();
-                                            }
-                                          } finally {
-                                            setSavingCalendar(false);
-                                          }
-                                        }}
-                                        className="rounded-full border border-white/20 px-2 py-[2px] text-[11px] text-white hover:border-white/35"
-                                      >
-                                        +{slotMinutes}m
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => delayAndRescheduleMatch(m)}
-                                        disabled={m.status !== "PENDING" || delayBusyMatchId === m.id}
-                                        className="rounded-full border border-amber-200/40 bg-amber-400/10 px-2 py-[2px] text-[11px] text-amber-100 hover:border-amber-200/60 disabled:opacity-60"
-                                      >
-                                        {delayBusyMatchId === m.id ? "A reagendar…" : "Atrasar + auto"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-white/75">
-                                    {m.status}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                        </div>
-                        <div className="space-y-2 lg:col-span-2">
-                          <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Conflitos</p>
-                          {calendarConflicts.length === 0 && (
-                            <p className="text-[12px] text-emerald-200/80">Sem conflitos detetados.</p>
-                          )}
-                          {calendarConflicts.slice(0, 6).map((c) => (
-                            <div
-                              key={`${c.type}-${c.aId}-${c.bId}`}
-                              className={`flex items-center justify-between rounded-lg px-3 py-2 text-[12px] shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
-                                c.type === "outside_event_window" || c.type === "availability_match"
-                                  ? "border border-amber-300/40 bg-amber-500/10 text-amber-50"
-                                  : "border border-red-300/40 bg-red-500/10 text-red-50"
-                              }`}
-                            >
-                              <div className="space-y-1">
-                                <p className="font-semibold">{c.summary}</p>
-                                <p className="text-red-100/80">Registos #{c.aId} e #{c.bId}</p>
-                                {c.type === "player_match" && (
-                                  <p className="text-[11px] text-red-100/70">Duplicado no horário.</p>
-                                )}
-                                {c.type === "outside_event_window" && (
-                                  <p className="text-[11px] text-amber-100/80">Fora da janela do evento.</p>
-                                )}
-                              </div>
-                              <span className="rounded-full border border-red-200/40 bg-red-200/15 px-2 py-[6px] text-[11px] text-red-50">
-                                {c.type}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="rounded-2xl border border-white/10 bg-black/25 p-3 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">
-                            Vista em lista
-                          </p>
-                          <span className="text-[11px] text-white/50">
-                            {calendarListItems.length} itens
-                          </span>
-                        </div>
-                        <div className="mt-2">
-                          <CalendarListView
-                            items={calendarListItems}
-                            timezone={calendarTimezone}
-                            onEditBlock={(rawId) => {
-                              const id = Number(rawId.split("-")[1]);
-                              if (!Number.isFinite(id)) return;
-                              const block = calendarBlocks.find((item) => item.id === id);
-                              if (block) handleEditBlock(block);
-                            }}
-                            onDeleteBlock={(rawId) => {
-                              const id = Number(rawId.split("-")[1]);
-                              if (!Number.isFinite(id)) return;
-                              handleDeleteCalendarItem("block", id);
-                            }}
-                            onEditAvailability={(rawId) => {
-                              const id = Number(rawId.split("-")[1]);
-                              if (!Number.isFinite(id)) return;
-                              const availability = calendarAvailabilities.find((item) => item.id === id);
-                              if (availability) handleEditAvailability(availability);
-                            }}
-                            onDeleteAvailability={(rawId) => {
-                              const id = Number(rawId.split("-")[1]);
-                              if (!Number.isFinite(id)) return;
-                              handleDeleteCalendarItem("availability", id);
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-[12px] uppercase tracking-[0.16em] text-white/55">Conflitos</p>
-                        {calendarConflicts.length === 0 && (
-                          <p className="text-[12px] text-emerald-200/80">Sem conflitos detetados.</p>
-                        )}
-                        {calendarConflicts.slice(0, 6).map((c) => (
-                          <div
-                            key={`${c.type}-${c.aId}-${c.bId}`}
-                            className={`flex items-center justify-between rounded-lg px-3 py-2 text-[12px] shadow-[0_12px_35px_rgba(0,0,0,0.35)] ${
-                              c.type === "outside_event_window" || c.type === "availability_match"
-                                ? "border border-amber-300/40 bg-amber-500/10 text-amber-50"
-                                : "border border-red-300/40 bg-red-500/10 text-red-50"
-                            }`}
-                          >
-                            <div className="space-y-1">
-                              <p className="font-semibold">{c.summary}</p>
-                              <p className="text-red-100/80">Registos #{c.aId} e #{c.bId}</p>
-                              {c.type === "player_match" && (
-                                <p className="text-[11px] text-red-100/70">Duplicado no horário.</p>
-                              )}
-                              {c.type === "outside_event_window" && (
-                                <p className="text-[11px] text-amber-100/80">Fora da janela do evento.</p>
-                              )}
-                            </div>
-                            <span className="rounded-full border border-red-200/40 bg-red-200/15 px-2 py-[6px] text-[11px] text-red-50">
-                              {c.type}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="space-y-3 rounded-2xl border border-white/12 bg-white/5 p-4 text-white/80 shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-              <p className="text-sm font-semibold text-white">Legenda & próximos passos</p>
-              <ul className="space-y-2 text-[13px] text-white/70">
-                <li>• Bloqueios e indisponibilidades.</li>
-                <li>• Conflitos: sobreposição, dois jogos, fora de horário.</li>
-                <li>• Hierarquia: HardBlock &gt; MatchSlot &gt; Booking &gt; SoftBlock (aviso).</li>
-                <li>• Vista por clube ou todos.</li>
-                <li>• Horas em {calendarTimezone} · buffer {calendarBuffer} min.</li>
-              </ul>
-              <div className="rounded-xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/50 to-[#050912]/90 p-3 text-[13px] text-white/75">
-                Sugestão: auto-agenda e ajusta.
-              </div>
-            </div>
-            <div
-              id="auto-schedule"
-              className="scroll-mt-24 space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#101a33]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]"
-            >
-              <p className="text-sm font-semibold text-white">Auto-agendar jogos</p>
-              <p className="text-[12px] text-white/65">
-                Distribui jogos na janela com campos ativos. Podes guardar como padrão.
-              </p>
-              <div className="rounded-xl border border-white/12 bg-black/25 px-3 py-2 text-[11px] text-white/75">
-                <p>
-                  Formato ativo: <span className="font-semibold text-white">{tournamentFormatLabel}</span>
-                </p>
-                <p className="mt-1 text-white/70">{autoScheduleFormatHint}</p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <OryaDateTimeField
-                  value={autoScheduleForm.start}
-                  onChange={(next) => setAutoScheduleForm((p) => ({ ...p, start: next }))}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || autoScheduling}
-                />
-                <OryaDateTimeField
-                  value={autoScheduleForm.end}
-                  onChange={(next) => setAutoScheduleForm((p) => ({ ...p, end: next }))}
-                  minDateTime={autoScheduleForm.start || undefined}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || autoScheduling}
-                />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-4">
-                <input
-                  type="number"
-                  min={10}
-                  value={autoScheduleForm.duration}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, duration: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Duração (min)"
-                  disabled={!eventId || autoScheduling}
-                />
-                <input
-                  type="number"
-                  min={5}
-                  value={autoScheduleForm.slot}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, slot: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Slot (min)"
-                  disabled={!eventId || autoScheduling}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={autoScheduleForm.buffer}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, buffer: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Buffer (min)"
-                  disabled={!eventId || autoScheduling}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  value={autoScheduleForm.rest}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, rest: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                  placeholder="Descanso (min)"
-                  disabled={!eventId || autoScheduling}
-                />
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <select
-                  value={autoScheduleForm.priority}
-                  onChange={(e) => setAutoScheduleForm((p) => ({ ...p, priority: e.target.value }))}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                  disabled={!eventId || autoScheduling}
-                >
-                  <option value="GROUPS_FIRST">Prioridade: Grupos</option>
-                  <option value="KNOCKOUT_FIRST">Prioridade: Eliminatórias</option>
-                </select>
-                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
-                  Descanso mínimo evita jogos seguidos da mesma dupla.
-                </div>
-              </div>
-              {autoScheduleCourtOptions.length > 0 && (
-                <div className="space-y-2 rounded-lg border border-white/10 bg-black/25 p-3">
-                  <div className="flex items-center justify-between text-[11px] text-white/75">
-                    <p>Campos nesta execução: {autoScheduleEffectiveCourtIds.length}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const ids = autoScheduleCourtOptions.map((court) => court.id);
-                        setAutoScheduleCourtIds(ids);
-                        setAutoScheduleCourtPriorityOrder(ids);
-                      }}
-                      className="rounded-full border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35"
-                      disabled={!eventId || autoScheduling}
-                    >
-                      Usar todos
-                    </button>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {autoScheduleCourtOptions.map((court) => {
-                      const selected = autoScheduleEffectiveCourtIds.includes(court.id);
-                      const priorityIndex = autoScheduleEffectivePriorityOrder.indexOf(court.id);
-                      return (
-                        <div
-                          key={`auto-court-${court.id}`}
-                          className={`rounded-lg border px-2 py-2 text-[11px] ${
-                            selected ? "border-cyan-300/40 bg-cyan-500/10" : "border-white/10 bg-black/20"
-                          }`}
-                        >
-                          <label className="flex items-center gap-2 text-white/85">
-                            <input
-                              type="checkbox"
-                              checked={selected}
-                              onChange={() => toggleAutoScheduleCourt(court.id)}
-                              disabled={!eventId || autoScheduling}
-                            />
-                            <span>{court.name}</span>
-                          </label>
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <span className="text-white/60">
-                              Prioridade {priorityIndex >= 0 ? `#${priorityIndex + 1}` : "—"}
-                            </span>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => moveAutoScheduleCourtPriority(court.id, -1)}
-                                className="rounded border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35 disabled:opacity-40"
-                                disabled={!selected || priorityIndex <= 0 || !eventId || autoScheduling}
-                              >
-                                ↑
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => moveAutoScheduleCourtPriority(court.id, 1)}
-                                className="rounded border border-white/20 px-2 py-1 text-[10px] text-white/80 hover:border-white/35 disabled:opacity-40"
-                                disabled={
-                                  !selected ||
-                                  priorityIndex === -1 ||
-                                  priorityIndex >= autoScheduleEffectivePriorityOrder.length - 1 ||
-                                  !eventId ||
-                                  autoScheduling
-                                }
-                              >
-                                ↓
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {!tournamentHasKnockoutPhase && tournamentFormatRaw && (
-                <p className="text-[11px] text-amber-200/85">
-                  Este formato não usa eliminatórias; a prioridade de eliminatórias pode não ter efeito.
-                </p>
-              )}
-              {autoSchedulePlanLoading && (
-                <p className="text-[11px] text-white/60">A calcular viabilidade por formato...</p>
-              )}
-              {autoSchedulePlanError && (
-                <div className="rounded-lg border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                  {autoSchedulePlanError}
-                </div>
-              )}
-              {autoScheduleCapacity && (
-                <div
-                  className={`rounded-lg border px-3 py-2 text-[12px] ${
-                    autoScheduleCapacity.unscheduledMatches > 0
-                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
-                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
-                  }`}
-                >
-                  Slots {autoScheduleCapacity.totalSlots} · Jogos necessários {autoScheduleCapacity.matchesNeeded} ·
-                  Em falta {Math.max(0, autoScheduleCapacity.unscheduledMatches)} · Campos {autoScheduleCapacity.courts}.
-                  {autoScheduleCapacity.unscheduledMatches > 0 && (
-                    <span className="block mt-1 text-[11px] opacity-90">
-                      Ajusta janela/campos ou reduz carga por formato.
-                    </span>
-                  )}
-                  {autoSchedulePlanBlocking.length > 0 && (
-                    <span className="block mt-1 text-[11px] opacity-90">
-                      Bloqueios técnicos: {autoSchedulePlanBlocking.join(" · ")}.
-                    </span>
-                  )}
-                  {autoSchedulePlanAlternatives.length > 0 && (
-                    <span className="block mt-1 text-[11px] opacity-90">
-                      Alternativas: {autoSchedulePlanAlternatives.slice(0, 2).join(" · ")}.
-                    </span>
-                  )}
-                </div>
-              )}
-              {calendarEventStart && calendarEventEnd && (
-                <p className="text-[11px] text-white/60">
-                  Janela do evento: {formatZoned(calendarEventStart, calendarTimezone)} →{" "}
-                  {formatZoned(calendarEventEnd, calendarTimezone)}.
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={runAutoSchedule}
-                disabled={!eventId || autoScheduling}
-                className={CTA_PAD_PRIMARY}
-              >
-                {autoScheduling ? "A agendar…" : "Auto-agendar jogos"}
-              </button>
-              <button
-                type="button"
-                onClick={previewAutoSchedule}
-                disabled={!eventId || autoScheduling}
-                className="inline-flex items-center justify-center rounded-full border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:border-white/45 disabled:opacity-50"
-              >
-                Simular
-              </button>
-              <button
-                type="button"
-                onClick={saveAutoScheduleDefaults}
-                disabled={!eventId || !padelConfig || autoScheduling}
-                className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 disabled:opacity-50"
-              >
-                Guardar
-              </button>
-              {autoScheduleSummary && <p className="text-[12px] text-white/70">{autoScheduleSummary}</p>}
-              {autoSchedulePreview && autoSchedulePreview.length > 0 && (
-                <div className="space-y-1 rounded-xl border border-white/15 bg-black/30 p-2 text-[11px] text-white/75">
-                  {autoSchedulePreview.slice(0, 6).map((item) => (
-                    <p key={`preview-${item.matchId}`}>
-                      #{item.matchId} · Campo {item.courtId} · {formatZoned(item.start, calendarTimezone)} →
-                      {formatZoned(item.end, calendarTimezone)}
-                    </p>
-                  ))}
-                  {autoSchedulePreview.length > 6 && (
-                    <p className="text-white/55">+{autoSchedulePreview.length - 6} jogos</p>
-                  )}
-                </div>
-              )}
-              {!eventId && <p className="text-[12px] text-white/55">Falta eventId no URL.</p>}
-            </div>
-            <div
-              id="round-ops"
-              className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0d1a33]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]"
-            >
-              <p className="text-sm font-semibold text-white">Operação por rondas</p>
-              <p className="text-[12px] text-white/65">
-                Avança rondas com geração incremental e auto-agendamento imediato.
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <select
-                  value={roundOpsCategoryKey}
-                  onChange={(e) => setRoundOpsCategoryKey(e.target.value)}
-                  className="rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                >
-                  {runtimeCategoryKeys.map((key) => (
-                    <option key={`round-cat-${key}`} value={key}>
-                      {formatRuntimeCategoryLabel(key)}
-                    </option>
-                  ))}
-                </select>
-                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
-                  <p>
-                    Formato: <span className="font-semibold text-white">{roundOpsFormatLabel}</span>
-                  </p>
-                  <p className="mt-1">
-                    Ronda atual: <span className="font-semibold text-white">{roundOpsRoundLabel}</span>
-                  </p>
-                  {selectedRoundOpsCategoryTeamHint && (
-                    <p className="mt-1 text-white/65">{selectedRoundOpsCategoryTeamHint}</p>
-                  )}
-                  {roundOpsProfileSourceLabel && (
-                    <p className="mt-1">
-                      Perfil: <span className="font-semibold text-white">{roundOpsProfileSourceLabel}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="space-y-1 text-[11px] text-white/65">
-                  <span>Modo de planeamento</span>
-                  <select
-                    value={roundOpsPlanningMode}
-                    onChange={(e) => setRoundOpsPlanningMode(e.target.value === "capacity" ? "capacity" : "runtime")}
-                    className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                    disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                  >
-                    <option value="runtime">Equipas reais (confirmadas/ativas)</option>
-                    <option value="capacity">Capacidade teórica da categoria</option>
-                  </select>
-                </label>
-                <div className="rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
-                  {roundOpsPlanningMode === "runtime"
-                    ? "Planeia com base no estado real atual da categoria."
-                    : "Planeia no limite da lotação definida para a categoria."}
-                </div>
-              </div>
-              <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3 text-[12px] text-white/80">
-                <p className="font-semibold text-white">Perfil por formato ({roundOpsCategoryLabel})</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <label className="space-y-1 text-[11px] text-white/65">
-                    <span>Formato competitivo</span>
-                    <select
-                      value={roundOpsFormatValue}
-                      onChange={(e) => saveRoundOpsFormatProfile({ format: e.target.value }, "selected")}
-                      className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                      disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                    >
-                      {Object.entries(PADEL_FORMAT_LABELS).map(([value, label]) => (
-                        <option key={`round-profile-format-${value}`} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {roundOpsIsAmMxFormat && (
-                    <label className="space-y-1 text-[11px] text-white/65">
-                      <span>Modo AM/MX</span>
-                      <select
-                        value={selectedAmMxMode}
-                        onChange={(e) =>
-                          saveRoundOpsFormatProfile(
-                            { amMxMode: e.target.value === "FIXED_PAIR" ? "FIXED_PAIR" : "INDIVIDUAL_ROTATION" },
-                            "selected",
-                          )
-                        }
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                      >
-                        <option value="INDIVIDUAL_ROTATION">Rotação individual</option>
-                        <option value="FIXED_PAIR">Dupla fixa</option>
-                      </select>
-                    </label>
-                  )}
-                  {roundOpsIsAmMxFormat && (
-                    <label className="space-y-1 text-[11px] text-white/65">
-                      <span>Progressão</span>
-                      <select
-                        value={selectedAmMxProgressionMode}
-                        onChange={() => saveRoundOpsFormatProfile({ amMxProgressionMode: "ROUND_BY_ROUND" }, "selected")}
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                      >
-                        <option value="ROUND_BY_ROUND">Ronda a ronda (dinâmico)</option>
-                      </select>
-                    </label>
-                  )}
-                  {roundOpsIsNonStopFormat && (
-                    <label className="space-y-1 text-[11px] text-white/65">
-                      <span>Modo NON_STOP</span>
-                      <select
-                        value={selectedNonStopMode}
-                        onChange={(e) =>
-                          saveRoundOpsFormatProfile(
-                            { nonStopMode: e.target.value === "HARD_CAP_WAITLIST" ? "HARD_CAP_WAITLIST" : "ACTIVE_QUEUE" },
-                            "selected",
-                          )
-                        }
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                      >
-                        <option value="ACTIVE_QUEUE">Fila ativa</option>
-                        <option value="HARD_CAP_WAITLIST">Hard cap + waitlist</option>
-                      </select>
-                    </label>
-                  )}
-                  {roundOpsIsNonStopFormat && (
-                    <label className="space-y-1 text-[11px] text-white/65">
-                      <span>Rondas NON_STOP</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={roundOpsNonStopRoundsDraft}
-                        onChange={(e) => setRoundOpsNonStopRoundsDraft(e.target.value)}
-                        onBlur={() => {
-                          const parsed = Number(roundOpsNonStopRoundsDraft);
-                          const nextRounds = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : selectedNonStopRounds;
-                          setRoundOpsNonStopRoundsDraft(String(nextRounds));
-                          saveRoundOpsFormatProfile({ nonStopRounds: nextRounds }, "selected");
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            (e.currentTarget as HTMLInputElement).blur();
-                          }
-                        }}
-                        className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-[#6BFFFF]"
-                        disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                      />
-                    </label>
-                  )}
-                </div>
-                {roundOpsCategoryKey !== "global" && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      saveRoundOpsFormatProfile(
-                        {
-                          format: roundOpsFormatValue,
-                          amMxMode: roundOpsIsAmMxFormat ? selectedAmMxMode : undefined,
-                          amMxProgressionMode: roundOpsIsAmMxFormat ? "ROUND_BY_ROUND" : undefined,
-                          nonStopMode: roundOpsIsNonStopFormat ? selectedNonStopMode : undefined,
-                          nonStopRounds: roundOpsIsNonStopFormat ? selectedNonStopRounds : null,
-                        },
-                        "global",
-                      )
-                    }
-                    className="inline-flex items-center justify-center rounded-full border border-white/25 px-3 py-1.5 text-[11px] font-semibold text-white hover:border-white/40 disabled:opacity-60"
-                    disabled={!eventId || roundOpsBusy || roundOpsProfileBusy}
-                  >
-                    Copiar perfil para fallback global
-                  </button>
-                )}
-              </div>
-              {roundOpsPlanLoading && (
-                <p className="text-[11px] text-white/60">A calcular viabilidade operacional desta ronda...</p>
-              )}
-              {roundOpsPlanError && (
-                <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                  {roundOpsPlanError}
-                </div>
-              )}
-              {roundOpsPlan && (
-                <div
-                  className={`rounded-xl border px-3 py-2 text-[12px] ${
-                    roundOpsPlan.unscheduledMatches > 0 || !roundOpsPlan.feasible
-                      ? "border-amber-300/40 bg-amber-500/10 text-amber-100"
-                      : "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
-                  }`}
-                >
-                  <p className="mb-1 text-[11px] opacity-90">
-                    Modo de planeamento:{" "}
-                    {roundOpsPlanningMode === "capacity" ? "capacidade teórica" : "equipas reais"}
-                  </p>
-                  {roundOpsPlanCategory ? (
-                    <>
-                      <p>
-                        {roundOpsPlanCategory.label}: mínimo {roundOpsPlanCategory.minTeams} · equipas {roundOpsPlanCategory.teams} ·
-                        jogos {roundOpsPlanCategory.matchesNeeded} · slots {roundOpsPlanCategory.allocatedSlots}
-                      </p>
-                      <p className="mt-1">
-                        Recomendado máximo {roundOpsPlanCategory.recommendedMaxTeams}
-                        {typeof roundOpsPlanCategory.hardCapMax === "number"
-                          ? ` · hard cap ${roundOpsPlanCategory.hardCapMax}`
-                          : ""}
-                        {typeof roundOpsPlanCategory.queueEstimatedRounds === "number"
-                          ? ` · fila estimada ${roundOpsPlanCategory.queueEstimatedRounds} rondas`
-                          : ""}
-                        .
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p>
-                        Slots {roundOpsPlan.totalSlots} · jogos necessários {roundOpsPlan.matchesNeeded} · em falta{" "}
-                        {Math.max(0, roundOpsPlan.unscheduledMatches)} · campos {roundOpsPlan.courtsUsed}.
-                      </p>
-                    </>
-                  )}
-                  {roundOpsPlan.blockingReasons.length > 0 && (
-                    <p className="mt-1 text-[11px] opacity-90">
-                      Bloqueios técnicos: {roundOpsPlan.blockingReasons.join(" · ")}.
-                    </p>
-                  )}
-                  {roundOpsPlanWarnings.length > 0 && (
-                    <p className="mt-1 text-[11px] opacity-90">Avisos: {roundOpsPlanWarnings.slice(0, 2).join(" · ")}.</p>
-                  )}
-                  {roundOpsPlanAlternatives.length > 0 && (
-                    <p className="mt-1 text-[11px] opacity-90">
-                      Alternativas: {roundOpsPlanAlternatives.slice(0, 2).join(" · ")}.
-                    </p>
-                  )}
-                </div>
-              )}
-              {selectedNonStopRuntime && (
-                <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3 text-[12px] text-white/80">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-white">Runtime NON_STOP</p>
-                    <div className="flex items-center gap-2">
-                      <span className={badge(selectedNonStopMode === "ACTIVE_QUEUE" ? "blue" : "amber")}>
-                        {selectedNonStopMode === "ACTIVE_QUEUE" ? "Fila ativa" : "Hard cap"}
-                      </span>
-                      <span className={badge("slate")}>Espera: {nonStopQueuePairingIds.length}</span>
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {nonStopActivePairs.length === 0 && (
-                      <p className="text-[11px] text-white/60">Sem pares ativos no runtime.</p>
-                    )}
-                    {nonStopActivePairs.map((entry) => (
-                      <div key={`ns-court-${entry.court}`} className="rounded-lg border border-white/10 bg-black/25 px-3 py-2">
-                        <p className="text-[11px] uppercase tracking-[0.15em] text-white/55">Campo {entry.court}</p>
-                        <p className="mt-1 text-white/85">
-                          {entry.sideA ? `#${entry.sideA}` : "—"} vs {entry.sideB ? `#${entry.sideB}` : "—"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  {nonStopQueuePairingIds.length > 0 && (
-                    <div className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                      Fila (ordem de entrada):{" "}
-                      {nonStopQueuePairingIds.map((pairingId) => `#${pairingId}`).join(" · ")}
-                    </div>
-                  )}
-                  {selectedNonStopMode === "HARD_CAP_WAITLIST" && nonStopQueuePairingIds.length === 0 && (
-                    <div className="rounded-lg border border-white/12 bg-black/25 px-3 py-2 text-[11px] text-white/70">
-                      Hard cap ativo: sem fila operacional. Rotação ocorre apenas entre duplas ativas em campo.
-                    </div>
-                  )}
-                </div>
-              )}
-              {selectedAmMxRuntime && !selectedNonStopRuntime && (
-                <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-2 text-[11px] text-white/75">
-                  Progressão AM/MX dinâmica ativa para {roundOpsCategoryLabel}. O próximo avanço gera só a ronda
-                  seguinte.
-                </div>
-              )}
-              {!roundOpsHasRuntime && (
-                <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                  Runtime ainda não iniciado. Gera os jogos do torneio para ativar avanço por rondas.
-                </div>
-              )}
-              {roundOpsMessage && (
-                <div className="rounded-xl border border-emerald-300/40 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-100">
-                  {roundOpsMessage}
-                </div>
-              )}
-              {roundOpsWarning && (
-                <div className="rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
-                  {roundOpsWarning}
-                </div>
-              )}
-              {roundOpsError && (
-                <div className="rounded-xl border border-rose-300/40 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-100">
-                  {roundOpsError}
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => runRoundsAdvance(true)}
-                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy || !roundOpsHasRuntime}
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40 disabled:opacity-60"
-                >
-                  {roundOpsBusy ? "A processar…" : "Simular avanço"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => runRoundsAdvance(false)}
-                  disabled={!eventId || roundOpsBusy || roundOpsProfileBusy || !roundOpsHasRuntime}
-                  className={CTA_PAD_PRIMARY}
-                >
-                  {roundOpsBusy ? "A avançar…" : "Avançar ronda"}
-                </button>
-              </div>
-              <div className="rounded-xl border border-white/12 bg-black/30 px-3 py-3 text-[12px] text-white/80 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-white">Notificações operacionais</p>
-                  <span className="text-[11px] text-white/55">{opsLiveFeed.length} recente(s)</span>
-                </div>
-                {opsLiveFeed.length === 0 && (
-                  <p className="text-[11px] text-white/60">Sem notificações recentes nesta sessão.</p>
-                )}
-                {opsLiveFeed.slice(0, 8).map((item) => (
-                  <div
-                    key={item.id}
-                    className={`rounded-lg border px-2 py-2 ${
-                      item.level === "ok"
-                        ? "border-emerald-300/35 bg-emerald-500/10 text-emerald-100"
-                        : item.level === "warn"
-                          ? "border-amber-300/35 bg-amber-500/10 text-amber-100"
-                          : item.level === "err"
-                            ? "border-rose-300/35 bg-rose-500/10 text-rose-100"
-                            : "border-sky-300/35 bg-sky-500/10 text-sky-100"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold">{item.title}</p>
-                      <span className="text-[10px] opacity-75">{formatZoned(item.at, calendarTimezone)}</span>
-                    </div>
-                    {item.detail && <p className="mt-1 text-[11px] opacity-90">{item.detail}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
-              <p className="text-sm font-semibold text-white">Exportar calendário</p>
-              <p className="text-[12px] text-white/65">Partilha a agenda com equipas e clube.</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <a
-                  href={
-                    eventId
-                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "pdf" }) || "#"
-                      : "#"
-                  }
-                  aria-disabled={!eventId}
-                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
-                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
-                  }`}
-                >
-                  PDF
-                </a>
-                <a
-                  href={
-                    eventId
-                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "html" }) || "#"
-                      : "#"
-                  }
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-disabled={!eventId}
-                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
-                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
-                  }`}
-                >
-                  HTML
-                </a>
-                <a
-                  href={
-                    eventId
-                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "csv" }) || "#"
-                      : "#"
-                  }
-                  aria-disabled={!eventId}
-                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
-                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
-                  }`}
-                >
-                  CSV
-                </a>
-                <a
-                  href={
-                    eventId
-                      ? buildOrgApiPath("/padel/exports/calendario", { eventId, format: "ics" }) || "#"
-                      : "#"
-                  }
-                  aria-disabled={!eventId}
-                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-[12px] font-semibold text-white ${
-                    eventId ? "border-white/25 hover:border-white/45" : "pointer-events-none border-white/10 text-white/40"
-                  }`}
-                >
-                  ICS
-                </a>
-              </div>
-              {!eventId && <p className="text-[12px] text-white/55">Seleciona um torneio para exportar.</p>}
-            </div>
-            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0f1c3d]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
-              <p className="text-sm font-semibold text-white">Novo bloqueio</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <OryaDateTimeField
-                  value={blockForm.start}
-                  onChange={(next) => setBlockForm((p) => ({ ...p, start: next }))}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || savingCalendar}
-                />
-                <OryaDateTimeField
-                  value={blockForm.end}
-                  onChange={(next) => setBlockForm((p) => ({ ...p, end: next }))}
-                  minDateTime={blockForm.start || undefined}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || savingCalendar}
-                />
-              </div>
-              <input
-                type="text"
-                value={blockForm.label}
-                onChange={(e) => setBlockForm((p) => ({ ...p, label: e.target.value }))}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Título do bloqueio (opcional)"
-                disabled={!eventId || savingCalendar}
-              />
-              <input
-                type="text"
-                value={blockForm.note}
-                onChange={(e) => setBlockForm((p) => ({ ...p, note: e.target.value }))}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Nota (opcional)"
-                disabled={!eventId || savingCalendar}
-              />
-              <button
-                type="button"
-                onClick={() => saveCalendarItem("block")}
-                disabled={!eventId || savingCalendar}
-                className={CTA_PAD_PRIMARY}
-              >
-                {savingCalendar ? "A guardar…" : editingBlockId ? "Atualizar bloqueio" : "Guardar bloqueio"}
-              </button>
-              {lastAction && lastAction.type === "block" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!lastAction) return;
-                    setCalendarMessage(null);
-                    setCalendarWarning(null);
-                    setCalendarError(null);
-                    setSavingCalendar(true);
-                    fetch("/api/padel/calendar", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        type: "block",
-                        id: lastAction.id,
-                        startAt: lastAction.prevStart,
-                        endAt: lastAction.prevEnd,
-                        courtId: lastAction.prevCourtId ?? undefined,
-                        version: lastAction.version ?? undefined,
-                      }),
-                    })
-                      .then((res) => res.json().then((json) => ({ res, json })))
-                      .then(({ res, json }) => {
-                        if (!res.ok || json?.ok === false) {
-                          setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."));
-                          toast(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."), "err");
-                        } else {
-                          setCalendarMessage("Desfeito.");
-                          toast("Desfeito", "ok");
-                          setLastAction(null);
-                          mutateCalendar();
-                        }
-                      })
-                      .catch(() => {
-                        setCalendarError("Erro ao desfazer.");
-                      })
-                      .finally(() => setSavingCalendar(false));
-                  }}
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
-                >
-                  Desfazer último
-                </button>
-              )}
-              {editingBlockId && (
-                <button
-                  type="button"
-                  onClick={resetCalendarForms}
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
-                >
-                  Cancelar edição
-                </button>
-              )}
-              {!eventId && <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>}
-            </div>
-            <div className="space-y-3 rounded-2xl border border-white/12 bg-gradient-to-br from-white/8 via-[#130c24]/55 to-[#050912]/90 p-4 text-white shadow-[0_18px_55px_rgba(0,0,0,0.45)]">
-              <p className="text-sm font-semibold text-white">Nova indisponibilidade</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <OryaDateTimeField
-                  value={availabilityForm.start}
-                  onChange={(next) => setAvailabilityForm((p) => ({ ...p, start: next }))}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || savingCalendar}
-                />
-                <OryaDateTimeField
-                  value={availabilityForm.end}
-                  onChange={(next) => setAvailabilityForm((p) => ({ ...p, end: next }))}
-                  minDateTime={availabilityForm.start || undefined}
-                  className="w-full"
-                  dateButtonClassName="h-10 flex-1 rounded-lg"
-                  timeButtonClassName="h-10 rounded-lg"
-                  disabled={!eventId || savingCalendar}
-                />
-              </div>
-              <input
-                type="text"
-                value={availabilityForm.playerName}
-                onChange={(e) => setAvailabilityForm((p) => ({ ...p, playerName: e.target.value }))}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Nome do jogador (opcional)"
-                disabled={!eventId || savingCalendar}
-              />
-              <input
-                type="email"
-                value={availabilityForm.playerEmail}
-                onChange={(e) => setAvailabilityForm((p) => ({ ...p, playerEmail: e.target.value }))}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Email (opcional)"
-                disabled={!eventId || savingCalendar}
-              />
-              <input
-                type="text"
-                value={availabilityForm.note}
-                onChange={(e) => setAvailabilityForm((p) => ({ ...p, note: e.target.value }))}
-                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                placeholder="Nota (opcional)"
-                disabled={!eventId || savingCalendar}
-              />
-              <button
-                type="button"
-                onClick={() => saveCalendarItem("availability")}
-                disabled={!eventId || savingCalendar}
-                className={CTA_PAD_PRIMARY}
-              >
-                {savingCalendar ? "A guardar…" : editingAvailabilityId ? "Atualizar indisponibilidade" : "Guardar indisponibilidade"}
-              </button>
-              {lastAction && lastAction.type === "availability" && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!lastAction) return;
-                    setCalendarMessage(null);
-                    setCalendarWarning(null);
-                    setCalendarError(null);
-                    setSavingCalendar(true);
-                    fetch("/api/padel/calendar", {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        type: "availability",
-                        id: lastAction.id,
-                        startAt: lastAction.prevStart,
-                        endAt: lastAction.prevEnd,
-                        version: lastAction.version ?? undefined,
-                      }),
-                    })
-                      .then((res) => res.json().then((json) => ({ res, json })))
-                      .then(({ res, json }) => {
-                        if (!res.ok || json?.ok === false) {
-                          setCalendarError(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."));
-                          toast(sanitizeUiErrorMessage(json?.error, "Não foi possível desfazer."), "err");
-                        } else {
-                          setCalendarMessage("Desfeito.");
-                          toast("Desfeito", "ok");
-                          setLastAction(null);
-                          mutateCalendar();
-                        }
-                      })
-                      .catch(() => {
-                        setCalendarError("Erro ao desfazer.");
-                      })
-                      .finally(() => setSavingCalendar(false));
-                  }}
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
-                >
-                  Desfazer último
-                </button>
-              )}
-              {editingAvailabilityId && (
-                <button
-                  type="button"
-                  onClick={resetCalendarForms}
-                  className="inline-flex items-center justify-center rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:border-white/40"
-                >
-                  Cancelar edição
-                </button>
-              )}
-              {!eventId && <p className="text-[12px] text-white/55">Precisas de eventId no URL.</p>}
-            </div>
+            <CalendarMatrixPanel
+              eventId={eventId}
+              isCalendarLoading={isCalendarLoading}
+              padelEventsLoading={padelEventsLoading}
+              padelEventsCount={padelEvents.length}
+              tournamentsCreateHref={tournamentsCreateHref}
+              padelEventsError={padelEventsError}
+              hasSelectedEvent={Boolean(selectedEvent)}
+              calendarError={calendarError}
+              calendarWarning={calendarWarning}
+              calendarMessage={calendarMessage}
+              calendarScope={calendarScope}
+              selectedDay={selectedDay}
+              selectedDayLabel={startOfDay ? formatZoned(startOfDay, calendarTimezone) : null}
+              onCalendarScopeChange={setCalendarScope}
+              weekStart={weekStart}
+              calendarCourts={calendarCourts.map((court) => ({ id: court.id, name: court.name }))}
+              calendarMatches={calendarMatches}
+              calendarBlocks={calendarBlocks}
+              calendarAvailabilities={calendarAvailabilities}
+              calendarTimezone={calendarTimezone}
+              warnings={v2Warnings}
+              conflictsCount={calendarConflicts.length}
+              byCategory={autoScheduleByCategory.map((row) => ({
+                ...row,
+                categoryLabel:
+                  row.categoryId === null
+                    ? "global"
+                    : eventCategoryLabelById.get(row.categoryId) || `#${row.categoryId}`,
+              }))}
+              unscheduledRows={v2UnscheduledRows}
+              autoScheduling={autoScheduling}
+              onGenerate={generateCalendarMatches}
+              onSimulate={previewAutoSchedule}
+              onApply={runAutoSchedule}
+              onUndoLastRun={
+                lastAutoScheduleRunId && latestAutoScheduleRun?.applied !== false ? undoAutoScheduleRun : undefined
+              }
+              onQuickMoveMatch={quickMoveCalendarMatch}
+              onEditMatch={handleEditMatchById}
+              selectedMatchIds={selectedMatchIds}
+              onToggleSelectMatch={toggleSelectedMatch}
+              latestRun={latestAutoScheduleRun}
+              roundOps={{
+                categoryKey: roundOpsCategoryKey,
+                categoryOptions: runtimeCategoryKeys.map((key) => ({
+                  key,
+                  label: formatRuntimeCategoryLabel(key),
+                })),
+                onCategoryChange: setRoundOpsCategoryKey,
+                formatLabel: roundOpsFormatLabel,
+                roundLabel: roundOpsRoundLabel,
+                note: selectedRoundOpsCategoryTeamHint,
+                hasRuntime: roundOpsHasRuntime,
+                busy: roundOpsBusy,
+                profileBusy: roundOpsProfileBusy,
+                onSimulate: () => runRoundsAdvance(true),
+                onAdvance: () => runRoundsAdvance(false),
+                message: roundOpsMessage,
+                warning: roundOpsWarning,
+                error: roundOpsError,
+              }}
+            />
+            <CalendarExportPanel eventId={eventId} links={calendarExportLinks} />
           </div>
+          <CalendarManualAdjustmentsPanel
+            eventId={eventId}
+            timezone={calendarTimezone}
+            saving={savingCalendar}
+            formatZoned={formatZoned}
+            blockForm={blockForm}
+            onBlockFormChange={(patch) => setBlockForm((prev) => ({ ...prev, ...patch }))}
+            onSaveBlock={() => saveCalendarItem("block")}
+            editingBlockId={editingBlockId}
+            onCancelBlockEdit={resetCalendarForms}
+            canUndoBlock={Boolean(lastAction && lastAction.type === "block")}
+            onUndoBlock={() => undoCalendarAction("block")}
+            blocks={calendarBlocks}
+            onEditBlock={handleEditBlockById}
+            onDeleteBlock={(id) => handleDeleteCalendarItem("block", id)}
+            availabilityForm={availabilityForm}
+            onAvailabilityFormChange={(patch) => setAvailabilityForm((prev) => ({ ...prev, ...patch }))}
+            onSaveAvailability={() => saveCalendarItem("availability")}
+            editingAvailabilityId={editingAvailabilityId}
+            onCancelAvailabilityEdit={resetCalendarForms}
+            canUndoAvailability={Boolean(lastAction && lastAction.type === "availability")}
+            onUndoAvailability={() => undoCalendarAction("availability")}
+            availabilities={calendarAvailabilities}
+            onEditAvailability={handleEditAvailabilityById}
+            onDeleteAvailability={(id) => handleDeleteCalendarItem("availability", id)}
+          />
+          <CalendarMatchAdjustmentsPanel
+            eventId={eventId}
+            timezone={calendarTimezone}
+            saving={savingCalendar}
+            formatZoned={formatZoned}
+            matches={calendarMatches}
+            courts={calendarCourts.map((court) => ({ id: court.id, name: court.name }))}
+            editingMatchId={editingMatchId}
+            selectedMatchIds={selectedMatchIds}
+            form={matchForm}
+            onFormChange={(patch) => setMatchForm((prev) => ({ ...prev, ...patch }))}
+            onSave={saveCalendarMatchSchedule}
+            onCancel={resetMatchScheduleForm}
+            onEditMatch={handleEditMatchById}
+            onToggleSelectMatch={toggleSelectedMatch}
+            onClearSelection={clearSelectedMatches}
+            onBulkMove={bulkMoveSelectedMatches}
+          />
         </div>
       )}
 
       {!switchingTab && showCourtsPanel && (
-        <div className="space-y-4 transition-all duration-250 ease-out opacity-100 translate-y-0">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-white">Clubes</h2>
-              <p className="text-[12px] text-white/65">
-                Criação de clubes e gestão de campos no mesmo fluxo.
-              </p>
-              {isPadelReadOnly && (
-                <p className="mt-2 text-[12px] text-amber-200">Modo apenas leitura: sem permissões para alterar clubes.</p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={openNewClubModal}
-                disabled={isPadelReadOnly}
-                className={CTA_PAD_PRIMARY}
-              >
-                {visibleClubs.length > 0 ? "Editar clube" : "Novo clube"}
-              </button>
-            </div>
-          </div>
-          {visibleClubs.length === 0 ? (
-            <div className="rounded-2xl border border-white/15 bg-white/5 p-6 text-white shadow-[0_16px_50px_rgba(0,0,0,0.45)]">
-              <p className="text-lg font-semibold">Sem clubes.</p>
-              <p className="text-sm text-white/70">Adiciona o clube principal com morada e campos.</p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={openNewClubModal}
-                  disabled={isPadelReadOnly}
-                  className={CTA_PAD_PRIMARY}
-                >
-                  Criar clube
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {visibleClubs.map((club) => {
-                return (
-                  <div
-                    key={club.id}
-                    className={`rounded-2xl p-4 shadow-[0_16px_60px_rgba(0,0,0,0.45)] ${
-                      club.isActive
-                        ? "border border-emerald-400/40 bg-emerald-500/5"
-                        : "border border-red-500/40 bg-red-500/8"
-                    } ${drawerClubId === club.id ? "ring-2 ring-cyan-400/40" : ""}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setDrawerClubId(club.id);
-                      loadCourtsAndStaff(club.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setDrawerClubId(club.id);
-                        loadCourtsAndStaff(club.id);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-base font-semibold text-white">{club.name}</p>
-                        <p className="text-[12px] text-white/65">{compactAddress(club)}</p>
-                        <p className="text-[12px] text-white/55">Campos ativos: {activeCourtsForClub(club)}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <span
-                          className={
-                            club.isActive
-                              ? badge("green")
-                              : "rounded-full border border-red-400/50 bg-red-500/15 px-3 py-1 text-[12px] text-red-100"
-                          }
-                        >
-                          {club.isActive ? "Ativo" : "Inativo"}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      {!isPadelReadOnly && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setClubDialog({ club, nextActive: !club.isActive });
-                          }}
-                          className={`rounded-full border px-3 py-1.5 text-[12px] ${
-                            club.isActive
-                              ? "border-amber-300/60 bg-amber-400/15 text-amber-50 hover:border-amber-200/80"
-                              : "border-emerald-400/60 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/80"
-                          }`}
-                        >
-                          {club.isActive ? "Arquivar" : "Reativar"}
-                        </button>
-                      )}
-                      {!isPadelReadOnly && !club.isActive && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteClubDialog(club);
-                          }}
-                          className="rounded-full border border-red-400/60 bg-red-500/15 px-3 py-1.5 text-[12px] text-red-50 hover:border-red-300/80"
-                        >
-                          Apagar
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {drawerClubId && selectedClub && (
-            <div className="space-y-4 rounded-2xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/65 to-[#050912]/85 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.5)]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-[12px] uppercase tracking-[0.18em] text-white/60">Campos do clube</p>
-                  <p className="text-sm text-white/70">Atualização operacional dos campos por clube.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={badge("slate")}>{selectedClub.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDrawerClubId(null)}
-                    className="rounded-full border border-white/15 px-3 py-1 text-[12px] text-white hover:border-white/30"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              </div>
-
-              {loadingDrawer && (
-                <div className="space-y-3">
-                  <div className="h-4 w-32 rounded bg-white/10 animate-pulse" />
-                  <div className={`grid gap-3 ${showClubStaffPanel ? "lg:grid-cols-2" : ""}`}>
-                    {[...Array(showClubStaffPanel ? 2 : 1)].map((_, idx) => (
-                      <div key={idx} className="space-y-2 rounded-xl border border-white/12 bg-white/5 p-3 animate-pulse">
-                        <div className="h-4 w-1/2 rounded bg-white/10" />
-                        <div className="h-10 rounded bg-white/5" />
-                        <div className="h-10 rounded bg-white/5" />
-                        <div className="h-3 w-24 rounded bg-white/10" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className={`grid gap-4 ${showClubStaffPanel ? "lg:grid-cols-2" : ""}`}>
-                <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-white">Campos do clube</p>
-                    <span className={badge("slate")}>{courts.filter((c) => c.isActive).length} ativos</span>
-                  </div>
-                  {courtsPanelReadOnly && (
-                    <p className="text-[11px] text-amber-200">Sem permissões para editar campos neste modo.</p>
-                  )}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <input
-                      value={courtForm.name}
-                      onChange={(e) => setCourtForm((p) => ({ ...p, name: e.target.value }))}
-                      disabled={courtsPanelReadOnly}
-                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
-                      placeholder="Nome do campo"
-                    />
-                    <input
-                      value={courtForm.description}
-                      onChange={(e) => setCourtForm((p) => ({ ...p, description: e.target.value }))}
-                      disabled={courtsPanelReadOnly}
-                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF] disabled:opacity-60"
-                      placeholder="Descrição / patrocinador (opcional)"
-                    />
-                    <div className="col-span-2 flex flex-wrap items-center gap-2 text-sm text-white/80">
-                      <span className="text-[12px] uppercase tracking-[0.2em] text-white/60">Tipo</span>
-                      <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                        {[
-                          { key: false, label: "Outdoor" },
-                          { key: true, label: "Indoor" },
-                        ].map((opt) => (
-                          <button
-                            key={String(opt.key)}
-                            type="button"
-                            onClick={() => setCourtForm((p) => ({ ...p, indoor: opt.key as boolean }))}
-                            className={`rounded-full px-3 py-1 transition ${
-                              courtForm.indoor === opt.key
-                                ? "bg-white text-black font-semibold shadow"
-                                : "text-white/75 hover:bg-white/5"
-                            }`}
-                            disabled={courtsPanelReadOnly}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                        {[
-                          { key: true, label: "Ativo" },
-                          { key: false, label: "Inativo" },
-                        ].map((opt) => (
-                          <button
-                            key={String(opt.key)}
-                            type="button"
-                            onClick={() => setCourtForm((p) => ({ ...p, isActive: opt.key as boolean }))}
-                            className={`rounded-full px-3 py-1 transition ${
-                              courtForm.isActive === opt.key
-                                ? opt.key
-                                  ? "bg-emerald-400 text-black font-semibold"
-                                  : "bg-white text-black font-semibold"
-                                : "text-white/75 hover:bg-white/5"
-                            }`}
-                            disabled={courtsPanelReadOnly}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSubmitCourt}
-                      disabled={savingCourt || courtsPanelReadOnly}
-                      className={`${CTA_PAD_PRIMARY_SM} disabled:opacity-60 disabled:cursor-not-allowed`}
-                    >
-                      {savingCourt ? "A guardar…" : courtForm.id ? "Atualizar campo" : "Guardar campo"}
-                    </button>
-                    {courtForm.id && (
-                      <button
-                        type="button"
-                        onClick={resetCourtForm}
-                        disabled={courtsPanelReadOnly}
-                        className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white hover:border-white/35 disabled:opacity-60"
-                      >
-                        Cancelar
-                      </button>
-                    )}
-                  </div>
-                  {(courtError || courtMessage) && (
-                    <span className="text-[12px] text-white/70">{courtError || courtMessage}</span>
-                  )}
-                  <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-2 text-[12px] text-white/80">
-                    {courts.length === 0 && <p className="text-white/60">Sem campos ainda.</p>}
-                    {courts.map((c, idx) => (
-                      <div
-                        key={c.id}
-                        draggable={!courtsPanelReadOnly}
-                        onDragStart={() => setDraggingCourtId(c.id)}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          if (courtsPanelReadOnly) return;
-                          const updated = reorderCourts(c.id);
-                          if (updated) {
-                            persistCourtOrder(updated);
-                          }
-                          setDraggingCourtId(null);
-                        }}
-                        onDragEnd={() => setDraggingCourtId(null)}
-                        className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 transition ${
-                          c.isActive
-                            ? "border border-emerald-400/35 bg-emerald-500/5"
-                            : "border border-red-500/40 bg-red-500/8"
-                        } ${draggingCourtId === c.id ? "opacity-60" : "opacity-100"}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`flex h-10 w-10 items-center justify-center rounded-full border text-lg font-bold ${
-                              c.isActive
-                                ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-50"
-                                : "border-red-400/40 bg-red-500/10 text-red-100"
-                            }`}
-                          >
-                            {idx + 1}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-white">{c.name}</p>
-                            <p className={`text-[11px] ${c.isActive ? "text-emerald-100/80" : "text-red-100/80"}`}>
-                              {c.indoor ? "Indoor" : "Outdoor"} · Ordem {c.displayOrder} · {c.isActive ? "Ativo" : "Inativo"}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleEditCourt(c)}
-                            disabled={courtsPanelReadOnly}
-                            className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white hover:border-white/30 disabled:opacity-60"
-                          >
-                            Editar
-                          </button>
-                          {!courtsPanelReadOnly && (
-                            <button
-                              type="button"
-                              onClick={() => setCourtDialog({ court: c, nextActive: !c.isActive })}
-                              className={`rounded-full border px-2 py-1 text-[11px] ${
-                                c.isActive
-                                  ? "border-amber-300/60 bg-amber-400/15 text-amber-50 hover:border-amber-200/80"
-                                  : "border-emerald-400/60 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/80"
-                              }`}
-                            >
-                              {c.isActive ? "Desativar" : "Reativar"}
-                            </button>
-                          )}
-                          {!courtsPanelReadOnly && !c.isActive && (
-                            <button
-                              type="button"
-                              onClick={() => setDeleteCourtDialog(c)}
-                              className="rounded-full border border-red-400/60 bg-red-500/15 px-2 py-1 text-[11px] text-red-50 hover:border-red-300/80"
-                            >
-                              Apagar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {showClubStaffPanel && (
-                  <div className="space-y-3 rounded-xl border border-white/12 bg-gradient-to-br from-white/6 via-[#0c1628]/60 to-[#050912]/85 p-3 shadow-[0_14px_45px_rgba(0,0,0,0.45)]">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-white">Staff do clube</p>
-                      <p className="text-[11px] text-white/60">
-                        {staff.length} membros · {inheritedStaffCount} herdam para torneios
-                      </p>
-                    </div>
-                    <span className={badge("slate")}>Herdam: {inheritedStaffCount}</span>
-                  </div>
-                  {courtsPanelReadOnly && (
-                    <p className="text-[11px] text-amber-200">Sem permissões para editar staff neste modo.</p>
-                  )}
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {[
-                      {
-                        key: "existing",
-                        label: "Staff da organização",
-                        desc: "Reaproveita quem já tens no staff global e herda para torneios.",
-                      },
-                      {
-                        key: "external",
-                        label: "Contacto externo",
-                        desc: "Envia convite por email. Só entra no clube após aceitar com conta ORYA.",
-                      },
-                    ].map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => setStaffMode(opt.key as typeof staffMode)}
-                        disabled={courtsPanelReadOnly}
-                        className={`rounded-xl border p-3 text-left transition ${
-                          staffMode === opt.key
-                            ? "border-white/60 bg-white/10 shadow-[0_10px_35px_rgba(0,0,0,0.45)]"
-                            : "border-white/15 bg-white/5 hover:border-white/30"
-                        } disabled:cursor-not-allowed disabled:opacity-60`}
-                      >
-                        <p className="font-semibold text-white">{opt.label}</p>
-                        <p className="text-[12px] text-white/65">{opt.desc}</p>
-                      </button>
-                    ))}
-                  </div>
-
-                  {staffMode === "existing" ? (
-                    <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          value={staffSearch}
-                          onChange={(e) => setStaffSearch(e.target.value)}
-                          disabled={courtsPanelReadOnly}
-                          className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                          placeholder="Pesquisar membro (nome, email, username)"
-                        />
-                        <select
-                          value={staffForm.staffMemberId}
-                          onChange={(e) => setStaffForm((p) => ({ ...p, staffMemberId: e.target.value }))}
-                          disabled={courtsPanelReadOnly}
-                          className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                        >
-                          <option value="">Escolhe membro</option>
-                          {staffOptions.map((m) => (
-                            <option key={m.userId} value={m.userId}>
-                              {(m.fullName || m.username || m.email || "Membro").trim()} {m.email ? `· ${m.email}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      {staffForm.staffMemberId && (
-                        <div className="rounded-lg border border-white/15 bg-white/5 p-3 text-[12px] text-white/75">
-                          <p className="font-semibold text-white/90">Resumo rápido</p>
-                          <p className="text-white/70">
-                            Herdado do staff global; ficará marcado como herdado neste clube e nos torneios.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-2 rounded-xl border border-white/12 bg-black/30 p-3">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          value={staffForm.email}
-                          onChange={(e) => setStaffForm((p) => ({ ...p, email: e.target.value }))}
-                          disabled={courtsPanelReadOnly}
-                          className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                          placeholder="Email do contacto"
-                        />
-                        <div className="rounded-lg border border-white/15 bg-black/25 px-3 py-2 text-[12px] text-white/70">
-                          O email recebe convite e a pessoa só entra quando aceitar com conta ORYA.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <select
-                      value={staffForm.role}
-                      onChange={(e) => setStaffForm((p) => ({ ...p, role: e.target.value }))}
-                      disabled={courtsPanelReadOnly}
-                      className="rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm outline-none focus:border-[#6BFFFF]"
-                    >
-                      <option value="ADMIN_CLUBE">Admin clube</option>
-                      <option value="DIRETOR_PROVA">Diretor / Árbitro</option>
-                      <option value="STAFF">Staff de campo</option>
-                    </select>
-                    <div className="inline-flex rounded-full border border-white/15 bg-black/40 p-1 text-[12px]">
-                      {[
-                        { key: true, label: "Herdar para torneios" },
-                        { key: false, label: "Só neste clube" },
-                      ].map((opt) => (
-                        <button
-                          key={String(opt.key)}
-                          type="button"
-                          onClick={() => setStaffForm((p) => ({ ...p, inheritToEvents: opt.key as boolean }))}
-                          disabled={courtsPanelReadOnly}
-                          className={`rounded-full px-3 py-1 transition ${
-                            staffForm.inheritToEvents === opt.key
-                              ? "bg-white text-black font-semibold shadow"
-                              : "text-white/75 hover:bg-white/5"
-                          } disabled:cursor-not-allowed disabled:opacity-60`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSubmitStaff}
-                      disabled={courtsPanelReadOnly}
-                      className={`${CTA_PAD_PRIMARY_SM} disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      {staffForm.id ? "Atualizar" : "Adicionar"}
-                    </button>
-                    {staffForm.id && (
-                      <button
-                        type="button"
-                        onClick={resetStaffForm}
-                        disabled={courtsPanelReadOnly}
-                        className="rounded-full border border-white/20 px-3 py-1.5 text-[12px] text-white hover:border-white/35 disabled:opacity-60"
-                      >
-                        Cancelar
-                      </button>
-                    )}
-                    {(staffError || staffMessage || staffInviteNotice) && (
-                      <span className="text-[12px] text-white/70">
-                        {staffError || staffMessage || staffInviteNotice}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 rounded-lg border border-white/12 bg-white/5 p-2 text-[12px] text-white/80">
-                    {staff.length === 0 && <p className="text-white/60">Sem staff.</p>}
-                    {staff.map((s) => (
-                      <div
-                        key={s.id}
-                        className="flex items-center justify-between rounded-md border border-white/10 bg-black/40 px-2 py-1.5"
-                      >
-                        <div className="space-y-0.5">
-                          <p className="text-sm text-white">{s.user?.fullName || s.user?.username || s.userId}</p>
-                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/60">
-                            <span className="rounded-full border border-white/20 bg-white/5 px-2 py-[2px]">{s.role}</span>
-                            <span
-                              className={`rounded-full border px-2 py-[2px] ${
-                                s.inheritToEvents
-                                  ? "border-emerald-300/50 bg-emerald-500/10 text-emerald-100"
-                                  : "border-white/20 bg-white/5 text-white/70"
-                              }`}
-                            >
-                              {s.inheritToEvents ? "Herdado" : "Só clube"}
-                            </span>
-                            {s.user?.username && (
-                              <span className="rounded-full border border-white/15 bg-white/5 px-2 py-[2px]">
-                                @{s.user.username}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleEditStaff(s)}
-                          disabled={courtsPanelReadOnly}
-                          className="rounded-full border border-white/15 px-2 py-1 text-[11px] text-white hover:border-white/30 disabled:opacity-60"
-                        >
-                          Editar
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <ClubsManagementPanel
+          isPadelReadOnly={isPadelReadOnly}
+          showClubStaffPanel={showClubStaffPanel}
+          visibleClubs={visibleClubs}
+          drawerClubId={drawerClubId}
+          selectedClub={selectedClub}
+          loadingDrawer={loadingDrawer}
+          courtsPanelReadOnly={courtsPanelReadOnly}
+          courts={courts}
+          courtForm={courtForm}
+          savingCourt={savingCourt}
+          courtError={courtError}
+          courtMessage={courtMessage}
+          draggingCourtId={draggingCourtId}
+          staff={staff}
+          inheritedStaffCount={inheritedStaffCount}
+          staffMode={staffMode}
+          staffSearch={staffSearch}
+          staffForm={staffForm}
+          staffOptions={staffOptions}
+          staffError={staffError}
+          staffMessage={staffMessage}
+          staffInviteNotice={staffInviteNotice}
+          ctaPrimaryClass={CTA_PAD_PRIMARY}
+          ctaPrimarySmClass={CTA_PAD_PRIMARY_SM}
+          badgeClass={badge}
+          compactAddress={compactAddress}
+          activeCourtsForClub={activeCourtsForClub}
+          onOpenNewClubModal={openNewClubModal}
+          onSelectClub={(clubId) => {
+            setDrawerClubId(clubId);
+            loadCourtsAndStaff(clubId);
+          }}
+          onToggleClubActiveDialog={(club) => setClubDialog({ club, nextActive: !club.isActive })}
+          onDeleteClubDialog={(club) => setDeleteClubDialog(club)}
+          onCloseDrawer={() => setDrawerClubId(null)}
+          onCourtFormPatch={(patch) => setCourtForm((prev) => ({ ...prev, ...patch }))}
+          onSubmitCourt={handleSubmitCourt}
+          onResetCourt={resetCourtForm}
+          onCourtDragStart={setDraggingCourtId}
+          onCourtDrop={(courtId) => {
+            if (courtsPanelReadOnly) return;
+            const updated = reorderCourts(courtId);
+            if (updated) {
+              persistCourtOrder(updated);
+            }
+            setDraggingCourtId(null);
+          }}
+          onCourtDragEnd={() => setDraggingCourtId(null)}
+          onEditCourt={handleEditCourt}
+          onToggleCourtActiveDialog={(court) => setCourtDialog({ court, nextActive: !court.isActive })}
+          onDeleteCourtDialog={setDeleteCourtDialog}
+          onStaffModeChange={setStaffMode}
+          onStaffSearchChange={setStaffSearch}
+          onStaffFormPatch={(patch) => setStaffForm((prev) => ({ ...prev, ...patch }))}
+          onSubmitStaff={handleSubmitStaff}
+          onResetStaff={resetStaffForm}
+          onEditStaff={handleEditStaff}
+        />
       )}
 
       {!switchingTab && activeTab === "categories" && (

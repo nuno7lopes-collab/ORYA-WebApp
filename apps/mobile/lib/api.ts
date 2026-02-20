@@ -75,6 +75,27 @@ const isUnauthorizedError = (err: unknown) => {
 };
 
 const isNotFoundErrorMessage = (message: string) => message.includes("API 404");
+const EXPECTED_DEV_BUSINESS_CONFLICT_CODES = new Set([
+  "PAIRING_ALREADY_ACTIVE",
+  "ORGANIZATION_STRIPE_NOT_CONNECTED",
+  "ORGANIZATION_PAYMENTS_NOT_READY",
+]);
+const isStorePaymentsNotReadyError = (path: string, message: string) => {
+  if (!path.toLowerCase().includes("/api/public/store/")) return false;
+  return message.toUpperCase().includes("PAYMENTS_NOT_READY");
+};
+const isExpectedBusinessConflictErrorMessage = (message: string) => {
+  const normalized = message.toUpperCase();
+  if (!normalized.includes("API 409")) return false;
+  for (const code of EXPECTED_DEV_BUSINESS_CONFLICT_CODES) {
+    if (normalized.includes(code)) return true;
+  }
+  return false;
+};
+const shouldSuppressDevWarning = (path: string, message: string) =>
+  isNotFoundErrorMessage(message) ||
+  isStorePaymentsNotReadyError(path, message) ||
+  isExpectedBusinessConflictErrorMessage(message);
 
 const hasAuthorizationHeader = (headers?: RequestInit["headers"]) => {
   if (!headers) return false;
@@ -223,7 +244,7 @@ export const api = {
       }
       if (isDev) {
         const duration = Date.now() - startedAt;
-        if (!isNotFoundErrorMessage(errorMessage)) {
+        if (!shouldSuppressDevWarning(path, errorMessage)) {
           console.warn(
             `[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`,
           );
@@ -266,7 +287,7 @@ export const api = {
         }
         if (isDev) {
           const duration = Date.now() - startedAt;
-          if (!isNotFoundErrorMessage(retryMessage)) {
+          if (!shouldSuppressDevWarning(path, retryMessage)) {
             console.warn(
               `[api] ${method} ${path} retry failed in ${duration}ms: ${retryMessage}`,
             );
@@ -366,7 +387,7 @@ export const api = {
       }
       if (isDev) {
         const duration = Date.now() - startedAt;
-        if (!isNotFoundErrorMessage(errorMessage)) {
+        if (!shouldSuppressDevWarning(path, errorMessage)) {
           console.warn(
             `[api] ${method} ${path} failed in ${duration}ms: ${errorMessage}`,
           );
@@ -446,23 +467,29 @@ export const unwrapApiResponse = <T>(payload: unknown, status = 200): T => {
       ? statusFromDetails
       : null) ??
     (Number.isFinite(status) ? status : 500);
+  const isExpectedBusinessConflict =
+    finalStatus === 409 &&
+    typeof finalErrorCode === "string" &&
+    EXPECTED_DEV_BUSINESS_CONFLICT_CODES.has(finalErrorCode);
   if (isDev) {
     const envelope = payload as ApiEnvelope<unknown> & {
       requestId?: string;
       correlationId?: string;
     };
-    const logger = finalStatus >= 500 ? console.warn : console.info;
-    logger("[api] envelope_error", {
-      status: finalStatus,
-      errorCode: finalErrorCode,
-      message: envelope.message ?? null,
-      requestId: (envelope as any).requestId ?? null,
-      correlationId: (envelope as any).correlationId ?? null,
-      error:
-        typeof envelope.error === "string"
-          ? envelope.error
-          : ((envelope.error as any)?.message ?? null),
-    });
+    if (!isExpectedBusinessConflict) {
+      const logger = finalStatus >= 500 ? console.warn : console.info;
+      logger("[api] envelope_error", {
+        status: finalStatus,
+        errorCode: finalErrorCode,
+        message: envelope.message ?? null,
+        requestId: (envelope as any).requestId ?? null,
+        correlationId: (envelope as any).correlationId ?? null,
+        error:
+          typeof envelope.error === "string"
+            ? envelope.error
+            : ((envelope.error as any)?.message ?? null),
+      });
+    }
   }
   throw new ApiError(finalStatus, message, finalErrorCode);
 };

@@ -20,8 +20,8 @@ const variants: Record<SettingsButtonVariant, { background: string; border: stri
     text: "#0b0f16",
   },
   secondary: {
-    background: "rgba(255,255,255,0.14)",
-    border: "rgba(255,255,255,0.3)",
+    background: "rgba(255,255,255,0.16)",
+    border: "rgba(255,255,255,0.36)",
     text: "rgba(255,255,255,0.95)",
   },
   ghost: {
@@ -30,9 +30,9 @@ const variants: Record<SettingsButtonVariant, { background: string; border: stri
     text: "rgba(255,255,255,0.92)",
   },
   danger: {
-    background: "rgba(255, 74, 112, 0.28)",
-    border: "rgba(255, 74, 112, 0.65)",
-    text: "#FFF0F4",
+    background: "rgba(255, 62, 96, 0.44)",
+    border: "rgba(255, 112, 132, 0.92)",
+    text: "#FFF6F7",
   },
 };
 
@@ -64,9 +64,9 @@ export function SettingsButton({
         };
       case "danger":
         return {
-          background: "rgba(255, 74, 112, 0.14)",
-          border: "rgba(255, 74, 112, 0.35)",
-          text: "rgba(255, 227, 234, 0.75)",
+          background: "rgba(255, 62, 96, 0.2)",
+          border: "rgba(255, 112, 132, 0.5)",
+          text: "rgba(255, 236, 239, 0.78)",
         };
       case "ghost":
       default:

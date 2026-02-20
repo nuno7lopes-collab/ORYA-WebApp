@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { fetchDiscoverPage } from "./api";
 import { DiscoverDateFilter, DiscoverKind, DiscoverPriceFilter } from "./types";
+import { quantizeGeoKeyValue } from "./geoKey";
 
 export const useDebouncedValue = <T>(value: T, delayMs: number): T => {
   const [debounced, setDebounced] = useState(value);
@@ -32,7 +33,7 @@ export const useDiscoverFeed = (
   return useInfiniteQuery({
     queryKey,
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       fetchDiscoverPage({
         q: params.q.trim() || undefined,
         type: params.type,
@@ -40,6 +41,7 @@ export const useDiscoverFeed = (
         date: params.date,
         city: params.city.trim() || undefined,
         cursor: pageParam,
+        signal,
       }),
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.nextCursor : null),
     staleTime: 1000 * 60 * 2,
@@ -66,9 +68,18 @@ export const useDiscoverMapEvents = (
     south?: number;
     east?: number;
     west?: number;
+    lat?: number;
+    lng?: number;
   },
   enabled = true,
 ) => {
+  const northQ = quantizeGeoKeyValue(params.north);
+  const southQ = quantizeGeoKeyValue(params.south);
+  const eastQ = quantizeGeoKeyValue(params.east);
+  const westQ = quantizeGeoKeyValue(params.west);
+  const latQ = quantizeGeoKeyValue(params.lat);
+  const lngQ = quantizeGeoKeyValue(params.lng);
+
   const queryKey = useMemo(
     () => [
       "discover-map",
@@ -82,34 +93,39 @@ export const useDiscoverMapEvents = (
       params.templateTypes ?? "",
       typeof params.priceMin === "number" ? params.priceMin : "min-null",
       typeof params.priceMax === "number" ? params.priceMax : "max-null",
-      typeof params.north === "number" ? params.north : "north-null",
-      typeof params.south === "number" ? params.south : "south-null",
-      typeof params.east === "number" ? params.east : "east-null",
-      typeof params.west === "number" ? params.west : "west-null",
+      typeof northQ === "number" ? northQ : "north-null",
+      typeof southQ === "number" ? southQ : "south-null",
+      typeof eastQ === "number" ? eastQ : "east-null",
+      typeof westQ === "number" ? westQ : "west-null",
+      typeof latQ === "number" ? latQ : "lat-null",
+      typeof lngQ === "number" ? lngQ : "lng-null",
     ],
     [
       params.city,
       params.date,
       params.endDate,
       params.limit,
-      params.north,
-      params.south,
-      params.east,
-      params.west,
       params.priceMax,
       params.priceMin,
       params.q,
       params.startDate,
       params.templateTypes,
       params.type,
+      northQ,
+      southQ,
+      eastQ,
+      westQ,
+      latQ,
+      lngQ,
     ],
   );
 
   return useQuery({
     queryKey,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       fetchDiscoverPage({
         q: params.q?.trim() || undefined,
+        mode: "map",
         type: params.type,
         kind: "events",
         date: params.date,
@@ -120,11 +136,15 @@ export const useDiscoverMapEvents = (
         templateTypes: params.templateTypes,
         priceMin: params.priceMin ?? undefined,
         priceMax: params.priceMax ?? undefined,
-        north: params.north,
-        south: params.south,
-        east: params.east,
-        west: params.west,
+        north: northQ ?? undefined,
+        south: southQ ?? undefined,
+        east: eastQ ?? undefined,
+        west: westQ ?? undefined,
+        lat: latQ ?? undefined,
+        lng: lngQ ?? undefined,
+        signal,
       }),
+    placeholderData: (previous) => previous,
     staleTime: 1000 * 60 * 2,
     gcTime: 10 * 60_000,
     retry: 1,

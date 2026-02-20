@@ -1385,6 +1385,19 @@ async function main() {
           payoutMode: "ORGANIZATION",
         },
       });
+      await prisma.eventAccessPolicy.create({
+        data: {
+          eventId: event.id,
+          policyVersion: 1,
+          mode: "PUBLIC",
+          guestCheckoutAllowed: true,
+          inviteTokenAllowed: false,
+          inviteIdentityMatch: "BOTH",
+          inviteTokenTtlSeconds: null,
+          requiresEntitlementForEntry: false,
+          checkinMethods: [],
+        },
+      });
 
       standardEvents.push({ id: event.id, organizationId: org.id, startsAt });
 
@@ -1777,6 +1790,19 @@ async function main() {
           coverImageUrl: seedCoverUrl("tournament", i),
           feeMode: "INCLUDED",
           payoutMode: "ORGANIZATION",
+        },
+      });
+      await prisma.eventAccessPolicy.create({
+        data: {
+          eventId: event.id,
+          policyVersion: 1,
+          mode: "PUBLIC",
+          guestCheckoutAllowed: true,
+          inviteTokenAllowed: false,
+          inviteIdentityMatch: "BOTH",
+          inviteTokenTtlSeconds: null,
+          requiresEntitlementForEntry: false,
+          checkinMethods: [],
         },
       });
 

@@ -12,7 +12,7 @@ import {
 import { BlurView } from "expo-blur";
 import { Ionicons } from "../../icons/Ionicons";
 import { formatCurrency } from "../../../lib/formatters";
-import { tokens } from "@orya/shared";
+import { tokens, useTranslation } from "@orya/shared";
 
 export type TicketSelectorItem = {
   id: number;
@@ -37,6 +37,7 @@ type TicketSelectorSheetProps = {
   currency: string;
   canSubmit: boolean;
   submitting: boolean;
+  submitLabel?: string;
   onClose: () => void;
   onIncrement: (id: number) => void;
   onDecrement: (id: number) => void;
@@ -46,20 +47,29 @@ type TicketSelectorSheetProps = {
 
 export function TicketSelectorSheet({
   visible,
-  title = "Comprar bilhetes",
+  title,
   items,
   totalCents,
   currency,
   canSubmit,
   submitting,
+  submitLabel,
   onClose,
   onIncrement,
   onDecrement,
   onSubmit,
-  emptyStateMessage = null,
+  emptyStateMessage,
 }: TicketSelectorSheetProps) {
+  const { t } = useTranslation();
   const translateY = useRef(new Animated.Value(380)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const resolvedTitle = title ?? t("events:tickets.title");
+  const resolvedSubmitLabel =
+    submitLabel ?? t("events:tickets.sheet.submit.default");
+  const resolvedEmptyStateMessage =
+    emptyStateMessage ?? t("events:tickets.unavailableNow");
+  const submitDisabled = !canSubmit || submitting;
+  const submitMuted = !canSubmit && !submitting;
 
   useEffect(() => {
     if (!visible) return;
@@ -81,18 +91,23 @@ export function TicketSelectorSheet({
 
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} accessibilityRole="button" accessibilityLabel="Fechar seleção de bilhetes">
+      <Pressable
+        style={styles.overlay}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel={t("events:tickets.sheet.closeSelection")}
+      >
         <Animated.View style={[styles.overlayDim, { opacity }]} />
       </Pressable>
       <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <BlurView tint="dark" intensity={90} style={StyleSheet.absoluteFill} />
         <View style={styles.handle} />
         <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.title}>{resolvedTitle}</Text>
           <Pressable
             onPress={onClose}
             accessibilityRole="button"
-            accessibilityLabel="Fechar"
+            accessibilityLabel={t("common:actions.close")}
             style={({ pressed }) => [styles.close, pressed ? styles.pressed : null]}
           >
             <Ionicons name="close" size={18} color="rgba(240,247,255,0.92)" />
@@ -108,7 +123,7 @@ export function TicketSelectorSheet({
                 color="rgba(229,242,255,0.72)"
               />
               <Text style={styles.emptyStateText}>
-                {emptyStateMessage ?? "Sem bilhetes disponíveis neste momento."}
+                {resolvedEmptyStateMessage}
               </Text>
             </View>
           ) : (
@@ -122,73 +137,72 @@ export function TicketSelectorSheet({
                     <Text style={styles.ticketName} numberOfLines={2}>
                       {item.name}
                     </Text>
-                    {item.quantity > 0 ? (
-                      <View style={styles.qtyBadge}>
-                        <Text style={styles.qtyBadgeText}>{item.quantity}</Text>
-                      </View>
-                    ) : null}
                   </View>
                   {item.description ? (
                     <Text style={styles.ticketDescription} numberOfLines={2}>
                       {item.description}
                     </Text>
                   ) : null}
-                  <View style={styles.ticketMetaRow}>
+                  <View style={styles.ticketBottomRow}>
                     <Text style={styles.ticketPrice}>
-                      {item.priceCents <= 0 ? "Grátis" : formatCurrency(item.priceCents / 100, item.currency)}
+                      {item.priceCents <= 0
+                        ? t("common:price.free")
+                        : formatCurrency(item.priceCents / 100, item.currency)}
                     </Text>
-                    <Text style={styles.ticketStatus}>{item.statusLabel}</Text>
-                    {item.availabilityLabel ? (
-                      <Text style={styles.ticketAvailability} numberOfLines={1}>
-                        {item.availabilityLabel}
-                      </Text>
-                    ) : null}
                     {item.limitLabel ? (
                       <Text style={styles.ticketLimit} numberOfLines={1}>
                         {item.limitLabel}
                       </Text>
                     ) : null}
+                    <View style={styles.stepper}>
+                      <Pressable
+                        onPress={() => onDecrement(item.id)}
+                        disabled={item.quantity === 0 || item.disabled}
+                        style={({ pressed }) => [
+                          styles.stepperBtn,
+                          item.quantity === 0 || item.disabled
+                            ? styles.stepperBtnDisabled
+                            : null,
+                          pressed ? styles.pressed : null,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("events:tickets.sheet.decrement", {
+                          name: item.name,
+                        })}
+                        accessibilityState={{
+                          disabled: item.quantity === 0 || item.disabled,
+                        }}
+                      >
+                        <Ionicons name="remove" size={18} color="rgba(237,246,255,0.96)" />
+                      </Pressable>
+                      <Text style={styles.stepperValue}>{item.quantity}</Text>
+                      <Pressable
+                        onPress={() => onIncrement(item.id)}
+                        disabled={item.disabled || item.quantity >= item.maxQuantity}
+                        style={({ pressed }) => [
+                          styles.stepperBtn,
+                          item.disabled || item.quantity >= item.maxQuantity
+                            ? styles.stepperBtnDisabled
+                            : null,
+                          pressed ? styles.pressed : null,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("events:tickets.sheet.increment", {
+                          name: item.name,
+                        })}
+                        accessibilityState={{
+                          disabled: item.disabled || item.quantity >= item.maxQuantity,
+                        }}
+                      >
+                        <Ionicons name="add" size={18} color="rgba(237,246,255,0.96)" />
+                      </Pressable>
+                    </View>
                   </View>
                   {item.disabled && item.disabledReason ? (
                     <Text style={styles.disabledReason} numberOfLines={2}>
                       {item.disabledReason}
                     </Text>
                   ) : null}
-                </View>
-                <View style={styles.counter}>
-                  <Pressable
-                    onPress={() => onDecrement(item.id)}
-                    disabled={item.quantity === 0 || item.disabled}
-                    style={({ pressed }) => [
-                      styles.counterBtn,
-                      item.quantity === 0 || item.disabled ? styles.counterBtnDisabled : null,
-                      pressed ? styles.pressed : null,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remover bilhete ${item.name}`}
-                    accessibilityState={{ disabled: item.quantity === 0 || item.disabled }}
-                  >
-                    <Ionicons name="remove" size={16} color="rgba(237,246,255,0.92)" />
-                  </Pressable>
-                  <Text style={styles.counterValue}>{item.quantity}</Text>
-                  <Pressable
-                    onPress={() => onIncrement(item.id)}
-                    disabled={item.disabled || item.quantity >= item.maxQuantity}
-                    style={({ pressed }) => [
-                      styles.counterBtn,
-                      item.disabled || item.quantity >= item.maxQuantity
-                        ? styles.counterBtnDisabled
-                        : null,
-                      pressed ? styles.pressed : null,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Adicionar bilhete ${item.name}`}
-                    accessibilityState={{
-                      disabled: item.disabled || item.quantity >= item.maxQuantity,
-                    }}
-                  >
-                    <Ionicons name="add" size={16} color="rgba(237,246,255,0.92)" />
-                  </Pressable>
                 </View>
               </View>
             ))
@@ -203,23 +217,39 @@ export function TicketSelectorSheet({
           </View>
           <Pressable
             onPress={onSubmit}
-            disabled={!canSubmit || submitting}
+            disabled={submitDisabled}
             accessibilityRole="button"
-            accessibilityLabel="Finalizar compra"
-            accessibilityState={{ disabled: !canSubmit || submitting }}
+            accessibilityLabel={resolvedSubmitLabel}
+            accessibilityState={{ disabled: submitDisabled }}
             style={({ pressed }) => [
               styles.submitBtn,
-              !canSubmit ? styles.submitBtnDisabled : null,
+              submitMuted ? styles.submitBtnDisabled : null,
               pressed ? styles.pressed : null,
             ]}
           >
             {submitting ? (
               <View style={styles.submitBusy}>
                 <ActivityIndicator size="small" color="#0a1018" />
-                <Text style={styles.submitText}>A processar…</Text>
+                <Text style={styles.submitText}>
+                  {t("events:tickets.cta.processing")}
+                </Text>
               </View>
             ) : (
-              <Text style={styles.submitText}>Finalizar compra</Text>
+              <View style={styles.submitReady}>
+                <Text
+                  style={[
+                    styles.submitText,
+                    submitMuted ? styles.submitTextMuted : null,
+                  ]}
+                >
+                  {resolvedSubmitLabel}
+                </Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={18}
+                  color={submitMuted ? "rgba(234,244,255,0.72)" : "#0A1018"}
+                />
+              </View>
             )}
           </Pressable>
         </View>
@@ -309,7 +339,7 @@ const styles = StyleSheet.create({
   ticketHead: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    marginBottom: 2,
   },
   ticketName: {
     flex: 1,
@@ -317,49 +347,55 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-  qtyBadge: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 6,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(107,255,255,0.28)",
-    borderWidth: 1,
-    borderColor: "rgba(177,255,255,0.74)",
-  },
-  qtyBadgeText: {
-    color: "#DFFDFF",
-    fontSize: 11,
-    fontWeight: "800",
-  },
   ticketDescription: {
     color: "rgba(226,240,255,0.62)",
     fontSize: 12,
     lineHeight: 17,
   },
-  ticketMetaRow: {
+  ticketBottomRow: {
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 8,
+    marginTop: 2,
   },
   ticketPrice: {
     color: "rgba(242,249,255,0.95)",
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.2,
+    marginRight: "auto",
   },
-  ticketStatus: {
-    color: "rgba(213,237,255,0.62)",
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-    fontWeight: "700",
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(232,246,255,0.24)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
-  ticketAvailability: {
-    color: "rgba(123,255,240,0.86)",
-    fontSize: 11,
-    fontWeight: "600",
+  stepperBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.24)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  stepperValue: {
+    minWidth: 24,
+    textAlign: "center",
+    color: "#F4F9FF",
+    fontSize: 18,
+    fontWeight: "800",
   },
   ticketLimit: {
     color: "rgba(255,227,122,0.9)",
@@ -391,30 +427,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: "600",
   },
-  counter: {
-    width: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-  },
-  counterBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.1)",
-  },
-  counterBtnDisabled: {
-    opacity: 0.44,
-  },
-  counterValue: {
-    color: "#F4F9FF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
   footer: {
     borderTopWidth: 1,
     borderTopColor: "rgba(255,255,255,0.12)",
@@ -441,22 +453,35 @@ const styles = StyleSheet.create({
     minHeight: tokens.layout.touchTarget,
     borderRadius: 16,
     backgroundColor: "#EAF63A",
+    borderWidth: 1,
+    borderColor: "rgba(238,250,68,0.9)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
   submitBtnDisabled: {
-    opacity: 0.5,
+    opacity: 1,
+    backgroundColor: "rgba(226,242,92,0.3)",
+    borderColor: "rgba(232,246,128,0.54)",
   },
   submitText: {
     color: "#0A1018",
     fontSize: 16,
     fontWeight: "800",
   },
+  submitTextMuted: {
+    color: "rgba(234,244,255,0.9)",
+  },
   submitBusy: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  submitReady: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
   },
 });

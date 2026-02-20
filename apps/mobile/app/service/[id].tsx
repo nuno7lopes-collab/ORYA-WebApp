@@ -12,7 +12,7 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useServiceDetail } from "../../features/services/hooks";
 import { LinearGradient } from "expo-linear-gradient";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useAuth } from "../../lib/auth";
 import { createMessageRequest } from "../../features/messages/api";
 import { getUserFacingError } from "../../lib/errors";
@@ -90,7 +90,7 @@ export default function ServiceDetailScreen() {
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
   const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : "/service"), [idValue]);
   const openAuth = useCallback(() => {
-    router.push({ pathname: "/auth", params: { next: nextRoute } });
+    safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
   const previewTitle = useMemo(
     () => (Array.isArray(serviceTitle) ? serviceTitle[0] : serviceTitle) ?? t("services:detail.fallbackTitle"),
@@ -502,7 +502,7 @@ export default function ServiceDetailScreen() {
               <Pressable
                 onPress={() => {
                   if (!data?.id) return;
-                  router.push({ pathname: "/service/[id]/booking", params: { id: String(data.id) } });
+                  safePush(router, { pathname: "/service/[id]/booking", params: { id: String(data.id) } });
                 }}
                 className="rounded-2xl bg-white/15 px-4 py-4"
                 style={{ minHeight: tokens.layout.touchTarget }}

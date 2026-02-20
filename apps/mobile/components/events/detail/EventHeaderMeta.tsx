@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   },
   organizerRow: {
     minHeight: 84,
-    marginTop: 22,
+    marginTop: 26,
     paddingRight: 8,
   },
   organizerLabel: {
@@ -135,13 +135,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     letterSpacing: 0.2,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   organizerProfileRow: {
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 18,
   },
   organizerAvatar: {
     width: 48,
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   },
   organizerTextWrap: {
     flex: 1,
-    gap: 4,
+    gap: 5,
   },
   organizerPrimary: {
     color: "#F3F9FF",

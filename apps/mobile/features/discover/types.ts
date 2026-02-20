@@ -13,6 +13,7 @@ export type DiscoverServiceCard = {
   unitPriceCents: number;
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
+  assignmentMode?: "PROFESSIONAL_ONLY" | "RESOURCE_ONLY" | "PROFESSIONAL_AND_RESOURCE" | null;
   categoryTag?: string | null;
   nextAvailability?: string | null;
   addressId?: string | null;

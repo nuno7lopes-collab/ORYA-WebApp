@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { safePush } from "../../lib/navigation";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { useUserFollowers, useUserFollowing } from "../../features/network/followLists";
 import { FollowListModal } from "../../components/profile/FollowListModal";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
+import { ProfileTicketsSheet } from "../../components/profile/ProfileTicketsSheet";
 import type { AgendaItem } from "../../features/profile/types";
 import { splitAgendaTimeline } from "../../features/profile/timeline";
 import { getMobileEnv } from "../../lib/env";
@@ -117,6 +119,7 @@ export default function ProfileScreen() {
   const [padelLevel, setPadelLevel] = useState<PadelLevel | null>(null);
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
+  const [ticketsSheetOpen, setTicketsSheetOpen] = useState(false);
   const [interestsError, setInterestsError] = useState<string | null>(null);
   const [usernameStatus, setUsernameStatus] = useState<
     "idle" | "checking" | "available" | "taken" | "reserved" | "error" | "unchanged"
@@ -128,21 +131,9 @@ export default function ProfileScreen() {
   const followersList = useUserFollowers(userId, accessToken, Boolean(followersOpen && userId));
   const followingList = useUserFollowing(userId, accessToken, Boolean(followingOpen && userId));
   const padelProfile = publicProfile.data?.profile ?? null;
-  const normalizedPadelGender =
-    padelProfile?.padelGender === "MALE" || padelProfile?.padelGender === "FEMALE"
-      ? (padelProfile.padelGender as PadelGender)
-      : null;
-  const normalizedPadelSide =
-    padelProfile?.padelPreferredSide === "ESQUERDA" ||
-    padelProfile?.padelPreferredSide === "DIREITA" ||
-    padelProfile?.padelPreferredSide === "QUALQUER"
-      ? (padelProfile.padelPreferredSide as PadelPreferredSide)
-      : null;
-  const normalizedPadelLevel =
-    typeof profile?.padelLevel === "string" &&
-    PADEL_LEVELS.includes(profile.padelLevel as PadelLevel)
-      ? (profile.padelLevel as PadelLevel)
-      : null;
+  const normalizedPadelGender = normalizePadelGenderValue(padelProfile?.padelGender ?? null);
+  const normalizedPadelSide = normalizePadelSideValue(padelProfile?.padelPreferredSide ?? null);
+  const normalizedPadelLevel = normalizePadelLevelValue(padelProfile?.padelLevel ?? profile?.padelLevel ?? null);
   const hasPadelProfile = Boolean(normalizedPadelGender && normalizedPadelSide && normalizedPadelLevel);
   const padelGenderLabels = useMemo(
     () => ({
@@ -186,6 +177,12 @@ export default function ProfileScreen() {
   }, [hasPadelProfile, showPadel]);
 
   useEffect(() => {
+    if (!showPadel) {
+      setPadelEditorOpen(false);
+    }
+  }, [showPadel]);
+
+  useEffect(() => {
     if (isFocused) {
       setDataReady(true);
       return;
@@ -213,7 +210,7 @@ export default function ProfileScreen() {
   const topBarTitle = profile?.username ? `@${profile.username}` : "Perfil";
   const topBarRight = (
     <Pressable
-      onPress={() => router.push("/settings")}
+      onPress={() => safePush(router, "/settings")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -284,25 +281,34 @@ export default function ProfileScreen() {
   );
 
   useEffect(() => {
+    const cleanup = () => {
+      if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
+      if (usernameAbortRef.current) usernameAbortRef.current.abort();
+    };
+
     if (!editMode) {
       setUsernameStatus("idle");
-      return;
+      cleanup();
+      return cleanup;
     }
     if (!username || !usernameValidation.valid) {
       setUsernameStatus("idle");
-      return;
+      cleanup();
+      return cleanup;
     }
     if (normalizedUsername === (profile?.username ?? "")) {
       setUsernameStatus("unchanged");
-      return;
+      cleanup();
+      return cleanup;
     }
     const cached = usernameCacheRef.current.get(normalizedUsername);
     if (cached) {
       setUsernameStatus(cached);
-      return;
+      cleanup();
+      return cleanup;
     }
-    if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
-    if (usernameAbortRef.current) usernameAbortRef.current.abort();
+
+    cleanup();
     const controller = new AbortController();
     usernameAbortRef.current = controller;
     setUsernameStatus("checking");
@@ -322,10 +328,8 @@ export default function ProfileScreen() {
         if (!controller.signal.aborted) setUsernameStatus("error");
       }
     }, 650);
-    return () => {
-      if (usernameTimerRef.current) clearTimeout(usernameTimerRef.current);
-      if (usernameAbortRef.current) usernameAbortRef.current.abort();
-    };
+
+    return cleanup;
   }, [accessToken, editMode, normalizedUsername, profile?.username, username, usernameValidation.valid]);
 
   const nameNode = editMode ? (
@@ -674,7 +678,7 @@ export default function ProfileScreen() {
     return (
       <Pressable
         key={item.id}
-        onPress={() => (target ? router.push(target as any) : undefined)}
+        onPress={() => (target ? safePush(router, target as any) : undefined)}
         disabled={disabled}
         className={
           featured
@@ -729,7 +733,7 @@ export default function ProfileScreen() {
     return (
       <Pressable
         key={item.id}
-        onPress={() => (target ? router.push(target as any) : undefined)}
+        onPress={() => (target ? safePush(router, target as any) : undefined)}
         disabled={disabled}
         className={showDivider ? "flex-row items-start gap-3 border-b border-white/10 py-3" : "flex-row items-start gap-3 py-3"}
         style={disabled ? { opacity: 0.6 } : undefined}
@@ -761,7 +765,7 @@ export default function ProfileScreen() {
         variant="title"
         title={topBarTitle}
         titleAlign="center"
-        leftSlot={<TopTicketsButton />}
+        leftSlot={<TopTicketsButton onPress={() => setTicketsSheetOpen(true)} />}
         rightSlot={topBarRight}
         rightSlotMode="replace"
         showNotifications={false}
@@ -857,19 +861,19 @@ export default function ProfileScreen() {
               </Text>
             ) : null}
 
-            <View className="flex-row items-center justify-center gap-2">
+            <View className="self-center flex-row items-center rounded-full border border-white/14 bg-white/[0.04] p-1">
               <Pressable
                 onPress={() => setShowPadel(false)}
                 className={
                   !showPadel
-                    ? "rounded-full border border-white/30 bg-white/20 px-4 py-2"
-                    : "rounded-full border border-white/12 bg-white/5 px-4 py-2"
+                    ? "min-w-[126px] rounded-full border border-white/24 bg-white/20 px-4 py-2.5"
+                    : "min-w-[126px] rounded-full border border-transparent bg-transparent px-4 py-2.5"
                 }
                 accessibilityRole="button"
                 accessibilityLabel={t("events:padel.profile.baseLabel")}
                 accessibilityState={{ selected: !showPadel }}
               >
-                <Text className={!showPadel ? "text-white text-xs font-semibold" : "text-white/75 text-xs font-semibold"}>
+                <Text className={!showPadel ? "text-white text-xs font-semibold text-center" : "text-white/75 text-xs font-semibold text-center"}>
                   {t("events:padel.profile.baseLabel")}
                 </Text>
               </Pressable>
@@ -877,16 +881,16 @@ export default function ProfileScreen() {
                 onPress={() => setShowPadel(true)}
                 className={
                   showPadel
-                    ? "rounded-full border border-cyan-200/40 bg-cyan-300/20 px-4 py-2"
-                    : "rounded-full border border-white/12 bg-white/5 px-4 py-2"
+                    ? "min-w-[126px] rounded-full border border-cyan-200/38 bg-cyan-300/20 px-4 py-2.5"
+                    : "min-w-[126px] rounded-full border border-transparent bg-transparent px-4 py-2.5"
                 }
                 accessibilityRole="button"
                 accessibilityLabel={t("events:padel.profile.padelLabel")}
                 accessibilityState={{ selected: showPadel }}
               >
-                <View className="flex-row items-center gap-2">
+                <View className="flex-row items-center justify-center gap-2">
                   <Ionicons name="tennisball" size={14} color="rgba(255,255,255,0.9)" />
-                  <Text className={showPadel ? "text-white text-xs font-semibold" : "text-white/75 text-xs font-semibold"}>
+                  <Text className={showPadel ? "text-white text-xs font-semibold text-center" : "text-white/75 text-xs font-semibold text-center"}>
                     {t("events:padel.profile.padelLabel")}
                   </Text>
                 </View>
@@ -894,11 +898,11 @@ export default function ProfileScreen() {
             </View>
 
             {showPadel ? (
-              <View className="gap-3 border-b border-white/12 pb-4">
+              <View className="gap-3 pb-3">
                 <Text className="text-white text-sm font-semibold mb-2">{t("events:padel.profile.title")}</Text>
-                {profile?.padelLevel ? (
+                {normalizedPadelLevel ? (
                   <Text className="text-white/70 text-sm">
-                    {t("events:padel.profile.levelLabel", { level: profile.padelLevel })}
+                    {t("events:padel.profile.levelLabel", { level: normalizedPadelLevel })}
                   </Text>
                 ) : (
                   <Text className="text-white/60 text-sm">{t("events:padel.profile.levelMissing")}</Text>
@@ -1030,7 +1034,7 @@ export default function ProfileScreen() {
                   </View>
                 ) : null}
                 <Pressable
-                  onPress={() => router.push("/padel")}
+                  onPress={() => safePush(router, "/padel")}
                   className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel={t("common:actions.explore")}
@@ -1115,16 +1119,28 @@ export default function ProfileScreen() {
                   </View>
                 ) : (
                   <View className="gap-5">
-                    <View className="flex-row items-center justify-between border-b border-white/15 pb-2">
-                      <Text className="text-white/85 text-sm font-semibold">Próximos: {timeline.active.length}</Text>
-                      <Text className="text-white/65 text-sm">Passados: {timeline.history.length}</Text>
-                      <Text className="text-cyan-100/80 text-sm">Mês: {agendaStats.thisMonth}</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
+                        <Text className="text-cyan-50 text-xs font-semibold">
+                          Próximos {timeline.active.length}
+                        </Text>
+                      </View>
+                      <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
+                        <Text className="text-white/80 text-xs font-semibold">
+                          Histórico {timeline.history.length}
+                        </Text>
+                      </View>
+                      <View className="rounded-full border border-emerald-200/26 bg-emerald-300/10 px-3 py-1.5">
+                        <Text className="text-emerald-100 text-xs font-semibold">
+                          Este mês {agendaStats.thisMonth}
+                        </Text>
+                      </View>
                     </View>
                     {activeTimelineItems.length === 0 && historyTimelineItems.length === 0 ? (
                       <View className="gap-2">
                         <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
                         <Pressable
-                          onPress={() => router.push("/agora")}
+                          onPress={() => safePush(router, "/agora")}
                           className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
                           accessibilityRole="button"
                           accessibilityLabel="Explorar eventos"
@@ -1136,7 +1152,9 @@ export default function ProfileScreen() {
                       <>
                         {activeTimelineItems.length > 0 ? (
                           <View className="gap-2">
-                            <Text className="text-white text-base font-semibold">Próximos eventos</Text>
+                            <Text className="text-white text-base font-semibold">
+                              Próximos eventos ({activeTimelineItems.length})
+                            </Text>
                             {featuredUpcomingItem ? renderAgendaItem(featuredUpcomingItem, { featured: true }) : null}
                             {remainingUpcomingItems.length > 0 ? (
                               <View className="border-b border-cyan-200/20 pb-1">
@@ -1149,7 +1167,9 @@ export default function ProfileScreen() {
                         ) : null}
                         {historyTimelineItems.length > 0 ? (
                           <View className="gap-2">
-                            <Text className="text-white/90 text-base font-semibold">Histórico</Text>
+                            <Text className="text-white/90 text-base font-semibold">
+                              Histórico ({historyTimelineItems.length})
+                            </Text>
                             <View className="border-b border-white/10 pb-1">
                               {historyGroups.map((group) => (
                                 <View key={group.label} className="gap-1">
@@ -1195,6 +1215,7 @@ export default function ProfileScreen() {
         onClose={() => setFollowingOpen(false)}
         onRetry={() => followingList.refetch()}
       />
+      <ProfileTicketsSheet visible={ticketsSheetOpen} onClose={() => setTicketsSheetOpen(false)} />
     </LiquidBackground>
   );
 }

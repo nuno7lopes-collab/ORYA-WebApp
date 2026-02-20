@@ -1,6 +1,20 @@
 function getPublicSupabaseUrl() {
-  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
-  return raw.trim().replace(/\/+$/, "");
+  const isTestRuntime =
+    process.env.NODE_ENV === "test" ||
+    process.env.ORIGINAL_NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    typeof process.env.VITEST_WORKER_ID === "string";
+  const candidates = [
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_URL,
+    isTestRuntime ? "http://127.0.0.1:54321" : "",
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim().replace(/\/+$/, "");
+    }
+  }
+  return "";
 }
 
 const SUPABASE_PUBLIC_BASE_URL = getPublicSupabaseUrl();

@@ -66,7 +66,7 @@ async function main() {
       status: "PUBLISHED",
       templateType: "PADEL",
       isDeleted: false,
-      OR: [{ endsAt: null }, { endsAt: { gt: now } }],
+      endsAt: { gt: now },
     },
     select: {
       id: true,

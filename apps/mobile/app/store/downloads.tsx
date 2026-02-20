@@ -2,7 +2,6 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View, Linking } from "r
 import { useRouter } from "expo-router";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
@@ -72,30 +71,33 @@ export default function StoreDownloadsScreen() {
         scrollEventThrottle={16}
       >
         {!session?.user?.id ? (
-          <GlassCard intensity={52}>
+          <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-base font-semibold">Inicia sessão para descarregar ficheiros</Text>
             <Pressable
               onPress={openAuth}
-              className="mt-4 rounded-xl bg-white px-4 py-3"
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
             >
-              <Text className="text-center text-sm font-semibold text-black">Iniciar sessão</Text>
+              <Text className="text-xs font-semibold text-black">Iniciar sessão</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : grants.isLoading ? (
           <View className="py-8">
             <ActivityIndicator color="white" />
           </View>
         ) : grants.isError ? (
-          <GlassCard intensity={52}>
+          <View className="border-b border-rose-200/30 pb-3">
             <Text className="text-red-300 text-sm">{getStoreErrorMessage(grants.error)}</Text>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-3">
             {(grants.data ?? []).length ? (
-              (grants.data ?? []).map((grant) => (
-                <GlassCard key={`grant-${grant.id}`} intensity={46}>
+              (grants.data ?? []).map((grant, grantIndex, grantList) => (
+                <View
+                  key={`grant-${grant.id}`}
+                  className={grantIndex < grantList.length - 1 ? "border-b border-white/12 pb-4" : "pb-2"}
+                >
                   <Text className="text-white text-sm font-semibold">{grant.product.name}</Text>
                   <Text className="mt-1 text-white/65 text-xs">
                     {grant.store.displayName} · {grant.order.orderNumber ?? `#${grant.order.id}`}
@@ -123,18 +125,18 @@ export default function StoreDownloadsScreen() {
                       </Pressable>
                     ))}
                   </View>
-                </GlassCard>
+                </View>
               ))
             ) : (
-              <GlassCard intensity={46}>
+              <View className="border-b border-white/12 pb-3">
                 <Text className="text-white/70 text-sm">Ainda não tens descargas digitais disponíveis.</Text>
-              </GlassCard>
+              </View>
             )}
 
             {download.isError ? (
-              <GlassCard intensity={48}>
+              <View className="border-b border-rose-200/30 pb-3">
                 <Text className="text-rose-200 text-xs">{getStoreErrorMessage(download.error)}</Text>
-              </GlassCard>
+              </View>
             ) : null}
           </View>
         )}

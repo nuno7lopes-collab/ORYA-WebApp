@@ -34,6 +34,9 @@ export function useStoreCatalog(username: string | null, enabled = true) {
     queryFn: () => fetchStoreCatalog(username ?? ""),
     enabled: enabled && Boolean(username),
     staleTime: 30_000,
+    retry: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
     refetchOnWindowFocus: false,
   });
 }

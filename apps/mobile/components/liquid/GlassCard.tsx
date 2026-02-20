@@ -8,6 +8,7 @@ type GlassCardProps = PropsWithChildren<{
   intensity?: number;
   padding?: number;
   highlight?: boolean;
+  blurEnabled?: boolean;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
 }>;
@@ -18,6 +19,7 @@ export function GlassCard({
   intensity = 60,
   padding = tokens.spacing.lg,
   highlight = false,
+  blurEnabled,
   style,
   contentStyle,
 }: GlassCardProps) {
@@ -28,6 +30,7 @@ export function GlassCard({
       intensity={intensity}
       padding={padding}
       tint="dark"
+      blurEnabled={blurEnabled}
       style={[styles.base, highlight ? styles.highlight : null, style]}
       contentStyle={contentStyle}
       withGradient

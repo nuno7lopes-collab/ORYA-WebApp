@@ -29,7 +29,7 @@ import {
 import { useAuth } from "../../lib/auth";
 import { getMobileEnv } from "../../lib/env";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
 import { api, ApiError } from "../../lib/api";
@@ -58,6 +58,32 @@ const toApiPaymentMethod = (method: CheckoutMethod): "card" | "mbway" => {
   if (method === "mbway") return "mbway";
   return "card";
 };
+
+const CHECKOUT_BLOCKED_CODES = new Set([
+  "ORGANIZATION_STRIPE_NOT_CONNECTED",
+  "ORGANIZATION_PAYMENTS_NOT_READY",
+  "PAYMENTS_NOT_READY",
+]);
+
+const resolveApiErrorCode = (error: unknown): string | null => {
+  if (error instanceof ApiError && error.code) {
+    return error.code.trim().toUpperCase();
+  }
+  if (!(error instanceof Error)) return null;
+  const message = error.message ?? "";
+  const jsonCodeMatch = message.match(/"errorCode"\s*:\s*"([^"]+)"/i);
+  if (jsonCodeMatch?.[1]) {
+    return jsonCodeMatch[1].trim().toUpperCase();
+  }
+  const codeMatch = message.match(/"code"\s*:\s*"([^"]+)"/i);
+  if (codeMatch?.[1]) {
+    return codeMatch[1].trim().toUpperCase();
+  }
+  return null;
+};
+
+const isCheckoutBlockedCode = (code: string | null) =>
+  Boolean(code && CHECKOUT_BLOCKED_CODES.has(code));
 
 const CHECKOUT_CONFIG_ERROR =
   "Pagamentos indisponíveis neste momento. A chave Stripe da app não está configurada.";
@@ -246,7 +272,7 @@ export default function CheckoutScreen() {
     draft && session?.user?.id && (stripeKey || isFreeCheckout),
   );
   const openAuth = useCallback(() => {
-    router.push({ pathname: "/auth", params: { next: "/checkout" } });
+    safePush(router, { pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
   const handleBack = () => {
     safeBack(router, navigation, "/(tabs)/index");
@@ -753,19 +779,23 @@ export default function CheckoutScreen() {
         });
       }
     } catch (err: any) {
+      const errorCode = resolveApiErrorCode(err);
       setError(
         getUserFacingError(err, "Não foi possível concluir o pagamento."),
       );
-      trackEvent("checkout_payment_failed", {
-        sourceType: draft.sourceType ?? null,
-        method: resolvedMethod,
-        code:
-          err instanceof ApiError
-            ? (err.code ?? null)
-            : typeof err?.code === "string"
-              ? err.code
-              : null,
-      });
+      if (isCheckoutBlockedCode(errorCode)) {
+        trackEvent("checkout_payment_blocked", {
+          sourceType: draft.sourceType ?? null,
+          method: resolvedMethod,
+          code: errorCode,
+        });
+      } else {
+        trackEvent("checkout_payment_failed", {
+          sourceType: draft.sourceType ?? null,
+          method: resolvedMethod,
+          code: errorCode,
+        });
+      }
     } finally {
       setProcessing(false);
     }

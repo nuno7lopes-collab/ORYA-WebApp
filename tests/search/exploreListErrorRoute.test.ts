@@ -15,6 +15,7 @@ vi.mock("@/lib/supabaseServer", () => ({
 
 vi.mock("@/lib/observability/logger", () => ({
   logError: vi.fn(),
+  logInfo: vi.fn(),
 }));
 
 describe("GET /api/explorar/list (erro)", () => {
@@ -30,4 +31,3 @@ describe("GET /api/explorar/list (erro)", () => {
     expect(body.errorCode ?? body.code).toBe("INTERNAL_ERROR");
   });
 });
-

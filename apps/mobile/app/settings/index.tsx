@@ -18,7 +18,7 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens, useTranslation } from "@orya/shared";
 import { useRouter } from "expo-router";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { SettingsSection } from "../../components/settings/SettingsSection";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { SettingsButton } from "../../components/settings/SettingsButton";
@@ -113,11 +113,13 @@ export default function SettingsScreen() {
 
   const [visibility, setVisibility] = useState<Visibility>("PUBLIC");
   const [savingVisibility, setSavingVisibility] = useState(false);
-  const [privacyMessage, setPrivacyMessage] = useState<string | null>(null);
+  const [privacySuccessMessage, setPrivacySuccessMessage] = useState<string | null>(null);
+  const [privacyErrorMessage, setPrivacyErrorMessage] = useState<string | null>(null);
 
   const [interests, setInterests] = useState<InterestId[]>([]);
   const [savingInterests, setSavingInterests] = useState(false);
-  const [interestsMessage, setInterestsMessage] = useState<string | null>(null);
+  const [interestsSuccessMessage, setInterestsSuccessMessage] = useState<string | null>(null);
+  const [interestsErrorMessage, setInterestsErrorMessage] = useState<string | null>(null);
 
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>({
     allowEmailNotifications: true,
@@ -132,7 +134,8 @@ export default function SettingsScreen() {
     allowSystemAnnouncements: true,
   });
   const [savingNotifications, setSavingNotifications] = useState(false);
-  const [notificationsMessage, setNotificationsMessage] = useState<string | null>(null);
+  const [notificationsSuccessMessage, setNotificationsSuccessMessage] = useState<string | null>(null);
+  const [notificationsErrorMessage, setNotificationsErrorMessage] = useState<string | null>(null);
   const [pushStatus, setPushStatus] = useState<"granted" | "denied" | "undetermined" | "unavailable">("undetermined");
   const [pushReason, setPushReason] = useState<PushPermissionReason>(null);
   const [pushBusy, setPushBusy] = useState(false);
@@ -186,7 +189,10 @@ export default function SettingsScreen() {
 
   const showTransientMessage = useCallback((setter: (value: string | null) => void, message: string) => {
     setter(message);
-    const timer = setTimeout(() => setter(null), 2400);
+    const timer = setTimeout(() => {
+      setter(null);
+      feedbackTimers.current = feedbackTimers.current.filter((entry) => entry !== timer);
+    }, 2400);
     feedbackTimers.current.push(timer);
   }, []);
 
@@ -281,11 +287,8 @@ export default function SettingsScreen() {
 
   const consentItems = useMemo(() => {
     return consents
-      .filter((item) => item.isFollowed || item.consents.MARKETING || item.consents.CONTACT_EMAIL)
+      .filter((item) => item.isFollowed)
       .sort((a, b) => {
-        const af = a.isFollowed ? 1 : 0;
-        const bf = b.isFollowed ? 1 : 0;
-        if (af !== bf) return bf - af;
         const an =
           a.organization.publicName || a.organization.businessName || a.organization.username || "";
         const bn =
@@ -349,13 +352,14 @@ export default function SettingsScreen() {
   const handleSaveVisibility = async () => {
     if (!visibilityDirty) return;
     setSavingVisibility(true);
-    setPrivacyMessage(null);
+    setPrivacySuccessMessage(null);
+    setPrivacyErrorMessage(null);
     try {
       await updateSettings({ visibility }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
-      showTransientMessage(setPrivacyMessage, t("settings:messages.privacySaved"));
+      showTransientMessage(setPrivacySuccessMessage, t("settings:messages.privacySaved"));
     } catch {
-      setPrivacyMessage(t("settings:messages.privacySaveFailed"));
+      setPrivacyErrorMessage(t("settings:messages.privacySaveFailed"));
     } finally {
       setSavingVisibility(false);
     }
@@ -364,13 +368,14 @@ export default function SettingsScreen() {
   const handleSaveInterests = async () => {
     if (!interestsDirty) return;
     setSavingInterests(true);
-    setInterestsMessage(null);
+    setInterestsSuccessMessage(null);
+    setInterestsErrorMessage(null);
     try {
       await updateSettings({ favouriteCategories: interests }, accessToken);
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
-      showTransientMessage(setInterestsMessage, t("settings:messages.interestsSaved"));
+      showTransientMessage(setInterestsSuccessMessage, t("settings:messages.interestsSaved"));
     } catch {
-      setInterestsMessage(t("settings:messages.interestsSaveFailed"));
+      setInterestsErrorMessage(t("settings:messages.interestsSaveFailed"));
     } finally {
       setSavingInterests(false);
     }
@@ -379,7 +384,8 @@ export default function SettingsScreen() {
   const handleSaveNotifications = async () => {
     if (!notificationsDirty) return;
     setSavingNotifications(true);
-    setNotificationsMessage(null);
+    setNotificationsSuccessMessage(null);
+    setNotificationsErrorMessage(null);
     try {
       await updateSettings({ ...notificationPrefs }, accessToken);
       await api.requestWithAccessToken("/api/notifications/prefs", accessToken, {
@@ -388,9 +394,9 @@ export default function SettingsScreen() {
         body: JSON.stringify(notificationPrefs),
       });
       prefsQuery.refetch();
-      showTransientMessage(setNotificationsMessage, t("settings:messages.notificationsSaved"));
+      showTransientMessage(setNotificationsSuccessMessage, t("settings:messages.notificationsSaved"));
     } catch {
-      setNotificationsMessage(t("settings:messages.notificationsSaveFailed"));
+      setNotificationsErrorMessage(t("settings:messages.notificationsSaveFailed"));
     } finally {
       setSavingNotifications(false);
     }
@@ -523,7 +529,7 @@ export default function SettingsScreen() {
             />
           </View>
           {emailMessage ? <Text style={styles.helperText}>{emailMessage}</Text> : null}
-          <View style={styles.rowButtons}>
+          <View style={styles.accountActions}>
             <SettingsButton
               label={t("settings:account.updateEmail")}
               onPress={handleEmailSave}
@@ -531,7 +537,7 @@ export default function SettingsScreen() {
               loading={emailSaving}
               loadingLabel={t("settings:account.updating")}
               variant="primary"
-              style={{ flex: 1 }}
+              style={styles.accountActionButton}
             />
             <SettingsButton
               label={resetting ? t("settings:account.sending") : t("settings:account.resetPassword")}
@@ -540,7 +546,7 @@ export default function SettingsScreen() {
               loading={resetting}
               loadingLabel={t("settings:account.sending")}
               variant="secondary"
-              style={{ flex: 1 }}
+              style={styles.accountActionButton}
             />
           </View>
         </SettingsSection>
@@ -584,7 +590,8 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
-          {privacyMessage ? <Text style={styles.statusText}>{privacyMessage}</Text> : null}
+          {privacyErrorMessage ? <Text style={styles.errorText}>{privacyErrorMessage}</Text> : null}
+          {privacySuccessMessage ? <Text style={styles.statusText}>{privacySuccessMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -625,7 +632,8 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
-          {interestsMessage ? <Text style={styles.statusText}>{interestsMessage}</Text> : null}
+          {interestsErrorMessage ? <Text style={styles.errorText}>{interestsErrorMessage}</Text> : null}
+          {interestsSuccessMessage ? <Text style={styles.statusText}>{interestsSuccessMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -741,7 +749,8 @@ export default function SettingsScreen() {
             variant="primary"
             style={{ alignSelf: "stretch" }}
           />
-          {notificationsMessage ? <Text style={styles.statusText}>{notificationsMessage}</Text> : null}
+          {notificationsErrorMessage ? <Text style={styles.errorText}>{notificationsErrorMessage}</Text> : null}
+          {notificationsSuccessMessage ? <Text style={styles.statusText}>{notificationsSuccessMessage}</Text> : null}
         </SettingsSection>
 
         <SettingsSection
@@ -780,7 +789,7 @@ export default function SettingsScreen() {
               <Text style={styles.helperText}>{t("settings:consents.loading")}</Text>
             </View>
           ) : consentItems.length === 0 ? (
-            <Text style={styles.helperText}>{t("settings:consents.empty")}</Text>
+            <Text style={styles.helperText}>{t("settings:consents.emptyFollowed")}</Text>
           ) : (
             <View style={styles.stack}>
               <View style={styles.stack}>
@@ -827,7 +836,7 @@ export default function SettingsScreen() {
                     <Pressable
                       onPress={() => {
                         if (orgUsername) {
-                          router.push({ pathname: "/[username]", params: { username: orgUsername } });
+                          safePush(router, { pathname: "/[username]", params: { username: orgUsername } });
                         }
                       }}
                       disabled={!orgUsername}
@@ -878,18 +887,28 @@ export default function SettingsScreen() {
           subtitle={t("settings:sections.session.subtitle")}
         >
           <View style={styles.stack}>
+            <View style={styles.sessionWarning}>
+              <Ionicons name="warning-outline" size={18} color="rgba(255,180,188,0.95)" />
+              <View style={styles.sessionWarningContent}>
+                <Text style={styles.sessionWarningTitle}>{t("settings:session.deleteWarningTitle")}</Text>
+                <Text style={styles.sessionWarningBody}>
+                  {t("settings:session.deleteWarningBody", { phrase: deletePhraseUpper })}
+                </Text>
+              </View>
+            </View>
             <SettingsButton
               label={t("settings:session.signOut")}
               onPress={handleLogout}
-              variant="primary"
-              style={{ alignSelf: "stretch" }}
+              variant="secondary"
+              style={styles.sessionActionButton}
             />
             <SettingsButton
               label={t("settings:session.delete")}
               onPress={() => setDeleteModalOpen(true)}
               variant="danger"
-              style={{ alignSelf: "stretch" }}
+              style={styles.sessionActionButton}
             />
+            <Text style={styles.sessionDeleteHint}>{t("settings:session.deleteHint")}</Text>
           </View>
         </SettingsSection>
 
@@ -993,9 +1012,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-  rowButtons: {
-    flexDirection: "row",
+  accountActions: {
+    flexDirection: "column",
     gap: tokens.spacing.sm,
+  },
+  accountActionButton: {
+    alignSelf: "stretch",
   },
   optionRow: {
     flexDirection: "column",
@@ -1168,5 +1190,39 @@ const styles = StyleSheet.create({
   },
   versionRow: {
     alignItems: "flex-start",
+  },
+  sessionWarning: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,120,132,0.38)",
+    backgroundColor: "rgba(255,72,96,0.14)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  sessionWarningContent: {
+    flex: 1,
+    gap: 2,
+  },
+  sessionWarningTitle: {
+    color: "rgba(255,232,236,0.98)",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  sessionWarningBody: {
+    color: "rgba(255,222,228,0.88)",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  sessionActionButton: {
+    alignSelf: "stretch",
+    minHeight: 50,
+  },
+  sessionDeleteHint: {
+    color: "rgba(255,182,190,0.9)",
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

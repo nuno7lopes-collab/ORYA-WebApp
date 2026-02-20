@@ -13,7 +13,7 @@ import { useAuth } from "../../lib/auth";
 import { useMessageRequests } from "../../features/messages/hooks";
 import { acceptMessageRequest, declineMessageRequest } from "../../features/messages/api";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useNavigation } from "@react-navigation/native";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { formatDate } from "../../lib/formatters";
@@ -75,7 +75,7 @@ export default function MessageRequestsScreen() {
     try {
       const response = await acceptMessageRequest(requestId, accessToken);
       if (response.conversationId) {
-        router.push({
+        safePush(router, {
           pathname: "/messages/[threadId]",
           params: { threadId: response.conversationId, source: "conversation" },
         });

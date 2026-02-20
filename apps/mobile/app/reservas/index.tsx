@@ -6,13 +6,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { tokens } from "@orya/shared";
 import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
-import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useAuth } from "../../lib/auth";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { getUserFacingError } from "../../lib/errors";
 import {
   cancelBooking,
@@ -187,90 +186,89 @@ export default function BookingsScreen() {
     const pendingRequest = booking.changeRequest?.status === "PENDING" ? booking.changeRequest : null;
     const isFocused = Number.isFinite(focusBookingId) && booking.id === Number(focusBookingId);
     return (
-      <GlassCard key={`booking-${booking.id}`} intensity={section === "active" ? 58 : 48}>
-        <View
-          className="gap-2 rounded-2xl border px-3 py-3"
-          style={{
-            borderColor: isFocused ? "rgba(192,235,255,0.55)" : "rgba(255,255,255,0.12)",
-            backgroundColor: isFocused ? "rgba(143,223,255,0.12)" : "rgba(255,255,255,0.04)",
-          }}
-        >
-          <View className="flex-row items-start justify-between gap-3">
-            <View style={{ flex: 1 }}>
-              <Text className="text-white text-sm font-semibold">
-                {booking.service?.title?.trim() || "Reserva de serviço"}
-              </Text>
-              <Text className="text-white/65 text-xs">{bookingOrganizationLabel(booking)}</Text>
-            </View>
-            <View className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
-              <Text className="text-white/80 text-[10px] font-semibold uppercase tracking-[0.12em]">
-                {bookingStatusLabel(booking.status)}
-              </Text>
+      <View
+        key={`booking-${booking.id}`}
+        className="gap-2 border-b px-1 py-3"
+        style={{
+          borderColor: isFocused ? "rgba(192,235,255,0.45)" : "rgba(255,255,255,0.12)",
+          backgroundColor: isFocused ? "rgba(143,223,255,0.08)" : "transparent",
+        }}
+      >
+        <View className="flex-row items-start justify-between gap-3">
+          <View style={{ flex: 1 }}>
+            <Text className="text-white text-sm font-semibold">
+              {booking.service?.title?.trim() || "Reserva de serviço"}
+            </Text>
+            <Text className="text-white/65 text-xs">{bookingOrganizationLabel(booking)}</Text>
+          </View>
+          <View className="rounded-full border border-white/15 bg-white/10 px-2 py-1">
+            <Text className="text-white/80 text-[10px] font-semibold uppercase tracking-[0.12em]">
+              {bookingStatusLabel(booking.status)}
+            </Text>
+          </View>
+        </View>
+
+        <Text className="text-white/80 text-xs">
+          {formatDateTime(booking.startsAt)} · {booking.durationMinutes} min
+        </Text>
+        <Text className="text-white/60 text-xs">{formatMoney(booking.price, booking.currency)}</Text>
+
+        {booking.estimatedStartsAt && booking.delayMinutes && booking.delayMinutes > 0 ? (
+          <Text className="text-amber-200 text-xs">
+            Início estimado: {formatDateTime(booking.estimatedStartsAt)} ({booking.delayMinutes} min de atraso)
+          </Text>
+        ) : null}
+
+        {pendingRequest ? (
+          <View className="mt-1 rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2">
+            <Text className="text-amber-100 text-xs font-semibold">Pedido de alteração pendente</Text>
+            <Text className="text-amber-100/85 text-xs mt-1">
+              Nova data: {formatDateTime(pendingRequest.proposedStartsAt)}
+            </Text>
+            <Text className="text-amber-100/75 text-xs mt-1">
+              Responder até {formatDateTime(pendingRequest.expiresAt)}
+            </Text>
+            <View className="mt-2 flex-row gap-2">
+              <Pressable
+                onPress={() => void handleChangeRequest(booking, "DECLINE")}
+                disabled={respondingRequestId === pendingRequest.id}
+                className="flex-1 rounded-xl border border-white/20 bg-white/5 px-3 py-2"
+                accessibilityRole="button"
+                accessibilityLabel="Recusar alteração"
+              >
+                <Text className="text-white text-xs font-semibold text-center">
+                  {respondingRequestId === pendingRequest.id ? "A processar..." : "Recusar"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void handleChangeRequest(booking, "ACCEPT")}
+                disabled={respondingRequestId === pendingRequest.id}
+                className="flex-1 rounded-xl bg-white/90 px-3 py-2"
+                accessibilityRole="button"
+                accessibilityLabel="Aceitar alteração"
+              >
+                <Text className="text-[#0b1014] text-xs font-semibold text-center">
+                  {respondingRequestId === pendingRequest.id ? "A processar..." : "Aceitar"}
+                </Text>
+              </Pressable>
             </View>
           </View>
+        ) : null}
 
-          <Text className="text-white/80 text-xs">
-            {formatDateTime(booking.startsAt)} · {booking.durationMinutes} min
-          </Text>
-          <Text className="text-white/60 text-xs">{formatMoney(booking.price, booking.currency)}</Text>
-
-          {booking.estimatedStartsAt && booking.delayMinutes && booking.delayMinutes > 0 ? (
-            <Text className="text-amber-200 text-xs">
-              Início estimado: {formatDateTime(booking.estimatedStartsAt)} ({booking.delayMinutes} min de atraso)
+        {showCancelAction ? (
+          <Pressable
+            onPress={() => void handleCancelPress(booking.id)}
+            disabled={cancelingBookingId === booking.id}
+            className="mt-2 rounded-xl border border-rose-300/40 bg-rose-500/12 px-3 py-2"
+            accessibilityRole="button"
+            accessibilityLabel="Cancelar reserva"
+          >
+            <Text className="text-rose-100 text-xs font-semibold text-center">
+              {cancelingBookingId === booking.id ? "A cancelar..." : "Cancelar reserva"}
             </Text>
-          ) : null}
-
-          {pendingRequest ? (
-            <View className="mt-1 rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2">
-              <Text className="text-amber-100 text-xs font-semibold">Pedido de alteração pendente</Text>
-              <Text className="text-amber-100/85 text-xs mt-1">
-                Nova data: {formatDateTime(pendingRequest.proposedStartsAt)}
-              </Text>
-              <Text className="text-amber-100/75 text-xs mt-1">
-                Responder até {formatDateTime(pendingRequest.expiresAt)}
-              </Text>
-              <View className="mt-2 flex-row gap-2">
-                <Pressable
-                  onPress={() => void handleChangeRequest(booking, "DECLINE")}
-                  disabled={respondingRequestId === pendingRequest.id}
-                  className="flex-1 rounded-xl border border-white/20 bg-white/5 px-3 py-2"
-                  accessibilityRole="button"
-                  accessibilityLabel="Recusar alteração"
-                >
-                  <Text className="text-white text-xs font-semibold text-center">
-                    {respondingRequestId === pendingRequest.id ? "A processar..." : "Recusar"}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void handleChangeRequest(booking, "ACCEPT")}
-                  disabled={respondingRequestId === pendingRequest.id}
-                  className="flex-1 rounded-xl bg-white/90 px-3 py-2"
-                  accessibilityRole="button"
-                  accessibilityLabel="Aceitar alteração"
-                >
-                  <Text className="text-[#0b1014] text-xs font-semibold text-center">
-                    {respondingRequestId === pendingRequest.id ? "A processar..." : "Aceitar"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
-
-          {showCancelAction ? (
-            <Pressable
-              onPress={() => void handleCancelPress(booking.id)}
-              disabled={cancelingBookingId === booking.id}
-              className="mt-2 rounded-xl border border-rose-300/40 bg-rose-500/12 px-3 py-2"
-              accessibilityRole="button"
-              accessibilityLabel="Cancelar reserva"
-            >
-              <Text className="text-rose-100 text-xs font-semibold text-center">
-                {cancelingBookingId === booking.id ? "A cancelar..." : "Cancelar reserva"}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </GlassCard>
+          </Pressable>
+        ) : null}
+      </View>
     );
   };
 
@@ -299,61 +297,57 @@ export default function BookingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {!accessReady ? (
-          <GlassCard intensity={56}>
+          <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-sm font-semibold">Inicia sessão para ver as tuas reservas.</Text>
             <Pressable
-              onPress={() => router.push({ pathname: "/auth", params: { next: "/reservas" } })}
-              className="mt-3 rounded-xl bg-white/90 px-4 py-3"
+              onPress={() => safePush(router, { pathname: "/auth", params: { next: "/reservas" } })}
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
             >
-              <Text className="text-[#0b1014] text-center text-sm font-semibold">Iniciar sessão</Text>
+              <Text className="text-[#0b1014] text-xs font-semibold">Iniciar sessão</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : bookingsQuery.isLoading ? (
           <View className="gap-3">
             <GlassSkeleton height={120} />
             <GlassSkeleton height={120} />
           </View>
         ) : bookingsQuery.isError ? (
-          <GlassCard intensity={56}>
+          <View className="gap-2 border-b border-rose-200/30 pb-4">
             <Text className="text-red-200 text-sm font-semibold">Não foi possível carregar reservas.</Text>
             <Pressable
               onPress={() => bookingsQuery.refetch()}
-              className="mt-3 rounded-xl border border-white/15 bg-white/8 px-4 py-3"
+              className="mt-2 self-start rounded-full border border-white/20 bg-white/8 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
-              <Text className="text-white text-center text-sm font-semibold">Tentar novamente</Text>
+              <Text className="text-white text-xs font-semibold">Tentar novamente</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-3">
-            <GlassCard intensity={54}>
-              <View className="flex-row items-center justify-between gap-3">
-                <View>
-                  <Text className="text-white text-sm font-semibold">Timeline pessoal</Text>
-                  <Text className="text-white/65 text-xs">Ativos e histórico de reservas de serviço.</Text>
-                </View>
-                <View className="items-end">
-                  <Text className="text-white/85 text-xs">Ativos: {activeBookings.length}</Text>
-                  <Text className="text-white/60 text-xs">Histórico: {timeline.history.length}</Text>
-                </View>
+            <View className="flex-row flex-wrap gap-2">
+              <View className="rounded-full border border-cyan-200/35 bg-cyan-300/12 px-3 py-1.5">
+                <Text className="text-cyan-50 text-xs font-semibold">Ativos {activeBookings.length}</Text>
               </View>
-            </GlassCard>
+              <View className="rounded-full border border-white/16 bg-white/6 px-3 py-1.5">
+                <Text className="text-white/80 text-xs font-semibold">Histórico {timeline.history.length}</Text>
+              </View>
+            </View>
 
             {activeBookings.length === 0 && timeline.history.length === 0 ? (
-              <GlassCard intensity={50}>
+              <View className="gap-2 border-b border-white/12 pb-4">
                 <Text className="text-white/70 text-sm">Ainda não tens reservas de serviço.</Text>
                 <Pressable
-                  onPress={() => router.push("/search")}
-                  className="mt-3 rounded-xl border border-white/15 bg-white/8 px-4 py-3"
+                  onPress={() => safePush(router, "/search")}
+                  className="mt-2 self-start rounded-full border border-white/20 bg-white/8 px-4 py-2.5"
                   accessibilityRole="button"
                   accessibilityLabel="Explorar serviços"
                 >
-                  <Text className="text-white text-center text-sm font-semibold">Explorar serviços</Text>
+                  <Text className="text-white text-xs font-semibold">Explorar serviços</Text>
                 </Pressable>
-              </GlassCard>
+              </View>
             ) : null}
 
             {activeBookings.length > 0 ? (

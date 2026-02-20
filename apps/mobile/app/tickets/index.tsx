@@ -15,11 +15,12 @@ import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useRouter } from "expo-router";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type TicketsScreenProps = {
   showBackButton?: boolean;
+  embedded?: boolean;
 };
 
 type WalletListItem =
@@ -32,7 +33,7 @@ const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   return new Intl.NumberFormat("pt-PT", { style: "currency", currency }).format(cents / 100);
 };
 
-export default function TicketsScreen({ showBackButton = true }: TicketsScreenProps) {
+export default function TicketsScreen({ showBackButton = true, embedded = false }: TicketsScreenProps) {
   const router = useRouter();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
@@ -88,7 +89,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         return (
           <Pressable
             onPress={() =>
-              router.push({ pathname: "/store/purchases/[orderId]", params: { orderId: String(order.id) } })
+              safePush(router, { pathname: "/store/purchases/[orderId]", params: { orderId: String(order.id) } })
             }
             accessibilityRole="button"
             accessibilityLabel="Ver compra da loja"
@@ -110,7 +111,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
       }
       const entitlementId = item.entitlement.entitlementId;
       const openEntitlement = () => {
-        router.push({ pathname: "/wallet/[entitlementId]", params: { entitlementId } });
+        safePush(router, { pathname: "/wallet/[entitlementId]", params: { entitlementId } });
       };
       return (
         <Pressable
@@ -155,6 +156,114 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
     </Pressable>
   );
 
+  const listNode = (
+    <FlatList
+      contentContainerStyle={{
+        paddingHorizontal: 20,
+        paddingBottom: insets.bottom + 24,
+        paddingTop: embedded ? 8 : topPadding,
+      }}
+      data={listData}
+      keyExtractor={keyExtractor}
+      onRefresh={handleRefresh}
+      refreshing={mode === "store" ? storePurchases.isFetching : feed.isFetching}
+      onScroll={embedded ? undefined : topBar.onScroll}
+      onScrollEndDrag={embedded ? undefined : topBar.onScrollEndDrag}
+      onMomentumScrollEnd={embedded ? undefined : topBar.onMomentumScrollEnd}
+      scrollEventThrottle={16}
+      removeClippedSubviews={Platform.OS === "android"}
+      initialNumToRender={4}
+      maxToRenderPerBatch={4}
+      updateCellsBatchingPeriod={40}
+      windowSize={5}
+      ListHeaderComponent={
+        <View style={{ paddingBottom: 8 }}>
+          <View className="mb-3 flex-row rounded-full border border-white/15 bg-white/5 p-1">
+            {(["upcoming", "history", "store"] as const).map((option) => (
+              <Pressable
+                key={option}
+                onPress={() => setMode(option)}
+                className={`flex-1 rounded-full px-3 py-2 ${
+                  mode === option ? "bg-white/90" : "bg-transparent"
+                }`}
+                accessibilityRole="button"
+                accessibilityLabel={option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
+              >
+                <Text
+                  className={`text-center text-xs font-semibold ${
+                    mode === option ? "text-[#0b101a]" : "text-white/70"
+                  }`}
+                >
+                  {option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {(mode === "store" ? storePurchases.isError : feed.isError) ? (
+            <GlassSurface intensity={52} padding={16}>
+              <Text className="mb-3 text-sm text-red-300">
+                {mode === "store"
+                  ? "Não foi possível carregar compras da Loja."
+                  : "Não foi possível carregar a carteira."}
+              </Text>
+              <Pressable
+                className="rounded-xl bg-white/10 px-4 py-3"
+                onPress={() => (mode === "store" ? storePurchases.refetch() : feed.refetch())}
+                style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Tentar novamente"
+              >
+                <Text className="text-center text-sm font-semibold text-white">Tentar novamente</Text>
+              </Pressable>
+            </GlassSurface>
+          ) : null}
+        </View>
+      }
+      renderItem={renderItem}
+      ListFooterComponent={
+        <View className="pt-1">
+          {!showSkeleton &&
+          !(mode === "store" ? storePurchases.isError : feed.isError) &&
+          (mode === "store" ? storeItems.length === 0 : ticketItems.length === 0) ? (
+            <GlassSurface intensity={45} padding={16}>
+              <Text className="text-sm text-white/65">{emptyLabel}</Text>
+              <Pressable
+                className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+                onPress={() => {
+                  safePush(router, "/(tabs)/index");
+                }}
+                style={{ minHeight: tokens.layout.touchTarget }}
+                accessibilityRole="button"
+                accessibilityLabel="Explorar eventos"
+              >
+                <Text className="text-center text-sm font-semibold text-white">Explorar eventos</Text>
+              </Pressable>
+            </GlassSurface>
+          ) : null}
+          {mode !== "store" && feed.hasNextPage ? (
+            <Pressable
+              className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
+              onPress={() => feed.fetchNextPage()}
+              disabled={feed.isFetchingNextPage}
+              style={{ minHeight: tokens.layout.touchTarget }}
+              accessibilityRole="button"
+              accessibilityLabel="Carregar mais"
+              accessibilityState={{ disabled: feed.isFetchingNextPage }}
+            >
+              <Text className="text-center text-sm font-semibold text-white">
+                {feed.isFetchingNextPage ? "A carregar…" : "Carregar mais"}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      }
+    />
+  );
+
+  if (embedded) {
+    return <View style={{ flex: 1 }}>{listNode}</View>;
+  }
+
   return (
     <LiquidBackground>
       <TopAppHeader
@@ -166,107 +275,7 @@ export default function TicketsScreen({ showBackButton = true }: TicketsScreenPr
         showNotifications={false}
         showMessages={false}
       />
-      <FlatList
-        contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: insets.bottom + 24,
-          paddingTop: topPadding,
-        }}
-        data={listData}
-        keyExtractor={keyExtractor}
-        onRefresh={handleRefresh}
-        refreshing={mode === "store" ? storePurchases.isFetching : feed.isFetching}
-        onScroll={topBar.onScroll}
-        onScrollEndDrag={topBar.onScrollEndDrag}
-        onMomentumScrollEnd={topBar.onMomentumScrollEnd}
-        scrollEventThrottle={16}
-        removeClippedSubviews={Platform.OS === "android"}
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        updateCellsBatchingPeriod={40}
-        windowSize={5}
-        ListHeaderComponent={
-          <View style={{ paddingBottom: 8 }}>
-            <View className="mb-3 flex-row rounded-full border border-white/15 bg-white/5 p-1">
-              {(["upcoming", "history", "store"] as const).map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() => setMode(option)}
-                  className={`flex-1 rounded-full px-3 py-2 ${
-                    mode === option ? "bg-white/90" : "bg-transparent"
-                  }`}
-                  accessibilityRole="button"
-                  accessibilityLabel={option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
-                >
-                  <Text
-                    className={`text-center text-xs font-semibold ${
-                      mode === option ? "text-[#0b101a]" : "text-white/70"
-                    }`}
-                  >
-                    {option === "upcoming" ? "Ativos" : option === "history" ? "Histórico" : "Loja"}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            {(mode === "store" ? storePurchases.isError : feed.isError) ? (
-              <GlassSurface intensity={52} padding={16}>
-                <Text className="mb-3 text-sm text-red-300">
-                  {mode === "store"
-                    ? "Não foi possível carregar compras da Loja."
-                    : "Não foi possível carregar a carteira."}
-                </Text>
-                <Pressable
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  onPress={() => (mode === "store" ? storePurchases.refetch() : feed.refetch())}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Tentar novamente"
-                >
-                  <Text className="text-center text-sm font-semibold text-white">Tentar novamente</Text>
-                </Pressable>
-              </GlassSurface>
-            ) : null}
-          </View>
-        }
-        renderItem={renderItem}
-        ListFooterComponent={
-          <View className="pt-1">
-            {!showSkeleton &&
-            !(mode === "store" ? storePurchases.isError : feed.isError) &&
-            (mode === "store" ? storeItems.length === 0 : ticketItems.length === 0) ? (
-              <GlassSurface intensity={45} padding={16}>
-                <Text className="text-sm text-white/65">{emptyLabel}</Text>
-                <Pressable
-                  className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                  onPress={() => {
-                    router.push("/(tabs)/index");
-                  }}
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Explorar eventos"
-                >
-                  <Text className="text-center text-sm font-semibold text-white">Explorar eventos</Text>
-                </Pressable>
-              </GlassSurface>
-            ) : null}
-            {mode !== "store" && feed.hasNextPage ? (
-              <Pressable
-                className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
-                onPress={() => feed.fetchNextPage()}
-                disabled={feed.isFetchingNextPage}
-                style={{ minHeight: tokens.layout.touchTarget }}
-                accessibilityRole="button"
-                accessibilityLabel="Carregar mais"
-                accessibilityState={{ disabled: feed.isFetchingNextPage }}
-              >
-                <Text className="text-center text-sm font-semibold text-white">
-                  {feed.isFetchingNextPage ? "A carregar…" : "Carregar mais"}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
-        }
-      />
+      {listNode}
     </LiquidBackground>
   );
 }

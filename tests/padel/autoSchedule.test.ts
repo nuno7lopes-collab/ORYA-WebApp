@@ -130,4 +130,82 @@ describe("padel auto-schedule", () => {
     expect(result.scheduled[0].start.toISOString()).toBe("2025-01-01T09:00:00.000Z");
     expect(result.scheduled[1].start.toISOString()).toBe("2025-01-01T13:00:00.000Z");
   });
+
+  it("prefere campo menos carregado quando o melhor horário empata", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 31,
+          sideAProfileIds: [1001],
+          sideBProfileIds: [1002],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [
+        {
+          id: 99,
+          plannedStartAt: new Date("2025-01-01T08:00:00Z"),
+          plannedEndAt: new Date("2025-01-01T09:00:00Z"),
+          plannedDurationMinutes: 60,
+          startTime: null,
+          courtId: 1,
+          sideAProfileIds: [2001],
+          sideBProfileIds: [2002],
+        },
+      ],
+      courts: [{ id: 1 }, { id: 2 }],
+      availabilities: [],
+      courtBlocks: [],
+      config: {
+        windowStart: new Date("2025-01-01T10:00:00Z"),
+        windowEnd: new Date("2025-01-01T12:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(1);
+    expect(result.scheduled[0]?.courtId).toBe(2);
+    expect(result.scheduled[0]?.start.toISOString()).toBe("2025-01-01T10:00:00.000Z");
+  });
+
+  it("devolve motivo detalhado quando jogadores não têm janela", () => {
+    const result = computeAutoSchedulePlan({
+      unscheduledMatches: [
+        {
+          id: 41,
+          sideAProfileIds: [3001],
+          sideBProfileIds: [3002],
+          plannedDurationMinutes: null,
+          courtId: null,
+          roundType: "GROUPS",
+        },
+      ],
+      scheduledMatches: [],
+      courts: [{ id: 1 }],
+      availabilities: [
+        { playerProfileId: 3001, playerEmail: null, startAt: new Date("2025-01-01T10:00:00Z"), endAt: new Date("2025-01-01T14:00:00Z") },
+      ],
+      courtBlocks: [],
+      config: {
+        windowStart: new Date("2025-01-01T10:00:00Z"),
+        windowEnd: new Date("2025-01-01T14:00:00Z"),
+        durationMinutes: 60,
+        slotMinutes: 30,
+        bufferMinutes: 0,
+        minRestMinutes: 0,
+        priority: "GROUPS_FIRST",
+      },
+    });
+
+    expect(result.scheduled).toHaveLength(0);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.reason).toBe("PLAYER_UNAVAILABLE");
+    expect(result.unscheduledByReason.PLAYER_UNAVAILABLE).toBe(1);
+  });
 });

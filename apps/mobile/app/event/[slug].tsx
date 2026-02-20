@@ -16,8 +16,8 @@ import {
   InteractionManager,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useEventDetail } from "../../features/events/hooks";
 import { tokens, useTranslation } from "@orya/shared";
@@ -32,7 +32,9 @@ import {
   buildCheckoutIdempotencyKey,
 } from "../../features/checkout/store";
 import {
+  createCheckoutIntent,
   createPairingCheckoutIntent,
+  fetchCheckoutStatus,
 } from "../../features/checkout/api";
 import {
   createPairing,
@@ -52,7 +54,7 @@ import {
   shouldShowMyPairingSection,
   shouldShowOpenPairingsSection,
 } from "../../features/tournaments/uxState";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { FavoriteToggle } from "../../components/events/FavoriteToggle";
 import { StickyPurchaseBar } from "../../components/events/detail/StickyPurchaseBar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -66,6 +68,8 @@ import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
 import * as Haptics from "expo-haptics";
 import {
+  type TicketCtaState,
+  resolveTicketCtaState,
   resolveTicketSheetGateState,
   shouldDismissByPullDown,
 } from "../../features/events/detailState";
@@ -146,7 +150,7 @@ const resolveAccessBadge = (
   t: (key: string) => string,
 ) => {
   const normalized = mode?.toUpperCase();
-  if (normalized === "INVITE_ONLY" || normalized === "UNLISTED")
+  if (normalized === "INVITE_ONLY")
     return { label: t("events:access.invite"), variant: "muted" as const };
   return { label: t("events:access.public"), variant: "accent" as const };
 };
@@ -209,6 +213,17 @@ const resolvePairingLabel = (
   return names.join(" / ");
 };
 
+const resolveTicketCtaLabel = (state: TicketCtaState): string => {
+  if (state === "READY") return "events:tickets.cta.state.ready";
+  if (state === "INVITE_LOCKED") return "events:tickets.cta.state.inviteLocked";
+  if (state === "ENDED") return "events:tickets.cta.state.ended";
+  if (state === "COMING_SOON") return "events:tickets.cta.state.comingSoon";
+  return "events:tickets.cta.state.unavailable";
+};
+
+const isCheckoutSettledStatus = (status: string | null | undefined) =>
+  status === "PAID" || status === "SUCCEEDED";
+
 const normalizeEmailValue = (value?: string | null) =>
   value?.trim().toLowerCase() ?? "";
 const normalizeUsernameValue = (value?: string | null) =>
@@ -239,6 +254,7 @@ type Gradient4 = [string, string, string, string];
 
 type EventBackdropPalette = {
   rootGradient: Gradient3;
+  auraGradient: Gradient4;
   topWashGradient: Gradient4 | null;
   depthGradient: Gradient4;
 };
@@ -327,10 +343,22 @@ const mixRgb = (from: Rgb, to: Rgb, weight: number): Rgb => {
   };
 };
 
+const relativeLuminance = ({ r, g, b }: Rgb) =>
+  (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
 const normalizeDominantColor = (input: Rgb): Rgb => {
   const hsl = rgbToHsl(input);
-  const saturation = Math.max(0.22, Math.min(0.66, hsl.s));
-  const lightness = Math.max(0.22, Math.min(0.62, hsl.l));
+  const isNearGrayscale = hsl.s < 0.12;
+  if (isNearGrayscale) {
+    const luminance =
+      input.r * 0.2126 + input.g * 0.7152 + input.b * 0.0722;
+    const channel = clampChannel(
+      Math.max(22, Math.min(160, luminance * 0.92)),
+    );
+    return { r: channel, g: channel, b: channel };
+  }
+  const saturation = Math.max(0.2, Math.min(0.72, hsl.s));
+  const lightness = Math.max(0.14, Math.min(0.58, hsl.l));
   return hslToRgb({ h: hsl.h, s: saturation, l: lightness });
 };
 
@@ -344,26 +372,72 @@ const buildEventBackdropPalette = (
         b: dominantColor.b,
       })
     : null;
-  const topWashBase = normalized
-    ? mixRgb(normalized, APP_BG_RGB, 0.24)
-    : null;
-  const topWashHead = normalized
-    ? mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.1)
-    : null;
+  const fallbackBase = mixRgb(APP_BG_RGB, { r: 30, g: 44, b: 62 }, 0.34);
+
+  if (!normalized) {
+    return {
+      rootGradient: [
+        rgba(mixRgb(APP_BG_RGB, fallbackBase, 0.24), 1),
+        rgba(APP_BG_RGB, 1),
+        rgba(APP_BG_RGB, 1),
+      ],
+      auraGradient: [
+        rgba(mixRgb(fallbackBase, { r: 255, g: 255, b: 255 }, 0.08), 0.7),
+        rgba(fallbackBase, 0.4),
+        rgba(mixRgb(fallbackBase, APP_BG_RGB, 0.52), 0.12),
+        "rgba(0,0,0,0)",
+      ],
+      topWashGradient: [
+        rgba(fallbackBase, 0.42),
+        rgba(mixRgb(fallbackBase, APP_BG_RGB, 0.48), 0.24),
+        rgba(APP_BG_RGB, 0.12),
+        "rgba(0,0,0,0)",
+      ],
+      depthGradient: [
+        "rgba(0,0,0,0)",
+        rgba(APP_BG_RGB, 0.24),
+        rgba(APP_BG_RGB, 0.84),
+        rgba(APP_BG_DEEP, 0.97),
+      ],
+    };
+  }
+
+  const hsl = rgbToHsl(normalized);
+  const luminance = relativeLuminance(normalized);
+  const brightnessBoost = Math.max(0, (luminance - 0.54) * 0.5);
+  const topStrength = clampAlpha(
+    0.46 + hsl.s * 0.32 + (0.62 - luminance) * 0.18,
+  );
+  const baseTint = mixRgb(normalized, APP_BG_RGB, 0.12);
+  const headTint = mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.06);
+  const tailTint = mixRgb(baseTint, APP_BG_RGB, 0.58);
+  const rootTop = mixRgb(normalized, APP_BG_RGB, 0.52);
+  const rootMid = mixRgb(normalized, APP_BG_RGB, 0.72);
+  const auraHead = mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.1);
+  const auraTail = mixRgb(normalized, APP_BG_RGB, 0.32);
+
   return {
-    rootGradient: [rgba(APP_BG_RGB, 1), rgba(APP_BG_RGB, 1), rgba(APP_BG_RGB, 1)],
-    topWashGradient: topWashHead && topWashBase
-      ? [
-          rgba(topWashHead, 0.84),
-          rgba(topWashBase, 0.5),
-          rgba(mixRgb(topWashBase, APP_BG_RGB, 0.62), 0.15),
-          "rgba(0,0,0,0)",
-        ]
-      : null,
+    rootGradient: [
+      rgba(rootTop, 1),
+      rgba(rootMid, 1),
+      rgba(APP_BG_RGB, 1),
+    ],
+    auraGradient: [
+      rgba(auraHead, clampAlpha(topStrength * 1.08)),
+      rgba(normalized, clampAlpha(topStrength * 0.64)),
+      rgba(auraTail, clampAlpha(topStrength * 0.24)),
+      "rgba(0,0,0,0)",
+    ],
+    topWashGradient: [
+      rgba(headTint, clampAlpha(topStrength * 0.94)),
+      rgba(baseTint, clampAlpha(topStrength * 0.7)),
+      rgba(tailTint, clampAlpha(topStrength * 0.34)),
+      "rgba(0,0,0,0)",
+    ],
     depthGradient: [
       "rgba(0,0,0,0)",
-      rgba(APP_BG_RGB, 0.14),
-      rgba(APP_BG_RGB, 0.76),
+      rgba(APP_BG_RGB, clampAlpha(0.18 + brightnessBoost * 0.5)),
+      rgba(APP_BG_RGB, clampAlpha(0.76 + brightnessBoost * 0.4)),
       rgba(APP_BG_DEEP, 0.96),
     ],
   };
@@ -452,7 +526,7 @@ export default function EventDetail() {
   }, [fallbackRoute, slugValue, source]);
 
   const openAuth = useCallback(() => {
-    router.push({ pathname: "/auth", params: { next: nextRoute } });
+    safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
   const previewHost = useMemo(() => {
     const value = params.hostName;
@@ -496,6 +570,18 @@ export default function EventDetail() {
   const [ticketQuantities, setTicketQuantities] = useState<Record<number, number>>({});
   const [infoExpanded, setInfoExpanded] = useState(false);
   const [initiatingCheckout, setInitiatingCheckout] = useState(false);
+  const [freeCheckoutSuccessVisible, setFreeCheckoutSuccessVisible] =
+    useState(false);
+  const [freeCheckoutSuccessKicker, setFreeCheckoutSuccessKicker] =
+    useState<string>(t("events:tickets.freeSuccess.kicker.single"));
+  const [freeCheckoutSuccessTitle, setFreeCheckoutSuccessTitle] =
+    useState<string>(t("events:tickets.freeSuccess.title.single"));
+  const [freeCheckoutSuccessMessage, setFreeCheckoutSuccessMessage] =
+    useState<string | null>(null);
+  const [freeCheckoutSuccessCtaLabel, setFreeCheckoutSuccessCtaLabel] =
+    useState<string>(t("events:tickets.freeSuccess.cta.single"));
+  const freeSuccessOpacity = useRef(new Animated.Value(0)).current;
+  const freeSuccessScale = useRef(new Animated.Value(0.92)).current;
   const [inviteTokenInput, setInviteTokenInput] = useState("");
   const [inviteState, setInviteState] = useState<{
     status: "idle" | "checking" | "valid" | "invalid";
@@ -533,6 +619,27 @@ export default function EventDetail() {
       () => undefined,
     );
   }, []);
+
+  useEffect(() => {
+    if (!freeCheckoutSuccessVisible) {
+      freeSuccessOpacity.setValue(0);
+      freeSuccessScale.setValue(0.92);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(freeSuccessOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(freeSuccessScale, {
+        toValue: 1,
+        friction: 8,
+        tension: 86,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [freeCheckoutSuccessVisible, freeSuccessOpacity, freeSuccessScale]);
 
   useEffect(() => {
     const eventId = data?.id;
@@ -990,11 +1097,11 @@ export default function EventDetail() {
   const backdropSeed = useMemo(
     () =>
       String(
-        displayCover ??
-          data?.slug ??
+        data?.slug ??
           slugValue ??
           displayTitle ??
           eventTitleValue ??
+          displayCover ??
           "orya-event",
       ),
     [data?.slug, displayCover, displayTitle, eventTitleValue, slugValue],
@@ -1005,6 +1112,15 @@ export default function EventDetail() {
     () => buildEventBackdropPalette(backdropDominantColor),
     [backdropDominantColor],
   );
+  const heroOverlayTint = useMemo(() => {
+    if (!backdropDominantColor) return "rgba(8,12,20,0.36)";
+    const normalized = normalizeDominantColor({
+      r: backdropDominantColor.r,
+      g: backdropDominantColor.g,
+      b: backdropDominantColor.b,
+    });
+    return rgba(normalized, 0.42);
+  }, [backdropDominantColor]);
   const displayLocation =
     data?.location?.formattedAddress ||
     data?.location?.city ||
@@ -1037,7 +1153,8 @@ export default function EventDetail() {
     const task = InteractionManager.runAfterInteractions(() => {
       getDominantColor(displayCover, backdropSeed)
         .then((resolved) => {
-          if (active) setBackdropDominantColor(resolved);
+          if (!active) return;
+          setBackdropDominantColor(resolved);
         })
         .catch(() => undefined);
     });
@@ -1049,7 +1166,7 @@ export default function EventDetail() {
 
   const handleHostPress = () => {
     if (hostUsername) {
-      router.push(`/${hostUsername}`);
+      safePush(router, `/${hostUsername}`);
     }
   };
   const showStickyPurchaseBar =
@@ -1064,6 +1181,9 @@ export default function EventDetail() {
     isPublicEvent: isPublicEventAccess,
   });
   const canOpenTicketSheet = ticketGateState.canOpenSheet;
+  const ticketCtaState = resolveTicketCtaState(ticketGateState);
+  const stickyCtaLabel = t(resolveTicketCtaLabel(ticketCtaState));
+  const stickyCtaDisabled = ticketCtaState !== "READY";
   const scrollBottomPadding = showStickyPurchaseBar ? insets.bottom + 190 : 36;
   const ticketSheetCurrency =
     selectedTicketItems[0]?.currency ??
@@ -1108,9 +1228,30 @@ export default function EventDetail() {
       }),
     [canAccessInvite, eventIsActive, t, ticketMeta, ticketQuantities],
   );
+  const hasPriceWithoutTicketTypes =
+    showStickyPurchaseBar &&
+    !ticketGateState.hasTicketTypes &&
+    typeof data?.priceFrom === "number";
   const stickyPriceLabel =
     selectedTicketQuantity > 0
       ? formatTicketPrice(selectedTicketTotalCents, ticketSheetCurrency, t)
+      : ticketGateState.inviteLocked
+        ? accessBadge.label
+      : ticketGateState.eventEnded
+        ? t("events:status.ended")
+      : hasPriceWithoutTicketTypes
+        ? data?.priceFrom && data.priceFrom > 0
+          ? t("common:price.from", {
+              price: formatCurrency(
+                data.priceFrom / 100,
+                "EUR",
+              ),
+            })
+          : t("common:price.free")
+      : !ticketGateState.hasTicketTypes
+        ? t("events:tickets.comingSoon")
+      : !ticketGateState.hasSelectableTickets
+        ? t("events:tickets.unavailableNow")
       : hasPurchasableTickets
         ? (() => {
             const sorted = [...purchasableTickets].sort(
@@ -1118,23 +1259,20 @@ export default function EventDetail() {
             );
             const lowest = sorted[0];
             if (!lowest) return t("events:tickets.unavailableNow");
-            const uniquePrices = new Set(sorted.map((ticket) => ticket.price));
-            return uniquePrices.size > 1 && lowest.price > 0
+            return lowest.price > 0
               ? t("common:price.from", {
                   price: formatCurrency(
                     lowest.price / 100,
                     lowest.currencyCode ?? "EUR",
                   ),
                 })
-              : formatTicketPrice(lowest.price, lowest.currencyCode, t);
+              : t("common:price.free");
           })()
-        : ticketGateState.hasTicketTypes
-          ? t("events:tickets.unavailableNow")
-        : t("events:tickets.comingSoon");
-  const hasPriceWithoutTicketTypes =
-    showStickyPurchaseBar &&
-    !ticketGateState.hasTicketTypes &&
-    typeof data?.priceFrom === "number";
+        : t("events:tickets.unavailableNow");
+  const ticketSheetSubmitLabel =
+    selectedTicketQuantity <= 0
+      ? t("events:tickets.sheet.submit.select")
+      : t("events:tickets.sheet.submit.default");
   const stickyHelperText = ticketGateState.inviteLocked
     ? t("events:invite.lockedTickets")
     : ticketGateState.eventEnded
@@ -1472,6 +1610,10 @@ export default function EventDetail() {
     const firstItem = selectedTicketItems[0];
     if (!firstItem) return;
     const idempotencyKey = buildCheckoutIdempotencyKey();
+    const checkoutItemsPayload = selectedTicketItems.map((item) => ({
+      ticketTypeId: item.ticketTypeId,
+      quantity: item.quantity,
+    }));
     setInitiatingCheckout(true);
     try {
       trackEvent("checkout_started", {
@@ -1499,7 +1641,99 @@ export default function EventDetail() {
         idempotencyKey,
       });
       setTicketSheetVisible(false);
-      router.push("/checkout");
+      if (selectedItemsAreFree) {
+        const response = await createCheckoutIntent({
+          slug: data.slug ?? "",
+          items: checkoutItemsPayload,
+          paymentMethod: "card",
+          paymentScenario: "FREE_CHECKOUT",
+          inviteToken: inviteToken ?? undefined,
+          idempotencyKey,
+        });
+        setCheckoutIntent({
+          clientSecret: response.clientSecret ?? null,
+          paymentIntentId: response.paymentIntentId ?? null,
+          purchaseId: response.purchaseId ?? null,
+          breakdown: response.breakdown ?? null,
+          freeCheckout:
+            response.freeCheckout ?? response.isGratisCheckout ?? false,
+        });
+
+        const freeCheckout =
+          response.freeCheckout ||
+          response.isGratisCheckout ||
+          (response.amount ?? 0) <= 0;
+        if (freeCheckout) {
+          let isSettled = true;
+          if (response.purchaseId || response.paymentIntentId) {
+            try {
+              const status = await fetchCheckoutStatus({
+                purchaseId: response.purchaseId ?? undefined,
+                paymentIntentId: response.paymentIntentId ?? undefined,
+              });
+              isSettled = isCheckoutSettledStatus(status.status);
+            } catch {
+              isSettled = false;
+            }
+          }
+
+          if (isSettled) {
+            const eventTitleCopy =
+              data.title?.trim() ||
+              displayTitle?.trim() ||
+              t("events:tickets.freeSuccess.eventFallback");
+            const isPlural = selectedTicketQuantity > 1;
+            void Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Success,
+            ).catch(() => undefined);
+            setTicketQuantities({});
+            setFreeCheckoutSuccessKicker(
+              isPlural
+                ? t("events:tickets.freeSuccess.kicker.plural")
+                : t("events:tickets.freeSuccess.kicker.single"),
+            );
+            setFreeCheckoutSuccessTitle(
+              isPlural
+                ? t("events:tickets.freeSuccess.title.plural")
+                : t("events:tickets.freeSuccess.title.single"),
+            );
+            setFreeCheckoutSuccessMessage(
+              isPlural
+                ? t("events:tickets.freeSuccess.message.plural", {
+                    count: selectedTicketQuantity,
+                    event: eventTitleCopy,
+                  })
+                : t("events:tickets.freeSuccess.message.single", {
+                    event: eventTitleCopy,
+                  }),
+            );
+            setFreeCheckoutSuccessCtaLabel(
+              isPlural
+                ? t("events:tickets.freeSuccess.cta.plural")
+                : t("events:tickets.freeSuccess.cta.single"),
+            );
+            setFreeCheckoutSuccessVisible(true);
+            trackEvent("checkout_free_ticket_confirmed", {
+              sourceType: "EVENT_TICKET",
+              eventId: data.id,
+              quantity: selectedTicketQuantity,
+            });
+            return;
+          }
+
+          safePush(router, {
+            pathname: "/checkout/success",
+            params: {
+              purchaseId: response.purchaseId ?? "",
+              paymentIntentId: response.paymentIntentId ?? "",
+              eventTitle: data.title ?? "",
+              slug: data.slug ?? "",
+            },
+          });
+          return;
+        }
+      }
+      safePush(router, "/checkout");
     } catch (err: any) {
       Alert.alert(
         t("common:labels.error"),
@@ -1511,6 +1745,7 @@ export default function EventDetail() {
   }, [
     canAccessInvite,
     data,
+    displayTitle,
     eventIsActive,
     inviteToken,
     openAuth,
@@ -1521,9 +1756,21 @@ export default function EventDetail() {
     selectedTicketTotalCents,
     session?.user?.id,
     setCheckoutDraft,
+    setCheckoutIntent,
     t,
     triggerLightHaptic,
   ]);
+
+  const handleDismissFreeCheckoutSuccess = useCallback(() => {
+    setFreeCheckoutSuccessVisible(false);
+    setFreeCheckoutSuccessMessage(null);
+  }, []);
+
+  const handleViewTicketFromFreeSuccess = useCallback(() => {
+    setFreeCheckoutSuccessVisible(false);
+    setFreeCheckoutSuccessMessage(null);
+    router.replace("/tickets");
+  }, [router]);
 
   const handleCreatePairing = async () => {
     triggerLightHaptic();
@@ -1593,7 +1840,7 @@ export default function EventDetail() {
           t("events:padel.onboardingRequiredTitle"),
           t("events:padel.onboardingRequiredBody"),
         );
-        router.push("/(tabs)/profile");
+        safePush(router, "/(tabs)/profile");
         return;
       }
       Alert.alert(
@@ -1614,10 +1861,12 @@ export default function EventDetail() {
     if (pairingBusy) return;
     setPairingBusy(true);
     try {
-      await joinOpenPairing(pairingId);
+      const joinResult = await joinOpenPairing(pairingId);
       Alert.alert(
         t("events:padel.pairingTitle"),
-        t("events:padel.joinSuccess"),
+        joinResult.alreadyActive
+          ? t("events:padel.joinAlreadyActive")
+          : t("events:padel.joinSuccess"),
       );
       await Promise.all([
         myPairingsQuery.refetch(),
@@ -1723,7 +1972,7 @@ export default function EventDetail() {
         (response.amount ?? 0) <= 0 ||
         total <= 0;
       if (isFree) {
-        router.push({
+        safePush(router, {
           pathname: "/checkout/success",
           params: {
             purchaseId: response.purchaseId ?? "",
@@ -1759,7 +2008,7 @@ export default function EventDetail() {
         freeCheckout:
           response.freeCheckout ?? response.isGratisCheckout ?? false,
       });
-      router.push("/checkout");
+      safePush(router, "/checkout");
     } catch (err: any) {
       Alert.alert(
         t("events:payment.title"),
@@ -1786,10 +2035,16 @@ export default function EventDetail() {
             end={{ x: 0.88, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
+          <LinearGradient
+            colors={backdropPalette.auraGradient}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.backdropAura}
+          />
           {backdropPalette.topWashGradient ? (
             <LinearGradient
               colors={backdropPalette.topWashGradient}
-              start={{ x: 0.46, y: 0 }}
+              start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
               style={styles.backdropTopWash}
             />
@@ -1841,7 +2096,11 @@ export default function EventDetail() {
               style={{ opacity: fade, transform: [{ translateY: translate }] }}
             >
               <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
-                <EventHeroSquare coverUri={displayCover} title={displayTitle} />
+                <EventHeroSquare
+                  coverUri={displayCover}
+                  title={displayTitle}
+                  overlayTint={heroOverlayTint}
+                />
                 <EventHeaderMeta
                   title={displayTitle}
                   dateLabel={date}
@@ -1887,23 +2146,10 @@ export default function EventDetail() {
               <View className="px-5 pt-5 gap-4">
                 <EventInfoAccordion
                   expanded={infoExpanded}
-                  onToggle={() => setInfoExpanded(true)}
+                  onToggle={() => setInfoExpanded((current) => !current)}
                   description={description}
                   title={t("events:detail.about")}
-                >
-                  <View className="flex-row flex-wrap gap-2">
-                    <GlassPill
-                      label={accessBadge.label}
-                      variant={accessBadge.variant}
-                    />
-                    {statusLabel ? (
-                      <GlassPill label={statusLabel} variant="muted" />
-                    ) : null}
-                    {ticketInventoryLabel ? (
-                      <GlassPill label={ticketInventoryLabel} variant="muted" />
-                    ) : null}
-                  </View>
-                </EventInfoAccordion>
+                />
 
                 <EventLocationBlock
                   startsAtLabel={startsAtLabel}
@@ -2847,33 +3093,30 @@ export default function EventDetail() {
               accessibilityRole="button"
               accessibilityLabel={t("common:actions.back")}
               hitSlop={14}
-              style={({ pressed }) => [styles.closeButton, pressed ? styles.closeButtonPressed : null]}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed ? styles.closeButtonPressed : null,
+              ]}
             >
-              <BlurView
-                tint="dark"
-                intensity={88}
-                style={StyleSheet.absoluteFill}
-              />
-              <LinearGradient
-                pointerEvents="none"
-                colors={[
-                  "rgba(255,255,255,0.22)",
-                  "rgba(255,255,255,0.03)",
-                  "rgba(3,8,14,0.42)",
-                ]}
-                start={{ x: 0.2, y: 0 }}
-                end={{ x: 0.8, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <Ionicons name="close" size={24} color="rgba(248,252,255,0.98)" />
+              <View pointerEvents="none" style={styles.closePlate}>
+                {Platform.OS === "ios" ? (
+                  <BlurView intensity={40} tint="dark" style={styles.closePlateBlur} />
+                ) : null}
+                <View style={styles.closePlateTint} />
+                <View style={styles.closeGlyph}>
+                  <View style={[styles.closeGlyphLine, styles.closeGlyphLineA]} />
+                  <View style={[styles.closeGlyphLine, styles.closeGlyphLineB]} />
+                </View>
+              </View>
             </Pressable>
           </View>
         </View>
         {showStickyPurchaseBar ? (
           <StickyPurchaseBar
             priceLabel={stickyPriceLabel}
-            buttonLabel={t("events:detail.ctaBuy")}
-            disabled={!canOpenTicketSheet}
+            ctaState={ticketCtaState}
+            ctaLabel={stickyCtaLabel}
+            disabled={stickyCtaDisabled}
             helperText={stickyHelperText}
             onPress={handleOpenTicketSheet}
           />
@@ -2884,6 +3127,7 @@ export default function EventDetail() {
           items={ticketSelectorItems}
           totalCents={selectedTicketTotalCents}
           currency={ticketSheetCurrency}
+          submitLabel={ticketSheetSubmitLabel}
           emptyStateMessage={
             ticketGateState.hasTicketTypes
               ? t("events:tickets.unavailableNow")
@@ -2901,6 +3145,80 @@ export default function EventDetail() {
           onDecrement={handleDecrementTicket}
           onSubmit={handleCheckoutFromTickets}
         />
+        {freeCheckoutSuccessVisible ? (
+          <Animated.View
+            style={[styles.freeSuccessOverlay, { opacity: freeSuccessOpacity }]}
+          >
+            <LinearGradient
+              colors={["#10F18A", "#17F59B", "#1EF8A8"]}
+              start={{ x: 0.28, y: 0 }}
+              end={{ x: 0.72, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View
+              style={[
+                styles.freeSuccessContent,
+                {
+                  paddingTop: insets.top + 18,
+                  paddingBottom: insets.bottom + 26,
+                },
+              ]}
+            >
+              <View style={styles.freeSuccessHeader}>
+                <View style={styles.freeSuccessSpacer} />
+                <Pressable
+                  onPress={handleDismissFreeCheckoutSuccess}
+                  accessibilityRole="button"
+                  accessibilityLabel="Fechar confirmação"
+                  style={({ pressed }) => [
+                    styles.freeSuccessClose,
+                    pressed ? styles.closeButtonPressed : null,
+                  ]}
+                >
+                  <Ionicons name="close" size={22} color="#071018" />
+                </Pressable>
+              </View>
+
+              <Animated.View
+                style={[
+                  styles.freeSuccessBody,
+                  { transform: [{ scale: freeSuccessScale }] },
+                ]}
+              >
+                <View style={styles.freeSuccessIconWrap}>
+                  <Ionicons name="checkmark" size={46} color="#071018" />
+                </View>
+                <Text style={styles.freeSuccessKicker}>
+                  {freeCheckoutSuccessKicker}
+                </Text>
+                <Text style={styles.freeSuccessTitle}>
+                  {freeCheckoutSuccessTitle}
+                </Text>
+                <Text style={styles.freeSuccessMessage}>
+                  {freeCheckoutSuccessMessage ??
+                    t("events:tickets.freeSuccess.message.default")}
+                </Text>
+              </Animated.View>
+
+              <Pressable
+                onPress={handleViewTicketFromFreeSuccess}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  freeCheckoutSuccessCtaLabel ||
+                  t("events:tickets.freeSuccess.cta.accessibility")
+                }
+                style={({ pressed }) => [
+                  styles.freeSuccessCta,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.freeSuccessCtaText}>
+                  {freeCheckoutSuccessCtaLabel}
+                </Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        ) : null}
       </LiquidBackground>
     </>
   );
@@ -2911,31 +3229,161 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
   },
+  backdropAura: {
+    position: "absolute",
+    top: -42,
+    left: 0,
+    right: 0,
+    height: "88%",
+  },
   backdropTopWash: {
     position: "absolute",
     top: -20,
     left: 0,
     right: 0,
-    height: "48%",
+    height: "72%",
   },
   closeButton: {
-    width: 47,
-    height: 47,
-    borderRadius: 23.5,
-    borderWidth: 1,
-    borderColor: "rgba(234,246,255,0.32)",
-    backgroundColor: "rgba(6,10,16,0.58)",
+    width: 54,
+    height: 54,
+    minWidth: 54,
+    maxWidth: 54,
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closePlate: {
+    width: 54,
+    height: 54,
+    borderRadius: 999,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "rgba(0,0,0,0.7)",
+    shadowColor: "rgba(0,0,0,0.74)",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.34,
+    shadowOpacity: 0.28,
     shadowRadius: 12,
     elevation: 10,
   },
+  closePlateBlur: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  closePlateTint: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(226,241,255,0.34)",
+    backgroundColor: "rgba(8,12,20,0.46)",
+  },
+  closeGlyph: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  closeGlyphLine: {
+    position: "absolute",
+    width: 21,
+    height: 2.8,
+    borderRadius: 999,
+    backgroundColor: "rgba(248,252,255,0.98)",
+  },
+  closeGlyphLineA: {
+    transform: [{ rotate: "45deg" }],
+  },
+  closeGlyphLineB: {
+    transform: [{ rotate: "-45deg" }],
+  },
   closeButtonPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.96 }],
+    opacity: 0.92,
+    transform: [{ scale: 0.97 }],
+  },
+  freeSuccessOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 460,
+    elevation: 460,
+  },
+  freeSuccessContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    justifyContent: "space-between",
+  },
+  freeSuccessHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  freeSuccessSpacer: {
+    width: 54,
+    height: 54,
+  },
+  freeSuccessClose: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(7,16,24,0.24)",
+    backgroundColor: "rgba(7,16,24,0.18)",
+  },
+  freeSuccessBody: {
+    alignItems: "center",
+    paddingHorizontal: 20,
+    gap: 8,
+  },
+  freeSuccessIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(7,16,24,0.12)",
+    borderWidth: 2,
+    borderColor: "rgba(7,16,24,0.22)",
+    marginBottom: 6,
+  },
+  freeSuccessKicker: {
+    color: "#071018",
+    fontSize: 50,
+    lineHeight: 54,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+  freeSuccessTitle: {
+    color: "#071018",
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  freeSuccessMessage: {
+    color: "rgba(7,16,24,0.88)",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "500",
+    textAlign: "center",
+    paddingHorizontal: 10,
+    marginTop: 6,
+  },
+  freeSuccessCta: {
+    minHeight: 58,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#071018",
+    borderWidth: 1,
+    borderColor: "rgba(7,16,24,0.92)",
+    marginBottom: 4,
+  },
+  freeSuccessCtaText: {
+    color: "#F4F9FF",
+    fontSize: 31 / 2,
+    lineHeight: 38 / 2,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
   },
 });

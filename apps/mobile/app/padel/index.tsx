@@ -6,7 +6,7 @@ import { tokens } from "@orya/shared";
 export default function PadelRedirectScreen() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const emptyStateLabel = "Ainda não foi possível abrir o hub de Padel.";
+  const emptyStateLabel = "Ainda não foi possível abrir a área de Padel.";
   const isLoading = true;
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export default function PadelRedirectScreen() {
     }, 2500);
 
     try {
-      router.replace({ pathname: "/(tabs)/index", params: { world: "padel" } });
+      router.replace("/(tabs)/padel");
     } catch {
       setError("Falha no redirecionamento.");
     }
@@ -34,7 +34,7 @@ export default function PadelRedirectScreen() {
       <Text
         style={{ marginTop: 12, color: "rgba(255,255,255,0.78)", fontSize: 14, fontWeight: "600", minHeight: tokens.layout.touchTarget }}
       >
-        A carregar Padel...
+        A abrir Padel...
       </Text>
       {error ? (
         <Text style={{ marginTop: 8, color: "rgba(248,113,113,0.95)", fontSize: 12, textAlign: "center" }}>

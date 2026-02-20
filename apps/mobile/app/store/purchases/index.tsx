@@ -2,7 +2,6 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-nati
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "../../../components/icons/Ionicons";
 import { LiquidBackground } from "../../../components/liquid/LiquidBackground";
-import { GlassCard } from "../../../components/liquid/GlassCard";
 import { TopAppHeader } from "../../../components/navigation/TopAppHeader";
 import { useTopHeaderPadding } from "../../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../../components/navigation/useTopBarScroll";
@@ -68,43 +67,49 @@ export default function StorePurchasesScreen() {
         scrollEventThrottle={16}
       >
         {!session?.user?.id ? (
-          <GlassCard intensity={52}>
+          <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-base font-semibold">Inicia sessão para ver compras</Text>
             <Pressable
               onPress={openAuth}
-              className="mt-4 rounded-xl bg-white px-4 py-3"
+              className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
             >
-              <Text className="text-center text-sm font-semibold text-black">Iniciar sessão</Text>
+              <Text className="text-xs font-semibold text-black">Iniciar sessão</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : purchases.isLoading ? (
           <View className="py-8">
             <ActivityIndicator color="white" />
           </View>
         ) : purchases.isError ? (
-          <GlassCard intensity={52}>
+          <View className="gap-2 border-b border-rose-200/30 pb-4">
             <Text className="text-red-300 text-sm mb-3">{getStoreErrorMessage(purchases.error)}</Text>
             <Pressable
               onPress={() => purchases.refetch()}
-              className="rounded-xl bg-white/10 px-4 py-3"
+              className="self-start rounded-full border border-white/20 bg-white/10 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
-              <Text className="text-center text-sm font-semibold text-white">Tentar novamente</Text>
+              <Text className="text-xs font-semibold text-white">Tentar novamente</Text>
             </Pressable>
-          </GlassCard>
+          </View>
         ) : (
           <View className="gap-3">
             {(purchases.data?.items ?? []).length ? (
-              (purchases.data?.items ?? []).map((order) => (
+              (purchases.data?.items ?? []).map((order, index, list) => (
                 <Link
                   key={`store-order-${order.id}`}
                   href={{ pathname: "/store/purchases/[orderId]", params: { orderId: String(order.id) } }}
                   asChild
                 >
-                  <Pressable className="rounded-2xl border border-white/12 bg-white/5 px-4 py-4">
+                  <Pressable
+                    className={
+                      index < list.length - 1
+                        ? "border-b border-white/10 px-1 py-3"
+                        : "px-1 py-3"
+                    }
+                  >
                     <View className="flex-row items-center justify-between gap-2">
                       <Text className="text-white text-sm font-semibold">
                         {order.store.displayName}
@@ -122,9 +127,9 @@ export default function StorePurchasesScreen() {
                 </Link>
               ))
             ) : (
-              <GlassCard intensity={46}>
+              <View className="border-b border-white/12 pb-3">
                 <Text className="text-white/70 text-sm">Ainda não tens compras de Loja.</Text>
-              </GlassCard>
+              </View>
             )}
           </View>
         )}

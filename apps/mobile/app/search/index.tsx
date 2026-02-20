@@ -24,7 +24,7 @@ import { SearchUserRow } from "../../features/search/SearchUserRow";
 import { SearchOrganizationRow } from "../../features/search/SearchOrganizationRow";
 import { useNetworkActions, useOrganizationFollowActions } from "../../features/network/hooks";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
-import { safeBack } from "../../lib/navigation";
+import { safeBack, safePush } from "../../lib/navigation";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { DiscoverKind, DiscoverOfferCard } from "../../features/discover/types";
 import { SearchOrganization, SearchUser } from "../../features/search/types";
@@ -566,7 +566,7 @@ export default function SearchScreen() {
                 </Pressable>
               ) : null}
               <Pressable
-                onPress={() => router.push("/(tabs)/index")}
+                onPress={() => safePush(router, "/(tabs)/index")}
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"

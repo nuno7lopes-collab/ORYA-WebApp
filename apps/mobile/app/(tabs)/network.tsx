@@ -12,12 +12,13 @@ import { useIpLocation } from "../../features/onboarding/hooks";
 import { SocialFeedItem } from "../../features/social/types";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
-import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
+import { TopPadelButton } from "../../components/navigation/TopPadelButton";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { NetworkPeopleDeck } from "../../features/network/NetworkPeopleDeck";
+import { safePush } from "../../lib/navigation";
 
 const SECTION_SPACING = 24;
 
@@ -163,7 +164,7 @@ export default function NetworkScreen() {
           <GlassCard intensity={48} className="mb-4">
             <Text className="text-white/70 text-sm">{message}</Text>
             <Pressable
-              onPress={() => router.push("/search")}
+              onPress={() => safePush(router, "/search")}
               className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -244,7 +245,7 @@ export default function NetworkScreen() {
           </Text>
           <View className="mt-3 flex-row gap-2">
             <Pressable
-              onPress={() => router.push("/padel")}
+              onPress={() => safePush(router, "/padel")}
               className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -253,7 +254,7 @@ export default function NetworkScreen() {
               <Text className="text-white text-xs font-semibold text-center">Explorar Padel</Text>
             </Pressable>
             <Pressable
-              onPress={() => router.push({ pathname: "/search", params: { tab: "people" } })}
+              onPress={() => safePush(router, { pathname: "/search", params: { tab: "people" } })}
               className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -281,7 +282,7 @@ export default function NetworkScreen() {
         variant="title"
         title="Rede"
         titleAlign="center"
-        leftSlot={<TopTicketsButton />}
+        leftSlot={<TopPadelButton />}
         showNotifications
         showMessages={false}
       />

@@ -20,7 +20,7 @@ import {
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TAB_BAR_HEIGHT } from "../../components/navigation/FloatingTabBar";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
-import { TopTicketsButton } from "../../components/navigation/TopTicketsButton";
+import { TopPadelButton } from "../../components/navigation/TopPadelButton";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useRouter } from "expo-router";
@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
+import { safePush } from "../../lib/navigation";
 
 const MAP_BUTTON_SIZE = 50;
 const MAP_ICON_SIZE = 20;
@@ -171,7 +172,7 @@ export default function AgoraScreen() {
           variant="title"
           title={t("agora:title")}
           titleAlign="center"
-          leftSlot={<TopTicketsButton />}
+          leftSlot={<TopPadelButton />}
           showNotifications
           showMessages={false}
         />
@@ -278,7 +279,7 @@ export default function AgoraScreen() {
           }}
         >
           <Pressable
-            onPress={() => router.push("/map")}
+            onPress={() => safePush(router, "/map")}
             accessibilityRole="button"
             accessibilityLabel={t("agora:openMap")}
             style={({ pressed }) => [

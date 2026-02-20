@@ -28,7 +28,7 @@ import {
   buildBookingPayload,
 } from "../../../features/services/bookingPayload";
 import { useAuth } from "../../../lib/auth";
-import { safeBack } from "../../../lib/navigation";
+import { safeBack, safePush } from "../../../lib/navigation";
 import { getUserFacingError } from "../../../lib/errors";
 import { trackEvent } from "../../../lib/analytics";
 import { api } from "../../../lib/api";
@@ -358,7 +358,7 @@ export default function ServiceBookingScreen() {
 
   const openAuth = useCallback(() => {
     if (!serviceId) return;
-    router.push({
+    safePush(router, {
       pathname: "/auth",
       params: { next: `/service/${serviceId}/booking` },
     });
@@ -460,7 +460,7 @@ export default function ServiceBookingScreen() {
           serviceId,
           bookingId: json.booking?.id ?? null,
         });
-        router.push("/checkout");
+        safePush(router, "/checkout");
       } catch (err) {
         setBookingError(
           getUserFacingError(err, "Não foi possível criar a pré-reserva."),
