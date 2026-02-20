@@ -51,7 +51,7 @@ const parseAuthError = (err: any, t: (key: string) => string) => {
   if (lower.includes("email") && lower.includes("confirm")) {
     return { kind: "email_not_confirmed", message: t("auth:email.errors.emailNotConfirmed") };
   }
-  if (lower.includes("user") && lower.includes("already") || lower.includes("already registered")) {
+  if ((lower.includes("user") && lower.includes("already")) || lower.includes("already registered")) {
     return { kind: "user_exists", message: t("auth:email.errors.userExists") };
   }
   if (lower.includes("signup") && lower.includes("disabled")) {
@@ -86,6 +86,7 @@ export default function AuthEmailScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const identifierInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
 
   const normalizedIdentifier = identifier.trim();
@@ -138,6 +139,13 @@ export default function AuthEmailScreen() {
     }
   };
 
+  const handleToggleAuthMode = () => {
+    setIsSignUp((prev) => !prev);
+    setFormError(null);
+    setInfoMessage(null);
+    setPasswordVisible(false);
+  };
+
   const handleEmailAuth = async () => {
     if (loading) return;
     await triggerHaptic();
@@ -185,6 +193,8 @@ export default function AuthEmailScreen() {
         trackEvent("auth_success_email", { mode: "signup_pending" });
         setInfoMessage(t("auth:email.linkSent"));
         setIsSignUp(false);
+        setPassword("");
+        setPasswordVisible(false);
         Alert.alert(t("auth:email.confirmEmailTitle"), t("auth:email.confirmEmailBody"));
         return;
       }
@@ -237,7 +247,10 @@ export default function AuthEmailScreen() {
 
       if (parsed.kind === "user_exists") {
         setFormError(t("auth:email.errors.userExistsSignIn"));
-        if (isSignUp) setIsSignUp(false);
+        if (isSignUp) {
+          setIsSignUp(false);
+          setPasswordVisible(false);
+        }
         return;
       }
 
@@ -314,7 +327,7 @@ export default function AuthEmailScreen() {
                 paddingBottom: Math.max(insets.bottom + 28, 40),
               },
             ]}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
@@ -336,8 +349,13 @@ export default function AuthEmailScreen() {
               <GlassCard style={compactLayout ? styles.cardCompact : styles.card} intensity={84}>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>{identifierLabel}</Text>
-                  <View style={[styles.inputShell, identifierInvalid ? styles.inputShellError : null]}>
+                  <Pressable
+                    style={[styles.inputShell, identifierInvalid ? styles.inputShellError : null]}
+                    onPress={() => identifierInputRef.current?.focus()}
+                    accessible={false}
+                  >
                     <TextInput
+                      ref={identifierInputRef}
                       style={styles.input}
                       autoCapitalize="none"
                       autoCorrect={false}
@@ -352,18 +370,22 @@ export default function AuthEmailScreen() {
                       returnKeyType="next"
                       onSubmitEditing={() => passwordInputRef.current?.focus()}
                     />
-                  </View>
+                  </Pressable>
                 </View>
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>{t("common:labels.password")}</Text>
-                  <View style={[styles.inputShell, styles.inputWrap]}>
+                  <Pressable
+                    style={[styles.inputShell, styles.inputWrap]}
+                    onPress={() => passwordInputRef.current?.focus()}
+                    accessible={false}
+                  >
                     <TextInput
                       ref={passwordInputRef}
                       style={[styles.input, styles.inputWithIcon]}
                       secureTextEntry={!passwordVisible}
                       textContentType={isSignUp ? "newPassword" : "password"}
-                      autoComplete="password"
+                      autoComplete={isSignUp ? "new-password" : "password"}
                       value={password}
                       onChangeText={setPassword}
                       placeholder="••••••••"
@@ -377,6 +399,7 @@ export default function AuthEmailScreen() {
                     <Pressable
                       onPress={() => setPasswordVisible((prev) => !prev)}
                       style={styles.passwordToggle}
+                      hitSlop={10}
                       accessibilityLabel={
                         passwordVisible ? t("auth:email.hidePassword") : t("auth:email.showPassword")
                       }
@@ -387,7 +410,7 @@ export default function AuthEmailScreen() {
                         color="rgba(220,232,255,0.82)"
                       />
                     </Pressable>
-                  </View>
+                  </Pressable>
                 </View>
 
                 {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
@@ -416,7 +439,7 @@ export default function AuthEmailScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setIsSignUp((prev) => !prev)}
+                  onPress={handleToggleAuthMode}
                   disabled={loading}
                   accessibilityRole="button"
                   accessibilityState={{ disabled: loading }}
@@ -562,6 +585,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 52,
+    width: "100%",
     color: "#f7fbff",
     fontSize: 16,
     fontFamily: tokens.typography.fontFamily?.body ?? "System",
@@ -570,8 +594,10 @@ const styles = StyleSheet.create({
     position: "relative",
     flexDirection: "row",
     alignItems: "center",
+    width: "100%",
   },
   inputWithIcon: {
+    flex: 1,
     paddingRight: 44,
   },
   passwordToggle: {

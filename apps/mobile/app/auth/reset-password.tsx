@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -40,6 +40,8 @@ export default function ResetPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const newPasswordInputRef = useRef<TextInput>(null);
+  const confirmPasswordInputRef = useRef<TextInput>(null);
 
   const nextRoute = useMemo(() => {
     const raw = params.next;
@@ -130,7 +132,7 @@ export default function ResetPasswordScreen() {
                 paddingBottom: Math.max(insets.bottom + 28, 40),
               },
             ]}
-            keyboardShouldPersistTaps="handled"
+            keyboardShouldPersistTaps="always"
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
@@ -152,8 +154,13 @@ export default function ResetPasswordScreen() {
               <GlassCard style={styles.card} intensity={84}>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>{t("auth:resetPassword.newPassword")}</Text>
-                  <View style={styles.inputShell}>
+                  <Pressable
+                    style={styles.inputShell}
+                    onPress={() => newPasswordInputRef.current?.focus()}
+                    accessible={false}
+                  >
                     <TextInput
+                      ref={newPasswordInputRef}
                       style={styles.input}
                       secureTextEntry
                       textContentType="newPassword"
@@ -164,14 +171,20 @@ export default function ResetPasswordScreen() {
                       placeholderTextColor="rgba(225,235,252,0.52)"
                       accessibilityLabel={t("auth:resetPassword.newPassword")}
                       returnKeyType="next"
+                      onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
                     />
-                  </View>
+                  </Pressable>
                 </View>
 
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>{t("auth:resetPassword.confirmPassword")}</Text>
-                  <View style={styles.inputShell}>
+                  <Pressable
+                    style={styles.inputShell}
+                    onPress={() => confirmPasswordInputRef.current?.focus()}
+                    accessible={false}
+                  >
                     <TextInput
+                      ref={confirmPasswordInputRef}
                       style={styles.input}
                       secureTextEntry
                       textContentType="newPassword"
@@ -184,7 +197,7 @@ export default function ResetPasswordScreen() {
                       returnKeyType="go"
                       onSubmitEditing={handleSavePassword}
                     />
-                  </View>
+                  </Pressable>
                 </View>
 
                 {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
@@ -294,6 +307,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 52,
+    width: "100%",
     color: "#f7fbff",
     fontSize: 16,
     fontFamily: tokens.typography.fontFamily?.body ?? "System",

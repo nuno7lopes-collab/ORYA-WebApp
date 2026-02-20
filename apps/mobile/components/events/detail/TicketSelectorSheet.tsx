@@ -70,9 +70,8 @@ export function TicketSelectorSheet({
     submitLabel ?? t("events:tickets.sheet.submit.default");
   const resolvedEmptyStateMessage =
     emptyStateMessage ?? t("events:tickets.unavailableNow");
-  const submitDisabled = !hasSelection || submitting;
-  const submitMuted = !hasSelection && !submitting;
-  const showSubmit = hasSelection || submitting;
+  const showSubmit = hasSelection;
+  const submitDisabled = submitting;
 
   useEffect(() => {
     if (!visible) return;
@@ -232,7 +231,6 @@ export function TicketSelectorSheet({
               accessibilityState={{ disabled: submitDisabled }}
               style={({ pressed }) => [
                 styles.submitBtn,
-                submitMuted ? styles.submitBtnDisabled : null,
                 pressed ? styles.pressed : null,
               ]}
             >
@@ -245,18 +243,11 @@ export function TicketSelectorSheet({
                 </View>
               ) : (
                 <View style={styles.submitReady}>
-                  <Text
-                    style={[
-                      styles.submitText,
-                      submitMuted ? styles.submitTextMuted : null,
-                    ]}
-                  >
-                    {resolvedSubmitLabel}
-                  </Text>
+                  <Text style={styles.submitText}>{resolvedSubmitLabel}</Text>
                   <Ionicons
                     name="arrow-forward"
                     size={18}
-                    color={submitMuted ? "rgba(234,244,255,0.92)" : "#0A1018"}
+                    color="#0A1018"
                   />
                 </View>
               )}
@@ -448,6 +439,8 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
     justifyContent: "flex-start",
     gap: 12,
+    zIndex: 10,
+    elevation: 10,
   },
   footerTopRow: {
     flexDirection: "row",
@@ -476,18 +469,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
-  submitBtnDisabled: {
-    opacity: 1,
-    backgroundColor: "rgba(228,241,255,0.12)",
-    borderColor: "rgba(228,241,255,0.32)",
-  },
   submitText: {
     color: "#0A1018",
     fontSize: 16,
     fontWeight: "800",
-  },
-  submitTextMuted: {
-    color: "rgba(234,244,255,0.96)",
   },
   submitBusy: {
     flexDirection: "row",

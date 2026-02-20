@@ -134,6 +134,20 @@ const isCheckoutPollingState = (status?: string | null) =>
     status && ["PENDING", "PROCESSING", "REQUIRES_ACTION"].includes(status),
   );
 
+const isBookingTerminalStatus = (status?: string | null) =>
+  Boolean(
+    status &&
+      [
+        "CONFIRMED",
+        "CANCELLED",
+        "CANCELLED_BY_CLIENT",
+        "CANCELLED_BY_ORG",
+        "COMPLETED",
+        "DISPUTED",
+        "NO_SHOW",
+      ].includes(status),
+  );
+
 type StatusMeta = {
   tone: "success" | "danger" | "warning" | "info";
   title: string;
@@ -171,6 +185,10 @@ export default function CheckoutScreen() {
   const [checkoutPollingTimedOut, setCheckoutPollingTimedOut] = useState(false);
   const recoveredTrackedRef = useRef(false);
   const statusCheckInFlightRef = useRef<Promise<CheckoutStatusResponse | null> | null>(null);
+  const bookingStatusInFlightRef = useRef<Promise<string | null> | null>(null);
+  const bookingStatusInFlightBookingIdRef = useRef<number | null>(null);
+  const bookingPollInFlightRef = useRef<Promise<void> | null>(null);
+  const bookingTimeoutTrackedRef = useRef(false);
   const returnUrl = useMemo(() => buildReturnUrl("checkout/success"), []);
 
   const draft = useCheckoutStore((state) => state.draft);
@@ -208,6 +226,8 @@ export default function CheckoutScreen() {
       setCheckoutPollingStartedAt(null);
       setCheckoutPollingTimedOut(false);
       recoveredTrackedRef.current = false;
+      bookingPollInFlightRef.current = null;
+      bookingTimeoutTrackedRef.current = false;
       return;
     }
     if (!draft.purchaseId && !draft.paymentIntentId) {
@@ -217,6 +237,8 @@ export default function CheckoutScreen() {
       setCheckoutPollingStartedAt(null);
       setCheckoutPollingTimedOut(false);
       recoveredTrackedRef.current = false;
+      bookingPollInFlightRef.current = null;
+      bookingTimeoutTrackedRef.current = false;
     }
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
@@ -445,59 +467,88 @@ export default function CheckoutScreen() {
 
   const fetchBookingStatus = useCallback(async () => {
     if (!draft?.bookingId) return null;
-    setBookingChecking(true);
-    try {
-      const endpoint = `/api/me/reservas/${draft.bookingId}`;
-      const result = await api.requestRaw<{
-        ok: boolean;
-        booking?: { status?: string };
-        message?: string;
-        error?: string;
-      }>(endpoint, { cache: "no-store" });
-      const json = result.data;
-      if (!result.ok || !json?.ok) {
-        throw new Error(
-          json?.message ||
-            json?.error ||
-            "Não foi possível verificar a reserva.",
+    if (
+      bookingStatusInFlightRef.current &&
+      bookingStatusInFlightBookingIdRef.current === draft.bookingId
+    ) {
+      return bookingStatusInFlightRef.current;
+    }
+    const task = (async () => {
+      setBookingChecking(true);
+      try {
+        const endpoint = `/api/me/reservas/${draft.bookingId}`;
+        const result = await api.requestRaw<{
+          ok: boolean;
+          booking?: { status?: string };
+          message?: string;
+          error?: string;
+        }>(endpoint, { cache: "no-store" });
+        const json = result.data;
+        if (!result.ok || !json?.ok) {
+          throw new Error(
+            json?.message ||
+              json?.error ||
+              "Não foi possível verificar a reserva.",
+          );
+        }
+        const status = json.booking?.status as string | undefined;
+        setBookingStatus(status ?? null);
+        setBookingError(null);
+        return status ?? null;
+      } catch (err) {
+        setBookingError(
+          getUserFacingError(err, "Não foi possível verificar a reserva."),
         );
+        return null;
+      } finally {
+        setBookingChecking(false);
       }
-      const status = json.booking?.status as string | undefined;
-      setBookingStatus(status ?? null);
-      setBookingError(null);
-      return status ?? null;
-    } catch (err) {
-      setBookingError(
-        getUserFacingError(err, "Não foi possível verificar a reserva."),
-      );
-      return null;
+    })();
+    bookingStatusInFlightRef.current = task;
+    bookingStatusInFlightBookingIdRef.current = draft.bookingId;
+    try {
+      return await task;
     } finally {
-      setBookingChecking(false);
+      if (bookingStatusInFlightRef.current === task) {
+        bookingStatusInFlightRef.current = null;
+        bookingStatusInFlightBookingIdRef.current = null;
+      }
     }
   }, [draft?.bookingId]);
 
   const pollBookingStatus = useCallback(async () => {
     if (!draft?.bookingId) return;
-    setBookingTimedOut(false);
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const status = await fetchBookingStatus();
-      if (status === "CONFIRMED") return;
-      if (
-        status &&
-        ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
-          status,
-        )
-      )
-        return;
-      await new Promise((resolve) =>
-        setTimeout(resolve, BOOKING_POLL_INTERVAL_MS),
-      );
+    if (bookingPollInFlightRef.current) {
+      await bookingPollInFlightRef.current;
+      return;
     }
-    setBookingTimedOut(true);
-    trackEvent("booking_confirm_timeout", {
-      bookingId: draft.bookingId,
-      sourceType: draft.sourceType ?? null,
-    });
+    const task = (async () => {
+      setBookingTimedOut(false);
+      bookingTimeoutTrackedRef.current = false;
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const status = await fetchBookingStatus();
+        if (isBookingTerminalStatus(status)) return;
+        await new Promise((resolve) =>
+          setTimeout(resolve, BOOKING_POLL_INTERVAL_MS),
+        );
+      }
+      setBookingTimedOut(true);
+      if (!bookingTimeoutTrackedRef.current) {
+        bookingTimeoutTrackedRef.current = true;
+        trackEvent("booking_confirm_timeout", {
+          bookingId: draft.bookingId,
+          sourceType: draft.sourceType ?? null,
+        });
+      }
+    })();
+    bookingPollInFlightRef.current = task;
+    try {
+      await task;
+    } finally {
+      if (bookingPollInFlightRef.current === task) {
+        bookingPollInFlightRef.current = null;
+      }
+    }
   }, [draft?.bookingId, fetchBookingStatus]);
 
   useEffect(() => {
@@ -518,22 +569,32 @@ export default function CheckoutScreen() {
     if (!isServiceBooking) return;
     if (!checkoutStatus) return;
     if (!isPaymentSettled(checkoutStatus.status)) return;
+    if (bookingTimedOut) return;
+    if (isBookingTerminalStatus(bookingStatus)) return;
     pollBookingStatus();
-  }, [checkoutStatus, isServiceBooking, pollBookingStatus]);
+  }, [
+    bookingStatus,
+    bookingTimedOut,
+    checkoutStatus,
+    isServiceBooking,
+    pollBookingStatus,
+  ]);
 
   useEffect(() => {
     if (!isServiceBooking || !bookingStatus) return;
-    if (bookingStatus === "CONFIRMED") {
+    if (isBookingTerminalStatus(bookingStatus)) {
       setBookingTimedOut(false);
-      trackEvent("booking_confirmed", { bookingId: draft?.bookingId ?? null });
-    }
-    if (
-      ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
-        bookingStatus,
-      )
-    ) {
-      setBookingTimedOut(false);
-      trackEvent("booking_cancelled", { bookingId: draft?.bookingId ?? null });
+      bookingTimeoutTrackedRef.current = false;
+      if (bookingStatus === "CONFIRMED") {
+        trackEvent("booking_confirmed", { bookingId: draft?.bookingId ?? null });
+      }
+      if (
+        ["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(
+          bookingStatus,
+        )
+      ) {
+        trackEvent("booking_cancelled", { bookingId: draft?.bookingId ?? null });
+      }
     }
   }, [bookingStatus, draft?.bookingId, isServiceBooking]);
 
@@ -998,6 +1059,18 @@ export default function CheckoutScreen() {
       };
     }
     if (isPaymentSettled(status)) {
+      if (isServiceBooking && bookingTimedOut) {
+        return {
+          tone: "warning" as const,
+          title: "Confirmação da reserva pendente",
+          message:
+            "O pagamento foi confirmado, mas o agendamento ainda está a sincronizar. Atualiza o estado da reserva.",
+          actionLabel: "Atualizar reserva",
+          action: () => fetchBookingStatus(),
+          secondaryActionLabel: "Tentar novamente",
+          secondaryAction: () => pollBookingStatus(),
+        };
+      }
       return {
         tone: "success" as const,
         title: "Pagamento confirmado",
@@ -1064,18 +1137,6 @@ export default function CheckoutScreen() {
         action: () => runStatusCheck(),
         secondaryActionLabel: "Tentar novamente",
         secondaryAction: () => handlePay(),
-      };
-    }
-    if (isServiceBooking && bookingTimedOut) {
-      return {
-        tone: "warning" as const,
-        title: "Pagamento confirmado",
-        message:
-          "Ainda estamos a sincronizar a reserva. Atualiza o estado para confirmar o agendamento.",
-        actionLabel: "Atualizar reserva",
-        action: () => fetchBookingStatus(),
-        secondaryActionLabel: "Verificar novamente",
-        secondaryAction: () => pollBookingStatus(),
       };
     }
     if (status === "REFUNDED") {
@@ -1193,7 +1254,7 @@ export default function CheckoutScreen() {
               <GlassCard intensity={60} highlight>
                 <View className="gap-3">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-white text-sm font-semibold">
+                    <Text style={{ color: "#F4FAFF", fontSize: 14, fontWeight: "700" }}>
                       Checkout
                     </Text>
                     {statusPill ? (
@@ -1203,10 +1264,7 @@ export default function CheckoutScreen() {
                       />
                     ) : null}
                   </View>
-                  <Text
-                    className="text-white text-lg font-semibold"
-                    numberOfLines={2}
-                  >
+                  <Text style={{ color: "#F4FAFF", fontSize: 18, fontWeight: "700" }} numberOfLines={2}>
                     {draft.eventTitle ?? draft.serviceTitle ?? "Checkout"}
                   </Text>
                   <View className="rounded-2xl border border-white/10 bg-black/20 px-3 py-3 gap-2">
@@ -1243,16 +1301,18 @@ export default function CheckoutScreen() {
                     ) : null}
                     <View className="h-px bg-white/10" />
                     <View className="flex-row items-center justify-between">
-                      <Text className="text-white/60 text-sm">Total</Text>
+                      <Text style={{ color: "rgba(233,244,255,0.72)", fontSize: 14, fontWeight: "600" }}>
+                        Total
+                      </Text>
                       {totalLabel ? (
-                        <Text className="text-white text-2xl font-semibold">
+                        <Text style={{ color: "#F4FAFF", fontSize: 22, fontWeight: "700" }}>
                           {totalLabel}
                         </Text>
                       ) : null}
                     </View>
                   </View>
                   {isFreeCheckout ? (
-                    <Text className="text-white/55 text-xs">
+                    <Text style={{ color: "rgba(233,244,255,0.62)", fontSize: 12 }}>
                       Limite por pessoa: 1
                     </Text>
                   ) : null}
@@ -1274,11 +1334,6 @@ export default function CheckoutScreen() {
                             enabled: allowApplePay,
                           },
                           { key: "card", label: "Cartão", enabled: true },
-                          {
-                            key: "mbway",
-                            label: "MBWay (indisponível)",
-                            enabled: allowMbwayInApp,
-                          },
                         ] as const
                       ).map((option) => {
                         if (!option.enabled) return null;
@@ -1300,10 +1355,10 @@ export default function CheckoutScreen() {
                           >
                             <View className="flex-row items-center justify-between gap-3">
                               <Text
-                                className={
+                                style={
                                   active
-                                    ? "text-white text-sm font-semibold"
-                                    : "text-white/80 text-sm font-medium"
+                                    ? { color: "#F4FAFF", fontSize: 14, fontWeight: "700" }
+                                    : { color: "rgba(233,244,255,0.84)", fontSize: 14, fontWeight: "600" }
                                 }
                               >
                                 {option.label}
@@ -1320,7 +1375,7 @@ export default function CheckoutScreen() {
                         );
                       })}
                     </View>
-                    <Text className="text-white/55 text-xs">
+                    <Text style={{ color: "rgba(233,244,255,0.62)", fontSize: 12 }}>
                       {resolveMethodLabel(resolvedMethod)} em checkout nativo,
                       sem sair da app.
                     </Text>

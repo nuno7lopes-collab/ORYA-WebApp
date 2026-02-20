@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { PaymentStatus, Prisma } from "@prisma/client";
 import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { performPaymentFulfillment } from "@/lib/operations/performPaymentFulfillment";
 
 type Status = CheckoutStatus;
 
@@ -50,6 +51,87 @@ function resolveNextActionForStatus(status: Status): string {
 function resolveRetryableForStatus(status: Status): boolean {
   if (status === "FAILED" || status === "CANCELED") return true;
   return status === "PENDING" || status === "PROCESSING" || status === "REQUIRES_ACTION";
+}
+
+async function buildCanonicalStatusFromPaymentId(params: {
+  paymentId: string;
+  paymentIntentId: string | null;
+}) {
+  const payment = await prisma.payment.findUnique({
+    where: { id: params.paymentId },
+    select: { id: true, status: true },
+  });
+  if (!payment) return null;
+  const ledgerEntries = await prisma.ledgerEntry.findMany({
+    where: { paymentId: payment.id },
+    select: { entryType: true },
+  });
+  const status = deriveCheckoutStatusFromPayment({
+    paymentStatus: payment.status,
+    ledgerEntries,
+  });
+  const final = FINAL_STATUSES.includes(status);
+  return buildStatusPayload({
+    status,
+    final,
+    purchaseId: payment.id,
+    paymentIntentId: params.paymentIntentId,
+    retryable: resolveRetryableForStatus(status),
+    nextAction: resolveNextActionForStatus(status),
+    errorMessage: null,
+  });
+}
+
+async function maybeHealPaidIntent(params: {
+  paymentIntentId: string | null;
+  purchaseId: string | null;
+  requestId: string;
+}) {
+  if (!params.paymentIntentId) return false;
+  try {
+    const intent = await retrievePaymentIntent(params.paymentIntentId, {
+      expand: ["latest_charge"],
+    });
+    const mapped = mapStripeIntentToCheckout({
+      status: intent?.status ?? null,
+      last_payment_error: intent?.last_payment_error
+        ? { message: intent.last_payment_error.message ?? null }
+        : null,
+    });
+    if (mapped !== "PAID") return false;
+
+    const result = await performPaymentFulfillment(intent);
+    if (params.purchaseId) {
+      await prisma.payment.updateMany({
+        where: {
+          id: params.purchaseId,
+          status: { not: PaymentStatus.SUCCEEDED },
+        },
+        data: { status: PaymentStatus.SUCCEEDED },
+      });
+    }
+    await prisma.paymentEvent.updateMany({
+      where: {
+        OR: [
+          { stripePaymentIntentId: intent.id },
+          ...(params.purchaseId ? [{ purchaseId: params.purchaseId }] : []),
+        ],
+      },
+      data: {
+        status: "OK",
+        errorMessage: null,
+        updatedAt: new Date(),
+      },
+    });
+    return result.handled;
+  } catch (err) {
+    logError("checkout.status.heal_paid_intent_failed", err, {
+      requestId: params.requestId,
+      paymentIntentId: params.paymentIntentId,
+      purchaseId: params.purchaseId,
+    });
+    return false;
+  }
 }
 
 async function resolveStatusFromStripeIntent(params: {
@@ -162,15 +244,12 @@ async function _GET(req: NextRequest) {
         select: { id: true, status: true },
       });
       if (payment) {
-        const ledgerEntries = await prisma.ledgerEntry.findMany({
-          where: { paymentId: payment.id },
-          select: { entryType: true },
+        const canonical = await buildCanonicalStatusFromPaymentId({
+          paymentId: payment.id,
+          paymentIntentId,
         });
-        const status = deriveCheckoutStatusFromPayment({
-          paymentStatus: payment.status,
-          ledgerEntries,
-        });
-        const final = FINAL_STATUSES.includes(status);
+        const status = canonical?.status ?? "FAILED";
+        const final = canonical?.final ?? false;
         const stripeFallback =
           !final && paymentIntentId
             ? await resolveStatusFromStripeIntent({
@@ -182,6 +261,23 @@ async function _GET(req: NextRequest) {
           stripeFallback &&
           (stripeFallback.final || stripeFallback.status === "REQUIRES_ACTION")
         ) {
+          if (stripeFallback.status === "PAID") {
+            await maybeHealPaidIntent({
+              paymentIntentId,
+              purchaseId: payment.id,
+              requestId: ctx.requestId,
+            });
+            const healed = await buildCanonicalStatusFromPaymentId({
+              paymentId: payment.id,
+              paymentIntentId,
+            });
+            if (healed && (healed.final || healed.status === "PAID")) {
+              return respondOk(ctx, healed, {
+                status: 200,
+                headers: NO_STORE_HEADERS,
+              });
+            }
+          }
           return respondOk(ctx, stripeFallback, {
             status: 200,
             headers: NO_STORE_HEADERS,
@@ -189,15 +285,16 @@ async function _GET(req: NextRequest) {
         }
         return respondOk(
           ctx,
-          buildStatusPayload({
-            status,
-            final,
-            purchaseId: payment.id,
-            paymentIntentId,
-            retryable: resolveRetryableForStatus(status),
-            nextAction: resolveNextActionForStatus(status),
-            errorMessage: null,
-          }),
+          canonical ??
+            buildStatusPayload({
+              status,
+              final,
+              purchaseId: payment.id,
+              paymentIntentId,
+              retryable: resolveRetryableForStatus(status),
+              nextAction: resolveNextActionForStatus(status),
+              errorMessage: null,
+            }),
           { status: 200, headers: NO_STORE_HEADERS },
         );
       }
@@ -223,6 +320,13 @@ async function _GET(req: NextRequest) {
           stripeFallback &&
           (stripeFallback.final || stripeFallback.status === "REQUIRES_ACTION")
         ) {
+          if (stripeFallback.status === "PAID") {
+            await maybeHealPaidIntent({
+              paymentIntentId,
+              purchaseId: resolvedPaymentId,
+              requestId: ctx.requestId,
+            });
+          }
           return respondOk(ctx, stripeFallback, {
             status: 200,
             headers: NO_STORE_HEADERS,
@@ -250,6 +354,13 @@ async function _GET(req: NextRequest) {
         purchaseId: resolvedPaymentId ?? purchaseId,
       });
       if (stripeFallback) {
+        if (stripeFallback.status === "PAID") {
+          await maybeHealPaidIntent({
+            paymentIntentId,
+            purchaseId: resolvedPaymentId ?? purchaseId,
+            requestId: ctx.requestId,
+          });
+        }
         return respondOk(ctx, stripeFallback, {
           status: 200,
           headers: NO_STORE_HEADERS,

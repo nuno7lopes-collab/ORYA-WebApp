@@ -3,6 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import { resolveServiceAssignmentMode } from "@/lib/reservas/serviceAssignment";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 async function _GET(
@@ -155,6 +156,12 @@ async function _GET(
       ...publicOrganization
     } = service.organization;
 
+    const assignmentConfig = resolveServiceAssignmentMode({
+      organizationMode: service.organization?.reservationAssignmentMode ?? null,
+      serviceMode: service.assignmentMode ?? null,
+      serviceKind: service.kind ?? null,
+    });
+
     const [professionals, resources] = await Promise.all([
       prisma.reservationProfessional.findMany({
         where: { organizationId: service.organization.id, isActive: true },
@@ -169,19 +176,24 @@ async function _GET(
         },
       }),
       prisma.reservationResource.findMany({
-        where: { organizationId: service.organization.id, isActive: true },
+        where: {
+          organizationId: service.organization.id,
+          isActive: true,
+          ...(assignmentConfig.isCourtService ? { courtId: { not: null } } : {}),
+        },
         orderBy: [{ priority: "asc" }, { id: "asc" }],
         select: {
           id: true,
           label: true,
           capacity: true,
           priority: true,
+          courtId: true,
         },
       }),
     ]);
 
     const selectionRules = resolveServicePartySizeRules({
-      assignmentMode: service.assignmentMode ?? null,
+      assignmentMode: assignmentConfig.assignmentMode,
       serviceKind: service.kind ?? null,
       partySizeRequired: service.partySizeRequired,
       partySizeMin: service.partySizeMin,
@@ -207,7 +219,16 @@ async function _GET(
           label: resource.label,
           capacity: resource.capacity,
           priority: resource.priority,
+          courtId: resource.courtId ?? null,
         })),
+        assignment: {
+          assignmentMode: assignmentConfig.assignmentMode,
+          availabilityMode: assignmentConfig.availabilityMode,
+          requiresProfessional: assignmentConfig.requiresProfessional,
+          requiresResource: assignmentConfig.requiresResource,
+          isHybrid: assignmentConfig.isHybrid,
+          isCourtService: assignmentConfig.isCourtService,
+        },
         selectionRules: {
           ...selectionRules,
           partySizeRange: {
@@ -215,12 +236,8 @@ async function _GET(
             max: selectionRules.partySizeMax,
             step: selectionRules.partySizeStep,
           },
-          requiresProfessional:
-            service.assignmentMode === "PROFESSIONAL_ONLY" ||
-            service.assignmentMode === "PROFESSIONAL_AND_RESOURCE",
-          requiresResource:
-            service.assignmentMode === "RESOURCE_ONLY" ||
-            service.assignmentMode === "PROFESSIONAL_AND_RESOURCE",
+          requiresProfessional: assignmentConfig.requiresProfessional,
+          requiresResource: assignmentConfig.requiresResource,
         },
         packs: [],
         policy: policy

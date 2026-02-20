@@ -98,10 +98,13 @@ export default function AuthCallbackScreen() {
       const { code, accessToken, refreshToken, type, error, errorDescription } = parseAuthUrl(url);
       const isRecoveryFlow = type === "recovery" || recoveryQueryFlow;
       if (isRecoveryFlow) {
-        setRecoveryFlowDetected(true);
+        if (active) {
+          setRecoveryFlowDetected(true);
+        }
       }
       if (error) {
         trackEvent("auth_fail_email", { reason: error });
+        if (!active) return;
         setStatus("error");
         setMessage(errorDescription || "Não foi possível confirmar o email.");
         return;
@@ -140,7 +143,15 @@ export default function AuthCallbackScreen() {
 
     const start = async () => {
       const initialUrl = await Linking.getInitialURL();
-      await handleUrl(initialUrl ?? fallbackUrl);
+      const candidateUrl = initialUrl ?? fallbackUrl;
+      if (!candidateUrl) {
+        if (!active) return;
+        trackEvent("auth_fail_email", { reason: "callback_missing_params" });
+        setStatus("error");
+        setMessage("Link inválido ou expirado. Pede um novo email de confirmação.");
+        return;
+      }
+      await handleUrl(candidateUrl);
     };
 
     start();

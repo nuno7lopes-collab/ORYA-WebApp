@@ -183,10 +183,6 @@ function isLegacyApiRoute(pathname: string) {
   return pathname === "/api/organizacao" || pathname.startsWith("/api/organizacao/");
 }
 
-function isRemovedPublicServiceAvailabilityRoute(pathname: string) {
-  return /^\/api\/servicos\/\d+\/(slots|disponibilidade)(?:\/|$)/i.test(pathname);
-}
-
 function isRemovedCanonicalOrgApiRoute(pathname: string) {
   return /^\/api\/org\/\d+\/payouts(?:\/|$)/i.test(pathname);
 }
@@ -404,7 +400,6 @@ export async function proxy(req: NextRequest) {
 
   if (
     isLegacyApiRoute(req.nextUrl.pathname) ||
-    isRemovedPublicServiceAvailabilityRoute(req.nextUrl.pathname) ||
     isRemovedCanonicalOrgApiRoute(req.nextUrl.pathname)
   ) {
     logProxyMetric("legacy_410_hits", {

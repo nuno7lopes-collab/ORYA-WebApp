@@ -14,8 +14,7 @@ import { refundPurchase } from "@/lib/refunds/refundService";
 import { appendChargebackLedgerEntries, appendDisputeFeeReversal } from "@/domain/finance/ledgerAdjustments";
 import { BookingSplitOffsessionAttemptStatus, PaymentEventSource, PaymentStatus, RefundReason, EntitlementType, EntitlementStatus, Prisma, NotificationType, SourceType, PadelRegistrationStatus, CheckinResultCode, ProcessorFeesStatus } from "@prisma/client";
 import { FulfillPayload } from "@/lib/operations/types";
-import { fulfillPaidIntent } from "@/lib/operations/fulfillPaid";
-import { fulfillStoreOrderIntent } from "@/lib/operations/fulfillStoreOrder";
+import { performPaymentFulfillment } from "@/lib/operations/performPaymentFulfillment";
 import { markSaleDisputed } from "@/domain/finance/disputes";
 import {
   sendPurchaseConfirmationEmail,
@@ -25,12 +24,7 @@ import {
   sendImportantUpdateEmail,
   sendBookingInviteEmail,
 } from "@/lib/emailSender";
-import { fulfillResaleIntent } from "@/lib/operations/fulfillResale";
-import { fulfillPadelRegistrationIntent } from "@/lib/operations/fulfillPadelRegistration";
-import { fulfillPadelSecondCharge } from "@/lib/operations/fulfillPadelSecondCharge";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
-import { fulfillBookingChargeIntent } from "@/lib/operations/fulfillBookingCharge";
-import { fulfillServiceCreditPurchaseIntent } from "@/lib/operations/fulfillServiceCredits";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { processNotificationOutboxBatch } from "@/domain/notifications/outboxProcessor";
@@ -1505,37 +1499,6 @@ async function processOperation(op: OperationRecord) {
   }
 }
 
-async function performPaymentFulfillment(intent: Stripe.PaymentIntent, stripeEventId?: string) {
-  const handledStore = await fulfillStoreOrderIntent(intent as Stripe.PaymentIntent);
-  const handledCharge = await fulfillBookingChargeIntent(intent as Stripe.PaymentIntent);
-  const handledService = handledCharge ? false : await fulfillServiceBookingIntent(intent as Stripe.PaymentIntent);
-  const handledCredits = await fulfillServiceCreditPurchaseIntent(intent as Stripe.PaymentIntent);
-  const handledResale = await fulfillResaleIntent(intent as Stripe.PaymentIntent);
-  const handledPadelRegistration = await fulfillPadelRegistrationIntent(intent as Stripe.PaymentIntent, null);
-  const handledSecondCharge = await fulfillPadelSecondCharge(intent as Stripe.PaymentIntent);
-  const handledPaid =
-    handledStore ||
-    handledCharge ||
-    handledService ||
-    handledCredits ||
-    handledResale ||
-    handledPadelRegistration ||
-    handledSecondCharge
-      ? true
-      : await fulfillPaidIntent(intent as Stripe.PaymentIntent, stripeEventId);
-
-  return (
-    handledStore ||
-    handledCharge ||
-    handledService ||
-    handledCredits ||
-    handledResale ||
-    handledPadelRegistration ||
-    handledSecondCharge ||
-    handledPaid
-  );
-}
-
 async function processStripeEvent(op: OperationRecord) {
   const payload = op.payload || {};
   const eventType = typeof payload.stripeEventType === "string" ? payload.stripeEventType : null;
@@ -1572,8 +1535,11 @@ async function processStripeEvent(op: OperationRecord) {
       logError("worker.process_stripe_event.reconcile_failed", err);
     }
     try {
-      const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
-      if (!handled) {
+      const fulfillment = await performPaymentFulfillment(
+        intent as Stripe.PaymentIntent,
+        op.stripeEventId ?? undefined,
+      );
+      if (!fulfillment.handled) {
         throw new Error("PAYMENT_INTENT_NOT_HANDLED");
       }
       await paymentEventRepo(prisma).updateMany({
@@ -1687,8 +1653,11 @@ async function processFulfillPayment(op: OperationRecord) {
       : await retrievePaymentIntent(piId, { expand: ["latest_charge"] });
 
   try {
-    const handled = await performPaymentFulfillment(intent as Stripe.PaymentIntent, op.stripeEventId ?? undefined);
-    if (!handled) {
+    const fulfillment = await performPaymentFulfillment(
+      intent as Stripe.PaymentIntent,
+      op.stripeEventId ?? undefined,
+    );
+    if (!fulfillment.handled) {
       throw new Error("PAYMENT_INTENT_NOT_HANDLED");
     }
     await paymentEventRepo(prisma).updateMany({

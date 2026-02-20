@@ -50,8 +50,6 @@ export function StickyPurchaseBar({
   const iconName = resolveCtaIconName(ctaState);
   const safeLabel = ctaLabel?.trim() || t("events:tickets.cta.state.ready");
   const iconColor = isReady ? "#0A1018" : "#EAF63A";
-  const ctaMinWidth = isUltraCompact ? 118 : isCompact ? 132 : isLarge ? 172 : 156;
-  const ctaMaxWidth = isUltraCompact ? 148 : isCompact ? 170 : isLarge ? 210 : 188;
 
   return (
     <View style={[styles.wrapper, { paddingBottom: insets.bottom + 12 }]}>
@@ -103,7 +101,6 @@ export function StickyPurchaseBar({
             <View
               style={[
                 styles.ctaChip,
-                { minWidth: ctaMinWidth, maxWidth: ctaMaxWidth },
                 isLarge ? styles.ctaChipLarge : null,
                 isCompact ? styles.ctaChipCompact : null,
                 isUltraCompact ? styles.ctaChipUltraCompact : null,
@@ -243,6 +240,8 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   ctaChip: {
+    minWidth: 132,
+    maxWidth: "58%",
     minHeight: 44,
     borderRadius: 14,
     borderWidth: 1,
@@ -254,9 +253,12 @@ const styles = StyleSheet.create({
   },
   ctaChipCompact: {
     paddingHorizontal: 10,
+    minWidth: 122,
   },
   ctaChipUltraCompact: {
     paddingHorizontal: 8,
+    minWidth: 112,
+    maxWidth: "62%",
   },
   ctaChipLarge: {
     paddingHorizontal: 16,

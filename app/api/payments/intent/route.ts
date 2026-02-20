@@ -236,7 +236,8 @@ function normalizePaymentMethod(raw: unknown): "mbway" | "card" {
   const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
   if (value === "card") return "card";
   if (value === "mb_way" || value === "mbway") return "mbway";
-  return "mbway";
+  // Fallback conservador para clientes antigos/sem campo explícito.
+  return "card";
 }
 
 function isStripeDestinationConfigError(err: unknown) {

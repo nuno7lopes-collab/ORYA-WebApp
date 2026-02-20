@@ -24,22 +24,16 @@ describe("proxy org canonical hard-cut", () => {
     expect(body.namespace).toBe("api");
   });
 
-  it("returns 410 for removed public availability routes", async () => {
+  it("does not block public availability compatibility routes", async () => {
     const slotsReq = new NextRequest("http://localhost/api/servicos/9/slots?day=2026-03-01");
     const slotsRes = await proxy(slotsReq);
-    expect(slotsRes.status).toBe(410);
-    const slotsBody = await slotsRes.json();
-    expect(slotsBody.error).toBe("LEGACY_ROUTE_REMOVED");
-    expect(slotsBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
-    expect(slotsBody.namespace).toBe("api");
+    expect(slotsRes.status).toBe(200);
+    expect(slotsRes.headers.get("x-middleware-rewrite")).toBeNull();
 
     const disponibilidadeReq = new NextRequest("http://localhost/api/servicos/9/disponibilidade?day=2026-03-01");
     const disponibilidadeRes = await proxy(disponibilidadeReq);
-    expect(disponibilidadeRes.status).toBe(410);
-    const disponibilidadeBody = await disponibilidadeRes.json();
-    expect(disponibilidadeBody.error).toBe("LEGACY_ROUTE_REMOVED");
-    expect(disponibilidadeBody.errorCode).toBe("LEGACY_ROUTE_REMOVED");
-    expect(disponibilidadeBody.namespace).toBe("api");
+    expect(disponibilidadeRes.status).toBe(200);
+    expect(disponibilidadeRes.headers.get("x-middleware-rewrite")).toBeNull();
   });
 
   it("returns 410 for removed /api/org/:orgId/payouts/* routes", async () => {

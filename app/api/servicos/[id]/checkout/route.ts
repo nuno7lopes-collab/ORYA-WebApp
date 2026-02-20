@@ -88,7 +88,7 @@ async function _POST(
 
   try {
     const supabase = await createSupabaseServer();
-    const { data: userData } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
+    const { data: userData } = await getUserWithPolicy("optional_verified", { supabaseOverride: supabase });
     const user = userData?.user ?? null;
     const payload = await req.json().catch(() => ({}));
     const phoneOptions = resolvePhoneNormalizationOptions({

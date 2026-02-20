@@ -5,6 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { normalizeEmail } from "@/lib/utils/email";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { rateLimit } from "@/lib/auth/rateLimit";
+
+const BOOKING_STATUS_IP_WINDOW_MS = 60 * 1000;
+const BOOKING_STATUS_IP_MAX = 40;
+const BOOKING_STATUS_EMAIL_WINDOW_MS = 60 * 1000;
+const BOOKING_STATUS_EMAIL_MAX = 12;
 
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
@@ -26,6 +32,31 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   }
 
   try {
+    const ipLimiter = await rateLimit(req, {
+      windowMs: BOOKING_STATUS_IP_WINDOW_MS,
+      max: BOOKING_STATUS_IP_MAX,
+      keyPrefix: "servicos:booking-status:ip",
+    });
+    if (!ipLimiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "THROTTLED" },
+        { status: 429, headers: { "Retry-After": String(ipLimiter.retryAfter) } },
+      );
+    }
+
+    const emailLimiter = await rateLimit(req, {
+      windowMs: BOOKING_STATUS_EMAIL_WINDOW_MS,
+      max: BOOKING_STATUS_EMAIL_MAX,
+      keyPrefix: "servicos:booking-status:email",
+      identifier: `${serviceId}:${guestEmail}`,
+    });
+    if (!emailLimiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "THROTTLED" },
+        { status: 429, headers: { "Retry-After": String(emailLimiter.retryAfter) } },
+      );
+    }
+
     const booking = await prisma.booking.findFirst({
       where: {
         id: bookingId,

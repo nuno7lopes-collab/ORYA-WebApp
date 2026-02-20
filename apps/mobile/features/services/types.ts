@@ -48,6 +48,30 @@ export type ServiceResource = {
   label: string;
   capacity: number;
   priority: number | null;
+  courtId?: number | null;
+};
+
+export type ServiceSelectionRules = {
+  partySizeRequired: boolean;
+  partySizeRange?: {
+    min: number;
+    max: number;
+    step: number;
+  };
+  partySizeMin: number;
+  partySizeMax: number;
+  partySizeStep: number;
+  requiresProfessional: boolean;
+  requiresResource: boolean;
+};
+
+export type ServiceAssignment = {
+  assignmentMode: string;
+  availabilityMode: "PROFESSIONAL" | "RESOURCE" | "HYBRID";
+  requiresProfessional: boolean;
+  requiresResource: boolean;
+  isHybrid: boolean;
+  isCourtService: boolean;
 };
 
 export type ServiceDetail = {
@@ -58,6 +82,7 @@ export type ServiceDetail = {
   unitPriceCents: number;
   currency: string;
   kind: "GENERAL" | "COURT" | "CLASS";
+  assignmentMode?: string | null;
   categoryTag: string | null;
   locationMode: "FIXED" | "CHOOSE_AT_BOOKING" | string | null;
   addressId: string | null;
@@ -89,5 +114,7 @@ export type ServiceDetail = {
   packages?: ServicePackage[];
   professionals?: ServiceProfessional[];
   resources?: ServiceResource[];
+  assignment?: ServiceAssignment | null;
+  selectionRules?: ServiceSelectionRules | null;
   policy: ServicePolicy | null;
 };

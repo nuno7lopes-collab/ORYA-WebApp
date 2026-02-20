@@ -92,11 +92,44 @@ const formatTime = (date: string) => {
 const monthKey = (year: number, month: number) => year * 12 + (month - 1);
 
 const resolveAssignmentMode = (
-  serviceKind?: string | null,
-  orgMode?: string | null,
+  service?: {
+    kind?: string | null;
+    assignmentMode?: string | null;
+    organization?: { reservationAssignmentMode?: string | null } | null;
+    assignment?: {
+      requiresProfessional?: boolean;
+      requiresResource?: boolean;
+      availabilityMode?: string | null;
+    } | null;
+    selectionRules?: {
+      requiresProfessional?: boolean;
+      requiresResource?: boolean;
+    } | null;
+  } | null,
 ) => {
-  if (serviceKind === "COURT") return "RESOURCE";
-  if (orgMode === "RESOURCE") return "RESOURCE";
+  const requiresProfessional = Boolean(
+    service?.selectionRules?.requiresProfessional ??
+      service?.assignment?.requiresProfessional,
+  );
+  const requiresResource = Boolean(
+    service?.selectionRules?.requiresResource ??
+      service?.assignment?.requiresResource,
+  );
+  if (requiresResource && !requiresProfessional) return "RESOURCE";
+  if (requiresResource && requiresProfessional) return "RESOURCE";
+
+  const assignmentModeRaw = service?.assignmentMode?.trim().toUpperCase();
+  if (
+    assignmentModeRaw === "RESOURCE_ONLY" ||
+    assignmentModeRaw === "RESOURCE" ||
+    assignmentModeRaw === "PROFESSIONAL_AND_RESOURCE"
+  ) {
+    return "RESOURCE";
+  }
+
+  if (service?.kind === "COURT") return "RESOURCE";
+  const orgMode = service?.organization?.reservationAssignmentMode;
+  if (orgMode === "RESOURCE" || orgMode === "RESOURCE_ONLY") return "RESOURCE";
   return "PROFESSIONAL";
 };
 
@@ -155,12 +188,8 @@ export default function ServiceBookingScreen() {
   const [pendingSlot, setPendingSlot] = useState<AvailabilitySlot | null>(null);
 
   const assignmentMode = useMemo(
-    () =>
-      resolveAssignmentMode(
-        service?.kind ?? null,
-        service?.organization?.reservationAssignmentMode ?? null,
-      ),
-    [service?.kind, service?.organization?.reservationAssignmentMode],
+    () => resolveAssignmentMode(service ?? null),
+    [service],
   );
   const isAuthenticated = Boolean(session?.user?.id);
 
@@ -316,7 +345,7 @@ export default function ServiceBookingScreen() {
       const params = new URLSearchParams({ day: selectedDay });
       buildAvailabilityParams(params);
       const result = await api.requestRaw<SlotsResponse>(
-        `/api/servicos/${serviceId}/slots?${params.toString()}`,
+        `/api/servicos/${serviceId}/calendario?${params.toString()}`,
         {
           cache: "no-store",
         },

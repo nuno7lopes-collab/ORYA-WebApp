@@ -77,7 +77,8 @@
     "logo:build": "node scripts/regenerate-logo-assets.mjs",
     "seed:rich-demo": "node scripts/run-ts.cjs scripts/seed_rich_demo.ts"
     ,
-    "smoke:reservas:hybrid": "node scripts/run-ts.cjs scripts/smoke_reservas_hybrid.ts"
+    "smoke:reservas:hybrid": "node scripts/run-ts.cjs scripts/smoke_reservas_hybrid.ts",
+    "seed:reservas:bootstrap": "node scripts/run-ts.cjs scripts/seed_reservas_bootstrap.ts"
   },
   "dependencies": {
     "@aws-sdk/client-budgets": "^3.980.0",
