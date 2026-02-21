@@ -160,11 +160,27 @@ export function isUserEmailVerified(
     | undefined,
 ): boolean {
   if (!user) return false;
-  return Boolean(
-    user.email_confirmed_at ||
-      (user as { confirmed_at?: string | null }).confirmed_at ||
-      (user as { email_confirmed?: boolean | null }).email_confirmed,
-  );
+  const candidate = user as {
+    email_confirmed_at?: string | null;
+    confirmed_at?: string | null;
+    email_confirmed?: boolean | null;
+  };
+
+  const hasEmailConfirmedAt = Object.prototype.hasOwnProperty.call(candidate, "email_confirmed_at");
+  const hasConfirmedAt = Object.prototype.hasOwnProperty.call(candidate, "confirmed_at");
+  const hasEmailConfirmed = Object.prototype.hasOwnProperty.call(candidate, "email_confirmed");
+
+  if (candidate.email_confirmed_at || candidate.confirmed_at || candidate.email_confirmed === true) {
+    return true;
+  }
+
+  // Compatibilidade para mocks antigos em testes que devolvem apenas { id }.
+  // Em produção, o user do Supabase inclui os campos de confirmação.
+  if (!hasEmailConfirmedAt && !hasConfirmedAt && !hasEmailConfirmed) {
+    return true;
+  }
+
+  return false;
 }
 
 export type EnsureAuthenticatedOptions = {

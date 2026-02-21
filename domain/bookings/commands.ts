@@ -245,6 +245,18 @@ export async function ensureBookingPendingExpiry(params: {
   });
 }
 
+export async function attachBookingPaymentIntentIfMissing(params: {
+  tx?: Prisma.TransactionClient;
+  bookingId: number;
+  paymentIntentId: string;
+}) {
+  const tx = params.tx ?? prisma;
+  return tx.booking.updateMany({
+    where: { id: params.bookingId, paymentIntentId: null },
+    data: { paymentIntentId: params.paymentIntentId },
+  });
+}
+
 export async function cancelBooking(
   input: BookingCommandBase &
     BookingCommandTx & {

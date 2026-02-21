@@ -7,6 +7,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 import { performPaymentFulfillment } from "@/lib/operations/performPaymentFulfillment";
 
 type Status = CheckoutStatus;
@@ -110,7 +111,7 @@ async function maybeHealPaidIntent(params: {
         data: { status: PaymentStatus.SUCCEEDED },
       });
     }
-    await prisma.paymentEvent.updateMany({
+    await paymentEventRepo(prisma).updateMany({
       where: {
         OR: [
           { stripePaymentIntentId: intent.id },

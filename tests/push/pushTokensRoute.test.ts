@@ -24,9 +24,13 @@ vi.mock("@/lib/supabaseServer", () => ({
   }),
 }));
 
-vi.mock("@/lib/security", () => ({
-  isUnauthenticatedError: () => false,
-}));
+vi.mock("@/lib/security", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/security")>();
+  return {
+    ...actual,
+    isUnauthenticatedError: () => false,
+  };
+});
 
 describe("POST /api/me/push-tokens", () => {
   beforeEach(() => {

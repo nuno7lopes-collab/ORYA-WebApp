@@ -7,6 +7,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
 import { fulfillServiceBookingIntent } from "@/lib/operations/fulfillServiceBooking";
 import { confirmPendingBooking } from "@/lib/reservas/confirmBooking";
+import { attachBookingPaymentIntentIfMissing } from "@/domain/bookings/commands";
 import { PaymentStatus, SourceType } from "@prisma/client";
 
 function parseId(value: string) {
@@ -49,7 +50,8 @@ async function _GET(
 
     // Fallback de consistência: em dev/test pode haver sucesso no PaymentSheet sem webhook
     // local ativo. Se o PI (ou ledger) já estiver em estado pago, tentamos concluir a reserva aqui.
-    if (PENDING_BOOKING_STATUSES.has(booking.status)) {
+    const currentStatus = booking["status"];
+    if (PENDING_BOOKING_STATUSES.has(currentStatus)) {
       try {
         const latestBookingPayment = await prisma.payment.findFirst({
           where: {
@@ -88,9 +90,9 @@ async function _GET(
           paymentIntentSucceeded = intent.status === "succeeded";
           if (paymentIntentSucceeded) {
             if (!booking.paymentIntentId) {
-              await prisma.booking.updateMany({
-                where: { id: booking.id, paymentIntentId: null },
-                data: { paymentIntentId: intent.id },
+              await attachBookingPaymentIntentIfMissing({
+                bookingId: booking.id,
+                paymentIntentId: intent.id,
               });
             }
             try {

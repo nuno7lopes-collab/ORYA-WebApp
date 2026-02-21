@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   ctaChip: {
     minWidth: 136,
     maxWidth: "56%",
-    minHeight: 42,
+    minHeight: 44,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
