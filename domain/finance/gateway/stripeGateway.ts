@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
-import { getStripeClient } from "@/lib/stripeClient";
+import { getStripeClient, getStripeClientForEnv, type StripeRuntimeEnv } from "@/lib/stripeClient";
+import { getStripeEnv } from "@/lib/stripeKeys";
 import { resolveConnectStatus } from "@/domain/finance/stripeConnectStatus";
 
 export type StripeOrgContext = {
@@ -45,8 +46,19 @@ export async function retrievePaymentIntent(
   id: string,
   params?: Stripe.PaymentIntentRetrieveParams,
 ) {
-  const stripe = getStripeClient();
-  return stripe.paymentIntents.retrieve(id, params as Stripe.PaymentIntentRetrieveParams);
+  const primaryEnv = getStripeEnv();
+  const primary = getStripeClientForEnv(primaryEnv);
+  try {
+    return primary.paymentIntents.retrieve(id, params as Stripe.PaymentIntentRetrieveParams);
+  } catch (err) {
+    if (!isNoSuchPaymentIntentError(err)) throw err;
+    const fallbackEnv: StripeRuntimeEnv = primaryEnv === "test" ? "prod" : "test";
+    const fallback = getStripeClientForEnv(fallbackEnv);
+    return fallback.paymentIntents.retrieve(
+      id,
+      params as Stripe.PaymentIntentRetrieveParams,
+    );
+  }
 }
 
 export async function cancelPaymentIntent(
@@ -112,6 +124,11 @@ export async function createTransfer(
     params,
     opts?.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : undefined,
   );
+}
+
+function isNoSuchPaymentIntentError(err: unknown) {
+  if (!(err instanceof Error)) return false;
+  return err.message.toLowerCase().includes("no such payment_intent");
 }
 
 export function constructStripeWebhookEvent(

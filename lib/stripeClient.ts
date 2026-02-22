@@ -5,8 +5,9 @@ import { getStripeEnv, getStripeSecretKeyForEnv } from "@/lib/stripeKeys";
 
 const cached: { prod?: Stripe; test?: Stripe } = {};
 
-export function getStripeClient() {
-  const env = getStripeEnv();
+export type StripeRuntimeEnv = "prod" | "test";
+
+export function getStripeClientForEnv(env: StripeRuntimeEnv) {
   if (env === "test" && cached.test) return cached.test;
   if (env === "prod" && cached.prod) return cached.prod;
   const client = new Stripe(getStripeSecretKeyForEnv(env), {
@@ -16,4 +17,9 @@ export function getStripeClient() {
   if (env === "test") cached.test = client;
   else cached.prod = client;
   return client;
+}
+
+export function getStripeClient() {
+  const env = getStripeEnv();
+  return getStripeClientForEnv(env);
 }
