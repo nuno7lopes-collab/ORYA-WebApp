@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { PaymentStatus, Prisma } from "@prisma/client";
+import { EntitlementType, PaymentStatus, Prisma, SourceType } from "@prisma/client";
 import { CheckoutStatus, deriveCheckoutStatusFromPayment } from "@/domain/finance/status";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
@@ -102,6 +102,23 @@ async function maybeHealPaidIntent(params: {
     if (mapped !== "PAID") return false;
 
     const result = await performPaymentFulfillment(intent);
+    if (!result.handled) {
+      await paymentEventRepo(prisma).updateMany({
+        where: {
+          OR: [
+            { stripePaymentIntentId: intent.id },
+            ...(params.purchaseId ? [{ purchaseId: params.purchaseId }] : []),
+          ],
+        },
+        data: {
+          status: "ERROR",
+          errorMessage: "PAYMENT_INTENT_NOT_HANDLED",
+          updatedAt: new Date(),
+        },
+      });
+      return false;
+    }
+
     if (params.purchaseId) {
       await prisma.payment.updateMany({
         where: {
@@ -133,6 +150,34 @@ async function maybeHealPaidIntent(params: {
     });
     return false;
   }
+}
+
+async function hasTicketOrderEntitlements(purchaseId: string) {
+  const count = await prisma.entitlement.count({
+    where: {
+      purchaseId,
+      type: EntitlementType.EVENT_TICKET,
+    },
+  });
+  return count > 0;
+}
+
+async function ensureTicketOrderFulfilled(params: {
+  paymentId: string;
+  paymentIntentId: string | null;
+  requestId: string;
+}) {
+  const alreadyFulfilled = await hasTicketOrderEntitlements(params.paymentId);
+  if (alreadyFulfilled) return true;
+
+  const healed = await maybeHealPaidIntent({
+    paymentIntentId: params.paymentIntentId,
+    purchaseId: params.paymentId,
+    requestId: params.requestId,
+  });
+  if (!healed) return false;
+
+  return hasTicketOrderEntitlements(params.paymentId);
 }
 
 async function resolveStatusFromStripeIntent(params: {
@@ -242,9 +287,35 @@ async function _GET(req: NextRequest) {
     if (resolvedPaymentId) {
       const payment = await prisma.payment.findUnique({
         where: { id: resolvedPaymentId },
-        select: { id: true, status: true },
+        select: { id: true, status: true, sourceType: true },
       });
       if (payment) {
+        if (
+          payment.status === PaymentStatus.SUCCEEDED &&
+          payment.sourceType === SourceType.TICKET_ORDER
+        ) {
+          const fulfilled = await ensureTicketOrderFulfilled({
+            paymentId: payment.id,
+            paymentIntentId,
+            requestId: ctx.requestId,
+          });
+          if (!fulfilled) {
+            return respondOk(
+              ctx,
+              buildStatusPayload({
+                status: "PROCESSING",
+                final: false,
+                purchaseId: payment.id,
+                paymentIntentId,
+                retryable: true,
+                nextAction: "NONE",
+                errorMessage: null,
+              }),
+              { status: 200, headers: NO_STORE_HEADERS },
+            );
+          }
+        }
+
         const canonical = await buildCanonicalStatusFromPaymentId({
           paymentId: payment.id,
           paymentIntentId,
@@ -322,11 +393,26 @@ async function _GET(req: NextRequest) {
           (stripeFallback.final || stripeFallback.status === "REQUIRES_ACTION")
         ) {
           if (stripeFallback.status === "PAID") {
-            await maybeHealPaidIntent({
+            const healed = await maybeHealPaidIntent({
               paymentIntentId,
               purchaseId: resolvedPaymentId,
               requestId: ctx.requestId,
             });
+            if (!healed) {
+              return respondOk(
+                ctx,
+                buildStatusPayload({
+                  status: "PROCESSING",
+                  final: false,
+                  purchaseId: resolvedPaymentId,
+                  paymentIntentId,
+                  retryable: true,
+                  nextAction: "NONE",
+                  errorMessage: null,
+                }),
+                { status: 200, headers: NO_STORE_HEADERS },
+              );
+            }
           }
           return respondOk(ctx, stripeFallback, {
             status: 200,
@@ -356,11 +442,26 @@ async function _GET(req: NextRequest) {
       });
       if (stripeFallback) {
         if (stripeFallback.status === "PAID") {
-          await maybeHealPaidIntent({
+          const healed = await maybeHealPaidIntent({
             paymentIntentId,
             purchaseId: resolvedPaymentId ?? purchaseId,
             requestId: ctx.requestId,
           });
+          if (!healed) {
+            return respondOk(
+              ctx,
+              buildStatusPayload({
+                status: "PROCESSING",
+                final: false,
+                purchaseId: resolvedPaymentId ?? purchaseId ?? paymentIntentId,
+                paymentIntentId,
+                retryable: true,
+                nextAction: "NONE",
+                errorMessage: null,
+              }),
+              { status: 200, headers: NO_STORE_HEADERS },
+            );
+          }
         }
         return respondOk(ctx, stripeFallback, {
           status: 200,
