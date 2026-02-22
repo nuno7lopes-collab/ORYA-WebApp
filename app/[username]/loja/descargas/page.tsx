@@ -1,10 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { isStoreDigitalEnabled, isStoreFeatureEnabled } from "@/lib/storeAccess";
 import StorefrontHeader from "@/components/storefront/StorefrontHeader";
 import StorefrontDownloadsClient from "@/components/storefront/StorefrontDownloadsClient";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -30,18 +31,32 @@ export default async function StoreDownloadsPage({ params }: PageProps) {
     redirect(`/${username}/loja/descargas`);
   }
 
-  const organization = await prisma.organization.findFirst({
-    where: { username, status: "ACTIVE" },
+  const resolvedOrganization = await resolveUsernameOwner(username, {
+    expectedOwnerType: "organization",
+    includeDeletedUser: false,
+    requireActiveOrganization: true,
+    backfillGlobalUsername: false,
+  });
+  if (resolvedOrganization?.ownerType !== "organization") {
+    notFound();
+  }
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: resolvedOrganization.ownerId },
     select: { id: true, username: true, publicName: true, businessName: true, brandingAvatarUrl: true },
   });
 
   if (!organization) {
     notFound();
   }
+  const canonicalUsername = organization.username ?? username;
+  if (canonicalUsername !== username) {
+    redirect(`/${canonicalUsername}/loja/descargas`);
+  }
 
   const store = await prisma.store.findFirst({
     where: { ownerOrganizationId: organization.id },
-    select: { id: true, status: true, showOnProfile: true, catalogLocked: true, checkoutEnabled: true },
+    select: { id: true },
   });
 
   if (!store) {
@@ -49,14 +64,15 @@ export default async function StoreDownloadsPage({ params }: PageProps) {
   }
 
   const storeEnabled = isStoreFeatureEnabled();
-  const storePublic = resolveStoreState(store) === "ACTIVE";
+  const storeDigitalEnabled = isStoreDigitalEnabled();
+  const downloadsEnabled = storeEnabled && storeDigitalEnabled;
   const displayName =
     organization.publicName ||
     organization.businessName ||
     organization.username ||
     "Loja";
 
-  const baseHref = `/${username}/loja`;
+  const baseHref = `/${canonicalUsername}/loja`;
 
   return (
     <main className="min-h-screen w-full text-white">
@@ -68,14 +84,14 @@ export default async function StoreDownloadsPage({ params }: PageProps) {
         />
 
         <section className="mt-6 rounded-3xl border border-white/12 bg-white/5 p-6 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-          {!storeEnabled || !storePublic ? (
+          {!downloadsEnabled ? (
             <p>A funcionalidade da loja esta temporariamente desativada.</p>
           ) : (
             <p>Se compraste um produto digital, podes descarregar aqui.</p>
           )}
         </section>
 
-        {storeEnabled && storePublic ? (
+        {downloadsEnabled ? (
           <div className="mt-8">
             <StorefrontDownloadsClient storeId={store.id} storeBaseHref={baseHref} />
           </div>

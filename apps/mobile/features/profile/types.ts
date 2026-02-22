@@ -68,6 +68,14 @@ export type PublicProfilePayload = {
     isPrivate: boolean;
     canView: boolean;
   };
+  store?: {
+    exists?: boolean;
+    enabled?: boolean;
+    canOpenPublicStore?: boolean;
+    resolvedState?: "DISABLED" | "HIDDEN" | "LOCKED" | "CHECKOUT_DISABLED" | "ACTIVE";
+    publicProductsCount?: number;
+    showOnProfile?: boolean;
+  };
 };
 
 export type PublicProfileEvents = {

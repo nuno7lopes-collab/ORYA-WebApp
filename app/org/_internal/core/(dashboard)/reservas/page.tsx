@@ -17,6 +17,7 @@ import { getStripePublishableKey } from "@/lib/stripePublic";
 import { cn } from "@/lib/utils";
 import { AddressCombobox } from "@/components/ui/address-combobox";
 import { OryaDateField, OryaDateTimeField, OryaTimeField } from "@/components/ui/datetime";
+import { normalizeStepMinutes } from "@/lib/datetime/localInput";
 import type { GeoDetailsItem } from "@/lib/geo/types";
 import { getDateParts, makeUtcDateFromLocal } from "@/lib/reservas/availability";
 import {
@@ -410,6 +411,16 @@ type SplitState = {
   currency: string;
 };
 
+type BookingConfigResponse = {
+  ok: boolean;
+  data?: {
+    gridMinutes: number;
+    allowedDurations: number[];
+    allowCustomDuration: boolean;
+    presetDurations: number[];
+  };
+};
+
 
 export default function ReservasDashboardPage() {
   const router = useRouter();
@@ -511,6 +522,11 @@ export default function ReservasDashboardPage() {
     };
     membershipRole?: string | null;
   }>(orgMeUrl, fetcher);
+  const bookingConfigKey =
+    organizationId && Number.isFinite(organizationId)
+      ? `/api/org/${organizationId}/reservas/config`
+      : null;
+  const { data: bookingConfigData } = useSWR<BookingConfigResponse>(bookingConfigKey, fetcher);
   const padelClubsKey =
     organizationId && Number.isFinite(organizationId)
       ? `/api/padel/clubs?organizationId=${organizationId}&includeInactive=0`
@@ -557,6 +573,11 @@ export default function ReservasDashboardPage() {
   const organizationAssignmentMode = normalizeReservationAssignmentMode(
     orgData?.organization?.reservationAssignmentMode ?? null,
   );
+  const bookingGridMinutes =
+    typeof bookingConfigData?.data?.gridMinutes === "number" && Number.isFinite(bookingConfigData.data.gridMinutes)
+      ? Math.max(5, bookingConfigData.data.gridMinutes)
+      : 30;
+  const bookingTimeStepMinutes = normalizeStepMinutes(bookingGridMinutes);
   const assignmentMode: ReservationFilterMode = requiresResourceForAssignmentMode(organizationAssignmentMode)
     ? "RESOURCE"
     : "PROFESSIONAL";
@@ -1476,7 +1497,8 @@ export default function ReservasDashboardPage() {
     const nowDate = new Date();
     const dayParts = getDateParts(nowDate, timezone);
     const timeParts = getTimeParts(nowDate, timezone);
-    const nextBucketMinute = Math.ceil((timeParts.hour * 60 + timeParts.minute + 5) / 15) * 15;
+    const step = Math.max(5, bookingGridMinutes);
+    const nextBucketMinute = Math.ceil((timeParts.hour * 60 + timeParts.minute + 5) / step) * step;
     const carryDay = nextBucketMinute >= 24 * 60;
     const targetDay = carryDay ? addDaysToParts(dayParts, 1) : dayParts;
     const minuteOfDay = carryDay ? nextBucketMinute - 24 * 60 : nextBucketMinute;
@@ -1488,7 +1510,7 @@ export default function ReservasDashboardPage() {
     );
 
     if (startsAt <= nowDate) {
-      openCreateDrawer(new Date(nowDate.getTime() + 15 * 60 * 1000));
+      openCreateDrawer(new Date(nowDate.getTime() + step * 60 * 1000));
       return;
     }
     openCreateDrawer(startsAt);
@@ -2582,7 +2604,7 @@ export default function ReservasDashboardPage() {
                     <OryaTimeField
                       value={rescheduleTime}
                       onChange={setRescheduleTime}
-                      stepMinutes={15}
+                      stepMinutes={bookingTimeStepMinutes}
                       disabled={drawerBooking.changeRequest?.status === "PENDING"}
                       buttonClassName="h-10 rounded-lg"
                     />

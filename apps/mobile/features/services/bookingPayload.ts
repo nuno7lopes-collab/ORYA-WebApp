@@ -2,6 +2,7 @@ export type SelectedAddonPayload = { addonId: number; quantity: number };
 
 export type BookingPayloadInput = {
   startsAt: string;
+  durationMinutes?: number | null;
   professionalId?: number | null;
   partySize?: number | null;
   addressId?: string | null;
@@ -21,6 +22,7 @@ export const buildAddonPayload = (
 
 export const buildBookingPayload = (input: BookingPayloadInput) => ({
   startsAt: input.startsAt,
+  durationMinutes: input.durationMinutes ?? null,
   professionalId: input.professionalId ?? null,
   partySize: input.partySize ?? null,
   addressId: input.addressId ?? null,

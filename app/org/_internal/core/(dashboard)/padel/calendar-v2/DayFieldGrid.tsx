@@ -19,6 +19,7 @@ type DayGridBlock = {
   endAt: string | Date;
   label?: string | null;
   note?: string | null;
+  kind?: string | null;
   courtId?: number | null;
   courtName?: string | null;
 };
@@ -30,6 +31,14 @@ type DayGridAvailability = {
   playerName?: string | null;
   playerEmail?: string | null;
   note?: string | null;
+};
+
+type DayGridQuickRescheduleInput = {
+  matchId: number;
+  targetCourtId: number;
+  targetStartIso: string;
+  targetEndIso: string;
+  durationMinutes: number;
 };
 
 const toDate = (value: string | Date | null | undefined) => {
@@ -58,6 +67,38 @@ const resolveMatchEnd = (match: DayGridMatch) => {
   return new Date(start.getTime() + safeDuration * 60_000);
 };
 
+const resolveMatchStart = (match: DayGridMatch) => toDate(match.startTime ?? match.plannedStartAt);
+
+const resolveMatchDurationMinutes = (match: DayGridMatch) => {
+  const start = resolveMatchStart(match);
+  const end = resolveMatchEnd(match);
+  if (start && end) {
+    const diff = Math.round((end.getTime() - start.getTime()) / 60_000);
+    if (Number.isFinite(diff) && diff > 0) return diff;
+  }
+  const fallback = Number(match.plannedDurationMinutes ?? 60);
+  return Number.isFinite(fallback) && fallback > 0 ? Math.round(fallback) : 60;
+};
+
+const buildDropSlots = (entries: Array<{ start: Date | null; end: Date | null }>) => {
+  const starts = entries.map((entry) => entry.start).filter((value): value is Date => Boolean(value));
+  const ends = entries.map((entry) => entry.end).filter((value): value is Date => Boolean(value));
+  const anchor = starts[0] ?? ends[0] ?? new Date();
+  const minHour = starts.length > 0 ? Math.min(...starts.map((item) => item.getHours())) : 8;
+  const maxHour = ends.length > 0 ? Math.max(...ends.map((item) => item.getHours())) : 22;
+  const fromHour = Math.max(6, minHour - 1);
+  const toHour = Math.min(23, maxHour + 2);
+  const slots: Date[] = [];
+  for (let hour = fromHour; hour <= toHour; hour += 1) {
+    [0, 30].forEach((minute) => {
+      const slot = new Date(anchor);
+      slot.setHours(hour, minute, 0, 0);
+      slots.push(slot);
+    });
+  }
+  return slots;
+};
+
 export function DayFieldGrid(props: {
   courts: DayGridCourt[];
   matches: DayGridMatch[];
@@ -66,10 +107,12 @@ export function DayFieldGrid(props: {
   timezone: string;
   onEditMatch?: (matchId: number) => void;
   onQuickMoveMatch?: (matchId: number, targetCourtId: number) => void;
+  onQuickRescheduleMatch?: (payload: DayGridQuickRescheduleInput) => void;
   selectedMatchIds?: number[];
   onToggleSelectMatch?: (matchId: number) => void;
 }) {
   const [draggedMatchId, setDraggedMatchId] = useState<number | null>(null);
+  const canDragMatches = Boolean(props.onQuickMoveMatch || props.onQuickRescheduleMatch);
 
   if (props.courts.length === 0) {
     return <p className="text-[12px] text-white/60">Sem campos ativos para mostrar.</p>;
@@ -78,6 +121,35 @@ export function DayFieldGrid(props: {
   const blocks = props.blocks ?? [];
   const availabilities = props.availabilities ?? [];
   const selected = new Set(props.selectedMatchIds ?? []);
+  const resolveBlockTone = (kind?: string | null) => {
+    const normalized = typeof kind === "string" ? kind.trim().toUpperCase() : "";
+    if (normalized === "CLASS_SESSION") {
+      return {
+        wrapper: "border-cyan-300/35 bg-cyan-500/10",
+        text: "text-cyan-50",
+        meta: "text-cyan-100/90",
+      };
+    }
+    if (normalized === "BOOKING") {
+      return {
+        wrapper: "border-emerald-300/35 bg-emerald-500/10",
+        text: "text-emerald-50",
+        meta: "text-emerald-100/90",
+      };
+    }
+    if (normalized === "SOFT_BLOCK") {
+      return {
+        wrapper: "border-violet-300/35 bg-violet-500/10",
+        text: "text-violet-50",
+        meta: "text-violet-100/90",
+      };
+    }
+    return {
+      wrapper: "border-amber-300/35 bg-amber-500/10",
+      text: "text-amber-50",
+      meta: "text-amber-100/90",
+    };
+  };
 
   const globalBlocks = blocks
     .filter((block) => !block.courtId)
@@ -157,6 +229,7 @@ export function DayFieldGrid(props: {
             end: toDate(block.endAt),
             label: block.label || `Bloqueio #${block.id}`,
             note: block.note || null,
+            blockKind: block.kind ?? null,
           })),
           ...courtMatches.map((match) => ({
             kind: "match" as const,
@@ -176,7 +249,14 @@ export function DayFieldGrid(props: {
           return a.key.localeCompare(b.key);
         });
 
-        const dropEnabled = Boolean(props.onQuickMoveMatch && draggedMatchId !== null);
+        const dropSlots = buildDropSlots(
+          timeline.map((entry) => ({
+            start: entry.start ?? null,
+            end: entry.end ?? null,
+          })),
+        );
+
+        const dropEnabled = Boolean(canDragMatches && draggedMatchId !== null);
 
         return (
           <div
@@ -208,20 +288,20 @@ export function DayFieldGrid(props: {
                   entry.kind === "block" ? (
                     <div
                       key={`day-entry-${entry.key}`}
-                      className="rounded-lg border border-amber-300/35 bg-amber-500/10 px-2 py-1 text-[12px]"
+                      className={`rounded-lg border px-2 py-1 text-[12px] ${resolveBlockTone(entry.blockKind).wrapper}`}
                     >
-                      <span className="font-semibold text-amber-50">{entry.label}</span>
-                      <span className="ml-2 text-amber-100/90">
+                      <span className={`font-semibold ${resolveBlockTone(entry.blockKind).text}`}>{entry.label}</span>
+                      <span className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}>
                         {fmt(entry.start, props.timezone)} → {fmt(entry.end, props.timezone)}
                       </span>
-                      {entry.note ? <span className="ml-2 text-amber-100/70">{entry.note}</span> : null}
+                      {entry.note ? <span className={`ml-2 ${resolveBlockTone(entry.blockKind).meta}`}>{entry.note}</span> : null}
                     </div>
                   ) : (
                     <div
                       key={`day-entry-${entry.key}`}
-                      draggable={Boolean(props.onQuickMoveMatch)}
+                      draggable={canDragMatches}
                       onDragStart={(event) => {
-                        if (!props.onQuickMoveMatch) return;
+                        if (!canDragMatches) return;
                         setDraggedMatchId(entry.id);
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/plain", String(entry.id));
@@ -257,7 +337,7 @@ export function DayFieldGrid(props: {
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
-                          {props.onQuickMoveMatch ? <span className="text-[10px] text-white/50">Arrasta</span> : null}
+                          {canDragMatches ? <span className="text-[10px] text-white/50">Arrasta</span> : null}
                           {props.onEditMatch ? (
                             <button
                               type="button"
@@ -274,6 +354,46 @@ export function DayFieldGrid(props: {
                 )}
               </div>
             )}
+            {draggedMatchId !== null && props.onQuickRescheduleMatch ? (
+              <div className="mt-2 rounded-lg border border-white/12 bg-white/[0.03] p-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-white/55">Largar para mudar hora</p>
+                <div className="mt-1 grid grid-cols-4 gap-1">
+                  {dropSlots.map((slot) => (
+                    <button
+                      key={`drop-slot-${court.id}-${slot.toISOString()}`}
+                      type="button"
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const dragged = props.matches.find((item) => item.id === draggedMatchId);
+                        if (!dragged) {
+                          setDraggedMatchId(null);
+                          return;
+                        }
+                        const durationMinutes = resolveMatchDurationMinutes(dragged);
+                        const targetStart = new Date(slot);
+                        const targetEnd = new Date(targetStart.getTime() + durationMinutes * 60_000);
+                        props.onQuickRescheduleMatch?.({
+                          matchId: dragged.id,
+                          targetCourtId: court.id,
+                          targetStartIso: targetStart.toISOString(),
+                          targetEndIso: targetEnd.toISOString(),
+                          durationMinutes,
+                        });
+                        setDraggedMatchId(null);
+                      }}
+                      className="rounded-md border border-white/15 bg-black/20 px-1.5 py-1 text-[10px] text-white/75 hover:border-[#6BFFFF]/45 hover:text-white"
+                    >
+                      {fmt(slot, props.timezone)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         );
       })}

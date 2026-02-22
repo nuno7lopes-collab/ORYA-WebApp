@@ -17,6 +17,16 @@ type LiveDispatchPolicy = {
   bypassRateLimit?: boolean;
 };
 
+const normalizeDate = (value: Date | string | null | undefined) => {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+};
+
 function resolveMatchIdFromPayload(payload: unknown): number | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>).matchId;
@@ -118,6 +128,7 @@ export async function queueMatchChanged(params: {
   delayStatus?: string | null;
   priority?: LivePriority;
   eventType?: string;
+  scheduledAt?: Date | string | null;
   isCancellation?: boolean;
 }) {
   const {
@@ -130,6 +141,7 @@ export async function queueMatchChanged(params: {
     delayStatus = null,
     eventType = "MATCH_CHANGED",
   } = params;
+  const scheduledAt = normalizeDate(params.scheduledAt ?? startAt ?? null);
 
   const inferredCancellation =
     params.isCancellation === true ||
@@ -138,7 +150,7 @@ export async function queueMatchChanged(params: {
   const priority = params.priority ?? "CRITICAL";
 
   // Use the same dedupe hash as scheduling dedupe so we never send twice for identical change.
-  const dedupeKey = dedupeMatchChange(matchId, startAt, courtId, scheduleVersion);
+  const dedupeKey = dedupeMatchChange(matchId, startAt, courtId, scheduleVersion, eventType, scheduledAt);
   await Promise.all(
     userIds.map(async (userId) => {
       const allowed = await canDispatchLiveNotification({
@@ -156,7 +168,7 @@ export async function queueMatchChanged(params: {
         reason,
         delayStatus,
         eventType,
-        scheduledAt: startAt ?? null,
+        scheduledAt,
       });
     }),
   );

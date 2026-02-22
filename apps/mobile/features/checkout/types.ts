@@ -78,6 +78,10 @@ export type CheckoutDraft = {
 
 export type CheckoutIntentResponse = {
   ok?: boolean;
+  code?: string;
+  status?: CheckoutStatus;
+  nextAction?: string;
+  retryable?: boolean;
   clientSecret?: string;
   paymentIntentId?: string;
   purchaseId?: string;

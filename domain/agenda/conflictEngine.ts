@@ -1,4 +1,4 @@
-export type AgendaCandidateType = "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
+export type AgendaCandidateType = "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
 
 export type PriorityRuleVersion = "v1";
 
@@ -45,7 +45,8 @@ export type ConflictDecision = {
 const ACTIVE_PRIORITY_RULE_VERSION: PriorityRuleVersion = "v1";
 
 const PRIORITY_BY_TYPE: Record<AgendaCandidateType, number> = {
-  HARD_BLOCK: 4,
+  HARD_BLOCK: 5,
+  CLASS_SESSION: 4,
   MATCH: 3,
   BOOKING: 2,
   SOFT_BLOCK: 1,
@@ -76,6 +77,7 @@ function resolvePriorityForActiveRule(candidate: AgendaCandidate): number | null
   }
 
   if (candidate.type === "HARD_BLOCK") return PRIORITY_BY_TYPE.HARD_BLOCK;
+  if (candidate.type === "CLASS_SESSION") return PRIORITY_BY_TYPE.CLASS_SESSION;
   if (candidate.type === "BOOKING") return PRIORITY_BY_TYPE.BOOKING;
   if (candidate.type === "SOFT_BLOCK") return PRIORITY_BY_TYPE.SOFT_BLOCK;
   if (candidate.type === "MATCH") return PRIORITY_BY_TYPE.MATCH;

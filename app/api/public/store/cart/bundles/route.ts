@@ -3,7 +3,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
 import { validateStorePersonalization } from "@/lib/store/personalization";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
@@ -36,6 +36,7 @@ async function resolveStore(storeId: number) {
       status: true,
       showOnProfile: true,
       catalogLocked: true,
+      checkoutEnabled: true,
       currency: true,
       organization: {
         select: {
@@ -50,13 +51,21 @@ async function resolveStore(storeId: number) {
     },
   });
   if (!store) {
-    return { ok: false as const, error: "Store nao encontrada." };
+    return {
+      ok: false as const,
+      status: 404,
+      errorCode: "STORE_NOT_FOUND",
+      message: "Store nao encontrada.",
+    };
   }
-  if (!isPublicStore(store)) {
-    return { ok: false as const, error: "Loja fechada." };
-  }
-  if (store.catalogLocked) {
-    return { ok: false as const, error: "Catalogo bloqueado." };
+  const publicAccess = resolvePublicStoreAccess(store);
+  if (!publicAccess.ok) {
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: publicAccess.errorCode,
+      message: publicAccess.error,
+    };
   }
   const paymentsGate = getPublicStorePaymentsGate({
     orgType: store.organization?.orgType,
@@ -67,7 +76,12 @@ async function resolveStore(storeId: number) {
     stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
   });
   if (!paymentsGate.ok) {
-    return { ok: false as const, error: "PAYMENTS_NOT_READY" };
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: "PAYMENTS_NOT_READY",
+      message: "Pagamentos indisponiveis.",
+    };
   }
   return { ok: true as const, store };
 }
@@ -117,9 +131,17 @@ async function _POST(req: NextRequest) {
       return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
-    const store = await resolveStore(storeParsed.storeId);
-    if (!store.ok) {
-      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
+    const storeContext = await resolveStore(storeParsed.storeId);
+    if (!storeContext.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: storeContext.errorCode,
+          message: storeContext.message,
+          error: storeContext.errorCode,
+        },
+        { status: storeContext.status },
+      );
     }
 
     const body = await req.json().catch(() => null);
@@ -134,7 +156,7 @@ async function _POST(req: NextRequest) {
     const bundle = await prisma.storeBundle.findFirst({
       where: {
         id: payload.bundleId,
-        storeId: store.store.id,
+        storeId: storeContext.store.id,
         visibility: "PUBLIC",
       },
       select: {
@@ -177,7 +199,7 @@ async function _POST(req: NextRequest) {
       if (item.product.visibility !== "PUBLIC") {
         return jsonWrap({ ok: false, error: "Bundle indisponivel." }, { status: 409 });
       }
-      if (item.product.currency !== store.store.currency) {
+      if (item.product.currency !== storeContext.store.currency) {
         return jsonWrap({ ok: false, error: "Moeda invalida." }, { status: 400 });
       }
       if (item.variant && !item.variant.isActive) {
@@ -214,8 +236,8 @@ async function _POST(req: NextRequest) {
     const sessionId = userId ? null : cookieSession ?? crypto.randomUUID();
 
     const resolved = await resolveCart({
-      storeId: store.store.id,
-      currency: store.store.currency,
+      storeId: storeContext.store.id,
+      currency: storeContext.store.currency,
       userId,
       sessionId,
     });

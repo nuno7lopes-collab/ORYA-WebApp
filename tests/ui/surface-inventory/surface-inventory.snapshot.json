@@ -271,6 +271,7 @@
     "apps/mobile/app/reservas/index.tsx",
     "apps/mobile/app/search/index.tsx",
     "apps/mobile/app/service/[id].tsx",
+    "apps/mobile/app/service/[id]/__tests__/bookingDurationPolicy.test.tsx",
     "apps/mobile/app/service/[id]/booking.tsx",
     "apps/mobile/app/settings/index.tsx",
     "apps/mobile/app/store/[username]/cart.tsx",
@@ -535,7 +536,7 @@
   },
   "counts": {
     "webTotal": 237,
-    "mobileTotal": 43,
+    "mobileTotal": 44,
     "org": 78,
     "admin": 17,
     "user": 21,

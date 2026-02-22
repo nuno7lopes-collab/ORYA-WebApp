@@ -34,6 +34,24 @@ const resolvePayload = (payload: unknown) => {
   return payload as Record<string, unknown>;
 };
 
+const resolveNumericFromPayload = (payload: Record<string, unknown>, keys: string[]) => {
+  for (const key of keys) {
+    const raw = payload[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw))) return Number(raw);
+  }
+  const nested = payload.payload;
+  if (nested && typeof nested === "object") {
+    const nestedRecord = nested as Record<string, unknown>;
+    for (const key of keys) {
+      const raw = nestedRecord[key];
+      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+      if (typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw))) return Number(raw);
+    }
+  }
+  return null;
+};
+
 // resolvePayloadKind / resolveRoleLabel / resolveCampaignId vivem no registry
 
 const shouldFallbackOnError = (err: unknown) => {
@@ -57,6 +75,7 @@ export async function _GET(req: NextRequest) {
   let tab: "all" | "network" = "all";
   let limit = 30;
   let cursorRaw: string | null = null;
+  const loggedMissingFieldWarnings = new Set<string>();
   try {
     const user = await requireUser();
     userId = user.id;
@@ -359,6 +378,11 @@ export async function _GET(req: NextRequest) {
       const payload = resolvePayload(primary.payload);
       const payloadKind = resolvePayloadKind(payload);
       const roleLabel = resolveRoleLabel(payload);
+      const payloadEventId = resolveNumericFromPayload(payload, ["eventId", "event_id"]);
+      const payloadOrganizationId = resolveNumericFromPayload(payload, ["organizationId", "organization_id"]);
+      const resolvedEventId = primary.event?.id ?? primary.eventId ?? payloadEventId ?? null;
+      const resolvedOrganizationId =
+        primary.organization?.id ?? primary.organizationId ?? primary.event?.organizationId ?? payloadOrganizationId ?? null;
 
       const singleActor = actorCount === 1 ? actors[0] : null;
       const registryInput = {
@@ -368,8 +392,8 @@ export async function _GET(req: NextRequest) {
         ctaUrl: primary.ctaUrl ?? null,
         ctaLabel: primary.ctaLabel ?? null,
         fromUserId: primary.fromUserId ?? null,
-        organizationId: primary.organizationId ?? null,
-        eventId: primary.eventId ?? null,
+        organizationId: resolvedOrganizationId,
+        eventId: resolvedEventId,
         ticketId: primary.ticketId ?? null,
         ticketEntitlementId: primary.ticketId ? entitlementByTicketId.get(primary.ticketId) ?? null : null,
         inviteId: primary.inviteId ?? null,
@@ -403,7 +427,11 @@ export async function _GET(req: NextRequest) {
       const content = resolveNotificationContent(registryInput);
       const missing = validateNotificationInput(registryInput);
       if (missing.length) {
-        console.warn("[notifications][feed] missing_fields", { notificationId: primary.id, type: primary.type, missing });
+        const warningKey = `${primary.id}:${missing.slice().sort().join(",")}`;
+        if (!loggedMissingFieldWarnings.has(warningKey)) {
+          loggedMissingFieldWarnings.add(warningKey);
+          console.warn("[notifications][feed] missing_fields", { notificationId: primary.id, type: primary.type, missing });
+        }
       }
 
       const thumbnailUrl = primary.event?.coverImageUrl ?? primary.organization?.brandingCoverUrl ?? null;
@@ -421,8 +449,8 @@ export async function _GET(req: NextRequest) {
         thumbnailUrl,
         ctaUrl: content.ctaUrl ?? undefined,
         ctaLabel: content.ctaLabel ?? undefined,
-        organizationId: primary.organizationId ?? undefined,
-        eventId: primary.eventId ?? undefined,
+        organizationId: resolvedOrganizationId ?? undefined,
+        eventId: resolvedEventId ?? undefined,
         payloadKind: payloadKind ?? undefined,
         payload: primary.payload ?? undefined,
         actions: content.actions && content.actions.length > 0 ? content.actions : undefined,

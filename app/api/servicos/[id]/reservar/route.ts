@@ -39,6 +39,12 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { normalizeEmail } from "@/lib/utils/email";
 import { isValidPhone, normalizePhone, resolvePhoneNormalizationOptions } from "@/lib/phone";
 import { ingestCrmInteraction } from "@/lib/crm/ingest";
+import {
+  getOrganizationBookingPolicy,
+  validateDurationAgainstPolicy,
+  validateStartAtAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
+import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -51,20 +57,6 @@ function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
-}
-
-function getMinutesOfDay(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const map = new Map(parts.map((p) => [p.type, p.value]));
-  const hour = Number(map.get("hour"));
-  const minute = Number(map.get("minute"));
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour * 60 + minute;
 }
 
 function parsePositiveInt(value: unknown) {
@@ -312,6 +304,7 @@ async function _POST(
     });
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
+    const isCourtService = service.kind === "COURT";
     let addonResolution: Awaited<ReturnType<typeof resolveServiceAddonSelection>> = {
       ok: true,
       addons: [],
@@ -322,7 +315,7 @@ async function _POST(
       ok: true,
       package: null,
     };
-    if (packageId) {
+    if (packageId && !isCourtService) {
       packageResolution = await resolveServicePackageSelection({
         tx: prisma,
         serviceId: service.id,
@@ -353,8 +346,27 @@ async function _POST(
       totalDeltaMinutes: addonResolution.totalDeltaMinutes,
       totalDeltaPriceCents: addonResolution.totalDeltaPriceCents,
     });
-    const effectiveDurationMinutes = totals.durationMinutes;
-    const effectivePriceCents = totals.priceCents;
+    const durationOverride = parsePositiveInt(payload?.durationMinutes);
+    let effectiveDurationMinutes = durationOverride ?? totals.durationMinutes;
+    let effectivePriceCents = totals.priceCents;
+
+    if (isCourtService) {
+      if (!durationOverride) {
+        effectiveDurationMinutes = service.durationMinutes;
+      }
+      const courtDurationPrice = await resolveCourtDurationPrice({
+        tx: prisma,
+        serviceId: service.id,
+        durationMinutes: effectiveDurationMinutes,
+      });
+      if (!courtDurationPrice) {
+        return jsonWrap(
+          { ok: false, error: "DURATION_NOT_PRICED", message: "Duração sem preço configurado." },
+          { status: 400 },
+        );
+      }
+      effectivePriceCents = Math.max(0, courtDurationPrice.priceCents + Math.max(0, effectivePriceCents - base.priceCents));
+    }
 
     if (effectivePriceCents > 0) {
       const isPlatformOrg = service.organization?.orgType === "PLATFORM";
@@ -379,9 +391,24 @@ async function _POST(
         );
       }
     }
-    const minutesOfDay = getMinutesOfDay(startsAt, timezone);
-    if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return jsonWrap({ ok: false, error: "Horário fora da grelha de 5 minutos." }, { status: 400 });
+    const bookingPolicy = await getOrganizationBookingPolicy({
+      organizationId: service.organizationId,
+      tx: prisma,
+    });
+    const startValidation = validateStartAtAgainstPolicy({
+      startsAt,
+      timezone,
+      policy: bookingPolicy,
+    });
+    if (!startValidation.ok) {
+      return jsonWrap({ ok: false, error: startValidation.errorCode, message: startValidation.message }, { status: 400 });
+    }
+    const durationValidation = validateDurationAgainstPolicy({
+      durationMinutes: effectiveDurationMinutes,
+      policy: bookingPolicy,
+    });
+    if (!durationValidation.ok) {
+      return jsonWrap({ ok: false, error: durationValidation.errorCode, message: durationValidation.message }, { status: 400 });
     }
 
     const now = new Date();

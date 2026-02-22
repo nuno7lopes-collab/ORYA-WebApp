@@ -3,12 +3,16 @@ import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
   serviceFindFirst: vi.fn(),
+  organizationSettingsFindUnique: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     service: {
       findFirst: mocks.serviceFindFirst,
+    },
+    organizationSettings: {
+      findUnique: mocks.organizationSettingsFindUnique,
     },
   },
 }));
@@ -62,6 +66,11 @@ describe("service calendar window", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-02-10T10:00:00Z"));
+    mocks.organizationSettingsFindUnique.mockResolvedValue({
+      bookingGridMinutes: 30,
+      bookingAllowedDurations: [60, 90],
+      bookingAllowCustomDuration: false,
+    });
     mocks.serviceFindFirst.mockResolvedValue({
       id: 1,
       kind: "COURT",
@@ -91,6 +100,7 @@ describe("service calendar window", () => {
   afterEach(() => {
     vi.useRealTimers();
     mocks.serviceFindFirst.mockReset();
+    mocks.organizationSettingsFindUnique.mockReset();
   });
 
   it("bloqueia meses fora da janela (mês atual + 3)", async () => {

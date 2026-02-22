@@ -49,4 +49,34 @@ describe("agenda query", () => {
       }),
     );
   });
+
+  it("mapeia CLASS_SESSION para kind CLASS", async () => {
+    const from = new Date("2025-03-01T00:00:00Z");
+    const to = new Date("2025-03-31T23:59:59Z");
+    mocks.findMany.mockResolvedValue([
+      {
+        title: "Aula de Pádel",
+        startsAt: from,
+        endsAt: to,
+        sourceType: SourceType.CLASS_SESSION,
+        sourceId: "42",
+        status: "SCHEDULED",
+        padelClubId: 9,
+        courtId: 7,
+        resourceId: null,
+        professionalId: 11,
+      },
+    ]);
+
+    const res = await getAgendaItemsForOrganization({ organizationId: 3, from, to });
+    expect(res).toEqual([
+      expect.objectContaining({
+        kind: "CLASS",
+        classSessionId: 42,
+        status: "SCHEDULED",
+        courtId: 7,
+        professionalId: 11,
+      }),
+    ]);
+  });
 });

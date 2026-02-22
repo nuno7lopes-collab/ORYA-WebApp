@@ -8,7 +8,7 @@ import { BACKGROUND_CATALOG } from "@/lib/theme/catalog";
 const ORG_PREFIXES = ["/org", "/org-hub"];
 const EVENT_NON_SLUG_SEGMENTS = new Set(["nova"]);
 const LANDING_PREFIXES = ["/landing"];
-const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%)";
+const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #1f1f1f 0%, #242424 50%, #2a2a2a 100%)";
 
 type BackgroundKey = "orya-bg-user" | "orya-bg-event" | "orya-bg-org" | "orya-bg-landing";
 
@@ -22,36 +22,36 @@ type BackgroundPreset = {
 };
 
 const USER_BG_PRESET: BackgroundPreset = {
-  color: "#0b1014",
+  color: "#1f1f1f",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
+    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
 };
 
 const ORG_BG_PRESET: BackgroundPreset = {
-  color: "#0b1014",
+  color: "#1f1f1f",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
+    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
 };
 
 const LANDING_BG_PRESET: BackgroundPreset = {
-  color: "#0b1014",
+  color: "#1f1f1f",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
+    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
 };
 
 type BackgroundLayerPreset = Pick<BackgroundPreset, "color" | "image" | "overlay" | "overlayOpacity">;
@@ -74,6 +74,27 @@ const BG_PRESETS: Record<BackgroundKey, BackgroundPreset> = {
   "orya-bg-event": USER_BG_PRESET,
   "orya-bg-org": ORG_BG_PRESET,
   "orya-bg-landing": LANDING_BG_PRESET,
+};
+
+const hexToRgbChannels = (value: string): string | null => {
+  const normalized = value.trim();
+  const fullHex = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (fullHex) {
+    const hex = fullHex[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  }
+  const shortHex = normalized.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortHex) {
+    const hex = shortHex[1];
+    const r = parseInt(`${hex[0]}${hex[0]}`, 16);
+    const g = parseInt(`${hex[1]}${hex[1]}`, 16);
+    const b = parseInt(`${hex[2]}${hex[2]}`, 16);
+    return `${r}, ${g}, ${b}`;
+  }
+  return null;
 };
 
 const isEventCoverRoute = (pathname: string | null) => {
@@ -107,6 +128,8 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
   const bgClass = getBackgroundClass(pathname);
   const preset = BG_PRESETS[bgClass];
   const routeOverride = bgClass === "orya-bg-event" ? EVENT_BLUR_PRESET : null;
+  const routeColor = routeOverride?.color ?? preset.color;
+  const routeRgb = hexToRgbChannels(routeColor) ?? "31, 31, 31";
 
   const layerStyle: CSSProperties = routeOverride
     ? {
@@ -127,6 +150,10 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
   const overlayStyle: CSSProperties = routeOverride
     ? { backgroundImage: routeOverride.overlay, opacity: routeOverride.overlayOpacity }
     : { backgroundImage: preset.overlay, opacity: preset.overlayOpacity };
+  const shellVars = {
+    "--orya-route-bg-color": routeColor,
+    "--orya-route-bg-rgb": routeRgb,
+  } as CSSProperties;
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -144,7 +171,7 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
   }, [bgClass]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col" style={shellVars}>
       <div
         className="orya-bg-layer inset-0 z-0 pointer-events-none"
         style={layerStyle}

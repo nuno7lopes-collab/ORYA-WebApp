@@ -33,6 +33,12 @@ export type PadelUnscheduledReason =
   | "COURT_NOT_AVAILABLE"
   | "NO_SLOT_AVAILABLE"
   | "CATEGORY_WINDOW_EXHAUSTED"
+  | "HARD_BLOCK_CONFLICT"
+  | "CLASS_SESSION_CONFLICT"
+  | "BOOKING_CONFLICT"
+  | "MATCH_CONFLICT"
+  | "SOFT_BLOCK_CONFLICT"
+  | "AGENDA_CONFLICT"
   | (string & {});
 
 export type SchedulerV2CategorySummary = {

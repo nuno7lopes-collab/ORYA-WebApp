@@ -80,6 +80,7 @@ loadEnv();
 
 const redisUrl = process.env.REDIS_URL ? String(process.env.REDIS_URL).trim() : "";
 const redisConfigured = redisUrl.length > 0;
+const disableRedisAfterFailure = process.env.NODE_ENV !== "production";
 if (process.env.NODE_ENV === "production" && !redisConfigured) {
   console.warn("[chat-ws] REDIS_URL em falta em produção. A correr em modo degradado (sem pub/sub redis).");
 }
@@ -115,6 +116,18 @@ const prisma = new PrismaClient({ adapter });
 let redisPublisher = null;
 let redisSubscriber = null;
 let redisConnectPromise = null;
+let redisDisabled = false;
+const redisErrorOnce = new Set();
+
+function warnRedisClientError(role, err) {
+  const code = typeof err?.code === "string" ? err.code : "UNKNOWN";
+  const address = typeof err?.address === "string" ? err.address : "unknown";
+  const port = Number.isFinite(Number(err?.port)) ? Number(err.port) : "unknown";
+  const key = `${role}:${code}:${address}:${port}`;
+  if (redisErrorOnce.has(key)) return;
+  redisErrorOnce.add(key);
+  console.warn(`[chat-ws][redis:${role}] error`, err);
+}
 
 async function closeRedisClients() {
   const clients = [redisSubscriber, redisPublisher].filter(Boolean);
@@ -132,16 +145,19 @@ async function closeRedisClients() {
 }
 
 async function ensureRedisClients() {
-  if (!redisConfigured) return false;
+  if (!redisConfigured || redisDisabled) return false;
   if (redisPublisher && redisSubscriber && redisPublisher.isOpen && redisSubscriber.isOpen) {
     return true;
   }
   if (!redisConnectPromise) {
     redisConnectPromise = (async () => {
-      const publisher = createRedisClient({ url: redisUrl });
-      const subscriber = createRedisClient({ url: redisUrl });
-      publisher.on("error", (err) => console.warn("[chat-ws][redis:publisher] error", err));
-      subscriber.on("error", (err) => console.warn("[chat-ws][redis:subscriber] error", err));
+      const clientOptions = disableRedisAfterFailure
+        ? { url: redisUrl, socket: { reconnectStrategy: () => false } }
+        : { url: redisUrl };
+      const publisher = createRedisClient(clientOptions);
+      const subscriber = createRedisClient(clientOptions);
+      publisher.on("error", (err) => warnRedisClientError("publisher", err));
+      subscriber.on("error", (err) => warnRedisClientError("subscriber", err));
       await publisher.connect();
       await subscriber.connect();
       await subscriber.subscribe(CHAT_EVENTS_CHANNEL, (message) => {
@@ -158,6 +174,9 @@ async function ensureRedisClients() {
     })()
       .catch(async (err) => {
         await closeRedisClients();
+        if (disableRedisAfterFailure) {
+          redisDisabled = true;
+        }
         console.warn("[chat-ws] falha a inicializar redis", err);
         return false;
       })
@@ -570,6 +589,10 @@ if (redisConfigured) {
     if (ok) return;
     if (process.env.NODE_ENV === "production") {
       console.warn("[chat-ws] Redis indisponível em produção. A continuar em modo degradado.");
+      return;
+    }
+    if (redisDisabled) {
+      console.warn("[chat-ws] Redis indisponível em desenvolvimento. A continuar em modo degradado.");
     }
   });
 }

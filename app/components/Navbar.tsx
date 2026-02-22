@@ -549,10 +549,10 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
         } ${shouldHide ? "hidden" : ""} ${isMobileHubRoute ? "hidden md:block" : ""}`}
       >
         <div
-          className={`relative flex w-full items-center gap-4 rounded-b-[24px] border-b px-4 py-5 transition-all duration-300 md:px-6 md:py-6 lg:px-8 ${
+          className={`relative flex w-full items-center gap-4 rounded-b-[24px] border-b-[0.5px] px-4 py-5 transition-all duration-300 md:px-6 md:py-6 lg:px-8 ${
             isAtTop
-              ? "border-white/5 bg-[#0b1014]/40 backdrop-blur-md"
-              : "border-white/10 bg-[#0b1014]/75 shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl"
+              ? "border-white/[0.06] [background:var(--orya-topbar-bg)] backdrop-blur-md"
+              : "border-white/[0.09] [background:var(--orya-topbar-bg)] shadow-[0_12px_30px_rgba(0,0,0,0.4)] backdrop-blur-xl"
           }`}
         >
           {/* Logo + pesquisa à esquerda */}

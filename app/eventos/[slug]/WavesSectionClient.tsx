@@ -74,15 +74,15 @@ export default function WavesSectionClient({
 
   return (
     <div className="mt-6 w-full">
-      <div className="relative flex flex-col gap-3 rounded-2xl border border-white/12 bg-black/55 px-5 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+      <div className="relative flex items-center gap-3 rounded-2xl border border-white/12 bg-black/55 px-5 py-3.5 shadow-[0_18px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl">
         <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-[#7CFFEA]/70 to-transparent" />
-        <p className="text-sm text-white/85">
+        <p className="min-w-0 flex-1 truncate text-xl text-white/90 leading-tight font-semibold">
           {isGratisLabel ? (
-            <span className="text-white font-semibold">{ticketCopy.freeLabel}</span>
+            <span className="text-white">{ticketCopy.freeLabel}</span>
           ) : minPrice !== null ? (
             <>
               {t("fromLabel", locale)}{" "}
-              <span className="text-white font-semibold">
+              <span className="text-white">
                 {minPrice.toFixed(2)}€
               </span>
             </>
@@ -130,7 +130,7 @@ export default function WavesSectionClient({
               } catch {}
             }, 10);
           }}
-          className={`${CTA_PRIMARY} w-full justify-center py-3 text-sm shadow-[0_12px_30px_rgba(124,255,234,0.18)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
+          className={`${CTA_PRIMARY} min-h-12 min-w-[166px] max-w-[62%] shrink-0 justify-center px-5 py-2.5 text-[0.98rem] shadow-[0_12px_30px_rgba(124,255,234,0.18)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50`}
         >
           {purchasableTickets.length === 0
             ? t("availabilitySoldOut", locale)

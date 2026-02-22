@@ -16,6 +16,7 @@ describe("booking payload helpers", () => {
     });
     expect(payload).toEqual({
       startsAt: "2026-02-08T10:00:00.000Z",
+      durationMinutes: null,
       professionalId: null,
       partySize: null,
       addressId: null,

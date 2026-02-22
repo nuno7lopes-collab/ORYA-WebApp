@@ -114,7 +114,7 @@ const filterPillActiveClass =
 const filterSelectClass =
   "rounded-full border border-white/15 bg-black/40 px-3 py-2 text-xs text-white/80 focus:border-white/45 focus:outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] hover:border-white/30 transition-all duration-200 ease-out";
 const panelShellClass =
-  "rounded-2xl border border-white/12 bg-gradient-to-br from-[#0c1325] via-[#0b1124] to-[#050914] p-3 sm:p-4 shadow-[0_16px_45px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
+  "rounded-2xl border border-white/12 bg-gradient-to-br from-[#2a2a2a] via-[#1f1f1f] to-[#1a1a1a] p-3 sm:p-4 shadow-[0_16px_45px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
 const panelHeaderClass = "flex items-center justify-between text-[11px] text-white/70";
 const panelTitleClass = "flex items-center gap-2 text-white/85";
 const panelActionClass =
@@ -129,9 +129,9 @@ const panelListItemActiveClass =
 const panelListItemIdleClass =
   "border-white/12 bg-white/5 text-white/80 hover:border-white/30 hover:bg-white/8";
 const panelPopoverBaseClass =
-  "mt-2 w-full rounded-2xl border border-white/15 bg-gradient-to-br from-[#0c1325] via-[#0b1124] to-[#050914] p-3 sm:p-4 backdrop-blur space-y-3 shadow-[0_24px_60px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
+  "mt-2 w-full rounded-2xl border border-white/15 bg-gradient-to-br from-[#2a2a2a] via-[#1f1f1f] to-[#1a1a1a] p-3 sm:p-4 backdrop-blur space-y-3 shadow-[0_24px_60px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
 const panelModalClass =
-  "w-full max-w-sm rounded-2xl border border-white/15 bg-gradient-to-br from-[#0c1325] via-[#0b1124] to-[#050914] p-4 space-y-3 shadow-[0_24px_60px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
+  "w-full max-w-sm rounded-2xl border border-white/15 bg-gradient-to-br from-[#2a2a2a] via-[#1f1f1f] to-[#1a1a1a] p-4 space-y-3 shadow-[0_24px_60px_rgba(0,0,0,0.55)] transition-shadow duration-200 ease-out";
 
 type ExplorarContentProps = {
   initialWorld?: ExploreWorld;
@@ -1019,7 +1019,7 @@ export function ExplorarContent({ initialWorld, hideWorldTabs = false }: Explora
 
   return (
     <main className={exploreMainClass}>
-      <MobileTopBar />
+      <MobileTopBar variant="search-only" searchPlaceholder="Pesquisar" />
       <section className="orya-page-width px-6 md:px-10 py-6 md:py-8 space-y-6">
         {!hideWorldTabs && (
           <div className={exploreTabsCardClass}>

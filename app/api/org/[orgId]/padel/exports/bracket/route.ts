@@ -83,7 +83,7 @@ const buildBracketPdf = async ({
   rows,
 }: {
   title: string;
-  rows: Array<{ category: string; round: string; teamA: string; teamB: string; score: string; status: string }>;
+  rows: Array<{ category: string; round: string; teamA: string; teamB: string; score: string; status: string; streamLive: boolean }>;
 }) => {
   const doc = new PDFDocument({ size: "A4", margin: 36 });
   const chunks: Buffer[] = [];
@@ -135,7 +135,7 @@ const buildBracketPdf = async ({
     doc.text(row.teamA, columnX[2], y, { width: columnWidths[2] - 4 });
     doc.text(row.teamB, columnX[3], y, { width: columnWidths[3] - 4 });
     doc.text(row.score, columnX[4], y, { width: columnWidths[4] - 4 });
-    doc.text(row.status, columnX[5], y, { width: columnWidths[5] - 4 });
+    doc.text(`${row.status} · stream: ${row.streamLive ? "sim" : "não"}`, columnX[5], y, { width: columnWidths[5] - 4 });
     currentY += rowHeight;
   });
 
@@ -210,6 +210,10 @@ async function _GET(req: NextRequest) {
     category.rounds.flatMap((round) =>
       round.matches.map((m) => {
         const scoreObj = m.score && typeof m.score === "object" ? (m.score as Record<string, unknown>) : null;
+        const liveStream =
+          scoreObj?.liveStream && typeof scoreObj.liveStream === "object" && !Array.isArray(scoreObj.liveStream)
+            ? (scoreObj.liveStream as Record<string, unknown>)
+            : null;
         return {
           category: category.label,
           round: formatRoundLabel(round.label),
@@ -217,6 +221,7 @@ async function _GET(req: NextRequest) {
           teamB: pairingLabel(m.pairingB?.slots),
           score: formatScore(m.scoreSets, scoreObj),
           status: String(m.status),
+          streamLive: liveStream?.isLive === true,
         };
       }),
     ),
@@ -279,6 +284,14 @@ async function _GET(req: NextRequest) {
                   <div class="team">${pairingLabel(m.pairingB?.slots)}</div>
                   <div class="score">${formatScore(m.scoreSets, scoreObj)}</div>
                   <div class="status">${String(m.status)}</div>
+                  <div class="status">stream: ${
+                    scoreObj?.liveStream &&
+                    typeof scoreObj.liveStream === "object" &&
+                    !Array.isArray(scoreObj.liveStream) &&
+                    (scoreObj.liveStream as Record<string, unknown>).isLive === true
+                      ? "sim"
+                      : "não"
+                  }</div>
                 </div>`;
                 })
                 .join("")}

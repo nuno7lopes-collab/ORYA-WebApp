@@ -23,7 +23,6 @@ import { createMessageRequest } from "../../features/messages/api";
 import { GlassCard } from "../../components/liquid/GlassCard";
 import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
-import { TopPadelButton } from "../../components/navigation/TopPadelButton";
 import { SafeFlashList } from "../../components/lists/SafeFlashList";
 import { formatDate } from "../../lib/formatters";
 import { useIsFocused } from "@react-navigation/native";
@@ -277,7 +276,6 @@ export default function MessagesTabScreen() {
         variant="title"
         title={t("messages:title")}
         titleAlign="center"
-        leftSlot={<TopPadelButton />}
         rightSlotMode="append"
         rightSlot={
           session?.user?.id ? (

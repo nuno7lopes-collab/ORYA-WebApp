@@ -231,10 +231,10 @@ describe("padel ranking v2 guardrails (N6)", () => {
 });
 
 describe("padel lessons + trainers booking guardrails", () => {
-  it("associação de treinador mantém profissional operacional (ativo)", () => {
+  it("publicar/aprovar treinador faz sync canónico para ReservationProfessional", () => {
     const trainersRoute = readLocal("app/api/org/[orgId]/trainers/route.ts");
-    expect(trainersRoute).toContain("reservationProfessional.update");
-    expect(trainersRoute).toContain("data: { isActive: true }");
+    expect(trainersRoute).toContain("reservationProfessional.upsert");
+    expect(trainersRoute).toContain("reservationProfessionalId");
   });
 
   it("serviços de aula exigem instrutor com profissional ativo", () => {
@@ -248,9 +248,21 @@ describe("padel lessons + trainers booking guardrails", () => {
     expect(patchService).toContain("INSTRUCTOR_PROFESSIONAL_INACTIVE");
   });
 
-  it("padel hub bloqueia criação de aula com treinador sem profissional ativo", () => {
+  it("class-series valida startMinute pela grelha da organização", () => {
+    const createSeries = readLocal("app/api/org/[orgId]/servicos/[id]/class-series/route.ts");
+    const patchSeries = readLocal("app/api/org/[orgId]/servicos/[id]/class-series/[seriesId]/route.ts");
+    expect(createSeries).toContain("getOrganizationBookingPolicy");
+    expect(createSeries).toContain("validateStartMinuteAgainstPolicy");
+    expect(createSeries).not.toContain("SLOT_STEP_MINUTES = 15");
+    expect(patchSeries).toContain("getOrganizationBookingPolicy");
+    expect(patchSeries).toContain("validateStartMinuteAgainstPolicy");
+    expect(patchSeries).not.toContain("SLOT_STEP_MINUTES = 15");
+  });
+
+  it("padel hub oferece provisionamento em reservas antes de criar aula recorrente", () => {
     const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
-    expect(hub).toContain("professionalIsActive === false");
-    expect(hub).toContain("Reativa em Reservas > Profissionais");
+    expect(hub).toContain("handleProvisionLessonTrainer");
+    expect(hub).toContain("Criar em reservas");
+    expect(hub).toContain("/class-series");
   });
 });

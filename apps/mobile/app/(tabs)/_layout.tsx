@@ -32,7 +32,7 @@ const ExpoTopTabs = withLayoutContext<
   MaterialTopTabNavigationEventMap
 >(MaterialTopTabs.Navigator);
 const APP_BACKGROUND = tokens.colors.background;
-const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["agora", "network", "messages", "profile", "index"];
+const VISIBLE_TAB_KEYS: ReadonlyArray<TabKey> = ["agora", "index", "network", "messages", "profile"];
 
 export default function TabsLayout() {
   const { t } = useTranslation();
@@ -277,10 +277,10 @@ export default function TabsLayout() {
       >
         <ExpoTopTabs.Screen name="padel" options={{ title: "Padel" }} />
         <ExpoTopTabs.Screen name="agora" options={{ title: "Agora" }} />
+        <ExpoTopTabs.Screen name="index" options={{ title: "Descobrir" }} />
         <ExpoTopTabs.Screen name="network" options={{ title: "Rede" }} />
         <ExpoTopTabs.Screen name="messages" options={{ title: "Mensagens" }} />
         <ExpoTopTabs.Screen name="profile" options={{ title: "Perfil" }} />
-        <ExpoTopTabs.Screen name="index" options={{ title: "Descobrir" }} />
       </ExpoTopTabs>
       <LocationPermissionModal
         visible={locationModalVisible}

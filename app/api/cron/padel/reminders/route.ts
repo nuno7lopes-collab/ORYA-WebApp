@@ -1,46 +1,22 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { createNotification, shouldNotify } from "@/lib/notifications";
+import { shouldNotify } from "@/lib/notifications";
+import { queueMatchChanged } from "@/domain/notifications/tournament";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordCronHeartbeat } from "@/lib/cron/heartbeat";
-const REMINDER_MINUTES = 30;
+const REMINDER_MINUTES = 15;
 const WINDOW_MINUTES = 10;
 const MAX_MATCHES = 120;
 
-const formatTime = (value: Date, timezone?: string | null) =>
-  new Intl.DateTimeFormat("pt-PT", {
-    timeZone: timezone || "Europe/Lisbon",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(value);
-
-const formatPairing = (pairing: {
-  slots?: Array<{
-    playerProfile?: { displayName?: string | null; fullName?: string | null } | null;
-    profile?: { fullName?: string | null; username?: string | null } | null;
-    invitedContact?: string | null;
-  }>;
-}) => {
-  const names =
-    pairing?.slots
-      ?.map((slot) =>
-        slot.playerProfile?.displayName ||
-        slot.playerProfile?.fullName ||
-        slot.profile?.fullName ||
-        slot.profile?.username ||
-        slot.invitedContact ||
-        null,
-      )
-      .filter((name): name is string => Boolean(name)) || [];
-  if (names.length === 0) return "Dupla";
-  return names.slice(0, 2).join(" / ");
-};
+function emitPadelMetric(metric: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({ kind: "padel_metric", metric, ...payload }));
+}
 
 async function _POST(req: NextRequest) {
   const startedAt = new Date();
@@ -135,11 +111,6 @@ async function _POST(req: NextRequest) {
       continue;
     }
 
-    const pairingALabel = formatPairing(match.pairingA || {});
-    const pairingBLabel = formatPairing(match.pairingB || {});
-    const timeLabel = formatTime(startAt, match.event?.timezone);
-    const courtLabel = String(match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra");
-
     const participants = new Set<string>();
     (match.pairingA?.slots ?? []).forEach((slot) => {
       if (slot.profile?.id) participants.add(slot.profile.id);
@@ -157,42 +128,27 @@ async function _POST(req: NextRequest) {
         continue;
       }
 
-      const dedupeKey = `REMINDER_30:${match.id}:${userId}`;
-      try {
-        await prisma.matchNotification["create"]({
-          data: {
-            matchId: match.id,
-            dedupeKey,
-            payload: { type: "REMINDER_30", startAt: startAt.toISOString() },
-          },
-        });
-      } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-          skipped += 1;
-          continue;
-        }
-        throw err;
-      }
-
-      await createNotification({
-        userId,
-        type: "EVENT_REMINDER",
-        title: `Jogo em ${REMINDER_MINUTES} min`,
-        body: `${pairingALabel} vs ${pairingBLabel} · ${timeLabel} · ${courtLabel}`,
-        eventId: match.event?.id ?? null,
-        organizationId: match.event?.organizationId ?? null,
-        ctaUrl: match.event?.slug ? `/eventos/${match.event.slug}` : null,
-        ctaLabel: "Ver torneio",
-        payload: {
-          matchId: match.id,
-          eventId: match.event?.id ?? null,
-          categoryId: match.categoryId ?? null,
-          startAt: startAt.toISOString(),
-        },
+      await queueMatchChanged({
+        userIds: [userId],
+        matchId: match.id,
+        startAt,
+        courtId: match.courtId ?? null,
+        scheduleVersion: match.updatedAt?.toISOString?.() ?? null,
+        eventType: "MATCH_STARTING_SOON",
+        scheduledAt: startAt,
+        priority: "CRITICAL",
       });
       sent += 1;
     }
   }
+
+    emitPadelMetric("matchStartingSoonSentCount", {
+      value: sent,
+      skipped,
+      matches: matches.length,
+      reminderMinutes: REMINDER_MINUTES,
+      windowMinutes: WINDOW_MINUTES,
+    });
 
     await recordCronHeartbeat("padel-reminders", { status: "SUCCESS", startedAt });
     return jsonWrap(

@@ -12,7 +12,6 @@ import { useIpLocation } from "../../features/onboarding/hooks";
 import { SocialFeedItem } from "../../features/social/types";
 import { useTabBarPadding } from "../../components/navigation/useTabBarPadding";
 import { TopAppHeader } from "../../components/navigation/TopAppHeader";
-import { TopPadelButton } from "../../components/navigation/TopPadelButton";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useRouter } from "expo-router";
@@ -282,7 +281,6 @@ export default function NetworkScreen() {
         variant="title"
         title="Rede"
         titleAlign="center"
-        leftSlot={<TopPadelButton />}
         showNotifications
         showMessages={false}
       />

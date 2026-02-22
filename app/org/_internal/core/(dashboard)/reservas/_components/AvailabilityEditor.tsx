@@ -5,6 +5,7 @@ import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { normalizeStepMinutes } from "@/lib/datetime/localInput";
 import { getDateParts, normalizeIntervals } from "@/lib/reservas/availability";
 import { OryaDateField, OryaTimeField } from "@/components/ui/datetime";
 import {
@@ -19,7 +20,7 @@ import {
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"] as const;
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
-const SLOT_MINUTES = 15;
+const DEFAULT_SLOT_MINUTES = 30;
 const DAY_MINUTES = 24 * 60;
 
 type AvailabilityTemplate = {
@@ -64,6 +65,7 @@ type AvailabilityEditorProps = {
   title?: string;
   subtitle?: string;
   hourHeight?: number;
+  gridMinutes?: number;
 };
 
 function padTime(value: number) {
@@ -136,6 +138,7 @@ export default function AvailabilityEditor({
   title = "Disponibilidade semanal",
   subtitle = "Define os intervalos semanais e exceções.",
   hourHeight = 56,
+  gridMinutes = DEFAULT_SLOT_MINUTES,
 }: AvailabilityEditorProps) {
   const scopeParams = useMemo(() => {
     const params = new URLSearchParams({ scopeType });
@@ -160,7 +163,16 @@ export default function AvailabilityEditor({
     : true;
   const minuteHeight = hourHeight / 60;
   const gridHeight = hourHeight * 24;
-  const slotHeight = minuteHeight * SLOT_MINUTES;
+  const slotMinutes =
+    Number.isFinite(gridMinutes) &&
+    gridMinutes > 0 &&
+    gridMinutes <= 60 &&
+    gridMinutes % 5 === 0 &&
+    60 % gridMinutes === 0
+      ? Math.floor(gridMinutes)
+      : DEFAULT_SLOT_MINUTES;
+  const timePickerStepMinutes = normalizeStepMinutes(slotMinutes);
+  const slotHeight = minuteHeight * slotMinutes;
   const timezone = availabilityData?.timezone ?? "Europe/Lisbon";
   const todayParts = getDateParts(new Date(), timezone);
   const minScheduleDate = `${todayParts.year}-${padTime(todayParts.month)}-${padTime(todayParts.day)}`;
@@ -231,9 +243,9 @@ export default function AvailabilityEditor({
       const current = list[idx];
       if (!current) return prev;
       const duration = current.endMinute - current.startMinute;
-      if (duration < SLOT_MINUTES * 2) return prev;
+      if (duration < slotMinutes * 2) return prev;
       const midpoint = snapMinute(current.startMinute + duration / 2);
-      if (midpoint <= current.startMinute + SLOT_MINUTES || midpoint >= current.endMinute - SLOT_MINUTES) {
+      if (midpoint <= current.startMinute + slotMinutes || midpoint >= current.endMinute - slotMinutes) {
         return prev;
       }
       list.splice(
@@ -438,7 +450,7 @@ export default function AvailabilityEditor({
   };
 
   const clampMinute = (value: number) => Math.min(DAY_MINUTES, Math.max(0, value));
-  const snapMinute = (value: number) => Math.round(value / SLOT_MINUTES) * SLOT_MINUTES;
+  const snapMinute = (value: number) => Math.round(value / slotMinutes) * slotMinutes;
 
   const getMinuteFromPointer = (clientY: number, rectTop: number, rectHeight: number) => {
     const ratio = (clientY - rectTop) / rectHeight;
@@ -476,7 +488,7 @@ export default function AvailabilityEditor({
       index = list.length;
       list.push({
         startMinute,
-        endMinute: Math.min(startMinute + SLOT_MINUTES, DAY_MINUTES),
+        endMinute: Math.min(startMinute + slotMinutes, DAY_MINUTES),
       });
       return { ...prev, [dayIdx]: list };
     });
@@ -485,7 +497,7 @@ export default function AvailabilityEditor({
       index,
       mode: "create",
       anchorMinute: startMinute,
-      durationMinutes: SLOT_MINUTES,
+      durationMinutes: slotMinutes,
       offsetMinutes: 0,
       rectTop: rect.top,
       rectHeight: rect.height,
@@ -556,7 +568,7 @@ export default function AvailabilityEditor({
 
       if (state.mode === "create") {
         startMinute = Math.min(state.anchorMinute, minute);
-        endMinute = Math.max(state.anchorMinute + SLOT_MINUTES, minute);
+        endMinute = Math.max(state.anchorMinute + slotMinutes, minute);
       } else if (state.mode === "move") {
         startMinute = minute - state.offsetMinutes;
         startMinute = clampMinute(startMinute);
@@ -573,11 +585,11 @@ export default function AvailabilityEditor({
 
       startMinute = clampMinute(startMinute);
       endMinute = clampMinute(endMinute);
-      if (endMinute - startMinute < SLOT_MINUTES) {
+      if (endMinute - startMinute < slotMinutes) {
         if (state.mode === "resize-start") {
-          startMinute = Math.max(0, endMinute - SLOT_MINUTES);
+          startMinute = Math.max(0, endMinute - slotMinutes);
         } else {
-          endMinute = Math.min(DAY_MINUTES, startMinute + SLOT_MINUTES);
+          endMinute = Math.min(DAY_MINUTES, startMinute + slotMinutes);
         }
       }
 
@@ -779,7 +791,7 @@ export default function AvailabilityEditor({
             >
               {templateSavingAll ? "A guardar semana..." : "Guardar semana"}
             </button>
-            <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Grelha {SLOT_MINUTES} min</div>
+            <div className="text-[10px] uppercase tracking-[0.22em] text-white/45">Grelha {slotMinutes} min</div>
           </div>
         </div>
 
@@ -970,14 +982,14 @@ export default function AvailabilityEditor({
                 <OryaTimeField
                   value={interval.start}
                   onChange={(next) => handleOverrideIntervalChange(idx, "start", next)}
-                  stepMinutes={15}
+                  stepMinutes={timePickerStepMinutes}
                   buttonClassName="h-10 rounded-xl"
                 />
                 <span className="text-white/60">→</span>
                 <OryaTimeField
                   value={interval.end}
                   onChange={(next) => handleOverrideIntervalChange(idx, "end", next)}
-                  stepMinutes={15}
+                  stepMinutes={timePickerStepMinutes}
                   buttonClassName="h-10 rounded-xl"
                 />
                 <button type="button" className={CTA_DANGER} onClick={() => handleOverrideRemove(idx)}>

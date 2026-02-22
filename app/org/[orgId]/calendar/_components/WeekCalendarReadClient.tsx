@@ -26,10 +26,11 @@ import { CALENDAR_TIMEZONE_OPTIONS, normalizeCalendarTimezone } from "./timezone
 import { summarizeAgendaItemsByStatus } from "./statusSummary";
 
 type AgendaItem = {
-  kind: "EVENT" | "TOURNAMENT" | "RESERVATION";
+  kind: "EVENT" | "TOURNAMENT" | "RESERVATION" | "CLASS";
   eventId?: number | null;
   tournamentId?: number | null;
   reservationId?: number | null;
+  classSessionId?: number | null;
   courtId?: number | null;
   resourceId?: number | null;
   professionalId?: number | null;
@@ -146,6 +147,12 @@ const HOUR_END = 24;
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
+const KIND_FILTER_OPTIONS = [
+  { value: "RESERVATION", label: "Reserva" },
+  { value: "CLASS", label: "Aula" },
+  { value: "EVENT", label: "Evento" },
+  { value: "TOURNAMENT", label: "Torneio" },
+] as const;
 const DAY_HEADER_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 const DATE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 const HOUR_MINUTE_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
@@ -427,6 +434,7 @@ function resolveStatusLabel(status: string) {
 
 function resolveKindLabel(kind: AgendaItem["kind"]) {
   if (kind === "RESERVATION") return "Reserva";
+  if (kind === "CLASS") return "Aula";
   if (kind === "TOURNAMENT") return "Torneio";
   return "Evento";
 }
@@ -444,6 +452,9 @@ function resolveCardTone(item: AgendaItem) {
   }
   if (item.kind === "EVENT") {
     return "border-fuchsia-200/55 bg-[linear-gradient(135deg,rgba(217,70,239,0.24),rgba(126,34,206,0.1))]";
+  }
+  if (item.kind === "CLASS") {
+    return "border-sky-200/55 bg-[linear-gradient(135deg,rgba(56,189,248,0.25),rgba(14,116,144,0.1))]";
   }
   return "border-emerald-300/55 bg-[linear-gradient(135deg,rgba(16,185,129,0.3),rgba(16,185,129,0.12))]";
 }
@@ -484,6 +495,9 @@ function getAgendaItemIdentity(item: AgendaItem) {
   if (item.kind === "TOURNAMENT" && Number.isFinite(item.tournamentId) && Number(item.tournamentId) > 0) {
     return `TOURNAMENT-${Number(item.tournamentId)}`;
   }
+  if (item.kind === "CLASS" && Number.isFinite(item.classSessionId) && Number(item.classSessionId) > 0) {
+    return `CLASS-${Number(item.classSessionId)}`;
+  }
   return [
     item.kind,
     item.title,
@@ -520,6 +534,9 @@ export default function WeekCalendarReadClient() {
   const organizationId = Number(orgIdRaw);
   const [selectedAggregateKey, setSelectedAggregateKey] = useState<string | null>(null);
   const [hoveredAggregateKey, setHoveredAggregateKey] = useState<string | null>(null);
+  const [visibleKinds, setVisibleKinds] = useState<Array<(typeof KIND_FILTER_OPTIONS)[number]["value"]>>(
+    KIND_FILTER_OPTIONS.map((option) => option.value),
+  );
   const hourHeight = DEFAULT_HOUR_HEIGHT;
   const timezone = useMemo(
     () => normalizeCalendarTimezone(searchParams.get("tz")),
@@ -585,6 +602,15 @@ export default function WeekCalendarReadClient() {
   };
   const clearSelections = () => {
     replaceState({ nextResources: [], nextCourts: [], nextProfessionals: [] });
+  };
+  const toggleVisibleKind = (kind: (typeof KIND_FILTER_OPTIONS)[number]["value"]) => {
+    setVisibleKinds((current) => {
+      if (current.includes(kind)) {
+        const next = current.filter((item) => item !== kind);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, kind];
+    });
   };
 
   const range = useMemo(() => {
@@ -709,6 +735,7 @@ export default function WeekCalendarReadClient() {
   const items = data?.items ?? [];
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
+      if (!visibleKinds.includes(item.kind)) return false;
       const matchesResource = Boolean(item.resourceId && selectedResourceIds.includes(item.resourceId));
       const matchesCourt = Boolean(item.courtId && selectedCourtIds.includes(item.courtId));
       const matchesProfessional = Boolean(
@@ -719,7 +746,7 @@ export default function WeekCalendarReadClient() {
       if (!hasAnySelection) return true;
       return matchesProfessional || matchesResource || matchesCourt;
     });
-  }, [items, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
+  }, [items, selectedCourtIds, selectedProfessionalIds, selectedResourceIds, visibleKinds]);
 
   const minuteHeight = hourHeight / 60;
   const viewportHeight = hourHeight * VISIBLE_HOURS;
@@ -946,6 +973,27 @@ export default function WeekCalendarReadClient() {
           >
             Geral
           </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
+          {KIND_FILTER_OPTIONS.map((option) => {
+            const isActive = visibleKinds.includes(option.value);
+            return (
+              <button
+                key={`week-kind-${option.value}`}
+                type="button"
+                onClick={() => toggleVisibleKind(option.value)}
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  isActive
+                    ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                    : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

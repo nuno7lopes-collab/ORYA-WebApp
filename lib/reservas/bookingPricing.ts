@@ -14,20 +14,33 @@ type BookingAddonLike = {
 type ComputeBookingPriceParams = {
   serviceDurationMinutes: number | null;
   serviceUnitPriceCents: number | null;
+  isCourtService?: boolean | null;
+  durationOverrideMinutes?: number | null;
+  courtDurationPriceCents?: number | null;
   bookingPackage?: BookingPackageLike | null;
   addons?: BookingAddonLike[] | null;
 };
 
 export function computeBookingPriceComponents(params: ComputeBookingPriceParams) {
+  const isCourtService = params.isCourtService === true;
+  const durationOverrideMinutes = Number.isFinite(Number(params.durationOverrideMinutes))
+    ? Math.round(Number(params.durationOverrideMinutes))
+    : null;
   const baseDurationMinutes = Math.max(
     0,
     Math.round(
-      params.bookingPackage?.durationMinutes ?? params.serviceDurationMinutes ?? 0,
+      isCourtService
+        ? durationOverrideMinutes ?? params.serviceDurationMinutes ?? 0
+        : params.bookingPackage?.durationMinutes ?? params.serviceDurationMinutes ?? 0,
     ),
   );
   const basePriceCents = Math.max(
     0,
-    Math.round(params.bookingPackage?.priceCents ?? params.serviceUnitPriceCents ?? 0),
+    Math.round(
+      isCourtService
+        ? params.courtDurationPriceCents ?? params.serviceUnitPriceCents ?? 0
+        : params.bookingPackage?.priceCents ?? params.serviceUnitPriceCents ?? 0,
+    ),
   );
 
   const addonItems = Array.isArray(params.addons) ? params.addons : [];

@@ -34,6 +34,12 @@ export type ServicePackage = {
   sortOrder: number;
 };
 
+export type ServiceDurationPrice = {
+  durationMinutes: number;
+  priceCents: number;
+  isActive: boolean;
+};
+
 export type ServiceProfessional = {
   id: number;
   name: string;
@@ -112,6 +118,7 @@ export type ServiceDetail = {
   packs: ServicePack[];
   addons?: ServiceAddon[];
   packages?: ServicePackage[];
+  durationPrices?: ServiceDurationPrice[];
   professionals?: ServiceProfessional[];
   resources?: ServiceResource[];
   assignment?: ServiceAssignment | null;

@@ -14,6 +14,7 @@ import { parsePadelFormat } from "@/domain/padel/formatCatalog";
 import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
 import type { PadelExecutionMode, PadelPartialMode, PadelScheduleStrategy } from "@/domain/padel/schedulerV2/types";
 import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
+import { buildExistingByCourt, evaluateMatchBatchAgainstAgenda } from "@/domain/agenda/scheduleWriteGateway";
 import {
   buildMexicanoRoundRelations,
   deriveMexicanoRoundEntries,
@@ -34,6 +35,15 @@ const parseDate = (value: unknown) => {
   if (typeof value !== "string" || !value.trim()) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const isActiveBooking = (booking: { status: string; pendingExpiresAt: Date | null }) => {
+  const status = booking["status"];
+  if (["CONFIRMED", "DISPUTED", "NO_SHOW"].includes(status)) return true;
+  if (["PENDING_CONFIRMATION", "PENDING"].includes(status)) {
+    return booking.pendingExpiresAt ? booking.pendingExpiresAt > new Date() : false;
+  }
+  return false;
 };
 
 const roundLabelFor = (round: number, court: number) => `R${round}.C${court}`;
@@ -118,6 +128,7 @@ async function tryAutoScheduleGenerated(params: {
   if (createdMatchIds.length === 0) {
     return {
       scheduled: 0,
+      skippedByMatch: [] as Array<{ matchId: number; reason: string }>,
       unscheduledByReason: {} as Record<string, number>,
       byCategory: [] as Array<Record<string, unknown>>,
       executionMode,
@@ -146,6 +157,7 @@ async function tryAutoScheduleGenerated(params: {
   if (!windowStart || !windowEnd || windowEnd <= windowStart) {
     return {
       scheduled: 0,
+      skippedByMatch: [] as Array<{ matchId: number; reason: string }>,
       unscheduledByReason: { INVALID_WINDOW: createdMatchIds.length },
       byCategory: [],
       executionMode,
@@ -166,6 +178,7 @@ async function tryAutoScheduleGenerated(params: {
   if (courts.length === 0) {
     return {
       scheduled: 0,
+      skippedByMatch: [] as Array<{ matchId: number; reason: string }>,
       unscheduledByReason: { NO_COURTS_CONFIGURED: createdMatchIds.length },
       byCategory: [],
       executionMode,
@@ -200,7 +213,7 @@ async function tryAutoScheduleGenerated(params: {
   });
 
   if (unscheduledMatchesRaw.length === 0) {
-    return { scheduled: 0, unscheduledByReason: {}, byCategory: [], executionMode };
+    return { scheduled: 0, skippedByMatch: [], unscheduledByReason: {}, byCategory: [], executionMode };
   }
 
   const normalizeParticipantSide = (side: "A" | "B", rows: typeof unscheduledMatchesRaw[number]["participants"]) =>
@@ -263,14 +276,79 @@ async function tryAutoScheduleGenerated(params: {
     sideBEmails: normalizeParticipantEmails("B", match.participants),
   }));
 
-  const availabilities = await prisma.calendarAvailability.findMany({
-    where: { eventId: event.id, organizationId: event.organizationId },
-    select: { playerProfileId: true, playerEmail: true, startAt: true, endAt: true },
-  });
-  const blocks = await prisma.calendarBlock.findMany({
-    where: { eventId: event.id, organizationId: event.organizationId },
-    select: { courtId: true, startAt: true, endAt: true },
-  });
+  const now = new Date();
+  const [availabilities, blocks, bookings, softBlocks, classSessions] = await Promise.all([
+    prisma.calendarAvailability.findMany({
+      where: { eventId: event.id, organizationId: event.organizationId },
+      select: { playerProfileId: true, playerEmail: true, startAt: true, endAt: true },
+    }),
+    prisma.calendarBlock.findMany({
+      where: { eventId: event.id, organizationId: event.organizationId },
+      select: { id: true, courtId: true, startAt: true, endAt: true },
+    }),
+    prisma.booking.findMany({
+      where: {
+        organizationId: event.organizationId,
+        courtId: { in: courts.map((court) => court.id) },
+        startsAt: { lt: windowEnd },
+        OR: [
+          { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+          { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+        ],
+      },
+      select: {
+        id: true,
+        courtId: true,
+        startsAt: true,
+        durationMinutes: true,
+        status: true,
+        pendingExpiresAt: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.softBlock.findMany({
+      where: {
+        organizationId: event.organizationId,
+        startsAt: { lt: windowEnd },
+        endsAt: { gt: windowStart },
+        OR: [
+          { scopeType: "ORGANIZATION" },
+          { scopeType: "COURT", scopeId: { in: courts.map((court) => court.id) } },
+        ],
+      },
+      select: { id: true, scopeType: true, scopeId: true, startsAt: true, endsAt: true },
+    }),
+    prisma.classSession.findMany({
+      where: {
+        organizationId: event.organizationId,
+        courtId: { in: courts.map((court) => court.id) },
+        startsAt: { lt: windowEnd },
+        endsAt: { gt: windowStart },
+        status: { not: "CANCELLED" },
+      },
+      select: { id: true, courtId: true, startsAt: true, endsAt: true },
+    }),
+  ]);
+
+  const bookingPlannerBlocks = bookings
+    .filter((booking) => booking.courtId && isActiveBooking(booking))
+    .map((booking) => ({
+      id: `booking:${booking.id}`,
+      courtId: booking.courtId,
+      startAt: booking.startsAt,
+      endAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+      sourceType: "BOOKING" as const,
+    }));
+
+  const classSessionPlannerBlocks = classSessions
+    .filter((session) => session.courtId)
+    .map((session) => ({
+      id: `class:${session.id}`,
+      courtId: session.courtId,
+      startAt: session.startsAt,
+      endAt: session.endsAt,
+      sourceType: "CLASS_SESSION" as const,
+    }));
 
   const allowPlaceholderMatches = resolveAllowPlaceholderMatches({
     tournamentFormat: event.padelTournamentConfig?.format ?? null,
@@ -283,7 +361,7 @@ async function tryAutoScheduleGenerated(params: {
     scheduledMatches,
     courts,
     availabilities,
-    courtBlocks: blocks,
+    courtBlocks: [...blocks, ...bookingPlannerBlocks, ...classSessionPlannerBlocks],
     config: {
       windowStart,
       windowEnd,
@@ -299,11 +377,59 @@ async function tryAutoScheduleGenerated(params: {
     },
   });
 
-  if (partialMode === "REQUIRE_FULL" && !dryRun && scheduleResult.skipped.length > 0) {
+  const unscheduledByReason: Record<string, number> = { ...scheduleResult.unscheduledByReason };
+  const { existingByCourt, missingExisting } = buildExistingByCourt({
+    courtIds: courts.map((court) => court.id),
+    hardBlocks: blocks,
+    scheduledMatches: scheduledMatchesRaw,
+    bookings,
+    softBlocks,
+    classSessions,
+  });
+  if (missingExisting) {
+    unscheduledByReason.AGENDA_CONFLICT = (unscheduledByReason.AGENDA_CONFLICT ?? 0) + createdMatchIds.length;
     return {
-      scheduled: scheduleResult.scheduled.length,
-      skipped: scheduleResult.skipped.length,
-      unscheduledByReason: scheduleResult.unscheduledByReason,
+      scheduled: 0,
+      skipped: createdMatchIds.length,
+      skippedByMatch: createdMatchIds.map((matchId) => ({ matchId, reason: "AGENDA_CONFLICT" })),
+      unscheduledByReason,
+      byCategory: scheduleResult.byCategory,
+      executionMode,
+      error: "AUTO_SCHEDULE_INFEASIBLE",
+    };
+  }
+
+  const arbitration = evaluateMatchBatchAgainstAgenda({
+    updates: scheduleResult.scheduled.map((update) => ({
+      matchId: update.matchId,
+      courtId: update.courtId,
+      start: update.start,
+      end: update.end,
+    })),
+    existingByCourt,
+    partialMode,
+  });
+  arbitration.rejectedUpdates.forEach((item) => {
+    unscheduledByReason[item.reason] = (unscheduledByReason[item.reason] ?? 0) + 1;
+  });
+  const skippedByMatch = [
+    ...scheduleResult.skipped.map((item) => ({ matchId: item.matchId, reason: item.reason })),
+    ...arbitration.rejectedUpdates.map((item) => ({
+      matchId: item.matchId,
+      reason: item.reason,
+      blockedByType: item.blockedByType ?? null,
+      blockedBySourceId: item.blockedBySourceId ?? null,
+    })),
+  ];
+  const acceptedMatchIds = new Set(arbitration.acceptedUpdates.map((update) => update.matchId));
+  const scheduledAccepted = scheduleResult.scheduled.filter((update) => acceptedMatchIds.has(update.matchId));
+
+  if (partialMode === "REQUIRE_FULL" && !dryRun && skippedByMatch.length > 0) {
+    return {
+      scheduled: scheduledAccepted.length,
+      skipped: skippedByMatch.length,
+      skippedByMatch,
+      unscheduledByReason,
       byCategory: scheduleResult.byCategory,
       executionMode,
       error: "AUTO_SCHEDULE_INFEASIBLE",
@@ -312,7 +438,7 @@ async function tryAutoScheduleGenerated(params: {
 
   if (!dryRun) {
     const courtById = new Map(courtSelection.courts.map((court) => [court.id, court]));
-    for (const scheduled of scheduleResult.scheduled) {
+    for (const scheduled of scheduledAccepted) {
       const court = courtById.get(scheduled.courtId);
       await prisma.eventMatchSlot.update({
         where: { id: scheduled.matchId },
@@ -329,8 +455,9 @@ async function tryAutoScheduleGenerated(params: {
   }
 
   return {
-    scheduled: scheduleResult.scheduled.length,
-    unscheduledByReason: scheduleResult.unscheduledByReason,
+    scheduled: scheduledAccepted.length,
+    skippedByMatch,
+    unscheduledByReason,
     byCategory: scheduleResult.byCategory,
     executionMode,
   };
@@ -940,6 +1067,9 @@ async function _POST(req: NextRequest) {
         generated: createdMatchIds.length,
         scheduled: scheduled.scheduled,
         skipped: typeof scheduled.skipped === "number" ? scheduled.skipped : null,
+        skippedByMatch: Array.isArray((scheduled as { skippedByMatch?: unknown }).skippedByMatch)
+          ? (scheduled as { skippedByMatch: unknown[] }).skippedByMatch
+          : [],
         unscheduledByReason: scheduled.unscheduledByReason,
         byCategory: scheduled.byCategory ?? [],
       },
@@ -957,6 +1087,9 @@ async function _POST(req: NextRequest) {
       format: formatEffective,
       generated: createdMatchIds.length,
       scheduled: scheduled.scheduled,
+      skippedByMatch: Array.isArray((scheduled as { skippedByMatch?: unknown }).skippedByMatch)
+        ? (scheduled as { skippedByMatch: unknown[] }).skippedByMatch
+        : [],
       unscheduledByReason: scheduled.unscheduledByReason,
       byCategory: scheduled.byCategory ?? [],
       autoSchedule: {

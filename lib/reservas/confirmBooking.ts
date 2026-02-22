@@ -19,6 +19,11 @@ import {
   type BookingConfirmationPaymentMeta,
 } from "@/lib/reservas/confirmationSnapshot";
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
+import {
+  getOrganizationBookingPolicy,
+  validateDurationAgainstPolicy,
+  validateStartAtAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
 
 const SLOT_STEP_MINUTES = 5;
 
@@ -31,6 +36,8 @@ type ConfirmBookingResult =
         | "INVALID_STATUS"
         | "SLOT_TAKEN"
         | "INVALID_CAPACITY"
+        | "INVALID_START_GRID"
+        | "INVALID_DURATION_POLICY"
         | "SERVICE_INACTIVE"
         | "POLICY_SNAPSHOT_MISSING"
         | "PRICING_SNAPSHOT_MISSING";
@@ -248,6 +255,25 @@ export async function confirmPendingBooking({
         .filter((value): value is number => typeof value === "number" && value > 0)
     : null;
   const timezone = booking.snapshotTimezone || booking.service.organization?.timezone || "Europe/Lisbon";
+  const bookingPolicy = await getOrganizationBookingPolicy({
+    organizationId: booking.organizationId,
+    tx,
+  });
+  const startValidation = validateStartAtAgainstPolicy({
+    startsAt: booking.startsAt,
+    timezone,
+    policy: bookingPolicy,
+  });
+  if (!startValidation.ok) {
+    return { ok: false, code: startValidation.errorCode, message: startValidation.message };
+  }
+  const durationValidation = validateDurationAgainstPolicy({
+    durationMinutes: booking.durationMinutes,
+    policy: bookingPolicy,
+  });
+  if (!durationValidation.ok) {
+    return { ok: false, code: durationValidation.errorCode, message: durationValidation.message };
+  }
   const dayParts = getDateParts(booking.startsAt, timezone);
   const dayStart = makeUtcDateFromLocal({ ...dayParts, hour: 0, minute: 0 }, timezone);
   const dayEnd = makeUtcDateFromLocal({ ...dayParts, hour: 23, minute: 59 }, timezone);

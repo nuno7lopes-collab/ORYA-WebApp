@@ -109,7 +109,11 @@ vi.mock("@/lib/stripeClient", () => {
     })),
   };
   const stripe = { paymentIntents, charges };
-  return { stripe, getStripeClient: () => stripe };
+  return {
+    stripe,
+    getStripeClient: () => stripe,
+    getStripeClientForEnv: () => stripe,
+  };
 });
 
 const prismaMock = vi.mocked(prisma);

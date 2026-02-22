@@ -8,11 +8,16 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { getOrganizationBookingPolicy } from "@/lib/reservas/gridPolicy";
 import {
   normalizeReservationAssignmentMode,
   requiresPartySizeForAssignmentMode,
 } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import {
+  buildDefaultCourtDurationPrices,
+  normalizeCourtDurationPricePayload,
+} from "@/lib/reservas/serviceDurationPrices";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -118,6 +123,15 @@ async function _GET(req: NextRequest) {
         },
         instructor: {
           select: { id: true, fullName: true, username: true, avatarUrl: true },
+        },
+        durationPrices: {
+          orderBy: [{ durationMinutes: "asc" }],
+          select: {
+            id: true,
+            durationMinutes: true,
+            priceCents: true,
+            isActive: true,
+          },
         },
         professionalLinks: { select: { professionalId: true } },
         resourceLinks: { select: { resourceId: true } },
@@ -240,6 +254,10 @@ async function _POST(req: NextRequest) {
     if (!Number.isFinite(unitPriceCents) || unitPriceCents < 0) {
       return fail(400, "Dados inválidos.");
     }
+    const durationPricesInput = normalizeCourtDurationPricePayload(payload?.durationPrices);
+    if (payload?.durationPrices !== undefined && !durationPricesInput) {
+      return fail(400, "durationPrices inválido.");
+    }
 
     let policyId: number | null = null;
     if (Number.isFinite(policyIdRaw)) {
@@ -268,6 +286,30 @@ async function _POST(req: NextRequest) {
     if (kindRaw === "CLASS" && assignmentMode === "RESOURCE_ONLY") {
       return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
     }
+
+    let courtDurationPrices = durationPricesInput;
+    if (kindRaw === "COURT") {
+      if (!courtDurationPrices || courtDurationPrices.length === 0) {
+        courtDurationPrices = buildDefaultCourtDurationPrices({
+          baseDurationMinutes: durationMinutes,
+          basePriceCents: Math.round(unitPriceCents),
+        });
+      }
+      const bookingPolicy = await getOrganizationBookingPolicy({
+        organizationId: organization.id,
+        tx: prisma,
+      });
+      const activeRows = new Set(
+        courtDurationPrices.filter((row) => row.isActive !== false).map((row) => row.durationMinutes),
+      );
+      const missingActiveDuration = bookingPolicy.allowedDurations.find((duration) => !activeRows.has(duration));
+      if (missingActiveDuration) {
+        return fail(400, "MISSING_ACTIVE_DURATION_PRICE");
+      }
+    } else if (courtDurationPrices && courtDurationPrices.length > 0) {
+      return fail(400, "durationPrices só é permitido para serviços COURT.");
+    }
+
     let instructorId: string | null = null;
     let instructorProfessionalId: number | null = null;
     if (instructorIdRaw) {
@@ -378,6 +420,17 @@ async function _POST(req: NextRequest) {
           })),
         });
       }
+      if (kindRaw === "COURT" && courtDurationPrices && courtDurationPrices.length > 0) {
+        await tx.serviceDurationPrice.createMany({
+          data: courtDurationPrices.map((row) => ({
+            serviceId: created.id,
+            durationMinutes: row.durationMinutes,
+            priceCents: row.priceCents,
+            isActive: row.isActive,
+          })),
+          skipDuplicates: true,
+        });
+      }
       return created;
     });
 
@@ -399,6 +452,7 @@ async function _POST(req: NextRequest) {
         locationMode: locationModeRaw,
         professionalIds: resolvedProfessionalIds,
         resourceIds: resolvedResourceIds,
+        durationPrices: kindRaw === "COURT" ? courtDurationPrices : null,
       },
       ip,
       userAgent,

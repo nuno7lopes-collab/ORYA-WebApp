@@ -13,13 +13,29 @@ type PublicStoreVisibilityInput = {
   publicProductCount?: number | null;
 };
 
-export function shouldShowStoreOnPublicProfile(input: PublicStoreVisibilityInput): boolean {
+type PublicStorefrontAvailabilityInput = PublicStoreVisibilityInput & {
+  checkoutEnabled?: boolean | null;
+  catalogLocked?: boolean | null;
+  paymentsReady?: boolean | null;
+};
+
+export function canOpenPublicStorefront(input: PublicStorefrontAvailabilityInput): boolean {
   const status = typeof input.status === "string" ? input.status.trim().toUpperCase() : "";
   const publicProductCount =
     typeof input.publicProductCount === "number" && Number.isFinite(input.publicProductCount)
       ? Math.max(0, Math.floor(input.publicProductCount))
       : 0;
-  return status === "ACTIVE" && input.showOnProfile === true && publicProductCount >= 1;
+  const checkoutEnabled = input.checkoutEnabled === true;
+  const catalogLocked = input.catalogLocked === true;
+  const paymentsReady = input.paymentsReady === true;
+  return (
+    status === "ACTIVE" &&
+    input.showOnProfile === true &&
+    checkoutEnabled &&
+    !catalogLocked &&
+    paymentsReady &&
+    publicProductCount >= 1
+  );
 }
 
 export function canPublishStoreOnProfile(publicProductCount: number): { ok: true } | { ok: false; error: string } {

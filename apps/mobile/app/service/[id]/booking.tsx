@@ -46,17 +46,25 @@ type AvailabilitySlot = {
   status: string;
 };
 
+type BookingPolicy = {
+  durationCatalog?: number[];
+  activeDurations?: number[];
+  allowedDurations?: number[];
+};
+
 type CalendarResponse = {
   ok: boolean;
   timezone?: string | null;
   month?: string | null;
   days?: AvailabilityDay[];
+  bookingPolicy?: BookingPolicy;
   error?: string;
 };
 
 type SlotsResponse = {
   ok: boolean;
   items?: AvailabilitySlot[];
+  bookingPolicy?: BookingPolicy;
   error?: string;
 };
 
@@ -156,6 +164,12 @@ export default function ServiceBookingScreen() {
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(
     null,
   );
+  const [bookingPolicy, setBookingPolicy] = useState<BookingPolicy>({
+    durationCatalog: [30, 60, 90, 120],
+    activeDurations: [60, 90],
+    allowedDurations: [60, 90],
+  });
+  const [selectedDurationMinutes, setSelectedDurationMinutes] = useState<number | null>(null);
   const [addonQuantities, setAddonQuantities] = useState<
     Record<number, number>
   >({});
@@ -239,11 +253,12 @@ export default function ServiceBookingScreen() {
   }, [assignmentMode, availableProfessionals, selectedProfessionalId]);
 
   const selectedPackage = useMemo(() => {
+    if (service?.kind === "COURT") return null;
     return (
       (service?.packages ?? []).find((pkg) => pkg.id === selectedPackageId) ??
       null
     );
-  }, [service?.packages, selectedPackageId]);
+  }, [service?.kind, service?.packages, selectedPackageId]);
 
   const selectedAddonsPayload = useMemo(
     () => buildAddonPayload(addonQuantities),
@@ -272,15 +287,41 @@ export default function ServiceBookingScreen() {
     }, 0);
   }, [selectedAddonsPayload, service?.addons]);
 
-  const basePriceCents =
-    selectedPackage?.priceCents ?? service?.unitPriceCents ?? 0;
-  const baseDurationMinutes =
-    selectedPackage?.durationMinutes ?? service?.durationMinutes ?? 0;
+  const isCourtService = service?.kind === "COURT";
+  const activeDurationOptions = useMemo(() => {
+    const fromPolicy = Array.isArray(bookingPolicy.activeDurations)
+      ? bookingPolicy.activeDurations
+      : Array.isArray(bookingPolicy.allowedDurations)
+        ? bookingPolicy.allowedDurations
+        : [];
+    const unique = Array.from(
+      new Set(
+        fromPolicy
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0)
+          .map((value) => Math.round(value)),
+      ),
+    ).sort((a, b) => a - b);
+    return unique.length > 0 ? unique : [60, 90];
+  }, [bookingPolicy.activeDurations, bookingPolicy.allowedDurations]);
+  const durationPriceMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (service?.durationPrices ?? []).forEach((item) => {
+      if (item.isActive === false) return;
+      map.set(item.durationMinutes, item.priceCents);
+    });
+    return map;
+  }, [service?.durationPrices]);
+  const baseDurationMinutes = isCourtService
+    ? selectedDurationMinutes ?? service?.durationMinutes ?? activeDurationOptions[0] ?? 0
+    : selectedPackage?.durationMinutes ?? service?.durationMinutes ?? 0;
+  const effectiveDurationMinutes = isCourtService
+    ? Math.max(0, baseDurationMinutes)
+    : Math.max(0, baseDurationMinutes + addonsDeltaMinutes);
+  const basePriceCents = isCourtService
+    ? durationPriceMap.get(effectiveDurationMinutes) ?? service?.unitPriceCents ?? 0
+    : selectedPackage?.priceCents ?? service?.unitPriceCents ?? 0;
   const totalCents = Math.max(0, basePriceCents + addonsDeltaCents);
-  const effectiveDurationMinutes = Math.max(
-    0,
-    baseDurationMinutes + addonsDeltaMinutes,
-  );
 
   const canFetchCalendar =
     Boolean(serviceId) &&
@@ -294,16 +335,21 @@ export default function ServiceBookingScreen() {
       if (assignmentMode === "RESOURCE" && selectedPartySize) {
         params.set("partySize", String(selectedPartySize));
       }
-      if (selectedPackageId) {
+      if (!isCourtService && selectedPackageId) {
         params.set("packageId", String(selectedPackageId));
       }
       if (addonsParam) {
         params.set("addons", addonsParam);
       }
+      if (isCourtService && effectiveDurationMinutes > 0) {
+        params.set("durationMinutes", String(effectiveDurationMinutes));
+      }
     },
     [
       addonsParam,
       assignmentMode,
+      effectiveDurationMinutes,
+      isCourtService,
       selectedPackageId,
       selectedPartySize,
       selectedProfessionalId,
@@ -326,6 +372,9 @@ export default function ServiceBookingScreen() {
         throw new Error(
           json.error || "Não foi possível carregar o calendário.",
         );
+      }
+      if (json.bookingPolicy) {
+        setBookingPolicy((prev) => ({ ...prev, ...json.bookingPolicy }));
       }
       setCalendarDays(json.days ?? []);
     } catch (err) {
@@ -354,6 +403,9 @@ export default function ServiceBookingScreen() {
       if (!result.ok || !json.ok) {
         throw new Error(json.error || "Não foi possível carregar horários.");
       }
+      if (json.bookingPolicy) {
+        setBookingPolicy((prev) => ({ ...prev, ...json.bookingPolicy }));
+      }
       setSlots(json.items ?? []);
     } catch (err) {
       setSlotsError(
@@ -370,10 +422,33 @@ export default function ServiceBookingScreen() {
   }, [canFetchCalendar, loadCalendar]);
 
   useEffect(() => {
+    if (!service) return;
+    if (!isCourtService) {
+      if (selectedDurationMinutes !== null) setSelectedDurationMinutes(null);
+      return;
+    }
+    if (activeDurationOptions.length === 0) return;
+    const current = selectedDurationMinutes ?? service.durationMinutes ?? activeDurationOptions[0];
+    if (activeDurationOptions.includes(current)) {
+      if (selectedDurationMinutes == null) {
+        setSelectedDurationMinutes(current);
+      }
+      return;
+    }
+    setSelectedDurationMinutes(activeDurationOptions[0]);
+  }, [
+    activeDurationOptions,
+    isCourtService,
+    selectedDurationMinutes,
+    service,
+  ]);
+
+  useEffect(() => {
     setSelectedDay(null);
     setSelectedSlot(null);
   }, [
     selectedPackageId,
+    selectedDurationMinutes,
     addonsParam,
     assignmentMode,
     selectedProfessionalId,
@@ -420,12 +495,13 @@ export default function ServiceBookingScreen() {
         }
         const payload = buildBookingPayload({
           startsAt: slot.startsAt,
+          durationMinutes: isCourtService ? effectiveDurationMinutes : null,
           professionalId:
             assignmentMode === "PROFESSIONAL" ? selectedProfessionalId : null,
           partySize: assignmentMode === "RESOURCE" ? selectedPartySize : null,
           addressId: addressSelection?.addressId ?? null,
           selectedAddons: selectedAddonsPayload,
-          packageId: selectedPackageId,
+          packageId: isCourtService ? null : selectedPackageId,
         });
         const result = await api.requestRaw<{
           ok: boolean;
@@ -502,6 +578,8 @@ export default function ServiceBookingScreen() {
       addressSelection?.addressId,
       assignmentMode,
       basePriceCents,
+      effectiveDurationMinutes,
+      isCourtService,
       isAuthenticated,
       openAuth,
       router,
@@ -673,7 +751,7 @@ export default function ServiceBookingScreen() {
               </View>
             </GlassCard>
 
-            {service.packages && service.packages.length > 0 ? (
+            {!isCourtService && service.packages && service.packages.length > 0 ? (
               <GlassCard intensity={50}>
                 <View className="gap-3">
                   <Text className="text-white text-sm font-semibold">
@@ -711,6 +789,56 @@ export default function ServiceBookingScreen() {
                             {formatMoney(pkg.priceCents, service.currency)} ·{" "}
                             {pkg.durationMinutes} min
                           </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              </GlassCard>
+            ) : null}
+
+            {isCourtService ? (
+              <GlassCard intensity={50}>
+                <View className="gap-3">
+                  <Text className="text-white text-sm font-semibold">
+                    Duração
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {activeDurationOptions.map((duration) => {
+                      const active = effectiveDurationMinutes === duration;
+                      const price = durationPriceMap.get(duration);
+                      return (
+                        <Pressable
+                          key={`duration-${duration}`}
+                          onPress={() => setSelectedDurationMinutes(duration)}
+                          className={
+                            active
+                              ? "rounded-full bg-white/20 px-4 py-2"
+                              : "rounded-full border border-white/10 bg-white/5 px-4 py-2"
+                          }
+                          style={{ minHeight: tokens.layout.touchTarget }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Selecionar duração ${duration} minutos`}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text
+                            className={
+                              active
+                                ? "text-white text-sm font-semibold"
+                                : "text-white/70 text-sm"
+                            }
+                          >
+                            {duration} min
+                          </Text>
+                          {Number.isFinite(price) ? (
+                            <Text className="text-white/60 text-[11px]">
+                              {formatMoney(price ?? 0, service.currency)}
+                            </Text>
+                          ) : (
+                            <Text className="text-amber-200 text-[11px]">
+                              Sem preço
+                            </Text>
+                          )}
                         </Pressable>
                       );
                     })}

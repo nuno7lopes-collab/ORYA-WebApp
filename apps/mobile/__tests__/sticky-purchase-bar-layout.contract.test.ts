@@ -7,10 +7,12 @@ const stickyPath = resolve(
 );
 
 describe("sticky purchase bar layout contract", () => {
-  it("enforces a horizontal one-line row for price and CTA", () => {
+  it("mantém layout em linha única com CTA à direita", () => {
     const file = readFileSync(stickyPath, "utf8");
-    expect(file).toContain('flexDirection: "row"');
-    expect(file).toContain('flexWrap: "nowrap"');
-    expect(file).toContain('justifyContent: "space-between"');
+    expect(file).toContain("flexDirection: \"row\"");
+    expect(file).toContain("flexWrap: \"nowrap\"");
+    expect(file).toContain("maxWidth: \"34%\"");
+    expect(file).toContain("flex: 1");
+    expect(file).toContain("marginLeft: \"auto\"");
   });
 });

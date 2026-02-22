@@ -74,7 +74,8 @@ export default function PublicProfileScreen() {
   const canOpenFollowers = Boolean(profileId);
   const canOpenFollowing = Boolean(isUser);
   const topBarTitle = profile?.username ? `@${profile.username}` : profile?.fullName ?? "Perfil";
-  const organizationStoreHref = !isUser && profile?.username ? `/store/${profile.username}` : null;
+  const canOpenStore = !isUser && data?.store?.canOpenPublicStore === true;
+  const organizationStoreHref = canOpenStore && profile?.username ? `/store/${profile.username}` : null;
   const backButton = (
     <Pressable
       onPress={() => safeBack(router, navigation, "/(tabs)/network")}

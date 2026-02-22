@@ -10,6 +10,7 @@ import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -36,8 +37,18 @@ export default async function StoreProductPage({ params }: PageProps) {
     redirect(`/${username}/loja/produto/${encodeURIComponent(slug ?? "")}`);
   }
 
-  const organization = await prisma.organization.findFirst({
-    where: { username, status: "ACTIVE" },
+  const resolvedOrganization = await resolveUsernameOwner(username, {
+    expectedOwnerType: "organization",
+    includeDeletedUser: false,
+    requireActiveOrganization: true,
+    backfillGlobalUsername: false,
+  });
+  if (resolvedOrganization?.ownerType !== "organization") {
+    notFound();
+  }
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: resolvedOrganization.ownerId },
     select: {
       id: true,
       username: true,
@@ -54,6 +65,10 @@ export default async function StoreProductPage({ params }: PageProps) {
 
   if (!organization) {
     notFound();
+  }
+  const canonicalUsername = organization.username ?? username;
+  if (canonicalUsername !== username) {
+    redirect(`/${canonicalUsername}/loja/produto/${encodeURIComponent(slug ?? "")}`);
   }
 
   const store = await prisma.store.findFirst({
@@ -104,7 +119,7 @@ export default async function StoreProductPage({ params }: PageProps) {
           <StorefrontHeader
             title={displayName}
             subtitle="Loja fechada ou catalogo indisponivel."
-            cartHref={`/${username}/loja/carrinho`}
+            cartHref={`/${canonicalUsername}/loja/carrinho`}
           />
           <div className="rounded-3xl border border-white/12 bg-white/5 p-6 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             Loja fechada. Volta mais tarde para veres os produtos disponíveis.
@@ -179,10 +194,10 @@ export default async function StoreProductPage({ params }: PageProps) {
         <StorefrontHeader
           title={displayName}
           subtitle="Detalhe do produto"
-          cartHref={`/${username}/loja/carrinho`}
+          cartHref={`/${canonicalUsername}/loja/carrinho`}
         />
         <Link
-          href={`/${username}/loja`}
+          href={`/${canonicalUsername}/loja`}
           className="text-sm text-white/60 hover:text-white/90"
         >
           ← Voltar a loja
@@ -206,7 +221,7 @@ export default async function StoreProductPage({ params }: PageProps) {
             }}
             variants={product.variants}
             options={product.options}
-            cartHref={`/${username}/loja/carrinho`}
+            cartHref={`/${canonicalUsername}/loja/carrinho`}
             shippingEta={shippingEta}
           />
         </div>
@@ -226,8 +241,8 @@ export default async function StoreProductPage({ params }: PageProps) {
         storeId={store.id}
         currency={store.currency}
         freeShippingThresholdCents={store.freeShippingThresholdCents}
-        storeBaseHref={`/${username}/loja`}
-        checkoutHref={`/${username}/loja/checkout`}
+        storeBaseHref={`/${canonicalUsername}/loja`}
+        checkoutHref={`/${canonicalUsername}/loja/checkout`}
       />
     </main>
   );

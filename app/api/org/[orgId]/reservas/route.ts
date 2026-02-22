@@ -34,6 +34,11 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { loadScheduleDelays, resolveBookingDelay } from "@/lib/reservas/scheduleDelay";
 import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
+import {
+  getOrganizationBookingPolicy,
+  validateDurationAgainstPolicy,
+  validateStartAtAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -60,20 +65,6 @@ function fail(
     { errorCode, message, retryable: status >= 500, ...(details ? { details } : {}) },
     { status },
   );
-}
-
-function getMinutesOfDay(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  const hour = Number(map.get("hour"));
-  const minute = Number(map.get("minute"));
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour * 60 + minute;
 }
 
 function parsePositiveInt(value: unknown) {
@@ -605,9 +596,24 @@ async function _POST(req: NextRequest) {
     }
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
-    const minutesOfDay = getMinutesOfDay(startsAt, timezone);
-    if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 5 minutos.");
+    const bookingPolicy = await getOrganizationBookingPolicy({
+      organizationId: organization.id,
+      tx: prisma,
+    });
+    const startValidation = validateStartAtAgainstPolicy({
+      startsAt,
+      timezone,
+      policy: bookingPolicy,
+    });
+    if (!startValidation.ok) {
+      return fail(ctx, 400, startValidation.errorCode, startValidation.message);
+    }
+    const durationValidation = validateDurationAgainstPolicy({
+      durationMinutes: service.durationMinutes,
+      policy: bookingPolicy,
+    });
+    if (!durationValidation.ok) {
+      return fail(ctx, 400, durationValidation.errorCode, durationValidation.message);
     }
 
     const now = new Date();

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { StoreStatus } from "@prisma/client";
-import { canCheckout, isPublicStore, isStoreDigitalEnabled, isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import {
+  canCheckout,
+  isPublicStore,
+  isStoreDigitalEnabled,
+  isStoreFeatureEnabled,
+  resolvePublicStoreAccess,
+  resolveStoreState,
+} from "@/lib/storeAccess";
 
 describe("storeAccess resolveStoreState", () => {
   const activeBase = {
@@ -20,11 +27,24 @@ describe("storeAccess resolveStoreState", () => {
   });
 
   it("keeps public/checkout helpers aligned to resolved state", () => {
-    expect(isPublicStore({ ...activeBase, catalogLocked: true })).toBe(true);
-    expect(isPublicStore({ ...activeBase, checkoutEnabled: false })).toBe(true);
+    expect(isPublicStore({ ...activeBase, catalogLocked: true })).toBe(false);
+    expect(isPublicStore({ ...activeBase, checkoutEnabled: false })).toBe(false);
     expect(isPublicStore({ ...activeBase, showOnProfile: false })).toBe(false);
     expect(canCheckout({ ...activeBase, checkoutEnabled: false })).toBe(false);
     expect(canCheckout(activeBase)).toBe(true);
+  });
+
+  it("maps public access errors deterministically", () => {
+    expect(
+      resolvePublicStoreAccess({ ...activeBase, catalogLocked: true, checkoutEnabled: true }),
+    ).toEqual({ ok: false, errorCode: "CATALOG_LOCKED", error: "Catalogo bloqueado." });
+    expect(
+      resolvePublicStoreAccess({ ...activeBase, checkoutEnabled: false, catalogLocked: false }),
+    ).toEqual({ ok: false, errorCode: "CHECKOUT_UNAVAILABLE", error: "Checkout indisponivel." });
+    expect(
+      resolvePublicStoreAccess({ ...activeBase, showOnProfile: false }),
+    ).toEqual({ ok: false, errorCode: "STORE_CLOSED", error: "Loja fechada." });
+    expect(resolvePublicStoreAccess(activeBase)).toEqual({ ok: true });
   });
 
   it("keeps store feature permanently enabled", () => {

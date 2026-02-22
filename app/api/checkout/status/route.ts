@@ -248,6 +248,18 @@ function cleanParam(v: string | null) {
   return s ? s : null;
 }
 
+function normalizePaymentEventFallbackStatus(params: {
+  paymentEventStatus: string | null | undefined;
+  errorMessage: string | null | undefined;
+}): Status {
+  const normalized = (params.paymentEventStatus ?? "").trim().toUpperCase();
+  if (params.errorMessage) return "FAILED";
+  if (normalized === "ERROR" || normalized === "FAILED") return "FAILED";
+  if (normalized === "REQUIRES_ACTION") return "REQUIRES_ACTION";
+  if (normalized === "CANCELED" || normalized === "CANCELLED") return "CANCELED";
+  return "PROCESSING";
+}
+
 async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   const url = new URL(req.url);
@@ -550,17 +562,20 @@ async function _GET(req: NextRequest) {
     });
 
     if (paymentEvent) {
-      // PaymentEvent é apenas telemetria; não inferimos estado final daqui.
-      const status: Status = "PROCESSING";
+      const status = normalizePaymentEventFallbackStatus({
+        paymentEventStatus: paymentEvent.status,
+        errorMessage: paymentEvent.errorMessage,
+      });
+      const final = status === "FAILED" || status === "CANCELED";
       return respondOk(
         ctx,
         buildStatusPayload({
           status,
-          final: false,
+          final,
           purchaseId: paymentEvent.purchaseId ?? purchaseId ?? paymentIntentId ?? null,
           paymentIntentId: paymentEvent.stripePaymentIntentId ?? paymentIntentId,
-          retryable: true,
-          nextAction: "NONE",
+          retryable: resolveRetryableForStatus(status),
+          nextAction: resolveNextActionForStatus(status),
           errorMessage: paymentEvent.errorMessage ?? null,
         }),
         { status: 200, headers: NO_STORE_HEADERS },

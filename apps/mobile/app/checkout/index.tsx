@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { tokens } from "@orya/shared";
+import Constants from "expo-constants";
 import {
   initStripe,
   isPlatformPaySupported,
@@ -97,9 +98,13 @@ const isCheckoutBlockedCode = (code: string | null) =>
 
 const CHECKOUT_CONFIG_ERROR =
   "Pagamentos indisponíveis neste momento. Falta configuração Stripe.";
+const CHECKOUT_MBWAY_EXPO_GO_ERROR =
+  "MBWay não está disponível no Expo Go. Usa um Development Build/TestFlight para MBWay.";
 const CHECKOUT_AUTOPOLL_TIMEOUT_MS = 20_000;
+const CHECKOUT_AUTOPOLL_TIMEOUT_MBWAY_MS = 120_000;
 const BOOKING_POLL_INTERVAL_MS = 1200;
 const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS = 1500;
+const CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MBWAY_MS = 5000;
 const CHECKOUT_POLL_INTERVAL_PENDING_MS = 4000;
 const CHECKOUT_SETTLEMENT_POLL_MS = 1200;
 
@@ -263,12 +268,17 @@ export default function CheckoutScreen() {
   }, [draft?.paymentIntentId, draft?.purchaseId, draft?.bookingId]);
 
   const allowApplePay = Boolean(merchantId && applePaySupported);
-  const allowMbwayInApp = true;
+  const isExpoGo =
+    Constants.appOwnership === "expo" ||
+    Constants.executionEnvironment === "storeClient";
+  const allowMbwayInApp = !isExpoGo;
   const selectedMethod =
     draft?.paymentMethod ?? (allowApplePay ? "apple_pay" : "card");
   const resolvedMethod =
     !allowApplePay && selectedMethod === "apple_pay"
       ? "card"
+      : !allowMbwayInApp && selectedMethod === "mbway"
+        ? "card"
       : selectedMethod;
 
   const checkoutItems = useMemo(() => {
@@ -419,6 +429,14 @@ export default function CheckoutScreen() {
     setRequiresActionTimedOut(false);
     recoveredTrackedRef.current = false;
   }, [draft?.paymentMethod]);
+
+  useEffect(() => {
+    if (!draft?.paymentMethod) return;
+    if (allowMbwayInApp) return;
+    if (draft.paymentMethod !== "mbway") return;
+    setPaymentMethod("card");
+    setError(CHECKOUT_MBWAY_EXPO_GO_ERROR);
+  }, [allowMbwayInApp, draft?.paymentMethod, setPaymentMethod]);
 
   const applyCheckoutStatus = useCallback((status: CheckoutStatusResponse) => {
     setCheckoutStatus(status);
@@ -667,7 +685,11 @@ export default function CheckoutScreen() {
     if (!checkoutPollingStartedAt) {
       setCheckoutPollingStartedAt(startedAt);
     }
-    if (now - startedAt >= CHECKOUT_AUTOPOLL_TIMEOUT_MS) {
+    const pollingTimeoutMs =
+      resolvedMethod === "mbway"
+        ? CHECKOUT_AUTOPOLL_TIMEOUT_MBWAY_MS
+        : CHECKOUT_AUTOPOLL_TIMEOUT_MS;
+    if (now - startedAt >= pollingTimeoutMs) {
       setCheckoutPollingTimedOut(true);
       if (checkoutStatus.status === "REQUIRES_ACTION") {
         setRequiresActionTimedOut(true);
@@ -682,7 +704,9 @@ export default function CheckoutScreen() {
     }
     const intervalMs =
       checkoutStatus.status === "REQUIRES_ACTION"
-        ? CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS
+        ? resolvedMethod === "mbway"
+          ? CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MBWAY_MS
+          : CHECKOUT_POLL_INTERVAL_REQUIRES_ACTION_MS
         : CHECKOUT_POLL_INTERVAL_PENDING_MS;
     const timer = setTimeout(() => {
       runStatusCheck();
@@ -1003,11 +1027,22 @@ export default function CheckoutScreen() {
         purchaseId,
         paymentIntentId,
       });
+      if (
+        resolvedMethod === "mbway" &&
+        latestStatus &&
+        isCheckoutPollingState(latestStatus.status)
+      ) {
+        return;
+      }
       const pollStartedAt = Date.now();
+      const inlinePollingTimeoutMs =
+        resolvedMethod === "mbway"
+          ? CHECKOUT_AUTOPOLL_TIMEOUT_MBWAY_MS
+          : CHECKOUT_AUTOPOLL_TIMEOUT_MS;
       while (
         latestStatus &&
         isCheckoutPollingState(latestStatus.status) &&
-        Date.now() - pollStartedAt < CHECKOUT_AUTOPOLL_TIMEOUT_MS
+        Date.now() - pollStartedAt < inlinePollingTimeoutMs
       ) {
         await new Promise((resolve) =>
           setTimeout(resolve, CHECKOUT_SETTLEMENT_POLL_MS),
@@ -1169,6 +1204,22 @@ export default function CheckoutScreen() {
     }
     if (status === "REQUIRES_ACTION") {
       const timedOut = requiresActionTimedOut || checkoutPollingTimedOut;
+      if (resolvedMethod === "mbway") {
+        return {
+          tone: "warning" as const,
+          title: timedOut
+            ? "Confirmação MBWay pendente"
+            : "Aguarda confirmação MBWay",
+          message: timedOut
+            ? "A confirmação no MBWay está a demorar mais do que o esperado. Atualiza o estado; se continuar pendente, tenta novamente."
+            : "Confirma o pagamento na app MBWay e depois atualiza o estado aqui.",
+          actionLabel: "Atualizar estado",
+          action: () => runStatusCheck(),
+          secondaryActionLabel: timedOut ? "Tentar novamente" : undefined,
+          secondaryAction: timedOut ? () => handlePay() : undefined,
+          showSpinner: !timedOut,
+        };
+      }
       return {
         tone: "warning" as const,
         title: "Ação necessária",
@@ -1434,6 +1485,13 @@ export default function CheckoutScreen() {
                         );
                       })}
                     </View>
+                    {!allowMbwayInApp ? (
+                      <Text
+                        style={{ color: "rgba(233,244,255,0.62)", fontSize: 12 }}
+                      >
+                        {CHECKOUT_MBWAY_EXPO_GO_ERROR}
+                      </Text>
+                    ) : null}
                     <Text style={{ color: "rgba(233,244,255,0.62)", fontSize: 12 }}>
                       {resolveMethodLabel(resolvedMethod)} em checkout nativo,
                       sem sair da app.

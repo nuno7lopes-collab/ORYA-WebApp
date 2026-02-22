@@ -76,6 +76,7 @@ describe("MATCH_CHANGED notification consumer payload", () => {
         scheduleVersion: "2026-02-13T15:20:00.000Z",
         reason: "chuva",
         delayStatus: "RESCHEDULED",
+        eventType: "MATCH_CHANGED",
       },
     });
 
@@ -86,6 +87,26 @@ describe("MATCH_CHANGED notification consumer payload", () => {
       scheduleVersion: "2026-02-13T15:20:00.000Z",
       delayStatus: "RESCHEDULED",
       reason: "chuva",
+      eventType: "MATCH_CHANGED",
     });
+  });
+
+  it("gera copy específica para MATCH_STARTING_SOON", async () => {
+    const notification = await deliverNotificationOutboxItem({
+      id: "out-2",
+      userId: "user-1",
+      notificationType: "MATCH_CHANGED",
+      payload: {
+        matchId: 50,
+        startAt: "2026-02-13T15:30:00.000Z",
+        courtId: 3,
+        scheduleVersion: "2026-02-13T15:20:00.000Z",
+        eventType: "MATCH_STARTING_SOON",
+      },
+    });
+
+    expect(notification.title).toBe("Jogo a começar");
+    expect(notification.body).toContain("Ana");
+    expect(notification.body).toContain("Bea");
   });
 });

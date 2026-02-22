@@ -8,11 +8,17 @@ import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { ensureDefaultPolicies } from "@/lib/organizationPolicies";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { ensureOrganizationWriteAccess } from "@/lib/organizationWriteAccess";
+import { getOrganizationBookingPolicy } from "@/lib/reservas/gridPolicy";
 import {
   normalizeReservationAssignmentMode,
   requiresPartySizeForAssignmentMode,
 } from "@/lib/reservas/serviceAssignment";
 import { resolveServicePartySizeRules } from "@/lib/reservas/servicePartySize";
+import {
+  buildDefaultCourtDurationPrices,
+  normalizeCourtDurationPricePayload,
+  replaceCourtDurationPrices,
+} from "@/lib/reservas/serviceDurationPrices";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { AddressSourceProvider, OrganizationMemberRole, ServiceKind } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -148,6 +154,15 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
         instructor: {
           select: { id: true, fullName: true, username: true, avatarUrl: true },
         },
+        durationPrices: {
+          orderBy: [{ durationMinutes: "asc" }],
+          select: {
+            id: true,
+            durationMinutes: true,
+            priceCents: true,
+            isActive: true,
+          },
+        },
         professionalLinks: { select: { professionalId: true } },
         resourceLinks: { select: { resourceId: true } },
       },
@@ -212,6 +227,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       where: { id: serviceId, organizationId: organization.id },
       select: {
         id: true,
+        durationMinutes: true,
         unitPriceCents: true,
         isActive: true,
         instructorId: true,
@@ -222,6 +238,14 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         partySizeMax: true,
         partySizeStep: true,
         professionalLinks: { select: { professionalId: true } },
+        durationPrices: {
+          select: {
+            id: true,
+            durationMinutes: true,
+            priceCents: true,
+            isActive: true,
+          },
+        },
       },
     });
 
@@ -252,6 +276,10 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
       updates.unitPriceCents = price;
     }
+    const durationPricesInput = normalizeCourtDurationPricePayload(payload?.durationPrices);
+    if (payload?.durationPrices !== undefined && !durationPricesInput) {
+      return fail(400, "durationPrices inválido.");
+    }
     if (typeof payload?.currency === "string") updates.currency = payload.currency.trim().toUpperCase();
     if (typeof payload?.assignmentMode === "string") {
       const assignmentModeRaw = payload.assignmentMode.trim().toUpperCase();
@@ -273,6 +301,38 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     );
     if (resolvedKind === ServiceKind.CLASS && resolvedAssignmentMode === "RESOURCE_ONLY") {
       return fail(400, "CLASS_REQUIRES_PROFESSIONAL_MODE");
+    }
+    const resolvedDurationMinutes = Number.isFinite(Number(updates.durationMinutes))
+      ? Number(updates.durationMinutes)
+      : existing.durationMinutes;
+    const resolvedUnitPriceCents = Number.isFinite(Number(updates.unitPriceCents))
+      ? Number(updates.unitPriceCents)
+      : existing.unitPriceCents;
+    let nextCourtDurationPrices = durationPricesInput;
+    if (resolvedKind === ServiceKind.COURT) {
+      if (!nextCourtDurationPrices || nextCourtDurationPrices.length === 0) {
+        if (!existing.durationPrices.length) {
+          nextCourtDurationPrices = buildDefaultCourtDurationPrices({
+            baseDurationMinutes: resolvedDurationMinutes,
+            basePriceCents: resolvedUnitPriceCents,
+          });
+        }
+      }
+      if (nextCourtDurationPrices && nextCourtDurationPrices.length > 0) {
+        const bookingPolicy = await getOrganizationBookingPolicy({
+          organizationId: organization.id,
+          tx: prisma,
+        });
+        const activeRows = new Set(
+          nextCourtDurationPrices.filter((row) => row.isActive !== false).map((row) => row.durationMinutes),
+        );
+        const missingActiveDuration = bookingPolicy.allowedDurations.find((duration) => !activeRows.has(duration));
+        if (missingActiveDuration) {
+          return fail(400, "MISSING_ACTIVE_DURATION_PRICE");
+        }
+      }
+    } else if (nextCourtDurationPrices && nextCourtDurationPrices.length > 0) {
+      return fail(400, "durationPrices só é permitido para serviços COURT.");
     }
     const hasPartySizeRequired = Object.prototype.hasOwnProperty.call(payload, "partySizeRequired");
     const hasPartySizeMin = Object.prototype.hasOwnProperty.call(payload, "partySizeMin");
@@ -443,7 +503,13 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
       }
     }
 
-    if (Object.keys(updates).length === 0 && nextProfessionalIds === null && resourceIds === null) {
+    if (
+      Object.keys(updates).length === 0 &&
+      nextProfessionalIds === null &&
+      resourceIds === null &&
+      nextCourtDurationPrices == null &&
+      !(resolvedKind !== ServiceKind.COURT && existing.durationPrices.length > 0)
+    ) {
       return fail(400, "Sem alterações.");
     }
 
@@ -480,6 +546,17 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         }
       }
 
+      if (resolvedKind === ServiceKind.COURT && nextCourtDurationPrices && nextCourtDurationPrices.length > 0) {
+        await replaceCourtDurationPrices({
+          tx,
+          serviceId,
+          rows: nextCourtDurationPrices,
+        });
+      }
+      if (resolvedKind !== ServiceKind.COURT) {
+        await tx.serviceDurationPrice.deleteMany({ where: { serviceId } });
+      }
+
       return tx.service.findUnique({
         where: { id: serviceId },
         select: {
@@ -514,6 +591,15 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
           instructor: {
             select: { id: true, fullName: true, username: true, avatarUrl: true },
           },
+          durationPrices: {
+            orderBy: [{ durationMinutes: "asc" }],
+            select: {
+              id: true,
+              durationMinutes: true,
+              priceCents: true,
+              isActive: true,
+            },
+          },
           professionalLinks: { select: { professionalId: true } },
           resourceLinks: { select: { resourceId: true } },
         },
@@ -534,6 +620,7 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
         updates,
         professionalIds: nextProfessionalIds ?? undefined,
         resourceIds: resourceIds ?? undefined,
+        durationPrices: nextCourtDurationPrices ?? undefined,
       },
       ip,
       userAgent,

@@ -23,6 +23,7 @@ import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { evaluateCandidate, type AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { mapSourceTypeToAgendaCandidateType } from "@/domain/agenda/arbitrationPolicy";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type ClaimInput = {
@@ -45,27 +46,10 @@ const ACTIVE_PRIORITY_RULE_VERSION = "v1";
 const AGENDA_ARBITRATION_COMPENSATION_OPERATION = "AGENDA_ARBITRATION_COMPENSATION";
 const CANONICAL_CLAIM_SOURCE_TYPES = new Set<SourceType>([
   SourceType.MATCH,
+  SourceType.CLASS_SESSION,
   SourceType.BOOKING,
   SourceType.HARD_BLOCK,
 ]);
-
-type ArbitrationCandidateType = "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
-
-function mapSourceTypeToArbitrationType(sourceType: SourceType): ArbitrationCandidateType | null {
-  if (sourceType === SourceType.HARD_BLOCK) return "HARD_BLOCK";
-  if (sourceType === SourceType.SOFT_BLOCK) return "SOFT_BLOCK";
-  if (sourceType === SourceType.BOOKING) return "BOOKING";
-  if (
-    sourceType === SourceType.MATCH ||
-    sourceType === SourceType.EVENT ||
-    sourceType === SourceType.TOURNAMENT ||
-    sourceType === SourceType.PADEL_REGISTRATION ||
-    sourceType === SourceType.CLASS_SESSION
-  ) {
-    return "MATCH";
-  }
-  return null;
-}
 
 function computeArbitrationInputHash(input: Record<string, unknown>) {
   return crypto.createHash("sha256").update(JSON.stringify(input)).digest("hex");
@@ -486,7 +470,7 @@ async function _POST(req: NextRequest) {
           conflictsByResourceKey.set(claim.resourceKey, (conflictsByResourceKey.get(claim.resourceKey) ?? 0) + 1);
         }
 
-        const candidateType = mapSourceTypeToArbitrationType(claim.sourceType);
+        const candidateType = mapSourceTypeToAgendaCandidateType(claim.sourceType);
         const candidateReasonCode = extractReasonCode(claim.metadata);
         const candidate: AgendaCandidate = {
           type: candidateType ?? `UNSUPPORTED_${claim.sourceType}`,
@@ -501,7 +485,7 @@ async function _POST(req: NextRequest) {
         };
 
         const existingCandidates: AgendaCandidate[] = overlapping.map((existing) => ({
-          type: mapSourceTypeToArbitrationType(existing.sourceType) ?? `UNSUPPORTED_${existing.sourceType}`,
+          type: mapSourceTypeToAgendaCandidateType(existing.sourceType) ?? `UNSUPPORTED_${existing.sourceType}`,
           sourceId: existing.sourceId,
           claimId: existing.id,
           startsAt: existing.startsAt,
@@ -682,6 +666,13 @@ async function _POST(req: NextRequest) {
 
     const arbitrationLatencyMs = Date.now() - arbitrationStartedAt;
     emitArbitrationMetric("arbitration.decision.latency_ms", {
+      organizationId: auth.organizationId,
+      authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
+      priorityRuleVersion,
+      value: arbitrationLatencyMs,
+      correlationId: requestCtx.correlationId,
+    });
+    emitArbitrationMetric("scheduleWriteGatewayDecisionLatencyMs", {
       organizationId: auth.organizationId,
       authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,
       priorityRuleVersion,

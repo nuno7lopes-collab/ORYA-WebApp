@@ -1,6 +1,6 @@
 # ORYA SSOT Registry
 
-Atualizado: 2026-02-17
+Atualizado: 2026-02-22
 
 ## 00 Authority
 
@@ -52,7 +52,7 @@ Atualizado: 2026-02-17
 - Risk thresholds: autoridade única em 19.2.2; A7 fica apenas como resumo informativo sem números vinculativos.
 - Naming contratual: `orgId` + `customerIdentityId` como shape canónico único (sem aliases externos).
 - C01 (Agenda/Reservas): contrato atualizado para `resourceKey` global (`resourceType:authorityOrgId:resourceId`) e payload canónico cross-org.
-- Arbitragem cross-org: algoritmo explícito com prioridade `HARD_BLOCK > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`, `priorityRuleVersion` e fail-closed para tipo fora da versão ativa.
+- Arbitragem cross-org: algoritmo explícito com prioridade `HARD_BLOCK > CLASS_SESSION > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`, `priorityRuleVersion` e fail-closed para tipo fora da versão ativa.
 - Split: contrato antigo D12 (48/24) revogado para norma ativa `SPLIT_GARANTIDO` (`S01..S09`), com `deadlineAt`, `SettlementSnapshot` imutável, rails monotónicos e validação Stripe sandbox.
 - Danger zone org: `suspend` owner-only com step-up obrigatório, auditoria before/after e reversão controlada na janela de 30 dias.
 - Suspensão organização v2: reativação self-service do `OWNER` no dashboard/settings dentro da janela de 30 dias; eliminação definitiva só após fim dessa janela.
@@ -91,6 +91,8 @@ Atualizado: 2026-02-17
 | SSOT-2026-02-15-OFFICIAL-EMAIL-ROTATION-V2 | Nuno | 2026-02-15 | CAUTH.01 rotação de email oficial (ativo verificado + alteração pendente) | FECHADO | impedir regressão de estado verificado durante troca de email e formalizar cancelamento explícito do pendente | `Organization.officialEmail`/`officialEmailVerifiedAt` passam a representar apenas email ativo; pendente vive em `OrganizationOfficialEmailRequest`; contratos canónicos incluem `GET/POST/DELETE /api/org-hub/organizations/settings/official-email` + `POST /confirm`; UI separa ativo vs pendente |
 | SSOT-2026-02-15-ORG-SUSPENSION-REACTIVATION-V2 | Nuno | 2026-02-15 | HP-11 suspensão/reativação owner-only + delete pós-janela | FECHADO | corrigir lacuna operacional de reativação e garantir lifecycle consistente sem perda de estado | contrato canónico passa a `GET/POST/DELETE /api/org-hub/organizations/:id/suspend`; `DELETE /api/org-hub/organizations/:id` só após `SUSPENDED` + janela 30d expirada; reativação exclusiva de `OWNER`; username mantém reserva durante suspensão; org suspensa deixa de expor superfícies públicas por `organizationId` |
 | SSOT-2026-02-15-ADDRESS-AUTOCOMPLETE-UX-V1 | Nuno | 2026-02-15 | D11 UX operacional de procura de moradas (Address Service) | FECHADO | fechar consistência UX de topo sem quebrar invariantes canónicos de morada | dropdown passa a overlay em portal (sem empurrar layout), ranking visual em secções, confirmação obrigatória por seleção normalizada (`addressId`); texto livre sem seleção não pode virar morada canónica |
+| SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT | Nuno | 2026-02-21 | Fecho canónico de reservas de campos, aulas, torneios e serviços associados | FECHADO | eliminar ambiguidade de produto e execução, com regras únicas para grid, duração, modelação, conflitos, calendário e cutover | hard-cut sem feature flags; migrações forward-only; `CLASS_SESSION` canónico na agenda; validação server-side de grid por organização; sync 1:1 treinador-profissional obrigatório |
+| SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING | Nuno | 2026-02-22 | Política de duração e preço por duração em reservas de campos (web+mobile+API) | FECHADO | remover ambiguidade final de pricing/duração em campos e garantir paridade operacional | catálogo fixo `30/60/90/120` com subset ativo por organização; preço por duração em `ServiceDurationPrice`; `allowCustomDuration=true` inválido para campos; `ServicePackage` deixa de ser fonte de preço em booking público de `COURT` |
 ---
 
 
@@ -173,6 +175,108 @@ Atualizado: 2026-02-17
 #### 00.9.4 Exceções Intencionais de Modelação
 - `app_v3.cron_job_locks` permanece fora do Prisma por desenho (uso SQL raw em lock de cron).
 - `auth.*` é tratado como inventário read-only nesta ronda (sem DDL), com classificação de risco no relatório dedicado.
+
+### 00.10 Fecho Reservas+Aulas+Torneios (NORMATIVO)
+- `decisionId`: `SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING`
+- `owner`: Nuno
+- `approvedAt`: 2026-02-22
+- `scope`: Reservas de campos, aulas, torneios e serviços associados (API, UI web/mobile, schema, migrações, testes, runbook e observabilidade)
+- `rationale`: fechar contratos e eliminar superfície ambígua/legada em fluxo operacional crítico, incluindo pricing por duração em campos
+- `migrationImpact`: migrações forward-only, com rollback de aplicação (não de schema), backfills idempotentes com `dry-run/apply`
+
+#### 00.10.1 Tempo, Grid e Duração (FECHADO)
+- UI de reserva de campo usa grelha de início em `:00` e `:30` por defeito (`gridMinutes=30`).
+- Motor interno de disponibilidade e conflito mantém resolução de `5` minutos (`SLOT_STEP_MINUTES=5`) sem exceções.
+- Validação server-side de `startsAt` é obrigatória em todos os write-paths de reserva e remarcação.
+- Regra canónica de validação:
+  - `minutesOfDay(startsAt, timezoneOrg) % gridMinutes === 0` é obrigatório.
+  - `gridMinutes` é configuração por organização; default `30`.
+  - erro normativo: `INVALID_START_GRID` com mensagem `Horário fora da grelha configurada.`.
+- Catálogo canónico de durações para campos: `[30, 60, 90, 120]`.
+- Cada organização define `activeDurations` como subconjunto não vazio do catálogo (default para org sem configuração explícita: `[60, 90]`).
+- Em reservas de campos, `allowCustomDuration=true` é inválido e deve ser recusado com `INVALID_BOOKING_CONFIG`.
+- Duração fora de `activeDurations` devolve `INVALID_DURATION_POLICY`.
+- Preço por duração é obrigatório por serviço `COURT` em `ServiceDurationPrice`.
+- Reserva de campo sem preço configurado para a duração pedida devolve `DURATION_NOT_PRICED`.
+- `ServicePackage` deixa de ser fonte de preço no booking público de `COURT`.
+- A formulação histórica de rigidez “presets 60/90” e “custom por opt-in” para campos fica invalidada por `SUPERSEDED_BY_SSOT-2026-02-22-COURT-DURATION-CATALOG-PRICING`.
+
+#### 00.10.2 Modelação de Aulas e Instrutores (FECHADO)
+- Aulas recorrentes são sempre modeladas como:
+  - `Service.kind = CLASS`
+  - `ClassSeries`
+  - `ClassSession`
+- `Service.kind = GENERAL` com `categoryTag=AULAS` fica proibido para criação nova de aulas recorrentes.
+- `Service.instructorId` é suportado e obrigatório quando aula tem instrutor identificado no fluxo.
+- `ClassSeries.startMinute` deve respeitar `bookingGridMinutes` da organização; valores fora da grelha devolvem `INVALID_START_GRID`.
+- No fluxo PadelHub, se o treinador não tiver `ReservationProfessional` ativo, a ação canónica é `Criar em reservas` (upsert) antes de criar a aula recorrente.
+- Migração de legado obrigatória:
+  - converter `Service.kind=GENERAL` + `categoryTag=AULAS` para `CLASS` quando serviço for recorrente ou claramente aula.
+  - backfill é idempotente, paginado e com flags `--dry-run` e `--apply`.
+
+#### 00.10.3 Identidade Canónica de Treinador (FECHADO)
+- Vinculação 1:1 por organização:
+  - `TrainerProfile.userId` <-> `ReservationProfessional.userId`.
+- Constraint canónico obrigatório: unicidade em `ReservationProfessional(organizationId,userId)` para `userId` não nulo.
+- Publicar/aprovar treinador executa upsert automático de `ReservationProfessional` (ativo).
+- Erros normativos:
+  - `INSTRUCTOR_NOT_TRAINER`
+  - `INSTRUCTOR_NOT_PROFESSIONAL`
+  - `INSTRUCTOR_PROFESSIONAL_INACTIVE`
+
+#### 00.10.4 Agenda/Calendário (FECHADO)
+- `CLASS_SESSION` é fonte legítima obrigatória em `/api/org/[orgId]/agenda`.
+- UI de calendário org (day/week) mostra `CLASS_SESSION` como item de bloqueio operacional.
+- Filtro por tipo obrigatório: `Reserva`, `Aula`, `Evento`, `Torneio`.
+- Overlap de reserva com `ClassSession` deve ser recusado no write-path com `SLOT_TAKEN`.
+
+#### 00.10.5 Recursos e Torneios (FECHADO)
+- `ReservationResource` com `courtId != null` continua gerido exclusivamente pelo módulo de campos.
+- Endpoint genérico de recursos mantém bloqueio de edição/remoção com erro `COURT_RESOURCE_MANAGED_BY_COURT`.
+- Torneios suportam bulk-block de courts.
+- Arbitragem canónica de torneios inclui `CLASS_SESSION` como candidato de calendário de 1.ª classe.
+- Prioridade de arbitragem fechada: `HARD_BLOCK=5`, `CLASS_SESSION=4`, `MATCH=3`, `BOOKING=2`, `SOFT_BLOCK=1`.
+- `SourceType.CLASS_SESSION` é mapeado para tipo de arbitragem `CLASS_SESSION` (nunca para `MATCH`).
+- Política default de conflito em bulk-block de torneio: `CASCADE_SAME_COURT`.
+- Overrides operacionais exigem `reasonCode` auditável (regex canónica: `^[A-Z0-9_]{3,64}$`).
+
+#### 00.10.6 Concorrência, Hard-Cut e Migração (FECHADO)
+- Confirmação de reserva mantém lock transacional por organização:
+  - `pg_advisory_xact_lock(hashtext('booking:<orgId>'))`.
+- Rollout sem feature flags; qualquer caminho legado é removido/cortado na release de cutover.
+- Migrações são forward-only.
+- Rollback permitido apenas na aplicação (backend/frontend/jobs), nunca em schema.
+
+#### 00.10.7 Testes e Smoke (FECHADO)
+- Antes de cutover:
+  - `npm run typecheck`
+  - `npx vitest run tests/**/*.test.ts`
+- Suites obrigatórias:
+  - enforcement de grid (`:00/:30` aceites; `:15` recusado com `gridMinutes=30`)
+  - catálogo de duração de campos (`30/60/90/120`) com subset ativo (UI + API)
+  - recusa de `allowCustomDuration=true` para campos
+  - recusa de reserva `COURT` sem preço por duração (`DURATION_NOT_PRICED`)
+  - conflitos com `ClassSession` e bulk-block de torneio
+  - corrida de duas confirmações concorrentes para o mesmo court (lock advisory)
+  - migrações/backfills (idempotência + dry-run/apply)
+  - smoke e2e do ciclo treinador->aula->calendar->reserva recusada por overlap
+
+#### 00.10.8 Observabilidade e Alertas (FECHADO)
+- KPIs operacionais obrigatórios:
+  - `pendingSplitCount`
+  - `waitlistCount`
+  - `liveMatchesCount`
+  - `delayedMatchesCount`
+  - `conflictsClaimsCount`
+  - `overridesCount`
+- Métricas obrigatórias aulas+treinadores:
+  - ocupação por coach
+  - taxa de no-show por coach
+  - conversão por aula
+- Alertas operacionais obrigatórios:
+  - `SLOT_OVERRUN_ALERT`: disparar quando `delayedMatchesCount >= 8` ou `delayedMatchesCount/liveMatchesCount > 0.25` numa janela contínua de 10 minutos.
+  - `MASS_CONFLICT_ALERT`: disparar quando `conflictsClaimsCount` cresce `>= 10` em 5 minutos.
+  - `OVERRIDE_SPIKE_ALERT`: disparar quando `overridesCount` em 1 hora `>= max(5, 3x baseline média-horária de 7 dias)`.
 
 ## 01 Global Invariants (I*)
 
@@ -2510,7 +2614,8 @@ C01) Reservas ↔ Padel (agenda e slots)
 Contrato canónico ativo:
 	•	Todo write-path de ocupação passa pelo motor único de agenda (sem bypass por módulo).
 	•	`resourceKey` global é obrigatório no formato `resourceType:authorityOrgId:resourceId`.
-	•	`sourceType` mantém-se canónico (`MATCH`, `BOOKING`, `HARD_BLOCK`, `SOFT_BLOCK` reservado); `MATCH_SLOT` é `reasonCode`.
+	•	`sourceType` mantém-se canónico (`MATCH`, `BOOKING`, `CLASS_SESSION`, `HARD_BLOCK`, `SOFT_BLOCK` reservado); `MATCH_SLOT` é `reasonCode`.
+	•	Qualquer redação histórica neste bloco que trate `CLASS_SESSION` como “futuro” é inválida por `SUPERSEDED_BY_SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT`.
 	•	Em ocupação multi-recurso, a confirmação existe apenas com commit atómico de `slot + claims + locks`.
 	•	Conflito canónico devolve explicação estruturada: quem bloqueou, origem e regra aplicada.
 
@@ -2762,7 +2867,7 @@ Aditamento normativo (2026-02-14):
 		•	Regra de conflito em camadas:
 			–	hard constraints (segurança/compliance/manutenção/hard block) prevalecem sempre;
 			–	fora hard constraints, aplica-se `first_confirmed_wins`;
-			–	em empate técnico no mesmo instante/lote, aplicar prioridade: `HARD_BLOCK > MATCH (reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
+			–	em empate técnico no mesmo instante/lote, aplicar prioridade: `HARD_BLOCK > CLASS_SESSION > MATCH (reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
 			–	tie-break final determinístico: `confirmedAt` asc e depois `claimId` asc (fallback `createdAt` quando necessário).
 	•	`SOFT_BLOCK` fica reservado na taxonomia e não participa no write-path operacional de Reservas no v1.
 	•	Unidade temporal canónica do motor: blocos de **5 minutos**.
@@ -2812,9 +2917,11 @@ Se já existir reserva/aula, MatchSlot **não** sobrepõe automaticamente; reque
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2459`.
 
 D03.02) Operação de Calendário do Clube/Reservas (FECHADO)
-		•	Calendário único de clube:
-			–	reservas, aulas e torneios partilham o mesmo calendário operacional.
-			–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
+			•	Calendário único de clube:
+				–	reservas, aulas e torneios partilham o mesmo calendário operacional.
+				–	tudo o que ocupa recurso/campo bloqueia esse recurso no horário.
+				–	auto-schedule de torneio em modo `ALLOW_PARTIAL` não aborta o lote por conflito de domínio; devolve `200` com `skippedByMatch` e `unscheduledByReason`.
+				–	modo `REQUIRE_FULL` mantém fail-fast com `409 AUTO_SCHEDULE_INFEASIBLE`.
 		•	Agenda pessoal (utilizador):
 			–	é timeline unificada (projeção), não write-model de ocupação.
 			–	inclui `Booking` de serviço e itens de bilhete/evento em tipos separados.
@@ -2941,7 +3048,7 @@ Regras canónicas:
 		2) aplicar hard constraints;
 		3) aplicar `first_confirmed_wins`;
 		4) em empate técnico no mesmo instante/lote, aplicar prioridade explícita:
-		   `HARD_BLOCK > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
+		   `HARD_BLOCK > CLASS_SESSION > MATCH(reasonCode=MATCH_SLOT) > BOOKING > SOFT_BLOCK`;
 		5) tipo de claim fora da `priorityRuleVersion` ativa => `fail-closed`;
 		6) tie-break determinístico: `confirmedAt -> claimId -> createdAt`;
 		7) persistir decisão + evidência da regra aplicada.
@@ -3205,7 +3312,8 @@ D18.04) C01 com enforcement obrigatório (FECHADO)
 D18.05) sourceType e AgendaSourceType unificados (FECHADO)
 			•	Separação Finance/Agenda mantém-se obrigatória.
 			•	Taxonomia `AgendaSourceType` para ocupação mantém `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK`, com `SOFT_BLOCK` reservado fora do write-path operacional de Reservas v1.
-			•	`CLASS_SESSION` fica reservado para evolução futura, fora do write-path v1 de Reservas.
+			•	`CLASS_SESSION` é canónico na agenda org e na arbitragem de torneios.
+			•	Qualquer texto histórico que indique `CLASS_SESSION` como “reservado/futuro” fica explicitamente invalidado por `SUPERSEDED_BY_SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT`.
 			•	`MATCH_SLOT` é `reasonCode` de bloqueio/contexto operacional e não um `AgendaSourceType` autónomo.
 			•	`EVENT` e `TOURNAMENT` podem existir para timeline/visibilidade, sem substituir ocupação real de recurso.
 
@@ -3590,8 +3698,9 @@ Regra:
 
 Separação de enums (SSOT D07):
 - `FinanceSourceType` = lista acima (SSOT para Finanças/ledger/check‑in).
-- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `BOOKING`, `SOFT_BLOCK`, `HARD_BLOCK` (agenda/check‑in).
-- `CLASS_SESSION` permanece reservado para evolução futura (fora do v1 operacional de Reservas).
+- `AgendaSourceType` = `EVENT`, `TOURNAMENT`, `MATCH`, `BOOKING`, `CLASS_SESSION`, `SOFT_BLOCK`, `HARD_BLOCK` (agenda/check‑in).
+- `CLASS_SESSION` está ativo no modelo canónico de agenda e conflitos.
+- Qualquer formulação histórica em sentido contrário (ex.: `CLASS_SESSION` “reservado para futuro”) está invalidada por `SUPERSEDED_BY_SSOT-2026-02-21-RESERVAS-AULAS-TORNEIOS-HARDCUT`.
 - Normalização deve escolher o enum certo por domínio (finance vs agenda).  
 
 7.6 Segurança de Entitlements (mínimo v1–v2)

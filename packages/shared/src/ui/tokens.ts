@@ -1,7 +1,7 @@
 export const tokens = {
   colors: {
-    background: "#0a0f14",
-    backgroundElevated: "#101722",
+    background: "#05070b",
+    backgroundElevated: "#0b1018",
     surface: "rgba(255,255,255,0.06)",
     surfaceStrong: "rgba(255,255,255,0.12)",
     glass: "rgba(255,255,255,0.08)",

@@ -20,7 +20,7 @@ const buildCalendarPdf = async ({
   locale,
 }: {
   title: string;
-  rows: Array<{ start: string; court: string; round: string; teams: string; status: string }>;
+  rows: Array<{ start: string; court: string; round: string; teams: string; status: string; streamLive: boolean }>;
   locale: string;
 }) => {
   const doc = new PDFDocument({ size: "A4", margin: 36 });
@@ -73,7 +73,7 @@ const buildCalendarPdf = async ({
     doc.text(row.court, columnX[1], y, { width: columnWidths[1] - 4 });
     doc.text(row.round, columnX[2], y, { width: columnWidths[2] - 4 });
     doc.text(row.teams, columnX[3], y, { width: columnWidths[3] - 4 });
-    doc.text(row.status, columnX[4], y, { width: columnWidths[4] - 4 });
+    doc.text(`${row.status} · stream: ${row.streamLive ? "sim" : "não"}`, columnX[4], y, { width: columnWidths[4] - 4 });
     currentY += rowHeight;
   });
 
@@ -93,8 +93,20 @@ const escapeCsv = (value: string) => {
   return value;
 };
 
-const buildCalendarCsv = (rows: Array<{ startUtc: string; endUtc: string; timezone: string; court: string; round: string; teams: string; status: string }>) => {
-  const header = ["startUtc", "endUtc", "timezone", "court", "round", "teams", "status"];
+const buildCalendarCsv = (
+  rows: Array<{
+    startUtc: string;
+    endUtc: string;
+    timezone: string;
+    court: string;
+    round: string;
+    teams: string;
+    status: string;
+    streamLive: string;
+    streamUrl: string;
+  }>,
+) => {
+  const header = ["startUtc", "endUtc", "timezone", "court", "round", "teams", "status", "streamLive", "streamUrl"];
   const lines = [header.join(",")];
   rows.forEach((row) => {
     const line = [
@@ -105,6 +117,8 @@ const buildCalendarCsv = (rows: Array<{ startUtc: string; endUtc: string; timezo
       row.round,
       row.teams,
       row.status,
+      row.streamLive,
+      row.streamUrl,
     ]
       .map((value) => escapeCsv(value || ""))
       .join(",");
@@ -244,6 +258,17 @@ async function _GET(req: NextRequest) {
       round: m.roundLabel || m.groupLabel || "",
       teams: `${teamA} vs ${teamB}`,
       status: String(m.status),
+      streamLive:
+        m.score && typeof m.score === "object" && (m.score as Record<string, unknown>).liveStream
+          ? (((m.score as Record<string, unknown>).liveStream as Record<string, unknown>).isLive === true)
+          : false,
+      streamUrl:
+        m.score && typeof m.score === "object" && (m.score as Record<string, unknown>).liveStream
+          ? (() => {
+              const raw = ((m.score as Record<string, unknown>).liveStream as Record<string, unknown>).url;
+              return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+            })()
+          : null,
     };
   });
 
@@ -274,6 +299,8 @@ async function _GET(req: NextRequest) {
           round: row.round,
           teams: row.teams,
           status: row.status,
+          streamLive: row.streamLive ? "true" : "false",
+          streamUrl: row.streamUrl ?? "",
         })),
     );
     return new NextResponse(csv, {
@@ -339,6 +366,8 @@ async function _GET(req: NextRequest) {
           <th>${t("phaseLabel", locale)}</th>
           <th>${t("matchLabel", locale)}</th>
           <th>${t("statusLabel", locale)}</th>
+          <th>Stream</th>
+          <th>URL</th>
         </tr>
       </thead>
       <tbody>
@@ -350,6 +379,8 @@ async function _GET(req: NextRequest) {
               <td>${row.round}</td>
               <td>${row.teams}</td>
               <td>${row.status}</td>
+              <td>${row.streamLive ? "sim" : "não"}</td>
+              <td>${row.streamUrl ?? "—"}</td>
             </tr>`,
           )
           .join("")}

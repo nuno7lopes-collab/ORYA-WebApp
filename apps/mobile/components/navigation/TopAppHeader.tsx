@@ -1,20 +1,18 @@
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
 import { useNotificationsUnread } from "../../features/notifications/hooks";
 import { useAuth } from "../../lib/auth";
 import { safePush } from "../../lib/navigation";
 import type { TopBarScrollState } from "./useTopBarScroll";
 import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
 
-const USE_GLASS_BLUR = Platform.OS === "ios";
+const NAV_BAR_BG = tokens.colors.background;
 
 type TopAppHeaderVariant = "brand" | "title" | "custom";
 
@@ -59,7 +57,6 @@ export function TopAppHeader({
   const badgeLabel = unreadCount > 9 ? "9+" : String(unreadCount);
   const defaultTranslate = useRef(new Animated.Value(0)).current;
   const translateY = scrollState?.translateY ?? defaultTranslate;
-  const isElevated = scrollState?.isElevated ?? false;
 
   const containerStyle = useMemo(
     () => [
@@ -67,22 +64,12 @@ export function TopAppHeader({
       {
         paddingTop: insets.top,
         height: insets.top + TOP_APP_HEADER_HEIGHT,
+        backgroundColor: NAV_BAR_BG,
       },
-      isElevated ? styles.containerElevated : styles.containerTransparent,
       { transform: [{ translateY }] },
     ],
-    [insets.top, isElevated, translateY],
+    [insets.top, translateY],
   );
-  const gradientStyle = useMemo(
-    () => [
-      styles.gradient,
-      {
-        height: insets.top + Math.round(TOP_APP_HEADER_HEIGHT * 0.8),
-      },
-    ],
-    [insets.top],
-  );
-  const blurIntensity = isElevated ? 52 : 28;
 
   const defaultRightActions =
     renderNotifications || renderMessages ? (
@@ -96,7 +83,7 @@ export function TopAppHeader({
               hitSlop={10}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
             >
-              <Ionicons name="heart-outline" size={24} color="rgba(255,255,255,1)" />
+              <Ionicons name="notifications-outline" size={26} color="rgba(255,255,255,1)" />
             </Pressable>
             {showBadge ? (
               <View style={styles.badge}>
@@ -113,7 +100,7 @@ export function TopAppHeader({
             hitSlop={10}
             style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
           >
-            <Ionicons name="chatbubble-ellipses" size={24} color="rgba(255,255,255,1)" />
+            <Ionicons name="chatbubble-ellipses" size={26} color="rgba(255,255,255,1)" />
           </Pressable>
         ) : null}
       </View>
@@ -172,23 +159,6 @@ export function TopAppHeader({
 
   return (
     <Animated.View style={containerStyle} pointerEvents="box-none">
-      {USE_GLASS_BLUR ? (
-        <BlurView tint="dark" intensity={blurIntensity} style={StyleSheet.absoluteFill} />
-      ) : (
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            isElevated ? styles.blurFallbackElevated : styles.blurFallback,
-          ]}
-        />
-      )}
-      <LinearGradient
-        colors={["rgba(20, 28, 44, 0.35)", "rgba(8, 12, 20, 0.16)", "rgba(8, 12, 20, 0.0)"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={gradientStyle}
-        pointerEvents="none"
-      />
       <View style={styles.inner}>
         <View style={leftStyle}>{leftContent}</View>
         {centerContent ? (
@@ -207,7 +177,6 @@ export function TopAppHeader({
         ) : null}
         <View style={rightStyle}>{rightContent}</View>
       </View>
-      {isElevated ? <View style={styles.edgeFade} pointerEvents="none" /> : null}
     </Animated.View>
   );
 }
@@ -220,24 +189,6 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 20,
     paddingHorizontal: 16,
-  },
-  containerTransparent: {
-    backgroundColor: "rgba(6, 11, 20, 0.52)",
-  },
-  containerElevated: {
-    backgroundColor: "rgba(6, 11, 20, 0.9)",
-  },
-  gradient: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-  },
-  blurFallback: {
-    backgroundColor: "rgba(6, 11, 20, 0.78)",
-  },
-  blurFallbackElevated: {
-    backgroundColor: "rgba(6, 11, 20, 0.92)",
   },
   inner: {
     height: TOP_APP_HEADER_HEIGHT,
@@ -351,13 +302,5 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 9,
     fontWeight: "700",
-  },
-  edgeFade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(207,234,255,0.14)",
   },
 });

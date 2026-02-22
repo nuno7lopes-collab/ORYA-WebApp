@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { prisma } from "@/lib/prisma";
 import { computeStoreShippingQuote } from "@/lib/store/shipping";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
@@ -33,6 +33,7 @@ async function _GET(req: NextRequest) {
         status: true,
         showOnProfile: true,
         catalogLocked: true,
+        checkoutEnabled: true,
         organization: {
           select: {
             orgType: true,
@@ -48,11 +49,17 @@ async function _GET(req: NextRequest) {
     if (!store) {
       return jsonWrap({ ok: false, error: "Store nao encontrada." }, { status: 404 });
     }
-    if (!isPublicStore(store)) {
-      return jsonWrap({ ok: false, error: "Loja fechada." }, { status: 403 });
-    }
-    if (store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo bloqueado." }, { status: 403 });
+    const publicAccess = resolvePublicStoreAccess(store);
+    if (!publicAccess.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: publicAccess.errorCode,
+          message: publicAccess.error,
+          error: publicAccess.errorCode,
+        },
+        { status: 403 },
+      );
     }
 
     const paymentsGate = getPublicStorePaymentsGate({

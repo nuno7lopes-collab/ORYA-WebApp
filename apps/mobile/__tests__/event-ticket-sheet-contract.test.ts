@@ -13,9 +13,9 @@ describe("event ticket sheet contract", () => {
     expect(file).not.toContain('t("events:tickets.sheet.submit.select")');
   });
 
-  it("keeps submit CTA gated by selected quantity", () => {
+  it("usa a seleção derivada no próprio sheet (fonte única)", () => {
     const file = readFileSync(eventDetailPath, "utf8");
-    expect(file).toContain("hasSelection={selectedTicketQuantity > 0}");
+    expect(file).not.toContain("hasSelection={selectedTicketQuantity > 0}");
   });
 
   it("hides sticky purchase bar while ticket sheet is open", () => {

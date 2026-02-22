@@ -156,17 +156,17 @@ const EVENT_BG_MASK = `linear-gradient(
 
 const EVENT_BG_OVERLAY = `linear-gradient(
   to bottom,
-  rgba(0,0,0,var(--event-bg-overlay-top,0.38)) 0%,
-  rgba(0,0,0,var(--event-bg-overlay-mid,0.22)) 45%,
-  rgba(0,0,0,var(--event-bg-overlay-bottom,0.06)) 100%
+  rgba(var(--orya-route-bg-rgb,5,6,10),var(--event-bg-overlay-top,0.38)) 0%,
+  rgba(var(--orya-route-bg-rgb,5,6,10),var(--event-bg-overlay-mid,0.22)) 45%,
+  rgba(var(--orya-route-bg-rgb,5,6,10),var(--event-bg-overlay-bottom,0.06)) 100%
 )`;
 
 const EVENT_BG_FADE = `linear-gradient(
   to bottom,
-  rgba(0,0,0,0) 0%,
-  rgba(0,0,0,0) var(--event-bg-fade-start,78%),
-  rgba(0,0,0,var(--event-bg-fade-dark,0.78)) var(--event-bg-fade-mid,90%),
-  rgba(0,0,0,1) var(--event-bg-fade-end,99%)
+  rgba(var(--orya-route-bg-rgb,5,6,10),0) 0%,
+  rgba(var(--orya-route-bg-rgb,5,6,10),0) var(--event-bg-fade-start,78%),
+  rgba(var(--orya-route-bg-rgb,5,6,10),var(--event-bg-fade-dark,0.78)) var(--event-bg-fade-mid,90%),
+  rgba(var(--orya-route-bg-rgb,5,6,10),1) var(--event-bg-fade-end,99%)
 )`;
 
 function getWaveStatus(ticket: {

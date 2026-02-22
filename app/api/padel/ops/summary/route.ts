@@ -28,7 +28,7 @@ async function _GET(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { id: true, organizationId: true, templateType: true },
+    select: { id: true, organizationId: true, templateType: true, startsAt: true, endsAt: true },
   });
   if (!event?.organizationId || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
@@ -55,6 +55,12 @@ async function _GET(req: NextRequest) {
   }
 
   const now = new Date();
+  const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const classWindowStart = event.startsAt ?? sevenDaysAgo;
+  const classWindowEnd = event.endsAt ?? now;
   const pendingStatuses = [
     PadelRegistrationStatus.PENDING_PARTNER,
     PadelRegistrationStatus.PENDING_PAYMENT,
@@ -73,6 +79,14 @@ async function _GET(req: NextRequest) {
     activeSanctions,
     delayPolicyRows,
     conflictingClaimRows,
+    delayedOverrunCount,
+    conflictsClaimsLast5mCount,
+    overridesLastHourCount,
+    overridesLast7dCount,
+    classSessionsCapacityAgg,
+    classConfirmedBookings,
+    classPendingBookings,
+    classNoShowBookings,
   ] = await Promise.all([
     prisma.padelRegistration.count({
       where: {
@@ -148,6 +162,65 @@ async function _GET(req: NextRequest) {
         AND a.status = 'CLAIMED'::app_v3."AgendaResourceClaimStatus"
         AND b.status = 'CLAIMED'::app_v3."AgendaResourceClaimStatus"
     `),
+    prisma.eventMatchSlot.count({
+      where: {
+        eventId,
+        status: "PENDING",
+        OR: [{ plannedStartAt: { lt: tenMinutesAgo } }, { startTime: { lt: tenMinutesAgo } }],
+      },
+    }),
+    prisma.agendaResourceClaim.count({
+      where: {
+        eventId,
+        status: "CLAIMED",
+        createdAt: { gte: fiveMinutesAgo },
+      },
+    }),
+    prisma.padelPartnershipOverride.count({
+      where: {
+        eventId,
+        createdAt: { gte: oneHourAgo },
+      },
+    }),
+    prisma.padelPartnershipOverride.count({
+      where: {
+        eventId,
+        createdAt: { gte: sevenDaysAgo },
+      },
+    }),
+    prisma.classSession.aggregate({
+      where: {
+        organizationId: event.organizationId,
+        status: "SCHEDULED",
+        startsAt: { gte: classWindowStart, lte: classWindowEnd },
+      },
+      _sum: { capacity: true },
+      _count: { _all: true },
+    }),
+    prisma.booking.count({
+      where: {
+        organizationId: event.organizationId,
+        startsAt: { gte: classWindowStart, lte: classWindowEnd },
+        service: { kind: "CLASS" },
+        status: { in: ["CONFIRMED", "COMPLETED"] },
+      },
+    }),
+    prisma.booking.count({
+      where: {
+        organizationId: event.organizationId,
+        startsAt: { gte: classWindowStart, lte: classWindowEnd },
+        service: { kind: "CLASS" },
+        status: { in: ["PENDING_CONFIRMATION", "PENDING"] },
+      },
+    }),
+    prisma.booking.count({
+      where: {
+        organizationId: event.organizationId,
+        startsAt: { gte: classWindowStart, lte: classWindowEnd },
+        service: { kind: "CLASS" },
+        status: "NO_SHOW",
+      },
+    }),
   ]);
 
   const integritySummary = computePadelIntegritySummary(
@@ -189,6 +262,49 @@ async function _GET(req: NextRequest) {
     return acc;
   }, {});
   const conflictingClaimsCount = Number(conflictingClaimRows[0]?.count ?? 0);
+  const liveMatchesCount = inProgressMatchesCount;
+  const classCapacityTotal = classSessionsCapacityAgg._sum.capacity ?? 0;
+  const classBookingsTotal = classConfirmedBookings + classPendingBookings + classNoShowBookings;
+  const coachOccupancyRate = classCapacityTotal > 0 ? classConfirmedBookings / classCapacityTotal : null;
+  const coachNoShowRate = classBookingsTotal > 0 ? classNoShowBookings / classBookingsTotal : null;
+  const classConversionRate =
+    classConfirmedBookings + classPendingBookings > 0
+      ? classConfirmedBookings / (classConfirmedBookings + classPendingBookings)
+      : null;
+  const overrideSpikeThreshold = Math.max(5, Math.ceil((overridesLast7dCount / 168) * 3));
+  const alerts: Array<{ code: string; level: "warn" | "critical"; message: string; value: number; threshold: number }> = [];
+
+  const delayedLiveRatio = liveMatchesCount > 0 ? delayedMatchesCount / liveMatchesCount : 0;
+  if (
+    delayedOverrunCount > 0 &&
+    (delayedMatchesCount >= 8 || (liveMatchesCount > 0 && delayedLiveRatio > 0.25))
+  ) {
+    alerts.push({
+      code: "SLOT_OVERRUN_ALERT",
+      level: delayedMatchesCount >= 12 || delayedLiveRatio > 0.4 ? "critical" : "warn",
+      message: "Atraso operacional acima do limiar em janela >=10 minutos.",
+      value: delayedMatchesCount,
+      threshold: 8,
+    });
+  }
+  if (conflictsClaimsLast5mCount >= 10) {
+    alerts.push({
+      code: "MASS_CONFLICT_ALERT",
+      level: conflictsClaimsLast5mCount >= 20 ? "critical" : "warn",
+      message: "Subida massiva de conflitos de claims em 5 minutos.",
+      value: conflictsClaimsLast5mCount,
+      threshold: 10,
+    });
+  }
+  if (overridesLastHourCount >= overrideSpikeThreshold) {
+    alerts.push({
+      code: "OVERRIDE_SPIKE_ALERT",
+      level: overridesLastHourCount >= overrideSpikeThreshold * 2 ? "critical" : "warn",
+      message: "Pico de overrides na última hora acima da baseline de 7 dias.",
+      value: overridesLastHourCount,
+      threshold: overrideSpikeThreshold,
+    });
+  }
 
   return jsonWrap(
     {
@@ -201,6 +317,7 @@ async function _GET(req: NextRequest) {
         avgMatchmakingMinutes,
         waitlistCount,
         inProgressMatchesCount,
+        liveMatchesCount,
         delayedMatchesCount,
         delaysByPolicy: delayPolicyBreakdown,
         refundPendingCount,
@@ -208,6 +325,10 @@ async function _GET(req: NextRequest) {
         overridesCount: overrideCount,
         pendingCompensationCount,
         rankingSanctionsActive: sanctionsByType,
+        coachOccupancyRate,
+        coachNoShowRate,
+        classConversionRate,
+        alerts,
         invalidStateCount: integritySummary.counts.total,
         updatedAt: now.toISOString(),
       },

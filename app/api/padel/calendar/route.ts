@@ -17,8 +17,9 @@ import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { queueMatchChanged } from "@/domain/notifications/tournament";
-import { evaluateCandidate, type AgendaCandidate, type AgendaCandidateType, type ConflictDecision } from "@/domain/agenda/conflictEngine";
+import type { AgendaCandidate } from "@/domain/agenda/conflictEngine";
 import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
+import { evaluateCandidateAgainstAgenda } from "@/domain/agenda/scheduleWriteGateway";
 import { createHardBlock, deleteHardBlock, updateHardBlock } from "@/domain/hardBlocks/commands";
 import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 import { isPadelLockedForReschedule } from "@/domain/padel/liveStatus";
@@ -93,35 +94,6 @@ const resolveMatchUserIds = (participants: MatchParticipantRef[] | null | undefi
     ),
   );
 
-const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
-  HARD_BLOCK: "bloqueio",
-  MATCH: "jogo",
-  BOOKING: "reserva",
-  SOFT_BLOCK: "bloqueio suave",
-};
-
-function resolveAgendaTypeLabel(type: AgendaCandidateType | string, fallback: string) {
-  if (type in AGENDA_TYPE_LABEL) {
-    return AGENDA_TYPE_LABEL[type as AgendaCandidateType];
-  }
-  return fallback;
-}
-
-function buildAgendaWarning(decision: ConflictDecision, candidateType: AgendaCandidateType) {
-  if (!decision.allowed || decision.conflicts.length === 0) return null;
-  const primary = decision.conflicts[0];
-  const candidateLabel = resolveAgendaTypeLabel(candidateType, "agendamento");
-  const conflictLabel = resolveAgendaTypeLabel(primary.withType, "registo");
-  return {
-    message: `Aviso: ${candidateLabel} sobrepõe-se a ${conflictLabel}.`,
-    details: {
-      blockedByType: primary.withType,
-      blockedBySourceId: primary.withSourceId,
-      reason: decision.reason,
-    },
-  };
-}
-
 async function loadCourtCandidates(params: {
   organizationId: number;
   eventId: number;
@@ -132,7 +104,7 @@ async function loadCourtCandidates(params: {
   excludeBlockId?: number;
 }) {
   const { organizationId, eventId, courtId, startsAt, endsAt, excludeMatchId, excludeBlockId } = params;
-  const [blocks, matches, bookings, softBlocks] = await Promise.all([
+  const [blocks, matches, bookings, softBlocks, classSessions] = await Promise.all([
     prisma.calendarBlock.findMany({
       where: {
         organizationId,
@@ -161,6 +133,7 @@ async function loadCourtCandidates(params: {
     }),
     prisma.booking.findMany({
       where: {
+        organizationId,
         ...(courtId ? { courtId } : { courtId: { not: null } }),
         startsAt: { lt: endsAt },
         OR: [
@@ -168,7 +141,14 @@ async function loadCourtCandidates(params: {
           { status: { in: ["PENDING_CONFIRMATION", "PENDING"] } },
         ],
       },
-      select: { id: true, startsAt: true, durationMinutes: true, status: true, pendingExpiresAt: true },
+      select: {
+        id: true,
+        startsAt: true,
+        durationMinutes: true,
+        status: true,
+        pendingExpiresAt: true,
+        updatedAt: true,
+      },
     }),
     prisma.softBlock.findMany({
       where: {
@@ -181,6 +161,16 @@ async function loadCourtCandidates(params: {
         ],
       },
       select: { id: true, startsAt: true, endsAt: true, scopeType: true, scopeId: true },
+    }),
+    prisma.classSession.findMany({
+      where: {
+        organizationId,
+        ...(courtId ? { courtId } : { courtId: { not: null } }),
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+        status: { not: "CANCELLED" },
+      },
+      select: { id: true, startsAt: true, endsAt: true, courtId: true },
     }),
   ]);
 
@@ -216,6 +206,7 @@ async function loadCourtCandidates(params: {
       sourceId: String(booking.id),
       startsAt: booking.startsAt,
       endsAt: end,
+      confirmedAt: booking.updatedAt ?? booking.startsAt,
     });
   });
 
@@ -225,6 +216,16 @@ async function loadCourtCandidates(params: {
       sourceId: String(block.id),
       startsAt: block.startsAt,
       endsAt: block.endsAt,
+    });
+  });
+
+  classSessions.forEach((session) => {
+    if (!session.courtId) return;
+    candidates.push({
+      type: "CLASS_SESSION",
+      sourceId: String(session.id),
+      startsAt: session.startsAt,
+      endsAt: session.endsAt,
     });
   });
 
@@ -326,7 +327,10 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
-  const [courts, blocks, availabilities, matches, resourceClaims] = await Promise.all([
+  const eventWindowStart = event.startsAt ?? new Date("1970-01-01T00:00:00.000Z");
+  const eventWindowEnd = event.endsAt ?? new Date("2100-01-01T00:00:00.000Z");
+
+  const [courts, blocks, availabilities, matches, resourceClaims, bookings, classSessions] = await Promise.all([
     prisma.padelClubCourt.findMany({
       where: {
         deletedAt: null,
@@ -453,7 +457,79 @@ async function _GET(req: NextRequest) {
         updatedAt: true,
       },
     }),
+    prisma.booking.findMany({
+      where: {
+        organizationId: organization.id,
+        startsAt: { lt: eventWindowEnd },
+        ...(resolvedCourtId
+          ? { courtId: resolvedCourtId }
+          : resolvedClubId
+            ? { court: { padelClubId: resolvedClubId } }
+            : { courtId: { not: null } }),
+        OR: [
+          { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+          { status: { in: ["PENDING_CONFIRMATION", "PENDING"] } },
+        ],
+      },
+      orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        courtId: true,
+        startsAt: true,
+        durationMinutes: true,
+        status: true,
+        pendingExpiresAt: true,
+        updatedAt: true,
+      },
+    }),
+    prisma.classSession.findMany({
+      where: {
+        organizationId: organization.id,
+        status: { not: "CANCELLED" },
+        startsAt: { lt: eventWindowEnd },
+        endsAt: { gt: eventWindowStart },
+        ...(resolvedCourtId
+          ? { courtId: resolvedCourtId }
+          : resolvedClubId
+            ? { court: { padelClubId: resolvedClubId } }
+            : { courtId: { not: null } }),
+      },
+      orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        courtId: true,
+        startsAt: true,
+        endsAt: true,
+        status: true,
+        updatedAt: true,
+      },
+    }),
   ]);
+
+  const scopedCourtIds = courts.map((court) => court.id);
+  const softBlocks = await prisma.softBlock.findMany({
+    where: {
+      organizationId: organization.id,
+      startsAt: { lt: eventWindowEnd },
+      endsAt: { gt: eventWindowStart },
+      OR: [
+        { scopeType: SoftBlockScope.ORGANIZATION },
+        ...(resolvedCourtId ? [{ scopeType: SoftBlockScope.COURT, scopeId: resolvedCourtId }] : []),
+        ...(resolvedCourtId || scopedCourtIds.length === 0
+          ? []
+          : [{ scopeType: SoftBlockScope.COURT, scopeId: { in: scopedCourtIds } }]),
+      ],
+    },
+    orderBy: [{ startsAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      scopeType: true,
+      scopeId: true,
+      startsAt: true,
+      endsAt: true,
+      updatedAt: true,
+    },
+  });
 
   const overlaps = (a: { startAt?: Date; endAt?: Date; startTime?: Date; endTime?: Date }, b: typeof a) => {
     const aStart = (a.startAt ?? (a.startTime as Date)) as Date | null;
@@ -517,6 +593,44 @@ async function _GET(req: NextRequest) {
       }
     }
   }
+  // aula vs jogo
+  for (const session of classSessions) {
+    for (const m of matches) {
+      const { start, end } = matchWindow(m);
+      if (!start || !end) continue;
+      if (session.courtId && m.courtId && session.courtId !== m.courtId) continue;
+      if (overlaps(session as any, { startAt: start, endAt: end })) {
+        conflicts.push({
+          type: "class_match",
+          aId: session.id,
+          bId: m.id,
+          summary: "Aula coincide com jogo",
+        });
+      }
+    }
+  }
+  // reserva vs jogo
+  const activeBookings = bookings
+    .filter((booking) => isActiveBooking({ status: booking.status, pendingExpiresAt: booking.pendingExpiresAt }))
+    .map((booking) => ({
+      ...booking,
+      endAt: new Date(booking.startsAt.getTime() + booking.durationMinutes * 60 * 1000),
+    }));
+  for (const booking of activeBookings) {
+    for (const m of matches) {
+      const { start, end } = matchWindow(m);
+      if (!start || !end) continue;
+      if (booking.courtId && m.courtId && booking.courtId !== m.courtId) continue;
+      if (overlaps({ startAt: booking.startsAt, endAt: booking.endAt } as any, { startAt: start, endAt: end })) {
+        conflicts.push({
+          type: "booking_match",
+          aId: booking.id,
+          bId: m.id,
+          summary: "Reserva coincide com jogo",
+        });
+      }
+    }
+  }
   // match vs match (mesma dupla/jogador em slot sobreposto)
   for (let i = 0; i < matches.length; i += 1) {
     for (let j = i + 1; j < matches.length; j += 1) {
@@ -555,11 +669,86 @@ async function _GET(req: NextRequest) {
     }
   }
 
+  const occupancyItems = [
+    ...blocks.map((block) => ({
+      type: "HARD_BLOCK" as const,
+      sourceId: String(block.id),
+      courtId: block.courtId ?? null,
+      startsAt: block.startAt,
+      endsAt: block.endAt,
+      priority: 5,
+      isBlocking: true,
+      label: block.label || "Bloqueio",
+    })),
+    ...classSessions.map((session) => ({
+      type: "CLASS_SESSION" as const,
+      sourceId: String(session.id),
+      courtId: session.courtId ?? null,
+      startsAt: session.startsAt,
+      endsAt: session.endsAt,
+      priority: 4,
+      isBlocking: true,
+      label: `Aula #${session.id}`,
+    })),
+    ...matches
+      .map((match) => {
+        const { start, end } = matchWindow(match);
+        if (!start || !end) return null;
+        return {
+          type: "MATCH" as const,
+          sourceId: String(match.id),
+          courtId: match.courtId ?? null,
+          startsAt: start,
+          endsAt: end,
+          priority: 3,
+          isBlocking: true,
+          label: match.roundLabel || match.groupLabel || `Jogo #${match.id}`,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    ...activeBookings.map((booking) => ({
+      type: "BOOKING" as const,
+      sourceId: String(booking.id),
+      courtId: booking.courtId ?? null,
+      startsAt: booking.startsAt,
+      endsAt: booking.endAt,
+      priority: 2,
+      isBlocking: true,
+      label: `Reserva #${booking.id}`,
+    })),
+    ...softBlocks.map((block) => ({
+      type: "SOFT_BLOCK" as const,
+      sourceId: String(block.id),
+      courtId: block.scopeType === SoftBlockScope.COURT ? (block.scopeId ?? null) : null,
+      startsAt: block.startsAt,
+      endsAt: block.endsAt,
+      priority: 1,
+      isBlocking: false,
+      label: "Bloqueio suave",
+    })),
+  ].sort((a, b) => {
+    const startDiff = a.startsAt.getTime() - b.startsAt.getTime();
+    if (startDiff !== 0) return startDiff;
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    return a.sourceId.localeCompare(b.sourceId);
+  });
+
   return jsonWrap(
     {
       ok: true,
       courts,
       blocks,
+      classSessions,
+      bookings: activeBookings.map((booking) => ({
+        id: booking.id,
+        courtId: booking.courtId,
+        startsAt: booking.startsAt,
+        endsAt: booking.endAt,
+        status: booking.status,
+        updatedAt: booking.updatedAt,
+      })),
+      softBlocks,
+      occupancyItems,
       availabilities,
       matches,
       resourceClaims,
@@ -670,11 +859,14 @@ async function _POST(req: NextRequest) {
       startsAt: startAt,
       endsAt: endAt,
     };
-    const decision = evaluateCandidate({ candidate, existing: existingCandidates });
-    if (!decision.allowed) {
-      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+    const evaluation = evaluateCandidateAgainstAgenda({
+      candidate,
+      existing: existingCandidates,
+    });
+    if (!evaluation.allowed) {
+      return jsonWrap(agendaConflictResponse(evaluation.decision), { status: 409 });
     }
-    const agendaWarning = buildAgendaWarning(decision, "HARD_BLOCK");
+    const agendaWarning = evaluation.warning;
 
     const lockKey = `padel_block_${event.id}_${courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
@@ -887,11 +1079,14 @@ async function _PATCH(req: NextRequest) {
       startsAt: nextStart,
       endsAt: nextEnd,
     };
-    const decision = evaluateCandidate({ candidate, existing: existingCandidates });
-    if (!decision.allowed) {
-      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+    const evaluation = evaluateCandidateAgainstAgenda({
+      candidate,
+      existing: existingCandidates,
+    });
+    if (!evaluation.allowed) {
+      return jsonWrap(agendaConflictResponse(evaluation.decision), { status: 409 });
     }
-    const agendaWarning = buildAgendaWarning(decision, "HARD_BLOCK");
+    const agendaWarning = evaluation.warning;
 
     const lockKey = `padel_block_${block.eventId}_${typeof courtId === "number" ? courtId : block.courtId ?? "any"}`;
     const lock = await acquireLock(lockKey);
@@ -1157,11 +1352,14 @@ async function _PATCH(req: NextRequest) {
       endsAt: desiredEnd,
       reasonCode: "MATCH_SLOT",
     };
-    const decision = evaluateCandidate({ candidate, existing: existingCandidates });
-    if (!decision.allowed) {
-      return jsonWrap(agendaConflictResponse(decision), { status: 409 });
+    const evaluation = evaluateCandidateAgainstAgenda({
+      candidate,
+      existing: existingCandidates,
+    });
+    if (!evaluation.allowed) {
+      return jsonWrap(agendaConflictResponse(evaluation.decision), { status: 409 });
     }
-    const agendaWarning = buildAgendaWarning(decision, "MATCH");
+    const agendaWarning = evaluation.warning;
 
     if (desiredStart && desiredEnd && (courtId || match.courtId)) {
       const overlappingMatch = await prisma.eventMatchSlot.findFirst({

@@ -90,17 +90,46 @@ describe("agenda conflict engine (ARB.01)", () => {
     expect(res.reason).toBe("BLOCKED_BY_EQUAL_PRIORITY");
   });
 
-  it("fail-closed em candidate com tipo fora da versão ativa", () => {
+  it("aplica prioridade de CLASS_SESSION acima de MATCH e BOOKING", () => {
     const res = evaluateCandidate({
       candidate: baseCandidate({
-        // cobertura explícita de tipo desconhecido no runtime
-        type: "CLASS_SESSION",
+        type: "MATCH",
       }),
-      existing: [],
+      existing: [
+        baseCandidate({
+          type: "CLASS_SESSION",
+          sourceId: "class-1",
+          claimId: "class-1",
+        }),
+      ],
       priorityRuleVersion: "v1",
     });
     expect(res.allowed).toBe(false);
-    expect(res.reason).toBe("TYPE_NOT_SUPPORTED");
+    expect(res.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
+    expect(res.blockedBy).toBe("CLASS_SESSION");
+  });
+
+  it("permite CLASS_SESSION sobre BOOKING quando confirmado no mesmo momento", () => {
+    const confirmedAt = at("2025-01-01T09:30:00Z");
+    const res = evaluateCandidate({
+      candidate: baseCandidate({
+        type: "CLASS_SESSION",
+        sourceId: "class-1",
+        claimId: "class-1",
+        confirmedAt,
+      }),
+      existing: [
+        baseCandidate({
+          type: "BOOKING",
+          sourceId: "booking-1",
+          claimId: "booking-1",
+          confirmedAt,
+        }),
+      ],
+      priorityRuleVersion: "v1",
+    });
+    expect(res.allowed).toBe(true);
+    expect(res.reason).toBe("OVERRIDES_LOWER_PRIORITY");
   });
 
   it("fail-closed com priorityRuleVersion divergente", () => {

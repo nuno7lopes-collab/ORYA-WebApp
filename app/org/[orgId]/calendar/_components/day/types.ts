@@ -1,6 +1,6 @@
 export type CalendarEntityKind = "PROFESSIONAL" | "RESOURCE" | "COURT" | "GENERAL";
 
-export type CalendarEventKind = "EVENT" | "TOURNAMENT" | "RESERVATION";
+export type CalendarEventKind = "EVENT" | "TOURNAMENT" | "RESERVATION" | "CLASS";
 
 export type CalendarBookingType = "INDIVIDUAL" | "GROUP" | "BLOCK";
 
@@ -18,6 +18,7 @@ export type AgendaItem = {
   eventId?: number | null;
   tournamentId?: number | null;
   reservationId?: number | null;
+  classSessionId?: number | null;
   courtId?: number | null;
   resourceId?: number | null;
   professionalId?: number | null;
@@ -156,6 +157,7 @@ export type CalendarEvent = {
   endsAt: string;
   status: string;
   reservationId: number | null;
+  classSessionId: number | null;
   eventId: number | null;
   tournamentId: number | null;
   courtId: number | null;

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -7,6 +7,7 @@ import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { EventTemplateType, OrganizationModule, Prisma, SaleSummaryStatus } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Aggregate = {
@@ -102,6 +103,7 @@ async function _GET(req: NextRequest) {
       },
       select: {
         eventId: true,
+        purchaseId: true,
         subtotalCents: true,
         totalCents: true,
         platformFeeCents: true,
@@ -114,6 +116,14 @@ async function _GET(req: NextRequest) {
 
     const totals: Aggregate = { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0 };
     const eventStats = new Map<number, Aggregate>();
+    const purchaseIds = Array.from(
+      new Set(
+        summaries
+          .map((summary) => (typeof summary.purchaseId === "string" ? summary.purchaseId.trim() : ""))
+          .filter((purchaseId): purchaseId is string => purchaseId.length > 0),
+      ),
+    );
+    const statusMap = await resolvePaymentStatusMap(purchaseIds);
 
     const addTo = (target: Aggregate, gross: number, fees: number, net: number, qty: number) => {
       target.grossCents += gross;
@@ -123,6 +133,11 @@ async function _GET(req: NextRequest) {
     };
 
     for (const summary of summaries) {
+      const purchaseId = typeof summary.purchaseId === "string" ? summary.purchaseId.trim() : "";
+      const resolved = purchaseId ? statusMap.get(purchaseId) : null;
+      if (resolved && resolved.status !== "PAID") {
+        continue;
+      }
       const qty = summary.lines.reduce((sum, line) => sum + (line.quantity ?? 0), 0);
       const gross = summary.subtotalCents ?? 0;
       const fees =

@@ -112,6 +112,15 @@ async function _GET(
             sortOrder: true,
           },
         },
+        durationPrices: {
+          where: { isActive: true },
+          orderBy: [{ durationMinutes: "asc" }],
+          select: {
+            durationMinutes: true,
+            priceCents: true,
+            isActive: true,
+          },
+        },
       },
     });
 
@@ -240,6 +249,7 @@ async function _GET(
           requiresResource: assignmentConfig.requiresResource,
         },
         packs: [],
+        packages: service.kind === "COURT" ? [] : service.packages,
         policy: policy
           ? {
               id: policy.id,

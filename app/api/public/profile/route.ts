@@ -9,6 +9,9 @@ import { getUserFollowCounts, getUserFollowStatus, isOrganizationFollowed } from
 import { pickCanonicalField } from "@/lib/location/eventLocation";
 import { normalizeUsernameInput } from "@/lib/username";
 import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
+import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
+import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const normalizeVisibility = (value: unknown) =>
@@ -277,6 +280,12 @@ async function _GET(req: NextRequest) {
       brandingAvatarUrl: true,
       brandingCoverUrl: true,
       publicDescription: true,
+      orgType: true,
+      officialEmail: true,
+      officialEmailVerifiedAt: true,
+      stripeAccountId: true,
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
       addressRef: { select: { canonical: true } },
     },
   });
@@ -285,11 +294,49 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
   }
 
-  const [followersCount, eventsCount, viewerFollows] = await Promise.all([
+  const [followersCount, eventsCount, viewerFollows, store] = await Promise.all([
     prisma.organization_follows.count({ where: { organization_id: organization.id } }),
     prisma.event.count({ where: { organizationId: organization.id, isDeleted: false } }),
     viewerId ? isOrganizationFollowed(viewerId, organization.id) : Promise.resolve(false),
+    prisma.store.findFirst({
+      where: { ownerOrganizationId: organization.id },
+      select: {
+        id: true,
+        status: true,
+        showOnProfile: true,
+        catalogLocked: true,
+        checkoutEnabled: true,
+      },
+    }),
   ]);
+
+  const publicProductsCount = store
+    ? await prisma.storeProduct.count({
+        where: { storeId: store.id, visibility: "PUBLIC" },
+      })
+    : 0;
+  const storeEnabled = isStoreFeatureEnabled();
+  const paymentsReady = store
+    ? getPublicStorePaymentsGate({
+        orgType: organization.orgType,
+        officialEmail: organization.officialEmail,
+        officialEmailVerifiedAt: organization.officialEmailVerifiedAt,
+        stripeAccountId: organization.stripeAccountId,
+        stripeChargesEnabled: organization.stripeChargesEnabled,
+        stripePayoutsEnabled: organization.stripePayoutsEnabled,
+      }).ok
+    : false;
+  const storeResolvedState = resolveStoreState(store);
+  const canOpenPublicStore = storeEnabled
+    ? canOpenPublicStorefront({
+        status: store?.status ?? null,
+        showOnProfile: store?.showOnProfile ?? false,
+        checkoutEnabled: store?.checkoutEnabled ?? false,
+        catalogLocked: store?.catalogLocked ?? false,
+        publicProductCount: publicProductsCount,
+        paymentsReady,
+      })
+    : false;
 
   return jsonWrap(
     {
@@ -322,6 +369,14 @@ async function _GET(req: NextRequest) {
       privacy: {
         isPrivate: false,
         canView: true,
+      },
+      store: {
+        exists: Boolean(store),
+        enabled: storeEnabled,
+        canOpenPublicStore,
+        resolvedState: storeResolvedState,
+        publicProductsCount,
+        showOnProfile: Boolean(store?.showOnProfile),
       },
     },
     { status: 200 },

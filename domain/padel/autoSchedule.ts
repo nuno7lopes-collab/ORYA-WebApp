@@ -41,6 +41,7 @@ export type AutoScheduleCourtBlock = {
   courtId?: number | null;
   startAt: Date | null;
   endAt: Date | null;
+  sourceType?: "HARD_BLOCK" | "CLASS_SESSION" | "BOOKING" | "MATCH" | "SOFT_BLOCK" | string | null;
 };
 
 export type AutoScheduleConfig = {
@@ -70,6 +71,10 @@ export type AutoScheduleResult = {
 };
 
 type Interval = { start: Date; end: Date };
+type OccupiedInterval = Interval & {
+  sourceType: "HARD_BLOCK" | "CLASS_SESSION" | "BOOKING" | "MATCH" | "SOFT_BLOCK" | string;
+  blocking: boolean;
+};
 
 const normalizeSchedulingWindows = (config: AutoScheduleConfig) => {
   const windows =
@@ -115,7 +120,7 @@ const overlapsWithExtra = (start: Date, end: Date, interval: Interval, extraMs: 
   return startBuffered < interval.end && interval.start < endBuffered;
 };
 
-const addInterval = (map: Map<number, Interval[]>, key: number, interval: Interval) => {
+const addInterval = <T extends Interval>(map: Map<number, T[]>, key: number, interval: T) => {
   const list = map.get(key) ?? [];
   list.push(interval);
   map.set(key, list);
@@ -232,18 +237,27 @@ export function computeAutoSchedulePlan({
     }
   });
 
-  const occupiedByCourt = new Map<number, Interval[]>();
+  const occupiedByCourt = new Map<number, OccupiedInterval[]>();
   const scheduledCountByCourt = new Map<number, number>();
   courtIds.forEach((id) => occupiedByCourt.set(id, []));
   courtIds.forEach((id) => scheduledCountByCourt.set(id, 0));
-  const globalBlocks: Interval[] = [];
+  const globalBlocks: OccupiedInterval[] = [];
 
   const busyByProfile = new Map<number, Interval[]>();
   const busyByEmail = new Map<string, Interval[]>();
 
   courtBlocks.forEach((block) => {
     if (!block.startAt || !block.endAt) return;
-    const interval = { start: block.startAt, end: block.endAt };
+    const sourceType =
+      typeof block.sourceType === "string" && block.sourceType.trim().length > 0
+        ? block.sourceType.trim().toUpperCase()
+        : "HARD_BLOCK";
+    const interval: OccupiedInterval = {
+      start: block.startAt,
+      end: block.endAt,
+      sourceType,
+      blocking: sourceType !== "SOFT_BLOCK",
+    };
     if (block.courtId) {
       if (courtIdSet.has(block.courtId)) {
         addInterval(occupiedByCourt, block.courtId, interval);
@@ -298,7 +312,12 @@ export function computeAutoSchedulePlan({
     const window = computeMatchWindow(match);
     if (!window) return;
     if (match.courtId && courtIdSet.has(match.courtId)) {
-      addInterval(occupiedByCourt, match.courtId, { start: window.start, end: window.end });
+      addInterval(occupiedByCourt, match.courtId, {
+        start: window.start,
+        end: window.end,
+        sourceType: "MATCH",
+        blocking: true,
+      });
       scheduledCountByCourt.set(match.courtId, (scheduledCountByCourt.get(match.courtId) ?? 0) + 1);
     }
     addBusy(resolveMatchParticipants(match), { start: window.start, end: window.end });
@@ -309,9 +328,36 @@ export function computeAutoSchedulePlan({
   const hasOverlapWithRest = (list: Interval[] | undefined, start: Date, end: Date) =>
     (list ?? []).some((interval) => overlapsWithExtra(start, end, interval, bufferMs + restMs));
 
-  const isCourtAvailable = (courtId: number, start: Date, end: Date) => {
-    if (globalBlocks.some((interval) => overlapsWithBuffer(start, end, interval, bufferMs))) return false;
-    return !hasOverlap(occupiedByCourt.get(courtId), start, end);
+  const reasonBySourceType = (sourceType: string) => {
+    if (sourceType === "HARD_BLOCK") return "HARD_BLOCK_CONFLICT";
+    if (sourceType === "CLASS_SESSION") return "CLASS_SESSION_CONFLICT";
+    if (sourceType === "BOOKING") return "BOOKING_CONFLICT";
+    if (sourceType === "MATCH") return "MATCH_CONFLICT";
+    if (sourceType === "SOFT_BLOCK") return "SOFT_BLOCK_CONFLICT";
+    return "COURT_BLOCKED";
+  };
+
+  const sourcePriority = (sourceType: string) => {
+    if (sourceType === "HARD_BLOCK") return 5;
+    if (sourceType === "CLASS_SESSION") return 4;
+    if (sourceType === "MATCH") return 3;
+    if (sourceType === "BOOKING") return 2;
+    if (sourceType === "SOFT_BLOCK") return 1;
+    return 0;
+  };
+
+  const findBlockingReason = (list: OccupiedInterval[] | undefined, start: Date, end: Date) => {
+    const overlaps = (list ?? [])
+      .filter((interval) => interval.blocking && overlapsWithBuffer(start, end, interval, bufferMs))
+      .sort((a, b) => sourcePriority(b.sourceType) - sourcePriority(a.sourceType));
+    if (overlaps.length === 0) return null;
+    return reasonBySourceType(overlaps[0].sourceType);
+  };
+
+  const resolveCourtBlockReason = (courtId: number, start: Date, end: Date) => {
+    const globalReason = findBlockingReason(globalBlocks, start, end);
+    if (globalReason) return globalReason;
+    return findBlockingReason(occupiedByCourt.get(courtId), start, end);
   };
 
   const isPlayersAvailable = (
@@ -391,6 +437,7 @@ export function computeAutoSchedulePlan({
     let bestSlot: { start: Date; end: Date; courtId: number } | null = null;
     let hasAnyCourtWindow = false;
     let hasAnyPlayerWindow = false;
+    const courtBlockedReasons = new Set<string>();
     for (const courtId of candidateCourts) {
       const baseStart = nextStartByCourt.get(courtId) ?? firstWindowStart;
       for (const window of schedulingWindows) {
@@ -404,8 +451,10 @@ export function computeAutoSchedulePlan({
 
         while (candidate.getTime() + matchDurationMs <= window.end.getTime()) {
           const end = new Date(candidate.getTime() + matchDurationMs);
-          const courtAvailable = isCourtAvailable(courtId, candidate, end);
+          const courtBlockedReason = resolveCourtBlockReason(courtId, candidate, end);
+          const courtAvailable = !courtBlockedReason;
           const playersAvailable = isPlayersAvailable(participants, candidate, end);
+          if (courtBlockedReason) courtBlockedReasons.add(courtBlockedReason);
           if (courtAvailable) hasAnyCourtWindow = true;
           if (playersAvailable) hasAnyPlayerWindow = true;
           if (courtAvailable && playersAvailable) {
@@ -434,7 +483,17 @@ export function computeAutoSchedulePlan({
 
     if (!bestSlot) {
       const reason = !hasAnyCourtWindow
-        ? "NO_COURT_WINDOW"
+        ? courtBlockedReasons.has("HARD_BLOCK_CONFLICT")
+          ? "HARD_BLOCK_CONFLICT"
+          : courtBlockedReasons.has("CLASS_SESSION_CONFLICT")
+            ? "CLASS_SESSION_CONFLICT"
+            : courtBlockedReasons.has("BOOKING_CONFLICT")
+              ? "BOOKING_CONFLICT"
+              : courtBlockedReasons.has("MATCH_CONFLICT")
+                ? "MATCH_CONFLICT"
+                : courtBlockedReasons.has("SOFT_BLOCK_CONFLICT")
+                  ? "SOFT_BLOCK_CONFLICT"
+                  : "NO_COURT_WINDOW"
         : !hasAnyPlayerWindow
           ? "PLAYER_UNAVAILABLE"
           : "NO_SLOT_AVAILABLE";
@@ -450,7 +509,12 @@ export function computeAutoSchedulePlan({
       durationMinutes: Math.round((bestSlot.end.getTime() - bestSlot.start.getTime()) / 60000),
     });
 
-    addInterval(occupiedByCourt, bestSlot.courtId, { start: bestSlot.start, end: bestSlot.end });
+    addInterval(occupiedByCourt, bestSlot.courtId, {
+      start: bestSlot.start,
+      end: bestSlot.end,
+      sourceType: "MATCH",
+      blocking: true,
+    });
     scheduledCountByCourt.set(bestSlot.courtId, (scheduledCountByCourt.get(bestSlot.courtId) ?? 0) + 1);
     addBusy(participants, { start: bestSlot.start, end: bestSlot.end });
     const nextStart = roundUpToSlot(new Date(bestSlot.end.getTime() + bufferMs), slotMinutes);

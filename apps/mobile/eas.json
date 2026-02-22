@@ -6,6 +6,11 @@
   "build": {
     "production": {
       "channel": "production",
+      "env": {
+        "APP_VARIANT": "prod",
+        "EXPO_PUBLIC_APP_ENV": "prod",
+        "EXPO_PUBLIC_STRIPE_MODE": "prod"
+      },
       "ios": {
         "distribution": "store",
         "autoIncrement": true

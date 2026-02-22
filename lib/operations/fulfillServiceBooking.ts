@@ -969,7 +969,15 @@ export async function fulfillServiceBookingIntent(
         });
 
         if (!result.ok) {
-          if (["SLOT_TAKEN", "POLICY_SNAPSHOT_MISSING", "PRICING_SNAPSHOT_MISSING"].includes(result.code)) {
+          if (
+            [
+              "SLOT_TAKEN",
+              "INVALID_START_GRID",
+              "INVALID_DURATION_POLICY",
+              "POLICY_SNAPSHOT_MISSING",
+              "PRICING_SNAPSHOT_MISSING",
+            ].includes(result.code)
+          ) {
             await tx.booking.update({
               where: { id: bookingId },
               data: { status: "CANCELLED_BY_CLIENT" },
@@ -1299,6 +1307,8 @@ export async function fulfillServiceBookingIntent(
       [
         "SLOT_TAKEN",
         "INVALID_CAPACITY",
+        "INVALID_START_GRID",
+        "INVALID_DURATION_POLICY",
         "SERVICE_INACTIVE",
         "POLICY_SNAPSHOT_MISSING",
         "PRICING_SNAPSHOT_MISSING",

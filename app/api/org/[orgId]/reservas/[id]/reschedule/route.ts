@@ -32,6 +32,11 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { intersectIds, resolveReservasScopesForMember, resolveTrainerProfessionalIds } from "@/lib/reservas/memberScopes";
 import { computeBookingPriceComponents } from "@/lib/reservas/bookingPricing";
 import { getConflictWindowStart } from "@/lib/reservas/conflictWindow";
+import {
+  getOrganizationBookingPolicy,
+  validateDurationAgainstPolicy,
+  validateStartAtAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -65,20 +70,6 @@ function getRequestMeta(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
   return { ip, userAgent };
-}
-
-function getMinutesOfDay(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  const hour = Number(map.get("hour"));
-  const minute = Number(map.get("minute"));
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
-  return hour * 60 + minute;
 }
 
 function buildBlocks(
@@ -242,9 +233,24 @@ async function _POST(
     }
 
     const timezone = booking.service.organization?.timezone || "Europe/Lisbon";
-    const minutesOfDay = getMinutesOfDay(startsAt, timezone);
-    if (minutesOfDay == null || minutesOfDay % SLOT_STEP_MINUTES !== 0) {
-      return fail(ctx, 400, "INVALID_TIME_SLOT", "Horário fora da grelha de 5 minutos.");
+    const bookingPolicy = await getOrganizationBookingPolicy({
+      organizationId: organization.id,
+      tx: prisma,
+    });
+    const startValidation = validateStartAtAgainstPolicy({
+      startsAt,
+      timezone,
+      policy: bookingPolicy,
+    });
+    if (!startValidation.ok) {
+      return fail(ctx, 400, startValidation.errorCode, startValidation.message);
+    }
+    const durationValidation = validateDurationAgainstPolicy({
+      durationMinutes: booking.durationMinutes,
+      policy: bookingPolicy,
+    });
+    if (!durationValidation.ok) {
+      return fail(ctx, 400, durationValidation.errorCode, durationValidation.message);
     }
 
     if (startsAt <= new Date()) {

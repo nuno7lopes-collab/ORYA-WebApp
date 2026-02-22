@@ -8,6 +8,7 @@ import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,18 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
     redirect(`/${username}/loja/checkout`);
   }
 
-  const organization = await prisma.organization.findFirst({
-    where: { username, status: "ACTIVE" },
+  const resolvedOrganization = await resolveUsernameOwner(username, {
+    expectedOwnerType: "organization",
+    includeDeletedUser: false,
+    requireActiveOrganization: true,
+    backfillGlobalUsername: false,
+  });
+  if (resolvedOrganization?.ownerType !== "organization") {
+    notFound();
+  }
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: resolvedOrganization.ownerId },
     select: {
       id: true,
       username: true,
@@ -51,6 +62,10 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
 
   if (!organization) {
     notFound();
+  }
+  const canonicalUsername = organization.username ?? username;
+  if (canonicalUsername !== username) {
+    redirect(`/${canonicalUsername}/loja/checkout`);
   }
 
   const store = await prisma.store.findFirst({
@@ -97,7 +112,11 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
     return (
       <main className="min-h-screen w-full text-white">
         <div className="orya-page-width px-4 pb-16 pt-10 space-y-6">
-          <StorefrontHeader title={displayName} subtitle="Loja fechada." cartHref={`/${username}/loja/carrinho`} />
+          <StorefrontHeader
+            title={displayName}
+            subtitle="Loja fechada."
+            cartHref={`/${canonicalUsername}/loja/carrinho`}
+          />
           <div className="rounded-3xl border border-white/12 bg-white/5 p-6 text-sm text-white/75 shadow-[0_18px_50px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
             Loja fechada. Volta mais tarde para veres os produtos disponíveis.
           </div>
@@ -106,7 +125,7 @@ export default async function StoreCheckoutPage({ params }: PageProps) {
     );
   }
 
-  const baseHref = `/${username}/loja`;
+  const baseHref = `/${canonicalUsername}/loja`;
 
   return (
     <main className="min-h-screen w-full text-white">

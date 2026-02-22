@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { ensurePaymentIntent } from "@/domain/finance/paymentIntent";
 import { computeFeePolicyVersion } from "@/domain/finance/checkout";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, canCheckout } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { AddressSourceProvider, ProcessorFeesStatus, SourceType, StoreAddressType, StoreOrderStatus, StoreStockPolicy } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -184,11 +184,9 @@ async function _POST(req: NextRequest) {
     if (!store) {
       return fail("STORE_NOT_FOUND", "Store nao encontrada.", 404);
     }
-    if (!canCheckout(store)) {
-      return fail("CHECKOUT_UNAVAILABLE", "Checkout indisponivel.", 403);
-    }
-    if (store.catalogLocked) {
-      return fail("CATALOG_LOCKED", "Catalogo bloqueado.", 403);
+    const publicAccess = resolvePublicStoreAccess(store);
+    if (!publicAccess.ok) {
+      return fail(publicAccess.errorCode, publicAccess.error, 403);
     }
     const paymentsGate = getPublicStorePaymentsGate({
       orgType: store.organization?.orgType,

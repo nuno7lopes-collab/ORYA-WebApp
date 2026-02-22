@@ -84,6 +84,19 @@ type OrganizationSettingsPageProps = {
   embedded?: boolean;
 };
 
+type BookingConfigResponse = {
+  ok: boolean;
+  data?: {
+    gridMinutes: number;
+    durationCatalog?: number[];
+    activeDurations?: number[];
+    allowedDurations: number[];
+    allowCustomDuration: boolean;
+    presetDurations: number[];
+  };
+  errorCode?: string;
+};
+
 export default function OrganizationSettingsPage({ embedded }: OrganizationSettingsPageProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -115,6 +128,10 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
   const [contactPhone, setContactPhone] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [supportPhone, setSupportPhone] = useState("");
+  const [bookingGridMinutes, setBookingGridMinutes] = useState("30");
+  const [bookingActiveDurations, setBookingActiveDurations] = useState<number[]>([60, 90]);
+  const [bookingConfigLoading, setBookingConfigLoading] = useState(false);
+  const [bookingConfigMessage, setBookingConfigMessage] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [supportPhoneError, setSupportPhoneError] = useState<string | null>(null);
   const [orgMessage, setOrgMessage] = useState<string | null>(null);
@@ -208,6 +225,40 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setShowCoverCropModal(false);
     }
   }, [organization, profile, orgFormDirty, officialEmailDirty, publicProfileDirty]);
+
+  useEffect(() => {
+    if (!organizationId || !Number.isFinite(organizationId)) return;
+    let cancelled = false;
+    setBookingConfigLoading(true);
+    fetch(`/api/org/${organizationId}/reservas/config`, { cache: "no-store" })
+      .then((res) => res.json() as Promise<BookingConfigResponse>)
+      .then((json) => {
+        if (cancelled) return;
+        if (!json?.ok || !json.data) {
+          throw new Error(json?.errorCode || "Não foi possível carregar a política de reservas.");
+        }
+        const durations = Array.isArray(json.data.activeDurations)
+          ? json.data.activeDurations
+          : Array.isArray(json.data.allowedDurations)
+            ? json.data.allowedDurations
+            : [60, 90];
+        setBookingGridMinutes(String(json.data.gridMinutes ?? 30));
+        setBookingActiveDurations(durations);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBookingGridMinutes("30");
+        setBookingActiveDurations([60, 90]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBookingConfigLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId]);
 
   const hasOrganization = useMemo(() => organization && data?.ok, [organization, data]);
   const bootstrappingSession = isUserLoading || (isLoading && !hasOrganization);
@@ -349,6 +400,55 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
       setOrgMessage("Erro inesperado ao guardar.");
     } finally {
       setSavingOrg(false);
+    }
+  }
+
+  async function handleSaveBookingConfig() {
+    if (!user) {
+      openModal({ mode: "login", redirectTo, showGoogle: true });
+      return;
+    }
+    if (!organizationId || Number.isNaN(organizationId)) {
+      setBookingConfigMessage("Seleciona uma organização primeiro.");
+      return;
+    }
+    const parsedGrid = Number(bookingGridMinutes);
+    const parsedDurations = bookingActiveDurations;
+    if (!Number.isFinite(parsedGrid) || parsedDurations.length === 0) {
+      setBookingConfigMessage("Configuração inválida.");
+      return;
+    }
+
+    setBookingConfigLoading(true);
+    setBookingConfigMessage(null);
+    try {
+      const res = await fetch(`/api/org/${organizationId}/reservas/config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gridMinutes: parsedGrid,
+          activeDurations: parsedDurations,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        const reason = json?.details?.reason ? ` (${json.details.reason})` : "";
+        setBookingConfigMessage(`Não foi possível guardar a política de reservas${reason}.`);
+        return;
+      }
+      const data = json?.data ?? {};
+      const durations = Array.isArray(data.activeDurations)
+        ? data.activeDurations
+        : Array.isArray(data.allowedDurations)
+          ? data.allowedDurations
+          : parsedDurations;
+      setBookingGridMinutes(String(data.gridMinutes ?? parsedGrid));
+      setBookingActiveDurations(durations);
+      setBookingConfigMessage("Política de reservas atualizada.");
+    } catch {
+      setBookingConfigMessage("Erro ao guardar política de reservas.");
+    } finally {
+      setBookingConfigLoading(false);
     }
   }
 
@@ -1021,6 +1121,72 @@ export default function OrganizationSettingsPage({ embedded }: OrganizationSetti
           </div>
         </div>
         {orgMessage && <p className="text-[12px] text-white/70">{orgMessage}</p>}
+      </section>
+
+      <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Reservas de campos</h2>
+            <p className="text-[12px] text-white/65">Grelha e presets de duração por organização.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveBookingConfig}
+            disabled={bookingConfigLoading || !canEditOperational}
+            className={`${CTA_PRIMARY} disabled:opacity-60 shadow-[0_10px_30px_rgba(0,0,0,0.45)]`}
+          >
+            {bookingConfigLoading ? "A guardar…" : "Guardar política de reservas"}
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="space-y-1">
+            <span className="text-[12px] text-white/70">Grelha (minutos)</span>
+            <input
+              value={bookingGridMinutes}
+              onChange={(event) => setBookingGridMinutes(event.target.value)}
+              inputMode="numeric"
+              className="w-full rounded-xl border border-white/15 bg-black/45 px-3 py-2 text-sm outline-none transition-colors placeholder:text-white/35 hover:border-white/30 focus:border-[#6BFFFF] focus:ring-1 focus:ring-[#6BFFFF]/40"
+              placeholder="30"
+              disabled={!canEditOperational}
+            />
+          </label>
+          <div className="space-y-1 md:col-span-2">
+            <span className="text-[12px] text-white/70">Durações ativas (catálogo 30/60/90/120)</span>
+            <div className="flex flex-wrap gap-2">
+              {[30, 60, 90, 120].map((duration) => {
+                const active = bookingActiveDurations.includes(duration);
+                return (
+                  <button
+                    key={`duration-${duration}`}
+                    type="button"
+                    onClick={() => {
+                      if (!canEditOperational) return;
+                      setBookingActiveDurations((prev) => {
+                        if (prev.includes(duration)) {
+                          const next = prev.filter((value) => value !== duration);
+                          return next.length > 0 ? next : prev;
+                        }
+                        return [...prev, duration].sort((a, b) => a - b);
+                      });
+                    }}
+                    disabled={!canEditOperational}
+                    className={`rounded-full border px-3 py-2 text-[12px] transition ${
+                      active
+                        ? "border-[#6BFFFF]/70 bg-[#6BFFFF]/15 text-white"
+                        : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:bg-white/10"
+                    }`}
+                  >
+                    {duration} min
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <p className="text-[12px] text-white/60">
+          Duração custom está desativada por norma para reservas de campos.
+        </p>
+        {bookingConfigMessage && <p className="text-[12px] text-white/70">{bookingConfigMessage}</p>}
       </section>
 
       <section className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-white/10 via-[#0b1226]/80 to-[#050912]/92 p-6 space-y-4 shadow-[0_30px_100px_rgba(0,0,0,0.6)] backdrop-blur-3xl">

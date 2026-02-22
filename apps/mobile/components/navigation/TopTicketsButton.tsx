@@ -38,7 +38,7 @@ export function TopTicketsButton({ onPress, accessibilityLabel = "Bilhetes" }: T
         pressed ? { opacity: 0.92, backgroundColor: "rgba(255,255,255,0.24)", transform: [{ scale: 0.97 }] } : null,
       ]}
     >
-      <Ionicons name="ticket-outline" size={24} color="rgba(255,255,255,1)" />
+      <Ionicons name="ticket-outline" size={26} color="rgba(255,255,255,1)" />
     </Pressable>
   );
 }

@@ -38,7 +38,7 @@ export function TopPadelButton({ onPress, accessibilityLabel = "Padel" }: TopPad
         pressed ? { opacity: 0.92, backgroundColor: "rgba(255,255,255,0.24)", transform: [{ scale: 0.97 }] } : null,
       ]}
     >
-      <Ionicons name="tennisball-outline" size={22} color="rgba(255,255,255,1)" />
+      <Ionicons name="tennisball-outline" size={24} color="rgba(255,255,255,1)" />
     </Pressable>
   );
 }

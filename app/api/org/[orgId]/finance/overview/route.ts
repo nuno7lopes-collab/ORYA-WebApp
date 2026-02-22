@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
@@ -127,6 +127,7 @@ async function _GET(req: NextRequest) {
         subtotalCents: true,
         discountCents: true,
         platformFeeCents: true,
+        cardPlatformFeeCents: true,
         stripeFeeCents: true,
         netCents: true,
         totalCents: true,
@@ -140,13 +141,7 @@ async function _GET(req: NextRequest) {
     const agg7: Aggregate = { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0 };
     const agg30: Aggregate = { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0 };
 
-    const eventStats = new Map<
-      number,
-      Aggregate & {
-        status?: string | null;
-        startsAt?: Date | null;
-      }
-    >();
+    const eventStats = new Map<number, Aggregate>();
 
     const addTo = (target: Aggregate, gross: number, fees: number, net: number, qty: number) => {
       target.grossCents += gross;
@@ -155,48 +150,47 @@ async function _GET(req: NextRequest) {
       target.tickets += qty;
     };
 
-    const purchaseIds = summaries.map((s) => s.purchaseId).filter((p): p is string => Boolean(p));
-    if (summaries.length && purchaseIds.length !== summaries.length) {
-      return jsonWrap(
-        {
-          ok: false,
-          error: "FINANCE_STATUS_INCOMPLETE",
-          totals: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0, eventsWithSales: 0 },
-          rolling: { last7: agg7, last30: agg30 },
-          upcomingPayoutCents: 0,
-          payoutAlerts: { holdUntil: null, nextAttemptAt: null, actionRequired: false },
-          events: [],
-        },
-        { status: 503 }
-      );
-    }
+    const purchaseIds = Array.from(
+      new Set(
+        summaries
+          .map((summary) => (typeof summary.purchaseId === "string" ? summary.purchaseId.trim() : ""))
+          .filter((purchaseId): purchaseId is string => purchaseId.length > 0),
+      ),
+    );
 
     const statusMap = await resolvePaymentStatusMap(purchaseIds);
+    let fallbackMissingPurchaseId = 0;
+    let fallbackMissingStatus = 0;
+    let skippedNonPaidStatus = 0;
     for (const summary of summaries) {
-      const resolved = summary.purchaseId ? statusMap.get(summary.purchaseId) : null;
-      if (!resolved || resolved.status !== "PAID") {
-        return jsonWrap(
-          {
-            ok: false,
-            error: "FINANCE_STATUS_INCOMPLETE",
-            totals: { grossCents: 0, netCents: 0, feesCents: 0, tickets: 0, eventsWithSales: 0 },
-            rolling: { last7: agg7, last30: agg30 },
-            upcomingPayoutCents: 0,
-            payoutAlerts: { holdUntil: null, nextAttemptAt: null, actionRequired: false },
-            events: [],
-          },
-          { status: 503 }
-        );
+      const purchaseId = typeof summary.purchaseId === "string" ? summary.purchaseId.trim() : "";
+      if (!purchaseId) {
+        fallbackMissingPurchaseId += 1;
+        continue;
+      }
+      const resolved = statusMap.get(purchaseId);
+      if (!resolved) {
+        fallbackMissingStatus += 1;
+        continue;
+      }
+      if (resolved.status !== "PAID") {
+        skippedNonPaidStatus += 1;
       }
     }
 
     for (const s of summaries) {
+      const purchaseId = typeof s.purchaseId === "string" ? s.purchaseId.trim() : "";
+      const resolved = purchaseId ? statusMap.get(purchaseId) : null;
+      if (resolved && resolved.status !== "PAID") {
+        continue;
+      }
       const qty = s.lines.reduce((q, l) => q + (l.quantity ?? 0), 0);
       const gross = s.subtotalCents ?? 0;
       const platformFee = s.platformFeeCents ?? 0;
+      const cardPlatformFee = s.cardPlatformFeeCents ?? 0;
       const totalCents = s.totalCents ?? gross;
       const stripeFee = s.stripeFeeCents ?? 0;
-      const totalFees = platformFee + stripeFee;
+      const totalFees = platformFee + cardPlatformFee + stripeFee;
       const net =
         s.netCents != null && s.netCents >= 0
           ? s.netCents
@@ -211,11 +205,19 @@ async function _GET(req: NextRequest) {
         netCents: 0,
         feesCents: 0,
         tickets: 0,
-        status: events.find((e) => e.id === s.eventId)?.status,
-        startsAt: events.find((e) => e.id === s.eventId)?.startsAt ?? null,
       };
       addTo(current, gross, totalFees, net, qty);
       eventStats.set(s.eventId, current);
+    }
+
+    if (fallbackMissingPurchaseId > 0 || fallbackMissingStatus > 0 || skippedNonPaidStatus > 0) {
+      console.warn("[organizacao/finance/overview] payment_status_integrity", {
+        organizationId: organization.id,
+        fallbackMissingPurchaseId,
+        fallbackMissingStatus,
+        skippedNonPaidStatus,
+        totalSummaries: summaries.length,
+      });
     }
 
     const padelPairingStats = isPadelScope

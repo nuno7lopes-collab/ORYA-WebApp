@@ -4,6 +4,22 @@ module.exports = ({ config }) => {
   const expo = appJson.expo ?? {};
   const appVariant = process.env.APP_VARIANT ?? "prod";
   const isDev = appVariant === "dev";
+  const stripeMode =
+    process.env.EXPO_PUBLIC_STRIPE_MODE ??
+    expo.extra?.EXPO_PUBLIC_STRIPE_MODE ??
+    (isDev ? "test" : "prod");
+  const stripeLiveKey =
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE ??
+    expo.extra?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE;
+  const stripeTestKey =
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST ??
+    expo.extra?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST;
+  const stripeDefaultKey =
+    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    expo.extra?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
+    (stripeMode === "test" ? stripeTestKey : stripeLiveKey) ??
+    stripeLiveKey ??
+    stripeTestKey;
 
   const scheme = isDev ? "orya-dev" : (expo.scheme ?? "orya");
   const iosBundleIdentifier = isDev ? "com.orya.app.dev" : (expo.ios?.bundleIdentifier ?? "com.orya.app.prod");
@@ -20,9 +36,11 @@ module.exports = ({ config }) => {
     EXPO_PUBLIC_SUPABASE_ANON_KEY:
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
       expo.extra?.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+    EXPO_PUBLIC_STRIPE_MODE: stripeMode,
+    EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_LIVE: stripeLiveKey,
+    EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST: stripeTestKey,
     EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY:
-      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ??
-      expo.extra?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+      stripeDefaultKey,
     EXPO_PUBLIC_APPLE_MERCHANT_ID:
       process.env.EXPO_PUBLIC_APPLE_MERCHANT_ID ??
       expo.extra?.EXPO_PUBLIC_APPLE_MERCHANT_ID,

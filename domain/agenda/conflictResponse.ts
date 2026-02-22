@@ -20,6 +20,7 @@ const pickPrimaryConflict = (decision: ConflictDecision) => {
 
 const toAgendaCandidateType = (value: string | null | undefined): AgendaCandidateType | undefined => {
   if (value === "HARD_BLOCK") return "HARD_BLOCK";
+  if (value === "CLASS_SESSION") return "CLASS_SESSION";
   if (value === "MATCH") return "MATCH";
   if (value === "BOOKING") return "BOOKING";
   if (value === "SOFT_BLOCK") return "SOFT_BLOCK";

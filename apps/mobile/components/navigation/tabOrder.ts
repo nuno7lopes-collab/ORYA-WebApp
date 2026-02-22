@@ -1,16 +1,16 @@
-export const TAB_ORDER = ["network", "agora", "padel", "messages", "profile", "index"] as const;
+export const TAB_ORDER = ["agora", "index", "network", "messages", "profile", "padel"] as const;
 export const TAB_NAV_ORDER = [...TAB_ORDER] as const;
 
 export type TabKey = (typeof TAB_ORDER)[number];
 export type TabRouteKey = (typeof TAB_NAV_ORDER)[number];
 
 export const TAB_PATHS: Record<TabKey, string> = {
-  network: "/(tabs)/network",
   agora: "/(tabs)/agora",
-  padel: "/(tabs)/padel",
+  index: "/(tabs)/index",
+  network: "/(tabs)/network",
   messages: "/(tabs)/messages",
   profile: "/(tabs)/profile",
-  index: "/(tabs)/index",
+  padel: "/(tabs)/padel",
 };
 
 export const resolveTabKeyFromPathname = (pathname: string): TabKey | null => {

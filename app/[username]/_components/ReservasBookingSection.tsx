@@ -51,6 +51,11 @@ type Service = {
     recommended: boolean;
     sortOrder: number;
   }>;
+  durationPrices?: Array<{
+    durationMinutes: number;
+    priceCents: number;
+    isActive: boolean;
+  }>;
 };
 
 type Professional = {

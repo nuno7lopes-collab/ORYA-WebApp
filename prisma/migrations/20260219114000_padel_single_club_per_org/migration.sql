@@ -117,27 +117,34 @@ WHERE win.owner_club_id = map.club_id;
 
 UPDATE app_v3.padel_partner_court_snapshots snap
 SET partner_club_id = map.canonical_club_id,
-    updated_at = NOW()
+    synced_at = COALESCE(snap.synced_at, NOW())
 FROM tmp_padel_club_mapping map
 WHERE snap.partner_club_id = map.club_id;
 
 UPDATE app_v3.padel_partner_court_snapshots snap
 SET source_club_id = map.canonical_club_id,
-    updated_at = NOW()
+    synced_at = COALESCE(snap.synced_at, NOW())
 FROM tmp_padel_club_mapping map
 WHERE snap.source_club_id = map.club_id;
 
-UPDATE app_v3.padel_partnership_tournament_requests req
-SET owner_club_id = map.canonical_club_id,
-    updated_at = NOW()
-FROM tmp_padel_club_mapping map
-WHERE req.owner_club_id = map.club_id;
+DO $$
+BEGIN
+  IF to_regclass('app_v3.padel_partnership_tournament_requests') IS NOT NULL THEN
+    EXECUTE $q$
+      UPDATE app_v3.padel_partnership_tournament_requests req
+      SET owner_club_id = map.canonical_club_id
+      FROM tmp_padel_club_mapping map
+      WHERE req.owner_club_id = map.club_id
+    $q$;
 
-UPDATE app_v3.padel_partnership_tournament_requests req
-SET partner_club_id = map.canonical_club_id,
-    updated_at = NOW()
-FROM tmp_padel_club_mapping map
-WHERE req.partner_club_id = map.club_id;
+    EXECUTE $q$
+      UPDATE app_v3.padel_partnership_tournament_requests req
+      SET partner_club_id = map.canonical_club_id
+      FROM tmp_padel_club_mapping map
+      WHERE req.partner_club_id = map.club_id
+    $q$;
+  END IF;
+END $$;
 
 -- Normalize source links that referenced archived clubs.
 UPDATE app_v3.padel_clubs club

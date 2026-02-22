@@ -25,9 +25,45 @@ const TRAINER_MEMBER_ROLES: OrganizationMemberRole[] = [
   OrganizationMemberRole.ADMIN,
   OrganizationMemberRole.STAFF,
 ];
+const TRAINER_ROLE_TITLE = "Treinador";
 
 function isTrainerEligibleRole(role: OrganizationMemberRole | null | undefined) {
   return !!role && TRAINER_MEMBER_ROLES.includes(role);
+}
+
+async function ensureReservationProfessionalForTrainer(params: {
+  tx: Pick<typeof prisma, "profile" | "reservationProfessional">;
+  organizationId: number;
+  userId: string;
+}) {
+  const profile = await params.tx.profile.findUnique({
+    where: { id: params.userId },
+    select: { fullName: true, username: true },
+  });
+  const professionalName = profile?.fullName?.trim() || profile?.username?.trim() || TRAINER_ROLE_TITLE;
+
+  return params.tx.reservationProfessional.upsert({
+    where: {
+      organizationId_userId: {
+        organizationId: params.organizationId,
+        userId: params.userId,
+      },
+    },
+    update: {
+      isActive: true,
+      name: professionalName,
+      roleTitle: TRAINER_ROLE_TITLE,
+    },
+    create: {
+      organizationId: params.organizationId,
+      userId: params.userId,
+      name: professionalName,
+      roleTitle: TRAINER_ROLE_TITLE,
+      isActive: true,
+      priority: 0,
+    },
+    select: { id: true, isActive: true },
+  });
 }
 
 function fail(
@@ -257,55 +293,73 @@ async function _PATCH(req: NextRequest) {
 
     const now = new Date();
 
-    const profile = await prisma.trainerProfile.upsert({
-      where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
-      update: (() => {
-        if (action === "APPROVE") {
-          return {
-            isPublished: true,
-            reviewStatus: TrainerProfileReviewStatus.APPROVED,
-            reviewNote: null,
-            reviewRequestedAt: null,
-            reviewedAt: now,
-            reviewedByUserId: user.id,
-          };
+    const profile = await prisma.$transaction(async (tx) => {
+      const upserted = await tx.trainerProfile.upsert({
+        where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
+        update: (() => {
+          if (action === "APPROVE") {
+            return {
+              isPublished: true,
+              reviewStatus: TrainerProfileReviewStatus.APPROVED,
+              reviewNote: null,
+              reviewRequestedAt: null,
+              reviewedAt: now,
+              reviewedByUserId: user.id,
+            };
+          }
+          if (action === "REJECT") {
+            return {
+              isPublished: false,
+              reviewStatus: TrainerProfileReviewStatus.REJECTED,
+              reviewNote,
+              reviewRequestedAt: null,
+              reviewedAt: now,
+              reviewedByUserId: user.id,
+            };
+          }
+          if (action === "HIDE") {
+            return {
+              isPublished: false,
+            };
+          }
+          if (action === "PUBLISH") {
+            return {
+              isPublished: true,
+            };
+          }
+          return {};
+        })(),
+        create: {
+          organizationId: organization.id,
+          userId: targetUserId,
+          isPublished: action === "APPROVE" || action === "PUBLISH",
+          reviewStatus:
+            action === "APPROVE"
+              ? TrainerProfileReviewStatus.APPROVED
+              : action === "REJECT"
+                ? TrainerProfileReviewStatus.REJECTED
+                : TrainerProfileReviewStatus.DRAFT,
+          reviewNote: action === "REJECT" ? reviewNote : null,
+          reviewedAt: action === "APPROVE" || action === "REJECT" ? now : null,
+          reviewedByUserId: action === "APPROVE" || action === "REJECT" ? user.id : null,
+        },
+      });
+
+      if (action === "APPROVE" || action === "PUBLISH") {
+        const professional = await ensureReservationProfessionalForTrainer({
+          tx,
+          organizationId: organization.id,
+          userId: targetUserId,
+        });
+        if (upserted.reservationProfessionalId !== professional.id) {
+          return tx.trainerProfile.update({
+            where: { id: upserted.id },
+            data: { reservationProfessionalId: professional.id },
+          });
         }
-        if (action === "REJECT") {
-          return {
-            isPublished: false,
-            reviewStatus: TrainerProfileReviewStatus.REJECTED,
-            reviewNote,
-            reviewRequestedAt: null,
-            reviewedAt: now,
-            reviewedByUserId: user.id,
-          };
-        }
-        if (action === "HIDE") {
-          return {
-            isPublished: false,
-          };
-        }
-        if (action === "PUBLISH") {
-          return {
-            isPublished: true,
-          };
-        }
-        return {};
-      })(),
-      create: {
-        organizationId: organization.id,
-        userId: targetUserId,
-        isPublished: action === "APPROVE" || action === "PUBLISH",
-        reviewStatus:
-          action === "APPROVE"
-            ? TrainerProfileReviewStatus.APPROVED
-            : action === "REJECT"
-              ? TrainerProfileReviewStatus.REJECTED
-              : TrainerProfileReviewStatus.DRAFT,
-        reviewNote: action === "REJECT" ? reviewNote : null,
-        reviewedAt: action === "APPROVE" || action === "REJECT" ? now : null,
-        reviewedByUserId: action === "APPROVE" || action === "REJECT" ? user.id : null,
-      },
+      }
+
+      return upserted;
     });
 
     if (action === "APPROVE" || action === "REJECT") {
@@ -382,7 +436,7 @@ async function _POST(req: NextRequest) {
 
     const targetProfile = await prisma.profile.findUnique({
       where: { id: targetUserId },
-      select: { id: true, fullName: true, username: true },
+      select: { id: true },
     });
     if (!targetProfile) {
       return fail(ctx, 404, "USER_NOT_FOUND");
@@ -393,42 +447,34 @@ async function _POST(req: NextRequest) {
       select: { id: true },
     });
 
-    const trainerProfile = await prisma.trainerProfile.upsert({
-      where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
-      update: {},
-      create: {
-        organizationId: organization.id,
-        userId: targetUserId,
-        isPublished: false,
-        reviewStatus: TrainerProfileReviewStatus.DRAFT,
-      },
-    });
-
-    const existingProfessional = await prisma.reservationProfessional.findFirst({
-      where: { organizationId: organization.id, userId: targetUserId },
-      select: { id: true, isActive: true },
-    });
-    let professionalId = existingProfessional?.id ?? null;
-
-    if (!existingProfessional) {
-      const professional = await prisma.reservationProfessional.create({
-        data: {
+    const { trainerProfile, professionalId } = await prisma.$transaction(async (tx) => {
+      const profile = await tx.trainerProfile.upsert({
+        where: { organizationId_userId: { organizationId: organization.id, userId: targetUserId } },
+        update: {},
+        create: {
           organizationId: organization.id,
           userId: targetUserId,
-          name: targetProfile.fullName?.trim() || targetProfile.username?.trim() || "Treinador",
-          roleTitle: "Treinador",
-          isActive: true,
-          priority: 0,
+          isPublished: false,
+          reviewStatus: TrainerProfileReviewStatus.DRAFT,
         },
-        select: { id: true },
       });
-      professionalId = professional.id;
-    } else if (!existingProfessional.isActive) {
-      await prisma.reservationProfessional.update({
-        where: { id: existingProfessional.id },
-        data: { isActive: true },
+
+      const professional = await ensureReservationProfessionalForTrainer({
+        tx,
+        organizationId: organization.id,
+        userId: targetUserId,
       });
-    }
+
+      const linkedProfile =
+        profile.reservationProfessionalId === professional.id
+          ? profile
+          : await tx.trainerProfile.update({
+              where: { id: profile.id },
+              data: { reservationProfessionalId: professional.id },
+            });
+
+      return { trainerProfile: linkedProfile, professionalId: professional.id };
+    });
 
     return respondOk(
       ctx,

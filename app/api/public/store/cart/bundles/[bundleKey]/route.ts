@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { StoreStockPolicy } from "@prisma/client";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { z } from "zod";
@@ -34,6 +34,7 @@ async function resolveStore(storeId: number) {
       status: true,
       showOnProfile: true,
       catalogLocked: true,
+      checkoutEnabled: true,
       organization: {
         select: {
           orgType: true,
@@ -47,13 +48,21 @@ async function resolveStore(storeId: number) {
     },
   });
   if (!store) {
-    return { ok: false as const, error: "Store nao encontrada." };
+    return {
+      ok: false as const,
+      status: 404,
+      errorCode: "STORE_NOT_FOUND",
+      message: "Store nao encontrada.",
+    };
   }
-  if (!isPublicStore(store)) {
-    return { ok: false as const, error: "Loja fechada." };
-  }
-  if (store.catalogLocked) {
-    return { ok: false as const, error: "Catalogo bloqueado." };
+  const publicAccess = resolvePublicStoreAccess(store);
+  if (!publicAccess.ok) {
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: publicAccess.errorCode,
+      message: publicAccess.error,
+    };
   }
   const paymentsGate = getPublicStorePaymentsGate({
     orgType: store.organization?.orgType,
@@ -64,7 +73,12 @@ async function resolveStore(storeId: number) {
     stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
   });
   if (!paymentsGate.ok) {
-    return { ok: false as const, error: "PAYMENTS_NOT_READY" };
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: "PAYMENTS_NOT_READY",
+      message: "Pagamentos indisponiveis.",
+    };
   }
   return { ok: true as const, store };
 }
@@ -104,9 +118,17 @@ async function _PATCH(
       return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
-    const store = await resolveStore(storeParsed.storeId);
-    if (!store.ok) {
-      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
+    const storeContext = await resolveStore(storeParsed.storeId);
+    if (!storeContext.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: storeContext.errorCode,
+          message: storeContext.message,
+          error: storeContext.errorCode,
+        },
+        { status: storeContext.status },
+      );
     }
 
     const body = await req.json().catch(() => null);
@@ -122,7 +144,7 @@ async function _PATCH(
     const cookieSession = req.cookies.get(CART_SESSION_COOKIE)?.value ?? null;
     const sessionId = userId ? null : cookieSession;
 
-    const cart = await resolveCart(store.store.id, userId, sessionId);
+    const cart = await resolveCart(storeContext.store.id, userId, sessionId);
     if (!cart.ok) {
       return jsonWrap({ ok: false, error: cart.error }, { status: 404 });
     }
@@ -139,7 +161,7 @@ async function _PATCH(
     }
 
     const bundle = await prisma.storeBundle.findFirst({
-      where: { id: bundleId, storeId: store.store.id },
+      where: { id: bundleId, storeId: storeContext.store.id },
       select: {
         id: true,
         items: {
@@ -220,9 +242,17 @@ async function _DELETE(
       return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
-    const store = await resolveStore(storeParsed.storeId);
-    if (!store.ok) {
-      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
+    const storeContext = await resolveStore(storeParsed.storeId);
+    if (!storeContext.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: storeContext.errorCode,
+          message: storeContext.message,
+          error: storeContext.errorCode,
+        },
+        { status: storeContext.status },
+      );
     }
 
     const supabase = await createSupabaseServer();
@@ -232,7 +262,7 @@ async function _DELETE(
     const cookieSession = req.cookies.get(CART_SESSION_COOKIE)?.value ?? null;
     const sessionId = userId ? null : cookieSession;
 
-    const cart = await resolveCart(store.store.id, userId, sessionId);
+    const cart = await resolveCart(storeContext.store.id, userId, sessionId);
     if (!cart.ok) {
       return jsonWrap({ ok: false, error: cart.error }, { status: 404 });
     }

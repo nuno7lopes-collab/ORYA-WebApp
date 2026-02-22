@@ -12,6 +12,7 @@ import StorefrontFooter from "@/components/storefront/StorefrontFooter";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { resolveStorePolicy } from "@/lib/store/policySettings";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 export const dynamic = "force-dynamic";
 
@@ -62,8 +63,18 @@ export default async function PublicStorePage({ params }: PageProps) {
     redirect(`/${username}/loja`);
   }
 
-  const organization = await prisma.organization.findFirst({
-    where: { username, status: "ACTIVE" },
+  const resolvedOrganization = await resolveUsernameOwner(username, {
+    expectedOwnerType: "organization",
+    includeDeletedUser: false,
+    requireActiveOrganization: true,
+    backfillGlobalUsername: false,
+  });
+  if (resolvedOrganization?.ownerType !== "organization") {
+    notFound();
+  }
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: resolvedOrganization.ownerId },
     select: {
       id: true,
       username: true,
@@ -81,6 +92,10 @@ export default async function PublicStorePage({ params }: PageProps) {
 
   if (!organization) {
     notFound();
+  }
+  const canonicalUsername = organization.username ?? username;
+  if (canonicalUsername !== username) {
+    redirect(`/${canonicalUsername}/loja`);
   }
 
   const store = await prisma.store.findFirst({
@@ -312,7 +327,7 @@ export default async function PublicStorePage({ params }: PageProps) {
     count <= 3
       ? "flex flex-wrap gap-4"
       : "grid gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5";
-  const baseHref = `/${username}/loja`;
+  const baseHref = `/${canonicalUsername}/loja`;
 
   return (
     <main className="min-h-screen w-full text-white">

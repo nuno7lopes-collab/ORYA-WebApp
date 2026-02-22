@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
-import { isStoreFeatureEnabled, resolveStoreState } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess, resolveStoreState } from "@/lib/storeAccess";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { normalizeUsernameInput } from "@/lib/username";
 import { isReservedUsername } from "@/lib/reservedUsernames";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveUsernameOwner } from "@/lib/username/resolveUsernameOwner";
 
 function parseParams(req: NextRequest) {
   const usernameRaw = req.nextUrl.searchParams.get("username");
@@ -29,8 +30,20 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: parsed.error }, { status: 400 });
     }
 
+    const resolvedOrganization = await resolveUsernameOwner(parsed.username, {
+      expectedOwnerType: "organization",
+      includeDeletedUser: false,
+      requireActiveOrganization: true,
+      backfillGlobalUsername: false,
+    });
+
     const organization = await prisma.organization.findFirst({
-      where: { username: parsed.username, status: "ACTIVE" },
+      where: {
+        status: "ACTIVE",
+        ...(resolvedOrganization?.ownerType === "organization"
+          ? { id: resolvedOrganization.ownerId }
+          : { username: parsed.username }),
+      },
       select: {
         id: true,
         username: true,
@@ -75,10 +88,19 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: "PAYMENTS_NOT_READY" }, { status: 403 });
     }
 
-    const resolvedState = resolveStoreState(store);
-    if (resolvedState !== "ACTIVE" || store.catalogLocked) {
-      return jsonWrap({ ok: false, error: "Catalogo indisponivel." }, { status: 403 });
+    const publicAccess = resolvePublicStoreAccess(store);
+    if (!publicAccess.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: publicAccess.errorCode,
+          message: publicAccess.error,
+          error: publicAccess.errorCode,
+        },
+        { status: 403 },
+      );
     }
+    const resolvedState = resolveStoreState(store);
 
     const product = await prisma.storeProduct.findFirst({
       where: { storeId: store.id, slug: parsed.slug, visibility: "PUBLIC" },

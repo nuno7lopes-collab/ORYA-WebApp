@@ -70,7 +70,7 @@ async function _GET(req: NextRequest) {
     required: "VIEW",
   });
 
-  const sourceTypes: SourceType[] = [SourceType.BOOKING];
+  const sourceTypes: SourceType[] = [SourceType.BOOKING, SourceType.CLASS_SESSION];
   if (eventsAccess.ok) sourceTypes.push(SourceType.EVENT);
   if (tournamentsAccess.ok) sourceTypes.push(SourceType.TOURNAMENT);
 

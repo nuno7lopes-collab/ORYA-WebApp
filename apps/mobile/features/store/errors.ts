@@ -1,6 +1,7 @@
 import { ApiError } from "../../lib/api";
 
 const STORE_ERROR_COPY: Record<string, string> = {
+  NOT_FOUND: "Loja não encontrada.",
   STORE_DISABLED: "A loja está indisponível de momento.",
   STORE_NOT_FOUND: "Loja não encontrada.",
   CATALOG_LOCKED: "O catálogo está temporariamente bloqueado.",

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
+import { SourceType } from "@prisma/client";
 
 const getAgendaItemsForOrganization = vi.hoisted(() => vi.fn());
 const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
@@ -63,5 +64,10 @@ describe("organization agenda route", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.result.items).toHaveLength(1);
+    expect(getAgendaItemsForOrganization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceTypes: expect.arrayContaining([SourceType.BOOKING, SourceType.CLASS_SESSION]),
+      }),
+    );
   });
 });

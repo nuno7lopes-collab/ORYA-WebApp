@@ -190,6 +190,7 @@ function normalizeStatus(status: string) {
 }
 
 function resolveBookingType(agendaItem: AgendaItem, booking: ReservationBooking | undefined): CalendarBookingType {
+  if (agendaItem.kind === "CLASS") return "GROUP";
   if (agendaItem.kind !== "RESERVATION") return "BLOCK";
   const serviceKind = booking?.service?.kind?.trim().toUpperCase();
   if (serviceKind === "CLASS") return "GROUP";
@@ -201,17 +202,19 @@ export function enrichAgendaItems(items: AgendaItem[], bookings: ReservationBook
   const bookingsById = new Map(bookings.map((booking) => [booking.id, booking]));
   return items.map((item, index) => {
     const reservationId = item.kind === "RESERVATION" ? item.reservationId ?? null : null;
+    const classSessionId = item.kind === "CLASS" ? item.classSessionId ?? null : null;
     const booking = reservationId ? bookingsById.get(reservationId) : undefined;
     const startsAt = item.startsAt;
     const endsAt = item.endsAt;
     return {
-      id: `${item.kind}-${reservationId ?? item.eventId ?? item.tournamentId ?? index}-${startsAt}`,
+      id: `${item.kind}-${reservationId ?? classSessionId ?? item.eventId ?? item.tournamentId ?? index}-${startsAt}`,
       kind: item.kind,
       title: item.title,
       startsAt,
       endsAt,
       status: item.status,
       reservationId,
+      classSessionId,
       eventId: item.kind === "EVENT" ? item.eventId ?? null : null,
       tournamentId: item.kind === "TOURNAMENT" ? item.tournamentId ?? null : null,
       courtId: item.courtId ?? booking?.court?.id ?? null,

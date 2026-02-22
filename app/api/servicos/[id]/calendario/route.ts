@@ -13,6 +13,12 @@ import {
 } from "@/lib/reservas/servicePartySize";
 import { applyAddonTotals, normalizeAddonSelection, resolveServiceAddonSelection } from "@/lib/reservas/serviceAddons";
 import { applyPackageBase, parsePackageId, resolveServicePackageSelection } from "@/lib/reservas/servicePackages";
+import {
+  BOOKING_DURATION_CATALOG,
+  getOrganizationBookingPolicy,
+  validateDurationAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
+import { resolveCourtDurationPrice } from "@/lib/reservas/serviceDurationPrices";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const SLOT_STEP_MINUTES = 5;
@@ -78,6 +84,26 @@ function parsePositiveInt(value: string | null) {
   if (!value) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getMinutesOfDay(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  const rawHour = Number(map.get("hour"));
+  const hour = rawHour === 24 ? 0 : rawHour;
+  const minute = Number(map.get("minute"));
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+  return hour * 60 + minute;
+}
+
+function isSlotAlignedWithGrid(startsAt: Date, timeZone: string, gridMinutes: number) {
+  const minutesOfDay = getMinutesOfDay(startsAt, timeZone);
+  return minutesOfDay != null && minutesOfDay % gridMinutes === 0;
 }
 
 function buildSelectionRulesPayload(params: {
@@ -179,6 +205,18 @@ async function _GET(
     });
 
     const timezone = service.organization?.timezone || "Europe/Lisbon";
+    const bookingPolicy = await getOrganizationBookingPolicy({
+      organizationId: service.organizationId,
+      tx: prisma,
+    });
+    const bookingPolicyPayload = {
+      gridMinutes: bookingPolicy.gridMinutes,
+      durationCatalog: [...BOOKING_DURATION_CATALOG],
+      activeDurations: bookingPolicy.allowedDurations,
+      allowedDurations: bookingPolicy.allowedDurations,
+      allowCustomDuration: false,
+      presetDurations: bookingPolicy.allowedDurations,
+    };
     const allowedProfessionalIds = service.professionalLinks.length
       ? service.professionalLinks
           .filter((link) => link.professional?.isActive)
@@ -203,7 +241,7 @@ async function _GET(
         dayParam.month === todayParts.month &&
         dayParam.day < todayParts.day
       ) {
-        return jsonWrap({ ok: true, items: [], selectionRules });
+        return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
       }
 
       const rangeStart = makeUtcDateFromLocal({ ...dayParam, hour: 0, minute: 0 }, timezone);
@@ -231,11 +269,12 @@ async function _GET(
 
       const shouldUseOrgOnly = false;
       const now = new Date();
+      const isCourtService = service.kind === "COURT";
       let effectiveDurationMinutes = service.durationMinutes;
       let effectivePriceCents = service.unitPriceCents ?? 0;
       let baseDurationMinutes = service.durationMinutes;
       let basePriceCents = service.unitPriceCents ?? 0;
-      if (packageId) {
+      if (packageId && !isCourtService) {
         const packageResolution = await resolveServicePackageSelection({
           tx: prisma,
           serviceId: service.id,
@@ -275,6 +314,30 @@ async function _GET(
       }
       if (durationOverride) {
         effectiveDurationMinutes = durationOverride;
+      }
+      const durationValidation = validateDurationAgainstPolicy({
+        durationMinutes: effectiveDurationMinutes,
+        policy: bookingPolicy,
+      });
+      if (!durationValidation.ok) {
+        return jsonWrap(
+          { ok: false, error: durationValidation.errorCode, message: durationValidation.message },
+          { status: 400 },
+        );
+      }
+      if (isCourtService) {
+        const courtDurationPrice = await resolveCourtDurationPrice({
+          tx: prisma,
+          serviceId: service.id,
+          durationMinutes: effectiveDurationMinutes,
+        });
+        if (!courtDurationPrice) {
+          return jsonWrap(
+            { ok: false, error: "DURATION_NOT_PRICED", message: "Duração sem preço configurado." },
+            { status: 400 },
+          );
+        }
+        effectivePriceCents = Math.max(0, courtDurationPrice.priceCents + Math.max(0, effectivePriceCents - basePriceCents));
       }
       if (effectivePriceCents > 0) {
         const isPlatformOrg = service.organization?.orgType === "PLATFORM";
@@ -316,7 +379,7 @@ async function _GET(
           professionals = [professional];
         } else {
           if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
-            return jsonWrap({ ok: true, items: [], selectionRules });
+            return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
           }
           professionals = await prisma.reservationProfessional.findMany({
             where: {
@@ -329,11 +392,11 @@ async function _GET(
           });
         }
         if (professionals.length === 0) {
-          return jsonWrap({ ok: true, items: [], selectionRules });
+          return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
         }
 
         if (allowedResourceIds && allowedResourceIds.length === 0) {
-          return jsonWrap({ ok: true, items: [], selectionRules });
+          return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
         }
         const resources = await prisma.reservationResource.findMany({
           where: {
@@ -347,7 +410,7 @@ async function _GET(
           select: { id: true, capacity: true, priority: true, courtId: true },
         });
         if (resources.length === 0) {
-          return jsonWrap({ ok: true, items: [], selectionRules });
+          return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
         }
 
         const professionalIds = professionals.map((item) => item.id);
@@ -436,13 +499,15 @@ async function _GET(
           overridesByScope,
           blocks,
         });
-        const items = matrix.slots.map((slot) => ({
-          slotKey: slot.startsAt.toISOString(),
-          startsAt: slot.startsAt.toISOString(),
-          durationMinutes: slot.durationMinutes,
-          status: "OPEN",
-        }));
-        return jsonWrap({ ok: true, items, selectionRules });
+        const items = matrix.slots
+          .filter((slot) => isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes))
+          .map((slot) => ({
+            slotKey: slot.startsAt.toISOString(),
+            startsAt: slot.startsAt.toISOString(),
+            durationMinutes: slot.durationMinutes,
+            status: "OPEN",
+          }));
+        return jsonWrap({ ok: true, items, selectionRules, bookingPolicy: bookingPolicyPayload });
       }
 
       const assignmentMode: Exclude<typeof availabilityMode, "HYBRID"> = availabilityMode;
@@ -451,7 +516,7 @@ async function _GET(
 
       if (assignmentMode === "RESOURCE") {
         if (allowedResourceIds && allowedResourceIds.length === 0) {
-          return jsonWrap({ ok: true, items: [], selectionRules });
+          return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
         }
         const resources = await prisma.reservationResource.findMany({
           where: {
@@ -480,7 +545,7 @@ async function _GET(
           scopeIds = [professional.id];
         } else {
           if (allowedProfessionalIds && allowedProfessionalIds.length === 0) {
-            return jsonWrap({ ok: true, items: [], selectionRules });
+            return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
           }
           const professionals = await prisma.reservationProfessional.findMany({
             where: {
@@ -496,7 +561,7 @@ async function _GET(
       }
 
       if (scopeIds.length === 0) {
-        return jsonWrap({ ok: true, items: [], selectionRules });
+        return jsonWrap({ ok: true, items: [], selectionRules, bookingPolicy: bookingPolicyPayload });
       }
 
       const scopeFilters = [
@@ -584,6 +649,7 @@ async function _GET(
           blocks,
         });
         slots.forEach((slot) => {
+          if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
           slotMap.set(slot.startsAt.toISOString(), { startsAt: slot.startsAt, durationMinutes: slot.durationMinutes });
         });
       });
@@ -597,7 +663,7 @@ async function _GET(
           status: "OPEN",
         }));
 
-      return jsonWrap({ ok: true, items, selectionRules });
+      return jsonWrap({ ok: true, items, selectionRules, bookingPolicy: bookingPolicyPayload });
     }
 
     const monthParam = parseMonthParam(req.nextUrl.searchParams.get("month"));
@@ -645,13 +711,15 @@ async function _GET(
         month: `${targetMonth.year}-${String(targetMonth.month).padStart(2, "0")}`,
         days,
         selectionRules,
+        bookingPolicy: bookingPolicyPayload,
       });
 
+    const isCourtService = service.kind === "COURT";
     let effectiveDurationMinutes = service.durationMinutes;
     let effectivePriceCents = service.unitPriceCents ?? 0;
     let baseDurationMinutes = service.durationMinutes;
     let basePriceCents = service.unitPriceCents ?? 0;
-    if (packageId) {
+    if (packageId && !isCourtService) {
       const packageResolution = await resolveServicePackageSelection({
         tx: prisma,
         serviceId: service.id,
@@ -691,6 +759,30 @@ async function _GET(
     }
     if (durationOverride) {
       effectiveDurationMinutes = durationOverride;
+    }
+    const durationValidation = validateDurationAgainstPolicy({
+      durationMinutes: effectiveDurationMinutes,
+      policy: bookingPolicy,
+    });
+    if (!durationValidation.ok) {
+      return jsonWrap(
+        { ok: false, error: durationValidation.errorCode, message: durationValidation.message },
+        { status: 400 },
+      );
+    }
+    if (isCourtService) {
+      const courtDurationPrice = await resolveCourtDurationPrice({
+        tx: prisma,
+        serviceId: service.id,
+        durationMinutes: effectiveDurationMinutes,
+      });
+      if (!courtDurationPrice) {
+        return jsonWrap(
+          { ok: false, error: "DURATION_NOT_PRICED", message: "Duração sem preço configurado." },
+          { status: 400 },
+        );
+      }
+      effectivePriceCents = Math.max(0, courtDurationPrice.priceCents + Math.max(0, effectivePriceCents - basePriceCents));
     }
 
     if (effectivePriceCents > 0) {
@@ -860,6 +952,7 @@ async function _GET(
 
       const slotMap = new Map<string, number>();
       matrix.slots.forEach((slot) => {
+        if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
         const parts = getDateParts(slot.startsAt, timezone);
         const key = buildDateKey(parts);
         slotMap.set(key, (slotMap.get(key) ?? 0) + 1);
@@ -1018,6 +1111,7 @@ async function _GET(
         blocks,
       });
       slots.forEach((slot) => {
+        if (!isSlotAlignedWithGrid(slot.startsAt, timezone, bookingPolicy.gridMinutes)) return;
         const parts = getDateParts(slot.startsAt, timezone);
         const key = buildDateKey(parts);
         slotMap.set(key, (slotMap.get(key) ?? 0) + 1);

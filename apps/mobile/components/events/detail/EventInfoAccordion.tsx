@@ -1,6 +1,14 @@
-import { PropsWithChildren } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { PropsWithChildren, useCallback, useEffect, useState } from "react";
+import {
+  NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextLayoutEventData,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "../../icons/Ionicons";
 
 type EventInfoAccordionProps = PropsWithChildren<{
@@ -17,33 +25,67 @@ export function EventInfoAccordion({
   title = "Informação do Evento",
   children,
 }: EventInfoAccordionProps) {
+  const collapsedLines = 3;
   const hasDescription = Boolean(description?.trim());
+  const [hasOverflow, setHasOverflow] = useState(false);
+  const showToggle = hasDescription && hasOverflow;
+
+  useEffect(() => {
+    setHasOverflow(false);
+  }, [description]);
+
+  const handleMeasureLayout = useCallback(
+    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    const lines = Array.isArray(event?.nativeEvent?.lines)
+      ? event.nativeEvent.lines.length
+      : 0;
+    const nextHasOverflow = lines > collapsedLines;
+    setHasOverflow((current) =>
+      current === nextHasOverflow ? current : nextHasOverflow,
+    );
+    },
+    [collapsedLines],
+  );
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{title}</Text>
       {hasDescription ? (
         <View style={styles.descriptionWrap}>
-          <Text style={styles.description} numberOfLines={expanded ? undefined : 3}>
+          <Text
+            style={styles.description}
+            numberOfLines={expanded ? undefined : collapsedLines}
+          >
             {description}
           </Text>
-          {!expanded ? (
-            <LinearGradient
-              pointerEvents="none"
-              colors={[
-                "rgba(9,14,21,0)",
-                "rgba(9,14,21,0.78)",
-                "rgba(9,14,21,0.96)",
-              ]}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={styles.descriptionFade}
-            />
+          <Text
+            style={styles.descriptionMeasure}
+            onTextLayout={handleMeasureLayout}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+          >
+            {description}
+          </Text>
+          {!expanded && showToggle ? (
+            <View pointerEvents="none" style={styles.descriptionFade}>
+              <BlurView intensity={28} tint="dark" style={StyleSheet.absoluteFill} />
+              <LinearGradient
+                pointerEvents="none"
+                colors={[
+                  "rgba(0,0,0,0)",
+                  "rgba(3,5,8,0.8)",
+                  "rgba(1,2,4,0.98)",
+                ]}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+            </View>
           ) : null}
         </View>
       ) : null}
       {expanded && children ? <View style={styles.content}>{children}</View> : null}
-      {hasDescription ? (
+      {showToggle ? (
         <View style={styles.toggleWrap}>
           <Pressable
             onPress={onToggle}
@@ -92,12 +134,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  descriptionMeasure: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    opacity: 0,
+    zIndex: -1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
   descriptionFade: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    height: 34,
+    height: 38,
+    overflow: "hidden",
   },
   content: {
     gap: 10,

@@ -217,7 +217,10 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     ),
   );
   if (participantUserIds.length > 0) {
-    await queueMatchResult(participantUserIds, context.match.id, context.match.eventId);
+    await queueMatchResult(participantUserIds, context.match.id, context.match.eventId, {
+      eventType: "RESULT_CONFIRMED",
+      priority: "CRITICAL",
+    });
   }
 
   await recordOrganizationAuditSafe({

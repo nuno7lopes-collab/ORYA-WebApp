@@ -129,3 +129,35 @@ Status update:
 
 3. Risk: hidden coupling in monolith.
 - Mitigation: phase-by-phase extraction and smoke tests at each step.
+
+## confirmBooking algorithm v2 (Normativo)
+
+Ordem obrigatória de execução em `confirmPendingBooking`:
+
+1. Ler booking pendente e validar módulo/estado.
+2. Adquirir lock transaccional por organização:
+- `pg_advisory_xact_lock(hashtext('booking:<orgId>'))`
+3. Resolver policy de reserva por organização:
+- `bookingGridMinutes` (default `30`)
+- `durationCatalog` canónico `[30,60,90,120]`
+- `activeDurations` como subset ativo da organização (default `[60,90]`)
+- em campos, `allowCustomDuration` é sempre `false` (hard-cut)
+4. Validar `startsAt` contra grid por timezone org (`INVALID_START_GRID`).
+5. Validar `durationMinutes` contra policy (`INVALID_DURATION_POLICY`).
+6. Resolver `candidateScopes` conforme assignment mode:
+- `PROFESSIONAL` -> profissionais elegíveis
+- `RESOURCE` -> recursos elegíveis
+- `HYBRID` -> pares profissional+recurso
+7. Carregar disponibilidade canónica:
+- schedules
+- weekly templates
+- date overrides
+8. Carregar conflitos ativos no intervalo:
+- bookings ativos (confirmados e pendentes válidos)
+- `ClassSession` (`status=SCHEDULED`) para modos com profissional
+9. Construir blocos e avaliar slot com resolução interna `SLOT_STEP_MINUTES=5`.
+10. Aplicar `evaluateCandidate` para decisão final de conflito.
+11. Confirmar booking, gravar snapshot e atividade do utilizador.
+
+Regra operacional:
+- `ClassSession` é bloqueio efetivo de reserva; overlap devolve `SLOT_TAKEN`.

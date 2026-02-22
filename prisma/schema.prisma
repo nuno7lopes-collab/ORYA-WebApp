@@ -330,6 +330,9 @@ model OrganizationSettings {
   organizationId                    Int            @id @map("organization_id")
   supportEmail                      String?        @map("support_email")
   supportPhone                      String?        @map("support_phone")
+  bookingGridMinutes                Int            @default(30) @map("booking_grid_minutes")
+  bookingAllowedDurations           Int[]          @default([60, 90]) @map("booking_allowed_durations")
+  bookingAllowCustomDuration        Boolean        @default(false) @map("booking_allow_custom_duration")
   storeReturnPolicyMode             String?        @map("store_return_policy_mode")
   storeReturnWindowDays             Int?           @map("store_return_window_days")
   invoicingMode                     InvoicingMode? @map("invoicing_mode")
@@ -4512,10 +4515,12 @@ model ReservationProfessional {
   bookingChangeRequestsProposed BookingChangeRequest[]
   classSeries                   ClassSeries[]
   classSessions                 ClassSession[]
+  trainerProfiles               TrainerProfile[]
 
   @@index([organizationId])
   @@index([organizationId, isActive])
   @@index([userId])
+  @@unique([organizationId, userId], map: "reservation_professionals_org_user_unique")
   @@map("reservation_professionals")
   @@schema("app_v3")
 }
@@ -4574,6 +4579,7 @@ model Service {
   instructor        Profile?                  @relation("ServiceInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
   packs             ServicePack[]
   packages          ServicePackage[]
+  durationPrices    ServiceDurationPrice[]
   availabilities    Availability[]
   bookings          Booking[]
   classSeries       ClassSeries[]
@@ -4592,6 +4598,24 @@ model Service {
   @@index([categoryTag])
   @@index([addressId], map: "services_address_idx")
   @@map("services")
+  @@schema("app_v3")
+}
+
+model ServiceDurationPrice {
+  env             String   @default("prod")
+  id              Int      @id @default(autoincrement())
+  serviceId       Int      @map("service_id")
+  durationMinutes Int      @map("duration_minutes")
+  priceCents      Int      @map("price_cents")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, durationMinutes], map: "service_duration_prices_service_duration_unique")
+  @@index([serviceId], map: "service_duration_prices_service_idx")
+  @@index([serviceId, isActive], map: "service_duration_prices_service_active_idx")
+  @@map("service_duration_prices")
   @@schema("app_v3")
 }
 
@@ -4796,6 +4820,7 @@ model TrainerProfile {
   id                Int                        @id @default(autoincrement())
   organizationId    Int                        @map("organization_id")
   userId            String                     @map("user_id") @db.Uuid
+  reservationProfessionalId Int?               @map("reservation_professional_id")
   title             String?
   bio               String?
   specialties       String[]                   @default([])
@@ -4812,10 +4837,13 @@ model TrainerProfile {
   updatedAt         DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   organization      Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user              Profile                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservationProfessional ReservationProfessional? @relation(fields: [reservationProfessionalId], references: [id], onDelete: SetNull)
 
   @@unique([organizationId, userId], map: "trainer_profiles_org_user_unique")
+  @@unique([organizationId, reservationProfessionalId], map: "trainer_profiles_org_prof_unique")
   @@index([organizationId, isPublished], map: "trainer_profiles_org_published_idx")
   @@index([userId], map: "trainer_profiles_user_idx")
+  @@index([reservationProfessionalId], map: "trainer_profiles_professional_idx")
   @@map("trainer_profiles")
   @@schema("app_v3")
 }
@@ -4996,6 +5024,7 @@ model ClassSession {
   @@unique([seriesId, startsAt], map: "class_sessions_series_start_unique")
   @@index([organizationId, startsAt], map: "class_sessions_org_start_idx")
   @@index([courtId, startsAt], map: "class_sessions_court_start_idx")
+  @@index([organizationId, courtId, startsAt, endsAt], map: "class_sessions_org_court_start_end_idx")
   @@index([status], map: "class_sessions_status_idx")
   @@map("class_sessions")
   @@schema("app_v3")

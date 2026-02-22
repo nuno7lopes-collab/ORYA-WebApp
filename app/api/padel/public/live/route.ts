@@ -9,6 +9,10 @@ import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 
+function emitPadelMetric(metric: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({ kind: "padel_metric", metric, ...payload }));
+}
+
 async function _GET(req: NextRequest) {
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_public_live",
@@ -66,6 +70,28 @@ async function _GET(req: NextRequest) {
   if (!live) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
+
+  const liveMatches = live.live_now_by_court.flatMap((court) => court.matches);
+  const upcomingMatches = live.upcoming_matches_by_player.flatMap((player) => player.matches);
+  const latestMatches = live.latest_results_feed;
+  const calendarMatches = live.calendar_days.flatMap((day) => day.courts.flatMap((court) => court.matches));
+  const allMatches = [...liveMatches, ...upcomingMatches, ...latestMatches, ...calendarMatches];
+  const uniqueById = new Map<number, { stream?: { isLive?: boolean } | null }>();
+  allMatches.forEach((match) => {
+    if (!uniqueById.has(match.id)) {
+      uniqueById.set(match.id, match);
+    }
+  });
+  const totalUnique = uniqueById.size;
+  const streamLiveCount = Array.from(uniqueById.values()).reduce((count, match) => {
+    return match.stream?.isLive === true ? count + 1 : count;
+  }, 0);
+  emitPadelMetric("publicLivePayloadStreamCoverage", {
+    eventId: event.id,
+    value: totalUnique > 0 ? streamLiveCount / totalUnique : 0,
+    streamLiveCount,
+    matchesCount: totalUnique,
+  });
 
   return jsonWrap({ ok: true, ...live }, { status: 200 });
 }

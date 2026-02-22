@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { StoreAddressType } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -74,6 +74,10 @@ async function _GET(req: NextRequest) {
       where: { id: storeParsed.storeId },
       select: {
         id: true,
+        status: true,
+        showOnProfile: true,
+        catalogLocked: true,
+        checkoutEnabled: true,
         organization: {
           select: {
             orgType: true,
@@ -88,6 +92,10 @@ async function _GET(req: NextRequest) {
     });
     if (!store) {
       return fail(404, "Store nao encontrada.");
+    }
+    const publicAccess = resolvePublicStoreAccess(store);
+    if (!publicAccess.ok) {
+      return fail(403, publicAccess.error, publicAccess.errorCode);
     }
     const paymentsGate = getPublicStorePaymentsGate({
       orgType: store.organization?.orgType,

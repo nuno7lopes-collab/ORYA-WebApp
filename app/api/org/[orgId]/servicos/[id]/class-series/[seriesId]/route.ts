@@ -12,6 +12,10 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { buildClassSessionsForSeries } from "@/lib/reservas/classSeries";
 import { makeUtcDateFromLocal } from "@/lib/reservas/availability";
+import {
+  getOrganizationBookingPolicy,
+  validateStartMinuteAgainstPolicy,
+} from "@/lib/reservas/gridPolicy";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -21,7 +25,6 @@ const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
 ];
 
 const MINUTES_PER_DAY = 24 * 60;
-const SLOT_STEP_MINUTES = 15;
 
 function parseServiceId(idParam: string) {
   const parsed = Number(idParam);
@@ -59,7 +62,6 @@ function normalizeStartMinute(raw: unknown) {
   const minute = Number.isFinite(value) ? Math.round(value) : NaN;
   if (!Number.isFinite(minute)) return null;
   if (minute < 0 || minute >= MINUTES_PER_DAY) return null;
-  if (minute % SLOT_STEP_MINUTES !== 0) return null;
   return minute;
 }
 
@@ -142,6 +144,16 @@ async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: stri
     const validUntilParts = validUntilInput ? parseDateParts(validUntilInput) : null;
 
     const timezone = series.service.organization?.timezone || "Europe/Lisbon";
+
+    const bookingPolicy = await getOrganizationBookingPolicy({
+      organizationId: organization.id,
+      tx: prisma,
+    });
+    const startMinuteValidation = validateStartMinuteAgainstPolicy({ startMinute, policy: bookingPolicy });
+    if (!startMinuteValidation.ok) {
+      return fail(400, startMinuteValidation.message, startMinuteValidation.errorCode);
+    }
+
     const validFrom = validFromParts
       ? makeUtcDateFromLocal(
           { year: validFromParts.year, month: validFromParts.month, day: validFromParts.day, hour: 0, minute: 0 },

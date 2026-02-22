@@ -8,6 +8,7 @@ const ingestCrmInteraction = vi.hoisted(() => vi.fn());
 
 const prisma = vi.hoisted(() => ({
   service: { findFirst: vi.fn() },
+  organizationSettings: { findUnique: vi.fn() },
   reservationProfessional: { findMany: vi.fn(), findFirst: vi.fn() },
   reservationResource: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
   availabilitySchedule: { findMany: vi.fn() },
@@ -15,6 +16,7 @@ const prisma = vi.hoisted(() => ({
   availabilityOverride: { findMany: vi.fn() },
   booking: { findMany: vi.fn(), count: vi.fn() },
   classSession: { findMany: vi.fn() },
+  serviceDurationPrice: { findFirst: vi.fn() },
   address: { findUnique: vi.fn() },
   bookingPackage: { create: vi.fn() },
   bookingAddon: { createMany: vi.fn() },
@@ -58,6 +60,7 @@ beforeEach(() => {
   ingestCrmInteraction.mockReset();
 
   prisma.service.findFirst.mockReset();
+  prisma.organizationSettings.findUnique.mockReset();
   prisma.reservationProfessional.findMany.mockReset();
   prisma.reservationProfessional.findFirst.mockReset();
   prisma.reservationResource.findMany.mockReset();
@@ -69,6 +72,7 @@ beforeEach(() => {
   prisma.booking.findMany.mockReset();
   prisma.booking.count.mockReset();
   prisma.classSession.findMany.mockReset();
+  prisma.serviceDurationPrice.findFirst.mockReset();
   prisma.address.findUnique.mockReset();
   prisma.bookingPackage.create.mockReset();
   prisma.bookingAddon.createMany.mockReset();
@@ -79,6 +83,16 @@ beforeEach(() => {
   prisma.availabilityOverride.findMany.mockResolvedValue([]);
   prisma.booking.findMany.mockResolvedValue([]);
   prisma.classSession.findMany.mockResolvedValue([]);
+  prisma.organizationSettings.findUnique.mockResolvedValue({
+    bookingGridMinutes: 30,
+    bookingAllowedDurations: [60, 90],
+    bookingAllowCustomDuration: false,
+  });
+  prisma.serviceDurationPrice.findFirst.mockImplementation(async ({ where }: { where?: { durationMinutes?: number } }) => ({
+    durationMinutes: where?.durationMinutes ?? 60,
+    priceCents: 0,
+    isActive: true,
+  }));
   prisma.booking.count.mockResolvedValue(0);
   prisma.address.findUnique.mockResolvedValue({ sourceProvider: "APPLE_MAPS" });
   prisma.$transaction.mockImplementation(async (fn: any) => fn(prisma));
@@ -138,6 +152,56 @@ describe("GET /api/servicos/[id]/calendario (HYBRID)", () => {
     expect(body.ok).toBe(true);
     expect(body.items.length).toBe(1);
     expect(body.items[0].startsAt).toBe(slot.toISOString());
+  });
+
+  it("filtra slots fora da grelha da organização", async () => {
+    const day = formatLisbonYmd(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    const slot = new Date(`${day}T10:05:00.000Z`);
+    prisma.service.findFirst.mockResolvedValue({
+      id: 1,
+      organizationId: 10,
+      kind: "COURT",
+      assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+      partySizeRequired: true,
+      partySizeMin: 2,
+      partySizeMax: 4,
+      partySizeStep: 1,
+      durationMinutes: 90,
+      unitPriceCents: 0,
+      currency: "EUR",
+      locationMode: "FIXED",
+      addressId: "addr_1",
+      organization: {
+        id: 10,
+        status: "ACTIVE",
+        timezone: "Europe/Lisbon",
+        reservationAssignmentMode: null,
+        orgType: "CLUB",
+      },
+      professionalLinks: [],
+      resourceLinks: [],
+    });
+    prisma.reservationProfessional.findMany.mockResolvedValue([{ id: 1, priority: 1 }]);
+    prisma.reservationResource.findMany.mockResolvedValue([{ id: 2, capacity: 4, priority: 1, courtId: 99 }]);
+
+    getAvailableSlotsForScope.mockImplementation((args: any) => {
+      if (args.scopeType === "PROFESSIONAL" && args.scopeId === 1) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      if (args.scopeType === "RESOURCE" && args.scopeId === 2) {
+        return [{ startsAt: slot, durationMinutes: 90 }];
+      }
+      return [];
+    });
+
+    const { GET } = await import("@/app/api/servicos/[id]/calendario/route");
+    const req = new NextRequest(`http://localhost/api/servicos/1/calendario?day=${day}&partySize=2`);
+    const res = await GET(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.ok).toBe(true);
+    expect(body.items).toEqual([]);
   });
 
   it("nao retorna slots quando nao existe par simultaneo", async () => {

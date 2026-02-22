@@ -5,7 +5,7 @@ import { buildAgendaConflictPayload } from "@/domain/agenda/conflictResponse";
 const baseStart = new Date("2025-02-01T10:00:00Z");
 const baseEnd = new Date("2025-02-01T11:00:00Z");
 
-const makeCandidate = (type: "HARD_BLOCK" | "MATCH" | "BOOKING" | "SOFT_BLOCK", sourceId: string) => ({
+const makeCandidate = (type: "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK", sourceId: string) => ({
   type,
   sourceId,
   startsAt: baseStart,
@@ -33,6 +33,17 @@ describe("agenda conflict integration", () => {
     expect(decision.allowed).toBe(false);
     const payload = buildAgendaConflictPayload({ decision });
     expect(payload.details.blockedByType).toBe("HARD_BLOCK");
+    expect(payload.details.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
+  });
+
+  it("match collides with class session", () => {
+    const candidate = makeCandidate("MATCH", "match-3");
+    const existing = [makeCandidate("CLASS_SESSION", "class-1")];
+    const decision = evaluateCandidate({ candidate, existing });
+
+    expect(decision.allowed).toBe(false);
+    const payload = buildAgendaConflictPayload({ decision });
+    expect(payload.details.blockedByType).toBe("CLASS_SESSION");
     expect(payload.details.reason).toBe("BLOCKED_BY_HIGHER_PRIORITY");
   });
 

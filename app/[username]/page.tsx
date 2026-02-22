@@ -19,7 +19,7 @@ import {
 import { normalizeInterestSelection, resolveInterestLabel } from "@/lib/interests";
 import { getPaidSalesGate } from "@/lib/organizationPayments";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
-import { shouldShowStoreOnPublicProfile } from "@/lib/publicOrganizationProfile";
+import { canOpenPublicStorefront } from "@/lib/publicOrganizationProfile";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { getUserIdentityIds } from "@/lib/ownership/identity";
 import { OrganizationFormStatus, type Prisma } from "@prisma/client";
@@ -567,6 +567,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                 sortOrder: true,
               },
             },
+            durationPrices: {
+              where: { isActive: true },
+              orderBy: [{ durationMinutes: "asc" }],
+              select: {
+                durationMinutes: true,
+                priceCents: true,
+                isActive: true,
+              },
+            },
             professionalLinks: { select: { professionalId: true } },
             resourceLinks: { select: { resourceId: true } },
             packs: {
@@ -622,6 +631,11 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
               priceCents: number;
               recommended: boolean;
               sortOrder: number;
+            }>;
+            durationPrices?: Array<{
+              durationMinutes: number;
+              priceCents: number;
+              isActive: boolean;
             }>;
             packs: Array<{ id: number; quantity: number; packPriceCents: number; label: string | null; recommended: boolean }>;
           }>),
@@ -762,9 +776,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
     const showStoreSection =
       storeEnabled &&
-      shouldShowStoreOnPublicProfile({
+      canOpenPublicStorefront({
         status: store?.status ?? null,
         showOnProfile: store?.showOnProfile ?? false,
+        checkoutEnabled: store?.checkoutEnabled ?? false,
+        catalogLocked: store?.catalogLocked ?? false,
+        paymentsReady: allowPaidServices,
         publicProductCount: storeProductsCount,
       });
     const organizationSectionNav = [

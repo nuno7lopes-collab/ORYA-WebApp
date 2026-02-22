@@ -213,6 +213,47 @@ const resolvePairingLabel = (
   return names.join(" / ");
 };
 
+const resolveMatchStartAt = (match: Record<string, unknown>) => {
+  const raw =
+    typeof match.startTime === "string"
+      ? match.startTime
+      : typeof match.plannedStartAt === "string"
+        ? match.plannedStartAt
+        : null;
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const resolveMatchStream = (match: Record<string, unknown>) => {
+  const stream =
+    match.stream && typeof match.stream === "object" && !Array.isArray(match.stream)
+      ? (match.stream as Record<string, unknown>)
+      : null;
+  if (stream) {
+    const urlRaw = typeof stream.url === "string" ? stream.url.trim() : "";
+    return { isLive: stream.isLive === true, url: urlRaw.length > 0 ? urlRaw : null };
+  }
+  const score =
+    match.score && typeof match.score === "object" && !Array.isArray(match.score)
+      ? (match.score as Record<string, unknown>)
+      : null;
+  const liveStream =
+    score?.liveStream && typeof score.liveStream === "object" && !Array.isArray(score.liveStream)
+      ? (score.liveStream as Record<string, unknown>)
+      : null;
+  const urlRaw = typeof liveStream?.url === "string" ? liveStream.url.trim() : "";
+  return { isLive: liveStream?.isLive === true, url: urlRaw.length > 0 ? urlRaw : null };
+};
+
+const formatElapsedLabel = (seconds: number | null | undefined) => {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return null;
+  const total = Math.floor(seconds);
+  const mm = Math.floor(total / 60);
+  const ss = total % 60;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+};
+
 const resolveTicketCtaLabel = (state: TicketCtaState): string => {
   if (state === "READY") return "events:tickets.cta.state.ready";
   if (state === "INVITE_LOCKED") return "events:tickets.cta.state.inviteLocked";
@@ -259,8 +300,21 @@ type EventBackdropPalette = {
   depthGradient: Gradient4;
 };
 
+const resolveHexRgb = (value: string): Rgb | null => {
+  const normalized = value.trim();
+  const fullHex = normalized.match(/^#([0-9a-fA-F]{6})$/);
+  if (!fullHex) return null;
+  const hex = fullHex[1];
+  return {
+    r: parseInt(hex.slice(0, 2), 16),
+    g: parseInt(hex.slice(2, 4), 16),
+    b: parseInt(hex.slice(4, 6), 16),
+  };
+};
+
 const APP_BG_RGB: Rgb = { r: 10, g: 15, b: 20 };
-const APP_BG_DEEP: Rgb = { r: 8, g: 13, b: 19 };
+const GLOBAL_BG_RGB: Rgb =
+  resolveHexRgb(tokens.colors.background) ?? { r: 5, g: 7, b: 11 };
 
 const clampChannel = (value: number) =>
   Math.max(0, Math.min(255, Math.round(value)));
@@ -378,8 +432,8 @@ const buildEventBackdropPalette = (
     return {
       rootGradient: [
         rgba(mixRgb(APP_BG_RGB, fallbackBase, 0.24), 1),
-        rgba(APP_BG_RGB, 1),
-        rgba(APP_BG_RGB, 1),
+        rgba(mixRgb(fallbackBase, GLOBAL_BG_RGB, 0.46), 1),
+        rgba(GLOBAL_BG_RGB, 1),
       ],
       auraGradient: [
         rgba(mixRgb(fallbackBase, { r: 255, g: 255, b: 255 }, 0.08), 0.7),
@@ -395,9 +449,9 @@ const buildEventBackdropPalette = (
       ],
       depthGradient: [
         "rgba(0,0,0,0)",
-        rgba(APP_BG_RGB, 0.24),
-        rgba(APP_BG_RGB, 0.84),
-        rgba(APP_BG_DEEP, 0.97),
+        rgba(GLOBAL_BG_RGB, 0.16),
+        rgba(GLOBAL_BG_RGB, 0.9),
+        rgba(GLOBAL_BG_RGB, 1),
       ],
     };
   }
@@ -410,17 +464,17 @@ const buildEventBackdropPalette = (
   );
   const baseTint = mixRgb(normalized, APP_BG_RGB, 0.12);
   const headTint = mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.06);
-  const tailTint = mixRgb(baseTint, APP_BG_RGB, 0.58);
+  const tailTint = mixRgb(baseTint, GLOBAL_BG_RGB, 0.68);
   const rootTop = mixRgb(normalized, APP_BG_RGB, 0.52);
-  const rootMid = mixRgb(normalized, APP_BG_RGB, 0.72);
+  const rootMid = mixRgb(normalized, GLOBAL_BG_RGB, 0.76);
   const auraHead = mixRgb(normalized, { r: 255, g: 255, b: 255 }, 0.1);
-  const auraTail = mixRgb(normalized, APP_BG_RGB, 0.32);
+  const auraTail = mixRgb(normalized, GLOBAL_BG_RGB, 0.42);
 
   return {
     rootGradient: [
       rgba(rootTop, 1),
       rgba(rootMid, 1),
-      rgba(APP_BG_RGB, 1),
+      rgba(GLOBAL_BG_RGB, 1),
     ],
     auraGradient: [
       rgba(auraHead, clampAlpha(topStrength * 1.08)),
@@ -436,9 +490,9 @@ const buildEventBackdropPalette = (
     ],
     depthGradient: [
       "rgba(0,0,0,0)",
-      rgba(APP_BG_RGB, clampAlpha(0.18 + brightnessBoost * 0.5)),
-      rgba(APP_BG_RGB, clampAlpha(0.76 + brightnessBoost * 0.4)),
-      rgba(APP_BG_DEEP, 0.96),
+      rgba(GLOBAL_BG_RGB, clampAlpha(0.16 + brightnessBoost * 0.35)),
+      rgba(GLOBAL_BG_RGB, clampAlpha(0.88 + brightnessBoost * 0.2)),
+      rgba(GLOBAL_BG_RGB, 1),
     ],
   };
 };
@@ -582,6 +636,7 @@ export default function EventDetail() {
     useState<string>(t("events:tickets.freeSuccess.cta.single"));
   const freeSuccessOpacity = useRef(new Animated.Value(0)).current;
   const freeSuccessScale = useRef(new Animated.Value(0.92)).current;
+  const pullDownTintOpacity = useRef(new Animated.Value(0)).current;
   const [inviteTokenInput, setInviteTokenInput] = useState("");
   const [inviteState, setInviteState] = useState<{
     status: "idle" | "checking" | "valid" | "invalid";
@@ -1537,6 +1592,9 @@ export default function EventDetail() {
       const offsetY = event.nativeEvent.contentOffset.y;
       const isDragging = dragStartedAtTopRef.current;
       scrollOffsetYRef.current = offsetY;
+      const pullDistance = Math.max(0, -offsetY);
+      const tintOpacity = Math.min(1, pullDistance / 72);
+      pullDownTintOpacity.setValue(tintOpacity);
       if (isDragging && dragStartedAtTopRef.current) {
         dragMinOffsetRef.current = Math.min(dragMinOffsetRef.current, offsetY);
       }
@@ -1544,17 +1602,18 @@ export default function EventDetail() {
         triggerPullDownDismiss(offsetY, true);
       }
     },
-    [triggerPullDownDismiss],
+    [pullDownTintOpacity, triggerPullDownDismiss],
   );
 
   const handleEventScrollBeginDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = event.nativeEvent.contentOffset.y;
       scrollOffsetYRef.current = offsetY;
+      pullDownTintOpacity.setValue(Math.min(1, Math.max(0, -offsetY) / 72));
       dragStartedAtTopRef.current = offsetY <= 1;
       dragMinOffsetRef.current = Math.min(0, offsetY);
     },
-    [],
+    [pullDownTintOpacity],
   );
 
   const handleEventScrollEndDrag = useCallback(
@@ -1568,8 +1627,13 @@ export default function EventDetail() {
       if (minOffset <= 0) {
         triggerPullDownDismiss(minOffset, dragStartedAtTop);
       }
+      Animated.timing(pullDownTintOpacity, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
     },
-    [triggerPullDownDismiss],
+    [pullDownTintOpacity, triggerPullDownDismiss],
   );
 
   useEffect(() => {
@@ -1582,6 +1646,7 @@ export default function EventDetail() {
 
   const handleCheckoutFromTickets = useCallback(async () => {
     triggerLightHaptic();
+    if (initiatingCheckout) return;
     if (!data) return;
     if (!canAccessInvite) {
       Alert.alert(
@@ -1742,6 +1807,7 @@ export default function EventDetail() {
     data,
     displayTitle,
     eventIsActive,
+    initiatingCheckout,
     inviteToken,
     openAuth,
     router,
@@ -2019,126 +2085,142 @@ export default function EventDetail() {
         options={{
           headerShown: false,
           animation: "fade_from_bottom",
-          gestureEnabled: true,
+          gestureEnabled: false,
         }}
       />
       <LiquidBackground variant="solid">
-        <View pointerEvents="none" style={styles.backdropLayer}>
-          <LinearGradient
-            colors={backdropPalette.rootGradient}
-            start={{ x: 0.12, y: 0 }}
-            end={{ x: 0.88, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <LinearGradient
-            colors={backdropPalette.auraGradient}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={styles.backdropAura}
-          />
-          {backdropPalette.topWashGradient ? (
-            <LinearGradient
-              colors={backdropPalette.topWashGradient}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              style={styles.backdropTopWash}
-            />
-          ) : null}
-          <LinearGradient
-            colors={backdropPalette.depthGradient}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
+        <View pointerEvents="none" style={styles.pageGlobalBase} />
         <Animated.ScrollView
-          contentContainerStyle={{ paddingBottom: scrollBottomPadding }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScrollBeginDrag={handleEventScrollBeginDrag}
           onScroll={handleEventScroll}
           onScrollEndDrag={handleEventScrollEndDrag}
         >
-          {isLoading && !data ? (
-            <View className="px-5 gap-3" style={{ paddingTop: insets.top + 16 }}>
-              <GlassSkeleton height={320} />
-              <GlassSkeleton height={140} />
-              <GlassSkeleton height={120} />
-            </View>
-          ) : isError || !data ? (
-            <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
-              <GlassCard intensity={50}>
-                <Text className="text-red-300 text-sm mb-3">
-                  {error instanceof ApiError && error.status === 404
-                    ? t("events:detail.notFound")
-                    : t("events:detail.loadError")}
-                </Text>
-                <Pressable
-                  onPress={() => refetch()}
-                  className="rounded-xl bg-white/10 px-4 py-3"
-                  style={{ minHeight: tokens.layout.touchTarget }}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("common:actions.retry")}
-                >
-                  <Text className="text-white text-sm font-semibold text-center">
-                    {t("common:actions.retry")}
-                  </Text>
-                </Pressable>
-              </GlassCard>
-            </View>
-          ) : (
-            <Animated.View
-              style={{ opacity: fade, transform: [{ translateY: translate }] }}
-            >
-              <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
-                <EventHeroSquare
-                  coverUri={displayCover}
-                  title={displayTitle}
-                  overlayTint={heroOverlayTint}
+          <View
+            style={[styles.scrollBackdropRoot, { paddingBottom: scrollBottomPadding }]}
+          >
+            <View pointerEvents="none" style={styles.scrollBackdropLayer}>
+              <View style={styles.scrollBackdropBase} />
+              <View
+                style={[
+                  styles.scrollBackdropTopStack,
+                  { height: Math.max(620, insets.top + 520) },
+                ]}
+              >
+                <LinearGradient
+                  colors={backdropPalette.rootGradient}
+                  locations={[0, 0.36, 1]}
+                  start={{ x: 0.12, y: 0 }}
+                  end={{ x: 0.88, y: 1 }}
+                  style={StyleSheet.absoluteFill}
                 />
-                <EventHeaderMeta
-                  title={displayTitle}
-                  dateLabel={date}
-                  locationLabel={displayLocation}
-                  organizer={{
-                    name: displayHost,
-                    username: hostUsername,
-                    avatarUri: hostAvatar,
-                    onPress: handleHostPress,
-                    disabled: !hostUsername,
-                  }}
-                >
-                  {data?.id ? (
-                    <FavoriteToggle
-                      eventId={data.id}
-                      size={18}
-                      style={{ width: 42, height: 42, borderRadius: 21 }}
-                    />
-                  ) : null}
-                  <Pressable
-                    onPress={handleShare}
-                    disabled={!data}
-                    className="h-[42px] min-w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/10 px-3"
-                    style={({ pressed }) => [
-                      !data ? { opacity: 0.5 } : null,
-                      pressed && data
-                        ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
-                        : null,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("common:actions.share")}
-                    accessibilityState={{ disabled: !data }}
-                  >
-                    <Ionicons
-                      name="share-outline"
-                      size={17}
-                      color="rgba(255,255,255,0.9)"
-                    />
-                  </Pressable>
-                </EventHeaderMeta>
+                <LinearGradient
+                  colors={backdropPalette.auraGradient}
+                  locations={[0, 0.24, 0.52, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={styles.backdropAura}
+                />
+                {backdropPalette.topWashGradient ? (
+                  <LinearGradient
+                    colors={backdropPalette.topWashGradient}
+                    locations={[0, 0.3, 0.66, 1]}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                    style={styles.backdropTopWash}
+                  />
+                ) : null}
+                <LinearGradient
+                  colors={backdropPalette.depthGradient}
+                  locations={[0.22, 0.46, 0.72, 1]}
+                  start={{ x: 0.5, y: 0 }}
+                  end={{ x: 0.5, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
               </View>
+            </View>
+            <View style={styles.scrollBackdropContent}>
+              {isLoading && !data ? (
+                <View className="px-5 gap-3" style={{ paddingTop: insets.top + 16 }}>
+                  <GlassSkeleton height={320} />
+                  <GlassSkeleton height={140} />
+                  <GlassSkeleton height={120} />
+                </View>
+              ) : isError || !data ? (
+                <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
+                  <GlassCard intensity={50}>
+                    <Text className="text-red-300 text-sm mb-3">
+                      {error instanceof ApiError && error.status === 404
+                        ? t("events:detail.notFound")
+                        : t("events:detail.loadError")}
+                    </Text>
+                    <Pressable
+                      onPress={() => refetch()}
+                      className="rounded-xl bg-white/10 px-4 py-3"
+                      style={{ minHeight: tokens.layout.touchTarget }}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("common:actions.retry")}
+                    >
+                      <Text className="text-white text-sm font-semibold text-center">
+                        {t("common:actions.retry")}
+                      </Text>
+                    </Pressable>
+                  </GlassCard>
+                </View>
+              ) : (
+                <Animated.View
+                  style={{ opacity: fade, transform: [{ translateY: translate }] }}
+                >
+                  <View className="px-5" style={{ paddingTop: insets.top + 16 }}>
+                    <EventHeroSquare
+                      coverUri={displayCover}
+                      title={displayTitle}
+                      overlayTint={heroOverlayTint}
+                    />
+                    <EventHeaderMeta
+                      title={displayTitle}
+                      dateLabel={date}
+                      locationLabel={displayLocation}
+                      organizer={{
+                        name: displayHost,
+                        username: hostUsername,
+                        avatarUri: hostAvatar,
+                        onPress: handleHostPress,
+                        disabled: !hostUsername,
+                      }}
+                    >
+                      {data?.id ? (
+                        <FavoriteToggle
+                          eventId={data.id}
+                          size={18}
+                          style={{ width: 42, height: 42, borderRadius: 21 }}
+                        />
+                      ) : null}
+                      <Pressable
+                        onPress={handleShare}
+                        disabled={!data}
+                        className="h-[42px] min-w-[42px] items-center justify-center rounded-full border border-white/20 bg-white/10 px-3"
+                        style={({ pressed }) => [
+                          !data ? { opacity: 0.5 } : null,
+                          pressed && data
+                            ? { opacity: 0.86, transform: [{ scale: 0.96 }] }
+                            : null,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={t("common:actions.share")}
+                        accessibilityState={{ disabled: !data }}
+                      >
+                        <Ionicons
+                          name="share-outline"
+                          size={17}
+                          color="rgba(255,255,255,0.9)"
+                        />
+                      </Pressable>
+                    </EventHeaderMeta>
+                  </View>
 
-              <View className="px-5 pt-5 gap-4">
+                  <View className="px-5 pt-5 gap-4">
                 <EventInfoAccordion
                   expanded={infoExpanded}
                   onToggle={() => setInfoExpanded((current) => !current)}
@@ -3035,35 +3117,86 @@ export default function EventDetail() {
                           ) : (
                             (matchesQuery.data ?? [])
                               .slice(0, 6)
-                              .map((match: any) => (
-                                <View
-                                  key={`match-${match.id}`}
-                                  className="gap-1 rounded-2xl border border-white/14 bg-white/8 px-3 py-3"
-                                >
-                                  <Text className="text-white/70 text-xs">
-                                    {match.groupLabel
-                                      ? t("events:padel.groupLabel", {
-                                          group: match.groupLabel,
-                                        })
-                                      : t("events:padel.matchLabel")}
-                                  </Text>
-                                  <Text className="text-white/85 text-sm font-semibold">
-                                    {resolvePairingLabel(match.pairingA, t)}{" "}
-                                    {t("events:detail.vs")}{" "}
-                                    {resolvePairingLabel(match.pairingB, t)}
-                                  </Text>
-                                </View>
-                              ))
+                              .map((match: any) => {
+                                const stream = resolveMatchStream(match as Record<string, unknown>);
+                                const startAt = resolveMatchStartAt(match as Record<string, unknown>);
+                                const elapsedRaw =
+                                  typeof match.elapsedSeconds === "number" && Number.isFinite(match.elapsedSeconds)
+                                    ? Math.floor(match.elapsedSeconds)
+                                    : (match.status ?? "").toString().toUpperCase() === "IN_PROGRESS" && startAt
+                                      ? Math.max(0, Math.floor((Date.now() - startAt.getTime()) / 1000))
+                                      : null;
+                                const elapsedLabel = formatElapsedLabel(elapsedRaw);
+                                return (
+                                  <View
+                                    key={`match-${match.id}`}
+                                    className="gap-1 rounded-2xl border border-white/14 bg-white/8 px-3 py-3"
+                                  >
+                                    <View className="flex-row items-center justify-between gap-2">
+                                      <Text className="text-white/70 text-xs">
+                                        {match.groupLabel
+                                          ? t("events:padel.groupLabel", {
+                                              group: match.groupLabel,
+                                            })
+                                          : t("events:padel.matchLabel")}
+                                      </Text>
+                                      <View className="flex-row items-center gap-1.5">
+                                        {stream.isLive ? (
+                                          <Text className="rounded-full border border-fuchsia-200/50 bg-fuchsia-300/15 px-2 py-0.5 text-[10px] text-fuchsia-100">
+                                            Stream
+                                          </Text>
+                                        ) : null}
+                                        {elapsedLabel ? (
+                                          <Text className="rounded-full border border-emerald-200/45 bg-emerald-300/12 px-2 py-0.5 text-[10px] text-emerald-100">
+                                            {elapsedLabel}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    </View>
+                                    <Text className="text-white/85 text-sm font-semibold">
+                                      {resolvePairingLabel(match.pairingA, t)} {t("events:detail.vs")} {resolvePairingLabel(match.pairingB, t)}
+                                    </Text>
+                                    {stream.isLive && stream.url ? (
+                                      <Text className="text-white/60 text-[11px]" numberOfLines={1}>
+                                        {stream.url}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                );
+                              })
                           )}
                         </View>
                       </PadelSection>
                     ) : null}
                   </>
                 ) : null}
-              </View>
-            </Animated.View>
-          )}
+                  </View>
+                </Animated.View>
+              )}
+            </View>
+          </View>
         </Animated.ScrollView>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.pullDownTintLayer,
+            {
+              height: Math.max(260, insets.top + 220),
+              opacity: pullDownTintOpacity,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[
+              backdropPalette.rootGradient[0],
+              backdropPalette.rootGradient[1],
+              "rgba(0,0,0,0)",
+            ]}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
         <View
           pointerEvents="box-none"
           style={{
@@ -3121,14 +3254,12 @@ export default function EventDetail() {
           items={ticketSelectorItems}
           totalCents={selectedTicketTotalCents}
           currency={ticketSheetCurrency}
-          hasSelection={selectedTicketQuantity > 0}
           submitLabel={ticketSheetSubmitLabel}
           emptyStateMessage={
             ticketGateState.hasTicketTypes
               ? t("events:tickets.unavailableNow")
               : t("events:tickets.comingSoon")
           }
-          submitting={initiatingCheckout}
           onClose={() => setTicketSheetVisible(false)}
           onIncrement={handleIncrementTicket}
           onDecrement={handleDecrementTicket}
@@ -3214,9 +3345,39 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
-  backdropLayer: {
+  pageGlobalBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: tokens.colors.background,
+    zIndex: 0,
+  },
+  scrollBackdropRoot: {
+    position: "relative",
+  },
+  scrollBackdropLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+  },
+  scrollBackdropBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: tokens.colors.background,
+  },
+  scrollBackdropTopStack: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    overflow: "hidden",
+  },
+  scrollBackdropContent: {
+    position: "relative",
+    zIndex: 1,
+  },
+  pullDownTintLayer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 24,
   },
   backdropAura: {
     position: "absolute",

@@ -758,6 +758,11 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     updated.score && typeof updated.score === "object" ? (updated.score as Record<string, unknown>) : {};
   const delayReason = typeof scorePayload.delayReason === "string" ? scorePayload.delayReason : null;
   const delayStatus = typeof scorePayload.delayStatus === "string" ? scorePayload.delayStatus : null;
+  const liveStreamPayload =
+    scorePayload.liveStream && typeof scorePayload.liveStream === "object" && !Array.isArray(scorePayload.liveStream)
+      ? (scorePayload.liveStream as Record<string, unknown>)
+      : null;
+  const streamIsLive = liveStreamPayload?.isLive === true;
   await queueMatchChanged({
     userIds: involvedUserIds,
     matchId: updated.id,
@@ -767,6 +772,18 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     reason: delayReason,
     delayStatus,
   });
+  if (streamIsLive && updated.status === "IN_PROGRESS") {
+    await queueMatchChanged({
+      userIds: involvedUserIds,
+      matchId: updated.id,
+      startAt: updated.startTime ?? null,
+      courtId: matchCourtId,
+      scheduleVersion: updated.updatedAt?.toISOString?.() ?? null,
+      eventType: "MATCH_STREAM_ONLINE",
+      scheduledAt: updated.startTime ?? new Date(),
+      priority: "CRITICAL",
+    });
+  }
 
   const resolvedWinnerSide = updated.winnerSide === "A" || updated.winnerSide === "B" ? updated.winnerSide : null;
   const winnerSideParticipantIds =
@@ -780,7 +797,7 @@ async function handleMatchUpdated(payload: MatchUpdatedPayload) {
     (resolvedWinnerSide !== null ? resolveSideSourcePairingId(participantRows, resolvedWinnerSide) : null);
 
   if (resolvedWinnerParticipantId || resolvedWinnerPairingId) {
-    await queueMatchResult(involvedUserIds, updated.id, updated.eventId);
+    await queueMatchResult(involvedUserIds, updated.id, updated.eventId, { eventType: "RESULT_CONFIRMED" });
     await queueNextOpponent(involvedUserIds, updated.id, updated.eventId);
 
     if (

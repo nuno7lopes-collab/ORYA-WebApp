@@ -79,7 +79,29 @@ export type PadelMyPairing = {
   inviteEligibility?: { ok: boolean; reason?: string; missing?: Record<string, boolean> } | null;
 };
 
-export type PadelMatch = Record<string, any>;
+export type PadelStreamMeta = {
+  isLive: boolean;
+  url: string | null;
+  provider: string | null;
+  label: string | null;
+};
+
+export type PadelMatch = {
+  id: number;
+  status?: string | null;
+  roundLabel?: string | null;
+  groupLabel?: string | null;
+  startTime?: string | null;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+  elapsedSeconds?: number | null;
+  isLiveClockRunning?: boolean;
+  stream?: PadelStreamMeta | null;
+  score?: Record<string, unknown> | null;
+  pairingA?: Record<string, unknown> | null;
+  pairingB?: Record<string, unknown> | null;
+  [key: string]: unknown;
+};
 
 export type PadelDiscoverItem = {
   id: number;

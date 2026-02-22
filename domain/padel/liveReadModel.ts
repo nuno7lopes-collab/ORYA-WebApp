@@ -15,6 +15,19 @@ import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessP
 
 export type PadelLiveReadVisibility = "internal" | "public";
 
+type MatchStreamMeta = {
+  isLive: boolean;
+  url: string | null;
+  provider: string | null;
+  label: string | null;
+};
+
+type MatchRuntimeFields = {
+  elapsedSeconds: number | null;
+  isLiveClockRunning: boolean;
+  stream: MatchStreamMeta | null;
+};
+
 export type PadelLiveReadModel = {
   event: {
     id: number;
@@ -43,6 +56,9 @@ export type PadelLiveReadModel = {
       pairingA: string;
       pairingB: string;
       scoreLabel: string;
+      elapsedSeconds: number | null;
+      isLiveClockRunning: boolean;
+      stream: MatchStreamMeta | null;
     }>;
   }>;
   upcoming_matches_by_player: Array<{
@@ -55,6 +71,9 @@ export type PadelLiveReadModel = {
       pairingA: string;
       pairingB: string;
       roundLabel: string | null;
+      elapsedSeconds: number | null;
+      isLiveClockRunning: boolean;
+      stream: MatchStreamMeta | null;
     }>;
   }>;
   latest_results_feed: Array<{
@@ -67,6 +86,9 @@ export type PadelLiveReadModel = {
     scoreLabel: string;
     roundLabel: string | null;
     groupLabel: string | null;
+    elapsedSeconds: number | null;
+    isLiveClockRunning: boolean;
+    stream: MatchStreamMeta | null;
   }>;
   standings_with_tiebreak_explain: Array<{
     groupLabel: string;
@@ -99,6 +121,9 @@ export type PadelLiveReadModel = {
         pairingA: string;
         pairingB: string;
         scoreLabel: string;
+        elapsedSeconds: number | null;
+        isLiveClockRunning: boolean;
+        stream: MatchStreamMeta | null;
       }>;
     }>;
   }>;
@@ -193,6 +218,40 @@ function resolveMatchEnd(match: MatchRow, startAt: Date | null) {
 
 function resolveCourtLabel(match: MatchRow) {
   return match.court?.name || match.courtName || (match.courtNumber ? `Campo ${match.courtNumber}` : null) || "Campo";
+}
+
+function resolveMatchStreamMeta(match: MatchRow): MatchStreamMeta | null {
+  const score = match.score && typeof match.score === "object" ? (match.score as Record<string, unknown>) : null;
+  const liveStream = score?.liveStream;
+  if (!liveStream || typeof liveStream !== "object" || Array.isArray(liveStream)) return null;
+  const payload = liveStream as Record<string, unknown>;
+  const urlRaw = typeof payload.url === "string" ? payload.url.trim() : "";
+  const providerRaw = typeof payload.provider === "string" ? payload.provider.trim() : "";
+  const labelRaw = typeof payload.label === "string" ? payload.label.trim() : "";
+  return {
+    isLive: payload.isLive === true,
+    url: urlRaw.length > 0 ? urlRaw : null,
+    provider: providerRaw.length > 0 ? providerRaw : null,
+    label: labelRaw.length > 0 ? labelRaw : null,
+  };
+}
+
+function resolveMatchRuntimeFields(params: {
+  match: MatchRow;
+  startAt: Date | null;
+  normalizedStatus: string;
+  now: Date;
+}): MatchRuntimeFields {
+  const isLiveClockRunning = params.normalizedStatus === "IN_PROGRESS" && Boolean(params.startAt);
+  const elapsedSeconds =
+    isLiveClockRunning && params.startAt
+      ? Math.max(0, Math.floor((params.now.getTime() - params.startAt.getTime()) / 1000))
+      : null;
+  return {
+    elapsedSeconds,
+    isLiveClockRunning,
+    stream: resolveMatchStreamMeta(params.match),
+  };
 }
 
 function formatDayKey(date: Date, timezone: string) {
@@ -426,7 +485,8 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
     const pairingA = formatPairingLabel(match, "A", params.visibility);
     const pairingB = formatPairingLabel(match, "B", params.visibility);
     const scoreLabel = buildScoreLabel(match);
-    const normalizedStatus = normalizePadelMatchStatus(match.status);
+    const normalizedStatus = normalizePadelMatchStatus(match.status) ?? match.status;
+    const runtimeFields = resolveMatchRuntimeFields({ match, startAt, normalizedStatus, now });
     if (startAt) {
       const dayKey = formatDayKey(startAt, event.timezone ?? "Europe/Lisbon");
       const courtKey = match.courtId ? `id:${match.courtId}` : `label:${courtLabel}`;
@@ -451,6 +511,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         pairingA,
         pairingB,
         scoreLabel,
+        ...runtimeFields,
       });
     }
 
@@ -466,6 +527,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         scoreLabel,
         roundLabel: match.roundLabel ?? null,
         groupLabel: match.groupLabel ?? null,
+        ...runtimeFields,
       });
     }
 
@@ -504,6 +566,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
         pairingA,
         pairingB,
         scoreLabel,
+        ...runtimeFields,
       });
     }
 
@@ -534,6 +597,7 @@ export async function buildPadelLiveReadModel(params: BuildLiveReadModelParams):
           pairingA,
           pairingB,
           roundLabel: match.roundLabel ?? null,
+          ...runtimeFields,
         });
       });
     }

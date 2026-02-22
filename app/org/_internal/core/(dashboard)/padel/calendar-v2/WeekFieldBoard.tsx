@@ -55,6 +55,13 @@ export function WeekFieldBoard(props: {
   timezone: string;
   onEditMatch?: (matchId: number) => void;
   onQuickMoveMatch?: (matchId: number, targetCourtId: number) => void;
+  onQuickRescheduleMatch?: (payload: {
+    matchId: number;
+    targetCourtId: number;
+    targetStartIso: string;
+    targetEndIso: string;
+    durationMinutes: number;
+  }) => void;
   selectedMatchIds?: number[];
   onToggleSelectMatch?: (matchId: number) => void;
 }) {
@@ -110,6 +117,7 @@ export function WeekFieldBoard(props: {
                 timezone={props.timezone}
                 onEditMatch={props.onEditMatch}
                 onQuickMoveMatch={props.onQuickMoveMatch}
+                onQuickRescheduleMatch={props.onQuickRescheduleMatch}
                 selectedMatchIds={props.selectedMatchIds}
                 onToggleSelectMatch={props.onToggleSelectMatch}
               />

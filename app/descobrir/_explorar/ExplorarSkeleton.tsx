@@ -31,14 +31,10 @@ export default function ExplorarSkeleton({
       {showTopBar ? (
         <div className="sticky top-0 z-40 md:hidden">
           <div className="orya-mobile-topbar px-4 pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-full bg-white/10 animate-pulse" />
-                <div className="h-3 w-16 rounded-full bg-white/10 animate-pulse" />
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-9 w-9 rounded-full bg-white/10 animate-pulse" />
-                <div className="h-9 w-9 rounded-full bg-white/10 animate-pulse" />
+            <div className="h-12 w-full rounded-full border border-white/22 bg-[#2a2a2a] px-4">
+              <div className="flex h-full items-center gap-3">
+                <div className="h-6 w-6 rounded-full bg-white/10 animate-pulse" />
+                <div className="h-4 w-24 rounded-full bg-white/10 animate-pulse" />
               </div>
             </div>
           </div>

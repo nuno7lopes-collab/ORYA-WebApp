@@ -839,17 +839,28 @@ export async function deliverNotificationOutboxItem(item: {
     const validStartAt = startAt && !Number.isNaN(startAt.getTime()) ? startAt : null;
     const reason = typeof payload.reason === "string" ? payload.reason.trim() || null : null;
     const delayStatus = typeof payload.delayStatus === "string" ? payload.delayStatus.trim().toUpperCase() : null;
+    const eventType = typeof payload.eventType === "string" ? payload.eventType.trim().toUpperCase() : "MATCH_CHANGED";
     const courtLabel = match.court?.name || match.courtName || match.courtNumber || match.courtId || "Quadra";
     const teamA = pairingLabel(match.pairingA as Parameters<typeof pairingLabel>[0]);
     const teamB = pairingLabel(match.pairingB as Parameters<typeof pairingLabel>[0]);
-    const title = validStartAt
-      ? delayStatus === "RESCHEDULED"
-        ? "Jogo reagendado"
-        : "Horário atualizado"
-      : "Jogo adiado";
-    const body = validStartAt
-      ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}${reason ? ` · Motivo: ${reason}` : ""}`
-      : `${teamA} vs ${teamB} · Novo horário a definir.${reason ? ` Motivo: ${reason}.` : ""}`;
+    const title =
+      eventType === "MATCH_STARTING_SOON"
+        ? "Jogo a começar"
+        : eventType === "MATCH_STREAM_ONLINE"
+          ? "Transmissão em direto"
+          : validStartAt
+            ? delayStatus === "RESCHEDULED"
+              ? "Jogo reagendado"
+              : "Horário atualizado"
+            : "Jogo adiado";
+    const body =
+      eventType === "MATCH_STARTING_SOON"
+        ? `${teamA} vs ${teamB} · ${formatTime(validStartAt ?? new Date(), match.event.timezone)} · ${courtLabel}`
+        : eventType === "MATCH_STREAM_ONLINE"
+          ? `${teamA} vs ${teamB} · stream em direto no torneio.`
+          : validStartAt
+            ? `${teamA} vs ${teamB} · ${formatTime(validStartAt, match.event.timezone)} · ${courtLabel}${reason ? ` · Motivo: ${reason}` : ""}`
+            : `${teamA} vs ${teamB} · Novo horário a definir.${reason ? ` Motivo: ${reason}.` : ""}`;
     const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
 
     const notification = await createNotificationRecord({
@@ -898,7 +909,8 @@ export async function deliverNotificationOutboxItem(item: {
     const scoreLabel = formatScoreLabel(match);
     const teamA = pairingLabel(match.pairingA as Parameters<typeof pairingLabel>[0]);
     const teamB = pairingLabel(match.pairingB as Parameters<typeof pairingLabel>[0]);
-    const title = "Resultado final";
+    const eventType = typeof payload.eventType === "string" ? payload.eventType.trim().toUpperCase() : "MATCH_RESULT";
+    const title = eventType === "RESULT_CONFIRMED" ? "Resultado confirmado" : "Resultado final";
     const body = scoreLabel !== "—" ? `${teamA} vs ${teamB} · ${scoreLabel}` : `${teamA} vs ${teamB}`;
     const ctaUrl = match.event.slug ? `/eventos/${match.event.slug}` : "/eventos";
 

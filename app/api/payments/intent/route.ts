@@ -23,6 +23,8 @@ import {
   EntitlementStatus,
   EntitlementType,
   EventPricingMode,
+  PaymentEventSource,
+  PaymentStatus,
   PadelPairingSlotRole,
   PadelPaymentMode,
   PadelPairingPaymentStatus,
@@ -59,6 +61,7 @@ import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
 import { getStripeEnv, tryGetStripePublishableKeyForEnv } from "@/lib/stripeKeys";
+import { paymentEventRepo } from "@/domain/finance/readModelConsumer";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const FREE_PLACEHOLDER_INTENT_ID = "FREE_CHECKOUT";
@@ -274,6 +277,132 @@ function resolveStripeRuntimePayload(livemode: boolean | null | undefined) {
     return resolveStripeRuntimePayloadForMode(livemode ? "prod" : "test");
   }
   return resolveStripeRuntimePayloadForMode(getStripeEnv());
+}
+
+const ACTIVE_PAYMENT_STATUSES = [
+  PaymentStatus.CREATED,
+  PaymentStatus.REQUIRES_ACTION,
+  PaymentStatus.PROCESSING,
+] as const;
+
+const resolvePaymentEventStatusFromIntent = (
+  stripeStatus: string | null | undefined,
+) => {
+  const normalized = stripeStatus?.toLowerCase() ?? "";
+  if (
+    normalized === "requires_action" ||
+    normalized === "requires_confirmation" ||
+    normalized === "requires_payment_method"
+  ) {
+    return "REQUIRES_ACTION";
+  }
+  if (normalized === "processing") return "PROCESSING";
+  return "PROCESSING";
+};
+
+const resolvePaymentStatusFromIntent = (stripeStatus: string | null | undefined) => {
+  const normalized = stripeStatus?.toLowerCase() ?? "";
+  if (
+    normalized === "requires_action" ||
+    normalized === "requires_confirmation" ||
+    normalized === "requires_payment_method"
+  ) {
+    return PaymentStatus.REQUIRES_ACTION;
+  }
+  if (normalized === "processing") return PaymentStatus.PROCESSING;
+  return PaymentStatus.REQUIRES_ACTION;
+};
+
+async function persistCanonicalPendingIntentState(params: {
+  purchaseId: string;
+  paymentIntent: Pick<Stripe.PaymentIntent, "id" | "status" | "livemode" | "amount">;
+  dedupeKey: string;
+  eventId?: number | null;
+  userId?: string | null;
+  amountCents?: number | null;
+  platformFeeCents?: number | null;
+}) {
+  const {
+    purchaseId,
+    paymentIntent,
+    dedupeKey,
+    eventId,
+    userId,
+    amountCents,
+    platformFeeCents,
+  } = params;
+  const now = new Date();
+  const mode = paymentIntent.livemode ? "LIVE" : "TEST";
+  const isTest = !paymentIntent.livemode;
+  const eventStatus = resolvePaymentEventStatusFromIntent(paymentIntent.status);
+  const paymentStatus = resolvePaymentStatusFromIntent(paymentIntent.status);
+  const resolvedAmount =
+    typeof amountCents === "number"
+      ? amountCents
+      : typeof paymentIntent.amount === "number"
+        ? paymentIntent.amount
+        : null;
+
+  await prisma.$transaction(async (tx) => {
+    const paymentEvents = paymentEventRepo(tx);
+    const existingPaymentEvent = await tx.paymentEvent.findFirst({
+      where: {
+        OR: [
+          { purchaseId },
+          { stripePaymentIntentId: paymentIntent.id },
+        ],
+      },
+      select: { id: true, attempt: true },
+    });
+
+    if (existingPaymentEvent) {
+      await paymentEvents.update({
+        where: { id: existingPaymentEvent.id },
+        data: {
+          purchaseId,
+          stripePaymentIntentId: paymentIntent.id,
+          dedupeKey,
+          status: eventStatus,
+          source: PaymentEventSource.API,
+          eventId: typeof eventId === "number" ? eventId : undefined,
+          userId: userId ?? undefined,
+          amountCents: resolvedAmount,
+          platformFeeCents: platformFeeCents ?? null,
+          mode,
+          isTest,
+          updatedAt: now,
+          attempt: Math.max(1, existingPaymentEvent.attempt ?? 1),
+          errorMessage: null,
+        },
+      });
+    } else {
+      await paymentEvents.create({
+        data: {
+          purchaseId,
+          stripePaymentIntentId: paymentIntent.id,
+          dedupeKey,
+          status: eventStatus,
+          source: PaymentEventSource.API,
+          eventId: typeof eventId === "number" ? eventId : undefined,
+          userId: userId ?? undefined,
+          amountCents: resolvedAmount,
+          platformFeeCents: platformFeeCents ?? null,
+          mode,
+          isTest,
+          attempt: 1,
+          errorMessage: null,
+        },
+      });
+    }
+
+    await tx.payment.updateMany({
+      where: {
+        id: purchaseId,
+        status: { in: [...ACTIVE_PAYMENT_STATUSES] },
+      },
+      data: { status: paymentStatus, updatedAt: now },
+    });
+  });
 }
 
 async function handlePadelRegistrationIntent(req: NextRequest, body: Body) {
@@ -2285,10 +2414,23 @@ async function _POST(req: NextRequest) {
                 retryable: false,
               });
             }
+            await persistCanonicalPendingIntentState({
+              purchaseId,
+              paymentIntent: pi,
+              dedupeKey: checkoutIdempotencyKey,
+              eventId: event.id,
+              userId,
+              amountCents: Math.max(0, totalAmountInCents),
+              platformFeeCents: platformFeeTotalCents,
+            });
             return jsonWrap(
               {
                 ok: true,
                 reused: true,
+                code: "OK",
+                status: "REQUIRES_ACTION",
+                nextAction: "PAY_NOW",
+                retryable: true,
                 clientSecret: pi.client_secret,
                 amount: typeof pi.amount === "number" ? pi.amount : totalAmountInCents,
                 currency: currency.toUpperCase(),
@@ -2794,6 +2936,17 @@ async function _POST(req: NextRequest) {
         { status: 500 },
       );
     }
+
+    await persistCanonicalPendingIntentState({
+      purchaseId,
+      paymentIntent,
+      dedupeKey: checkoutIdempotencyKey,
+      eventId: event.id,
+      userId,
+      amountCents: Math.max(0, totalAmountInCents),
+      platformFeeCents: platformFeeTotalCents,
+    });
+
     return jsonWrap({
       ok: true,
       code: "OK",

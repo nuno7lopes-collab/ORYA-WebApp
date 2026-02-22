@@ -68,6 +68,11 @@ type Service = {
     recommended: boolean;
     sortOrder: number;
   }>;
+  durationPrices?: Array<{
+    durationMinutes: number;
+    priceCents: number;
+    isActive: boolean;
+  }>;
 };
 
 type Professional = {
@@ -95,6 +100,15 @@ type AvailabilitySlot = {
   startsAt: string;
   durationMinutes: number;
   status: string;
+};
+
+type BookingPolicy = {
+  gridMinutes: number;
+  durationCatalog?: number[];
+  activeDurations?: number[];
+  allowedDurations: number[];
+  allowCustomDuration: boolean;
+  presetDurations: number[];
 };
 
 type BookingCheckout = {
@@ -161,6 +175,14 @@ const ghostButtonClass =
   "rounded-full border border-white/15 bg-white/5 px-3 py-2 text-[12px] text-white/80 transition hover:border-white/30 hover:bg-white/10 disabled:opacity-60 sm:px-4";
 
 const CARD_FEE_BPS = 100;
+const DEFAULT_BOOKING_POLICY: BookingPolicy = {
+  gridMinutes: 30,
+  durationCatalog: [30, 60, 90, 120],
+  activeDurations: [60, 90],
+  allowedDurations: [60, 90],
+  allowCustomDuration: false,
+  presetDurations: [60, 90],
+};
 
 function formatMoney(cents: number, currency: string) {
   return `${(cents / 100).toFixed(2)} ${currency}`;
@@ -347,6 +369,9 @@ export default function ReservasBookingClient({
   const [selectedPartySize, setSelectedPartySize] = useState<number | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<Record<number, number>>({});
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [bookingPolicy, setBookingPolicy] = useState<BookingPolicy>(DEFAULT_BOOKING_POLICY);
+  const [durationOverrideMinutes, setDurationOverrideMinutes] = useState<number | null>(null);
+  const [customDurationDraft, setCustomDurationDraft] = useState("");
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -361,6 +386,7 @@ export default function ReservasBookingClient({
   const [slotsError, setSlotsError] = useState<string | null>(null);
   const [bookingPending, setBookingPending] = useState<BookingPending | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [durationError, setDurationError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<BookingCheckout | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
@@ -470,9 +496,10 @@ export default function ReservasBookingClient({
       })
     : null;
   const baseServiceCents = selectedService?.unitPriceCents ?? 0;
+  const isCourtService = selectedService?.kind === "COURT";
   const packageOptions = useMemo(
     () =>
-      (selectedService?.packages ?? [])
+      (isCourtService ? [] : selectedService?.packages ?? [])
         .slice()
         .sort(
           (a, b) =>
@@ -480,7 +507,7 @@ export default function ReservasBookingClient({
             (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
             a.id - b.id,
         ),
-    [selectedService?.packages],
+    [isCourtService, selectedService?.packages],
   );
   const selectedPackage =
     selectedPackageId != null
@@ -517,10 +544,29 @@ export default function ReservasBookingClient({
     (sum, addon) => sum + addon.deltaPriceCents * addon.quantity,
     0,
   );
-  const baseDurationMinutes = selectedPackage?.durationMinutes ?? selectedService?.durationMinutes ?? 0;
-  const basePriceCents = selectedPackage?.priceCents ?? baseServiceCents;
-  const effectiveDurationMinutes = Math.max(0, baseDurationMinutes + addonsDeltaMinutes);
-  const effectiveBaseCents = Math.max(0, basePriceCents + addonsDeltaCents);
+  const durationPriceMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (selectedService?.durationPrices ?? [])
+      .filter((item) => item.isActive !== false)
+      .forEach((item) => {
+        map.set(item.durationMinutes, item.priceCents);
+      });
+    return map;
+  }, [selectedService?.durationPrices]);
+  const baseDurationMinutes = isCourtService
+    ? selectedService?.durationMinutes ?? 0
+    : selectedPackage?.durationMinutes ?? selectedService?.durationMinutes ?? 0;
+  const basePriceCents = isCourtService
+    ? durationPriceMap.get(baseDurationMinutes) ?? baseServiceCents
+    : selectedPackage?.priceCents ?? baseServiceCents;
+  const computedDurationMinutes = isCourtService
+    ? Math.max(0, baseDurationMinutes)
+    : Math.max(0, baseDurationMinutes + addonsDeltaMinutes);
+  const effectiveDurationMinutes = durationOverrideMinutes ?? computedDurationMinutes;
+  const effectiveDurationPriceCents = isCourtService
+    ? durationPriceMap.get(effectiveDurationMinutes) ?? basePriceCents
+    : basePriceCents;
+  const effectiveBaseCents = Math.max(0, effectiveDurationPriceCents + addonsDeltaCents);
   const priceCurrency = checkout?.currency ?? selectedService?.currency ?? "EUR";
   const basePriceLabel = selectedService ? formatMoney(baseServiceCents, selectedService.currency) : null;
   const addonsPriceLabel =
@@ -542,6 +588,12 @@ export default function ReservasBookingClient({
   const totalEstimateCents = checkout?.amountCents ?? Math.max(0, effectiveBaseCents + cardFeeCents);
   const totalPriceLabel = selectedService ? formatMoney(totalEstimateCents, priceCurrency) : null;
   const cardFeeLabel = cardFeeBps ? `+${(cardFeeBps / 100).toFixed(0)}%` : "";
+  const presetDurationOptions = bookingPolicy.activeDurations?.length
+    ? bookingPolicy.activeDurations
+    : bookingPolicy.allowedDurations?.length
+      ? bookingPolicy.allowedDurations
+      : DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations;
+  const canUseCustomDuration = false;
   const canAccessStep2 = Boolean(selectedService);
   const canAccessStep3 =
     Boolean(selectedService) &&
@@ -595,6 +647,47 @@ export default function ReservasBookingClient({
     return true;
   };
 
+  const applyBookingPolicyFromPayload = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const raw = value as Record<string, unknown>;
+    const activeDurations = Array.isArray(raw.activeDurations)
+      ? raw.activeDurations.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry))
+      : null;
+    const allowedDurations = Array.isArray(raw.allowedDurations)
+      ? raw.allowedDurations.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry))
+      : [];
+    const resolvedActiveDurations = activeDurations && activeDurations.length > 0 ? activeDurations : allowedDurations;
+    const nextPolicy: BookingPolicy = {
+      gridMinutes:
+        typeof raw.gridMinutes === "number" && Number.isFinite(raw.gridMinutes)
+          ? raw.gridMinutes
+          : DEFAULT_BOOKING_POLICY.gridMinutes,
+      durationCatalog: Array.isArray(raw.durationCatalog)
+        ? raw.durationCatalog.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry))
+        : [...(DEFAULT_BOOKING_POLICY.durationCatalog ?? [])],
+      activeDurations: resolvedActiveDurations.length > 0
+        ? resolvedActiveDurations
+        : [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)],
+      allowedDurations: resolvedActiveDurations.length > 0
+        ? resolvedActiveDurations
+        : [...DEFAULT_BOOKING_POLICY.allowedDurations],
+      allowCustomDuration: false,
+      presetDurations: resolvedActiveDurations.length > 0
+        ? resolvedActiveDurations
+        : [...DEFAULT_BOOKING_POLICY.presetDurations],
+    };
+    if (!nextPolicy.allowedDurations.length) {
+      nextPolicy.allowedDurations = [...DEFAULT_BOOKING_POLICY.allowedDurations];
+    }
+    if (!nextPolicy.activeDurations?.length) {
+      nextPolicy.activeDurations = [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)];
+    }
+    if (!nextPolicy.presetDurations.length) {
+      nextPolicy.presetDurations = [...DEFAULT_BOOKING_POLICY.presetDurations];
+    }
+    setBookingPolicy(nextPolicy);
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -606,11 +699,79 @@ export default function ReservasBookingClient({
     if (!selectedService) {
       setSelectedAddons({});
       setSelectedPackageId(null);
+      setDurationOverrideMinutes(null);
+      setCustomDurationDraft("");
       return;
     }
     setSelectedAddons({});
     setSelectedPackageId(null);
+    setDurationOverrideMinutes(null);
+    setCustomDurationDraft("");
   }, [selectedServiceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/org/${organization.id}/reservas/config`, { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json) => {
+        if (cancelled) return;
+        if (!json?.ok) return;
+        const data = json?.data ?? {};
+        const activeDurations = Array.isArray(data.activeDurations)
+          ? data.activeDurations.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
+          : null;
+        const allowedDurations = Array.isArray(data.allowedDurations)
+          ? data.allowedDurations.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
+          : [];
+        const resolvedActiveDurations = activeDurations && activeDurations.length > 0 ? activeDurations : allowedDurations;
+        const nextPolicy: BookingPolicy = {
+          gridMinutes:
+            typeof data.gridMinutes === "number" && Number.isFinite(data.gridMinutes)
+              ? data.gridMinutes
+              : DEFAULT_BOOKING_POLICY.gridMinutes,
+          durationCatalog: Array.isArray(data.durationCatalog)
+            ? data.durationCatalog.filter((value: unknown) => typeof value === "number" && Number.isFinite(value))
+            : [...(DEFAULT_BOOKING_POLICY.durationCatalog ?? [])],
+          activeDurations: resolvedActiveDurations.length > 0
+            ? resolvedActiveDurations
+            : [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)],
+          allowedDurations: resolvedActiveDurations.length > 0
+            ? resolvedActiveDurations
+            : [...DEFAULT_BOOKING_POLICY.allowedDurations],
+          allowCustomDuration: false,
+          presetDurations: resolvedActiveDurations.length > 0
+            ? resolvedActiveDurations
+            : [...DEFAULT_BOOKING_POLICY.presetDurations],
+        };
+        if (!nextPolicy.allowedDurations.length) {
+          nextPolicy.allowedDurations = [...DEFAULT_BOOKING_POLICY.allowedDurations];
+        }
+        if (!nextPolicy.activeDurations?.length) {
+          nextPolicy.activeDurations = [...(DEFAULT_BOOKING_POLICY.activeDurations ?? DEFAULT_BOOKING_POLICY.allowedDurations)];
+        }
+        if (!nextPolicy.presetDurations.length) {
+          nextPolicy.presetDurations = [...DEFAULT_BOOKING_POLICY.presetDurations];
+        }
+        setBookingPolicy(nextPolicy);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBookingPolicy(DEFAULT_BOOKING_POLICY);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [organization.id]);
+
+  useEffect(() => {
+    if (durationOverrideMinutes == null) return;
+    const isPreset = presetDurationOptions.includes(durationOverrideMinutes);
+    if (isPreset) return;
+    if (canUseCustomDuration) return;
+    setDurationOverrideMinutes(null);
+    setCustomDurationDraft("");
+  }, [durationOverrideMinutes, canUseCustomDuration, presetDurationOptions]);
 
   useEffect(() => {
     if (fixedServiceId && fixedServiceId !== selectedServiceId) {
@@ -634,6 +795,7 @@ export default function ReservasBookingClient({
     setCheckoutLoading(false);
     setPaymentMessage(null);
     setBookingError(null);
+    setDurationError(null);
     setBookingSuccess(null);
     setPhoneRequired(false);
     setPhoneError(null);
@@ -694,9 +856,10 @@ export default function ReservasBookingClient({
     setCheckoutLoading(false);
     setPaymentMessage(null);
     setBookingError(null);
+    setDurationError(null);
     setBookingSuccess(null);
     setPendingSlot(null);
-  }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam]);
+  }, [assignmentConfig.assignmentMode, selectedProfessionalId, selectedPartySize, addonsParam, durationOverrideMinutes]);
 
   useEffect(() => {
     if (requiresResource && !selectedPartySize && activeStep > 2) {
@@ -747,6 +910,11 @@ export default function ReservasBookingClient({
     if (addonsParam) {
       params.set("addons", addonsParam);
     }
+    if (isCourtService && effectiveDurationMinutes > 0) {
+      params.set("durationMinutes", String(effectiveDurationMinutes));
+    } else if (durationOverrideMinutes != null) {
+      params.set("durationMinutes", String(durationOverrideMinutes));
+    }
 
     fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
       cache: "no-store",
@@ -758,6 +926,7 @@ export default function ReservasBookingClient({
         if (!data?.ok) {
           throw new Error(data?.message || data?.error || "Erro ao carregar calendário.");
         }
+        applyBookingPolicyFromPayload(data?.bookingPolicy);
         setAvailabilityDays(Array.isArray(data.days) ? data.days : []);
       })
       .catch((err) => {
@@ -781,6 +950,9 @@ export default function ReservasBookingClient({
     calendarMonthParam,
     addonsParam,
     selectedPackageId,
+    durationOverrideMinutes,
+    isCourtService,
+    effectiveDurationMinutes,
   ]);
 
   useEffect(
@@ -839,6 +1011,11 @@ export default function ReservasBookingClient({
     if (addonsParam) {
       params.set("addons", addonsParam);
     }
+    if (isCourtService && effectiveDurationMinutes > 0) {
+      params.set("durationMinutes", String(effectiveDurationMinutes));
+    } else if (durationOverrideMinutes != null) {
+      params.set("durationMinutes", String(durationOverrideMinutes));
+    }
 
     fetch(`/api/servicos/${selectedServiceId}/calendario?${params.toString()}`, {
       cache: "no-store",
@@ -850,6 +1027,7 @@ export default function ReservasBookingClient({
         if (!data?.ok) {
           throw new Error(data?.message || data?.error || "Erro ao carregar horários.");
         }
+        applyBookingPolicyFromPayload(data?.bookingPolicy);
         setDaySlots(Array.isArray(data.items) ? data.items : []);
       })
       .catch((err) => {
@@ -1047,7 +1225,8 @@ export default function ReservasBookingClient({
           partySize: requiresResource ? selectedPartySize : null,
           addressId: resolvedAddressId,
           selectedAddons: selectedAddonsPayload,
-          packageId: selectedPackageId,
+          packageId: isCourtService ? null : selectedPackageId,
+          durationMinutes: isCourtService ? effectiveDurationMinutes : durationOverrideMinutes,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -1210,6 +1389,87 @@ export default function ReservasBookingClient({
       return next;
     });
   };
+
+  const selectPresetDuration = (minutes: number) => {
+    setDurationError(null);
+    setCustomDurationDraft("");
+    setDurationOverrideMinutes(minutes);
+  };
+
+  const clearDurationOverride = () => {
+    setDurationError(null);
+    setCustomDurationDraft("");
+    setDurationOverrideMinutes(null);
+  };
+
+  const applyCustomDuration = () => {
+    if (!canUseCustomDuration) return;
+    const parsed = Number(customDurationDraft.replace(",", "."));
+    const duration = Number.isFinite(parsed) ? Math.floor(parsed) : NaN;
+    if (!Number.isFinite(duration)) {
+      setDurationError("Duração custom inválida.");
+      return;
+    }
+    if (duration < 30 || duration > 240 || duration % 5 !== 0) {
+      setDurationError("Duração custom deve ser múltipla de 5 (30-240 min).");
+      return;
+    }
+    setDurationError(null);
+    setDurationOverrideMinutes(duration);
+  };
+
+  const durationPolicyPanel = selectedService ? (
+    <div className="mt-4 rounded-2xl border border-white/12 bg-white/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Duração</p>
+          <p className="text-sm font-semibold text-white">Durações disponíveis</p>
+        </div>
+        <span className="text-[11px] text-white/60">
+          Atual: {effectiveDurationMinutes} min
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {presetDurationOptions.map((minutes) => {
+          const active = durationOverrideMinutes === minutes;
+          const label = minutes === 60 ? "1h" : minutes === 90 ? "1h30" : `${minutes} min`;
+          return (
+            <button
+              key={`preset-${minutes}`}
+              type="button"
+              onClick={() => selectPresetDuration(minutes)}
+              className={active ? primaryButtonClass : ghostButtonClass}
+            >
+              {label}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={clearDurationOverride}
+          className={durationOverrideMinutes == null ? primaryButtonClass : ghostButtonClass}
+        >
+          Serviço
+        </button>
+      </div>
+      {canUseCustomDuration && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={customDurationDraft}
+            onChange={(event) => setCustomDurationDraft(event.target.value)}
+            placeholder="Duração custom (min)"
+            className="w-48 rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-white/40"
+          />
+          <button type="button" className={ghostButtonClass} onClick={applyCustomDuration}>
+            Aplicar
+          </button>
+        </div>
+      )}
+      {durationError && <p className="mt-2 text-[11px] text-red-200">{durationError}</p>}
+    </div>
+  ) : null;
 
   const packagesPanel =
     selectedService && packageOptions.length > 0 ? (
@@ -1498,6 +1758,7 @@ export default function ReservasBookingClient({
                   </div>
                 )}
 
+                {durationPolicyPanel}
                 {packagesPanel}
                 {addonsPanel}
 
@@ -1514,6 +1775,7 @@ export default function ReservasBookingClient({
               </div>
             )}
 
+              {!allowServiceSelection && activeStep === 2 && durationPolicyPanel}
               {!allowServiceSelection && activeStep === 2 && packagesPanel}
               {!allowServiceSelection && activeStep === 2 && addonsPanel}
 

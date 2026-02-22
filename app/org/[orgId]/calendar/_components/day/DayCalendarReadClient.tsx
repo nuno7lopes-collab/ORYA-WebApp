@@ -43,6 +43,12 @@ import type {
 const PROFESSIONAL_OPTION_PREFIX = "P:";
 const RESOURCE_OPTION_PREFIX = "R:";
 const COURT_OPTION_PREFIX = "C:";
+const KIND_FILTER_OPTIONS = [
+  { value: "RESERVATION", label: "Reserva" },
+  { value: "CLASS", label: "Aula" },
+  { value: "EVENT", label: "Evento" },
+  { value: "TOURNAMENT", label: "Torneio" },
+] as const;
 const DATE_TIME_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 
 function getDateTimeFormatter(timezone: string) {
@@ -98,8 +104,9 @@ function resolveStatusLabel(status: string) {
   return status;
 }
 
-function resolveKindLabel(kind: "EVENT" | "TOURNAMENT" | "RESERVATION") {
+function resolveKindLabel(kind: "EVENT" | "TOURNAMENT" | "RESERVATION" | "CLASS") {
   if (kind === "RESERVATION") return "Reserva";
+  if (kind === "CLASS") return "Aula";
   if (kind === "TOURNAMENT") return "Torneio";
   return "Evento";
 }
@@ -204,6 +211,9 @@ export default function DayCalendarReadClient() {
   const [hourHeight] = useState(DEFAULT_HOUR_HEIGHT);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [visibleKinds, setVisibleKinds] = useState<Array<(typeof KIND_FILTER_OPTIONS)[number]["value"]>>(
+    KIND_FILTER_OPTIONS.map((option) => option.value),
+  );
   const [appliedFilters, setAppliedFilters] = useState(() => emptyFilters());
   const [draftFilters, setDraftFilters] = useState(() => emptyFilters());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -411,9 +421,13 @@ export default function DayCalendarReadClient() {
     });
   }, [enrichedEvents, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
 
-  const filteredEvents = useMemo(
+  const filteredEventsBase = useMemo(
     () => filterEvents(scopedEvents, appliedFilters, timezone),
     [appliedFilters, scopedEvents, timezone],
+  );
+  const filteredEvents = useMemo(
+    () => filteredEventsBase.filter((event) => visibleKinds.includes(event.kind)),
+    [filteredEventsBase, visibleKinds],
   );
   const statusSummary = useMemo(() => summarizeAgendaItemsByStatus(filteredEvents), [filteredEvents]);
   const filteredEventsById = useMemo(() => new Map(filteredEvents.map((event) => [event.id, event])), [filteredEvents]);
@@ -519,6 +533,15 @@ export default function DayCalendarReadClient() {
         return next;
       }
       return next;
+    });
+  };
+  const toggleVisibleKind = (kind: (typeof KIND_FILTER_OPTIONS)[number]["value"]) => {
+    setVisibleKinds((current) => {
+      if (current.includes(kind)) {
+        const next = current.filter((item) => item !== kind);
+        return next.length > 0 ? next : current;
+      }
+      return [...current, kind];
     });
   };
   const hasActiveSelection =
@@ -673,6 +696,28 @@ export default function DayCalendarReadClient() {
           </button>
         </div>
       ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] uppercase tracking-[0.14em] text-white/50">Tipo</span>
+        {KIND_FILTER_OPTIONS.map((option) => {
+          const isActive = visibleKinds.includes(option.value);
+          return (
+            <button
+              key={`kind-${option.value}`}
+              type="button"
+              onClick={() => toggleVisibleKind(option.value)}
+              className={`rounded-full border px-3 py-1 text-xs transition ${
+                isActive
+                  ? "border-cyan-300/45 bg-cyan-400/12 text-cyan-100"
+                  : "border-white/15 bg-white/5 text-white/70 hover:border-white/30 hover:text-white"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+
       {!agendaLoading && !agendaError ? (
         <div className="flex flex-wrap items-center gap-2 text-[11px]" aria-live="polite">
           <span className="rounded-full border border-white/20 bg-white/5 px-2 py-1 text-white/80">

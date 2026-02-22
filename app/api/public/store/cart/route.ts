@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
-import { isStoreFeatureEnabled, isPublicStore } from "@/lib/storeAccess";
+import { isStoreFeatureEnabled, resolvePublicStoreAccess } from "@/lib/storeAccess";
 import { computeBundleTotals } from "@/lib/store/bundles";
 import { getPublicStorePaymentsGate } from "@/lib/store/publicPaymentsGate";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -29,6 +29,7 @@ async function resolveStore(storeId: number) {
       status: true,
       showOnProfile: true,
       catalogLocked: true,
+      checkoutEnabled: true,
       currency: true,
       organization: {
         select: {
@@ -43,13 +44,21 @@ async function resolveStore(storeId: number) {
     },
   });
   if (!store) {
-    return { ok: false as const, error: "Store nao encontrada." };
+    return {
+      ok: false as const,
+      status: 404,
+      errorCode: "STORE_NOT_FOUND",
+      message: "Store nao encontrada.",
+    };
   }
-  if (!isPublicStore(store)) {
-    return { ok: false as const, error: "Loja fechada." };
-  }
-  if (store.catalogLocked) {
-    return { ok: false as const, error: "Catalogo bloqueado." };
+  const publicAccess = resolvePublicStoreAccess(store);
+  if (!publicAccess.ok) {
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: publicAccess.errorCode,
+      message: publicAccess.error,
+    };
   }
   const paymentsGate = getPublicStorePaymentsGate({
     orgType: store.organization?.orgType,
@@ -60,7 +69,12 @@ async function resolveStore(storeId: number) {
     stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
   });
   if (!paymentsGate.ok) {
-    return { ok: false as const, error: "PAYMENTS_NOT_READY" };
+    return {
+      ok: false as const,
+      status: 403,
+      errorCode: "PAYMENTS_NOT_READY",
+      message: "Pagamentos indisponiveis.",
+    };
   }
   return { ok: true as const, store };
 }
@@ -110,9 +124,17 @@ async function _GET(req: NextRequest) {
       return jsonWrap({ ok: false, error: storeParsed.error }, { status: 400 });
     }
 
-    const store = await resolveStore(storeParsed.storeId);
-    if (!store.ok) {
-      return jsonWrap({ ok: false, error: store.error }, { status: 403 });
+    const storeContext = await resolveStore(storeParsed.storeId);
+    if (!storeContext.ok) {
+      return jsonWrap(
+        {
+          ok: false,
+          errorCode: storeContext.errorCode,
+          message: storeContext.message,
+          error: storeContext.errorCode,
+        },
+        { status: storeContext.status },
+      );
     }
 
     const supabase = await createSupabaseServer();
@@ -123,8 +145,8 @@ async function _GET(req: NextRequest) {
     const sessionId = userId ? null : cookieSession ?? crypto.randomUUID();
 
     const resolved = await resolveCart({
-      storeId: store.store.id,
-      currency: store.store.currency,
+      storeId: storeContext.store.id,
+      currency: storeContext.store.currency,
       userId,
       sessionId,
     });
@@ -238,7 +260,7 @@ async function _GET(req: NextRequest) {
 
     const bundleDefinitions = bundleIds.length
       ? await prisma.storeBundle.findMany({
-          where: { id: { in: bundleIds }, storeId: store.store.id },
+          where: { id: { in: bundleIds }, storeId: storeContext.store.id },
           select: {
             id: true,
             name: true,
