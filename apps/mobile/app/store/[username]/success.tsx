@@ -55,7 +55,7 @@ export default function StoreCheckoutSuccessScreen() {
             </Pressable>
 
             <Pressable
-              onPress={() => router.replace({ pathname: "/store/[username]", params: { username } })}
+              onPressIn={() => router.replace({ pathname: "/store/[username]", params: { username } })}
               className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3"
               accessibilityRole="button"
               accessibilityLabel="Voltar à loja"

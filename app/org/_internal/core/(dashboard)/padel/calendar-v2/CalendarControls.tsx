@@ -39,7 +39,7 @@ export function CalendarControls(props: {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="space-y-1">
         <p className="text-[12px] uppercase tracking-[0.2em] text-white/60">Calendário de jogos</p>
-        <p className="text-sm text-white/70">Visual por campo: jogos e bloqueios.</p>
+        <p className="text-sm text-white/70">Visual por campo: jogos, aulas, reservas e bloqueios.</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/5 px-3 py-1 text-[12px] text-white/80">

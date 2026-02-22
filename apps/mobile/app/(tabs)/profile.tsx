@@ -210,7 +210,7 @@ export default function ProfileScreen() {
   const topBarTitle = profile?.username ? `@${profile.username}` : "Perfil";
   const topBarRight = (
     <Pressable
-      onPress={() => safePush(router, "/settings")}
+      onPressIn={() => safePush(router, "/settings")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -1034,7 +1034,7 @@ export default function ProfileScreen() {
                   </View>
                 ) : null}
                 <Pressable
-                  onPress={() => safePush(router, "/padel")}
+                  onPressIn={() => safePush(router, "/padel")}
                   className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel={t("common:actions.explore")}
@@ -1140,7 +1140,7 @@ export default function ProfileScreen() {
                       <View className="gap-2">
                         <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
                         <Pressable
-                          onPress={() => safePush(router, "/agora")}
+                          onPressIn={() => safePush(router, "/agora")}
                           className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
                           accessibilityRole="button"
                           accessibilityLabel="Explorar eventos"

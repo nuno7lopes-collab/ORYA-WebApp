@@ -1,7 +1,7 @@
 import { Redirect, withLayoutContext } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useProfileSummary } from "../../features/profile/hooks";
-import { ActivityIndicator, Animated, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useCallback, useEffect, useState } from "react";
 import { FloatingTabBar } from "../../components/navigation/FloatingTabBar";
 import { getOnboardingDone } from "../../lib/onboardingState";
@@ -172,14 +172,6 @@ export default function TabsLayout() {
   }, [session?.user?.id]);
 
   const { isBlocked } = useTabSwipeBlocker();
-  const renderLazyPlaceholder = useCallback(
-    () => (
-      <View style={{ flex: 1, backgroundColor: APP_BACKGROUND, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color="rgba(255,255,255,0.7)" />
-      </View>
-    ),
-    [],
-  );
   const renderTabBar = useCallback((props: MaterialTopTabBarProps) => {
     const activeRoute = props.state.routes[props.state.index]?.name ?? "agora";
     if (activeRoute === "padel") {
@@ -236,6 +228,7 @@ export default function TabsLayout() {
           onPress={() => profileQuery.refetch()}
           accessibilityRole="button"
           accessibilityLabel="Recarregar"
+          unstable_pressDelay={0}
           style={{
             backgroundColor: "rgba(255,255,255,0.12)",
             borderRadius: 16,
@@ -265,14 +258,12 @@ export default function TabsLayout() {
         tabBar={renderTabBar}
         screenOptions={{
           swipeEnabled: !isBlocked,
-          animationEnabled: Platform.OS === "ios",
+          animationEnabled: false,
           tabBarShowLabel: false,
           tabBarShowIcon: false,
           tabBarIndicatorStyle: { height: 0 },
           tabBarStyle: { backgroundColor: "transparent" },
-          lazy: true,
-          lazyPreloadDistance: 0,
-          lazyPlaceholder: renderLazyPlaceholder,
+          lazy: false,
         }}
       >
         <ExpoTopTabs.Screen name="padel" options={{ title: "Padel" }} />

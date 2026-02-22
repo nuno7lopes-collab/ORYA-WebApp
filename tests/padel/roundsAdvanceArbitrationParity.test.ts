@@ -15,5 +15,15 @@ describe("rounds advance usa arbitragem canónica do calendário", () => {
     expect(source).toContain("prisma.classSession.findMany");
     expect(source).toContain("skippedByMatch");
   });
-});
 
+  it("aplica writes de schedule pelo comando canónico de match slot", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/api/padel/rounds/advance/route.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("applyMatchSlotUpdate");
+    expect(source).toContain("eventType: \"padel.rounds.auto_schedule_generated\"");
+    expect(source).not.toContain("await prisma.eventMatchSlot.update({");
+  });
+});

@@ -48,6 +48,14 @@ type CategorySummary = {
   skippedCount: number;
 };
 
+type OccupancyLegendItem = {
+  type: "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
+  priority: number;
+  isBlocking: boolean;
+  label: string;
+  description?: string | null;
+};
+
 type RoundOpsCategoryOption = {
   key: string;
   label: string;
@@ -76,6 +84,14 @@ export function CalendarMatrixPanel(props: {
   calendarTimezone: string;
   warnings: string[];
   conflictsCount: number;
+  occupancyLegend?: OccupancyLegendItem[];
+  arbitrationPolicy?: {
+    algorithm?: string | null;
+    priorityRuleVersion?: string | null;
+    priorityOrder?: Array<"HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK">;
+    tieBreak?: string | null;
+    note?: string | null;
+  } | null;
   byCategory: CategorySummary[];
   unscheduledRows: Array<{ label: string; value: number }>;
   autoScheduling: boolean;
@@ -225,7 +241,13 @@ export function CalendarMatrixPanel(props: {
             }
             side={
               <>
-                <DiagnosticsPanel warnings={props.warnings} conflictsCount={props.conflictsCount} byCategory={props.byCategory} />
+                <DiagnosticsPanel
+                  warnings={props.warnings}
+                  conflictsCount={props.conflictsCount}
+                  occupancyLegend={props.occupancyLegend}
+                  arbitrationPolicy={props.arbitrationPolicy}
+                  byCategory={props.byCategory}
+                />
                 <AutoScheduleRunStatusPanel run={props.latestRun ?? null} />
                 <UnscheduledQueue rows={props.unscheduledRows} />
                 <AutoSchedulePanel

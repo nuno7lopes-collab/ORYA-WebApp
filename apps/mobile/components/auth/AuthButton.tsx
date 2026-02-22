@@ -68,6 +68,7 @@ export function AuthButton({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      unstable_pressDelay={0}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: isDisabled, busy: loading }}

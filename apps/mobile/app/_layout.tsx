@@ -68,9 +68,10 @@ LogBox.ignoreLogs([
   "`expo-notifications` functionality is not fully supported in Expo Go",
 ]);
 
-const NAV_DURATION_FAST = 200;
-const NAV_DURATION_STANDARD = 220;
-const NAV_DURATION_EMPHASIS = 240;
+const NAV_DURATION_FAST = 110;
+const NAV_DURATION_STANDARD = 130;
+const NAV_DURATION_EMPHASIS = 145;
+const NAV_DURATION_SMOOTH = 160;
 const APP_BACKGROUND = tokens.colors.background;
 
 export default function RootLayout() {
@@ -172,6 +173,14 @@ export default function RootLayout() {
                       options={{
                         animation: "fade_from_bottom",
                         animationDuration: NAV_DURATION_EMPHASIS,
+                        gestureEnabled: true,
+                      }}
+                    />
+                    <Stack.Screen
+                      name="map/index"
+                      options={{
+                        animation: "fade_from_bottom",
+                        animationDuration: NAV_DURATION_SMOOTH,
                         gestureEnabled: true,
                       }}
                     />

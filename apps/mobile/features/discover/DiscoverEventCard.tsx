@@ -526,6 +526,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
           onPressIn={onPressIn}
           onPressOut={onPressOut}
           onPress={handlePress}
+          unstable_pressDelay={0}
           onLongPress={() => {
             if (!isService && event) setFeedbackVisible(true);
           }}

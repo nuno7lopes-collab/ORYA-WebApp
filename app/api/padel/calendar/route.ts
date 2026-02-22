@@ -30,6 +30,50 @@ import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
 const LOCK_TTL_SECONDS = 45;
+const OCCUPANCY_LEGEND = [
+  {
+    type: "HARD_BLOCK",
+    priority: 5,
+    isBlocking: true,
+    label: "Bloqueio duro",
+    description: "Interdição operacional do campo. Vence qualquer ocupação.",
+  },
+  {
+    type: "CLASS_SESSION",
+    priority: 4,
+    isBlocking: true,
+    label: "Aula",
+    description: "Sessão de aula confirmada no campo.",
+  },
+  {
+    type: "MATCH",
+    priority: 3,
+    isBlocking: true,
+    label: "Jogo",
+    description: "Jogo de torneio agendado.",
+  },
+  {
+    type: "BOOKING",
+    priority: 2,
+    isBlocking: true,
+    label: "Reserva",
+    description: "Reserva de clube ativa no campo.",
+  },
+  {
+    type: "SOFT_BLOCK",
+    priority: 1,
+    isBlocking: false,
+    label: "Bloqueio suave",
+    description: "Aviso operacional; não bloqueia por si só.",
+  },
+] as const;
+const ARBITRATION_POLICY = {
+  algorithm: "first_confirmed_wins_then_priority",
+  priorityRuleVersion: "v1",
+  priorityOrder: ["HARD_BLOCK", "CLASS_SESSION", "MATCH", "BOOKING", "SOFT_BLOCK"],
+  tieBreak: "type_priority_desc_then_sourceId_asc",
+  note: "Fora hard constraints, vence o item confirmado mais cedo; depois aplica-se prioridade canónica.",
+} as const;
 
 const parseDate = (value: unknown) => {
   if (typeof value !== "string") return null;
@@ -749,6 +793,8 @@ async function _GET(req: NextRequest) {
       })),
       softBlocks,
       occupancyItems,
+      occupancyLegend: OCCUPANCY_LEGEND,
+      arbitrationPolicy: ARBITRATION_POLICY,
       availabilities,
       matches,
       resourceClaims,

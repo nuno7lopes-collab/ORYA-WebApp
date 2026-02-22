@@ -568,6 +568,7 @@ async function _POST(req: NextRequest) {
             correlationId: requestCtx.correlationId,
             metadata: {
               arbitrationId,
+              eventId: event.id,
               ruleVersion: priorityRuleVersion,
               decisionReason: decision.reason,
               conflictCount: overlapping.length,
@@ -665,6 +666,11 @@ async function _POST(req: NextRequest) {
     }
 
     const arbitrationLatencyMs = Date.now() - arbitrationStartedAt;
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE app_v3.agenda_arbitration_decisions
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('decisionLatencyMs', ${arbitrationLatencyMs})
+      WHERE bundle_id = ${bundleId}::uuid
+    `);
     emitArbitrationMetric("arbitration.decision.latency_ms", {
       organizationId: auth.organizationId,
       authorityOrgId: resolvedClaims[0]?.authorityOrgId ?? null,

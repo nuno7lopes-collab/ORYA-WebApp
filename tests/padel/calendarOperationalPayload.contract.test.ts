@@ -12,8 +12,9 @@ describe("GET /api/padel/calendar payload operacional", () => {
     expect(source).toContain("classSessions");
     expect(source).toContain("bookings:");
     expect(source).toContain("occupancyItems");
+    expect(source).toContain("occupancyLegend");
+    expect(source).toContain("arbitrationPolicy");
     expect(source).toContain("type: \"CLASS_SESSION\"");
     expect(source).toContain("type: \"BOOKING\"");
   });
 });
-

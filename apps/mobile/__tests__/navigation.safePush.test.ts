@@ -27,10 +27,10 @@ describe("safePush", () => {
 
     expect(safePush(router as any, "/notifications")).toBe(true);
 
-    jest.advanceTimersByTime(1000);
+    jest.advanceTimersByTime(200);
     expect(safePush(router as any, "/notifications")).toBe(false);
 
-    jest.advanceTimersByTime(500);
+    jest.advanceTimersByTime(150);
     expect(safePush(router as any, "/notifications")).toBe(true);
     expect(push).toHaveBeenCalledTimes(2);
   });

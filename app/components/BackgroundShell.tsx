@@ -8,7 +8,7 @@ import { BACKGROUND_CATALOG } from "@/lib/theme/catalog";
 const ORG_PREFIXES = ["/org", "/org-hub"];
 const EVENT_NON_SLUG_SEGMENTS = new Set(["nova"]);
 const LANDING_PREFIXES = ["/landing"];
-const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #1f1f1f 0%, #242424 50%, #2a2a2a 100%)";
+const FUNDO_1_BG_IMAGE = "linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%)";
 
 type BackgroundKey = "orya-bg-user" | "orya-bg-event" | "orya-bg-org" | "orya-bg-landing";
 
@@ -22,36 +22,36 @@ type BackgroundPreset = {
 };
 
 const USER_BG_PRESET: BackgroundPreset = {
-  color: "#1f1f1f",
+  color: "#0b1014",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
+    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
 };
 
 const ORG_BG_PRESET: BackgroundPreset = {
-  color: "#1f1f1f",
+  color: "#0b1014",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
+    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
 };
 
 const LANDING_BG_PRESET: BackgroundPreset = {
-  color: "#1f1f1f",
+  color: "#0b1014",
   image: FUNDO_1_BG_IMAGE,
   overlay: "none",
   overlayOpacity: 1,
   skeletonSurface:
-    "linear-gradient(180deg, rgba(44, 44, 44, 0.96) 0%, rgba(35, 35, 35, 0.98) 100%)",
+    "linear-gradient(180deg, rgba(14, 18, 24, 0.96) 0%, rgba(10, 13, 18, 0.98) 100%)",
   skeletonSurfaceStrong:
-    "linear-gradient(180deg, rgba(35, 35, 35, 0.98) 0%, rgba(30, 30, 30, 1) 100%)",
+    "linear-gradient(180deg, rgba(10, 13, 18, 0.98) 0%, rgba(8, 10, 14, 1) 100%)",
 };
 
 type BackgroundLayerPreset = Pick<BackgroundPreset, "color" | "image" | "overlay" | "overlayOpacity">;
@@ -129,7 +129,7 @@ export function BackgroundShell({ children }: { children: ReactNode }) {
   const preset = BG_PRESETS[bgClass];
   const routeOverride = bgClass === "orya-bg-event" ? EVENT_BLUR_PRESET : null;
   const routeColor = routeOverride?.color ?? preset.color;
-  const routeRgb = hexToRgbChannels(routeColor) ?? "31, 31, 31";
+  const routeRgb = hexToRgbChannels(routeColor) ?? "11, 16, 20";
 
   const layerStyle: CSSProperties = routeOverride
     ? {

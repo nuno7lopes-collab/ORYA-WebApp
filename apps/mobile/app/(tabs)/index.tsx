@@ -557,7 +557,7 @@ export default function DiscoverScreen() {
               <Ionicons
                 name="search"
                 size={20}
-                color="rgba(240,246,255,0.92)"
+                color="rgba(236,246,255,0.78)"
               />
               <Text style={styles.searchPlaceholder}>
                 {t("discover:searchPlaceholder")}
@@ -810,7 +810,7 @@ export default function DiscoverScreen() {
                               }
                             >
                               <Pressable
-                                onPress={() => safePush(router, "/map")}
+                                onPressIn={() => safePush(router, "/map")}
                                 style={({ pressed }) => [
                                   styles.emptyCtaIcon,
                                   styles.emptyCtaSecondary,
@@ -1122,21 +1122,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingHorizontal: 15,
-    height: tokens.layout.touchTarget,
-    minHeight: tokens.layout.touchTarget,
-    borderRadius: 23,
+    paddingHorizontal: 16,
+    height: 48,
+    minHeight: 48,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(208,234,255,0.28)",
-    backgroundColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(208,234,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   searchBarPressed: {
-    opacity: 0.92,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderColor: "rgba(208,234,255,0.3)",
   },
   searchPlaceholder: {
     flex: 1,
-    color: "rgba(238, 246, 255, 0.82)",
-    fontSize: 14.5,
-    fontWeight: "600",
+    color: "rgba(238,246,255,0.8)",
+    fontSize: 16,
+    fontWeight: "500",
   },
 });

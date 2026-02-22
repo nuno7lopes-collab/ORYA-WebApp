@@ -406,6 +406,14 @@ type CalendarOccupancyItem = {
   label?: string | null;
 };
 
+type CalendarOccupancyLegendItem = {
+  type: "HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK";
+  priority: number;
+  isBlocking: boolean;
+  label: string;
+  description?: string | null;
+};
+
 type CalendarMatch = {
   id: number;
   categoryId?: number | null;
@@ -454,6 +462,14 @@ type CalendarResponse = {
     updatedAt?: string | Date | null;
   }>;
   occupancyItems?: CalendarOccupancyItem[];
+  occupancyLegend?: CalendarOccupancyLegendItem[];
+  arbitrationPolicy?: {
+    algorithm?: string | null;
+    priorityRuleVersion?: string | null;
+    priorityOrder?: Array<"HARD_BLOCK" | "CLASS_SESSION" | "MATCH" | "BOOKING" | "SOFT_BLOCK">;
+    tieBreak?: string | null;
+    note?: string | null;
+  } | null;
   availabilities: CalendarAvailability[];
   matches: CalendarMatch[];
   conflicts: CalendarConflict[];
@@ -1288,6 +1304,7 @@ export default function PadelHubClient({
     skippedCount: number;
     unscheduledByReason: Record<string, number>;
   } | null>(null);
+  const reportedPreflightMismatchRef = useRef<Set<string>>(new Set());
   const [autoSchedulePlan, setAutoSchedulePlan] = useState<PadelFormatPlanResult | null>(null);
   const [autoSchedulePlanLoading, setAutoSchedulePlanLoading] = useState(false);
   const [autoSchedulePlanError, setAutoSchedulePlanError] = useState<string | null>(null);
@@ -3329,6 +3346,13 @@ export default function PadelHubClient({
   const calendarOccupancyItemsRaw: CalendarOccupancyItem[] = Array.isArray(calendarData?.occupancyItems)
     ? calendarData.occupancyItems
     : [];
+  const calendarOccupancyLegendRaw: CalendarOccupancyLegendItem[] = Array.isArray(calendarData?.occupancyLegend)
+    ? calendarData.occupancyLegend
+    : [];
+  const calendarArbitrationPolicy =
+    calendarData?.arbitrationPolicy && typeof calendarData.arbitrationPolicy === "object"
+      ? calendarData.arbitrationPolicy
+      : null;
   const calendarAvailabilitiesRaw: CalendarAvailability[] = calendarData?.availabilities ?? [];
   const calendarMatchesRaw: CalendarMatch[] = calendarData?.matches ?? [];
   const calendarConflicts: CalendarConflict[] = calendarData?.conflicts ?? [];
@@ -4221,6 +4245,47 @@ export default function PadelHubClient({
     }));
     return [...fromClasses, ...fromBookings];
   }, [calendarBookingsRaw, calendarClassSessionsRaw, calendarOccupancyItemsRaw]);
+  const calendarOccupancyLegend = useMemo<CalendarOccupancyLegendItem[]>(() => {
+    const fallback: CalendarOccupancyLegendItem[] = [
+      {
+        type: "HARD_BLOCK",
+        priority: 5,
+        isBlocking: true,
+        label: "Bloqueio duro",
+        description: "Interdição operacional do campo.",
+      },
+      {
+        type: "CLASS_SESSION",
+        priority: 4,
+        isBlocking: true,
+        label: "Aula",
+        description: "Sessão de aula confirmada no campo.",
+      },
+      {
+        type: "MATCH",
+        priority: 3,
+        isBlocking: true,
+        label: "Jogo",
+        description: "Jogo de torneio agendado.",
+      },
+      {
+        type: "BOOKING",
+        priority: 2,
+        isBlocking: true,
+        label: "Reserva",
+        description: "Reserva ativa no campo.",
+      },
+      {
+        type: "SOFT_BLOCK",
+        priority: 1,
+        isBlocking: false,
+        label: "Bloqueio suave",
+        description: "Aviso operacional; não bloqueia por si só.",
+      },
+    ];
+    const source = calendarOccupancyLegendRaw.length > 0 ? calendarOccupancyLegendRaw : fallback;
+    return [...source].sort((a, b) => b.priority - a.priority);
+  }, [calendarOccupancyLegendRaw]);
   const calendarBlocksForOps =
     showOnlyTournamentGames
       ? []
@@ -4855,58 +4920,183 @@ export default function PadelHubClient({
     setCalendarMessage(null);
     setCalendarWarning(null);
     try {
-      let updated = 0;
-      const reasonCount: Record<string, number> = {};
-      const updatedIds = new Set<number>();
+      const localReasonCount: Record<string, number> = {};
+      const candidateUpdates: Array<{
+        matchId: number;
+        courtId: number;
+        startAt: string;
+        endAt: string;
+        durationMinutes: number;
+        version: string | Date | null | undefined;
+      }> = [];
 
       for (const matchId of targets) {
         const match = calendarMatchesRaw.find((item) => item.id === matchId);
         if (!match) {
-          reasonCount.MATCH_NOT_FOUND = (reasonCount.MATCH_NOT_FOUND ?? 0) + 1;
+          localReasonCount.MATCH_NOT_FOUND = (localReasonCount.MATCH_NOT_FOUND ?? 0) + 1;
           continue;
         }
         if ((match.courtId ?? null) === targetCourtId) {
-          reasonCount.ALREADY_ON_COURT = (reasonCount.ALREADY_ON_COURT ?? 0) + 1;
+          localReasonCount.ALREADY_ON_COURT = (localReasonCount.ALREADY_ON_COURT ?? 0) + 1;
           continue;
         }
         const { start, end } = resolveCalendarMatchWindow(match);
         if (!start || !end) {
-          reasonCount.NO_MATCH_WINDOW = (reasonCount.NO_MATCH_WINDOW ?? 0) + 1;
+          localReasonCount.NO_MATCH_WINDOW = (localReasonCount.NO_MATCH_WINDOW ?? 0) + 1;
           continue;
         }
         const startIso = new Date(start).toISOString();
         const endIso = new Date(end).toISOString();
-        const preflightConflict = resolveCalendarPreflightConflict({
+        candidateUpdates.push({
           matchId,
           courtId: targetCourtId,
-          startIso,
-          endIso,
-        });
-        if (preflightConflict) {
-          const reasonCode = resolveBlockedReasonCodeFromType(preflightConflict.blockedByType);
-          reasonCount[reasonCode] = (reasonCount[reasonCode] ?? 0) + 1;
-          continue;
-        }
-        const durationMinutes = resolveCalendarMatchDurationMinutes(match);
-        const result = await patchCalendarMatchSchedule({
-          matchId,
-          startIso,
-          endIso,
-          durationMinutes,
-          courtId: targetCourtId,
+          startAt: startIso,
+          endAt: endIso,
+          durationMinutes: resolveCalendarMatchDurationMinutes(match),
           version: match.updatedAt ?? null,
         });
-        if (!result.ok) {
-          reasonCount[result.errorCode] = (reasonCount[result.errorCode] ?? 0) + 1;
-          continue;
-        }
-        updated += 1;
-        updatedIds.add(matchId);
       }
 
+      if (candidateUpdates.length === 0) {
+        const failMsg = formatUnscheduledSummary(localReasonCount) || "Nenhum jogo foi atualizado no lote.";
+        setCalendarError(failMsg);
+        toast(failMsg, "err");
+        return;
+      }
+
+      const endpoint = "/api/padel/calendar/matches/bulk-reschedule";
+      const payloadBase: Record<string, unknown> = {
+        eventId,
+        partialMode: "ALLOW_PARTIAL",
+        updates: candidateUpdates.map((update) => ({
+          matchId: update.matchId,
+          courtId: update.courtId,
+          startAt: update.startAt,
+          endAt: update.endAt,
+          durationMinutes: update.durationMinutes,
+          version: update.version ? String(update.version) : null,
+        })),
+      };
+      const requestFingerprint = buildAutoSchedulePayloadFingerprint(payloadBase);
+      const parsePayload = (value: unknown): Record<string, unknown> =>
+        value && typeof value === "object"
+          ? ((value as { result?: unknown }).result as Record<string, unknown>) ??
+            ((value as { data?: unknown }).data as Record<string, unknown>) ??
+            (value as Record<string, unknown>)
+          : {};
+
+      const previewRes = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payloadBase, mode: "PREVIEW" }),
+      });
+      const previewJson = await previewRes.json().catch(() => null);
+      const previewPayload = parsePayload(previewJson);
+      if (!previewRes.ok || previewPayload.ok === false) {
+        const errMsg = sanitizeUiErrorMessage(
+          previewPayload.error ?? (previewJson && typeof previewJson === "object" ? (previewJson as Record<string, unknown>).error : null),
+          "Pré-validação do lote falhou.",
+        );
+        setCalendarError(errMsg);
+        toast(errMsg, "warn");
+        pushOpsLive("warn", "Pré-validação do lote falhou", errMsg);
+        return;
+      }
+
+      const applyRes = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payloadBase, mode: "APPLY" }),
+      });
+      const applyJson = await applyRes.json().catch(() => null);
+      const applyPayload = parsePayload(applyJson);
+      if (!applyRes.ok || applyPayload.ok === false) {
+        const unscheduledByReason = normalizeUnscheduledByReason(applyPayload.unscheduledByReason);
+        const reasonSummary = formatUnscheduledSummary(unscheduledByReason);
+        const errMsg =
+          reasonSummary ||
+          sanitizeUiErrorMessage(
+            applyPayload.error ?? (applyJson && typeof applyJson === "object" ? (applyJson as Record<string, unknown>).error : null),
+            "Não foi possível aplicar o lote.",
+          );
+        setCalendarError(errMsg);
+        toast(errMsg, applyRes.status === 409 ? "warn" : "err");
+        pushOpsLive("warn", "Lote rejeitado", errMsg);
+        return;
+      }
+
+      const previewScheduledCount = Number(previewPayload.scheduledCount ?? 0);
+      const previewSkippedCount = Number(previewPayload.skippedCount ?? 0);
+      const previewUnscheduledByReason = normalizeUnscheduledByReason(previewPayload.unscheduledByReason);
+      const applyScheduledCount = Number(applyPayload.scheduledCount ?? 0);
+      const applySkippedCount = Number(applyPayload.skippedCount ?? 0);
+      const applyUnscheduledByReason = normalizeUnscheduledByReason(applyPayload.unscheduledByReason);
+
+      const mismatch =
+        previewScheduledCount !== applyScheduledCount ||
+        previewSkippedCount !== applySkippedCount ||
+        !areReasonMapsEqual(previewUnscheduledByReason, applyUnscheduledByReason);
+      if (mismatch) {
+        const mismatchPayload = {
+          kind: "padel_metric",
+          metric: "calendarConflictPreflightMismatchCount",
+          value: 1,
+          eventId,
+          mode: "BULK_MATCH_RESCHEDULE",
+          requestFingerprint,
+          previewScheduledCount,
+          previewSkippedCount,
+          applyScheduledCount,
+          applySkippedCount,
+        };
+        console.log(JSON.stringify(mismatchPayload));
+        trackEvent("calendarConflictPreflightMismatchCount", mismatchPayload);
+        const mismatchKey = `${requestFingerprint}:bulk`;
+        if (eventId && !reportedPreflightMismatchRef.current.has(mismatchKey)) {
+          reportedPreflightMismatchRef.current.add(mismatchKey);
+          void fetch("/api/padel/calendar/preflight-mismatch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventId,
+              requestFingerprint: mismatchKey,
+              previewScheduledCount,
+              previewSkippedCount,
+              previewUnscheduledByReason,
+              applyScheduledCount,
+              applySkippedCount,
+              applyUnscheduledByReason,
+            }),
+          }).catch(() => {
+            reportedPreflightMismatchRef.current.delete(mismatchKey);
+          });
+        }
+        pushOpsLive(
+          "warn",
+          "Preview e aplicar divergiram",
+          "O estado da agenda mudou entre a pré-validação e a aplicação do lote.",
+        );
+      }
+
+      const mergedReasonCount = {
+        ...applyUnscheduledByReason,
+      } as Record<string, number>;
+      Object.entries(localReasonCount).forEach(([reason, value]) => {
+        mergedReasonCount[reason] = (mergedReasonCount[reason] ?? 0) + Number(value ?? 0);
+      });
+
+      const scheduledMatches = Array.isArray(applyPayload.scheduled)
+        ? (applyPayload.scheduled as Array<{ matchId?: number }>)
+        : [];
+      const updatedIds = new Set(
+        scheduledMatches
+          .map((row) => Number(row.matchId))
+          .filter((matchId) => Number.isFinite(matchId)),
+      );
       const requested = targets.length;
-      const skipped = requested - updated;
-      const skippedSummary = formatUnscheduledSummary(reasonCount);
+      const updated = applyScheduledCount;
+      const skipped = Math.max(0, requested - updated);
+      const skippedSummary = formatUnscheduledSummary(mergedReasonCount);
 
       if (updated > 0) {
         setCalendarMessage(`Lote aplicado: ${updated}/${requested} jogos atualizados.`);
@@ -4917,8 +5107,10 @@ export default function PadelHubClient({
               : `Atualizados ${updated}/${requested}.`,
           );
           toast("Lote aplicado parcialmente", "warn");
+          pushOpsLive("warn", "Lote parcial", skippedSummary || "Parte dos jogos não foi atualizada.");
         } else {
           toast("Lote aplicado", "ok");
+          pushOpsLive("ok", "Lote aplicado", `Atualizados ${updated}/${requested} jogos.`);
         }
         setSelectedMatchIds((prev) => prev.filter((id) => !updatedIds.has(id)));
         mutateCalendar();
@@ -5233,6 +5425,14 @@ export default function PadelHubClient({
     ALREADY_ON_COURT: "já no campo alvo",
     NO_MATCH_WINDOW: "jogo sem janela válida",
     UPDATE_FAILED: "falha de atualização",
+    COURT_NOT_FOUND: "campo não encontrado",
+    STALE_VERSION: "versão desatualizada",
+    INVALID_VERSION: "versão inválida",
+    INVALID_UPDATES: "lote inválido",
+    DUPLICATE_MATCH_ID: "jogo duplicado no lote",
+    NO_CHANGES: "sem alterações",
+    AGENDA_WRITE_FAILED: "falha no write canónico",
+    BULK_RESCHEDULE_INFEASIBLE: "lote inviável",
   };
 
   const formatUnscheduledSummary = (value: Record<string, unknown> | null | undefined) => {
@@ -5590,6 +5790,26 @@ export default function PadelHubClient({
           };
           console.log(JSON.stringify(mismatchPayload));
           trackEvent("calendarConflictPreflightMismatchCount", mismatchPayload);
+          if (eventId && !reportedPreflightMismatchRef.current.has(requestFingerprint)) {
+            reportedPreflightMismatchRef.current.add(requestFingerprint);
+            void fetch("/api/padel/calendar/preflight-mismatch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                eventId,
+                requestFingerprint,
+                previewScheduledCount: previewSnapshot.scheduledCount,
+                previewSkippedCount: previewSnapshot.skippedCount,
+                previewUnscheduledByReason: previewSnapshot.unscheduledByReason,
+                applyScheduledCount: scheduledCount,
+                applySkippedCount: skippedCount,
+                applyUnscheduledByReason: unscheduledByReason,
+              }),
+            }).catch(() => {
+              // Se falhar telemetria, mantemos UX intacta e permitimos retry futuro.
+              reportedPreflightMismatchRef.current.delete(requestFingerprint);
+            });
+          }
           pushOpsLive(
             "warn",
             "Preview e aplicar divergiram",
@@ -6709,6 +6929,8 @@ export default function PadelHubClient({
               calendarTimezone={calendarTimezone}
               warnings={v2Warnings}
               conflictsCount={calendarConflicts.length}
+              occupancyLegend={calendarOccupancyLegend}
+              arbitrationPolicy={calendarArbitrationPolicy}
               byCategory={autoScheduleByCategory.map((row) => ({
                 ...row,
                 categoryLabel:

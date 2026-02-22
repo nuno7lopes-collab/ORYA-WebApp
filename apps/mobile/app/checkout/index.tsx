@@ -1345,7 +1345,7 @@ export default function CheckoutScreen() {
               <Pressable
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
-                onPress={() => router.replace("/(tabs)/index")}
+                onPressIn={() => router.replace("/(tabs)/index")}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar ao Descobrir"
               >

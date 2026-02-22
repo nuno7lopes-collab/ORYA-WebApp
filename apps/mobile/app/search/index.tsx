@@ -566,7 +566,7 @@ export default function SearchScreen() {
                 </Pressable>
               ) : null}
               <Pressable
-                onPress={() => safePush(router, "/(tabs)/index")}
+                onPressIn={() => safePush(router, "/(tabs)/index")}
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"

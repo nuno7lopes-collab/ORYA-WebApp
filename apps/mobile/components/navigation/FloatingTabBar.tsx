@@ -1,8 +1,12 @@
 import { Ionicons } from "../icons/Ionicons";
 import { Platform, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { tokens } from "@orya/shared";
+import { BlurView } from "expo-blur";
 import type { TabKey } from "./tabOrder";
+import {
+  NAV_BOTTOM_SOLID,
+  navDeepRgba,
+} from "./navColors";
 
 const TABS: Array<{
   key: TabKey;
@@ -28,7 +32,8 @@ const ICON_NUDGE_Y = -0.5;
 const ACTIVE_ICON_COLOR = "rgba(248,252,255,1)";
 const INACTIVE_ICON_COLOR = "rgba(228,240,255,0.8)";
 const TAB_SLOT_SIZE = 44;
-const NAV_BAR_BG = tokens.colors.background;
+const NAV_MILK_OVERLAY = navDeepRgba(0.78);
+const BLUR_INTENSITY = 24;
 
 type FloatingTabBarProps = {
   activeKey: TabKey;
@@ -42,6 +47,15 @@ export function FloatingTabBar({ activeKey, onSelect }: FloatingTabBarProps) {
   return (
     <View pointerEvents="box-none" style={styles.wrapper}>
       <View style={[styles.bar, { paddingBottom: safeBottom }]}>
+        <View pointerEvents="none" style={styles.backdrop}>
+          <BlurView
+            tint="default"
+            intensity={BLUR_INTENSITY}
+            style={StyleSheet.absoluteFill}
+            {...(Platform.OS === "android" ? { experimentalBlurMethod: "dimezisBlurView" as const } : null)}
+          />
+          <View style={styles.milkOverlay} />
+        </View>
         <View style={styles.slotsRow}>
           {TABS.map((tab) => {
             const isActive = activeKey === tab.key;
@@ -53,12 +67,14 @@ export function FloatingTabBar({ activeKey, onSelect }: FloatingTabBarProps) {
                 accessibilityHint={`Abrir ${tab.label}`}
                 accessibilityState={isActive ? { selected: true } : {}}
                 hitSlop={10}
+                unstable_pressDelay={0}
                 style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
-                onPress={() => {
+                onPressIn={() => {
                   if (tab.key !== activeKey) {
                     onSelect(tab.key);
                   }
                 }}
+                onPress={() => undefined}
               >
                 <View style={styles.iconBox}>
                   <Ionicons
@@ -87,7 +103,22 @@ const styles = StyleSheet.create({
   bar: {
     minHeight: TAB_BAR_HEIGHT,
     overflow: "hidden",
-    backgroundColor: NAV_BAR_BG,
+    backgroundColor: "transparent",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    shadowColor: "rgba(9,20,40,0.48)",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: NAV_BOTTOM_SOLID,
+  },
+  milkOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: NAV_MILK_OVERLAY,
   },
   slotsRow: {
     height: TAB_BAR_HEIGHT,

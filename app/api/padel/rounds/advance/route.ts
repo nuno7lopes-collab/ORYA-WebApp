@@ -15,6 +15,7 @@ import { computeSchedulerV2Plan } from "@/domain/padel/schedulerV2/planner";
 import type { PadelExecutionMode, PadelPartialMode, PadelScheduleStrategy } from "@/domain/padel/schedulerV2/types";
 import { resolveAllowPlaceholderMatches } from "@/domain/padel/schedulerV2/formatAdapters";
 import { buildExistingByCourt, evaluateMatchBatchAgainstAgenda } from "@/domain/agenda/scheduleWriteGateway";
+import { applyMatchSlotUpdate } from "@/domain/padel/matchSlots/commands";
 import {
   buildMexicanoRoundRelations,
   deriveMexicanoRoundEntries,
@@ -120,11 +121,12 @@ async function tryAutoScheduleGenerated(params: {
   categoryId: number | null;
   createdMatchIds: number[];
   dryRun: boolean;
+  actorUserId: string | null;
   strategy: PadelScheduleStrategy;
   partialMode: PadelPartialMode;
   executionMode: PadelExecutionMode;
 }) {
-  const { event, categoryId, createdMatchIds, dryRun, strategy, partialMode, executionMode } = params;
+  const { event, categoryId, createdMatchIds, dryRun, actorUserId, strategy, partialMode, executionMode } = params;
   if (createdMatchIds.length === 0) {
     return {
       scheduled: 0,
@@ -421,6 +423,7 @@ async function tryAutoScheduleGenerated(params: {
       blockedBySourceId: item.blockedBySourceId ?? null,
     })),
   ];
+  const skippedByMatchMutable = [...skippedByMatch];
   const acceptedMatchIds = new Set(arbitration.acceptedUpdates.map((update) => update.matchId));
   const scheduledAccepted = scheduleResult.scheduled.filter((update) => acceptedMatchIds.has(update.matchId));
 
@@ -436,27 +439,45 @@ async function tryAutoScheduleGenerated(params: {
     };
   }
 
+  let persistedScheduledCount = scheduledAccepted.length;
+
   if (!dryRun) {
     const courtById = new Map(courtSelection.courts.map((court) => [court.id, court]));
+    persistedScheduledCount = 0;
     for (const scheduled of scheduledAccepted) {
       const court = courtById.get(scheduled.courtId);
-      await prisma.eventMatchSlot.update({
-        where: { id: scheduled.matchId },
-        data: {
+      const updated = await applyMatchSlotUpdate({
+        matchId: scheduled.matchId,
+        organizationId: event.organizationId,
+        actorUserId,
+        correlationId: String(event.id),
+        eventType: "padel.rounds.auto_schedule_generated",
+        schedule: {
           courtId: scheduled.courtId,
-          courtNumber: court ? courtSelection.courtPriorityOrder.indexOf(court.id) + 1 : null,
-          courtName: court?.name ?? null,
           plannedStartAt: scheduled.start,
           plannedEndAt: scheduled.end,
           plannedDurationMinutes: scheduled.durationMinutes,
         },
+        data: {
+          courtNumber: court ? courtSelection.courtPriorityOrder.indexOf(court.id) + 1 : null,
+          courtName: court?.name ?? null,
+        },
       });
+      if (!updated.ok) {
+        unscheduledByReason.AGENDA_WRITE_FAILED = (unscheduledByReason.AGENDA_WRITE_FAILED ?? 0) + 1;
+        skippedByMatchMutable.push({
+          matchId: scheduled.matchId,
+          reason: "AGENDA_WRITE_FAILED",
+        });
+        continue;
+      }
+      persistedScheduledCount += 1;
     }
   }
 
   return {
-    scheduled: scheduledAccepted.length,
-    skippedByMatch,
+    scheduled: persistedScheduledCount,
+    skippedByMatch: skippedByMatchMutable,
     unscheduledByReason,
     byCategory: scheduleResult.byCategory,
     executionMode,
@@ -1054,6 +1075,7 @@ async function _POST(req: NextRequest) {
     categoryId,
     createdMatchIds,
     dryRun: false,
+    actorUserId: user.id,
     strategy: autoScheduleStrategy,
     partialMode: autoSchedulePartialMode,
     executionMode: autoScheduleExecutionMode,

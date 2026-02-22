@@ -241,7 +241,7 @@ export default function PublicProfileScreen() {
 
             {organizationStoreHref ? (
               <Pressable
-                onPress={() => safePush(router, organizationStoreHref)}
+                onPressIn={() => safePush(router, organizationStoreHref)}
                 className="rounded-2xl border border-emerald-300/40 bg-emerald-400/15 px-4 py-3"
                 accessibilityRole="button"
                 accessibilityLabel="Ver loja"

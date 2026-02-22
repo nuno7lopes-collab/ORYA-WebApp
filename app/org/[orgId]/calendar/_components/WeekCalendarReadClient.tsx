@@ -543,6 +543,7 @@ export default function WeekCalendarReadClient() {
     [searchParams],
   );
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
+  const hoverLeaveTimeoutRef = useRef<number | null>(null);
 
   const selectedResourceIds = useMemo(() => parseIdList(searchParams.get("resources")), [searchParams]);
   const selectedCourtIds = useMemo(() => parseIdList(searchParams.get("courts")), [searchParams]);
@@ -783,6 +784,7 @@ export default function WeekCalendarReadClient() {
   }, [aggregateByDay]);
   const selectedAggregate = selectedAggregateKey ? aggregatesByKey.get(selectedAggregateKey) ?? null : null;
   const hoveredAggregate = hoveredAggregateKey ? aggregatesByKey.get(hoveredAggregateKey) ?? null : null;
+  const hoverPreviewAggregate = selectedAggregate ? null : hoveredAggregate;
 
   const organizationAvailabilityKey =
     Number.isFinite(organizationId) && organizationId > 0 ? `org-availability:${organizationId}` : null;
@@ -822,8 +824,25 @@ export default function WeekCalendarReadClient() {
     node.scrollTo({ top, behavior: "smooth" });
   };
   const jumpTimes = [8, 12, 16, 20];
+  const cancelHoverLeaveTimeout = () => {
+    if (hoverLeaveTimeoutRef.current === null) return;
+    window.clearTimeout(hoverLeaveTimeoutRef.current);
+    hoverLeaveTimeoutRef.current = null;
+  };
+  const setHoveredAggregateImmediate = (aggregateKey: string) => {
+    cancelHoverLeaveTimeout();
+    setHoveredAggregateKey((current) => (current === aggregateKey ? current : aggregateKey));
+  };
+  const scheduleHoveredAggregateClear = (aggregateKey: string) => {
+    cancelHoverLeaveTimeout();
+    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
+      setHoveredAggregateKey((current) => (current === aggregateKey ? null : current));
+      hoverLeaveTimeoutRef.current = null;
+    }, 90);
+  };
 
   useEffect(() => {
+    cancelHoverLeaveTimeout();
     setSelectedAggregateKey(null);
     setHoveredAggregateKey(null);
   }, [dateInputValue, selectedCourtIds, selectedProfessionalIds, selectedResourceIds]);
@@ -832,9 +851,17 @@ export default function WeekCalendarReadClient() {
       setSelectedAggregateKey(null);
     }
     if (hoveredAggregateKey && !aggregatesByKey.has(hoveredAggregateKey)) {
+      cancelHoverLeaveTimeout();
       setHoveredAggregateKey(null);
     }
   }, [aggregatesByKey, hoveredAggregateKey, selectedAggregateKey]);
+  useEffect(() => {
+    return () => {
+      if (hoverLeaveTimeoutRef.current !== null) {
+        window.clearTimeout(hoverLeaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const node = gridScrollRef.current;
@@ -1084,22 +1111,31 @@ export default function WeekCalendarReadClient() {
             <span className="rounded-full border border-fuchsia-300/45 bg-fuchsia-400/12 px-2 py-0.5 text-fuchsia-100">Disputa</span>
             <span className="text-white/45">Click fixa detalhe · hover pré-visualiza</span>
           </div>
-          {hoveredAggregate && !selectedAggregate && (
-            <article className="mb-3 rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
-              <p className="text-xs font-semibold text-cyan-100">
-                Pré-visualização: {formatHourMinute(hoveredAggregate.start, timezone)} -{" "}
-                {formatHourMinute(hoveredAggregate.end, timezone)}
-              </p>
-              <p className="mt-1 text-[11px] text-cyan-50/80">
-                {hoveredAggregate.items.length} {hoveredAggregate.items.length === 1 ? "ocupação" : "ocupações"}
-              </p>
-              {hoveredAggregate.items.slice(0, 2).map((entry, index) => (
-                <p key={getProjectedEntryKey(entry, index)} className="truncate text-[11px] text-cyan-50/75">
-                  {formatHourMinute(entry.start, timezone)} {entry.item.title}
+          <div className="mb-3 h-[92px]">
+            {hoverPreviewAggregate ? (
+              <article className="h-full rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
+                <p className="truncate text-xs font-semibold text-cyan-100">
+                  Pré-visualização: {formatHourMinute(hoverPreviewAggregate.start, timezone)} -{" "}
+                  {formatHourMinute(hoverPreviewAggregate.end, timezone)}
                 </p>
-              ))}
-            </article>
-          )}
+                <p className="mt-1 truncate text-[11px] text-cyan-50/80">
+                  {hoverPreviewAggregate.items.length} {hoverPreviewAggregate.items.length === 1 ? "ocupação" : "ocupações"}
+                </p>
+                {hoverPreviewAggregate.items.slice(0, 2).map((entry, index) => (
+                  <p key={getProjectedEntryKey(entry, index)} className="truncate text-[11px] text-cyan-50/75">
+                    {formatHourMinute(entry.start, timezone)} {entry.item.title}
+                  </p>
+                ))}
+              </article>
+            ) : (
+              <article className="h-full rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                <p className="text-xs text-white/60">
+                  Passa o cursor sobre uma ocupação para pré-visualizar sem abrir o detalhe.
+                </p>
+                <p className="mt-1 text-[11px] text-white/45">Click numa ocupação para fixar no painel lateral.</p>
+              </article>
+            )}
+          </div>
 
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-[rgba(5,10,22,0.82)]">
             <div className="overflow-x-auto">
@@ -1229,17 +1265,13 @@ export default function WeekCalendarReadClient() {
                                     left: 4,
                                     width: "calc(100% - 8px)",
                                   }}
-                                  onMouseEnter={() => setHoveredAggregateKey(aggregateKey)}
-                                  onMouseLeave={() =>
-                                    setHoveredAggregateKey((current) => (current === aggregateKey ? null : current))
-                                  }
+                                  onMouseEnter={() => setHoveredAggregateImmediate(aggregateKey)}
+                                  onMouseLeave={() => scheduleHoveredAggregateClear(aggregateKey)}
                                   onClick={() =>
                                     setSelectedAggregateKey((current) => (current === aggregateKey ? null : aggregateKey))
                                   }
-                                  onFocus={() => setHoveredAggregateKey(aggregateKey)}
-                                  onBlur={() =>
-                                    setHoveredAggregateKey((current) => (current === aggregateKey ? null : current))
-                                  }
+                                  onFocus={() => setHoveredAggregateImmediate(aggregateKey)}
+                                  onBlur={() => scheduleHoveredAggregateClear(aggregateKey)}
                                   onKeyDown={(event) => {
                                     if (event.key === "Enter" || event.key === " ") {
                                       event.preventDefault();

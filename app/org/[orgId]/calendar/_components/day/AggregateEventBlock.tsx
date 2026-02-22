@@ -94,7 +94,6 @@ export function AggregateEventBlock({
             type="button"
             className="block w-full truncate rounded px-1 py-0.5 text-left text-[10px] text-white/90 transition hover:bg-black/25"
             onMouseEnter={() => onHoverEventChange?.(entry.item)}
-            onMouseLeave={() => onHoverEventChange?.(null)}
             onClick={(event) => {
               event.stopPropagation();
               onSelectEvent?.(entry.item);

@@ -275,6 +275,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         onPress={handlePress}
+        unstable_pressDelay={0}
         style={({ pressed }) => [
           styles.card,
           styles.rowCard,
@@ -373,6 +374,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={handlePress}
+      unstable_pressDelay={0}
       style={({ pressed }) => [
         styles.card,
         { width: safeSize, height: cardHeight },

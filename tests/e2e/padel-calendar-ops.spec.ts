@@ -19,6 +19,7 @@ describe("e2e guardrails - padel calendar ops", () => {
     const hub = readLocal("app/org/_internal/core/(dashboard)/padel/PadelHubClient.tsx");
 
     expect(hub).toContain("bulkMoveSelectedMatches");
+    expect(hub).toContain("/api/padel/calendar/matches/bulk-reschedule");
     expect(hub).toContain("resolveBlockedReasonCodeFromType");
     expect(hub).toContain("resolveAutoScheduleDomainConflictMessage");
     expect(hub).toContain("resolveAutoScheduleInfeasibleMessage");

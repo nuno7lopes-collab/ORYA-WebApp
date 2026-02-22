@@ -2,7 +2,7 @@
 
 /* ================== CORES BASE ================== */
 :root {
-  --background: #1f1f1f;
+  --background: #0b1014;
   --foreground: #ffffff;
 
   --orya-pink: #ff00c8;
@@ -21,34 +21,34 @@
   --orya-neon-glow-soft: 0 0 18px rgba(107, 255, 255, 0.2), 0 0 16px rgba(255, 0, 200, 0.18);
   --orya-neon-glow-strong: 0 0 28px rgba(107, 255, 255, 0.32), 0 0 26px rgba(255, 0, 200, 0.24);
 
-  --orya-surface-1: rgba(31, 31, 31, 0.8);
-  --orya-surface-2: rgba(31, 31, 31, 0.68);
+  --orya-surface-1: rgba(9, 13, 22, 0.78);
+  --orya-surface-2: rgba(8, 12, 20, 0.62);
   --orya-surface-3: rgba(255, 255, 255, 0.04);
   --orya-surface-border: rgba(255, 255, 255, 0.14);
   --orya-surface-border-strong: rgba(255, 255, 255, 0.22);
   --orya-surface-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  --orya-menu-bg: linear-gradient(160deg, rgba(43, 43, 43, 0.98), rgba(31, 31, 31, 0.96));
-  --orya-menu-bg-solid: rgba(31, 31, 31, 0.98);
+  --orya-menu-bg: linear-gradient(160deg, rgba(18, 24, 42, 0.98), rgba(9, 12, 24, 0.96));
+  --orya-menu-bg-solid: rgba(10, 14, 26, 0.98);
   --orya-menu-border: rgba(255, 255, 255, 0.24);
   --orya-menu-shadow: 0 22px 70px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --orya-menu-hover: rgba(255, 255, 255, 0.12);
   --orya-menu-divider: rgba(255, 255, 255, 0.16);
   --orya-skeleton-surface: linear-gradient(
     160deg,
-    rgba(44, 44, 44, 0.88) 0%,
-    rgba(35, 35, 35, 0.95) 58%,
-    rgba(31, 31, 31, 0.99) 100%
+    rgba(12, 18, 34, 0.86) 0%,
+    rgba(7, 10, 22, 0.95) 58%,
+    rgba(5, 8, 16, 0.99) 100%
   );
   --orya-skeleton-surface-strong: linear-gradient(
     160deg,
-    rgba(40, 40, 40, 0.92) 0%,
-    rgba(33, 33, 33, 0.98) 60%,
-    rgba(28, 28, 28, 1) 100%
+    rgba(10, 16, 30, 0.92) 0%,
+    rgba(6, 9, 18, 0.98) 60%,
+    rgba(4, 6, 12, 1) 100%
   );
 
-  --orya-card-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(31, 31, 31, 0.96));
-  --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(31, 31, 31, 0.92));
-  --orya-topbar-bg: linear-gradient(180deg, rgba(31, 31, 31, 0.94) 0%, rgba(31, 31, 31, 0.86) 100%);
+  --orya-card-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(4, 8, 16, 0.92));
+  --orya-card-bg-soft: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(4, 8, 16, 0.88));
+  --orya-topbar-bg: linear-gradient(180deg, rgba(8, 12, 20, 0.9) 0%, rgba(8, 12, 20, 0.76) 100%);
   --orya-topbar-separator: rgba(255, 255, 255, 0.08);
   --org-topbar-height: 64px;
 
@@ -606,7 +606,7 @@ html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #1f1f1f;
+    --background: #0b1014;
     --foreground: #ffffff;
   }
 }
@@ -619,7 +619,7 @@ html[data-theme-mode="light"] body:is([data-orya-bg="orya-bg-user"], [data-orya-
 
 body {
   background-color: var(--background);
-  background-image: linear-gradient(180deg, #1f1f1f 0%, #242424 50%, #2a2a2a 100%);
+  background-image: linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%);
   color: var(--foreground);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "SF Pro Display", -apple-system, sans-serif;
@@ -630,7 +630,7 @@ body {
 
 .admin-shell {
   font-family: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
-  background-color: #1f1f1f;
+  background-color: #0b1119;
   color: #e6edf7;
 }
 
@@ -641,7 +641,7 @@ body {
 .admin-shell .admin-card {
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(31, 31, 31, 0.9);
+  background: rgba(9, 13, 22, 0.9);
   box-shadow: 0 24px 60px rgba(2, 6, 14, 0.45);
 }
 
@@ -657,7 +657,7 @@ body {
   width: 100%;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(31, 31, 31, 0.82);
+  background: rgba(8, 12, 20, 0.8);
   color: #e6edf7;
   padding: 0.55rem 0.75rem;
   font-size: 12px;
@@ -736,7 +736,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(31, 31, 31, 0.95);
+  background: rgba(9, 13, 22, 0.95);
   border-bottom: 1px solid rgba(255, 255, 255, 0.18);
   color: rgba(230, 237, 247, 0.6);
   font-weight: 500;
@@ -769,7 +769,7 @@ body {
 .admin-section {
   border-radius: 24px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(31, 31, 31, 0.82);
+  background: rgba(9, 13, 22, 0.8);
   box-shadow: 0 30px 80px rgba(2, 6, 14, 0.5);
   padding: 24px;
 }
@@ -864,12 +864,12 @@ body {
 
 .orya-profile-cover-fallback,
 .orya-avatar-fallback {
-  background-color: #1f1f1f;
+  background-color: #0b0f16;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 42%),
     radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.14), transparent 52%),
     radial-gradient(circle at 82% 82%, rgba(0, 0, 0, 0.75), transparent 60%),
-    linear-gradient(145deg, #2a2a2a 0%, #242424 48%, #1f1f1f 100%);
+    linear-gradient(145deg, #0f121c 0%, #151b28 48%, #0a0c12 100%);
   background-position: center;
 }
 
@@ -1098,11 +1098,11 @@ body.orya-bg-landing {
   }
 
   html[data-theme-surface="gradient-panel"] .theme-surface {
-    @apply rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#2a2a2a]/75 to-[#1f1f1f]/95 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl;
+    @apply rounded-3xl border border-white/12 bg-gradient-to-br from-white/8 via-[#0b1124]/70 to-[#050810]/90 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl;
   }
 
   html[data-theme-surface="admin-card"] .theme-surface {
-    @apply rounded-[20px] border border-[rgba(255,255,255,0.1)] bg-[rgba(31,31,31,0.9)] shadow-[0_24px_60px_rgba(2,6,14,0.45)];
+    @apply rounded-[20px] border border-[rgba(255,255,255,0.1)] bg-[rgba(9,13,22,0.9)] shadow-[0_24px_60px_rgba(2,6,14,0.45)];
   }
 
   html[data-theme-surface="admin-card-soft"] .theme-surface {
@@ -1110,7 +1110,7 @@ body.orya-bg-landing {
   }
 
   html[data-theme-surface="admin-section"] .theme-surface {
-    @apply rounded-[24px] border border-[rgba(255,255,255,0.1)] bg-[rgba(31,31,31,0.82)] shadow-[0_30px_80px_rgba(2,6,14,0.5)] p-6;
+    @apply rounded-[24px] border border-[rgba(255,255,255,0.1)] bg-[rgba(9,13,22,0.8)] shadow-[0_30px_80px_rgba(2,6,14,0.5)] p-6;
   }
 
   html[data-theme-surface="mobile-surface"] .theme-surface {
@@ -1401,13 +1401,13 @@ html[data-theme-mode="light"][data-theme-badge="badge-gold"] .theme-badge {
 /* ============ LANDING ORYA ============ */
 
 .landing-shell {
-  --landing-ink: #1f1f1f;
+  --landing-ink: #0b1014;
   --landing-cyan: #5ef6ff;
   --landing-blue: #4c6dff;
   --landing-pink: #ff5fd7;
   --landing-violet: #7a4dff;
   background-color: var(--landing-ink);
-  background-image: linear-gradient(180deg, #1f1f1f 0%, #242424 50%, #2a2a2a 100%);
+  background-image: linear-gradient(180deg, #0b1014 0%, #0d1320 50%, #101826 100%);
 }
 
 .landing-shell[data-landing-mirror="true"] {

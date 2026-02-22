@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { useNotificationsUnread } from "../../features/notifications/hooks";
@@ -11,8 +12,13 @@ import { useAuth } from "../../lib/auth";
 import { safePush } from "../../lib/navigation";
 import type { TopBarScrollState } from "./useTopBarScroll";
 import { TOP_APP_HEADER_HEIGHT } from "./topBarTokens";
+import {
+  NAV_TOP_SOLID,
+  navRgba,
+} from "./navColors";
 
-const NAV_BAR_BG = tokens.colors.background;
+const NAV_MILK_OVERLAY = navRgba(0.78);
+const BLUR_INTENSITY = 24;
 
 type TopAppHeaderVariant = "brand" | "title" | "custom";
 
@@ -64,7 +70,14 @@ export function TopAppHeader({
       {
         paddingTop: insets.top,
         height: insets.top + TOP_APP_HEADER_HEIGHT,
-        backgroundColor: NAV_BAR_BG,
+        backgroundColor: "transparent",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "rgba(255,255,255,0.08)",
+        shadowColor: "rgba(9,20,40,0.45)",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 22,
+        elevation: 7,
       },
       { transform: [{ translateY }] },
     ],
@@ -77,10 +90,12 @@ export function TopAppHeader({
         {renderNotifications ? (
           <View style={styles.iconWrap}>
             <Pressable
-              onPress={() => safePush(router, "/notifications")}
+              onPressIn={() => safePush(router, "/notifications")}
+              onPress={() => undefined}
               accessibilityRole="button"
               accessibilityLabel="Notificações"
               hitSlop={10}
+              unstable_pressDelay={0}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
             >
               <Ionicons name="notifications-outline" size={26} color="rgba(255,255,255,1)" />
@@ -94,10 +109,12 @@ export function TopAppHeader({
         ) : null}
         {renderMessages ? (
           <Pressable
-            onPress={() => safePush(router, "/messages")}
+            onPressIn={() => safePush(router, "/messages")}
+            onPress={() => undefined}
             accessibilityRole="button"
             accessibilityLabel="Mensagens"
             hitSlop={10}
+            unstable_pressDelay={0}
             style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
           >
             <Ionicons name="chatbubble-ellipses" size={26} color="rgba(255,255,255,1)" />
@@ -159,6 +176,15 @@ export function TopAppHeader({
 
   return (
     <Animated.View style={containerStyle} pointerEvents="box-none">
+      <View pointerEvents="none" style={styles.backdrop}>
+        <BlurView
+          tint="default"
+          intensity={BLUR_INTENSITY}
+          style={StyleSheet.absoluteFill}
+          {...(Platform.OS === "android" ? { experimentalBlurMethod: "dimezisBlurView" as const } : null)}
+        />
+        <View style={styles.milkOverlay} />
+      </View>
       <View style={styles.inner}>
         <View style={leftStyle}>{leftContent}</View>
         {centerContent ? (
@@ -189,6 +215,15 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 20,
     paddingHorizontal: 16,
+    overflow: "hidden",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: NAV_TOP_SOLID,
+  },
+  milkOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: NAV_MILK_OVERLAY,
   },
   inner: {
     height: TOP_APP_HEADER_HEIGHT,
@@ -275,14 +310,14 @@ const styles = StyleSheet.create({
     borderRadius: tokens.layout.touchTarget / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     borderWidth: 1,
-    borderColor: "rgba(208,235,255,0.26)",
+    borderColor: "rgba(208,235,255,0.22)",
   },
   iconPressed: {
     opacity: 0.92,
     transform: [{ scale: 0.97 }],
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.2)",
   },
   badge: {
     position: "absolute",

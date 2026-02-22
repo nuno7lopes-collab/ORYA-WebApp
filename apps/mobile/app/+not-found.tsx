@@ -25,7 +25,7 @@ export default function NotFoundScreen() {
         {pathname || "/"}
       </Text>
       <Pressable
-        onPress={() => router.replace("/agora")}
+        onPressIn={() => router.replace("/agora")}
         style={{
           marginTop: 16,
           paddingHorizontal: 16,

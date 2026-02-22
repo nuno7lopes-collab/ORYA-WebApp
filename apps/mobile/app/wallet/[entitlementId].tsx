@@ -529,7 +529,7 @@ export default function WalletDetailScreen() {
 
               {data.event?.slug ? (
                 <Pressable
-                  onPress={() => safePush(router, { pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
+                  onPressIn={() => safePush(router, { pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
                   className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4 mb-4"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

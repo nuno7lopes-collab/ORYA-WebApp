@@ -315,6 +315,7 @@ export const EventCardSquare = memo(function EventCardSquare({
         onPressOut={() => {
           Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 7 }).start();
         }}
+        unstable_pressDelay={0}
         onPress={() => {
           safePush(router, linkHref as any);
           InteractionManager.runAfterInteractions(() => {

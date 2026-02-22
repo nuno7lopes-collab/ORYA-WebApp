@@ -80,7 +80,11 @@ Fecha gates de qualidade, smoke, observabilidade e documentação normativa fina
 - Snapshot de inventário de superfície UI sincronizado.
 - Calendário de torneio com drag temporal (hora) + preflight inline de conflitos (`CLASS_SESSION`/`BOOKING`/`HARD_BLOCK`).
 - Paridade de tratamento de conflitos entre `Simular` e `Aplicar` no auto-schedule.
+- Avanço de rondas com write de agendamento pelo comando canónico (`applyMatchSlotUpdate`) e sem `eventMatchSlot.update` direto no caminho de schedule.
+- Payload do calendário operacional com `occupancyLegend` e `arbitrationPolicy` para explicar hierarquia e regra `first_confirmed_wins`.
+- Bulk move de jogos via endpoint único `POST /api/padel/calendar/matches/bulk-reschedule`, com `PREVIEW`+`APPLY` no mesmo motor e mismatch auditável.
 - Métricas operacionais emitidas: `autoScheduleBlockedByClassSessionCount`, `autoScheduleSkippedByBookingCount`, `scheduleWriteGatewayDecisionLatencyMs`, `matchStartingSoonSentCount`, `publicLivePayloadStreamCoverage`, `calendarConflictPreflightMismatchCount`.
+- Divergências preview/apply são persistidas com ação auditável `PADEL_CALENDAR_PREFLIGHT_MISMATCH`.
 
 ### QA checklist
 - [x] `npm run typecheck` verde.

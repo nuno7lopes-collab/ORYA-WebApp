@@ -639,7 +639,7 @@ export default function PadelTabScreen() {
           <GlassCard intensity={48} className="mb-3">
             <Text className="text-white/70 text-sm">{sectionMeta.emptyLabel}</Text>
             <Pressable
-              onPress={() => safePush(router, "/(tabs)/agora")}
+              onPressIn={() => safePush(router, "/(tabs)/agora")}
               className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -814,7 +814,7 @@ export default function PadelTabScreen() {
                   </Text>
                 ) : null}
                 <Pressable
-                  onPress={() => safePush(router, "/(tabs)/profile")}
+                  onPressIn={() => safePush(router, "/(tabs)/profile")}
                   className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

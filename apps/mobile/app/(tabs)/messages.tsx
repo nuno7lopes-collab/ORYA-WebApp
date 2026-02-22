@@ -318,7 +318,7 @@ export default function MessagesTabScreen() {
             {session?.user?.id ? (
               <GlassCard intensity={46} padding={10}>
                 <Pressable
-                  onPress={() => safePush(router, "/messages/requests")}
+                  onPressIn={() => safePush(router, "/messages/requests")}
                   className="rounded-2xl px-2 py-2"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

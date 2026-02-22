@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { getDateParts } from "@/lib/reservas/availability";
@@ -218,6 +218,26 @@ export default function DayCalendarReadClient() {
   const [draftFilters, setDraftFilters] = useState(() => emptyFilters());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
+  const hoverLeaveTimeoutRef = useRef<number | null>(null);
+
+  const cancelHoverLeaveTimeout = () => {
+    if (hoverLeaveTimeoutRef.current === null) return;
+    window.clearTimeout(hoverLeaveTimeoutRef.current);
+    hoverLeaveTimeoutRef.current = null;
+  };
+
+  const handleHoverEventChange = (event: { id: string } | null) => {
+    if (event) {
+      cancelHoverLeaveTimeout();
+      setHoveredEventId((current) => (current === event.id ? current : event.id));
+      return;
+    }
+    cancelHoverLeaveTimeout();
+    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
+      setHoveredEventId(null);
+      hoverLeaveTimeoutRef.current = null;
+    }, 90);
+  };
 
   const replaceState = (input: {
     nextDate?: Date;
@@ -563,6 +583,7 @@ export default function DayCalendarReadClient() {
   }, [selectedCourtIds.length, selectedProfessionalIds.length, selectedResourceIds.length]);
   const selectedEvent = selectedEventId ? filteredEventsById.get(selectedEventId) ?? null : null;
   const hoveredEvent = hoveredEventId ? filteredEventsById.get(hoveredEventId) ?? null : null;
+  const hoverPreviewEvent = selectedEvent ? null : hoveredEvent;
 
   useEffect(() => {
     if (!selectedEventId) return;
@@ -570,6 +591,19 @@ export default function DayCalendarReadClient() {
       setSelectedEventId(null);
     }
   }, [filteredEventsById, selectedEventId]);
+  useEffect(() => {
+    if (!hoveredEventId) return;
+    if (!filteredEventsById.has(hoveredEventId)) {
+      setHoveredEventId(null);
+    }
+  }, [filteredEventsById, hoveredEventId]);
+  useEffect(() => {
+    return () => {
+      if (hoverLeaveTimeoutRef.current !== null) {
+        window.clearTimeout(hoverLeaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -747,17 +781,26 @@ export default function DayCalendarReadClient() {
       ) : null}
 
       <div className="grid gap-4">
-        {hoveredEvent && !selectedEvent ? (
-          <article className="rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
-            <p className="text-sm font-semibold text-cyan-100">{hoveredEvent.title}</p>
-            <p className="mt-1 text-[11px] text-cyan-50/85">
-              {formatDateTime(hoveredEvent.startsAt, timezone)} - {formatDateTime(hoveredEvent.endsAt, timezone)}
-            </p>
-            <p className="mt-1 text-[10px] uppercase tracking-[0.08em] text-cyan-50/70">
-              {resolveKindLabel(hoveredEvent.kind)} · {resolveStatusLabel(hoveredEvent.status)}
-            </p>
-          </article>
-        ) : null}
+        <div className="h-[92px]">
+          {hoverPreviewEvent ? (
+            <article className="h-full rounded-xl border border-cyan-300/25 bg-cyan-400/8 p-3">
+              <p className="truncate text-sm font-semibold text-cyan-100">{hoverPreviewEvent.title}</p>
+              <p className="mt-1 truncate text-[11px] text-cyan-50/85">
+                {formatDateTime(hoverPreviewEvent.startsAt, timezone)} - {formatDateTime(hoverPreviewEvent.endsAt, timezone)}
+              </p>
+              <p className="mt-1 truncate text-[10px] uppercase tracking-[0.08em] text-cyan-50/70">
+                {resolveKindLabel(hoverPreviewEvent.kind)} · {resolveStatusLabel(hoverPreviewEvent.status)}
+              </p>
+            </article>
+          ) : (
+            <article className="h-full rounded-xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-xs text-white/60">
+                Passa o cursor sobre uma ocupação para pré-visualizar sem abrir o detalhe.
+              </p>
+              <p className="mt-1 text-[11px] text-white/45">Click numa ocupação para fixar no painel lateral.</p>
+            </article>
+          )}
+        </div>
 
         <div>
           <DayGrid
@@ -767,7 +810,7 @@ export default function DayCalendarReadClient() {
             events={filteredEvents}
             hourHeight={hourHeight}
             selectedEventId={selectedEvent?.id ?? null}
-            onHoverEventChange={(event) => setHoveredEventId(event?.id ?? null)}
+            onHoverEventChange={handleHoverEventChange}
             onSelectEvent={(event) => {
               setSelectedEventId((current) => (current === event.id ? null : event.id));
             }}

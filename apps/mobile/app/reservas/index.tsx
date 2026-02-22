@@ -300,7 +300,7 @@ export default function BookingsScreen() {
           <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-sm font-semibold">Inicia sessão para ver as tuas reservas.</Text>
             <Pressable
-              onPress={() => safePush(router, { pathname: "/auth", params: { next: "/reservas" } })}
+              onPressIn={() => safePush(router, { pathname: "/auth", params: { next: "/reservas" } })}
               className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
@@ -340,7 +340,7 @@ export default function BookingsScreen() {
               <View className="gap-2 border-b border-white/12 pb-4">
                 <Text className="text-white/70 text-sm">Ainda não tens reservas de serviço.</Text>
                 <Pressable
-                  onPress={() => safePush(router, "/search")}
+                  onPressIn={() => safePush(router, "/search")}
                   className="mt-2 self-start rounded-full border border-white/20 bg-white/8 px-4 py-2.5"
                   accessibilityRole="button"
                   accessibilityLabel="Explorar serviços"

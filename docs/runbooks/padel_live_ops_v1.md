@@ -56,6 +56,10 @@ Operar em produção o domínio Padel + Reservas (campos, aulas, torneios e serv
   - incidentes especiais: somente write-path canónico
   - override operacional: sempre com `reasonCode` auditável
   - edição de recursos com `courtId != null`: proibida no endpoint genérico (`COURT_RESOURCE_MANAGED_BY_COURT`)
+  - divergência `Simular vs Aplicar` no auto-schedule é auditada em `PADEL_CALENDAR_PREFLIGHT_MISMATCH`
+  - avanço de rondas (`/api/padel/rounds/advance`) aplica write de agenda por comando canónico (`applyMatchSlotUpdate`), sem update direto do slot
+  - `GET /api/padel/calendar` expõe `occupancyLegend` + `arbitrationPolicy` para a UI explicar a ordem real de arbitragem no ecrã operacional
+  - bulk move de jogos usa endpoint único `POST /api/padel/calendar/matches/bulk-reschedule` com `mode=PREVIEW/APPLY` e paridade de razões
 - Notificações:
   - validar emissão `MATCH_CHANGED` para `DELAYED/RESCHEDULED`
   - validar reminder `MATCH_STARTING_SOON` com janela default de 15 minutos

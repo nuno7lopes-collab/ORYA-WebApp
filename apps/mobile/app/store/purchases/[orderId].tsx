@@ -104,7 +104,7 @@ export default function StorePurchaseDetailScreen() {
         title="Detalhe da compra"
         leftSlot={
           <Pressable
-            onPress={() => router.replace("/store/purchases")}
+            onPressIn={() => router.replace("/store/purchases")}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
             style={{
@@ -212,7 +212,7 @@ export default function StorePurchaseDetailScreen() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => safePush(router, "/store/downloads")}
+                  onPressIn={() => safePush(router, "/store/downloads")}
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel="Ir para descargas"

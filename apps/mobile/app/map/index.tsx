@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -77,6 +77,10 @@ const MAP_CARD_SPACING = 18;
 const MAP_CLUSTER_MIN_EVENTS = 10;
 const MAP_CLUSTER_MIN_DELTA = 0.18;
 const MAP_CLUSTER_MIN_POINTS_PER_CELL = 3;
+
+const MapPressable = (props: ComponentProps<typeof Pressable>) => (
+  <Pressable unstable_pressDelay={0} {...props} />
+);
 
 const formatEventDate = (startsAt?: string | null, endsAt?: string | null) => {
   if (!startsAt) return null;
@@ -287,11 +291,12 @@ export default function MapScreen() {
   const templateTypesParam = templateType === "all" ? null : templateType;
   const priceMinParam = priceMin > 0 ? priceMin : null;
   const priceMaxParam = priceMax != null ? priceMax : null;
-  const debouncedRegion = useDebouncedValue(mapRegion, 250);
+  const debouncedRegion = useDebouncedValue(mapRegion, 100);
+  const activeRegion = debouncedRegion ?? mapRegion;
 
   const bounds = useMemo(() => {
-    if (!debouncedRegion) return null;
-    const { latitude, longitude, latitudeDelta, longitudeDelta } = debouncedRegion;
+    if (!activeRegion) return null;
+    const { latitude, longitude, latitudeDelta, longitudeDelta } = activeRegion;
     const clampLat = (value: number) => Math.min(90, Math.max(-90, value));
     const wrapLng = (value: number) => {
       let v = value;
@@ -304,7 +309,7 @@ export default function MapScreen() {
     const east = wrapLng(longitude + longitudeDelta / 2);
     const west = wrapLng(longitude - longitudeDelta / 2);
     return { north, south, east, west };
-  }, [debouncedRegion]);
+  }, [activeRegion]);
 
   const shouldUpdateRegion = useCallback(
     (next: Region) => {
@@ -340,8 +345,8 @@ export default function MapScreen() {
       south: bounds?.south ?? undefined,
       east: bounds?.east ?? undefined,
       west: bounds?.west ?? undefined,
-      lat: debouncedRegion?.latitude ?? mapRegion?.latitude ?? undefined,
-      lng: debouncedRegion?.longitude ?? mapRegion?.longitude ?? undefined,
+      lat: activeRegion?.latitude ?? undefined,
+      lng: activeRegion?.longitude ?? undefined,
     },
     queryEnabled,
   );
@@ -370,7 +375,7 @@ export default function MapScreen() {
   }, [bounds, events]);
 
   const distanceOrigin = useMemo(() => {
-    const region = debouncedRegion ?? mapRegion;
+    const region = activeRegion;
     if (region?.latitude != null && region?.longitude != null) {
       if (distanceLat != null && distanceLng != null) {
         const distanceFromUser = getDistanceKm(
@@ -388,7 +393,7 @@ export default function MapScreen() {
     }
     if (distanceLat != null && distanceLng != null) return { lat: distanceLat, lng: distanceLng };
     return null;
-  }, [debouncedRegion, distanceLat, distanceLng, mapRegion]);
+  }, [activeRegion, distanceLat, distanceLng]);
 
   const filteredEvents = useMemo(() => {
     const base = eventsInBounds;
@@ -412,8 +417,8 @@ export default function MapScreen() {
     [filteredEvents],
   );
   const clusteredMarkers = useMemo(
-    () => buildClusteredMarkers(markerEvents, debouncedRegion ?? mapRegion),
-    [debouncedRegion, mapRegion, markerEvents],
+    () => buildClusteredMarkers(markerEvents, activeRegion),
+    [activeRegion, markerEvents],
   );
 
   useEffect(() => {
@@ -977,28 +982,28 @@ export default function MapScreen() {
               ) : null}
             </View>
           </View>
-          <Pressable
-            onPress={clearMapFilters}
+          <MapPressable
+            onPressIn={clearMapFilters}
             style={({ pressed }) => [styles.resetButton, pressed ? styles.controlPressed : null]}
             accessibilityRole="button"
             accessibilityLabel="Limpar filtros"
           >
             <Text style={styles.resetLabel}>Limpar</Text>
-          </Pressable>
+          </MapPressable>
         </View>
 
         {discoverQuery.isError ? (
           <GlassCard intensity={52} style={{ marginHorizontal: 20, marginBottom: 12 }}>
             <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o mapa.</Text>
-            <Pressable
-              onPress={() => discoverQuery.refetch()}
+            <MapPressable
+              onPressIn={() => discoverQuery.refetch()}
               className="rounded-xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
               accessibilityLabel="Tentar novamente"
             >
               <Text className="text-white text-sm font-semibold text-center">Tentar novamente</Text>
-            </Pressable>
+            </MapPressable>
           </GlassCard>
         ) : null}
       </View>
@@ -1054,7 +1059,6 @@ export default function MapScreen() {
 
   const handleOpenEvent = useCallback(
     (event: PublicEventCard) => {
-      handleSelectEvent(event);
       safePush(router, {
         pathname: "/event/[slug]",
         params: {
@@ -1071,7 +1075,7 @@ export default function MapScreen() {
         },
       });
     },
-    [handleSelectEvent, router],
+    [router],
   );
 
   const renderItem = useCallback(
@@ -1099,7 +1103,7 @@ export default function MapScreen() {
       const coverUri = resolveMediaUri(event.coverImageUrl ?? null);
       const isPadel = Boolean(event.tournament) || (event.categories ?? []).includes("PADEL");
       return (
-        <Pressable
+        <MapPressable
           onPress={() => handleOpenEvent(event)}
           accessibilityRole="button"
           accessibilityLabel={`Abrir evento ${event.title}`}
@@ -1148,7 +1152,7 @@ export default function MapScreen() {
               </View>
             </View>
           </GlassCard>
-        </Pressable>
+        </MapPressable>
       );
     },
     [distanceOrigin, handleOpenEvent, isSheetInteracting, selectedEventId],
@@ -1178,8 +1182,8 @@ export default function MapScreen() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: topPadding, paddingBottom: bottomPadding }}
           ListHeaderComponent={
             <View>
-              <Pressable
-                onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+              <MapPressable
+                onPressIn={() => safeBack(router, navigation, "/(tabs)/index")}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar"
                 style={{
@@ -1190,7 +1194,7 @@ export default function MapScreen() {
                 }}
               >
                 <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
-              </Pressable>
+              </MapPressable>
               <View style={{ marginTop: 10, marginBottom: 12 }}>
                 <Text style={{ color: "#ffffff", fontSize: 20, fontWeight: "700" }}>Mapa</Text>
                 <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>
@@ -1219,18 +1223,18 @@ export default function MapScreen() {
                     compact
                   />
                 </View>
-                <Pressable
-                  onPress={handleRecenter}
+                <MapPressable
+                  onPressIn={handleRecenter}
                   accessibilityRole="button"
                   accessibilityLabel="Recentrar mapa"
                   style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
                 >
                   <Ionicons name="locate-outline" size={18} color="rgba(255,255,255,0.9)" />
-                </Pressable>
+                </MapPressable>
               </View>
 
-              <Pressable
-                onPress={handleOpenExternalMap}
+              <MapPressable
+                onPressIn={handleOpenExternalMap}
                 accessibilityRole="button"
                 accessibilityLabel="Abrir mapa externo"
                 style={({ pressed }) => [
@@ -1241,18 +1245,18 @@ export default function MapScreen() {
               >
                 <Ionicons name="map-outline" size={16} color="rgba(255,255,255,0.9)" />
                 <Text style={styles.locationPromptLabel}>Abrir mapa externo</Text>
-              </Pressable>
+              </MapPressable>
 
               {locationStatus !== "granted" ? (
-                <Pressable
-                  onPress={handleOpenLocationModal}
+                <MapPressable
+                  onPressIn={handleOpenLocationModal}
                   accessibilityRole="button"
                   accessibilityLabel="Ativar localização"
                   style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
                 >
                   <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.9)" />
                   <Text style={styles.locationPromptLabel}>Ativar localização</Text>
-                </Pressable>
+                </MapPressable>
               ) : null}
 
               {locationError ? (
@@ -1268,13 +1272,13 @@ export default function MapScreen() {
             queryEnabled && !discoverQuery.isLoading && !discoverQuery.isError ? (
               <GlassSurface intensity={48} style={{ padding: 16, marginTop: 12 }}>
                 <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
-                <Pressable
-                  onPress={clearMapFilters}
+                <MapPressable
+                  onPressIn={clearMapFilters}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                 >
                   <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
-                </Pressable>
+                </MapPressable>
               </GlassSurface>
             ) : null
           }
@@ -1373,8 +1377,8 @@ export default function MapScreen() {
 
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Pressable
-              onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+            <MapPressable
+              onPressIn={() => safeBack(router, navigation, "/(tabs)/index")}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
               style={({ pressed }) => [
@@ -1383,7 +1387,7 @@ export default function MapScreen() {
               ]}
             >
               <Ionicons name="chevron-back" size={20} color="rgba(245,250,255,0.95)" />
-            </Pressable>
+            </MapPressable>
             <View style={{ flex: 1 }}>
               <MapFiltersBar
                 priceMin={priceMin}
@@ -1407,15 +1411,15 @@ export default function MapScreen() {
           </View>
 
           {locationStatus !== "granted" ? (
-            <Pressable
-              onPress={handleOpenLocationModal}
+            <MapPressable
+              onPressIn={handleOpenLocationModal}
               accessibilityRole="button"
               accessibilityLabel="Ativar localização"
               style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
             >
               <Ionicons name="location-outline" size={16} color="rgba(255,255,255,0.9)" />
               <Text style={styles.locationPromptLabel}>Ativar localização</Text>
-            </Pressable>
+            </MapPressable>
           ) : null}
 
           {locationError ? (
@@ -1479,13 +1483,13 @@ export default function MapScreen() {
                     isEmpty ? (
                       <GlassSurface intensity={48} style={{ padding: 16 }}>
                         <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
-                        <Pressable
-                          onPress={clearMapFilters}
+                        <MapPressable
+                          onPressIn={clearMapFilters}
                           className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                           style={{ minHeight: tokens.layout.touchTarget }}
                         >
                           <Text className="text-white text-sm font-semibold text-center">Limpar filtros</Text>
-                        </Pressable>
+                        </MapPressable>
                       </GlassSurface>
                     ) : null
                   }
@@ -1496,8 +1500,8 @@ export default function MapScreen() {
         </Animated.View>
 
         <Animated.View style={[styles.fabWrapper, fabAnimatedStyle]}>
-          <Pressable
-            onPress={handleRecenter}
+          <MapPressable
+            onPressIn={handleRecenter}
             accessibilityRole="button"
             accessibilityLabel="Recentrar mapa"
             style={({ pressed }) => [styles.fabButton, pressed ? styles.controlPressed : null]}
@@ -1510,7 +1514,7 @@ export default function MapScreen() {
             >
               <Ionicons name="locate" size={19} color="rgba(245,250,255,0.95)" style={styles.fabIcon} />
             </GlassSurface>
-          </Pressable>
+          </MapPressable>
         </Animated.View>
         <LocationPermissionModal
           visible={locationModalVisible}

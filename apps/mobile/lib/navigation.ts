@@ -2,8 +2,8 @@ import type { Router } from "expo-router";
 import type { NavigationProp } from "@react-navigation/native";
 
 const DEFAULT_FALLBACK = "/agora";
-const DEFAULT_PUSH_DEDUPE_MS = 900;
-const DEFAULT_PUSH_LOCK_MS = 1400;
+const DEFAULT_PUSH_DEDUPE_MS = 180;
+const DEFAULT_PUSH_LOCK_MS = 320;
 const PUSH_STALE_MS = 6000;
 
 type PushHref = Parameters<Router["push"]>[0];

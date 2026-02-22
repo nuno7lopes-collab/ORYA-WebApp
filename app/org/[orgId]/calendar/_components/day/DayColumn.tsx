@@ -85,7 +85,8 @@ export function DayColumn({
     const relativeY = clientY - rect.top;
     if (!Number.isFinite(relativeY)) return;
     const clampedY = Math.max(0, Math.min(totalHeight, relativeY));
-    const minute = Math.round(clampedY / minuteHeight);
+    const rawMinute = Math.round(clampedY / minuteHeight);
+    const minute = Math.round(rawMinute / SLOT_MINUTES) * SLOT_MINUTES;
     onHoverChange({ minute: Math.max(0, Math.min(24 * 60, minute)) });
   };
 

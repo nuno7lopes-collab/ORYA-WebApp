@@ -327,7 +327,12 @@ export function DayGrid({
                           setHoverSlot((current) => (current?.columnId === column.id ? null : current));
                           return;
                         }
-                        setHoverSlot({ columnId: column.id, minute: payload.minute });
+                        setHoverSlot((current) => {
+                          if (current?.columnId === column.id && current.minute === payload.minute) {
+                            return current;
+                          }
+                          return { columnId: column.id, minute: payload.minute };
+                        });
                       }}
                       onHoverEventChange={onHoverEventChange}
                       onSelectEvent={onSelectEvent}
