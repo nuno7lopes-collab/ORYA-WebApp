@@ -245,6 +245,7 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
 
       const typeTickets = ticketsByType.get(line.ticketTypeId) ?? new Map();
       let createdCount = 0;
+      const ticketOwnerUserId = ownerIdentityId ? null : userId;
 
       for (let i = 0; i < qty; i++) {
         let ticket = typeTickets.get(i);
@@ -255,7 +256,8 @@ export async function fulfillPaidIntent(intent: IntentLike, stripeEventId?: stri
           const created = await tx.ticket.create({
             data: {
               userId: userId ?? null,
-              ownerUserId: userId ?? null,
+              // Constraint tickets_owner_exclusive_chk: ownerUserId e ownerIdentityId não podem coexistir.
+              ownerUserId: ticketOwnerUserId ?? null,
               ownerIdentityId: ownerIdentityId ?? null,
               eventId: event.id,
               ticketTypeId: line.ticketTypeId,
