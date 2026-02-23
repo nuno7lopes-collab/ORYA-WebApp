@@ -2,7 +2,13 @@ import crypto from "crypto";
 import { config } from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { AnalyticsDimensionKey, AnalyticsMetricKey, PrismaClient, SourceType } from "@prisma/client";
+import {
+  AnalyticsDimensionKey,
+  AnalyticsMetricKey,
+  OrganizationModule,
+  PrismaClient,
+  SourceType,
+} from "@prisma/client";
 import { Pool } from "pg";
 import seedrandom from "seedrandom";
 
@@ -217,6 +223,27 @@ type SeedOrg = {
   ownerUserId: string;
 };
 
+type TopPadelCenterSeed = {
+  key: string;
+  username: string;
+  publicName: string;
+  shortName: string;
+  city: string;
+  address: string;
+  lat: number;
+  lng: number;
+  publicHours: string;
+  contactEmailMasked: string;
+  contactPhoneMasked: string;
+  courts: Array<{
+    name: string;
+    description: string;
+    surface: string;
+    indoor: boolean;
+  }>;
+  amenities: string[];
+};
+
 type PurchaseRecord = {
   organizationId: number;
   userId: string;
@@ -307,6 +334,179 @@ const cityPool = [
   { city: "Setubal", address: "Avenida Luisa Todi 310, Setubal", lat: 38.5244, lng: -8.8882 },
   { city: "Viseu", address: "Rua Formosa 31, Viseu", lat: 40.661, lng: -7.9097 },
   { city: "Guimaraes", address: "Largo do Toural 44, Guimaraes", lat: 41.4417, lng: -8.2951 },
+];
+
+const TOP_PADEL_CENTERS: TopPadelCenterSeed[] = [
+  {
+    key: "fluvial",
+    username: "top_padel",
+    publicName: "Top Padel Fluvial",
+    shortName: "TPF",
+    city: "Porto",
+    address: "Rua do Ouro 797, Porto, Portugal",
+    lat: 41.14702,
+    lng: -8.65558,
+    publicHours: "07:00-23:30",
+    contactEmailMasked: "geral.fluvial@top-padel-demo.pt",
+    contactPhoneMasked: "+351 22X XXX 10X",
+    courts: [
+      { name: "Court 1", description: "Panoramico WPT", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Panoramico WPT", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Competicao", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Competicao", surface: "Relva sintetica", indoor: true },
+      { name: "Court 5", description: "Outdoor panoramico", surface: "Mondo", indoor: false },
+      { name: "Court 6", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 7", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 8", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Bar", "Balnearios", "Loja tecnica", "Parque privado"],
+  },
+  {
+    key: "industrial",
+    username: "top_padel_industrial",
+    publicName: "Top Padel Industrial",
+    shortName: "TPI",
+    city: "Porto",
+    address: "Rua do Freixo 1460, Porto, Portugal",
+    lat: 41.14775,
+    lng: -8.56648,
+    publicHours: "07:30-23:00",
+    contactEmailMasked: "geral.industrial@top-padel-demo.pt",
+    contactPhoneMasked: "+351 22X XXX 11X",
+    courts: [
+      { name: "Court 1", description: "Indoor panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Indoor panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 5", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 6", description: "Outdoor individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Ginasiio funcional", "Balnearios", "Parque gratuito"],
+  },
+  {
+    key: "fojo",
+    username: "top_padel_fojo",
+    publicName: "Top Padel Fojo",
+    shortName: "TPFO",
+    city: "Braga",
+    address: "Rua do Fojo 88, Braga, Portugal",
+    lat: 41.56753,
+    lng: -8.41992,
+    publicHours: "08:00-23:30",
+    contactEmailMasked: "geral.fojo@top-padel-demo.pt",
+    contactPhoneMasked: "+351 25X XXX 12X",
+    courts: [
+      { name: "Court 1", description: "Panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 4", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 5", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Escola de padel", "Kids area", "Snack bar"],
+  },
+  {
+    key: "guimaraes",
+    username: "top_padel_guimaraes",
+    publicName: "Top Padel Guimaraes",
+    shortName: "TPG",
+    city: "Guimaraes",
+    address: "Avenida Conde Margaride 198, Guimaraes, Portugal",
+    lat: 41.43839,
+    lng: -8.29574,
+    publicHours: "07:00-22:30",
+    contactEmailMasked: "geral.guimaraes@top-padel-demo.pt",
+    contactPhoneMasked: "+351 25X XXX 13X",
+    courts: [
+      { name: "Court 1", description: "Indoor WPT", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Indoor WPT", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 5", description: "Outdoor standard", surface: "Relva sintetica", indoor: false },
+      { name: "Court 6", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Balnearios", "Loja tecnica", "Zona lounge"],
+  },
+  {
+    key: "braga",
+    username: "top_padel_braga",
+    publicName: "Top Padel Braga",
+    shortName: "TPB",
+    city: "Braga",
+    address: "Avenida do Cávado 120, Braga, Portugal",
+    lat: 41.5576,
+    lng: -8.42723,
+    publicHours: "07:00-23:00",
+    contactEmailMasked: "geral.braga@top-padel-demo.pt",
+    contactPhoneMasked: "+351 25X XXX 14X",
+    courts: [
+      { name: "Court 1", description: "Panoramico central", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Indoor", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Indoor", surface: "Relva sintetica", indoor: true },
+      { name: "Court 5", description: "Outdoor", surface: "Relva sintetica", indoor: false },
+      { name: "Court 6", description: "Outdoor", surface: "Relva sintetica", indoor: false },
+      { name: "Court 7", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Restaurante", "Balnearios", "Academia"],
+  },
+  {
+    key: "famalicao",
+    username: "top_padel_famalicao",
+    publicName: "Top Padel Famalicao",
+    shortName: "TPFA",
+    city: "Famalicao",
+    address: "Rua Adriano Pinto Basto 220, Famalicao, Portugal",
+    lat: 41.40682,
+    lng: -8.51966,
+    publicHours: "08:00-22:30",
+    contactEmailMasked: "geral.famalicao@top-padel-demo.pt",
+    contactPhoneMasked: "+351 25X XXX 15X",
+    courts: [
+      { name: "Court 1", description: "Panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 3", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Outdoor", surface: "Relva sintetica", indoor: false },
+      { name: "Court 5", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Snack bar", "Parque gratuito", "Escola de iniciacao"],
+  },
+  {
+    key: "maia",
+    username: "top_padel_maia",
+    publicName: "Top Padel Maia",
+    shortName: "TPM",
+    city: "Maia",
+    address: "Avenida Dom Manuel II 950, Maia, Portugal",
+    lat: 41.22794,
+    lng: -8.62079,
+    publicHours: "07:00-23:30",
+    contactEmailMasked: "geral.maia@top-padel-demo.pt",
+    contactPhoneMasked: "+351 22X XXX 16X",
+    courts: [
+      { name: "Court 1", description: "Panoramico WPT", surface: "Mondo", indoor: true },
+      { name: "Court 2", description: "Panoramico", surface: "Mondo", indoor: true },
+      { name: "Court 3", description: "Indoor treino", surface: "Relva sintetica", indoor: true },
+      { name: "Court 4", description: "Outdoor", surface: "Relva sintetica", indoor: false },
+      { name: "Court 5", description: "Outdoor", surface: "Relva sintetica", indoor: false },
+      { name: "Court 6", description: "Individual", surface: "Mondo", indoor: false },
+    ],
+    amenities: ["Balnearios", "Recovery zone", "Loja tecnica"],
+  },
+];
+
+const TOP_PADEL_REQUIRED_MODULES: OrganizationModule[] = [
+  "RESERVAS",
+  "TORNEIOS",
+  "EVENTOS",
+  "INSCRICOES",
+  "CRM",
+  "LOJA",
+  "FINANCEIRO",
+  "ANALYTICS",
+  "MENSAGENS",
+  "STAFF",
+  "DEFINICOES",
+  "PERFIL_PUBLICO",
 ];
 
 const tournamentFormats = [
@@ -667,6 +867,130 @@ async function ensureOrganization(
   };
 }
 
+async function ensureOrganizationInGroup(
+  prisma: PrismaClient,
+  input: {
+    username: string;
+    publicName: string;
+    ownerUserId: string;
+    officialEmail: string;
+    orgType: "EXTERNAL" | "PLATFORM";
+    groupId: number;
+  },
+): Promise<SeedOrg> {
+  const existing = await prisma.organization.findUnique({ where: { username: input.username } });
+  if (existing) {
+    const updated = await prisma.organization.update({
+      where: { id: existing.id },
+      data: {
+        groupId: input.groupId,
+        publicName: input.publicName,
+        status: "ACTIVE",
+        officialEmail: input.officialEmail,
+        officialEmailVerifiedAt: new Date(),
+        orgType: input.orgType,
+        stripeAccountId: existing.stripeAccountId ?? "acct_platform_orya_shared",
+        stripeChargesEnabled: true,
+        stripePayoutsEnabled: true,
+        timezone: "Europe/Lisbon",
+        language: "pt",
+      },
+    });
+
+    await prisma.organizationGroupMember.upsert({
+      where: {
+        groupId_userId: {
+          groupId: input.groupId,
+          userId: input.ownerUserId,
+        },
+      },
+      update: { role: "OWNER", scopeAllOrgs: true, scopeOrgIds: [] },
+      create: {
+        groupId: input.groupId,
+        userId: input.ownerUserId,
+        role: "OWNER",
+        scopeAllOrgs: true,
+        scopeOrgIds: [],
+      },
+    });
+
+    await ensureGlobalUsername(prisma, input.username, "ORG", String(updated.id));
+    return {
+      id: updated.id,
+      username: updated.username ?? input.username,
+      publicName: updated.publicName,
+      groupId: updated.groupId,
+      ownerUserId: input.ownerUserId,
+    };
+  }
+
+  const created = await prisma.organization.create({
+    data: {
+      groupId: input.groupId,
+      username: input.username,
+      publicName: input.publicName,
+      status: "ACTIVE",
+      orgType: input.orgType,
+      officialEmail: input.officialEmail,
+      officialEmailVerifiedAt: new Date(),
+      stripeAccountId: "acct_platform_orya_shared",
+      stripeChargesEnabled: true,
+      stripePayoutsEnabled: true,
+      timezone: "Europe/Lisbon",
+      language: "pt",
+    },
+  });
+
+  await prisma.organizationGroupMember.upsert({
+    where: {
+      groupId_userId: {
+        groupId: input.groupId,
+        userId: input.ownerUserId,
+      },
+    },
+    update: { role: "OWNER", scopeAllOrgs: true, scopeOrgIds: [] },
+    create: {
+      groupId: input.groupId,
+      userId: input.ownerUserId,
+      role: "OWNER",
+      scopeAllOrgs: true,
+      scopeOrgIds: [],
+    },
+  });
+
+  await ensureGlobalUsername(prisma, input.username, "ORG", String(created.id));
+  return {
+    id: created.id,
+    username: created.username ?? input.username,
+    publicName: created.publicName,
+    groupId: created.groupId,
+    ownerUserId: input.ownerUserId,
+  };
+}
+
+async function ensureOrganizationModules(
+  prisma: PrismaClient,
+  organizationId: number,
+  modules: OrganizationModule[],
+) {
+  for (const moduleKey of modules) {
+    await prisma.organizationModuleEntry.upsert({
+      where: {
+        organizationId_moduleKey: {
+          organizationId,
+          moduleKey,
+        },
+      },
+      update: { enabled: true },
+      create: {
+        organizationId,
+        moduleKey,
+        enabled: true,
+      },
+    });
+  }
+}
+
 async function upsertAddress(prisma: PrismaClient, address: string, lat: number, lng: number) {
   const hash = makeAddressHash(`${address}|${lat}|${lng}`);
   const existing = await prisma.address.findUnique({ where: { addressHash: hash } });
@@ -850,13 +1174,28 @@ async function main() {
       throw new Error(`Missing demo friend user @${demoFriendUser.username} in seed user pool.`);
     }
 
+    const topPadelPrimaryCenter = TOP_PADEL_CENTERS[0]!;
     const topPadelOrg = await ensureOrganization(prisma, {
-      username: "top_padel",
-      publicName: "Top Padel",
+      username: topPadelPrimaryCenter.username,
+      publicName: topPadelPrimaryCenter.publicName,
       ownerUserId: miguelProfile.id,
-      officialEmail: "migueloryatest@gmail.com",
+      officialEmail: topPadelPrimaryCenter.contactEmailMasked,
       orgType: "EXTERNAL",
     });
+    const topPadelSiblingCenterOrgs: SeedOrg[] = [];
+    for (const center of TOP_PADEL_CENTERS.slice(1)) {
+      const sibling = await ensureOrganizationInGroup(prisma, {
+        username: center.username,
+        publicName: center.publicName,
+        ownerUserId: miguelProfile.id,
+        officialEmail: center.contactEmailMasked,
+        orgType: "EXTERNAL",
+        groupId: topPadelOrg.groupId,
+      });
+      topPadelSiblingCenterOrgs.push(sibling);
+    }
+    const topPadelCenterOrgs = [topPadelOrg, ...topPadelSiblingCenterOrgs];
+    const topPadelCenterByUsername = new Map(topPadelCenterOrgs.map((org) => [org.username, org] as const));
 
     const oryaOrg = await ensureOrganization(prisma, {
       username: "orya",
@@ -887,7 +1226,7 @@ async function main() {
       extraOrgs.push(org);
     }
 
-    const organizations = [topPadelOrg, oryaOrg, ...extraOrgs];
+    const organizations = [topPadelOrg, ...topPadelSiblingCenterOrgs, oryaOrg, ...extraOrgs];
 
     for (const profile of allUsers) {
       await prisma.profile.update({ where: { id: profile.id }, data: { activeOrganizationId: topPadelOrg.id } });

@@ -217,6 +217,19 @@ type AgendaGroup = {
   items: AgendaItem[];
 };
 
+type GroupCenterSummary = {
+  id: number;
+  username: string;
+  name: string;
+  city: string | null;
+  address: string | null;
+  publicHours: string | null;
+  courtsLabel: string;
+  amenities: string[];
+  reservasHref: string | null;
+  formHref: string | null;
+};
+
 type OperationModule = "EVENTOS" | "RESERVAS" | "TORNEIOS";
 
 const OPERATION_META: Record<
@@ -364,6 +377,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       where: { username: usernameParam, status: "ACTIVE" },
       select: {
         id: true,
+        groupId: true,
         username: true,
         publicName: true,
         businessName: true,
@@ -717,6 +731,132 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       label: resource.label,
       capacity: resource.capacity,
     }));
+    const siblingOrganizations = await prisma.organization.findMany({
+      where: {
+        groupId: organizationProfile.groupId,
+        status: "ACTIVE",
+        id: { not: organizationProfile.id },
+        username: { not: null },
+      },
+      orderBy: [{ id: "asc" }],
+      select: {
+        id: true,
+        username: true,
+        publicName: true,
+        businessName: true,
+        publicHours: true,
+        infoRules: true,
+        infoRequirements: true,
+        infoLocationNotes: true,
+        addressRef: { select: { formattedAddress: true, canonical: true } },
+        organizationModules: {
+          where: { enabled: true },
+          select: { moduleKey: true },
+        },
+      },
+    });
+    const siblingOrgIds = siblingOrganizations.map((org) => org.id);
+    const [siblingClubs, siblingServiceCounts, siblingForms] = siblingOrgIds.length
+      ? await Promise.all([
+          prisma.padelClub.findMany({
+            where: {
+              organizationId: { in: siblingOrgIds },
+              isActive: true,
+              isDefault: true,
+            },
+            select: {
+              organizationId: true,
+              courtsCount: true,
+              hours: true,
+              courts: {
+                where: { isActive: true },
+                select: { indoor: true },
+              },
+            },
+          }),
+          prisma.service.groupBy({
+            by: ["organizationId"],
+            where: { organizationId: { in: siblingOrgIds }, isActive: true },
+            _count: { _all: true },
+          }),
+          prisma.organizationForm.findMany({
+            where: {
+              organizationId: { in: siblingOrgIds },
+              status: OrganizationFormStatus.PUBLISHED,
+            },
+            orderBy: [{ createdAt: "desc" }],
+            select: { id: true, organizationId: true },
+          }),
+        ])
+      : [
+          [] as Array<{
+            organizationId: number;
+            courtsCount: number;
+            hours: string | null;
+            courts: Array<{ indoor: boolean }>;
+          }>,
+          [] as Array<{ organizationId: number; _count: { _all: number } }>,
+          [] as Array<{ id: number; organizationId: number }>,
+        ];
+    const siblingClubByOrg = new Map(siblingClubs.map((club) => [club.organizationId, club]));
+    const siblingServiceCountByOrg = new Map(
+      siblingServiceCounts.map((row) => [row.organizationId, row._count._all]),
+    );
+    const siblingFeaturedFormByOrg = new Map<number, number>();
+    siblingForms.forEach((form) => {
+      if (!siblingFeaturedFormByOrg.has(form.organizationId)) {
+        siblingFeaturedFormByOrg.set(form.organizationId, form.id);
+      }
+    });
+    const groupCenters: GroupCenterSummary[] = siblingOrganizations
+      .filter((org) => Boolean(org.username))
+      .map((org) => {
+        const orgUsername = org.username as string;
+        const club = siblingClubByOrg.get(org.id);
+        const courtsCount = club ? (club.courts.length > 0 ? club.courts.length : club.courtsCount) : 0;
+        const indoorCount = club ? club.courts.filter((court) => court.indoor).length : 0;
+        const outdoorCount = Math.max(0, courtsCount - indoorCount);
+        const courtsLabel =
+          courtsCount <= 0
+            ? "Campos por confirmar"
+            : indoorCount > 0 && outdoorCount > 0
+              ? `${courtsCount} campos · ${indoorCount} indoor · ${outdoorCount} outdoor`
+              : indoorCount > 0
+                ? `${courtsCount} campos · indoor`
+                : `${courtsCount} campos · outdoor`;
+        const city = pickCanonicalField(
+          org.addressRef?.canonical ?? null,
+          "city",
+          "locality",
+          "addressLine2",
+          "region",
+          "state",
+        );
+        const serviceCount = siblingServiceCountByOrg.get(org.id) ?? 0;
+        const modules = parseOrganizationModules(
+          (org.organizationModules ?? []).map((module) => String(module.moduleKey).toUpperCase()),
+        ) ?? [];
+        const moduleSet = new Set<string>([...modules, ...CORE_ORGANIZATION_MODULES]);
+        const hasReservas = moduleSet.has("RESERVAS") && serviceCount > 0;
+        const featuredFormId = siblingFeaturedFormByOrg.get(org.id) ?? null;
+        const amenities = parseAmenityTags(org.infoRequirements, org.infoRules, org.infoLocationNotes);
+        if (amenities.length === 0) {
+          amenities.push("Reservas ORYA");
+          amenities.push("Gestão nativa");
+        }
+        return {
+          id: org.id,
+          username: orgUsername,
+          name: org.publicName?.trim() || org.businessName?.trim() || `Centro #${org.id}`,
+          city: city ?? null,
+          address: org.addressRef?.formattedAddress ?? null,
+          publicHours: org.publicHours || club?.hours || null,
+          courtsLabel,
+          amenities,
+          reservasHref: hasReservas ? `/${orgUsername}#reservar` : null,
+          formHref: featuredFormId ? `/inscricoes/${featuredFormId}` : null,
+        };
+      });
 
     const categoryEvents = operationTemplate
       ? orgEvents.filter(
@@ -785,7 +925,12 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
     const showAgendaSection = showAgenda && agendaTotal > 0;
     const showReservasSection = hasReservasModule && services.length > 0;
     const showFormsSection = hasInscricoes && publicForms.length > 0;
+    const showGroupCentersSection = groupCenters.length > 0;
     const showCommunitySection = true;
+    const isTopPadelProfile =
+      (organizationProfile.username ?? "").startsWith("top_padel") ||
+      orgDisplayName.toLowerCase().includes("top padel");
+    const groupCentersTitle = isTopPadelProfile ? "Centros do Grupo Top Padel" : "Outros centros do grupo";
 
     const storeBaseHref = `/${organizationProfile.username ?? usernameParam}/loja`;
     const legalBaseHref = `/${organizationProfile.username ?? usernameParam}/legal`;
@@ -804,6 +949,7 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
       showReservasSection ? { id: "reservas", label: "Reservas" } : null,
       showStoreSection ? { id: "loja", label: "Loja" } : null,
       showFormsSection ? { id: "formularios", label: "Formulários" } : null,
+      showGroupCentersSection ? { id: "centros-grupo", label: "Outros centros" } : null,
       showCommunitySection ? { id: "comunidade", label: "Comunidade" } : null,
     ].filter(Boolean) as Array<{ id: string; label: string }>;
 
@@ -833,6 +979,15 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             subtitle: `${publicForms.length} ${publicForms.length === 1 ? "ativo" : "ativos"}`,
             href: `/inscricoes/${featuredForm.id}`,
             cta: "Ver formulários ativos",
+          }
+        : null,
+      showGroupCentersSection
+        ? {
+            id: "quick-centros",
+            title: "Grupo",
+            subtitle: `${groupCenters.length} ${groupCenters.length === 1 ? "centro ligado" : "centros ligados"}`,
+            href: "#centros-grupo",
+            cta: "Ver centros do grupo",
           }
         : null,
     ].filter(Boolean) as Array<{ id: string; title: string; subtitle: string; href: string; cta: string }>;
@@ -998,6 +1153,79 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
             ),
           }
         : null,
+      showGroupCentersSection
+        ? {
+            id: "centros-grupo",
+            content: (
+              <section id="centros-grupo" className="rounded-3xl border border-white/12 bg-white/5 p-4 shadow-[0_18px_54px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-white/60">Grupo</p>
+                    <h3 className="text-lg font-semibold text-white">{groupCentersTitle}</h3>
+                    <p className="mt-1 text-[12px] text-white/70">
+                      Navega entre centros e reserva diretamente na experiência nativa ORYA.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/20 bg-white/8 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-white/70">
+                    {groupCenters.length} centros
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {groupCenters.map((center) => (
+                    <article key={center.id} className="rounded-2xl border border-white/12 bg-black/25 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{center.name}</p>
+                          <p className="text-[12px] text-white/65">
+                            {center.city || center.address || "Morada por confirmar"}
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-white/70">
+                          {center.publicHours || "Horário por anunciar"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-[12px] text-white/75">{center.courtsLabel}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {center.amenities.map((amenity) => (
+                          <span
+                            key={`${center.id}-${amenity}`}
+                            className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] text-white/70"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-[12px]">
+                        <Link
+                          href={`/${center.username}`}
+                          className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-white/85 hover:border-white/40"
+                        >
+                          Ver centro
+                        </Link>
+                        {center.reservasHref ? (
+                          <Link
+                            href={center.reservasHref}
+                            className="rounded-full bg-white px-3 py-1.5 font-semibold text-black"
+                          >
+                            Reservas ORYA
+                          </Link>
+                        ) : null}
+                        {center.formHref ? (
+                          <Link
+                            href={center.formHref}
+                            className="rounded-full border border-white/20 bg-black/30 px-3 py-1.5 text-white/85 hover:border-white/40"
+                          >
+                            Inscrição ORYA
+                          </Link>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ),
+          }
+        : null,
       showCommunitySection
         ? {
             id: "comunidade",
@@ -1140,7 +1368,13 @@ export default async function UserProfilePage({ params, searchParams }: PageProp
                   {fixedSections.map((section) => (
                     <div
                       key={section.id}
-                      className={section.id === "agenda-publica" || section.id === "reservas" ? "md:col-span-2" : ""}
+                      className={
+                        section.id === "agenda-publica" ||
+                        section.id === "reservas" ||
+                        section.id === "centros-grupo"
+                          ? "md:col-span-2"
+                          : ""
+                      }
                     >
                       {section.content}
                     </div>

@@ -1,6 +1,6 @@
 # API <-> UI Coverage Report
 
-Generated: 2026-02-23T14:08:53.930Z
+Generated: 2026-02-23T14:10:59.475Z
 CSV: reports/api_ui_coverage_v1.csv
 
 ## Summary
