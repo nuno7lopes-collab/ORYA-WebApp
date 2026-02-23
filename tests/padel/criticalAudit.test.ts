@@ -40,8 +40,8 @@ vi.mock("@/lib/organizationAudit", () => ({ recordOrganizationAuditSafe }));
 vi.mock("@/domain/padelPairingHold", () => ({ cancelActiveHold }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let swapPOST: typeof import("@/app/api/org/[orgId]/padel/pairings/swap/route").POST;
-let cancelPOST: typeof import("@/app/api/padel/pairings/[id]/cancel/route").POST;
+let swapPOST: typeof import("@/app/api/org/[orgId]/tournaments/pairings/swap/route").POST;
+let cancelPOST: typeof import("@/app/api/padel/pairings/[id]/actions/cancel/route").POST;
 
 beforeEach(async () => {
   createSupabaseServer.mockReset();
@@ -60,8 +60,8 @@ beforeEach(async () => {
   prisma.padelTournamentConfig.findUnique.mockReset();
   prisma.$transaction.mockClear();
   vi.resetModules();
-  swapPOST = (await import("@/app/api/org/[orgId]/padel/pairings/swap/route")).POST;
-  cancelPOST = (await import("@/app/api/padel/pairings/[id]/cancel/route")).POST;
+  swapPOST = (await import("@/app/api/org/[orgId]/tournaments/pairings/swap/route")).POST;
+  cancelPOST = (await import("@/app/api/padel/pairings/[id]/actions/cancel/route")).POST;
 });
 
 describe("critical audit payloads", () => {
@@ -129,7 +129,7 @@ describe("critical audit payloads", () => {
       },
     ]);
 
-    const req = new NextRequest("http://localhost/api/org/1/padel/pairings/swap", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/pairings/swap", {
       method: "POST",
       body: JSON.stringify({ eventId: 10, pairingAId: 1, pairingBId: 2 }),
     });
@@ -166,7 +166,7 @@ describe("critical audit payloads", () => {
     });
     prisma.event.findUnique.mockResolvedValue({ startsAt: new Date(), status: "DRAFT", templateType: "PADEL" });
 
-    const req = new NextRequest("http://localhost/api/padel/pairings/5/cancel", {
+    const req = new NextRequest("http://localhost/api/padel/pairings/5/actions/cancel", {
       method: "POST",
     });
     const res = await cancelPOST(req, { params: Promise.resolve({ id: "5" }) });

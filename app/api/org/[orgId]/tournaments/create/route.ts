@@ -28,6 +28,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { syncTournamentOperationalRolesFromClubStaff } from "@/lib/padel/tournamentStaffRoleSync";
 import { deriveEnvelopeFromDailyWindows, normalizePadelDailyWindows } from "@/lib/padel/scheduleWindows";
+import { isPartnershipTournamentRequestsTableMissingError } from "@/app/api/padel/partnerships/_shared";
 import {
   AddressSourceProvider,
   EventPricingMode,
@@ -522,8 +523,11 @@ async function _POST(req: NextRequest) {
         );
       }
 
-      const approvedRequest = partnershipTournamentRequestDelegate
-        ? await partnershipTournamentRequestDelegate.findFirst({
+      if (!partnershipTournamentRequestDelegate) {
+        return fail(503, "PARTNERSHIP_REQUESTS_UNAVAILABLE", "PARTNERSHIP_REQUESTS_UNAVAILABLE", false);
+      }
+
+      const approvedRequest = await partnershipTournamentRequestDelegate.findFirst({
         where: {
           id: partnershipTournamentRequestId,
           status: "APPROVED",
@@ -536,8 +540,7 @@ async function _POST(req: NextRequest) {
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         },
         select: { id: true },
-      })
-        : null;
+      });
       if (!approvedRequest) {
         return fail(
           409,
@@ -886,16 +889,22 @@ async function _POST(req: NextRequest) {
     });
 
     if (consumedPartnershipRequestId && partnershipTournamentRequestDelegate) {
-      await partnershipTournamentRequestDelegate.updateMany({
-        where: {
-          id: consumedPartnershipRequestId,
-          status: "APPROVED",
-          eventId: null,
-        },
-        data: {
-          eventId: created.id,
-        },
-      });
+      try {
+        await partnershipTournamentRequestDelegate.updateMany({
+          where: {
+            id: consumedPartnershipRequestId,
+            status: "APPROVED",
+            eventId: null,
+          },
+          data: {
+            eventId: created.id,
+          },
+        });
+      } catch (err) {
+        if (!isPartnershipTournamentRequestsTableMissingError(err)) {
+          throw err;
+        }
+      }
     }
 
     return respondOk(
@@ -913,6 +922,9 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "Não autenticado.");
+    }
+    if (isPartnershipTournamentRequestsTableMissingError(err)) {
+      return fail(503, "PARTNERSHIP_REQUESTS_UNAVAILABLE", "PARTNERSHIP_REQUESTS_UNAVAILABLE", false);
     }
     if (err instanceof ApiError) {
       return fail(err.status, err.code, err.code, err.retryable, err.details);

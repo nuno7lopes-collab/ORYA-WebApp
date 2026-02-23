@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationModule, Prisma } from "@prisma/client";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
@@ -8,6 +8,7 @@ import { resolveOrganizationIdStrict } from "@/lib/organizationId";
 
 const READ_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const WRITE_ROLES: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
+const PARTNERSHIP_TOURNAMENT_REQUESTS_TABLE = "padel_partnership_tournament_requests";
 
 type EnsurePartnershipOrganizationParams = {
   req: NextRequest;
@@ -80,6 +81,19 @@ export async function ensurePartnershipOrganization(
     role: membership.role,
     rolePack: membership.rolePack ?? null,
   };
+}
+
+export function isPartnershipTournamentRequestsTableMissingError(err: unknown) {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== "P2021") {
+    return false;
+  }
+
+  const table = String((err.meta as Record<string, unknown> | undefined)?.table ?? "").toLowerCase();
+  if (table.includes(PARTNERSHIP_TOURNAMENT_REQUESTS_TABLE)) {
+    return true;
+  }
+
+  return err.message.toLowerCase().includes(PARTNERSHIP_TOURNAMENT_REQUESTS_TABLE);
 }
 
 export function parsePositiveInt(value: unknown): number | null {

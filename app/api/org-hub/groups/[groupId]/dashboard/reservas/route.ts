@@ -120,13 +120,11 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
     let revenueCents = 0;
     const servicesCount = activeServices.reduce((acc, row) => acc + row._count._all, 0);
 
-    for (const booking of bookings) {
-      const row = rows.get(booking.organizationId);
+    for (const { organizationId, status, startsAt, price } of bookings) {
+      const row = rows.get(organizationId);
       if (!row) continue;
       row.bookings += 1;
       bookingsCount += 1;
-
-      const status = booking.status;
       if (status === "CONFIRMED") {
         row.confirmed += 1;
         confirmedCount += 1;
@@ -145,13 +143,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ groupId: stri
         cancelledCount += 1;
       }
 
-      if (booking.startsAt >= now && booking.startsAt <= next7Days) {
+      if (startsAt >= now && startsAt <= next7Days) {
         row.upcoming7d += 1;
         upcoming7dCount += 1;
       }
 
       if (status === "CONFIRMED" || status === "COMPLETED") {
-        const amount = booking.price ?? 0;
+        const amount = price ?? 0;
         row.revenueCents += amount;
         revenueCents += amount;
       }

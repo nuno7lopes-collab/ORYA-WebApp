@@ -239,8 +239,14 @@ export default function GroupDashboardClient({ group, organizations, metrics, pr
 
   const groupDisplayName = group.name?.trim() ? group.name.trim() : `Grupo #${group.id}`;
   const groupDashboardHref = buildOrgHubHref(`/groups/${group.id}`);
-  const scopedOrgIds = orgSelection.length ? orgSelection : organizations.map((org) => org.id);
-  const scopedOrgQuery = orgSelection.length ? `?orgIds=${orgSelection.join(",")}` : "";
+  const scopedOrgIds = useMemo(
+    () => (orgSelection.length ? orgSelection : organizations.map((org) => org.id)),
+    [orgSelection, organizations],
+  );
+  const scopedOrgQuery = useMemo(
+    () => (orgSelection.length ? `?orgIds=${orgSelection.join(",")}` : ""),
+    [orgSelection],
+  );
 
   useEffect(() => {
     if (tab !== "agenda") return;

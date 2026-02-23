@@ -606,8 +606,8 @@ async function _GET(req: NextRequest) {
             )}`
           : "/onboarding/padel",
         swapUrl: `/api/padel/pairings/${pairing.id}/swap`,
-        cancelUrl: `/api/padel/pairings/${pairing.id}/cancel`,
-        reopenUrl: `/api/padel/pairings/${pairing.id}/reopen`,
+        cancelUrl: `/api/padel/pairings/${pairing.id}/actions/cancel`,
+        reopenUrl: `/api/padel/pairings/${pairing.id}/actions/reopen`,
       },
       participants: {
         captain: {

@@ -1250,21 +1250,30 @@ async function main() {
     });
 
     const staffUsers = allUsers.filter((u) => u.id !== miguelProfile.id && u.id !== rodriUser.id).slice(0, 10);
+    const topPadelCenterIds = topPadelCenterOrgs.map((org) => org.id);
+    const staffScopes = staffUsers.map((user, index) => {
+      const firstCenterId = topPadelCenterIds[index % topPadelCenterIds.length] ?? topPadelOrg.id;
+      const secondCenterId = topPadelCenterIds[(index + 1) % topPadelCenterIds.length] ?? firstCenterId;
+      const scopeOrgIds = firstCenterId === secondCenterId ? [firstCenterId] : [firstCenterId, secondCenterId];
+      return { userId: user.id, scopeOrgIds };
+    });
     await prisma.organizationGroupMember.createMany({
-      data: staffUsers.map((u) => ({
+      data: staffScopes.map((scope) => ({
         groupId: topPadelOrg.groupId,
-        userId: u.id,
+        userId: scope.userId,
         role: "STAFF",
         scopeAllOrgs: false,
-        scopeOrgIds: [topPadelOrg.id],
+        scopeOrgIds: scope.scopeOrgIds,
       })),
       skipDuplicates: true,
     });
 
-    await prisma.organizationGroupMember.updateMany({
-      where: { groupId: topPadelOrg.groupId, userId: { in: staffUsers.map((u) => u.id) } },
-      data: { role: "STAFF", scopeAllOrgs: false, scopeOrgIds: [topPadelOrg.id] },
-    });
+    for (const scope of staffScopes) {
+      await prisma.organizationGroupMember.updateMany({
+        where: { groupId: topPadelOrg.groupId, userId: scope.userId },
+        data: { role: "STAFF", scopeAllOrgs: false, scopeOrgIds: scope.scopeOrgIds },
+      });
+    }
 
     await prisma.organizationGroupMember.updateMany({
       where: {
@@ -1275,12 +1284,11 @@ async function main() {
       data: { role: "PROMOTER", scopeAllOrgs: false, scopeOrgIds: [topPadelOrg.id] },
     });
 
-    const topPadelAddressData = cityPool.find((c) => c.city === "Matosinhos")!;
     const topPadelAddress = await upsertAddress(
       prisma,
-      `${topPadelAddressData.address}, Portugal`,
-      topPadelAddressData.lat,
-      topPadelAddressData.lng,
+      topPadelPrimaryCenter.address,
+      topPadelPrimaryCenter.lat,
+      topPadelPrimaryCenter.lng,
     );
 
     await prisma.organization.update({
@@ -1292,27 +1300,27 @@ async function main() {
     const topClub = await prisma.padelClub.create({
       data: {
         organizationId: topPadelOrg.id,
-        name: "Top Padel Club",
-        shortName: "TPC",
+        name: `${topPadelPrimaryCenter.publicName} Club`,
+        shortName: topPadelPrimaryCenter.shortName,
         addressId: topPadelAddress.id,
         kind: "OWN",
-        courtsCount: 8,
-        hours: "07:00-23:30",
-        slug: "top-padel-club",
+        courtsCount: topPadelPrimaryCenter.courts.length,
+        hours: topPadelPrimaryCenter.publicHours,
+        slug: `top-padel-${topPadelPrimaryCenter.key}`,
         isActive: true,
         isDefault: true,
       },
     });
 
     const courts = await Promise.all(
-      Array.from({ length: 8 }).map((_, index) =>
+      topPadelPrimaryCenter.courts.map((courtConfig, index) =>
         prisma.padelClubCourt.create({
           data: {
             padelClubId: topClub.id,
-            name: `Court ${index + 1}`,
-            description: index < 4 ? "Panoramico" : "Padrao",
-            surface: index % 2 === 0 ? "Relva sintetica" : "Mondo",
-            indoor: index % 3 === 0,
+            name: courtConfig.name,
+            description: courtConfig.description,
+            surface: courtConfig.surface,
+            indoor: courtConfig.indoor,
             displayOrder: index,
             isActive: true,
           },
@@ -1612,6 +1620,755 @@ async function main() {
       await prisma.availabilityOverride.createMany({
         data: overrideRows,
       });
+    }
+
+    await prisma.event.deleteMany({
+      where: {
+        OR: [{ slug: { startsWith: "seed-center-event-" } }, { slug: { startsWith: "seed-center-tour-" } }],
+      },
+    });
+
+    for (let centerIndex = 0; centerIndex < TOP_PADEL_CENTERS.length; centerIndex += 1) {
+      const center = TOP_PADEL_CENTERS[centerIndex]!;
+      const centerOrg = topPadelCenterByUsername.get(center.username);
+      if (!centerOrg) continue;
+      const centerAddress =
+        center.username === topPadelPrimaryCenter.username
+          ? topPadelAddress
+          : await upsertAddress(prisma, center.address, center.lat, center.lng);
+
+      await ensureOrganizationModules(prisma, centerOrg.id, TOP_PADEL_REQUIRED_MODULES);
+      await prisma.organization.update({
+        where: { id: centerOrg.id },
+        data: {
+          publicName: center.publicName,
+          businessName: `${center.publicName}, S.A.`,
+          addressId: centerAddress.id,
+          showAddressPublicly: true,
+          timezone: "Europe/Lisbon",
+          primaryModule: "RESERVAS",
+          publicHours: center.publicHours,
+          publicDescription: `${center.publicName} com operacao multi-centro ORYA, reservas e competicao nativas.`,
+          infoRules: "Check-in 10 min antes, toalha obrigatoria, bola oficial no balcao",
+          infoRequirements: center.amenities.join(", "),
+          infoPolicies: "Cancelamento ate 12h sem custo, no-show com taxa de 100%",
+          infoLocationNotes: `Centro ${center.city}. Contacto ${center.contactPhoneMasked}.`,
+          officialEmail: center.contactEmailMasked,
+          officialEmailVerifiedAt: new Date(),
+          publicWebsite: `https://demo.orya.pt/${center.username}`,
+          publicInstagram: `https://instagram.com/${center.username}`,
+        },
+      });
+
+      const centerStaffPool = [
+        staffUsers[centerIndex % staffUsers.length],
+        staffUsers[(centerIndex + 2) % staffUsers.length],
+        staffUsers[(centerIndex + 4) % staffUsers.length],
+        staffUsers[(centerIndex + 6) % staffUsers.length],
+      ].filter(Boolean) as Array<{ id: string; fullName: string }>;
+      const isPrimaryCenter = center.username === topPadelPrimaryCenter.username;
+      let centerClubId = topClub.id;
+      let centerCourts = courts;
+      let centerProfessionals = professionals;
+      let centerResources = resources;
+
+      if (!isPrimaryCenter) {
+        await prisma.padelClub.deleteMany({ where: { organizationId: centerOrg.id } });
+        const club = await prisma.padelClub.create({
+          data: {
+            organizationId: centerOrg.id,
+            name: `${center.publicName} Club`,
+            shortName: center.shortName,
+            addressId: centerAddress.id,
+            kind: "OWN",
+            courtsCount: center.courts.length,
+            hours: center.publicHours,
+            slug: `top-padel-${center.key}`,
+            isActive: true,
+            isDefault: true,
+          },
+        });
+        centerClubId = club.id;
+        centerCourts = await Promise.all(
+          center.courts.map((court, index) =>
+            prisma.padelClubCourt.create({
+              data: {
+                padelClubId: club.id,
+                name: court.name,
+                description: court.description,
+                surface: court.surface,
+                indoor: court.indoor,
+                displayOrder: index,
+                isActive: true,
+              },
+            }),
+          ),
+        );
+
+        await prisma.reservationProfessional.deleteMany({ where: { organizationId: centerOrg.id } });
+        await prisma.reservationResource.deleteMany({ where: { organizationId: centerOrg.id } });
+        await prisma.service.deleteMany({ where: { organizationId: centerOrg.id } });
+        await prisma.organizationPolicy.deleteMany({ where: { organizationId: centerOrg.id } });
+
+        centerProfessionals = await Promise.all(
+          centerStaffPool.map((staff, index) =>
+            prisma.reservationProfessional.create({
+              data: {
+                organizationId: centerOrg.id,
+                userId: staff.id,
+                name: staff.fullName,
+                roleTitle: index === 0 ? "Head Coach" : "Coach",
+                priority: index,
+                isActive: true,
+              },
+            }),
+          ),
+        );
+        centerResources = await Promise.all(
+          centerCourts.map((court, index) =>
+            prisma.reservationResource.create({
+              data: {
+                organizationId: centerOrg.id,
+                courtId: court.id,
+                label: court.name,
+                capacity: (court.description ?? "").toLowerCase().includes("individual") ? 2 : 4,
+                priority: index,
+                isActive: true,
+              },
+            }),
+          ),
+        );
+
+        const centerPolicy = await prisma.organizationPolicy.create({
+          data: {
+            organizationId: centerOrg.id,
+            name: `Politica Publica ${center.shortName}`,
+            policyType: "FLEXIBLE",
+            guestBookingAllowed: true,
+            cancellationWindowMinutes: 12 * 60,
+            rescheduleWindowMinutes: 8 * 60,
+          },
+        });
+
+        const priceOffset = centerIndex * 120;
+        const courtService = await prisma.service.create({
+          data: {
+            organizationId: centerOrg.id,
+            policyId: centerPolicy.id,
+            kind: "COURT",
+            title: "Aluguer de Campo",
+            description: `Reserva rapida no ${center.publicName}.`,
+            durationMinutes: 60,
+            unitPriceCents: 2100 + priceOffset,
+            currency: "EUR",
+            assignmentMode: "RESOURCE_ONLY",
+            partySizeRequired: true,
+            partySizeMin: 2,
+            partySizeMax: 4,
+            partySizeStep: 1,
+            locationMode: "FIXED",
+            addressId: centerAddress.id,
+          },
+        });
+        const lessonService = await prisma.service.create({
+          data: {
+            organizationId: centerOrg.id,
+            policyId: centerPolicy.id,
+            kind: "CLASS",
+            title: "Aula Particular",
+            description: "Sessao individual de tecnica e estrategia.",
+            durationMinutes: 60,
+            unitPriceCents: 3200 + priceOffset,
+            currency: "EUR",
+            assignmentMode: "PROFESSIONAL_ONLY",
+            partySizeRequired: false,
+            partySizeMin: 1,
+            partySizeMax: 1,
+            partySizeStep: 1,
+            locationMode: "FIXED",
+            addressId: centerAddress.id,
+          },
+        });
+        const hybridService = await prisma.service.create({
+          data: {
+            organizationId: centerOrg.id,
+            policyId: centerPolicy.id,
+            kind: "COURT",
+            title: "Treino Grupo Premium",
+            description: "Treino orientado em campo reservado.",
+            durationMinutes: 90,
+            unitPriceCents: 5000 + priceOffset,
+            currency: "EUR",
+            assignmentMode: "PROFESSIONAL_AND_RESOURCE",
+            partySizeRequired: true,
+            partySizeMin: 2,
+            partySizeMax: 4,
+            partySizeStep: 1,
+            locationMode: "FIXED",
+            addressId: centerAddress.id,
+          },
+        });
+
+        await prisma.serviceDurationPrice.createMany({
+          data: [
+            { serviceId: courtService.id, durationMinutes: 60, priceCents: 2100 + priceOffset, isActive: true },
+            { serviceId: courtService.id, durationMinutes: 90, priceCents: 3000 + priceOffset, isActive: true },
+            { serviceId: courtService.id, durationMinutes: 120, priceCents: 3800 + priceOffset, isActive: true },
+          ],
+          skipDuplicates: true,
+        });
+        await prisma.servicePackage.createMany({
+          data: [
+            {
+              serviceId: lessonService.id,
+              label: "Pack 4 aulas",
+              description: "Plano tecnico para 4 semanas.",
+              durationMinutes: 60,
+              priceCents: 11800 + priceOffset,
+              recommended: true,
+              sortOrder: 0,
+              isActive: true,
+            },
+            {
+              serviceId: lessonService.id,
+              label: "Pack 8 aulas",
+              description: "Plano evolucao para 8 semanas.",
+              durationMinutes: 60,
+              priceCents: 22800 + priceOffset,
+              recommended: false,
+              sortOrder: 1,
+              isActive: true,
+            },
+          ],
+          skipDuplicates: true,
+        });
+        await prisma.serviceAddon.createMany({
+          data: [
+            {
+              serviceId: hybridService.id,
+              label: "Video analise",
+              description: "Analise tecnica com highlights.",
+              deltaMinutes: 0,
+              deltaPriceCents: 900,
+              maxQty: 1,
+              category: "ANALYTICS",
+              sortOrder: 0,
+              isActive: true,
+            },
+            {
+              serviceId: hybridService.id,
+              label: "Cesto premium",
+              description: "Bolas premium para sessao intensiva.",
+              deltaMinutes: 0,
+              deltaPriceCents: 600,
+              maxQty: 1,
+              category: "MATERIAL",
+              sortOrder: 1,
+              isActive: true,
+            },
+          ],
+          skipDuplicates: true,
+        });
+        await prisma.servicePack.createMany({
+          data: [
+            {
+              serviceId: courtService.id,
+              quantity: 5,
+              packPriceCents: 9800 + priceOffset,
+              label: "Pack 5 campos",
+              recommended: true,
+              isActive: true,
+            },
+            {
+              serviceId: courtService.id,
+              quantity: 10,
+              packPriceCents: 19200 + priceOffset,
+              label: "Pack 10 campos",
+              recommended: false,
+              isActive: true,
+            },
+          ],
+        });
+        await prisma.serviceResourceLink.createMany({
+          data: centerResources.map((resource) => ({ serviceId: courtService.id, resourceId: resource.id })),
+          skipDuplicates: true,
+        });
+        await prisma.serviceProfessionalLink.createMany({
+          data: centerProfessionals.map((professional) => ({
+            serviceId: lessonService.id,
+            professionalId: professional.id,
+          })),
+          skipDuplicates: true,
+        });
+        await prisma.serviceProfessionalLink.createMany({
+          data: centerProfessionals.slice(0, 2).map((professional) => ({
+            serviceId: hybridService.id,
+            professionalId: professional.id,
+          })),
+          skipDuplicates: true,
+        });
+        await prisma.serviceResourceLink.createMany({
+          data: centerResources.slice(0, Math.max(2, centerResources.length - 1)).map((resource) => ({
+            serviceId: hybridService.id,
+            resourceId: resource.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      await prisma.padelClubStaff.createMany({
+        data: [
+          {
+            padelClubId: centerClubId,
+            userId: miguelProfile.id,
+            role: "ADMIN_CLUBE",
+            inheritToEvents: true,
+            isActive: true,
+          },
+          {
+            padelClubId: centerClubId,
+            userId: rodriUser.id,
+            role: "ADMIN_CLUBE",
+            inheritToEvents: true,
+            isActive: true,
+          },
+          ...centerStaffPool.map((user, index) => ({
+            padelClubId: centerClubId,
+            userId: user.id,
+            role: index === 0 ? ("DIRETOR_PROVA" as const) : ("STAFF" as const),
+            inheritToEvents: true,
+            isActive: true,
+          })),
+        ],
+        skipDuplicates: true,
+      });
+
+      await prisma.organizationForm.deleteMany({ where: { organizationId: centerOrg.id } });
+      const academyForm = await prisma.organizationForm.create({
+        data: {
+          organizationId: centerOrg.id,
+          title: `Academia ${center.publicName}`,
+          description: "Inscricao de academia com preferencia de dias e horario.",
+          status: "PUBLISHED",
+          capacity: 96,
+          waitlistEnabled: true,
+          startAt: plusDays(now, -15),
+          endAt: plusDays(now, 180),
+        },
+      });
+      await prisma.organizationFormField.createMany({
+        data: [
+          {
+            formId: academyForm.id,
+            label: "Nome completo",
+            fieldType: "TEXT",
+            required: true,
+            placeholder: "Nome e apelido",
+            order: 0,
+          },
+          {
+            formId: academyForm.id,
+            label: "Email",
+            fieldType: "EMAIL",
+            required: true,
+            placeholder: "nome@email.com",
+            order: 1,
+          },
+          {
+            formId: academyForm.id,
+            label: "Telefone",
+            fieldType: "PHONE",
+            required: true,
+            placeholder: "+351",
+            order: 2,
+          },
+          {
+            formId: academyForm.id,
+            label: "Dias preferenciais",
+            fieldType: "MULTI_SELECT",
+            required: true,
+            options: ["Segunda", "Terca", "Quarta", "Quinta", "Sexta"],
+            order: 3,
+          },
+          {
+            formId: academyForm.id,
+            label: "Horario preferencial",
+            fieldType: "TIME",
+            required: true,
+            placeholder: "18:30",
+            order: 4,
+          },
+          {
+            formId: academyForm.id,
+            label: "Nivel atual",
+            fieldType: "SELECT",
+            required: true,
+            options: ["Iniciacao", "Intermedio", "Competicao"],
+            order: 5,
+          },
+        ],
+      });
+      const teamBuildingForm = await prisma.organizationForm.create({
+        data: {
+          organizationId: centerOrg.id,
+          title: `Team Building ${center.publicName}`,
+          description: "Pedido comercial para empresas e grupos.",
+          status: "PUBLISHED",
+          capacity: null,
+          waitlistEnabled: true,
+          startAt: plusDays(now, -30),
+          endAt: plusDays(now, 300),
+        },
+      });
+      await prisma.organizationFormField.createMany({
+        data: [
+          {
+            formId: teamBuildingForm.id,
+            label: "Empresa",
+            fieldType: "TEXT",
+            required: true,
+            placeholder: "Nome da empresa",
+            order: 0,
+          },
+          {
+            formId: teamBuildingForm.id,
+            label: "Email responsavel",
+            fieldType: "EMAIL",
+            required: true,
+            placeholder: "responsavel@empresa.pt",
+            order: 1,
+          },
+          {
+            formId: teamBuildingForm.id,
+            label: "Numero de participantes",
+            fieldType: "NUMBER",
+            required: true,
+            placeholder: "24",
+            order: 2,
+          },
+          {
+            formId: teamBuildingForm.id,
+            label: "Data pretendida",
+            fieldType: "DATE",
+            required: true,
+            order: 3,
+          },
+          {
+            formId: teamBuildingForm.id,
+            label: "Horario de inicio",
+            fieldType: "TIME",
+            required: false,
+            placeholder: "17:00",
+            order: 4,
+          },
+        ],
+      });
+
+      const crmUsers = allUsers.slice(centerIndex * 5, centerIndex * 5 + 5);
+      for (const crmUser of crmUsers) {
+        const contact = await prisma.crmContact.upsert({
+          where: {
+            organizationId_userId: {
+              organizationId: centerOrg.id,
+              userId: crmUser.id,
+            },
+          },
+          update: {
+            status: "ACTIVE",
+            contactType: "CUSTOMER",
+            displayName: crmUser.fullName,
+            contactEmail: `${crmUser.username}@orya.test`,
+            contactPhone: center.contactPhoneMasked,
+            marketingEmailOptIn: true,
+            totalOrders: randInt(2, 14),
+            totalBookings: randInt(4, 20),
+            totalTournaments: randInt(0, 6),
+            totalStoreOrders: randInt(0, 5),
+            totalSpentCents: randInt(2200, 26000),
+            tags: ["TOP_PADEL", center.city.toUpperCase(), "DEMO"],
+            sourceType: "SEED_DEMO",
+            sourceId: `center_${center.key}`,
+            externalId: `seed_center_${center.key}_${crmUser.id}`,
+            firstInteractionAt: plusDays(now, -randInt(10, 180)),
+            lastActivityAt: plusDays(now, -randInt(0, 15)),
+            lastPurchaseAt: plusDays(now, -randInt(1, 30)),
+          },
+          create: {
+            organizationId: centerOrg.id,
+            userId: crmUser.id,
+            status: "ACTIVE",
+            contactType: "CUSTOMER",
+            displayName: crmUser.fullName,
+            contactEmail: `${crmUser.username}@orya.test`,
+            contactPhone: center.contactPhoneMasked,
+            legalBasis: "CONSENT",
+            marketingEmailOptIn: true,
+            totalOrders: randInt(2, 14),
+            totalBookings: randInt(4, 20),
+            totalTournaments: randInt(0, 6),
+            totalStoreOrders: randInt(0, 5),
+            totalSpentCents: randInt(2200, 26000),
+            tags: ["TOP_PADEL", center.city.toUpperCase(), "DEMO"],
+            sourceType: "SEED_DEMO",
+            sourceId: `center_${center.key}`,
+            externalId: `seed_center_${center.key}_${crmUser.id}`,
+            firstInteractionAt: plusDays(now, -randInt(10, 180)),
+            lastActivityAt: plusDays(now, -randInt(0, 15)),
+            lastPurchaseAt: plusDays(now, -randInt(1, 30)),
+          },
+        });
+        await prisma.crmContactConsent.upsert({
+          where: {
+            organizationId_contactId_type: {
+              organizationId: centerOrg.id,
+              contactId: contact.id,
+              type: "MARKETING",
+            },
+          },
+          update: {
+            status: "GRANTED",
+            grantedAt: plusDays(now, -randInt(5, 150)),
+            source: "seed-center",
+          },
+          create: {
+            organizationId: centerOrg.id,
+            contactId: contact.id,
+            type: "MARKETING",
+            status: "GRANTED",
+            grantedAt: plusDays(now, -randInt(5, 150)),
+            source: "seed-center",
+          },
+        });
+      }
+
+      await prisma.crmCampaignDelivery.deleteMany({ where: { organizationId: centerOrg.id } });
+      await prisma.crmCampaign.deleteMany({ where: { organizationId: centerOrg.id } });
+      await prisma.crmSegment.deleteMany({ where: { organizationId: centerOrg.id } });
+      const crmSegment = await prisma.crmSegment.create({
+        data: {
+          organizationId: centerOrg.id,
+          name: `Segmento ativos ${center.shortName}`,
+          description: "Contactos com atividade recente.",
+          status: "ACTIVE",
+          rules: {
+            conditions: [
+              { field: "totalBookings", op: "GTE", value: 3 },
+              { field: "lastActivityAt", op: "GTE_DAYS_AGO", value: 30 },
+            ],
+          },
+          sizeCache: randInt(30, 120),
+          lastComputedAt: plusDays(now, -2),
+          createdByUserId: miguelProfile.id,
+        },
+      });
+      const crmCampaign = await prisma.crmCampaign.create({
+        data: {
+          organizationId: centerOrg.id,
+          segmentId: crmSegment.id,
+          name: `Campanha boas-vindas ${center.shortName}`,
+          description: "Campanha de onboarding para novos jogadores.",
+          channel: "IN_APP",
+          channels: { inApp: true, email: true },
+          status: "SENT",
+          approvalState: "APPROVED",
+          approvalSubmittedAt: plusDays(now, -12),
+          approvedAt: plusDays(now, -11),
+          approvedByUserId: miguelProfile.id,
+          payload: { title: "Boas-vindas", body: `Oferta de boas-vindas no ${center.publicName}.` },
+          audienceSnapshot: { size: randInt(40, 90), source: "seed-center" },
+          scheduledAt: plusDays(now, -10),
+          sentAt: plusDays(now, -10),
+          sentCount: randInt(30, 90),
+          openedCount: randInt(12, 50),
+          clickedCount: randInt(4, 20),
+          failedCount: randInt(0, 3),
+          createdByUserId: miguelProfile.id,
+        },
+      });
+      const campaignContacts = await prisma.crmContact.findMany({
+        where: { organizationId: centerOrg.id },
+        take: 4,
+        orderBy: { createdAt: "desc" },
+        select: { id: true, userId: true },
+      });
+      for (const campaignContact of campaignContacts) {
+        await prisma.crmCampaignDelivery.create({
+          data: {
+            organizationId: centerOrg.id,
+            campaignId: crmCampaign.id,
+            contactId: campaignContact.id,
+            channel: "IN_APP",
+            userId: campaignContact.userId,
+            status: "SENT",
+            sentAt: plusDays(now, -9),
+            openedAt: maybe(0.6) ? plusDays(now, -8) : null,
+            clickedAt: maybe(0.3) ? plusDays(now, -7) : null,
+          },
+        });
+      }
+
+      const store = await prisma.store.upsert({
+        where: { ownerOrganizationId: centerOrg.id },
+        update: {
+          status: "ACTIVE",
+          showOnProfile: true,
+          catalogLocked: false,
+          checkoutEnabled: true,
+          currency: "EUR",
+        },
+        create: {
+          ownerOrganizationId: centerOrg.id,
+          status: "ACTIVE",
+          showOnProfile: true,
+          catalogLocked: false,
+          checkoutEnabled: true,
+          currency: "EUR",
+        },
+      });
+      await prisma.storeCategory.deleteMany({ where: { storeId: store.id } });
+      await prisma.storeProduct.deleteMany({ where: { storeId: store.id } });
+      const centerCategory = await prisma.storeCategory.create({
+        data: {
+          storeId: store.id,
+          name: "Equipamento Top Padel",
+          slug: `equipamento-${center.key}`,
+          description: `Catalogo tecnico ${center.publicName}`,
+          sortOrder: 0,
+          isActive: true,
+        },
+      });
+      const products = await Promise.all([
+        prisma.storeProduct.create({
+          data: {
+            storeId: store.id,
+            categoryId: centerCategory.id,
+            name: `T-shirt ${center.shortName}`,
+            slug: `tshirt-${center.key}`,
+            shortDescription: "T-shirt oficial do centro",
+            description: "Malha tecnica respiravel para treino e torneio.",
+            visibility: "PUBLIC",
+            priceCents: 2190 + centerIndex * 80,
+            compareAtPriceCents: 2590 + centerIndex * 80,
+            currency: "EUR",
+            stockPolicy: "TRACKED",
+            stockQty: 120,
+            requiresShipping: true,
+            tags: ["padel", "textil", center.city.toLowerCase()],
+          },
+        }),
+        prisma.storeProduct.create({
+          data: {
+            storeId: store.id,
+            categoryId: centerCategory.id,
+            name: `Bolas Premium ${center.shortName}`,
+            slug: `bolas-${center.key}`,
+            shortDescription: "Pack de 3 bolas premium",
+            description: "Bolas de competicao para indoor e outdoor.",
+            visibility: "PUBLIC",
+            priceCents: 790 + centerIndex * 30,
+            compareAtPriceCents: 990 + centerIndex * 30,
+            currency: "EUR",
+            stockPolicy: "TRACKED",
+            stockQty: 220,
+            requiresShipping: true,
+            tags: ["padel", "bolas", center.city.toLowerCase()],
+          },
+        }),
+      ]);
+      for (const product of products) {
+        await prisma.storeProductImage.create({
+          data: {
+            productId: product.id,
+            url: `https://picsum.photos/seed/${center.key}-${product.id}/900/900`,
+            altText: product.name,
+            sortOrder: 0,
+          },
+        });
+      }
+
+      if (center.username !== topPadelPrimaryCenter.username) {
+        const openEventStartsAt = plusDays(now, 5 + centerIndex * 2);
+        const tournamentStartsAt = plusDays(now, 15 + centerIndex * 3);
+        const openEvent = await prisma.event.create({
+          data: {
+            slug: `seed-center-event-${center.key}`,
+            title: `Open Day ${center.publicName}`,
+            description: "Evento mensal para novos praticantes.",
+            templateType: "OTHER",
+            organizationId: centerOrg.id,
+            ownerUserId: centerOrg.ownerUserId,
+            startsAt: openEventStartsAt,
+            endsAt: plusMinutes(openEventStartsAt, 180),
+            addressId: centerAddress.id,
+            timezone: "Europe/Lisbon",
+            status: "PUBLISHED",
+            pricingMode: "STANDARD",
+            feeMode: "INCLUDED",
+            payoutMode: "ORGANIZATION",
+          },
+        });
+        await prisma.eventAccessPolicy.create({
+          data: {
+            eventId: openEvent.id,
+            policyVersion: 1,
+            mode: "PUBLIC",
+            guestCheckoutAllowed: true,
+            inviteTokenAllowed: false,
+            inviteIdentityMatch: "BOTH",
+            inviteTokenTtlSeconds: null,
+            requiresEntitlementForEntry: false,
+            checkinMethods: [],
+          },
+        });
+        await prisma.ticketType.create({
+          data: {
+            eventId: openEvent.id,
+            name: "Bilhete geral",
+            description: `Entrada evento ${center.publicName}`,
+            price: 1000 + centerIndex * 40,
+            currency: "EUR",
+            totalQuantity: 160,
+            soldQuantity: randInt(8, 45),
+            status: "ON_SALE",
+            sortOrder: 0,
+            startsAt: plusDays(openEventStartsAt, -20),
+            endsAt: plusDays(openEventStartsAt, 1),
+          },
+        });
+
+        const tourEvent = await prisma.event.create({
+          data: {
+            slug: `seed-center-tour-${center.key}`,
+            title: `Top Tour ${center.city}`,
+            description: "Etapa mensal do circuito interno Top Tour.",
+            templateType: "PADEL",
+            organizationId: centerOrg.id,
+            ownerUserId: centerOrg.ownerUserId,
+            startsAt: tournamentStartsAt,
+            endsAt: plusMinutes(tournamentStartsAt, 540),
+            addressId: centerAddress.id,
+            timezone: "Europe/Lisbon",
+            status: "PUBLISHED",
+            pricingMode: "STANDARD",
+            feeMode: "INCLUDED",
+            payoutMode: "ORGANIZATION",
+          },
+        });
+        await prisma.eventAccessPolicy.create({
+          data: {
+            eventId: tourEvent.id,
+            policyVersion: 1,
+            mode: "PUBLIC",
+            guestCheckoutAllowed: true,
+            inviteTokenAllowed: false,
+            inviteIdentityMatch: "BOTH",
+            inviteTokenTtlSeconds: null,
+            requiresEntitlementForEntry: false,
+            checkinMethods: [],
+          },
+        });
+      }
+
     }
 
     await prisma.promoCode.deleteMany({ where: { code: { startsWith: "SEEDTP" } } });
@@ -2055,7 +2812,7 @@ async function main() {
         level: `${randInt(2, 6)}.${randInt(0, 99).toString().padStart(2, "0")}`,
         displayName: user.fullName,
         preferredSide: maybe(0.45) ? "ESQUERDA" : maybe(0.5) ? "DIREITA" : "QUALQUER",
-        clubName: orgId === topPadelOrg.id ? "Top Padel Club" : null,
+        clubName: orgId === topPadelOrg.id ? `${topPadelPrimaryCenter.publicName} Club` : null,
         isActive: true,
       } as const;
 

@@ -12,7 +12,7 @@ vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer }));
 vi.mock("@/lib/auth/getUserWithPolicy", () => ({ getUserWithPolicy }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let POST: typeof import("@/app/api/padel/pairings/[id]/reopen/route").POST;
+let POST: typeof import("@/app/api/padel/pairings/[id]/actions/reopen/route").POST;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -23,12 +23,12 @@ beforeEach(async () => {
     data: { user: { id: "u-1" } },
   });
 
-  POST = (await import("@/app/api/padel/pairings/[id]/reopen/route")).POST;
+  POST = (await import("@/app/api/padel/pairings/[id]/actions/reopen/route")).POST;
 });
 
-describe("POST /api/padel/pairings/[id]/reopen validação", () => {
+describe("POST /api/padel/pairings/[id]/actions/reopen validação", () => {
   it("rejeita mode inválido sem fallback silencioso", async () => {
-    const req = new NextRequest("http://localhost/api/padel/pairings/11/reopen", {
+    const req = new NextRequest("http://localhost/api/padel/pairings/11/actions/reopen", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ mode: "open_any" }),

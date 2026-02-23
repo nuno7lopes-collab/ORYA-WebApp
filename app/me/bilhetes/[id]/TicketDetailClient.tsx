@@ -205,6 +205,8 @@ export default function TicketDetailClient({ entitlementId }: Props) {
     if (!ticket?.pairing || !ticket?.event?.slug) return null;
     return `/eventos/${ticket.event.slug}?pairingId=${ticket.pairing.id}`;
   }, [ticket?.pairing, ticket?.event?.slug]);
+  const pairingCancelActionUrl = pairingId ? `/api/padel/pairings/${pairingId}/actions/cancel` : null;
+  const pairingReopenActionUrl = pairingId ? `/api/padel/pairings/${pairingId}/actions/reopen` : null;
 
   function resolvePairingError(raw: string) {
     try {
@@ -632,18 +634,18 @@ export default function TicketDetailClient({ entitlementId }: Props) {
                   {pairingState?.actions?.canCancel && (
                     <button
                       type="button"
-                      onClick={() => handlePairingAction(pairingState.urls?.cancelUrl, { redirectTo: "/me/carteira" })}
+                      onClick={() => handlePairingAction(pairingCancelActionUrl, { redirectTo: "/me/carteira" })}
                       disabled={pairingBusy}
                       className="rounded-full border border-rose-300/30 bg-rose-400/10 px-4 py-2 text-xs text-rose-100 disabled:opacity-60"
                     >
                       {t("pairingActionCancel", locale)}
                     </button>
                   )}
-                  {pairingState?.actions?.canReinvite && pairingState.urls?.reopenUrl && (
+                  {pairingState?.actions?.canReinvite && pairingReopenActionUrl && (
                     <button
                       type="button"
                       onClick={() =>
-                        handlePairingAction(pairingState.urls?.reopenUrl, {
+                        handlePairingAction(pairingReopenActionUrl, {
                           body: { mode: "INVITE_PARTNER" },
                         })
                       }
@@ -653,11 +655,11 @@ export default function TicketDetailClient({ entitlementId }: Props) {
                       {t("pairingActionReinvite", locale)}
                     </button>
                   )}
-                  {pairingState?.actions?.canMatchmake && pairingState.urls?.reopenUrl && (
+                  {pairingState?.actions?.canMatchmake && pairingReopenActionUrl && (
                     <button
                       type="button"
                       onClick={() =>
-                        handlePairingAction(pairingState.urls?.reopenUrl, {
+                        handlePairingAction(pairingReopenActionUrl, {
                           body: { mode: "LOOKING_FOR_PARTNER" },
                         })
                       }

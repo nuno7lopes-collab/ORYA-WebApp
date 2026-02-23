@@ -2022,9 +2022,15 @@ export default function PadelTournamentTabs({
 
   const canSubmitSwap =
     swapPairingAId && swapPairingBId && swapPairingAId !== swapPairingBId && !swapBusy;
+  const resolvedOrgIdForTournamentActions =
+    typeof organizationId === "number" && organizationId > 0
+      ? organizationId
+      : typeof configRes?.config?.organizationId === "number" && configRes.config.organizationId > 0
+        ? configRes.config.organizationId
+        : null;
 
   async function handleSwapPairings() {
-    if (!eventId) return;
+    if (!eventId || !resolvedOrgIdForTournamentActions) return;
     const pairingAId = Number(swapPairingAId);
     const pairingBId = Number(swapPairingBId);
     if (!Number.isFinite(pairingAId) || !Number.isFinite(pairingBId)) {
@@ -2035,7 +2041,7 @@ export default function PadelTournamentTabs({
     setSwapError(null);
     setSwapMessage(null);
     try {
-      const res = await fetch(orgApi("/padel/pairings/swap"), {
+      const res = await fetch(`/api/org/${resolvedOrgIdForTournamentActions}/tournaments/pairings/swap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ eventId, pairingAId, pairingBId }),
@@ -2071,7 +2077,7 @@ export default function PadelTournamentTabs({
   }
 
   async function sendBroadcast() {
-    if (!eventId) return;
+    if (!eventId || !resolvedOrgIdForTournamentActions) return;
     const message = broadcastMessage.trim();
     if (!message) {
       setBroadcastError("Mensagem obrigatória.");
@@ -2081,7 +2087,7 @@ export default function PadelTournamentTabs({
     setBroadcastError(null);
     setBroadcastResult(null);
     try {
-      const res = await fetch(orgApi("/padel/broadcast"), {
+      const res = await fetch(`/api/org/${resolvedOrgIdForTournamentActions}/tournaments/broadcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -185,6 +185,8 @@ export default function PairingInviteCard({
       : t("pairingPayInvite", locale);
 
   const payUrl = status?.urls?.payUrl ?? null;
+  const cancelActionUrl = pairingId ? `/api/padel/pairings/${pairingId}/actions/cancel` : null;
+  const reopenActionUrl = pairingId ? `/api/padel/pairings/${pairingId}/actions/reopen` : null;
 
   const resolvedBody = useMemo(() => {
     if (!body) return null;
@@ -335,18 +337,18 @@ export default function PairingInviteCard({
         {status?.actions?.canCancel && (
           <button
             type="button"
-            onClick={() => handleAction(status.urls?.cancelUrl)}
+            onClick={() => handleAction(cancelActionUrl)}
             disabled={actionBusy}
             className="rounded-full border border-rose-300/30 bg-rose-400/10 px-3 py-1.5 text-[11px] text-rose-100 disabled:opacity-60"
           >
             {t("pairingActionCancel", locale)}
           </button>
         )}
-        {status?.actions?.canReinvite && status.urls?.reopenUrl && (
+        {status?.actions?.canReinvite && reopenActionUrl && (
           <button
             type="button"
             onClick={() =>
-              handleAction(status.urls?.reopenUrl, {
+              handleAction(reopenActionUrl, {
                 body: { mode: "INVITE_PARTNER" },
               })
             }
@@ -356,11 +358,11 @@ export default function PairingInviteCard({
             {t("pairingActionReinvite", locale)}
           </button>
         )}
-        {status?.actions?.canMatchmake && status.urls?.reopenUrl && (
+        {status?.actions?.canMatchmake && reopenActionUrl && (
           <button
             type="button"
             onClick={() =>
-              handleAction(status.urls?.reopenUrl, {
+              handleAction(reopenActionUrl, {
                 body: { mode: "LOOKING_FOR_PARTNER" },
               })
             }

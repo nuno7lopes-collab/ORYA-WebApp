@@ -22,7 +22,7 @@ vi.mock("@/domain/notifications/email", () => ({ queueImportantUpdateEmail }));
 vi.mock("@/lib/organizationAudit", () => ({ recordOrganizationAuditSafe }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
 
-let POST: typeof import("@/app/api/org/[orgId]/padel/broadcast/route").POST;
+let POST: typeof import("@/app/api/org/[orgId]/tournaments/broadcast/route").POST;
 
 beforeEach(async () => {
   createSupabaseServer.mockReset();
@@ -35,7 +35,7 @@ beforeEach(async () => {
   prisma.padelPairingSlot.findMany.mockReset();
   prisma.padelWaitlistEntry.findMany.mockReset();
   vi.resetModules();
-  POST = (await import("@/app/api/org/[orgId]/padel/broadcast/route")).POST;
+  POST = (await import("@/app/api/org/[orgId]/tournaments/broadcast/route")).POST;
 });
 
 describe("padel broadcast route", () => {
@@ -44,7 +44,7 @@ describe("padel broadcast route", () => {
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
     });
 
-    const req = new NextRequest("http://localhost/api/org/1/padel/broadcast", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/broadcast", {
       method: "POST",
       body: JSON.stringify({
         eventId: 10,
@@ -89,7 +89,7 @@ describe("padel broadcast route", () => {
     ]);
     prisma.padelWaitlistEntry.findMany.mockResolvedValue([{ userId: "p3" }]);
 
-    const req = new NextRequest("http://localhost/api/org/1/padel/broadcast", {
+    const req = new NextRequest("http://localhost/api/org/1/tournaments/broadcast", {
       method: "POST",
       body: JSON.stringify({
         eventId: 10,

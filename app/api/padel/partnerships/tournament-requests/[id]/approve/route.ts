@@ -5,7 +5,10 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { readNumericParam } from "@/lib/routeParams";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
-import { ensurePartnershipOrganization } from "@/app/api/padel/partnerships/_shared";
+import {
+  ensurePartnershipOrganization,
+  isPartnershipTournamentRequestsTableMissingError,
+} from "@/app/api/padel/partnerships/_shared";
 
 type PartnershipTournamentRequestDelegate = {
   findUnique: (args: Record<string, unknown>) => Promise<any | null>;
@@ -31,62 +34,69 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_REQUEST_ID" }, { status: 400 });
   }
 
-  const requestItem = await partnershipTournamentRequestDelegate.findUnique({
-    where: { id: requestId },
-    select: {
-      id: true,
-      agreementId: true,
-      ownerOrganizationId: true,
-      partnerOrganizationId: true,
-      status: true,
-      expiresAt: true,
-      eventId: true,
-    },
-  });
-  if (!requestItem) {
-    return jsonWrap({ ok: false, error: "REQUEST_NOT_FOUND" }, { status: 404 });
-  }
+  try {
+    const requestItem = await partnershipTournamentRequestDelegate.findUnique({
+      where: { id: requestId },
+      select: {
+        id: true,
+        agreementId: true,
+        ownerOrganizationId: true,
+        partnerOrganizationId: true,
+        status: true,
+        expiresAt: true,
+        eventId: true,
+      },
+    });
+    if (!requestItem) {
+      return jsonWrap({ ok: false, error: "REQUEST_NOT_FOUND" }, { status: 404 });
+    }
 
-  if (check.organization.id !== requestItem.ownerOrganizationId) {
-    return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_REVIEW" }, { status: 403 });
-  }
+    if (check.organization.id !== requestItem.ownerOrganizationId) {
+      return jsonWrap({ ok: false, error: "ONLY_OWNER_CAN_REVIEW" }, { status: 403 });
+    }
 
-  if (requestItem.status !== "PENDING") {
-    return jsonWrap({ ok: false, error: "REQUEST_NOT_PENDING" }, { status: 409 });
-  }
-  if (requestItem.eventId) {
-    return jsonWrap({ ok: false, error: "REQUEST_ALREADY_CONSUMED" }, { status: 409 });
-  }
-  if (requestItem.expiresAt && requestItem.expiresAt.getTime() < Date.now()) {
-    await partnershipTournamentRequestDelegate.update({
+    if (requestItem.status !== "PENDING") {
+      return jsonWrap({ ok: false, error: "REQUEST_NOT_PENDING" }, { status: 409 });
+    }
+    if (requestItem.eventId) {
+      return jsonWrap({ ok: false, error: "REQUEST_ALREADY_CONSUMED" }, { status: 409 });
+    }
+    if (requestItem.expiresAt && requestItem.expiresAt.getTime() < Date.now()) {
+      await partnershipTournamentRequestDelegate.update({
+        where: { id: requestItem.id },
+        data: {
+          status: "EXPIRED",
+          reviewedByUserId: check.userId,
+          reviewedAt: new Date(),
+        },
+      });
+      return jsonWrap({ ok: false, error: "REQUEST_EXPIRED" }, { status: 409 });
+    }
+
+    const agreement = await prisma.padelPartnershipAgreement.findUnique({
+      where: { id: requestItem.agreementId },
+      select: { id: true, status: true, revokedAt: true },
+    });
+    if (!agreement || agreement.status !== "APPROVED" || agreement.revokedAt) {
+      return jsonWrap({ ok: false, error: "AGREEMENT_INVALID" }, { status: 409 });
+    }
+
+    const updated = await partnershipTournamentRequestDelegate.update({
       where: { id: requestItem.id },
       data: {
-        status: "EXPIRED",
+        status: "APPROVED",
         reviewedByUserId: check.userId,
         reviewedAt: new Date(),
       },
     });
-    return jsonWrap({ ok: false, error: "REQUEST_EXPIRED" }, { status: 409 });
+
+    return jsonWrap({ ok: true, request: updated }, { status: 200 });
+  } catch (err) {
+    if (isPartnershipTournamentRequestsTableMissingError(err)) {
+      return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
+    }
+    throw err;
   }
-
-  const agreement = await prisma.padelPartnershipAgreement.findUnique({
-    where: { id: requestItem.agreementId },
-    select: { id: true, status: true, revokedAt: true },
-  });
-  if (!agreement || agreement.status !== "APPROVED" || agreement.revokedAt) {
-    return jsonWrap({ ok: false, error: "AGREEMENT_INVALID" }, { status: 409 });
-  }
-
-  const updated = await partnershipTournamentRequestDelegate.update({
-    where: { id: requestItem.id },
-    data: {
-      status: "APPROVED",
-      reviewedByUserId: check.userId,
-      reviewedAt: new Date(),
-    },
-  });
-
-  return jsonWrap({ ok: true, request: updated }, { status: 200 });
 }
 
 export const POST = withApiEnvelope(_POST);

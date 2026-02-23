@@ -7,6 +7,7 @@ import { jsonWrap } from "@/lib/api/wrapResponse";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import {
   ensurePartnershipOrganization,
+  isPartnershipTournamentRequestsTableMissingError,
   parseOptionalDate,
   parsePositiveInt,
 } from "@/app/api/padel/partnerships/_shared";
@@ -30,6 +31,9 @@ const REQUEST_STATUSES = new Set<PartnershipTournamentRequestStatus>([
   "CANCELLED",
   "EXPIRED",
 ]);
+
+const partnershipRequestsUnavailable = () =>
+  jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
 
 async function resolveOwnerOrganizationId(params: {
   partnerOrganizationId?: number | null;
@@ -56,7 +60,7 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   if (!partnershipTournamentRequestDelegate) {
-    return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
+    return partnershipRequestsUnavailable();
   }
 
   const statusRaw = req.nextUrl.searchParams.get("status");
@@ -65,69 +69,76 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
   }
 
-  const items = await partnershipTournamentRequestDelegate.findMany({
-    where: {
-      OR: [
-        { ownerOrganizationId: check.organization.id },
-        { partnerOrganizationId: check.organization.id },
-      ],
-      ...(status ? { status: status as PartnershipTournamentRequestStatus } : {}),
-    },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 300,
-  });
+  try {
+    const items = await partnershipTournamentRequestDelegate.findMany({
+      where: {
+        OR: [
+          { ownerOrganizationId: check.organization.id },
+          { partnerOrganizationId: check.organization.id },
+        ],
+        ...(status ? { status: status as PartnershipTournamentRequestStatus } : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: 300,
+    });
 
-  const organizationIds = Array.from(
-    new Set(
-      items
-        .flatMap((item) => [item.ownerOrganizationId, item.partnerOrganizationId])
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
-    ),
-  );
-  const clubIds = Array.from(
-    new Set(
-      items
-        .flatMap((item) => [item.ownerClubId, item.partnerClubId])
-        .filter((id): id is number => Number.isFinite(id) && id > 0),
-    ),
-  );
+    const organizationIds = Array.from(
+      new Set(
+        items
+          .flatMap((item) => [item.ownerOrganizationId, item.partnerOrganizationId])
+          .filter((id): id is number => Number.isFinite(id) && id > 0),
+      ),
+    );
+    const clubIds = Array.from(
+      new Set(
+        items
+          .flatMap((item) => [item.ownerClubId, item.partnerClubId])
+          .filter((id): id is number => Number.isFinite(id) && id > 0),
+      ),
+    );
 
-  const [organizations, clubs] = await Promise.all([
-    organizationIds.length > 0
-      ? prisma.organization.findMany({
-          where: { id: { in: organizationIds } },
-          select: { id: true, publicName: true, businessName: true, username: true },
-        })
-      : Promise.resolve([] as Array<{ id: number; publicName: string | null; businessName: string | null; username: string | null }>),
-    clubIds.length > 0
-      ? prisma.padelClub.findMany({
-          where: { id: { in: clubIds }, deletedAt: null },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([] as Array<{ id: number; name: string }>),
-  ]);
+    const [organizations, clubs] = await Promise.all([
+      organizationIds.length > 0
+        ? prisma.organization.findMany({
+            where: { id: { in: organizationIds } },
+            select: { id: true, publicName: true, businessName: true, username: true },
+          })
+        : Promise.resolve([] as Array<{ id: number; publicName: string | null; businessName: string | null; username: string | null }>),
+      clubIds.length > 0
+        ? prisma.padelClub.findMany({
+            where: { id: { in: clubIds }, deletedAt: null },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([] as Array<{ id: number; name: string }>),
+    ]);
 
-  const organizationNameById = new Map<number, string>(
-    organizations.map((organization): [number, string] => [
-      organization.id,
-      organization.publicName || organization.businessName || organization.username || "Organização",
-    ]),
-  );
-  const clubNameById = new Map<number, string>(clubs.map((club): [number, string] => [club.id, club.name]));
+    const organizationNameById = new Map<number, string>(
+      organizations.map((organization): [number, string] => [
+        organization.id,
+        organization.publicName || organization.businessName || organization.username || "Organização",
+      ]),
+    );
+    const clubNameById = new Map<number, string>(clubs.map((club): [number, string] => [club.id, club.name]));
 
-  return jsonWrap(
-    {
-      ok: true,
-      items: items.map((item) => ({
-        ...item,
-        ownerOrganizationName: organizationNameById.get(item.ownerOrganizationId) ?? null,
-        partnerOrganizationName: organizationNameById.get(item.partnerOrganizationId) ?? null,
-        ownerClubName: clubNameById.get(item.ownerClubId) ?? null,
-        partnerClubName: clubNameById.get(item.partnerClubId) ?? null,
-      })),
-    },
-    { status: 200 },
-  );
+    return jsonWrap(
+      {
+        ok: true,
+        items: items.map((item) => ({
+          ...item,
+          ownerOrganizationName: organizationNameById.get(item.ownerOrganizationId) ?? null,
+          partnerOrganizationName: organizationNameById.get(item.partnerOrganizationId) ?? null,
+          ownerClubName: clubNameById.get(item.ownerClubId) ?? null,
+          partnerClubName: clubNameById.get(item.partnerClubId) ?? null,
+        })),
+      },
+      { status: 200 },
+    );
+  } catch (err) {
+    if (isPartnershipTournamentRequestsTableMissingError(err)) {
+      return partnershipRequestsUnavailable();
+    }
+    throw err;
+  }
 }
 
 async function _POST(req: NextRequest) {
@@ -139,7 +150,7 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: check.error }, { status: check.status });
   }
   if (!partnershipTournamentRequestDelegate) {
-    return jsonWrap({ ok: false, error: "PARTNERSHIP_REQUESTS_UNAVAILABLE" }, { status: 503 });
+    return partnershipRequestsUnavailable();
   }
 
   const agreementId = parsePositiveInt(body.agreementId);
@@ -227,38 +238,45 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: false, error: "AGREEMENT_CLUB_MISMATCH" }, { status: 409 });
   }
 
-  const overlappingPending = await partnershipTournamentRequestDelegate.count({
-    where: {
-      agreementId: agreement.id,
-      partnerClubId: partnerClub.id,
-      status: "PENDING",
-      startsAt: { lt: endsAt },
-      endsAt: { gt: startsAt },
-    },
-  });
-  if (overlappingPending > 0) {
-    return jsonWrap({ ok: false, error: "PENDING_REQUEST_ALREADY_EXISTS" }, { status: 409 });
+  try {
+    const overlappingPending = await partnershipTournamentRequestDelegate.count({
+      where: {
+        agreementId: agreement.id,
+        partnerClubId: partnerClub.id,
+        status: "PENDING",
+        startsAt: { lt: endsAt },
+        endsAt: { gt: startsAt },
+      },
+    });
+    if (overlappingPending > 0) {
+      return jsonWrap({ ok: false, error: "PENDING_REQUEST_ALREADY_EXISTS" }, { status: 409 });
+    }
+
+    const expiresAt = new Date(startsAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const created = await partnershipTournamentRequestDelegate.create({
+      data: {
+        agreementId: agreement.id,
+        ownerOrganizationId: agreement.ownerOrganizationId,
+        partnerOrganizationId: agreement.partnerOrganizationId,
+        ownerClubId: agreement.ownerClubId,
+        partnerClubId: partnerClub.id,
+        title,
+        startsAt,
+        endsAt,
+        requestedPayload: requestedPayload ?? {},
+        requestedByUserId: check.userId,
+        status: "PENDING",
+        expiresAt,
+      },
+    });
+
+    return jsonWrap({ ok: true, request: created }, { status: 201 });
+  } catch (err) {
+    if (isPartnershipTournamentRequestsTableMissingError(err)) {
+      return partnershipRequestsUnavailable();
+    }
+    throw err;
   }
-
-  const expiresAt = new Date(startsAt.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const created = await partnershipTournamentRequestDelegate.create({
-    data: {
-      agreementId: agreement.id,
-      ownerOrganizationId: agreement.ownerOrganizationId,
-      partnerOrganizationId: agreement.partnerOrganizationId,
-      ownerClubId: agreement.ownerClubId,
-      partnerClubId: partnerClub.id,
-      title,
-      startsAt,
-      endsAt,
-      requestedPayload: requestedPayload ?? {},
-      requestedByUserId: check.userId,
-      status: "PENDING",
-      expiresAt,
-    },
-  });
-
-  return jsonWrap({ ok: true, request: created }, { status: 201 });
 }
 
 export const GET = withApiEnvelope(_GET);

@@ -120,7 +120,7 @@ async function main() {
       createdCourtResources += 1;
     }
 
-    let professionals = await prisma.reservationProfessional.findMany({
+    const professionals = await prisma.reservationProfessional.findMany({
       where: { organizationId: organization.id, isActive: true },
       orderBy: [{ priority: "asc" }, { id: "asc" }],
       select: { id: true, userId: true, name: true },
