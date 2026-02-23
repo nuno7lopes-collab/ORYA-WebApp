@@ -10,6 +10,7 @@ import { CheckoutStatusResponse } from "../../features/checkout/types";
 import { getUserFacingError } from "../../lib/errors";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { trackEvent } from "../../lib/analytics";
 
 const resolveStatusCopy = (status?: string | null) => {
@@ -160,7 +161,7 @@ export default function CheckoutSuccessScreen() {
       router.replace({ pathname: "/event/[slug]", params: { slug } });
       return;
     }
-    safeBack(router, navigation, "/(tabs)/index");
+    safeBack(router, navigation, TAB_PATHNAMES.index);
   };
 
   return (

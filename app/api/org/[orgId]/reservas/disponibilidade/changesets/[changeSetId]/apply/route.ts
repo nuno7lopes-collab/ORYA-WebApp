@@ -10,6 +10,7 @@ import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { applyAvailabilityChangeset, mapChangesetError } from "@/lib/reservas/availabilityChangesets";
+import { ensureChangesetScopeAccess } from "@/lib/reservas/availabilityChangesetAccess";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -69,6 +70,16 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ changeSet
     });
     if (!reservasAccess.ok) {
       return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
+
+    const scopeAccess = await ensureChangesetScopeAccess({
+      organizationId: organization.id,
+      changeSetId,
+      role: membership.role,
+      userId: profile.id,
+    });
+    if (!scopeAccess.ok) {
+      return fail(ctx, scopeAccess.status, scopeAccess.errorCode, scopeAccess.message);
     }
 
     const result = await prisma.$transaction(async (tx) =>

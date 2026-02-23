@@ -21,16 +21,22 @@ async function _GET(req: NextRequest) {
   if (rateLimited) return rateLimited;
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
-  const slug = req.nextUrl.searchParams.get("slug");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
-  if (!eventId && !slug) {
+  const slug = req.nextUrl.searchParams.get("slug")?.trim() || null;
+  const hasEventIdParam = eventIdParam !== null;
+  const eventIdParsed = hasEventIdParam ? Number(eventIdParam) : null;
+  const eventId = eventIdParsed !== null && Number.isInteger(eventIdParsed) && eventIdParsed > 0 ? eventIdParsed : null;
+  if (hasEventIdParam && eventId === null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
+  if (!hasEventIdParam && !slug) {
     return jsonWrap({ ok: false, error: "EVENT_REQUIRED" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
-    where: eventId ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
+    where: eventId !== null ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
     select: {
       id: true,
+      templateType: true,
       status: true,
       padelTournamentConfig: {
         select: {
@@ -46,7 +52,9 @@ async function _GET(req: NextRequest) {
     },
   });
 
-  if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const competitionState = resolvePadelCompetitionState({
     eventStatus: event.status,

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { ConsentStatus, ConsentType, OrganizationMemberRole, Prisma } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
@@ -41,9 +41,13 @@ async function _GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...ROLE_ALLOWLIST],
     });
 

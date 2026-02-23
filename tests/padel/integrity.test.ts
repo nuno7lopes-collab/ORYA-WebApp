@@ -67,6 +67,22 @@ describe("padel integrity checks", () => {
     expect(issues.some((issue) => issue.reason === "MATCHMAKING_JOINMODE_MISMATCH")).toBe(true);
   });
 
+  it("flags missing registration records", () => {
+    const issues = evaluatePadelIntegrity({
+      ...basePairing,
+      registrationStatus: null,
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: "REGISTRATION_MISSING",
+          expectedStatus: PadelRegistrationStatus.CONFIRMED,
+        }),
+      ]),
+    );
+  });
+
   it("summarizes issues", () => {
     const summary = computePadelIntegritySummary([
       basePairing,

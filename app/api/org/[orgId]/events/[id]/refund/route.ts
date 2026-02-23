@@ -11,6 +11,7 @@ import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 const ALLOWED_REASONS: RefundReason[] = ["CANCELLED", "DELETED", "DATE_CHANGED"];
 
@@ -47,11 +48,19 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
 
     const event = await prisma.event.findUnique({
       where: { id: eventId },
       select: { id: true, organizationId: true, title: true },
     });
+    if (event?.organizationId && event.organizationId !== requestOrganizationId) {
+      return fail(404, "EVENT_NOT_FOUND");
+    }
     if (!event?.organizationId) {
       return fail(404, "EVENT_NOT_FOUND");
     }

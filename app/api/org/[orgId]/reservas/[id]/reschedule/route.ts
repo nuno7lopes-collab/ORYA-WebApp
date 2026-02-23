@@ -783,29 +783,34 @@ async function _POST(
     const priceDeltaCents = nextPriceCents - currentPriceCents;
     const currency = (booking.currency ?? booking.service?.currency ?? "EUR").toUpperCase();
 
-    await prisma.bookingChangeRequest.updateMany({
-      where: { bookingId: booking.id, status: "PENDING" },
-      data: { status: "CANCELLED", respondedAt: now, respondedByUserId: profile.id },
-    });
+    const request = await prisma.$transaction(async (tx) => {
+      const lockKey = `booking_change_request:${booking.id}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-    const request = await prisma.bookingChangeRequest.create({
-      data: {
-        bookingId: booking.id,
-        organizationId: booking.organizationId,
-        requestedBy: "ORG",
-        requestedByUserId: profile.id,
-        status: "PENDING",
-        proposedStartsAt: startsAt,
-        proposedCourtId:
-          availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
-            ? nextCourtId
-            : booking.courtId ?? null,
-        proposedProfessionalId: professionalId ?? null,
-        proposedResourceId: resourceId ?? null,
-        priceDeltaCents,
-        currency,
-        expiresAt,
-      },
+      await tx.bookingChangeRequest.updateMany({
+        where: { bookingId: booking.id, status: "PENDING" },
+        data: { status: "CANCELLED", respondedAt: now, respondedByUserId: profile.id },
+      });
+
+      return tx.bookingChangeRequest.create({
+        data: {
+          bookingId: booking.id,
+          organizationId: booking.organizationId,
+          requestedBy: "ORG",
+          requestedByUserId: profile.id,
+          status: "PENDING",
+          proposedStartsAt: startsAt,
+          proposedCourtId:
+            availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
+              ? nextCourtId
+              : booking.courtId ?? null,
+          proposedProfessionalId: professionalId ?? null,
+          proposedResourceId: resourceId ?? null,
+          priceDeltaCents,
+          currency,
+          expiresAt,
+        },
+      });
     });
 
     await recordOrganizationAudit(prisma, {

@@ -1,0 +1,100 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+const createSupabaseServer = vi.hoisted(() => vi.fn());
+const getUserWithPolicy = vi.hoisted(() => vi.fn());
+const getActiveOrganizationForUser = vi.hoisted(() => vi.fn());
+const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
+
+const prisma = vi.hoisted(() => ({
+  event: { findUnique: vi.fn() },
+}));
+
+vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer }));
+vi.mock("@/lib/auth/getUserWithPolicy", () => ({ getUserWithPolicy }));
+vi.mock("@/lib/organizationContext", () => ({ getActiveOrganizationForUser }));
+vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
+vi.mock("@/lib/prisma", () => ({ prisma }));
+
+let POST: typeof import("@/app/api/padel/matches/generate/route").POST;
+
+beforeEach(async () => {
+  vi.resetModules();
+  vi.clearAllMocks();
+
+  createSupabaseServer.mockResolvedValue({});
+  getUserWithPolicy.mockResolvedValue({
+    data: { user: { id: "u-1" } },
+  });
+  getActiveOrganizationForUser.mockResolvedValue({
+    organization: { id: 99 },
+    membership: { role: "ADMIN", rolePack: null },
+  });
+  ensureMemberModuleAccess.mockResolvedValue({ ok: true });
+
+  POST = (await import("@/app/api/padel/matches/generate/route")).POST;
+});
+
+describe("POST /api/padel/matches/generate validação fail-closed", () => {
+  const baseBody = {
+    eventId: 10,
+    format: "MEXICANO",
+  };
+
+  it("rejeita phase inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        phase: "semi",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_PHASE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita drawPolicy inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        drawPolicy: "random",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_DRAW_POLICY");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita seedSource inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/matches/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...baseBody,
+        seedSource: "fallback",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_SEED_SOURCE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+});

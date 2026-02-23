@@ -5,6 +5,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { SearchUser } from "./types";
 import { useRouter } from "expo-router";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   item: SearchUser;
@@ -33,7 +34,7 @@ export const SearchUserRow = memo(function SearchUserRow({
         <Pressable
           onPress={() => {
             if (item.username) {
-              router.push({ pathname: "/[username]", params: { username: item.username } });
+              safePush(router, { pathname: "/[username]", params: { username: item.username } });
             }
           }}
           accessibilityRole="button"

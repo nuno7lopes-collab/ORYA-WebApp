@@ -29,6 +29,7 @@ import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const BUFFER_MINUTES = 5; // tempo mínimo entre registos para evitar sobreposição acidental
+const FALLBACK_MATCH_DURATION_MINUTES = 60;
 const LOCK_TTL_SECONDS = 45;
 const OCCUPANCY_LEGEND = [
   {
@@ -81,6 +82,36 @@ const parseDate = (value: unknown) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
+const parsePositiveDurationMinutes = (value: number | null | undefined) =>
+  typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+const failText = (errorCode: string, error: string, status: number) =>
+  jsonWrap({ ok: false, errorCode, error }, { status });
+
+const resolveMatchEnd = (params: {
+  start: Date | null;
+  plannedEndAt: Date | null;
+  plannedDurationMinutes: number | null;
+}) => {
+  const { start, plannedEndAt, plannedDurationMinutes } = params;
+  if (!start) return null;
+  if (plannedEndAt && plannedEndAt > start) return plannedEndAt;
+  const durationMinutes = parsePositiveDurationMinutes(plannedDurationMinutes) ?? FALLBACK_MATCH_DURATION_MINUTES;
+  return new Date(start.getTime() + durationMinutes * 60 * 1000);
+};
+
 const overlapsWithBuffer = (aStart: Date, aEnd: Date, bStart: Date, bEnd: Date, bufferMinutes = BUFFER_MINUTES) => {
   const bufferMs = bufferMinutes * 60 * 1000;
   const aStartBuffered = new Date(aStart.getTime() - bufferMs);
@@ -103,11 +134,11 @@ const buildMatchWindow = (match: {
   startTime: Date | null;
 }) => {
   const start = match.plannedStartAt ?? match.startTime;
-  const end =
-    match.plannedEndAt ||
-    (start && match.plannedDurationMinutes
-      ? new Date(start.getTime() + Number(match.plannedDurationMinutes) * 60 * 1000)
-      : match.startTime);
+  const end = resolveMatchEnd({
+    start,
+    plannedEndAt: match.plannedEndAt,
+    plannedDurationMinutes: match.plannedDurationMinutes,
+  });
   return { start, end: end ?? start };
 };
 
@@ -323,23 +354,28 @@ async function _GET(req: NextRequest) {
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
   const eventId = eventIdParam ? Number(eventIdParam) : Number.NaN;
-  if (!Number.isFinite(eventId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
 
   const padelClubParam = req.nextUrl.searchParams.get("padelClubId");
   const courtParam = req.nextUrl.searchParams.get("courtId");
-  const padelClubId = padelClubParam ? Number(padelClubParam) : null;
-  const courtId = courtParam ? Number(courtParam) : null;
-  if (padelClubParam && !Number.isFinite(padelClubId)) {
+  const hasPadelClubParam = padelClubParam !== null;
+  const hasCourtParam = courtParam !== null;
+  const padelClubParsed = hasPadelClubParam ? Number(padelClubParam) : null;
+  const courtParsed = hasCourtParam ? Number(courtParam) : null;
+  const padelClubId =
+    padelClubParsed !== null && Number.isInteger(padelClubParsed) && padelClubParsed > 0 ? padelClubParsed : null;
+  const courtId = courtParsed !== null && Number.isInteger(courtParsed) && courtParsed > 0 ? courtParsed : null;
+  if (hasPadelClubParam && padelClubId === null) {
     return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
   }
-  if (courtParam && !Number.isFinite(courtId)) {
+  if (hasCourtParam && courtId === null) {
     return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
   }
 
-  let resolvedClubId: number | null = padelClubId && Number.isFinite(padelClubId) ? padelClubId : null;
-  const resolvedCourtId: number | null = courtId && Number.isFinite(courtId) ? courtId : null;
+  let resolvedClubId: number | null = padelClubId;
+  const resolvedCourtId: number | null = courtId;
   if (resolvedClubId) {
     const club = await prisma.padelClub.findFirst({
       where: { id: resolvedClubId, organizationId: organization.id, deletedAt: null },
@@ -364,10 +400,10 @@ async function _GET(req: NextRequest) {
   }
 
   const event = await prisma.event.findFirst({
-    where: { id: eventId, organizationId: organization.id },
-    select: { id: true, timezone: true, startsAt: true, endsAt: true },
+    where: { id: eventId, organizationId: organization.id, isDeleted: false },
+    select: { id: true, templateType: true, timezone: true, startsAt: true, endsAt: true },
   });
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
@@ -601,11 +637,11 @@ async function _GET(req: NextRequest) {
   }
   const matchWindow = (m: any) => {
     const start = (m.plannedStartAt as Date | null) || (m.startTime as Date | null);
-    const end =
-      (m.plannedEndAt as Date | null) ||
-      (start && m.plannedDurationMinutes
-        ? new Date(start.getTime() + Number(m.plannedDurationMinutes) * 60 * 1000)
-        : (m.startTime as Date | null));
+    const end = resolveMatchEnd({
+      start,
+      plannedEndAt: (m.plannedEndAt as Date | null) ?? null,
+      plannedDurationMinutes: (m.plannedDurationMinutes as number | null) ?? null,
+    });
     return { start, end: end ?? start };
   };
 
@@ -829,7 +865,7 @@ async function _POST(req: NextRequest) {
   if (type !== "block" && type !== "availability" && type !== "resource_claim") {
     return jsonWrap({ ok: false, error: "INVALID_TYPE" }, { status: 400 });
   }
-  if (!Number.isFinite(eventId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
   if (!startAt || !endAt || endAt <= startAt) {
@@ -838,10 +874,10 @@ async function _POST(req: NextRequest) {
 
   // Confirm event belongs to organization
   const event = await prisma.event.findFirst({
-    where: { id: eventId as number, organizationId: organization.id },
+    where: { id: eventId as number, organizationId: organization.id, isDeleted: false },
     select: { id: true, templateType: true },
   });
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
@@ -857,12 +893,18 @@ async function _POST(req: NextRequest) {
   }
 
   if (type === "block") {
-    const padelClubId =
-      typeof body.padelClubId === "number" ? body.padelClubId : typeof body.padelClubId === "string" ? Number(body.padelClubId) : null;
-    const courtId =
-      typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : null;
+    const hasPadelClubId = body.padelClubId != null;
+    const hasCourtId = body.courtId != null;
+    const padelClubId = hasPadelClubId ? parsePositiveInt(body.padelClubId) : null;
+    const courtId = hasCourtId ? parsePositiveInt(body.courtId) : null;
+    if (hasPadelClubId && padelClubId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+    }
+    if (hasCourtId && courtId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
 
-    if (courtId) {
+    if (courtId != null) {
       const court = await prisma.padelClubCourt.findFirst({
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true, padelClubId: true },
@@ -880,9 +922,10 @@ async function _POST(req: NextRequest) {
       },
     });
     if (overlappingBlocks && overlapsWithBuffer(startAt, endAt, overlappingBlocks.startAt, overlappingBlocks.endAt)) {
-      return jsonWrap(
-        { ok: false, error: "Já existe um bloqueio que colide neste intervalo. Ajusta horários ou court." },
-        { status: 409 },
+      return failText(
+        "BLOCK_OVERLAP",
+        "Já existe um bloqueio que colide neste intervalo. Ajusta horários ou court.",
+        409,
       );
     }
 
@@ -960,14 +1003,13 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const playerProfileId =
-    typeof body.playerProfileId === "number"
-      ? body.playerProfileId
-      : typeof body.playerProfileId === "string"
-        ? Number(body.playerProfileId)
-        : null;
+  const hasPlayerProfileId = body.playerProfileId != null;
+  const playerProfileId = hasPlayerProfileId ? parsePositiveInt(body.playerProfileId) : null;
+  if (hasPlayerProfileId && playerProfileId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_PLAYER" }, { status: 400 });
+  }
 
-  if (playerProfileId) {
+  if (playerProfileId != null) {
     const profile = await prisma.padelPlayerProfile.findFirst({
       where: { id: playerProfileId, organizationId: organization.id },
       select: { id: true },
@@ -981,7 +1023,7 @@ async function _POST(req: NextRequest) {
       where: {
         organizationId: organization.id,
         eventId: event.id,
-        ...(playerProfileId ? { playerProfileId } : {}),
+        ...(playerProfileId != null ? { playerProfileId } : {}),
         ...(emailToCheck ? { playerEmail: emailToCheck } : {}),
         startAt: { lt: endAt },
         endAt: { gt: startAt },
@@ -991,10 +1033,7 @@ async function _POST(req: NextRequest) {
       overlappingAvailability &&
       overlapsWithBuffer(startAt, endAt, overlappingAvailability.startAt, overlappingAvailability.endAt)
     ) {
-      return jsonWrap(
-        { ok: false, error: "Já existe indisponibilidade para este jogador neste intervalo." },
-        { status: 409 },
-      );
+      return failText("AVAILABILITY_OVERLAP", "Já existe indisponibilidade para este jogador neste intervalo.", 409);
     }
   }
 
@@ -1039,21 +1078,27 @@ async function _PATCH(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const type = typeof body.type === "string" ? body.type : null;
-  const id = typeof body.id === "number" ? body.id : Number(body.id);
-  if (!type || !Number.isFinite(id)) {
+  const id = parsePositiveInt(body.id);
+  if (!type || id == null) {
     return jsonWrap({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
   }
 
   if (type === "block") {
     const startAt = body.startAt ? parseDate(body.startAt) : null;
     const endAt = body.endAt ? parseDate(body.endAt) : null;
-    const padelClubId =
-      typeof body.padelClubId === "number" ? body.padelClubId : typeof body.padelClubId === "string" ? Number(body.padelClubId) : undefined;
-    const courtId =
-      typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
+    const hasPadelClubId = body.padelClubId != null;
+    const hasCourtId = body.courtId != null;
+    const padelClubId = hasPadelClubId ? parsePositiveInt(body.padelClubId) : undefined;
+    const courtId = hasCourtId ? parsePositiveInt(body.courtId) : undefined;
+    if (hasPadelClubId && padelClubId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+    }
+    if (hasCourtId && courtId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
 
     const block = await prisma.calendarBlock.findFirst({
-      where: { id: id as number, organizationId: organization.id },
+      where: { id, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, courtId: true, updatedAt: true },
     });
     if (!block) return jsonWrap({ ok: false, error: "BLOCK_NOT_FOUND" }, { status: 404 });
@@ -1068,7 +1113,7 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    if (courtId) {
+    if (typeof courtId === "number") {
       const court = await prisma.padelClubCourt.findFirst({
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
@@ -1090,16 +1135,13 @@ async function _PATCH(req: NextRequest) {
           organizationId: organization.id,
           eventId: block.eventId,
           ...(typeof courtId === "number" ? { courtId } : {}),
-          id: { not: id as number },
+          id: { not: id },
           startAt: { lt: endAt },
           endAt: { gt: startAt },
         },
       });
       if (overlapping && overlapsWithBuffer(startAt, endAt, overlapping.startAt, overlapping.endAt)) {
-        return jsonWrap(
-          { ok: false, error: "Colisão com outro bloqueio. Ajusta horários ou court." },
-          { status: 409 },
-        );
+        return failText("BLOCK_OVERLAP", "Colisão com outro bloqueio. Ajusta horários ou court.", 409);
       }
     }
 
@@ -1142,7 +1184,7 @@ async function _PATCH(req: NextRequest) {
     let updated: typeof block | null = null;
     try {
       const res = await updateHardBlock({
-        hardBlockId: id as number,
+        hardBlockId: id,
         organizationId: organization.id,
         padelClubId: typeof padelClubId !== "undefined" ? padelClubId : undefined,
         courtId: typeof courtId !== "undefined" ? courtId : undefined,
@@ -1191,15 +1233,14 @@ async function _PATCH(req: NextRequest) {
   if (type === "availability") {
     const startAt = body.startAt ? parseDate(body.startAt) : null;
     const endAt = body.endAt ? parseDate(body.endAt) : null;
-    const playerProfileId =
-      typeof body.playerProfileId === "number"
-        ? body.playerProfileId
-        : typeof body.playerProfileId === "string"
-          ? Number(body.playerProfileId)
-          : undefined;
+    const hasPlayerProfileId = body.playerProfileId != null;
+    const playerProfileId = hasPlayerProfileId ? parsePositiveInt(body.playerProfileId) : undefined;
+    if (hasPlayerProfileId && playerProfileId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_PLAYER" }, { status: 400 });
+    }
 
     const availability = await prisma.calendarAvailability.findFirst({
-      where: { id: id as number, organizationId: organization.id },
+      where: { id, organizationId: organization.id },
       select: { id: true, startAt: true, endAt: true, eventId: true, playerProfileId: true, playerEmail: true, updatedAt: true },
     });
     if (!availability) return jsonWrap({ ok: false, error: "AVAILABILITY_NOT_FOUND" }, { status: 404 });
@@ -1214,7 +1255,7 @@ async function _PATCH(req: NextRequest) {
       }
     }
 
-    if (playerProfileId) {
+    if (typeof playerProfileId === "number") {
       const profile = await prisma.padelPlayerProfile.findFirst({
         where: { id: playerProfileId, organizationId: organization.id },
         select: { id: true },
@@ -1236,27 +1277,22 @@ async function _PATCH(req: NextRequest) {
         where: {
           organizationId: organization.id,
           eventId: availability.eventId,
-          ...(playerProfileId ? { playerProfileId } : {}),
+          ...(typeof playerProfileId === "number" ? { playerProfileId } : {}),
           ...(emailToCheck ? { playerEmail: emailToCheck } : {}),
-          id: { not: id as number },
+          id: { not: id },
           startAt: { lt: endAt },
           endAt: { gt: startAt },
         },
       });
       if (overlapping && overlapsWithBuffer(startAt, endAt, overlapping.startAt, overlapping.endAt)) {
-        return jsonWrap(
-          { ok: false, error: "Já existe indisponibilidade para este jogador neste intervalo." },
-          { status: 409 },
-        );
+        return failText("AVAILABILITY_OVERLAP", "Já existe indisponibilidade para este jogador neste intervalo.", 409);
       }
     }
 
     const updated = await prisma.calendarAvailability.update({
-      where: { id: id as number },
+      where: { id },
       data: {
-        ...(typeof playerProfileId !== "undefined"
-          ? { playerProfileId: Number.isFinite(playerProfileId) ? playerProfileId : null }
-          : {}),
+        ...(typeof playerProfileId !== "undefined" ? { playerProfileId } : {}),
         ...(startAt ? { startAt } : {}),
         ...(endAt ? { endAt } : {}),
         ...(typeof body.playerName === "string" ? { playerName: body.playerName.trim() || null } : {}),
@@ -1298,11 +1334,14 @@ async function _PATCH(req: NextRequest) {
         : typeof body.plannedDurationMinutes === "string"
           ? Number(body.plannedDurationMinutes)
           : null;
-    const courtId =
-      typeof body.courtId === "number" ? body.courtId : typeof body.courtId === "string" ? Number(body.courtId) : undefined;
+    const hasCourtId = body.courtId != null;
+    const courtId = hasCourtId ? parsePositiveInt(body.courtId) : undefined;
+    if (hasCourtId && courtId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+    }
 
     const match = await prisma.eventMatchSlot.findFirst({
-      where: { id: id as number, event: { organizationId: organization.id } },
+      where: { id, event: { organizationId: organization.id } },
       select: {
         id: true,
         status: true,
@@ -1352,7 +1391,7 @@ async function _PATCH(req: NextRequest) {
       return jsonWrap({ ok: false, error: "INVALID_DATE_RANGE" }, { status: 400 });
     }
 
-    if (courtId) {
+    if (typeof courtId === "number") {
       const court = await prisma.padelClubCourt.findFirst({
         where: { id: courtId, club: { organizationId: organization.id } },
         select: { id: true },
@@ -1411,7 +1450,7 @@ async function _PATCH(req: NextRequest) {
       const overlappingMatch = await prisma.eventMatchSlot.findFirst({
         where: {
           eventId: match.eventId,
-          id: { not: id as number },
+          id: { not: id },
           ...(targetCourtId ? { courtId: targetCourtId } : {}),
           OR: [
             {
@@ -1429,10 +1468,7 @@ async function _PATCH(req: NextRequest) {
         const otherStart = overlappingMatch.plannedStartAt || overlappingMatch.startTime;
         const otherEnd = overlappingMatch.plannedEndAt || overlappingMatch.startTime;
         if (otherStart && otherEnd && overlapsWithBuffer(desiredStart, desiredEnd, otherStart, otherEnd)) {
-          return jsonWrap(
-            { ok: false, error: "Conflito com outro jogo neste court." },
-            { status: 409 },
-          );
+          return failText("MATCH_OVERLAP", "Conflito com outro jogo neste court.", 409);
         }
       }
 
@@ -1449,10 +1485,7 @@ async function _PATCH(req: NextRequest) {
         overlappingBlock &&
         overlapsWithBuffer(desiredStart, desiredEnd, overlappingBlock.startAt, overlappingBlock.endAt)
       ) {
-        return jsonWrap(
-          { ok: false, error: "Conflito com um bloqueio neste court." },
-          { status: 409 },
-        );
+        return failText("MATCH_BLOCK_CONFLICT", "Conflito com um bloqueio neste court.", 409);
       }
     }
 
@@ -1465,7 +1498,7 @@ async function _PATCH(req: NextRequest) {
       const overlappingPlayerMatch = await prisma.eventMatchSlot.findFirst({
         where: {
           eventId: match.eventId,
-          id: { not: id as number },
+          id: { not: id },
           participants: {
             some: {
               participant: {
@@ -1516,12 +1549,12 @@ async function _PATCH(req: NextRequest) {
     let updated: { id: number; plannedStartAt: Date | null; plannedEndAt: Date | null; plannedDurationMinutes: number | null; courtId: number | null } | null = null;
     try {
       const res = await applyMatchSlotUpdate({
-        matchId: id as number,
+        matchId: id,
         organizationId: organization.id,
         actorUserId: check.userId,
         correlationId: String(match.eventId),
         schedule: {
-          ...(typeof courtId !== "undefined" ? { courtId: Number.isFinite(courtId) ? courtId : null } : {}),
+          ...(typeof courtId !== "undefined" ? { courtId } : {}),
           ...(plannedStartAt ? { plannedStartAt } : {}),
           ...(desiredEnd ? { plannedEndAt: desiredEnd, plannedDurationMinutes: computedDurationMinutes } : {}),
         },
@@ -1605,8 +1638,8 @@ async function _DELETE(req: NextRequest) {
 
   const typeParam = req.nextUrl.searchParams.get("type");
   const idParam = req.nextUrl.searchParams.get("id");
-  const id = idParam ? Number(idParam) : NaN;
-  if (!typeParam || !Number.isFinite(id)) {
+  const id = parsePositiveInt(idParam);
+  if (!typeParam || id == null) {
     return jsonWrap({ ok: false, error: "TYPE_AND_ID_REQUIRED" }, { status: 400 });
   }
 

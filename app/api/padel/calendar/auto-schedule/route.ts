@@ -66,6 +66,29 @@ const parseNumber = (value: unknown) => {
   return null;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
+const parsePositiveIntArray = (value: unknown) => {
+  if (typeof value === "undefined" || value === null) return { values: [] as number[], invalid: false };
+  if (!Array.isArray(value)) return { values: [] as number[], invalid: true };
+  const values: number[] = [];
+  for (const item of value) {
+    const parsed = parsePositiveInt(item);
+    if (parsed == null) return { values: [] as number[], invalid: true };
+    values.push(parsed);
+  }
+  return { values, invalid: false };
+};
+
 type MatchParticipantSideRow = {
   side: string;
   participant: {
@@ -149,33 +172,55 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
   }
   const dryRun = body.dryRun === true;
   const startFromNow = body.startFromNow === true;
-  const partialMode: PadelPartialMode = body.partialMode === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
-  const executionMode: PadelExecutionMode = body.executionMode === "ASYNC" ? "ASYNC" : "SYNC";
+  const hasPartialMode = Object.prototype.hasOwnProperty.call(body, "partialMode");
+  const partialModeRaw = typeof body.partialMode === "string" ? body.partialMode.trim().toUpperCase() : "";
+  if (hasPartialMode && partialModeRaw !== "REQUIRE_FULL" && partialModeRaw !== "ALLOW_PARTIAL") {
+    return jsonWrap({ ok: false, error: "INVALID_PARTIAL_MODE" }, { status: 400 });
+  }
+  const partialMode: PadelPartialMode = partialModeRaw === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+
+  const hasExecutionMode = Object.prototype.hasOwnProperty.call(body, "executionMode");
+  const executionModeRaw = typeof body.executionMode === "string" ? body.executionMode.trim().toUpperCase() : "";
+  if (hasExecutionMode && executionModeRaw !== "ASYNC" && executionModeRaw !== "SYNC") {
+    return jsonWrap({ ok: false, error: "INVALID_EXECUTION_MODE" }, { status: 400 });
+  }
+  const executionMode: PadelExecutionMode = executionModeRaw === "ASYNC" ? "ASYNC" : "SYNC";
+
+  const hasStrategy = Object.prototype.hasOwnProperty.call(body, "strategy");
+  const strategyRaw = typeof body.strategy === "string" ? body.strategy.trim().toUpperCase() : "";
+  if (
+    hasStrategy &&
+    strategyRaw !== "GROUPS_FIRST" &&
+    strategyRaw !== "KNOCKOUT_FIRST" &&
+    strategyRaw !== "BALANCED_BY_CATEGORY"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_STRATEGY" }, { status: 400 });
+  }
   const strategy: PadelScheduleStrategy =
-    body.strategy === "GROUPS_FIRST" || body.strategy === "KNOCKOUT_FIRST" || body.strategy === "BALANCED_BY_CATEGORY"
-      ? body.strategy
+    strategyRaw === "GROUPS_FIRST" || strategyRaw === "KNOCKOUT_FIRST" || strategyRaw === "BALANCED_BY_CATEGORY"
+      ? strategyRaw
       : "BALANCED_BY_CATEGORY";
-  const matchIds = Array.isArray(body.matchIds)
-    ? body.matchIds.filter((id) => typeof id === "number" && Number.isFinite(id)).map((id) => Math.floor(id))
-    : [];
-  const targetMatchIds = matchIds.length > 0 ? matchIds : null;
-  const categoryIds = Array.isArray(body.categoryIds)
-    ? body.categoryIds
-        .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id): id is number => Number.isFinite(id) && id > 0)
-        .map((id) => Math.floor(id))
-    : [];
-  const targetCategoryIds = categoryIds.length > 0 ? Array.from(new Set(categoryIds)) : null;
+  const matchIdsParsed = parsePositiveIntArray(body.matchIds);
+  if (matchIdsParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_MATCH_IDS" }, { status: 400 });
+  }
+  const targetMatchIds = matchIdsParsed.values.length > 0 ? matchIdsParsed.values : null;
+  const categoryIdsParsed = parsePositiveIntArray(body.categoryIds);
+  if (categoryIdsParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_CATEGORY_IDS" }, { status: 400 });
+  }
+  const targetCategoryIds = categoryIdsParsed.values.length > 0 ? Array.from(new Set(categoryIdsParsed.values)) : null;
 
   const event = await prisma.event.findFirst({
-    where: { id: eventId, organizationId: organization.id },
+    where: { id: eventId, organizationId: organization.id, isDeleted: false },
     select: {
       id: true,
+      templateType: true,
       startsAt: true,
       endsAt: true,
       padelTournamentConfig: {
@@ -188,7 +233,7 @@ async function _POST(req: NextRequest) {
       },
     },
   });
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 
@@ -313,25 +358,28 @@ async function _POST(req: NextRequest) {
     0,
     Math.round(parseNumber(body.minRestMinutes) ?? restFromDefaults ?? DEFAULT_REST_MINUTES),
   );
+  const hasPriority = Object.prototype.hasOwnProperty.call(body, "priority");
+  const priorityRaw = typeof body.priority === "string" ? body.priority.trim().toUpperCase() : "";
+  if (hasPriority && priorityRaw !== "KNOCKOUT_FIRST" && priorityRaw !== "GROUPS_FIRST") {
+    return jsonWrap({ ok: false, error: "INVALID_PRIORITY" }, { status: 400 });
+  }
   const priority =
-    body.priority === "KNOCKOUT_FIRST" || body.priority === "GROUPS_FIRST"
-      ? (body.priority as "GROUPS_FIRST" | "KNOCKOUT_FIRST")
+    priorityRaw === "KNOCKOUT_FIRST" || priorityRaw === "GROUPS_FIRST"
+      ? priorityRaw
       : scheduleDefaults.priority === "KNOCKOUT_FIRST"
         ? "KNOCKOUT_FIRST"
         : "GROUPS_FIRST";
 
-  const requestedCourtIds = Array.isArray(body.courtIds)
-    ? body.courtIds
-        .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id): id is number => Number.isFinite(id) && id > 0)
-        .map((id) => Math.floor(id))
-    : [];
-  const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
-    ? body.courtPriorityOrder
-        .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id): id is number => Number.isFinite(id) && id > 0)
-        .map((id) => Math.floor(id))
-    : [];
+  const requestedCourtIdsParsed = parsePositiveIntArray(body.courtIds);
+  if (requestedCourtIdsParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT_IDS" }, { status: 400 });
+  }
+  const requestedCourtPriorityOrderParsed = parsePositiveIntArray(body.courtPriorityOrder);
+  if (requestedCourtPriorityOrderParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT_PRIORITY" }, { status: 400 });
+  }
+  const requestedCourtIds = requestedCourtIdsParsed.values;
+  const requestedCourtPriorityOrder = requestedCourtPriorityOrderParsed.values;
   const courtSelection = await resolvePadelCourtSelection({
     db: prisma,
     organizationId: organization.id,

@@ -198,10 +198,6 @@ function normalizeEndpoint(raw) {
   return endpoint;
 }
 
-function isOutOfScopePadel(endpoint) {
-  return /\/(padel|tournaments|torneios)(?:\/|$)/i.test(endpoint);
-}
-
 function extractFrontendApiUsage() {
   const sourceRoots = [
     path.join(ROOT, "app"),
@@ -375,6 +371,17 @@ function matchesEndpointPattern(pattern, candidate) {
   return true;
 }
 
+function isTemplateBaseEndpoint(endpoint, apiRoutesSet) {
+  const normalized = normalizeEndpoint(endpoint);
+  if (!normalized.startsWith("/api/")) return false;
+  if (apiRoutesSet.has(normalized)) return false;
+  const prefix = `${normalized}/`;
+  for (const route of apiRoutesSet) {
+    if (route.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 function main() {
   const apiFiles = fs.existsSync(API_ROOT) ? listFiles(API_ROOT) : [];
   const apiRouteFiles = apiFiles.filter((file) => /\/route\.(ts|tsx|js|jsx)$/.test(file));
@@ -462,9 +469,9 @@ function main() {
   const apiRoutesSet = new Set(apiRoutes);
   const missingApi = [];
   for (const endpoint of usage.keys()) {
-    if (isOutOfScopePadel(endpoint)) continue;
     if (endpoint === "/api/organizacao") continue;
     if (apiRoutesSet.has(endpoint)) continue;
+    if (isTemplateBaseEndpoint(endpoint, apiRoutesSet)) continue;
     if (endpoint.includes("[param]")) {
       const matched = apiRoutes.some((candidate) => matchesEndpointPattern(endpoint, candidate));
       if (matched) continue;

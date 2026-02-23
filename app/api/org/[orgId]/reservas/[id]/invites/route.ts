@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import crypto from "crypto";
-import { BookingInviteStatus, OrganizationMemberRole } from "@prisma/client";
+import { BookingInviteStatus, OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -13,6 +13,8 @@ import { getAppBaseUrl } from "@/lib/appBaseUrl";
 import { getBookingState, isBookingConfirmed } from "@/lib/reservas/bookingState";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
 
 const MAX_INVITES = 20;
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
@@ -102,13 +104,36 @@ async function _GET(
     if (!profile || !organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return fail(403, reservasAccess.error ?? "Reservas indisponíveis.", "RESERVAS_UNAVAILABLE");
+    }
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
-      select: { id: true },
+      select: {
+        id: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
+      },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(staffAccess.status, staffAccess.message, staffAccess.errorCode);
     }
 
     const items = await prisma.bookingInvite.findMany({
@@ -164,6 +189,12 @@ async function _POST(
     if (!user || !profile || !organization || !membership) {
       return fail(403, "Sem permissões.");
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
+    if (!reservasAccess.ok) {
+      return fail(403, reservasAccess.error ?? "Reservas indisponíveis.", "RESERVAS_UNAVAILABLE");
+    }
 
     const payload = await req.json().catch(() => ({}));
     const invitesPayload = Array.isArray(payload?.invites)
@@ -181,10 +212,31 @@ async function _POST(
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
-      select: { id: true, status: true, organizationId: true },
+      select: {
+        id: true,
+        status: true,
+        organizationId: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
+      },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(staffAccess.status, staffAccess.message, staffAccess.errorCode);
     }
     if (!isBookingConfirmed(booking)) {
       const bookingState = getBookingState(booking);
@@ -208,46 +260,55 @@ async function _POST(
     }
 
     const contacts = Array.from(new Set(invites.map((invite) => invite.contact)));
-    const existing = contacts.length
-      ? await prisma.bookingInvite.findMany({
-          where: { bookingId, targetContact: { in: contacts } },
-          select: { targetContact: true },
-        })
-      : [];
-    const existingSet = new Set(existing.map((item) => item.targetContact ?? ""));
-    const filtered = invites.filter((invite) => !existingSet.has(invite.contact));
+    const created = await prisma.$transaction(async (tx) => {
+      const lockKey = `booking_invites:${bookingId}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-    if (filtered.length === 0) {
+      const existing = contacts.length
+        ? await tx.bookingInvite.findMany({
+            where: { bookingId, targetContact: { in: contacts } },
+            select: { targetContact: true },
+          })
+        : [];
+      const existingSet = new Set(existing.map((item) => item.targetContact ?? ""));
+      const filtered = invites.filter((invite) => !existingSet.has(invite.contact));
+
+      if (filtered.length === 0) {
+        return [];
+      }
+
+      const tokens = new Set<string>();
+      const data = filtered.map((invite) => ({
+        bookingId,
+        organizationId: booking.organizationId,
+        invitedByUserId: user.id,
+        token: generateToken(tokens),
+        targetName: invite.name ? invite.name.slice(0, 120) : null,
+        targetContact: invite.contact.slice(0, 180),
+        message: invite.message ? invite.message.slice(0, 300) : null,
+        status: BookingInviteStatus.PENDING,
+      }));
+
+      await tx.bookingInvite.createMany({ data });
+
+      return tx.bookingInvite.findMany({
+        where: { bookingId, token: { in: Array.from(tokens) } },
+        select: {
+          id: true,
+          token: true,
+          targetName: true,
+          targetContact: true,
+          message: true,
+          status: true,
+          respondedAt: true,
+          createdAt: true,
+        },
+      });
+    });
+
+    if (created.length === 0) {
       return respondOk(ctx, { items: [] });
     }
-
-    const tokens = new Set<string>();
-    const data = filtered.map((invite) => ({
-      bookingId,
-      organizationId: booking.organizationId,
-      invitedByUserId: user.id,
-      token: generateToken(tokens),
-      targetName: invite.name ? invite.name.slice(0, 120) : null,
-      targetContact: invite.contact.slice(0, 180),
-      message: invite.message ? invite.message.slice(0, 300) : null,
-      status: BookingInviteStatus.PENDING,
-    }));
-
-    await prisma.bookingInvite.createMany({ data });
-
-    const created = await prisma.bookingInvite.findMany({
-      where: { bookingId, token: { in: Array.from(tokens) } },
-      select: {
-        id: true,
-        token: true,
-        targetName: true,
-        targetContact: true,
-        message: true,
-        status: true,
-        respondedAt: true,
-        createdAt: true,
-      },
-    });
 
     const emailInvites = created.filter(
       (invite) => invite.targetContact && invite.targetContact.includes("@"),

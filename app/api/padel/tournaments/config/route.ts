@@ -103,6 +103,17 @@ const TOURNAMENT_CONFIG_SELECT = {
   },
 } satisfies Prisma.PadelTournamentConfigSelect;
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -112,14 +123,16 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   // Garantir que o requester tem permissão no organization deste evento
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true },
+    select: { organizationId: true, templateType: true },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
@@ -146,31 +159,7 @@ async function _GET(req: NextRequest) {
       select: { generatedAt: true, generatedByUserId: true },
     }),
   ]);
-  let config = initialConfig;
-
-  if (config?.ruleSetId && !config.ruleSetVersionId) {
-    await prisma.$transaction(async (tx) => {
-      const fresh = await tx.padelTournamentConfig.findUnique({
-        where: { id: config!.id },
-        select: { id: true, ruleSetId: true, ruleSetVersionId: true },
-      });
-      if (!fresh?.ruleSetId || fresh.ruleSetVersionId) return;
-      const version = await ensurePadelRuleSetVersion({
-        tx,
-        tournamentConfigId: fresh.id,
-        ruleSetId: fresh.ruleSetId,
-        actorUserId: user.id,
-      });
-      await tx.padelTournamentConfig.update({
-        where: { id: fresh.id },
-        data: { ruleSetVersionId: version.id },
-      });
-    });
-    config = await prisma.padelTournamentConfig.findUnique({
-      where: { eventId },
-      select: TOURNAMENT_CONFIG_SELECT,
-    });
-  }
+  const config = initialConfig;
 
   return jsonWrap(
     {
@@ -238,38 +227,21 @@ async function _POST(req: NextRequest) {
       ? Math.max(1, Math.floor(numberOfCourtsRaw))
       : null;
   const hasRuleSetId = Object.prototype.hasOwnProperty.call(body, "ruleSetId");
-  const ruleSetIdRaw =
-    hasRuleSetId && (typeof body.ruleSetId === "number" || typeof body.ruleSetId === "string")
-      ? Number(body.ruleSetId)
-      : null;
-  const ruleSetId =
-    hasRuleSetId && typeof ruleSetIdRaw === "number" && Number.isFinite(ruleSetIdRaw)
-      ? Math.floor(ruleSetIdRaw)
-      : null;
+  const ruleSetInput = hasRuleSetId ? body.ruleSetId : undefined;
+  const shouldClearRuleSetId =
+    ruleSetInput === null || (typeof ruleSetInput === "string" && ruleSetInput.trim() === "");
+  const ruleSetId = hasRuleSetId && !shouldClearRuleSetId ? parsePositiveInt(ruleSetInput) : null;
+  if (hasRuleSetId && !shouldClearRuleSetId && ruleSetId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_RULESET" }, { status: 400 });
+  }
   const hasDefaultCategoryId = Object.prototype.hasOwnProperty.call(body, "defaultCategoryId");
   const defaultCategoryInput = hasDefaultCategoryId ? body.defaultCategoryId : undefined;
   const shouldClearDefaultCategory =
     defaultCategoryInput === null ||
     (typeof defaultCategoryInput === "string" && defaultCategoryInput.trim() === "");
-  const defaultCategoryRaw =
-    hasDefaultCategoryId &&
-    !shouldClearDefaultCategory &&
-    (typeof defaultCategoryInput === "number" || typeof defaultCategoryInput === "string")
-      ? Number(defaultCategoryInput)
-      : null;
   const defaultCategoryId =
-    hasDefaultCategoryId &&
-    !shouldClearDefaultCategory &&
-    typeof defaultCategoryRaw === "number" &&
-    Number.isFinite(defaultCategoryRaw) &&
-    defaultCategoryRaw > 0
-      ? Math.floor(defaultCategoryRaw)
-      : null;
-  if (
-    hasDefaultCategoryId &&
-    !shouldClearDefaultCategory &&
-    (defaultCategoryId === null || !Number.isFinite(defaultCategoryId))
-  ) {
+    hasDefaultCategoryId && !shouldClearDefaultCategory ? parsePositiveInt(defaultCategoryInput) : null;
+  if (hasDefaultCategoryId && !shouldClearDefaultCategory && defaultCategoryId === null) {
     return jsonWrap({ ok: false, error: "INVALID_DEFAULT_CATEGORY" }, { status: 400 });
   }
   const hasEligibilityType = Object.prototype.hasOwnProperty.call(body, "eligibilityType");
@@ -326,6 +298,18 @@ async function _POST(req: NextRequest) {
   }
   const groupsBody = body.groups && typeof body.groups === "object" ? (body.groups as Record<string, unknown>) : null;
   const hasGroupsConfig = Object.prototype.hasOwnProperty.call(body, "groups");
+  const hasGroupsMode = groupsBody ? Object.prototype.hasOwnProperty.call(groupsBody, "mode") : false;
+  const groupsModeRaw = typeof groupsBody?.mode === "string" ? groupsBody.mode.trim().toUpperCase() : "";
+  if (hasGroupsMode && groupsModeRaw !== "MANUAL" && groupsModeRaw !== "AUTO") {
+    return jsonWrap({ ok: false, error: "INVALID_GROUPS_MODE" }, { status: 400 });
+  }
+  const groupsMode = groupsModeRaw === "MANUAL" ? "MANUAL" : "AUTO";
+  const hasGroupsSeeding = groupsBody ? Object.prototype.hasOwnProperty.call(groupsBody, "seeding") : false;
+  const groupsSeedingRaw = typeof groupsBody?.seeding === "string" ? groupsBody.seeding.trim().toUpperCase() : "";
+  if (hasGroupsSeeding && groupsSeedingRaw !== "NONE" && groupsSeedingRaw !== "SNAKE") {
+    return jsonWrap({ ok: false, error: "INVALID_GROUPS_SEEDING" }, { status: 400 });
+  }
+  const groupsSeeding = groupsSeedingRaw === "NONE" ? "NONE" : "SNAKE";
   const hasManualAssignments =
     groupsBody && Object.prototype.hasOwnProperty.call(groupsBody, "manualAssignments");
   let manualAssignments: Record<string, string> | null | undefined = undefined;
@@ -345,11 +329,11 @@ async function _POST(req: NextRequest) {
   }
   const groupsConfig = groupsBody
     ? {
-        mode: groupsBody.mode === "MANUAL" ? "MANUAL" : "AUTO",
+        mode: groupsMode,
         groupCount: Number(groupsBody.groupCount),
         groupSize: Number(groupsBody.groupSize),
         qualifyPerGroup: Number(groupsBody.qualifyPerGroup),
-        seeding: groupsBody.seeding === "NONE" ? "NONE" : "SNAKE",
+        seeding: groupsSeeding,
         extraQualifiers: Number.isFinite(Number(groupsBody.extraQualifiers))
           ? Math.max(0, Math.floor(Number(groupsBody.extraQualifiers)))
           : null,
@@ -739,13 +723,13 @@ async function _POST(req: NextRequest) {
   const hasFeaturedMatchId = Object.prototype.hasOwnProperty.call(body, "featuredMatchId");
   let featuredMatchId: number | null | undefined = undefined;
   if (hasFeaturedMatchId) {
-    const raw =
-      typeof body.featuredMatchId === "number"
-        ? body.featuredMatchId
-        : typeof body.featuredMatchId === "string"
-          ? Number(body.featuredMatchId)
-          : null;
-    featuredMatchId = Number.isFinite(raw) ? Math.floor(raw as number) : null;
+    const featuredMatchInput = body.featuredMatchId;
+    const shouldClearFeaturedMatch =
+      featuredMatchInput === null || (typeof featuredMatchInput === "string" && featuredMatchInput.trim() === "");
+    featuredMatchId = shouldClearFeaturedMatch ? null : parsePositiveInt(featuredMatchInput);
+    if (!shouldClearFeaturedMatch && featuredMatchId == null) {
+      return jsonWrap({ ok: false, error: "INVALID_FEATURED_MATCH" }, { status: 400 });
+    }
   }
 
   const hasGoalLimits = Object.prototype.hasOwnProperty.call(body, "goalLimits");
@@ -783,7 +767,7 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  if (!Number.isFinite(eventId) || !organizationIdBody) {
+  if (!Number.isInteger(eventId) || eventId <= 0 || !organizationIdBody) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 

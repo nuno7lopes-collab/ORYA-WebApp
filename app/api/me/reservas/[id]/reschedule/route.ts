@@ -707,21 +707,96 @@ async function _POST(
       return fail(409, "COURT_RESOURCE_INVALID", "Sem ligação canónica entre campo e recurso.");
     }
 
-    const { booking: updated } = await updateBooking({
-      bookingId: booking.id,
-      organizationId: booking.organizationId,
-      actorUserId: user.id,
-      data: {
-        startsAt,
-        professionalId,
-        resourceId,
-        courtId:
-          availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
-            ? nextCourtId
-            : booking.courtId ?? null,
-        partySize,
-      },
-      select: { id: true, startsAt: true, status: true },
+    const { booking: updated } = await prisma.$transaction(async (tx) => {
+      const lockKey = `booking:${booking.organizationId}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const lockedScopeFilter =
+        availabilityMode === "RESOURCE"
+          ? { resourceId: resourceId ?? -1 }
+          : availabilityMode === "PROFESSIONAL"
+            ? { professionalId: professionalId ?? -1 }
+            : {
+                OR: [
+                  { professionalId: professionalId ?? -1 },
+                  { resourceId: resourceId ?? -1 },
+                ],
+              };
+      const lockedBookings = await tx.booking.findMany({
+        where: {
+          organizationId: booking.organizationId,
+          id: { not: booking.id },
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          AND: [
+            {
+              OR: [
+                { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+              ],
+            },
+            lockedScopeFilter,
+          ],
+        },
+        select: {
+          id: true,
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+        },
+      });
+      const lockedConflict = lockedBookings.some((item) => {
+        const itemEndsAt = new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000);
+        const overlaps = item.startsAt < bookingEndsAt && itemEndsAt > startsAt;
+        if (!overlaps) return false;
+        if (availabilityMode === "RESOURCE") {
+          return resourceId != null && item.resourceId === resourceId;
+        }
+        if (availabilityMode === "PROFESSIONAL") {
+          return professionalId != null && item.professionalId === professionalId;
+        }
+        return (
+          (professionalId != null && item.professionalId === professionalId) ||
+          (resourceId != null && item.resourceId === resourceId)
+        );
+      });
+      if (lockedConflict) {
+        throw new Error("AGENDA_CONFLICT_LOCKED");
+      }
+
+      if ((availabilityMode === "PROFESSIONAL" || availabilityMode === "HYBRID") && professionalId != null) {
+        const lockedSessions = await tx.classSession.findMany({
+          where: {
+            organizationId: booking.organizationId,
+            status: "SCHEDULED",
+            professionalId,
+            startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+            endsAt: { gt: startsAt },
+          },
+          select: { id: true },
+        });
+        if (lockedSessions.length > 0) {
+          throw new Error("AGENDA_CONFLICT_LOCKED");
+        }
+      }
+
+      return updateBooking({
+        tx,
+        bookingId: booking.id,
+        organizationId: booking.organizationId,
+        actorUserId: user.id,
+        data: {
+          startsAt,
+          professionalId,
+          resourceId,
+          courtId:
+            availabilityMode === "RESOURCE" || availabilityMode === "HYBRID"
+              ? nextCourtId
+              : booking.courtId ?? null,
+          partySize,
+        },
+        select: { id: true, startsAt: true, status: true },
+      });
     });
 
     const { ip, userAgent } = getRequestMeta(req);
@@ -746,6 +821,10 @@ async function _POST(
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error && err.message === "AGENDA_CONFLICT_LOCKED") {
+      const conflict = agendaConflictResponse();
+      return fail(409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
     }
     console.error("POST /api/me/reservas/[id]/reschedule error:", err);
     return fail(500, "BOOKING_RESCHEDULE_FAILED", "Erro ao reagendar reserva.");

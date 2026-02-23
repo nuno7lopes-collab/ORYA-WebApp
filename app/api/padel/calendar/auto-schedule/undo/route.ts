@@ -27,6 +27,17 @@ const incrementReason = (bucket: Record<string, number>, reason: string) => {
   bucket[key] = (bucket[key] ?? 0) + 1;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function ensureOrganization(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -66,8 +77,11 @@ async function _POST(req: NextRequest) {
   const runId = typeof body.runId === "string" ? body.runId.trim() : "";
   if (!runId) return jsonWrap({ ok: false, error: "RUN_ID_REQUIRED" }, { status: 400 });
 
-  const eventIdBody =
-    typeof body.eventId === "number" ? body.eventId : typeof body.eventId === "string" ? Number(body.eventId) : null;
+  const hasEventIdBody = body.eventId != null;
+  const eventIdBody = hasEventIdBody ? parsePositiveInt(body.eventId) : null;
+  if (hasEventIdBody && eventIdBody == null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
 
   const run = await prisma.padelScheduleRun.findFirst({
     where: { id: runId, organizationId: check.organization.id },
@@ -83,7 +97,7 @@ async function _POST(req: NextRequest) {
   });
   if (!run) return jsonWrap({ ok: false, error: "RUN_NOT_FOUND" }, { status: 404 });
 
-  if (Number.isFinite(eventIdBody) && eventIdBody !== run.eventId) {
+  if (eventIdBody != null && eventIdBody !== run.eventId) {
     return jsonWrap({ ok: false, error: "RUN_EVENT_MISMATCH" }, { status: 409 });
   }
 

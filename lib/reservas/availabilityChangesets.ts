@@ -312,6 +312,27 @@ async function assertNoScheduleOverlap(
   if (conflict) throw new Error("AVAILABILITY_SCHEDULE_OVERLAP");
 }
 
+async function resolveScopedScheduleId(params: {
+  tx: Tx;
+  scheduleId: number | null;
+  organizationId: number;
+  scopeType: AvailabilityScopeType;
+  scopeId: number;
+}) {
+  if (!params.scheduleId) return null;
+  const schedule = await params.tx.availabilitySchedule.findFirst({
+    where: {
+      id: params.scheduleId,
+      organizationId: params.organizationId,
+      scopeType: params.scopeType,
+      scopeId: params.scopeId,
+    },
+    select: { id: true },
+  });
+  if (!schedule) throw new Error("AVAILABILITY_SCHEDULE_INVALID_SCOPE");
+  return schedule.id;
+}
+
 async function loadAvailabilityState(tx: Tx, organizationId: number): Promise<LoadedAvailabilityState> {
   const [schedules, templates, overrides, resources] = await Promise.all([
     tx.availabilitySchedule.findMany({
@@ -730,6 +751,13 @@ export async function createAvailabilityChangeset(params: {
   requestedByUserId: string;
 }) {
   const draft = normalizeDraftInput(params.draftInput);
+  const scopedScheduleId = await resolveScopedScheduleId({
+    tx: params.tx,
+    scheduleId: draft.scheduleId,
+    organizationId: params.scope.organizationId,
+    scopeType: params.scope.scopeType,
+    scopeId: params.scope.scopeId,
+  });
 
   const existingPending = await params.tx.availabilityChangeSet.findFirst({
     where: {
@@ -757,7 +785,7 @@ export async function createAvailabilityChangeset(params: {
       organizationId: params.scope.organizationId,
       scopeType: params.scope.scopeType,
       scopeId: params.scope.scopeId,
-      scheduleId: draft.scheduleId,
+      scheduleId: scopedScheduleId,
       status,
       requestedByUserId: params.requestedByUserId,
       draftPayload: draft.payload as Prisma.InputJsonValue,
@@ -1033,6 +1061,13 @@ export async function applyAvailabilityChangeset(params: {
   }
 
   const draft = parseChangesetDraftPayload(changeSet.draftPayload);
+  const scopedScheduleId = await resolveScopedScheduleId({
+    tx: params.tx,
+    scheduleId: draft.scheduleId,
+    organizationId: changeSet.organizationId,
+    scopeType: changeSet.scopeType,
+    scopeId: changeSet.scopeId,
+  });
 
   await assertNoScheduleOverlap(params.tx, {
     organizationId: changeSet.organizationId,
@@ -1040,37 +1075,46 @@ export async function applyAvailabilityChangeset(params: {
     scopeId: changeSet.scopeId,
     startDate: draft.startDate,
     endDate: draft.endDate,
-    ignoreScheduleId: draft.scheduleId,
+    ignoreScheduleId: scopedScheduleId,
   });
 
-  const schedule = draft.scheduleId
-    ? await params.tx.availabilitySchedule.update({
-        where: { id: draft.scheduleId },
-        data: {
-          startDate: draft.startDate,
-          endDate: draft.endDate,
-        },
-        select: { id: true },
-      })
-    : await params.tx.availabilitySchedule.create({
-        data: {
-          organizationId: changeSet.organizationId,
-          scopeType: changeSet.scopeType,
-          scopeId: changeSet.scopeId,
-          startDate: draft.startDate,
-          endDate: draft.endDate,
-        },
-        select: { id: true },
-      });
+  let scheduleId: number;
+  if (scopedScheduleId) {
+    const updated = await params.tx.availabilitySchedule.updateMany({
+      where: {
+        id: scopedScheduleId,
+        organizationId: changeSet.organizationId,
+        scopeType: changeSet.scopeType,
+        scopeId: changeSet.scopeId,
+      },
+      data: { startDate: draft.startDate, endDate: draft.endDate },
+    });
+    if (updated.count !== 1) {
+      throw new Error("AVAILABILITY_SCHEDULE_INVALID_SCOPE");
+    }
+    scheduleId = scopedScheduleId;
+  } else {
+    const created = await params.tx.availabilitySchedule.create({
+      data: {
+        organizationId: changeSet.organizationId,
+        scopeType: changeSet.scopeType,
+        scopeId: changeSet.scopeId,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+      },
+      select: { id: true },
+    });
+    scheduleId = created.id;
+  }
 
   await params.tx.weeklyAvailabilityTemplate.deleteMany({
-    where: { availabilityId: schedule.id },
+    where: { availabilityId: scheduleId },
   });
 
   const templateRows = Array.from(draft.templatesByDay.entries())
     .filter(([, intervals]) => intervals.length > 0)
     .map(([dayOfWeek, intervals]) => ({
-      availabilityId: schedule.id,
+      availabilityId: scheduleId,
       dayOfWeek,
       intervals,
     }));
@@ -1145,9 +1189,9 @@ export async function applyAvailabilityChangeset(params: {
     data: {
       status: "APPLIED",
       appliedAt: new Date(),
-      scheduleId: schedule.id,
+      scheduleId,
       preflightSummary: {
-        scheduleId: schedule.id,
+        scheduleId,
         appliedAt: new Date().toISOString(),
       } as Prisma.InputJsonValue,
     },
@@ -1156,7 +1200,7 @@ export async function applyAvailabilityChangeset(params: {
   return {
     applied: true,
     alreadyApplied: false,
-    scheduleId: schedule.id,
+    scheduleId,
   };
 }
 
@@ -1380,6 +1424,8 @@ export function mapChangesetError(error: unknown) {
     case "AVAILABILITY_SCHEDULE_OVERLAP":
     case "SCHEDULE_OVERLAP":
       return { status: 409, errorCode: "AVAILABILITY_SCHEDULE_OVERLAP", message: "Existem sobreposições de horários para este escopo." };
+    case "AVAILABILITY_SCHEDULE_INVALID_SCOPE":
+      return { status: 409, errorCode: "AVAILABILITY_SCHEDULE_INVALID_SCOPE", message: "Schedule inválido para este escopo." };
     case "INVALID_START_DATE":
     case "INVALID_END_DATE":
     case "END_BEFORE_START":

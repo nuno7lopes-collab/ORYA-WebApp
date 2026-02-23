@@ -43,10 +43,14 @@ type MatchSnapshot = {
 };
 
 const parsePositiveInt = (value: unknown) => {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const normalized = Math.floor(parsed);
-  return normalized > 0 ? normalized : null;
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 };
 
 const parseDate = (value: unknown) => {
@@ -101,8 +105,19 @@ async function _POST(req: NextRequest) {
   const eventId = parsePositiveInt(body.eventId);
   if (!eventId) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
-  const mode: BulkMode = body.mode === "PREVIEW" ? "PREVIEW" : body.mode === "APPLY" ? "APPLY" : "APPLY";
-  const partialMode: BulkPartialMode = body.partialMode === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+  const hasMode = Object.prototype.hasOwnProperty.call(body, "mode");
+  const modeRaw = typeof body.mode === "string" ? body.mode.trim().toUpperCase() : "";
+  if (hasMode && modeRaw !== "PREVIEW" && modeRaw !== "APPLY") {
+    return jsonWrap({ ok: false, error: "INVALID_MODE" }, { status: 400 });
+  }
+  const mode: BulkMode = modeRaw === "PREVIEW" ? "PREVIEW" : "APPLY";
+
+  const hasPartialMode = Object.prototype.hasOwnProperty.call(body, "partialMode");
+  const partialModeRaw = typeof body.partialMode === "string" ? body.partialMode.trim().toUpperCase() : "";
+  if (hasPartialMode && partialModeRaw !== "REQUIRE_FULL" && partialModeRaw !== "ALLOW_PARTIAL") {
+    return jsonWrap({ ok: false, error: "INVALID_PARTIAL_MODE" }, { status: 400 });
+  }
+  const partialMode: BulkPartialMode = partialModeRaw === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
 
   const updatesRaw = Array.isArray(body.updates) ? (body.updates as Array<Record<string, unknown>>) : [];
   if (updatesRaw.length === 0) {

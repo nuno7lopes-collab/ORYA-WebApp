@@ -47,6 +47,26 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/calendar/preflight-mismatch", () => {
+  it("rejeita eventId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/preflight-mismatch", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 77.5,
+        requestFingerprint: "fp-1",
+      }),
+      headers: { "content-type": "application/json" },
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_EVENT");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(recordOrganizationAuditSafe).not.toHaveBeenCalled();
+  });
+
   it("regista audit de mismatch quando não é duplicado", async () => {
     const req = new NextRequest("http://localhost/api/padel/calendar/preflight-mismatch", {
       method: "POST",

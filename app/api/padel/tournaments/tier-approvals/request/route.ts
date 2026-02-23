@@ -32,7 +32,7 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const requestedTier = normalizeTier(body.tier);
   if (!requestedTier) return jsonWrap({ ok: false, error: "INVALID_TIER" }, { status: 400 });

@@ -60,6 +60,21 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/calendar/auto-schedule/undo", () => {
+  it("rejeita eventId inválido quando fornecido no body", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule/undo", {
+      method: "POST",
+      body: JSON.stringify({ runId: "run-1", eventId: "1.5" }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("INVALID_EVENT");
+    expect(prisma.padelScheduleRun.findFirst).not.toHaveBeenCalled();
+  });
+
   it("devolve RUN_NOT_APPLIED quando o run não foi aplicado", async () => {
     prisma.padelScheduleRun.findFirst.mockResolvedValue({
       id: "run-1",

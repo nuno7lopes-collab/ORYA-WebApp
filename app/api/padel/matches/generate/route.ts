@@ -25,6 +25,29 @@ const parseNumber = (value: unknown) => {
   return null;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
+const parsePositiveIntArray = (value: unknown) => {
+  if (typeof value === "undefined" || value === null) return { values: [] as number[], invalid: false };
+  if (!Array.isArray(value)) return { values: [] as number[], invalid: true };
+  const values: number[] = [];
+  for (const item of value) {
+    const parsed = parsePositiveInt(item);
+    if (parsed == null) return { values: [] as number[], invalid: true };
+    values.push(parsed);
+  }
+  return { values, invalid: false };
+};
+
 const parseDate = (value: unknown) => {
   if (typeof value !== "string" || !value.trim()) return null;
   const date = new Date(value);
@@ -46,40 +69,72 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
-  const phase = typeof body.phase === "string" ? body.phase.toUpperCase() : "GROUPS";
+  const hasCategoryId = body.categoryId != null;
+  const categoryId = hasCategoryId ? parsePositiveInt(body.categoryId) : null;
+  const hasPhase = Object.prototype.hasOwnProperty.call(body, "phase");
+  const phaseRaw = typeof body.phase === "string" ? body.phase.trim().toUpperCase() : "";
+  if (hasPhase && phaseRaw !== "GROUPS" && phaseRaw !== "KNOCKOUT") {
+    return jsonWrap({ ok: false, error: "INVALID_PHASE" }, { status: 400 });
+  }
+  const phase = phaseRaw === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
   const format = parsePadelFormat(body.format);
   const allowIncomplete = body.allowIncomplete === true;
+  const hasDrawPolicy = Object.prototype.hasOwnProperty.call(body, "drawPolicy");
+  const drawPolicyRaw = typeof body.drawPolicy === "string" ? body.drawPolicy.trim().toUpperCase() : "";
+  if (
+    hasDrawPolicy &&
+    drawPolicyRaw !== "RANDOM_ONLY" &&
+    drawPolicyRaw !== "SEEDED_ONLY" &&
+    drawPolicyRaw !== "RANDOM_WITH_OPTIONAL_SEEDS"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_DRAW_POLICY" }, { status: 400 });
+  }
   const drawPolicy: PadelDrawPolicy =
-    body.drawPolicy === "RANDOM_ONLY" || body.drawPolicy === "SEEDED_ONLY" || body.drawPolicy === "RANDOM_WITH_OPTIONAL_SEEDS"
-      ? (body.drawPolicy as PadelDrawPolicy)
+    drawPolicyRaw === "RANDOM_ONLY" || drawPolicyRaw === "SEEDED_ONLY" || drawPolicyRaw === "RANDOM_WITH_OPTIONAL_SEEDS"
+      ? (drawPolicyRaw as PadelDrawPolicy)
       : "RANDOM_WITH_OPTIONAL_SEEDS";
+  const hasSeedSource = Object.prototype.hasOwnProperty.call(body, "seedSource");
+  const seedSourceRaw = typeof body.seedSource === "string" ? body.seedSource.trim().toUpperCase() : "";
+  if (
+    hasSeedSource &&
+    seedSourceRaw !== "NONE" &&
+    seedSourceRaw !== "RANKING_SNAPSHOT" &&
+    seedSourceRaw !== "TOURNAMENT_CONFIG"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_SEED_SOURCE" }, { status: 400 });
+  }
   const seedSource: PadelSeedSource =
-    body.seedSource === "NONE" || body.seedSource === "RANKING_SNAPSHOT" || body.seedSource === "TOURNAMENT_CONFIG"
-      ? (body.seedSource as PadelSeedSource)
+    seedSourceRaw === "NONE" || seedSourceRaw === "RANKING_SNAPSHOT" || seedSourceRaw === "TOURNAMENT_CONFIG"
+      ? (seedSourceRaw as PadelSeedSource)
       : "TOURNAMENT_CONFIG";
   const drawSeed =
     typeof body.drawSeed === "string" || typeof body.drawSeed === "number" ? body.drawSeed : null;
+  let invalidSeedRanks = false;
   const seedRanks =
     body.seedRanks && typeof body.seedRanks === "object"
       ? Object.entries(body.seedRanks as Record<string, unknown>).reduce<Record<number, number>>((acc, [key, value]) => {
-          const pairingId = Number(key);
-          const rank = typeof value === "number" ? value : Number(value);
-          if (Number.isFinite(pairingId) && Number.isFinite(rank) && rank > 0) {
-            acc[Math.floor(pairingId)] = Math.floor(rank);
+          const pairingId = parsePositiveInt(key);
+          const rank = parsePositiveInt(value);
+          if (pairingId == null || rank == null) {
+            invalidSeedRanks = true;
+            return acc;
           }
+          acc[pairingId] = rank;
           return acc;
         }, {})
       : null;
 
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   if (!format) return jsonWrap({ ok: false, error: "INVALID_FORMAT" }, { status: 400 });
+  if (hasCategoryId && categoryId == null) return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
+  if (invalidSeedRanks) return jsonWrap({ ok: false, error: "INVALID_SEED_RANKS" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: {
       id: true,
       organizationId: true,
+      templateType: true,
       startsAt: true,
       endsAt: true,
       padelTournamentConfig: {
@@ -93,9 +148,11 @@ async function _POST(req: NextRequest) {
       },
     },
   });
-  if (!event || !event.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || !event.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
-  const resolvedCategoryId = Number.isFinite(categoryId) ? categoryId : null;
+  const resolvedCategoryId = categoryId;
   let categoryFormatOverride: string | null = null;
   if (resolvedCategoryId) {
     const link = await prisma.padelEventCategoryLink.findFirst({
@@ -125,18 +182,16 @@ async function _POST(req: NextRequest) {
   if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
   const configAdvanced = (event.padelTournamentConfig?.advancedSettings as Record<string, unknown> | null) ?? {};
-  const requestedCourtIds = Array.isArray(body.courtIds)
-    ? body.courtIds
-        .map((value) => parseNumber(value))
-        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
-        .map((value) => Math.floor(value))
-    : [];
-  const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
-    ? body.courtPriorityOrder
-        .map((value) => parseNumber(value))
-        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
-        .map((value) => Math.floor(value))
-    : [];
+  const requestedCourtIdsParsed = parsePositiveIntArray(body.courtIds);
+  if (requestedCourtIdsParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT_IDS" }, { status: 400 });
+  }
+  const requestedCourtPriorityOrderParsed = parsePositiveIntArray(body.courtPriorityOrder);
+  if (requestedCourtPriorityOrderParsed.invalid) {
+    return jsonWrap({ ok: false, error: "INVALID_COURT_PRIORITY" }, { status: 400 });
+  }
+  const requestedCourtIds = requestedCourtIdsParsed.values;
+  const requestedCourtPriorityOrder = requestedCourtPriorityOrderParsed.values;
   const resolvedCourtSelection = await resolvePadelCourtSelection({
     db: prisma,
     organizationId: event.organizationId,
@@ -279,7 +334,7 @@ async function _POST(req: NextRequest) {
         ? categoryFormatOverride
         : format;
   const effectiveFormatForGeneration = parsePadelFormat(effectiveFormatForGenerationRaw) ?? format;
-  const phaseNormalized = phase === "KNOCKOUT" ? "KNOCKOUT" : "GROUPS";
+  const phaseNormalized = phase;
   const isGroupsFormat = effectiveFormatForGeneration === "GRUPOS_ELIMINATORIAS";
   const existingPolicy = isGroupsFormat ? "error" : "replace";
   const notifyUsers = !isGroupsFormat || phaseNormalized === "KNOCKOUT";

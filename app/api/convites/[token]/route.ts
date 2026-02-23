@@ -228,18 +228,32 @@ async function _POST(
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const updatedInvite = await tx.bookingInvite.update({
-        where: { id: invite.id },
+      const respondedAt = new Date();
+      const claimed = await tx.bookingInvite.updateMany({
+        where: {
+          id: invite.id,
+          status: invite.status,
+        },
         data: {
           status: response,
-          respondedAt: new Date(),
-        },
-        select: {
-          id: true,
-          status: true,
-          respondedAt: true,
+          respondedAt,
         },
       });
+
+      if (claimed.count !== 1) {
+        const latest = await tx.bookingInvite.findUnique({
+          where: { id: invite.id },
+          select: { status: true, respondedAt: true },
+        });
+        if (!latest) {
+          throw new Error("NOT_FOUND");
+        }
+        return {
+          status: latest.status,
+          respondedAt: latest.respondedAt,
+          changed: false,
+        };
+      }
 
       if (response === BookingInviteStatus.ACCEPTED) {
         await tx.bookingParticipant.upsert({
@@ -269,7 +283,7 @@ async function _POST(
         });
       }
 
-      return updatedInvite;
+      return { status: response, respondedAt, changed: true };
     });
 
     const organization = invite.booking.organization;
@@ -277,7 +291,7 @@ async function _POST(
       organization?.officialEmailVerifiedAt && organization.officialEmail
         ? organization.officialEmail
         : null;
-    if (officialEmail) {
+    if (updated.changed && officialEmail) {
       const orgName = organization.publicName || organization.businessName || "Organização";
       const serviceTitle = invite.booking.service?.title || "Serviço";
       const guestLabel = invite.targetName || invite.targetContact || "Convidado";

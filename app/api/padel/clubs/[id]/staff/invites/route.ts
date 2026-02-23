@@ -244,12 +244,19 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const identifier = typeof body?.identifier === "string" ? body.identifier.trim() : "";
   const role = normalizePadelClubStaffRole(body?.role);
-  const inheritToEvents = typeof body?.inheritToEvents === "boolean" ? body.inheritToEvents : true;
+  if (typeof body?.inheritToEvents !== "boolean") {
+    return jsonWrap({ ok: false, error: "INVALID_INHERIT_TO_EVENTS" }, { status: 400 });
+  }
+  const inheritToEvents = body.inheritToEvents;
 
   if (!identifier) return jsonWrap({ ok: false, error: "IDENTIFIER_REQUIRED" }, { status: 400 });
   if (!role) {
     return jsonWrap(
-      { ok: false, error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}` },
+      {
+        ok: false,
+        errorCode: "INVALID_ROLE",
+        error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}`,
+      },
       { status: 400 },
     );
   }

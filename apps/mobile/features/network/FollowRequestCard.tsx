@@ -5,6 +5,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { FollowRequest } from "./types";
 import { useRouter } from "expo-router";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   item: FollowRequest;
@@ -45,7 +46,7 @@ export const FollowRequestCard = memo(function FollowRequestCard({
   const canOpenProfile = Boolean(item.username);
   const openProfile = () => {
     if (!item.username) return;
-    router.push({ pathname: "/[username]", params: { username: item.username } });
+    safePush(router, { pathname: "/[username]", params: { username: item.username } });
   };
 
   return (

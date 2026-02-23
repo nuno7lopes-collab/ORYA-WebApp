@@ -271,6 +271,62 @@ function normalizeUuid(value: unknown) {
     : null;
 }
 
+function normalizePaymentIntentId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.startsWith("pi_") ? normalized : null;
+}
+
+async function resolvePaymentIntentIdForFulfillment(params: {
+  purchaseId?: string | null;
+  operationPaymentIntentId?: string | null;
+  payloadPaymentIntentId?: unknown;
+}) {
+  const direct =
+    normalizePaymentIntentId(params.operationPaymentIntentId) ??
+    normalizePaymentIntentId(params.payloadPaymentIntentId);
+  if (direct) return direct;
+
+  const purchaseId =
+    typeof params.purchaseId === "string" && params.purchaseId.trim().length > 0
+      ? params.purchaseId.trim()
+      : null;
+  if (!purchaseId) return null;
+
+  const purchaseAsIntent = normalizePaymentIntentId(purchaseId);
+  if (purchaseAsIntent) return purchaseAsIntent;
+
+  const paymentEvent = await prisma.paymentEvent.findFirst({
+    where: {
+      OR: [{ purchaseId }, { stripePaymentIntentId: purchaseId }],
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { stripePaymentIntentId: true },
+  });
+  const fromEvent = normalizePaymentIntentId(paymentEvent?.stripePaymentIntentId);
+  if (fromEvent) return fromEvent;
+
+  const saleSummary = await prisma.saleSummary.findFirst({
+    where: {
+      OR: [{ purchaseId }, { paymentIntentId: purchaseId }],
+    },
+    select: { paymentIntentId: true },
+  });
+  const fromSaleSummary = normalizePaymentIntentId(saleSummary?.paymentIntentId);
+  if (fromSaleSummary) return fromSaleSummary;
+
+  const ticket = await prisma.ticket.findFirst({
+    where: {
+      OR: [{ purchaseId }, { stripePaymentIntentId: purchaseId }],
+    },
+    select: { stripePaymentIntentId: true },
+  });
+  const fromTicket = normalizePaymentIntentId(ticket?.stripePaymentIntentId);
+  if (fromTicket) return fromTicket;
+
+  return null;
+}
+
 function emitArbitrationMetric(metric: string, payload: Record<string, unknown>) {
   logInfo("arbitration.runtime.metric", {
     metric,
@@ -1308,6 +1364,29 @@ export async function runOperationsBatch() {
   }
 }
 
+function isOutboxHandlerFailure(result: unknown): result is { ok: false; code?: string } {
+  return Boolean(result && typeof result === "object" && "ok" in result && (result as { ok?: unknown }).ok === false);
+}
+
+async function runOutboxHandler(params: {
+  eventType: string;
+  outboxEventId: string | null;
+  handler: () => Promise<unknown>;
+}) {
+  const result = await params.handler();
+  if (isOutboxHandlerFailure(result)) {
+    const code = typeof result.code === "string" ? result.code : "OUTBOX_HANDLER_FAILED";
+    throw new Error(`OUTBOX_EVENT_HANDLER_FAILED:${params.eventType}:${code}`);
+  }
+  if (params.outboxEventId) {
+    await prisma.outboxEvent.update({
+      where: { eventId: params.outboxEventId },
+      data: { publishedAt: new Date(), nextAttemptAt: null },
+    });
+  }
+  return result;
+}
+
 async function processOperation(op: OperationRecord) {
   switch (op.operationType) {
     case "PROCESS_STRIPE_EVENT":
@@ -1355,82 +1434,70 @@ async function processOperation(op: OperationRecord) {
       });
       if (!eventType) throw new Error("OUTBOX_EVENT_MISSING_TYPE");
       if (eventType === "CRM_INGEST_REQUESTED") {
-        const result = await handleCrmOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handleCrmOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("payment.")) {
-        const result = await handleFinanceOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handleFinanceOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("PADREG_")) {
-        const result = await handlePadelRegistrationOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handlePadelRegistrationOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("LOYALTY_")) {
-        const result = await handleLoyaltyOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handleLoyaltyOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("TOURNAMENT_")) {
-        const result = await handleTournamentOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handleTournamentOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("PADEL_")) {
-        const result = await handlePadelOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handlePadelOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (
         eventType.startsWith("event.") ||
@@ -1439,60 +1506,44 @@ async function processOperation(op: OperationRecord) {
       ) {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
-        const result = await consumeAgendaMaterializationEvent(eventId);
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
+        return runOutboxHandler({
+          eventType,
+          outboxEventId,
+          handler: () => consumeAgendaMaterializationEvent(eventId),
+        });
       }
       if (eventType === "AGENDA_ITEM_UPSERT_REQUESTED") {
         const eventId = typeof payload.eventId === "string" ? payload.eventId : null;
         if (!eventId) throw new Error("OUTBOX_EVENT_MISSING_ID");
-        const result = await consumeAgendaMaterializationEvent(eventId);
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
+        return runOutboxHandler({
+          eventType,
+          outboxEventId,
+          handler: () => consumeAgendaMaterializationEvent(eventId),
+        });
       }
       if (eventType.startsWith("search.index.")) {
-        const result = await handleSearchIndexOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
+          outboxEventId,
+          handler: () =>
+            handleSearchIndexOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
       }
       if (eventType.startsWith("organization.owner_transfer.")) {
-        const result = await handleOwnerTransferOutboxEvent({
+        return runOutboxHandler({
           eventType,
-          payload: eventPayload as any,
-        });
-        if (outboxEventId) {
-          await prisma.outboxEvent.update({
-            where: { eventId: outboxEventId },
-            data: { publishedAt: new Date(), nextAttemptAt: null },
-          });
-        }
-        return result;
-      }
-      if (outboxEventId) {
-        await prisma.outboxEvent.update({
-          where: { eventId: outboxEventId },
-          data: { publishedAt: new Date(), nextAttemptAt: null },
+          outboxEventId,
+          handler: () =>
+            handleOwnerTransferOutboxEvent({
+              eventType,
+              payload: eventPayload as any,
+            }),
         });
       }
-      return { ok: true };
+      throw new Error(`OUTBOX_EVENT_UNSUPPORTED_TYPE:${eventType}`);
     }
     default:
       throw new Error(`Unsupported operationType=${op.operationType}`);
@@ -1642,10 +1693,22 @@ function extractDisputeFeeCents(stripeEventObject: Record<string, any> | null) {
 
 async function processFulfillPayment(op: OperationRecord) {
   const payload = (op.payload ?? {}) as Partial<FulfillPayload>;
-  const piId =
-    op.paymentIntentId ||
-    (typeof payload.paymentIntentId === "string" ? payload.paymentIntentId : null);
+  const purchaseId =
+    op.purchaseId ||
+    (typeof payload.purchaseId === "string" ? payload.purchaseId : null);
+  const piId = await resolvePaymentIntentIdForFulfillment({
+    purchaseId,
+    operationPaymentIntentId: op.paymentIntentId,
+    payloadPaymentIntentId: payload.paymentIntentId,
+  });
   if (!piId) throw new Error("Missing paymentIntentId for FULFILL_PAYMENT");
+
+  if (!op.paymentIntentId || op.paymentIntentId !== piId) {
+    await prisma.operation.updateMany({
+      where: { id: op.id },
+      data: { paymentIntentId: piId },
+    });
+  }
 
   const intent =
     typeof payload.rawMetadata === "object"

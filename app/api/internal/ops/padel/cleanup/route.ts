@@ -7,9 +7,19 @@ import { prisma } from "@/lib/prisma";
 import { rebuildPadelPlayerHistoryProjectionForEvent } from "@/domain/padel/playerHistoryProjection";
 
 const parseBool = (value: string | null) => value === "true" || value === "1";
-const parseNumber = (value: string | null) => {
-  const parsed = value ? Number(value) : NaN;
-  return Number.isFinite(parsed) ? parsed : null;
+const parsePositiveInteger = (value: string | null) => {
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+const parseNonNegativeNumber = (value: string | null) => {
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 };
 
 async function _POST(req: NextRequest) {
@@ -18,9 +28,26 @@ async function _POST(req: NextRequest) {
   }
 
   const params = req.nextUrl.searchParams;
-  const limit = parseNumber(params.get("limit"));
-  const cursor = parseNumber(params.get("cursor"));
-  const eventId = parseNumber(params.get("eventId"));
+  const limitParam = params.get("limit");
+  const cursorParam = params.get("cursor");
+  const eventIdParam = params.get("eventId");
+  const orphanGraceHoursParam = params.get("orphanGraceHours");
+  const limit = parsePositiveInteger(limitParam);
+  const cursor = parsePositiveInteger(cursorParam);
+  const eventId = parsePositiveInteger(eventIdParam);
+  const orphanGraceHours = parseNonNegativeNumber(orphanGraceHoursParam);
+  if (limitParam != null && limit == null) {
+    return jsonWrap({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
+  }
+  if (cursorParam != null && cursor == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CURSOR" }, { status: 400 });
+  }
+  if (eventIdParam != null && eventId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
+  if (orphanGraceHoursParam != null && orphanGraceHours == null) {
+    return jsonWrap({ ok: false, error: "INVALID_ORPHAN_GRACE_HOURS" }, { status: 400 });
+  }
 
   const result = await runPadelCleanup({
     limit: limit ?? undefined,
@@ -37,7 +64,7 @@ async function _POST(req: NextRequest) {
       ? parseBool(params.get("fixPolicyVersions"))
       : undefined,
     removeOrphanRegistrations: parseBool(params.get("removeOrphans")),
-    orphanGraceHours: parseNumber(params.get("orphanGraceHours")) ?? undefined,
+    orphanGraceHours: orphanGraceHours ?? undefined,
   });
 
   let historyProjectionRebuild: { ok: boolean; rows?: number; error?: string } | null = null;

@@ -3,20 +3,25 @@ import { PropsWithChildren } from "react";
 import { StyleSheet, View } from "react-native";
 import { tokens } from "@orya/shared";
 
-type LiquidBackgroundProps = PropsWithChildren;
+type LiquidBackgroundProps = PropsWithChildren<{
+  variant?: "solid" | "default" | "deep";
+}>;
 
 type GradientTuple = readonly [string, string, ...string[]];
 
-const BACKGROUND_GRADIENT: GradientTuple = [
-  tokens.colors.background,
-  tokens.colors.backgroundElevated,
-  tokens.colors.backgroundDeep,
-];
+const gradientVariants: Record<NonNullable<LiquidBackgroundProps["variant"]>, GradientTuple> = {
+  solid: [tokens.colors.background, tokens.colors.backgroundElevated, tokens.colors.backgroundDeep],
+  default: [tokens.colors.background, tokens.colors.backgroundElevated, tokens.colors.backgroundDeep],
+  deep: [tokens.colors.background, tokens.colors.backgroundElevated, tokens.colors.backgroundDeep],
+};
 
-export function LiquidBackground({ children }: LiquidBackgroundProps) {
+export function LiquidBackground({
+  children,
+  variant = "default",
+}: LiquidBackgroundProps) {
   return (
     <View style={styles.root}>
-      <LinearGradient colors={BACKGROUND_GRADIENT} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={gradientVariants[variant]} style={StyleSheet.absoluteFill} />
       <View style={styles.content}>{children}</View>
     </View>
   );

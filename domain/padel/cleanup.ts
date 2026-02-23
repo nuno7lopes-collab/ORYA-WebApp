@@ -44,16 +44,24 @@ const clampLimit = (value?: number | null) => {
   return Math.min(Math.max(10, Math.floor(limit)), 500);
 };
 
+const toPositiveIntegerOrNull = (value: unknown): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Number.isInteger(value) && value > 0 ? value : null;
+};
+
 export async function runPadelCleanup(params: PadelCleanupParams = {}): Promise<PadelCleanupSummary> {
   const apply = Boolean(params.apply);
   const limit = clampLimit(params.limit);
-  const cursor = Number.isFinite(params.cursor) ? Number(params.cursor) : null;
-  const eventId = Number.isFinite(params.eventId) ? Number(params.eventId) : null;
+  const cursor = toPositiveIntegerOrNull(params.cursor);
+  const eventId = toPositiveIntegerOrNull(params.eventId);
   const fixMissingRegistrations = params.fixMissingRegistrations !== false;
   const fixStatusMismatches = params.fixStatusMismatches !== false;
   const fixPolicyVersions = params.fixPolicyVersions !== false;
   const removeOrphanRegistrations = Boolean(params.removeOrphanRegistrations);
-  const orphanGraceHours = typeof params.orphanGraceHours === "number" ? params.orphanGraceHours : 24;
+  const orphanGraceHours =
+    typeof params.orphanGraceHours === "number" && Number.isFinite(params.orphanGraceHours) && params.orphanGraceHours >= 0
+      ? params.orphanGraceHours
+      : 24;
 
   let registrationsCreated = 0;
   let registrationsUpdated = 0;

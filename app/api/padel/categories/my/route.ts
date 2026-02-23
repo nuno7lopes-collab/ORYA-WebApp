@@ -23,6 +23,12 @@ const RESERVED_LABEL_ERROR =
   "Código reservado: M1..M6, F1..F6 e MX1..MX6 pertencem às categorias obrigatórias.";
 const DUPLICATE_LABEL_ERROR = "Já existe uma categoria com este nome.";
 const DEFAULT_CATEGORY_LOCKED_ERROR = "Categorias obrigatórias não podem ser renomeadas nem desativadas.";
+const RESERVED_LABEL_ERROR_CODE = "RESERVED_LABEL";
+const DUPLICATE_LABEL_ERROR_CODE = "DUPLICATE_LABEL";
+const DEFAULT_CATEGORY_LOCKED_ERROR_CODE = "DEFAULT_CATEGORY_LOCKED";
+
+const failText = (status: number, errorCode: string, message: string) =>
+  jsonWrap({ ok: false, error: message, errorCode }, { status });
 
 type CategoryLite = {
   id: number;
@@ -184,7 +190,7 @@ async function _GET(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return failText(403, "NO_ORGANIZATION", "Organização não encontrado.");
     }
     const permission = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -195,7 +201,7 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!permission.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return failText(403, "FORBIDDEN", "Sem permissões.");
     }
 
     const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "1";
@@ -222,10 +228,10 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: true, items: sortPadelCategories(categories) });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return failText(401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("[padel/categories/my] error", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar categorias." }, { status: 500 });
+    return failText(500, "CATEGORIES_LOAD_FAILED", "Erro ao carregar categorias.");
   }
 }
 
@@ -242,7 +248,7 @@ async function _POST(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return failText(403, "NO_ORGANIZATION", "Organização não encontrado.");
     }
     const permission = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -253,17 +259,17 @@ async function _POST(req: NextRequest) {
       required: "EDIT",
     });
     if (!permission.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return failText(403, "FORBIDDEN", "Sem permissões.");
     }
 
     await ensureMandatoryCategoryCatalog(organization.id);
 
     const label = typeof body.label === "string" ? body.label.trim() : "";
     if (!label) {
-      return jsonWrap({ ok: false, error: "Nome obrigatório." }, { status: 400 });
+      return failText(400, "CATEGORY_NAME_REQUIRED", "Nome obrigatório.");
     }
     if (isReservedPadelMandatoryLabel(label)) {
-      return jsonWrap({ ok: false, error: RESERVED_LABEL_ERROR }, { status: 409 });
+      return failText(409, RESERVED_LABEL_ERROR_CODE, RESERVED_LABEL_ERROR);
     }
 
     const conflicting = await findConflictingCategoryByLabel({
@@ -271,7 +277,7 @@ async function _POST(req: NextRequest) {
       label,
     });
     if (conflicting) {
-      return jsonWrap({ ok: false, error: DUPLICATE_LABEL_ERROR }, { status: 409 });
+      return failText(409, DUPLICATE_LABEL_ERROR_CODE, DUPLICATE_LABEL_ERROR);
     }
 
     const genderRestriction = typeof body.genderRestriction === "string" ? body.genderRestriction.trim() : null;
@@ -308,10 +314,10 @@ async function _POST(req: NextRequest) {
     return jsonWrap({ ok: true, item: category }, { status: 201 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return failText(401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("[padel/categories/my][POST] error", err);
-    return jsonWrap({ ok: false, error: "Erro ao criar categoria." }, { status: 500 });
+    return failText(500, "CATEGORY_CREATE_FAILED", "Erro ao criar categoria.");
   }
 }
 
@@ -323,7 +329,7 @@ async function _PATCH(req: NextRequest) {
     if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
     const categoryId = typeof body.id === "number" ? body.id : Number(body.id);
-    if (!Number.isFinite(categoryId)) {
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
       return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
     }
 
@@ -333,7 +339,7 @@ async function _PATCH(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return failText(403, "NO_ORGANIZATION", "Organização não encontrado.");
     }
     const permission = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -344,7 +350,7 @@ async function _PATCH(req: NextRequest) {
       required: "EDIT",
     });
     if (!permission.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return failText(403, "FORBIDDEN", "Sem permissões.");
     }
 
     await ensureMandatoryCategoryCatalog(organization.id);
@@ -365,15 +371,15 @@ async function _PATCH(req: NextRequest) {
     if (typeof body.label === "string") {
       const nextLabel = body.label.trim();
       if (!nextLabel) {
-        return jsonWrap({ ok: false, error: "Nome obrigatório." }, { status: 400 });
+        return failText(400, "CATEGORY_NAME_REQUIRED", "Nome obrigatório.");
       }
       if (existing.isDefault) {
         const isSameLabel = normalizeCategoryLabel(nextLabel) === normalizeCategoryLabel(existing.label);
         if (!isSameLabel) {
-          return jsonWrap({ ok: false, error: DEFAULT_CATEGORY_LOCKED_ERROR }, { status: 409 });
+          return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, DEFAULT_CATEGORY_LOCKED_ERROR);
         }
       } else if (isReservedPadelMandatoryLabel(nextLabel)) {
-        return jsonWrap({ ok: false, error: RESERVED_LABEL_ERROR }, { status: 409 });
+        return failText(409, RESERVED_LABEL_ERROR_CODE, RESERVED_LABEL_ERROR);
       }
 
       const conflicting = await findConflictingCategoryByLabel({
@@ -382,26 +388,26 @@ async function _PATCH(req: NextRequest) {
         excludeId: existing.id,
       });
       if (conflicting) {
-        return jsonWrap({ ok: false, error: DUPLICATE_LABEL_ERROR }, { status: 409 });
+        return failText(409, DUPLICATE_LABEL_ERROR_CODE, DUPLICATE_LABEL_ERROR);
       }
 
       updates.label = nextLabel;
     }
     if (typeof body.genderRestriction === "string") {
       if (existing.isDefault) {
-        return jsonWrap({ ok: false, error: DEFAULT_CATEGORY_LOCKED_ERROR }, { status: 409 });
+        return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, DEFAULT_CATEGORY_LOCKED_ERROR);
       }
       updates.genderRestriction = body.genderRestriction.trim() || null;
     }
     if (typeof body.minLevel === "string") {
       if (existing.isDefault) {
-        return jsonWrap({ ok: false, error: DEFAULT_CATEGORY_LOCKED_ERROR }, { status: 409 });
+        return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, DEFAULT_CATEGORY_LOCKED_ERROR);
       }
       updates.minLevel = body.minLevel.trim() || null;
     }
     if (typeof body.maxLevel === "string") {
       if (existing.isDefault) {
-        return jsonWrap({ ok: false, error: DEFAULT_CATEGORY_LOCKED_ERROR }, { status: 409 });
+        return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, DEFAULT_CATEGORY_LOCKED_ERROR);
       }
       updates.maxLevel = body.maxLevel.trim() || null;
     }
@@ -412,7 +418,7 @@ async function _PATCH(req: NextRequest) {
     }
     if (Object.prototype.hasOwnProperty.call(body, "isActive")) {
       if (existing.isDefault && body.isActive !== true) {
-        return jsonWrap({ ok: false, error: DEFAULT_CATEGORY_LOCKED_ERROR }, { status: 409 });
+        return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, DEFAULT_CATEGORY_LOCKED_ERROR);
       }
       updates.isActive = body.isActive === true;
     }
@@ -435,10 +441,10 @@ async function _PATCH(req: NextRequest) {
     return jsonWrap({ ok: true, item: updated }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return failText(401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("[padel/categories/my][PATCH] error", err);
-    return jsonWrap({ ok: false, error: "Erro ao atualizar categoria." }, { status: 500 });
+    return failText(500, "CATEGORY_UPDATE_FAILED", "Erro ao atualizar categoria.");
   }
 }
 
@@ -448,11 +454,11 @@ async function _DELETE(req: NextRequest) {
     const user = await ensureAuthenticated(supabase);
 
     let categoryId = Number(req.nextUrl.searchParams.get("id"));
-    if (!Number.isFinite(categoryId)) {
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
       const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
       const bodyId = typeof body?.id === "number" ? body.id : Number(body?.id);
-      if (!Number.isFinite(bodyId)) {
-        return jsonWrap({ ok: false, error: "ID inválido." }, { status: 400 });
+      if (!Number.isInteger(bodyId) || bodyId <= 0) {
+        return failText(400, "INVALID_ID", "ID inválido.");
       }
       categoryId = bodyId;
     }
@@ -463,7 +469,7 @@ async function _DELETE(req: NextRequest) {
       roles: ROLE_ALLOWLIST,
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Organização não encontrado." }, { status: 403 });
+      return failText(403, "NO_ORGANIZATION", "Organização não encontrado.");
     }
     const permission = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -474,7 +480,7 @@ async function _DELETE(req: NextRequest) {
       required: "EDIT",
     });
     if (!permission.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return failText(403, "FORBIDDEN", "Sem permissões.");
     }
 
     await ensureMandatoryCategoryCatalog(organization.id);
@@ -497,10 +503,10 @@ async function _DELETE(req: NextRequest) {
       },
     });
     if (!existing) {
-      return jsonWrap({ ok: false, error: "Categoria não encontrada." }, { status: 404 });
+      return failText(404, "CATEGORY_NOT_FOUND", "Categoria não encontrada.");
     }
     if (existing.isDefault) {
-      return jsonWrap({ ok: false, error: "Não podes apagar uma categoria base." }, { status: 409 });
+      return failText(409, DEFAULT_CATEGORY_LOCKED_ERROR_CODE, "Não podes apagar uma categoria base.");
     }
 
     const usageCount = Object.values(existing._count as Record<string, number>).reduce(
@@ -508,10 +514,7 @@ async function _DELETE(req: NextRequest) {
       0,
     );
     if (usageCount > 0) {
-      return jsonWrap(
-        { ok: false, error: "Categoria em uso. Remove-a dos torneios ou desativa em vez de apagar." },
-        { status: 409 },
-      );
+      return failText(409, "CATEGORY_IN_USE", "Categoria em uso. Remove-a dos torneios ou desativa em vez de apagar.");
     }
 
     await prisma.padelCategory.delete({ where: { id: categoryId } });
@@ -519,10 +522,10 @@ async function _DELETE(req: NextRequest) {
     return jsonWrap({ ok: true }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return failText(401, "UNAUTHENTICATED", "Não autenticado.");
     }
     console.error("[padel/categories/my][DELETE] error", err);
-    return jsonWrap({ ok: false, error: "Erro ao apagar categoria." }, { status: 500 });
+    return failText(500, "CATEGORY_DELETE_FAILED", "Erro ao apagar categoria.");
   }
 }
 export const GET = withApiEnvelope(_GET);

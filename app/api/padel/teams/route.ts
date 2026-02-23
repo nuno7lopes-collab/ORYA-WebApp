@@ -14,6 +14,17 @@ import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -100,42 +111,38 @@ async function _POST(req: NextRequest) {
   });
   if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const id = typeof body.id === "number" ? body.id : null;
+  const hasId = body.id != null;
+  const id = hasId ? parsePositiveInt(body.id) : null;
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const level = typeof body.level === "string" ? body.level.trim() : null;
-  const padelClubId =
-    typeof body.padelClubId === "number"
-      ? body.padelClubId
-      : typeof body.padelClubId === "string"
-        ? Number(body.padelClubId)
-        : null;
-  const categoryId =
-    typeof body.categoryId === "number"
-      ? body.categoryId
-      : typeof body.categoryId === "string"
-        ? Number(body.categoryId)
-        : null;
+  const hasPadelClubId = body.padelClubId != null;
+  const padelClubId = hasPadelClubId ? parsePositiveInt(body.padelClubId) : null;
+  const hasCategoryId = body.categoryId != null;
+  const categoryId = hasCategoryId ? parsePositiveInt(body.categoryId) : null;
   const isActive = typeof body.isActive === "boolean" ? body.isActive : true;
 
   if (!name) return jsonWrap({ ok: false, error: "NAME_REQUIRED" }, { status: 400 });
+  if (hasId && id == null) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (hasPadelClubId && padelClubId == null) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (hasCategoryId && categoryId == null) return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
 
-  if (Number.isFinite(padelClubId ?? NaN)) {
+  if (padelClubId != null) {
     const club = await prisma.padelClub.findFirst({
-      where: { id: padelClubId as number, organizationId: organization.id },
+      where: { id: padelClubId, organizationId: organization.id },
       select: { id: true },
     });
     if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
   }
 
-  if (Number.isFinite(categoryId ?? NaN)) {
+  if (categoryId != null) {
     const category = await prisma.padelCategory.findFirst({
-      where: { id: categoryId as number, organizationId: organization.id },
+      where: { id: categoryId, organizationId: organization.id },
       select: { id: true },
     });
     if (!category) return jsonWrap({ ok: false, error: "CATEGORY_NOT_FOUND" }, { status: 404 });
   }
 
-  if (id) {
+  if (id != null) {
     const existing = await prisma.padelTeam.findFirst({
       where: { id, organizationId: organization.id },
       select: { id: true },
@@ -147,8 +154,8 @@ async function _POST(req: NextRequest) {
       data: {
         name,
         level,
-        padelClubId: Number.isFinite(padelClubId ?? NaN) ? (padelClubId as number) : null,
-        categoryId: Number.isFinite(categoryId ?? NaN) ? (categoryId as number) : null,
+        padelClubId: padelClubId ?? null,
+        categoryId: categoryId ?? null,
         isActive,
       },
       include: {
@@ -165,8 +172,8 @@ async function _POST(req: NextRequest) {
       organizationId: organization.id,
       name,
       level,
-      padelClubId: Number.isFinite(padelClubId ?? NaN) ? (padelClubId as number) : null,
-      categoryId: Number.isFinite(categoryId ?? NaN) ? (categoryId as number) : null,
+      padelClubId: padelClubId ?? null,
+      categoryId: categoryId ?? null,
       isActive,
     },
     include: {

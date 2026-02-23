@@ -89,6 +89,7 @@
     "app/org/[orgId]/analytics/occupancy/page.tsx",
     "app/org/[orgId]/analytics/page.tsx",
     "app/org/[orgId]/bookings/[id]/page.tsx",
+    "app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx",
     "app/org/[orgId]/bookings/availability/page.tsx",
     "app/org/[orgId]/bookings/customers/page.tsx",
     "app/org/[orgId]/bookings/integrations/page.tsx",
@@ -294,6 +295,7 @@
       "app/org/[orgId]/analytics/occupancy/page.tsx",
       "app/org/[orgId]/analytics/page.tsx",
       "app/org/[orgId]/bookings/[id]/page.tsx",
+      "app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx",
       "app/org/[orgId]/bookings/availability/page.tsx",
       "app/org/[orgId]/bookings/customers/page.tsx",
       "app/org/[orgId]/bookings/integrations/page.tsx",
@@ -535,9 +537,9 @@
     ]
   },
   "counts": {
-    "webTotal": 237,
+    "webTotal": 238,
     "mobileTotal": 44,
-    "org": 78,
+    "org": 79,
     "admin": 17,
     "user": 21,
     "public": 64,

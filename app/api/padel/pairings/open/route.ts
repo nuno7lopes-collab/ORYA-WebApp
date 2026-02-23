@@ -72,7 +72,7 @@ async function _POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const pairingId = typeof body?.pairingId === "number" ? body.pairingId : Number(body?.pairingId);
-  if (!Number.isFinite(pairingId)) {
+  if (!Number.isInteger(pairingId) || pairingId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
@@ -102,15 +102,15 @@ async function _POST(req: NextRequest) {
 
   const [event, windowConfig] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: pairing.eventId },
-      select: { status: true, startsAt: true },
+      where: { id: pairing.eventId, isDeleted: false },
+      select: { status: true, startsAt: true, templateType: true },
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
       select: { advancedSettings: true, lifecycleStatus: true },
     }),
   ]);
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {

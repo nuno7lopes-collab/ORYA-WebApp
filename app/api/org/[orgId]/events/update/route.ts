@@ -40,6 +40,7 @@ import { shouldEmitSearchIndexUpdate } from "@/domain/searchIndex/triggers";
 import { normalizeInterestIds } from "@/lib/ranking/interests";
 import { isEndsAtAfterStart } from "@/lib/events/schedule";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -194,6 +195,11 @@ async function _POST(req: NextRequest) {
     if (!eventId || Number.isNaN(eventId)) {
       return fail(400, "eventId é obrigatório.");
     }
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
 
     // Autorização: perfil + membership no organization do evento
     let event: {
@@ -381,6 +387,9 @@ async function _POST(req: NextRequest) {
     event = eventResult;
 
     if (!event) {
+      return fail(404, "Evento não encontrado.");
+    }
+    if (event.organizationId !== requestOrganizationId) {
       return fail(404, "Evento não encontrado.");
     }
     if (!event.endsAt || Number.isNaN(event.endsAt.getTime())) {

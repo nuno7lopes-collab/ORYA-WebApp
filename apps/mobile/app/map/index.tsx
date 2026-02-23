@@ -49,9 +49,12 @@ import { getLocationPermissionState, requestLocationConsent } from "../../lib/lo
 import { formatDistanceKm, getDistanceKm } from "../../lib/geo";
 import { resolveMediaUri } from "../../lib/media";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 import type { PublicEventCard } from "@orya/shared";
 import { MapFiltersBar, type MapTemplateFilter } from "../../components/discover/MapFiltersBar";
 import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
+import { buildMapTargets } from "../../lib/mapLinks";
 
 const DEFAULT_REGION: Region = {
   latitude: 38.7223,
@@ -595,25 +598,29 @@ export default function MapScreen() {
 
   const handleOpenExternalMap = useCallback(() => {
     const cityLabel = city?.trim() || ipLocation?.city || "Eventos ORYA";
-    const lat = distanceOrigin?.lat ?? initialRegion.latitude;
-    const lng = distanceOrigin?.lng ?? initialRegion.longitude;
-    let url: string | null = null;
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      const label = encodeURIComponent(cityLabel);
-      if (Platform.OS === "android") {
-        url = `geo:${lat},${lng}?q=${lat},${lng}(${label})`;
-      } else {
-        url = `http://maps.apple.com/?ll=${lat},${lng}&q=${label}`;
-      }
-    } else if (cityLabel) {
-      if (Platform.OS === "android") {
-        url = `geo:0,0?q=${encodeURIComponent(cityLabel)}`;
-      } else {
-        url = `http://maps.apple.com/?q=${encodeURIComponent(cityLabel)}`;
-      }
-    }
-    if (!url) return;
-    Linking.openURL(url).catch(() => undefined);
+    const lat = distanceOrigin?.lat ?? initialRegion.latitude ?? null;
+    const lng = distanceOrigin?.lng ?? initialRegion.longitude ?? null;
+    const targets = buildMapTargets({
+      label: cityLabel,
+      query: cityLabel,
+      lat,
+      lng,
+    });
+    if (!targets) return;
+    const preferred = Platform.OS === "ios" ? targets.apple : targets.android;
+    Linking.canOpenURL(preferred)
+      .then((canOpen) => {
+        if (canOpen) {
+          return Linking.openURL(preferred);
+        }
+        const webUrl = resolveSafeHttpUrl(targets.web);
+        if (!webUrl) return undefined;
+        return Linking.canOpenURL(webUrl).then((canOpenWeb) => {
+          if (!canOpenWeb) return undefined;
+          return Linking.openURL(webUrl);
+        });
+      })
+      .catch(() => undefined);
   }, [city, distanceOrigin?.lat, distanceOrigin?.lng, initialRegion.latitude, initialRegion.longitude, ipLocation?.city]);
 
   const animateToRegion = useCallback((lat: number, lng: number, delta = 0.08) => {
@@ -989,7 +996,7 @@ export default function MapScreen() {
             </View>
           </View>
           <MapPressable
-            onPressIn={clearMapFilters}
+            onPress={clearMapFilters}
             style={({ pressed }) => [styles.resetButton, pressed ? styles.controlPressed : null]}
             accessibilityRole="button"
             accessibilityLabel="Limpar filtros"
@@ -1002,7 +1009,7 @@ export default function MapScreen() {
           <GlassCard intensity={52} style={{ marginHorizontal: 20, marginBottom: 12 }}>
             <Text className="text-red-300 text-sm mb-3">Não foi possível carregar o mapa.</Text>
             <MapPressable
-              onPressIn={() => discoverQuery.refetch()}
+              onPress={() => discoverQuery.refetch()}
               className="rounded-xl bg-white/10 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -1189,7 +1196,7 @@ export default function MapScreen() {
           ListHeaderComponent={
             <View>
               <MapPressable
-                onPressIn={() => safeBack(router, navigation, "/(tabs)/index")}
+                onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar"
                 style={{
@@ -1230,7 +1237,7 @@ export default function MapScreen() {
                   />
                 </View>
                 <MapPressable
-                  onPressIn={handleRecenter}
+                  onPress={handleRecenter}
                   accessibilityRole="button"
                   accessibilityLabel="Recentrar mapa"
                   style={({ pressed }) => [styles.iconButton, pressed ? styles.controlPressed : null]}
@@ -1240,7 +1247,7 @@ export default function MapScreen() {
               </View>
 
               <MapPressable
-                onPressIn={handleOpenExternalMap}
+                onPress={handleOpenExternalMap}
                 accessibilityRole="button"
                 accessibilityLabel="Abrir mapa externo"
                 style={({ pressed }) => [
@@ -1255,7 +1262,7 @@ export default function MapScreen() {
 
               {locationStatus !== "granted" ? (
                 <MapPressable
-                  onPressIn={handleOpenLocationModal}
+                  onPress={handleOpenLocationModal}
                   accessibilityRole="button"
                   accessibilityLabel="Ativar localização"
                   style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
@@ -1279,7 +1286,7 @@ export default function MapScreen() {
               <GlassSurface intensity={48} style={{ padding: 16, marginTop: 12 }}>
                 <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
                 <MapPressable
-                  onPressIn={clearMapFilters}
+                  onPress={clearMapFilters}
                   className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   style={{ minHeight: tokens.layout.touchTarget }}
                 >
@@ -1343,7 +1350,7 @@ export default function MapScreen() {
                   coordinate={{ latitude: marker.lat, longitude: marker.lng }}
                   onPress={() => handleClusterPress(marker)}
                 >
-                  <View style={styles.clusterShell as any}>
+                  <View style={styles.clusterShell}>
                     <Text style={styles.clusterCount}>{marker.count}</Text>
                   </View>
                 </Marker>
@@ -1384,7 +1391,7 @@ export default function MapScreen() {
         <View style={{ position: "absolute", top: topPadding, left: 20, right: 20 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <MapPressable
-              onPressIn={() => safeBack(router, navigation, "/(tabs)/index")}
+              onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
               accessibilityRole="button"
               accessibilityLabel="Voltar"
               style={({ pressed }) => [
@@ -1418,7 +1425,7 @@ export default function MapScreen() {
 
           {locationStatus !== "granted" ? (
             <MapPressable
-              onPressIn={handleOpenLocationModal}
+              onPress={handleOpenLocationModal}
               accessibilityRole="button"
               accessibilityLabel="Ativar localização"
               style={({ pressed }) => [styles.locationPrompt, pressed ? styles.controlPressed : null]}
@@ -1490,7 +1497,7 @@ export default function MapScreen() {
                       <GlassSurface intensity={48} style={{ padding: 16 }}>
                         <Text className="text-white/70 text-sm">Sem eventos nesta área.</Text>
                         <MapPressable
-                          onPressIn={clearMapFilters}
+                          onPress={clearMapFilters}
                           className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                           style={{ minHeight: tokens.layout.touchTarget }}
                         >
@@ -1507,7 +1514,7 @@ export default function MapScreen() {
 
         <Animated.View style={[styles.fabWrapper, fabAnimatedStyle]}>
           <MapPressable
-            onPressIn={handleRecenter}
+            onPress={handleRecenter}
             accessibilityRole="button"
             accessibilityLabel="Recentrar mapa"
             style={({ pressed }) => [styles.fabButton, pressed ? styles.controlPressed : null]}
@@ -1634,8 +1641,8 @@ const styles = {
     height: 36,
     paddingHorizontal: 10,
     borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     borderWidth: 1,
     borderColor: "rgba(188,229,255,0.96)",
     backgroundColor: "rgba(22,42,64,0.92)",

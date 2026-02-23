@@ -48,10 +48,65 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/rounds/advance", () => {
+  it("rejeita autoSchedule.partialMode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/rounds/advance", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 281,
+        autoSchedule: { partialMode: "sometimes" },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_PARTIAL_MODE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita autoSchedule.executionMode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/rounds/advance", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 281,
+        autoSchedule: { executionMode: "queued" },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_EXECUTION_MODE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita autoSchedule.strategy inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/rounds/advance", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 281,
+        autoSchedule: { strategy: "smart" },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_STRATEGY");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("returns ROUND_STATE_NOT_FOUND for NON_STOP ACTIVE_QUEUE without runtime state", async () => {
     prisma.event.findUnique.mockResolvedValue({
       id: 281,
       organizationId: 2,
+      templateType: "PADEL",
       startsAt: new Date("2026-04-28T11:00:00.000Z"),
       endsAt: new Date("2026-04-28T19:00:00.000Z"),
       padelTournamentConfig: {
@@ -88,6 +143,7 @@ describe("POST /api/padel/rounds/advance", () => {
     prisma.event.findUnique.mockResolvedValue({
       id: 281,
       organizationId: 2,
+      templateType: "PADEL",
       startsAt: new Date("2026-04-28T11:00:00.000Z"),
       endsAt: new Date("2026-04-28T19:00:00.000Z"),
       padelTournamentConfig: {

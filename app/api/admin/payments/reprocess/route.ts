@@ -32,21 +32,48 @@ async function _POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    if (!paymentIntentId.startsWith("pi_")) {
+      return respondError(
+        ctx,
+        { errorCode: "INVALID_PAYMENT_INTENT_ID", message: "PaymentIntent inválido.", retryable: false },
+        { status: 400 },
+      );
+    }
+
+    const paymentEvent = await prisma.paymentEvent.findFirst({
+      where: { stripePaymentIntentId: paymentIntentId },
+      select: { purchaseId: true },
+    });
+    const saleByIntent = await prisma.saleSummary.findFirst({
+      where: { paymentIntentId },
+      select: { purchaseId: true },
+    });
+    const purchaseId = paymentEvent?.purchaseId ?? saleByIntent?.purchaseId ?? null;
 
     await enqueueOperation({
       operationType: "FULFILL_PAYMENT",
       dedupeKey: paymentIntentId,
-      correlations: { paymentIntentId, purchaseId: paymentIntentId },
-      payload: { paymentIntentId },
+      correlations: { paymentIntentId, purchaseId },
+      payload: { paymentIntentId, purchaseId },
     });
 
     await paymentEventRepo(prisma).updateMany({
-      where: { purchaseId: paymentIntentId },
+      where: {
+        OR: [
+          { stripePaymentIntentId: paymentIntentId },
+          purchaseId ? { purchaseId } : undefined,
+        ].filter(Boolean) as any,
+      },
       data: { status: "PROCESSING", errorMessage: null, updatedAt: new Date() },
     });
 
     const sale = await prisma.saleSummary.findFirst({
-      where: { OR: [{ paymentIntentId }, { purchaseId: paymentIntentId }] },
+      where: {
+        OR: [
+          { paymentIntentId },
+          purchaseId ? { purchaseId } : undefined,
+        ].filter(Boolean) as any,
+      },
       select: { event: { select: { organizationId: true } } },
     });
     if (sale?.event?.organizationId) {
@@ -62,10 +89,10 @@ async function _POST(req: NextRequest) {
       action: "PAYMENT_REPROCESS",
       actorUserId: admin.userId,
       correlationId: ctx.correlationId,
-      payload: { paymentIntentId },
+      payload: { paymentIntentId, purchaseId },
     });
 
-    return respondOk(ctx, { paymentIntentId }, { status: 200 });
+    return respondOk(ctx, { paymentIntentId, purchaseId }, { status: 200 });
   } catch (err) {
     logError("admin.payments.reprocess_failed", err);
     return respondError(

@@ -28,6 +28,7 @@ beforeEach(async () => {
   enforcePublicRateLimit.mockResolvedValue(null);
   prisma.event.findUnique.mockResolvedValue({
     id: 281,
+    templateType: "PADEL",
     status: "PUBLISHED",
     padelTournamentConfig: { advancedSettings: { competitionState: "PUBLIC" }, lifecycleStatus: "PUBLIC" },
     accessPolicies: [{ mode: "PUBLIC" }],
@@ -89,6 +90,17 @@ beforeEach(async () => {
 });
 
 describe("GET /api/padel/public/live payload contract", () => {
+  it("rejeita eventId inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/public/live?eventId=1.5");
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error).toBe("INVALID_EVENT");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("expõe elapsed/clock/stream sem PII no payload público", async () => {
     const req = new NextRequest("http://localhost/api/padel/public/live?eventId=281");
     const res = await GET(req);

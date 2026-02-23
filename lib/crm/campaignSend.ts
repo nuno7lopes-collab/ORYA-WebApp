@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { resolveSegmentContactIds } from "@/lib/crm/segmentQuery";
-import { normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
+import { EmptySegmentDefinitionError, resolveSegmentContactIds } from "@/lib/crm/segmentQuery";
+import { hasAnyCampaignChannel, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { sendCrmCampaignEmail } from "@/lib/emailSender";
 import { assertEmailReady } from "@/lib/emailClient";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
@@ -80,37 +80,123 @@ function toCountMap(rows: Array<{ contactId: string; _count: { _all: number } }>
   return map;
 }
 
-async function createDelivery(params: {
+const SENT_LIKE_DELIVERY_STATUSES: CrmDeliveryStatus[] = [
+  CrmDeliveryStatus.SENT,
+  CrmDeliveryStatus.OPENED,
+  CrmDeliveryStatus.CLICKED,
+];
+
+type DeliveryReservationParams = {
   organizationId: number;
   campaignId: string;
   contactId: string;
   userId?: string | null;
   channel: CrmCampaignDeliveryChannel;
-  status: CrmDeliveryStatus;
-  sentAt?: Date | null;
+};
+
+type DeliveryReservationResult =
+  | { state: "ready"; deliveryId: string }
+  | { state: "already_handled" };
+
+async function reserveDelivery(params: DeliveryReservationParams): Promise<DeliveryReservationResult> {
+  const unique = {
+    campaignId_contactId_channel: {
+      campaignId: params.campaignId,
+      contactId: params.contactId,
+      channel: params.channel,
+    },
+  } as const;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const existing = await prisma.crmCampaignDelivery.findUnique({
+      where: unique,
+      select: { id: true, status: true, sentAt: true },
+    });
+    if (existing) {
+      if (existing.status === CrmDeliveryStatus.FAILED) {
+        await prisma.crmCampaignDelivery.update({
+          where: { id: existing.id },
+          data: {
+            status: CrmDeliveryStatus.SENT,
+            sentAt: null,
+            errorCode: null,
+            errorMessage: null,
+            ...(params.userId ? { userId: params.userId } : {}),
+          },
+        });
+        return { state: "ready", deliveryId: existing.id };
+      }
+      if (existing.status === CrmDeliveryStatus.SENT && !existing.sentAt) {
+        return { state: "already_handled" };
+      }
+      if (SENT_LIKE_DELIVERY_STATUSES.includes(existing.status)) {
+        return { state: "already_handled" };
+      }
+    }
+
+    try {
+      const created = await prisma.crmCampaignDelivery.create({
+        data: {
+          organizationId: params.organizationId,
+          campaignId: params.campaignId,
+          contactId: params.contactId,
+          ...(params.userId ? { userId: params.userId } : {}),
+          channel: params.channel,
+          status: CrmDeliveryStatus.SENT,
+          sentAt: null,
+        },
+        select: { id: true },
+      });
+      return { state: "ready", deliveryId: created.id };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  return { state: "already_handled" };
+}
+
+async function markDeliverySent(params: {
+  deliveryId: string;
+  sentAt: Date;
+}) {
+  const update = await prisma.crmCampaignDelivery.updateMany({
+    where: {
+      id: params.deliveryId,
+      status: CrmDeliveryStatus.SENT,
+      sentAt: null,
+    },
+    data: {
+      status: CrmDeliveryStatus.SENT,
+      sentAt: params.sentAt,
+      errorCode: null,
+      errorMessage: null,
+    },
+  });
+  return update.count === 1;
+}
+
+async function markDeliveryFailed(params: {
+  deliveryId: string;
   errorCode?: string | null;
   errorMessage?: string | null;
 }) {
-  try {
-    await prisma.crmCampaignDelivery.create({
-      data: {
-        organizationId: params.organizationId,
-        campaignId: params.campaignId,
-        contactId: params.contactId,
-        ...(params.userId ? { userId: params.userId } : {}),
-        channel: params.channel,
-        status: params.status,
-        ...(params.sentAt ? { sentAt: params.sentAt } : {}),
-        ...(params.errorCode ? { errorCode: params.errorCode } : {}),
-        ...(params.errorMessage ? { errorMessage: params.errorMessage.slice(0, 200) } : {}),
-      },
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return;
-    }
-    console.error("CRM campaign delivery error:", err);
-  }
+  await prisma.crmCampaignDelivery.updateMany({
+    where: {
+      id: params.deliveryId,
+      status: CrmDeliveryStatus.SENT,
+      sentAt: null,
+    },
+    data: {
+      status: CrmDeliveryStatus.FAILED,
+      errorCode: params.errorCode ?? null,
+      errorMessage: params.errorMessage?.slice(0, 200) ?? null,
+      sentAt: null,
+    },
+  });
 }
 
 export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<SendCrmCampaignResult> {
@@ -218,11 +304,19 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         return await abort("Segmento invalido.", 400, "SEGMENT_INVALID");
       }
 
-      const resolved = await resolveSegmentContactIds({
-        organizationId: options.organizationId,
-        rules: segment.rules,
-        maxContacts: MAX_RECIPIENTS,
-      });
+      let resolved: Awaited<ReturnType<typeof resolveSegmentContactIds>>;
+      try {
+        resolved = await resolveSegmentContactIds({
+          organizationId: options.organizationId,
+          rules: segment.rules,
+          maxContacts: MAX_RECIPIENTS,
+        });
+      } catch (err) {
+        if (err instanceof EmptySegmentDefinitionError) {
+          return await abort("Segmento sem regras.", 400, "SEGMENT_EMPTY_DEFINITION");
+        }
+        throw err;
+      }
 
       estimatedTotal = resolved.total;
       recipientContactIds = resolved.contactIds;
@@ -281,7 +375,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
     const inAppEnabled = channels.inApp;
     let emailEnabled = channels.email;
 
-    if (!inAppEnabled && !emailEnabled) {
+    if (!hasAnyCampaignChannel(channels)) {
       return await abort("Campanha sem canais definidos.", 400, "NO_CHANNELS");
     }
 
@@ -342,7 +436,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         where: {
           organizationId: options.organizationId,
           contactId: { in: contacts.map((contact) => contact.id) },
-          status: CrmDeliveryStatus.SENT,
+          status: { in: SENT_LIKE_DELIVERY_STATUSES },
           sentAt: { gte: dayWindowStart },
         },
         _count: { _all: true },
@@ -352,7 +446,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         where: {
           organizationId: options.organizationId,
           contactId: { in: contacts.map((contact) => contact.id) },
-          status: CrmDeliveryStatus.SENT,
+          status: { in: SENT_LIKE_DELIVERY_STATUSES },
           sentAt: { gte: weekWindowStart },
         },
         _count: { _all: true },
@@ -362,7 +456,7 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         where: {
           organizationId: options.organizationId,
           contactId: { in: contacts.map((contact) => contact.id) },
-          status: CrmDeliveryStatus.SENT,
+          status: { in: SENT_LIKE_DELIVERY_STATUSES },
           sentAt: { gte: monthWindowStart },
         },
         _count: { _all: true },
@@ -397,9 +491,6 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         ? officialEmailNormalized
         : platformOfficialEmail;
 
-    const sentAt = new Date();
-    let sentCount = 0;
-    let failedCount = 0;
     let suppressedByCap = 0;
     let suppressedByConsent = 0;
 
@@ -417,52 +508,48 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
       const pref = recipientId ? prefsMap.get(recipientId) : null;
       const allowMarketing = pref?.allowMarketingCampaigns ?? true;
       const allowEmailPref = pref?.allowEmailNotifications ?? true;
-      const marketingGranted = contact.marketingEmailOptIn || contact.marketingPushOptIn;
+      const marketingGranted = contact.marketingEmailOptIn === true || contact.marketingPushOptIn === true;
 
       let hasAttempt = false;
 
       const inAppRecipientId = recipientId;
       const canSendInApp = Boolean(inAppEnabled && inAppRecipientId && allowMarketing && marketingGranted);
       if (canSendInApp && inAppRecipientId) {
-        hasAttempt = true;
-        try {
-          await createNotification({
-            userId: inAppRecipientId,
-            dedupeKey: `crm-campaign:${campaign.id}:inapp:${inAppRecipientId}`,
-            type: NotificationType.CRM_CAMPAIGN,
-            title,
-            body,
-            ctaUrl,
-            ctaLabel,
-            priority: "NORMAL",
-            senderVisibility: "PRIVATE",
-            organizationId: options.organizationId,
-            payload: { campaignId: campaign.id, channel: "IN_APP" },
-          });
-          await createDelivery({
-            organizationId: options.organizationId,
-            campaignId: campaign.id,
-            contactId: contact.id,
-            userId: inAppRecipientId,
-            channel: CrmCampaignDeliveryChannel.IN_APP,
-            status: CrmDeliveryStatus.SENT,
-            sentAt,
-          });
-          sentCount += 1;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          await createDelivery({
-            organizationId: options.organizationId,
-            campaignId: campaign.id,
-            contactId: contact.id,
-            userId: inAppRecipientId,
-            channel: CrmCampaignDeliveryChannel.IN_APP,
-            status: CrmDeliveryStatus.FAILED,
-            errorCode: "IN_APP_FAILED",
-            errorMessage: message,
-          });
-          failedCount += 1;
-          console.error("CRM campaign in-app delivery error:", err);
+        const reservation = await reserveDelivery({
+          organizationId: options.organizationId,
+          campaignId: campaign.id,
+          contactId: contact.id,
+          userId: inAppRecipientId,
+          channel: CrmCampaignDeliveryChannel.IN_APP,
+        });
+        if (reservation.state === "ready") {
+          hasAttempt = true;
+          try {
+            await createNotification({
+              userId: inAppRecipientId,
+              dedupeKey: `crm-campaign:${campaign.id}:inapp:${inAppRecipientId}`,
+              type: NotificationType.CRM_CAMPAIGN,
+              title,
+              body,
+              ctaUrl,
+              ctaLabel,
+              priority: "NORMAL",
+              senderVisibility: "PRIVATE",
+              organizationId: options.organizationId,
+              payload: { campaignId: campaign.id, channel: "IN_APP" },
+            });
+            await markDeliverySent({ deliveryId: reservation.deliveryId, sentAt: new Date() });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await markDeliveryFailed({
+              deliveryId: reservation.deliveryId,
+              errorCode: "IN_APP_FAILED",
+              errorMessage: message,
+            });
+            console.error("CRM campaign in-app delivery error:", err);
+          }
+        } else {
+          hasAttempt = true;
         }
       }
 
@@ -470,43 +557,39 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         emailEnabled && contact.contactEmail && allowEmailPref && contact.marketingEmailOptIn,
       );
       if (canSendEmail) {
-        hasAttempt = true;
-        try {
-          await sendCrmCampaignEmail({
-            to: contact.contactEmail!,
-            subject: emailSubject,
-            organizationName,
-            title,
-            body,
-            ctaUrl,
-            ctaLabel,
-            previewText,
-            replyTo,
-          });
-          await createDelivery({
-            organizationId: options.organizationId,
-            campaignId: campaign.id,
-            contactId: contact.id,
-            userId: recipientId,
-            channel: CrmCampaignDeliveryChannel.EMAIL,
-            status: CrmDeliveryStatus.SENT,
-            sentAt,
-          });
-          sentCount += 1;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          await createDelivery({
-            organizationId: options.organizationId,
-            campaignId: campaign.id,
-            contactId: contact.id,
-            userId: recipientId,
-            channel: CrmCampaignDeliveryChannel.EMAIL,
-            status: CrmDeliveryStatus.FAILED,
-            errorCode: "EMAIL_FAILED",
-            errorMessage: message,
-          });
-          failedCount += 1;
-          console.error("CRM campaign email delivery error:", err);
+        const reservation = await reserveDelivery({
+          organizationId: options.organizationId,
+          campaignId: campaign.id,
+          contactId: contact.id,
+          userId: recipientId,
+          channel: CrmCampaignDeliveryChannel.EMAIL,
+        });
+        if (reservation.state === "ready") {
+          hasAttempt = true;
+          try {
+            await sendCrmCampaignEmail({
+              to: contact.contactEmail!,
+              subject: emailSubject,
+              organizationName,
+              title,
+              body,
+              ctaUrl,
+              ctaLabel,
+              previewText,
+              replyTo,
+            });
+            await markDeliverySent({ deliveryId: reservation.deliveryId, sentAt: new Date() });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            await markDeliveryFailed({
+              deliveryId: reservation.deliveryId,
+              errorCode: "EMAIL_FAILED",
+              errorMessage: message,
+            });
+            console.error("CRM campaign email delivery error:", err);
+          }
+        } else {
+          hasAttempt = true;
         }
       }
 
@@ -514,6 +597,25 @@ export async function sendCrmCampaign(options: SendCrmCampaignOptions): Promise<
         suppressedByConsent += 1;
       }
     }
+
+    const [sentCount, failedCount] = await Promise.all([
+      prisma.crmCampaignDelivery.count({
+        where: {
+          organizationId: options.organizationId,
+          campaignId: campaign.id,
+          status: { in: SENT_LIKE_DELIVERY_STATUSES },
+          sentAt: { not: null },
+        },
+      }),
+      prisma.crmCampaignDelivery.count({
+        where: {
+          organizationId: options.organizationId,
+          campaignId: campaign.id,
+          status: CrmDeliveryStatus.FAILED,
+        },
+      }),
+    ]);
+    const sentAt = new Date();
 
     await prisma.crmCampaign.update({
       where: { id: campaign.id },

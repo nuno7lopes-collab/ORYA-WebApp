@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
+import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { getActiveSession } from "./session";
 import { resetOnboardingDone } from "./onboardingState";
@@ -8,8 +9,8 @@ import { perfMark, perfMeasure } from "./perf";
 
 type AuthState = {
   loading: boolean;
-  session: any | null;
-  user: any | null;
+  session: Session | null;
+  user: User | null;
 };
 
 const AuthContext = createContext<AuthState>({
@@ -18,7 +19,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
 });
 
-const refreshSessionIfNeeded = (candidate: any | null) => {
+const refreshSessionIfNeeded = (candidate: Session | null) => {
   const expiresAtMs = candidate?.expires_at ? candidate.expires_at * 1000 : 0;
   if (!expiresAtMs) return;
   if (expiresAtMs - Date.now() >= 60_000) return;
@@ -27,8 +28,8 @@ const refreshSessionIfNeeded = (candidate: any | null) => {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState<any | null>(null);
-  const sessionRef = useRef<any | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -39,7 +40,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const hydrate = async () => {
       perfMark("auth_get_session");
       const nextSession = await getActiveSession({
-        refreshIfNearExpiry: false,
+        minTtlMs: 60_000,
+        refreshIfNearExpiry: true,
       });
 
       if (mounted) {
@@ -62,10 +64,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const subscription = AppState.addEventListener("change", (state) => {
       if (state !== "active") return;
-      getActiveSession({ refreshIfNearExpiry: false })
+      getActiveSession({ minTtlMs: 60_000, refreshIfNearExpiry: true })
         .then((nextSession) => {
           if (!mounted) return;
-          if (!nextSession && sessionRef.current) return;
+          if (!nextSession && sessionRef.current) {
+            const expiresAtMs = sessionRef.current.expires_at
+              ? sessionRef.current.expires_at * 1000
+              : 0;
+            const isCurrentSessionStillValid = expiresAtMs > Date.now();
+            if (isCurrentSessionStillValid) {
+              return;
+            }
+          }
           setSession(nextSession);
           refreshSessionIfNeeded(nextSession);
         })

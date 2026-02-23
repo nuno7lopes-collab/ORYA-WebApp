@@ -1537,7 +1537,8 @@ D17) Integrações Apple — guardrails normativos (FECHADO)
 C13) Org Context + RBAC (resolução e step‑up) — **FECHADO**
 
 Regras:
-	•	`orgId` é obrigatório no path (`/org/:orgId/*`) ou header `X-ORYA-ORG-ID`.
+	•	Em superfícies canónicas org-scoped (`/org/:orgId/*` e `/api/org/:orgId/*`), `orgId` é obrigatório no path.
+	•	`X-ORYA-ORG-ID` só pode ser usado em superfícies sem `orgId` no path e apenas quando o contrato da rota o declarar.
 	•	Cookies/lastUsedOrg **só** para redirect de UI (nunca para autorização).
 	•	Qualquer operação sem `orgId` resolve para **403** com `ORG_CONTEXT_REQUIRED`.
 	•	Step‑up obrigatório em ações críticas (refunds, alterações de fee policy, export PII, cancelamentos).
@@ -1591,10 +1592,8 @@ DORG.03A) Ferramentas da Organização — fonte única + fail-closed (FECHADO)
 - Fonte: `docs/ssot_registry_v1_source_snapshot_2026-02-14.md:2301`.
 
 DORG.04A + DORG.05A) Contexto de organização explícito e header canónico (FECHADO)
-	•	APIs de organização aceitam `organizationId` apenas por:
-		–	path (`/org/:id`), ou
-		–	query (`organizationId`), ou
-		–	header canónico `x-orya-org-id`.
+	•	APIs org-scoped (`/api/org/:id/*`) aceitam `organizationId` apenas por path.
+	•	APIs fora de `/api/org/:id/*` podem aceitar `organizationId` por query ou `x-orya-org-id` quando o contrato da rota o declarar explicitamente.
 	•	Cookie não é fonte de verdade para mutações API (apenas fallback UI quando explicitamente permitido).
 	•	Header legado `x-org-id` está descontinuado; único header válido é `x-orya-org-id`.
 
@@ -4246,11 +4245,11 @@ Classificação canónica:
 - `app/api/org/[orgId]/refunds/list/route.ts`
 - `app/api/org/[orgId]/events/[id]/refund/route.ts`
 - `app/api/padel/matches/[id]/dispute/route.ts`
-- `app/api/org/[orgId]/payouts/status/route.ts`
-- `app/api/org/[orgId]/payouts/list/route.ts`
-- `app/api/org/[orgId]/payouts/summary/route.ts`
-- `app/api/org/[orgId]/payouts/settings/route.ts`
-- `app/api/org/[orgId]/payouts/connect/route.ts`
+- `app/api/org/[orgId]/finance/payouts/status/route.ts`
+- `app/api/org/[orgId]/finance/payouts/list/route.ts`
+- `app/api/org/[orgId]/finance/payouts/summary/route.ts`
+- `app/api/org/[orgId]/finance/payouts/settings/route.ts`
+- `app/api/org/[orgId]/finance/payouts/connect/route.ts`
 - `app/api/org-system/payouts/webhook/route.ts`
 - `app/api/internal/reconcile/route.ts`
 - `app/api/internal/outbox/dlq/route.ts`

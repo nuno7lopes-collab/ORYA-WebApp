@@ -103,7 +103,7 @@ The following routes return raw/stream/file responses and must **not** be wrappe
 - ICS/downloads: `app/api/me/reservas/[id]/calendar.ics/route.ts`
 - Webhooks (raw body): `app/api/stripe/webhook/route.ts`, `app/api/webhooks/stripe/route.ts`, `app/api/org-system/payouts/webhook/route.ts`
 - Binary assets: `app/api/org/[orgId]/store/products/[id]/digital-assets/route.ts`
-- Imports: `app/api/organizacao/padel/imports/inscritos/route.ts`
+- Imports: `app/api/org/[orgId]/padel/imports/inscritos/route.ts`
 - Internal ops (raw/outbox): `app/api/internal/worker/operations/route.ts`
 
 ### Webhooks fail-closed

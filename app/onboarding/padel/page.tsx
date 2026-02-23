@@ -173,10 +173,16 @@ function PadelOnboardingContent() {
           clubName: clubName.trim() || null,
         }),
       });
-        const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string; code?: string } | null;
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          error?: string;
+          errorCode?: string;
+          code?: string;
+        } | null;
         if (!res.ok || !data?.ok) {
+          const errorCode = data?.errorCode ?? data?.code;
           const message =
-            data?.code === "USERNAME_TAKEN"
+            errorCode === "USERNAME_TAKEN"
               ? "Este @ ja esta a ser usado."
               : data?.error === "INVALID_PHONE"
                 ? "Telemovel invalido."

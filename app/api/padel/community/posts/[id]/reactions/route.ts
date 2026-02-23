@@ -14,7 +14,7 @@ const roles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const postId = Number(resolved?.id);
-  if (!Number.isFinite(postId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(postId) || postId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const supabase = await createSupabaseServer();
   const {

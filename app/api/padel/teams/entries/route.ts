@@ -14,6 +14,17 @@ import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -39,21 +50,32 @@ async function _GET(req: NextRequest) {
 
   const eventIdRaw = req.nextUrl.searchParams.get("eventId");
   const teamIdRaw = req.nextUrl.searchParams.get("teamId");
-  const eventId = eventIdRaw && Number.isFinite(Number(eventIdRaw)) ? Number(eventIdRaw) : null;
-  const teamId = teamIdRaw && Number.isFinite(Number(teamIdRaw)) ? Number(teamIdRaw) : null;
-  if (!eventId && !teamId) {
+  const hasEventId = eventIdRaw != null;
+  const hasTeamId = teamIdRaw != null;
+  const eventId = hasEventId ? parsePositiveInt(eventIdRaw) : null;
+  const teamId = hasTeamId ? parsePositiveInt(teamIdRaw) : null;
+  if (hasEventId && eventId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
+  if (hasTeamId && teamId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_TEAM" }, { status: 400 });
+  }
+  if (eventId == null && teamId == null) {
     return jsonWrap({ ok: false, error: "MISSING_FILTER" }, { status: 400 });
   }
 
-  if (eventId) {
+  if (eventId != null) {
     const event = await prisma.event.findFirst({
-      where: { id: eventId, organizationId: organization.id },
-      select: { id: true },
+      where: { id: eventId, organizationId: organization.id, isDeleted: false },
+      select: { id: true, templateType: true },
     });
     if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    if (event.templateType !== "PADEL") {
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    }
   }
 
-  if (teamId) {
+  if (teamId != null) {
     const team = await prisma.padelTeam.findFirst({
       where: { id: teamId, organizationId: organization.id },
       select: { id: true },
@@ -105,31 +127,21 @@ async function _POST(req: NextRequest) {
   });
   if (!editPermission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-  const eventId =
-    typeof body.eventId === "number"
-      ? body.eventId
-      : typeof body.eventId === "string"
-        ? Number(body.eventId)
-        : null;
-  const teamId =
-    typeof body.teamId === "number"
-      ? body.teamId
-      : typeof body.teamId === "string"
-        ? Number(body.teamId)
-        : null;
-  const categoryId =
-    typeof body.categoryId === "number"
-      ? body.categoryId
-      : typeof body.categoryId === "string"
-        ? Number(body.categoryId)
-        : null;
+  const eventId = parsePositiveInt(body.eventId);
+  const teamId = parsePositiveInt(body.teamId);
+  const hasCategoryId = Object.prototype.hasOwnProperty.call(body, "categoryId");
+  const categoryInput = hasCategoryId ? body.categoryId : null;
+  const categoryId = categoryInput === null ? null : parsePositiveInt(categoryInput);
 
-  if (!Number.isFinite(eventId ?? NaN) || !Number.isFinite(teamId ?? NaN)) {
+  if (eventId == null || teamId == null) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
+  }
+  if (hasCategoryId && categoryInput !== null && categoryId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
   }
 
   const event = await prisma.event.findFirst({
-    where: { id: eventId as number, organizationId: organization.id },
+    where: { id: eventId, organizationId: organization.id, isDeleted: false },
     select: {
       id: true,
       templateType: true,
@@ -139,14 +151,14 @@ async function _POST(req: NextRequest) {
   if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
 
   if (event.templateType !== "PADEL") {
-    return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL" }, { status: 409 });
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   if (!event.padelTournamentConfig?.isInterclub) {
     return jsonWrap({ ok: false, error: "INTERCLUB_DISABLED" }, { status: 409 });
   }
 
   const team = await prisma.padelTeam.findFirst({
-    where: { id: teamId as number, organizationId: organization.id },
+    where: { id: teamId, organizationId: organization.id },
     select: { id: true },
   });
   if (!team) return jsonWrap({ ok: false, error: "TEAM_NOT_FOUND" }, { status: 404 });
@@ -161,7 +173,7 @@ async function _POST(req: NextRequest) {
     }
   }
 
-  const categoryIdValue = Number.isFinite(categoryId ?? NaN) ? (categoryId as number) : null;
+  const categoryIdValue = categoryId;
   if (categoryIdValue) {
     const link = await prisma.padelEventCategoryLink.findFirst({
       where: { eventId: event.id, padelCategoryId: categoryIdValue },

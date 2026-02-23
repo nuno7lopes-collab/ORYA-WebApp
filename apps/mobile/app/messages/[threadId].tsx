@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -239,6 +241,8 @@ export default function ChatThreadScreen() {
     if (!accessToken || !threadId) return;
     const wsBase = buildWsBaseUrl();
     if (!wsBase) return;
+    let shouldReconnect = true;
+
     const stopWsPing = () => {
       if (wsPingRef.current) clearInterval(wsPingRef.current);
       wsPingRef.current = null;
@@ -360,6 +364,9 @@ export default function ChatThreadScreen() {
       ws.onclose = (event) => {
         stopWsPing();
         wsRef.current = null;
+        if (!shouldReconnect) {
+          return;
+        }
         if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
         const reason = typeof event.reason === "string" ? event.reason.trim().toUpperCase() : "";
         const reconnectDelayMs = reason === "RATE_LIMITED" ? 60000 : 2000;
@@ -376,9 +383,10 @@ export default function ChatThreadScreen() {
 
     connect();
     return () => {
+      shouldReconnect = false;
       stopWsPing();
       if (wsReconnectRef.current) clearTimeout(wsReconnectRef.current);
-      wsRef.current?.close();
+      wsRef.current?.close(1000, "SCREEN_UNMOUNT");
       wsRef.current = null;
     };
   }, [accessToken, threadId, t]);
@@ -436,7 +444,7 @@ export default function ChatThreadScreen() {
   );
 
   const handleScroll = useCallback(
-    (event: any) => {
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       topBar.onScroll(event);
       const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
       const distanceToBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;

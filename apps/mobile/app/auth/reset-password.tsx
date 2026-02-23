@@ -24,9 +24,13 @@ import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { safeBack } from "../../lib/navigation";
 import { trackEvent } from "../../lib/analytics";
+import { resolveSafeNextRoute } from "../../lib/authNextRoute";
 import { tokens, useTranslation } from "@orya/shared";
 
 const MIN_PASSWORD_LENGTH = 6;
+
+const resolveErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err ?? "");
 
 export default function ResetPasswordScreen() {
   const { t } = useTranslation();
@@ -44,17 +48,7 @@ export default function ResetPasswordScreen() {
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
   const nextRoute = useMemo(() => {
-    const raw = params.next;
-    const normalize = (value: string) => {
-      try {
-        return decodeURIComponent(value);
-      } catch {
-        return value;
-      }
-    };
-    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
-    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
-    return null;
+    return resolveSafeNextRoute(params.next);
   }, [params.next]);
 
   const handleSavePassword = async () => {
@@ -80,8 +74,8 @@ export default function ResetPasswordScreen() {
         t("auth:resetPassword.successBody"),
       );
       router.replace(nextRoute ?? "/");
-    } catch (err: any) {
-      const raw = String(err?.message ?? "").toLowerCase();
+    } catch (err: unknown) {
+      const raw = resolveErrorMessage(err).toLowerCase();
       if (raw.includes("password") && (raw.includes("least") || raw.includes("min"))) {
         setErrorMessage(t("auth:resetPassword.errors.passwordMin"));
       } else {

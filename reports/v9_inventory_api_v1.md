@@ -1,6 +1,6 @@
 # V9 Inventory — API Routes
 
-Total: 534
+Total: 552
 
 | Route | File | Methods | Type | Auth | Payloads | Status codes | Runtime | Cache | Envelope | Legacy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -20,6 +20,8 @@ Total: 534
 | /api/admin/infra/hard-pause | app/api/admin/infra/hard-pause/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/admin/infra/migrate | app/api/admin/infra/migrate/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/admin/infra/mode | app/api/admin/infra/mode/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/admin/infra/redis/start | app/api/admin/infra/redis/start/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/admin/infra/redis/stop | app/api/admin/infra/redis/stop/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/admin/infra/resume | app/api/admin/infra/resume/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/admin/infra/rotate-secrets | app/api/admin/infra/rotate-secrets/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/admin/infra/soft-pause | app/api/admin/infra/soft-pause/route.ts | POST | admin | admin | json | 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
@@ -54,16 +56,16 @@ Total: 534
 | /api/admin/tickets/export | app/api/admin/tickets/export/route.ts | GET | admin | admin | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/admin/tickets/list | app/api/admin/tickets/list/route.ts | GET | admin | admin | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/admin/utilizadores/manage | app/api/admin/utilizadores/manage/route.ts | POST | admin | admin | formData, json | 400, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/auth/apple/link | app/api/auth/apple/link/route.ts | POST | public | user | json | 400, 401, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/auth/bootstrap | app/api/auth/bootstrap/route.ts | POST | public | user | none detected | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/apple/link | app/api/auth/apple/link/route.ts | POST | public | none detected | json | 400, 401, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/bootstrap | app/api/auth/bootstrap/route.ts | POST | public | none detected | none detected | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/auth/check-email | app/api/auth/check-email/route.ts | GET, POST | public | none detected | json, query | 200, 400, 403, 429, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/auth/clear | app/api/auth/clear/route.ts | POST | public | none detected | none detected | 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/auth/login | app/api/auth/login/route.ts | POST | public | none detected | json | 400, 401, 403, 429, 500, 503 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/login | app/api/auth/login/route.ts | POST | public | none detected | json | 400, 401, 403, 429, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/auth/logout | app/api/auth/logout/route.ts | POST | public | none detected | none detected | 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/auth/me | app/api/auth/me/route.ts | GET | public | user | none detected | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/auth/password/reset-request | app/api/auth/password/reset-request/route.ts | POST | public | none detected | json, query | 400, 403, 429, 500, 502, 503 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/me | app/api/auth/me/route.ts | GET | public | none detected | none detected | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/password/reset-request | app/api/auth/password/reset-request/route.ts | POST | public | none detected | json, query | 400, 403, 429, 500, 502 | default/default/default | default | withApiEnvelope | - |
 | /api/auth/refresh | app/api/auth/refresh/route.ts | POST | public | none detected | json | 400, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/auth/send-otp | app/api/auth/send-otp/route.ts | POST | public | none detected | json | 400, 403, 409, 429, 500, 502, 503 | default/default/default | default | withApiEnvelope | - |
+| /api/auth/send-otp | app/api/auth/send-otp/route.ts | POST | public | none detected | json | 400, 403, 409, 429, 500, 502 | default/default/default | default | withApiEnvelope | - |
 | /api/checkout/resale | app/api/checkout/resale/route.ts | POST | public | none detected | none detected | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/checkout/status | app/api/checkout/status/route.ts | GET | public | none detected | query | 200, 400, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/cobrancas/[token] | app/api/cobrancas/[token]/route.ts | GET | public | none detected | none detected | 500 | default/default/default | default | withApiEnvelope | - |
@@ -90,19 +92,19 @@ Total: 534
 | /api/cron/padel/waitlist | app/api/cron/padel/waitlist/route.ts | POST | cron | internal | none detected | 401, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/cron/repair-usernames | app/api/cron/repair-usernames/route.ts | POST | cron | internal | query | 200, 401, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/cron/reservations/cleanup | app/api/cron/reservations/cleanup/route.ts | GET | cron | internal | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/email/verified | app/api/email/verified/route.ts | POST | public | user | none detected | 400, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/email/verified | app/api/email/verified/route.ts | POST | public | none detected | none detected | 400, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/eventos/[slug]/invite-token | app/api/eventos/[slug]/invite-token/route.ts | POST | public | none detected | json | 500 | default/default/default | default | withApiEnvelope | - |
 | /api/eventos/[slug]/invites/check | app/api/eventos/[slug]/invites/check/route.ts | POST | public | none detected | json | 500 | default/default/default | default | withApiEnvelope | - |
 | /api/eventos/[slug]/public | app/api/eventos/[slug]/public/route.ts | GET | public | none detected | none detected | 400, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/eventos/[slug]/resales | app/api/eventos/[slug]/resales/route.ts | GET | public | none detected | none detected | 200, 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/eventos/list | app/api/eventos/list/route.ts | GET | public | user | query | 200 | default/default/default | default | withApiEnvelope | - |
+| /api/eventos/list | app/api/eventos/list/route.ts | GET | public | none detected | query | 200 | default/default/default | default | withApiEnvelope | - |
 | /api/eventos/lookup | app/api/eventos/lookup/route.ts | GET | public | user | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/events/favorites | app/api/events/favorites/route.ts | GET | public | user | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/events/favorites/notify | app/api/events/favorites/notify/route.ts | POST | public | user | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/events/favorites/toggle | app/api/events/favorites/toggle/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/events/favorites | app/api/events/favorites/route.ts | GET | public | none detected | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/events/favorites/notify | app/api/events/favorites/notify/route.ts | POST | public | none detected | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/events/favorites/toggle | app/api/events/favorites/toggle/route.ts | POST | public | none detected | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/explorar/eventos/[slug] | app/api/explorar/eventos/[slug]/route.ts | GET | public | none detected | none detected | 404 | default/default/default | default | withApiEnvelope | - |
-| /api/explorar/list | app/api/explorar/list/route.ts | GET | public | user | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/inscricoes/[id]/submit | app/api/inscricoes/[id]/submit/route.ts | POST | public | user | json | 201, 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/explorar/list | app/api/explorar/list/route.ts | GET | public | none detected | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/inscricoes/[id]/submit | app/api/inscricoes/[id]/submit/route.ts | POST | public | none detected | json | 201, 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/audit | app/api/internal/audit/route.ts | GET | internal | internal | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/checkin/consume | app/api/internal/checkin/consume/route.ts | POST | internal | internal | json | 401, 429, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/internal/checkout/timeline | app/api/internal/checkout/timeline/route.ts | GET | internal | internal | query | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
@@ -115,8 +117,8 @@ Total: 534
 | /api/internal/ops/health | app/api/internal/ops/health/route.ts | GET | internal | internal | none detected | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/internal/ops/outbox/replay | app/api/internal/ops/outbox/replay/route.ts | POST | internal | internal | json | 200, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/ops/outbox/summary | app/api/internal/ops/outbox/summary/route.ts | GET | internal | internal | none detected | 200, 401 | default/default/default | default | withApiEnvelope | - |
-| /api/internal/ops/padel/backfill | app/api/internal/ops/padel/backfill/route.ts | POST | internal | internal | query | 200, 401 | default/default/default | default | withApiEnvelope | - |
-| /api/internal/ops/padel/cleanup | app/api/internal/ops/padel/cleanup/route.ts | POST | internal | internal | query | 200, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/internal/ops/padel/backfill | app/api/internal/ops/padel/backfill/route.ts | POST | internal | internal | query | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/internal/ops/padel/cleanup | app/api/internal/ops/padel/cleanup/route.ts | POST | internal | internal | query | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/ops/padel/integrity | app/api/internal/ops/padel/integrity/route.ts | GET | internal | internal | query | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/ops/padel/workforce-hygiene | app/api/internal/ops/padel/workforce-hygiene/route.ts | POST | internal | internal | query | 200, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/internal/ops/slo | app/api/internal/ops/slo/route.ts | GET | internal | internal | none detected | 401 | default/default/default | default | withApiEnvelope | - |
@@ -131,31 +133,31 @@ Total: 534
 | /api/internal/reprocess/stripe-event | app/api/internal/reprocess/stripe-event/route.ts | POST | internal | internal | json | 200, 400, 401 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/internal/worker/operations | app/api/internal/worker/operations/route.ts | POST | internal | internal | none detected | 200, 401 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/location/ip | app/api/location/ip/route.ts | GET | public | none detected | none detected | 200, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/maps/apple-token | app/api/maps/apple-token/route.ts | GET | public | none detected | none detected | 200, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/me | app/api/me/route.ts | GET | me | user | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/agenda | app/api/me/agenda/route.ts | GET | me | user | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/claim-guest | app/api/me/claim-guest/route.ts | POST | me | user | json | 401, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/maps/apple-token | app/api/maps/apple-token/route.ts | GET | public | none detected | none detected | 200, 429, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/me | app/api/me/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/agenda | app/api/me/agenda/route.ts | GET | me | user (expected) - NOT DETECTED | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/claim-guest | app/api/me/claim-guest/route.ts | POST | me | user (expected) - NOT DETECTED | json | 401, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/me/consents | app/api/me/consents/route.ts | GET, PUT | me | user | json | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/contact-phone | app/api/me/contact-phone/route.ts | PATCH | me | user | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/contact-phone | app/api/me/contact-phone/route.ts | PATCH | me | user (expected) - NOT DETECTED | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/creditos | app/api/me/creditos/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | 410 | default/default/default | default | withApiEnvelope | - |
-| /api/me/dsar/export | app/api/me/dsar/export/route.ts | GET | me | user | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/dsar/export | app/api/me/dsar/export/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/events/signals | app/api/me/events/signals/route.ts | POST | me | user | json | 200, 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/inscricoes | app/api/me/inscricoes/route.ts | GET | me | user | none detected | 200, 401 | default/default/default | default | withApiEnvelope | - |
-| /api/me/inscricoes/[id] | app/api/me/inscricoes/[id]/route.ts | GET | me | user | none detected | 200, 400, 401, 404 | default/default/default | default | withApiEnvelope | - |
-| /api/me/location/consent | app/api/me/location/consent/route.ts | POST | me | user | json | 200, 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/inscricoes | app/api/me/inscricoes/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | 200, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/me/inscricoes/[id] | app/api/me/inscricoes/[id]/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | 200, 400, 401, 404 | default/default/default | default | withApiEnvelope | - |
+| /api/me/location/consent | app/api/me/location/consent/route.ts | POST | me | user (expected) - NOT DETECTED | json | 200, 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/loyalty/carteira | app/api/me/loyalty/carteira/route.ts | GET | me | user | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/loyalty/recompensas | app/api/me/loyalty/recompensas/route.ts | GET | me | user | none detected | 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/loyalty/recompensas/[rewardId]/resgatar | app/api/me/loyalty/recompensas/[rewardId]/resgatar/route.ts | POST | me | user | none detected | 400, 401, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/notifications | app/api/me/notifications/route.ts | DELETE | me | user | json | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/notifications/[id]/read | app/api/me/notifications/[id]/read/route.ts | POST | me | user | none detected | 400, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/notifications/feed | app/api/me/notifications/feed/route.ts | GET | me | user | query | 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/notifications/[id]/read | app/api/me/notifications/[id]/read/route.ts | POST | me | user | none detected | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/notifications/feed | app/api/me/notifications/feed/route.ts | GET | me | user | query | 400, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/notifications/mute | app/api/me/notifications/mute/route.ts | DELETE, POST | me | user | json | 400, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/purchases | app/api/me/purchases/route.ts | GET | me | user | query | 200, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/me/purchases | app/api/me/purchases/route.ts | GET | me | user (expected) - NOT DETECTED | query | 200, 401 | default/default/default | default | withApiEnvelope | - |
 | /api/me/purchases/store | app/api/me/purchases/store/route.ts | GET | me | user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/purchases/store/[orderId] | app/api/me/purchases/store/[orderId]/route.ts | GET | me | user | none detected | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/purchases/store/[orderId]/invoice | app/api/me/purchases/store/[orderId]/invoice/route.ts | GET | me | user | none detected | 200, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/me/purchases/store/[orderId]/receipt | app/api/me/purchases/store/[orderId]/receipt/route.ts | GET | me | user | none detected | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/push-tokens | app/api/me/push-tokens/route.ts | POST | me | user | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/push-tokens | app/api/me/push-tokens/route.ts | POST | me | user (expected) - NOT DETECTED | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/reservas | app/api/me/reservas/route.ts | GET | me | user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/me/reservas/[id] | app/api/me/reservas/[id]/route.ts | GET | me | user | none detected | 400, 401, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/reservas/[id]/calendar.ics | app/api/me/reservas/[id]/calendar.ics/route.ts | GET | me | user | none detected | 200, 400, 401, 404, 500 | default/default/default | default | withApiEnvelope | - |
@@ -166,13 +168,13 @@ Total: 534
 | /api/me/reservas/[id]/reschedule/respond | app/api/me/reservas/[id]/reschedule/respond/route.ts | POST | me | user | json | 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/me/reservas/[id]/review | app/api/me/reservas/[id]/review/route.ts | POST | me | user | json | 400, 401, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/me/reservas/[id]/split | app/api/me/reservas/[id]/split/route.ts | GET, POST | me | user | json | 500 | default/default/default | dynamic exported | withApiEnvelope | - |
-| /api/me/settings/delete | app/api/me/settings/delete/route.ts | POST | me | user | none detected | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
-| /api/me/settings/delete/cancel | app/api/me/settings/delete/cancel/route.ts | POST | me | user | none detected | 200, 400, 401, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/settings/email | app/api/me/settings/email/route.ts | PATCH | me | user | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/settings/save | app/api/me/settings/save/route.ts | PATCH | me | user | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/wallet | app/api/me/wallet/route.ts | GET | me | admin, user | query | 401, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/me/wallet/[entitlementId] | app/api/me/wallet/[entitlementId]/route.ts | GET | me | admin, user | none detected | 400, 401, 403, 404 | default/default/default | default | withApiEnvelope | - |
-| /api/me/wallet/[entitlementId]/pass | app/api/me/wallet/[entitlementId]/pass/route.ts | GET | me | admin, user | none detected | 400, 401, 403, 404, 500, 501 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/me/settings/delete | app/api/me/settings/delete/route.ts | POST | me | user (expected) - NOT DETECTED | none detected | 200, 400, 401 | default/default/default | default | withApiEnvelope | - |
+| /api/me/settings/delete/cancel | app/api/me/settings/delete/cancel/route.ts | POST | me | user (expected) - NOT DETECTED | none detected | 200, 400, 401, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/settings/email | app/api/me/settings/email/route.ts | PATCH | me | user (expected) - NOT DETECTED | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/settings/save | app/api/me/settings/save/route.ts | PATCH | me | user (expected) - NOT DETECTED | json | 400, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/wallet | app/api/me/wallet/route.ts | GET | me | admin | query | 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/me/wallet/[entitlementId] | app/api/me/wallet/[entitlementId]/route.ts | GET | me | admin | none detected | 400, 401, 403, 404 | default/default/default | default | withApiEnvelope | - |
+| /api/me/wallet/[entitlementId]/pass | app/api/me/wallet/[entitlementId]/pass/route.ts | GET | me | admin | none detected | 400, 401, 403, 404, 500, 501 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/messages/attachments/presign | app/api/messages/attachments/presign/route.ts | POST | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/blocks | app/api/messages/blocks/route.ts | DELETE, POST | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/conversations | app/api/messages/conversations/route.ts | GET, POST | me | user (expected) - NOT DETECTED | none detected | 400 | nodejs/default/default | default | jsonWrap | - |
@@ -183,11 +185,11 @@ Total: 534
 | /api/messages/conversations/[conversationId]/notifications | app/api/messages/conversations/[conversationId]/notifications/route.ts | PATCH | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/conversations/[conversationId]/read | app/api/messages/conversations/[conversationId]/read/route.ts | POST | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/conversations/[conversationId]/threads/[messageId] | app/api/messages/conversations/[conversationId]/threads/[messageId]/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
-| /api/messages/conversations/resolve | app/api/messages/conversations/resolve/route.ts | POST | me | admin, org, user | json | 201, 202, 400, 401, 403, 404, 500, 503 | nodejs/default/default | default | jsonWrap | - |
-| /api/messages/grants | app/api/messages/grants/route.ts | GET | me | org, user | query | 401, 500 | nodejs/default/default | default | jsonWrap | - |
-| /api/messages/grants/[grantId]/accept | app/api/messages/grants/[grantId]/accept/route.ts | POST | me | org, user | none detected | 400, 401, 403, 404, 409, 410, 500, 503 | nodejs/default/default | default | jsonWrap | - |
-| /api/messages/grants/[grantId]/cancel | app/api/messages/grants/[grantId]/cancel/route.ts | POST | me | user | none detected | 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | jsonWrap | - |
-| /api/messages/grants/[grantId]/decline | app/api/messages/grants/[grantId]/decline/route.ts | POST | me | org, user | none detected | 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | jsonWrap | - |
+| /api/messages/conversations/resolve | app/api/messages/conversations/resolve/route.ts | POST | me | admin, org, user | json | 201, 202, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/messages/grants | app/api/messages/grants/route.ts | GET | me | org, user | query | 401, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/messages/grants/[grantId]/accept | app/api/messages/grants/[grantId]/accept/route.ts | POST | me | org, user | none detected | 400, 401, 403, 404, 409, 410, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/messages/grants/[grantId]/cancel | app/api/messages/grants/[grantId]/cancel/route.ts | POST | me | user | none detected | 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/messages/grants/[grantId]/decline | app/api/messages/grants/[grantId]/decline/route.ts | POST | me | org, user | none detected | 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/messages/messages | app/api/messages/messages/route.ts | POST | me | user (expected) - NOT DETECTED | json | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/messages/[messageId] | app/api/messages/messages/[messageId]/route.ts | DELETE, PATCH | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/messages/messages/[messageId]/pins | app/api/messages/messages/[messageId]/pins/route.ts | DELETE, POST | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
@@ -196,7 +198,7 @@ Total: 534
 | /api/messages/search | app/api/messages/search/route.ts | GET | me | user (expected) - NOT DETECTED | none detected | unknown | nodejs/default/default | default | unknown | - |
 | /api/notifications/mark-click | app/api/notifications/mark-click/route.ts | POST | public | user | json | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/notifications/mark-read | app/api/notifications/mark-read/route.ts | POST | public | user | json | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/notifications/prefs | app/api/notifications/prefs/route.ts | GET, POST | public | user | json | 401 | default/default/default | default | withApiEnvelope | - |
+| /api/notifications/prefs | app/api/notifications/prefs/route.ts | GET, POST | public | none detected | json | 401 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub | app/api/org-hub/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
 | /api/org-hub/become | app/api/org-hub/become/route.ts | DELETE, GET, POST | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/[groupId]/dashboard/agenda | app/api/org-hub/groups/[groupId]/dashboard/agenda/route.ts | GET | public | user | query | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
@@ -215,35 +217,35 @@ Total: 534
 | /api/org-hub/groups/join-requests/[id]/email/resend | app/api/org-hub/groups/join-requests/[id]/email/resend/route.ts | POST | public | user | none detected | 200 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/join-requests/[id]/generate-code | app/api/org-hub/groups/join-requests/[id]/generate-code/route.ts | POST | public | user | json | 200 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/groups/join-requests/[id]/verify-codes | app/api/org-hub/groups/join-requests/[id]/verify-codes/route.ts | POST | public | user | json | 200 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/invites | app/api/org-hub/invites/route.ts | GET | public | user | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/invites | app/api/org-hub/invites/route.ts | GET | public | none detected | query | 200, 401, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/organizations | app/api/org-hub/organizations/route.ts | GET, POST | public | user | json | 200, 201 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/[id] | app/api/org-hub/organizations/[id]/route.ts | DELETE | public | org, orgEmail, user | json | 200, 403, 409 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/[id]/suspend | app/api/org-hub/organizations/[id]/suspend/route.ts | DELETE, GET, POST | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/leave | app/api/org-hub/organizations/leave/route.ts | POST | public | org, user | json | 200 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/members | app/api/org-hub/organizations/members/route.ts | DELETE, GET, PATCH | public | org, orgEmail, user | json, query | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/members/invites | app/api/org-hub/organizations/members/invites/route.ts | GET, PATCH, POST | public | org, orgEmail, user | json, query | 200, 201, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/members/permissions | app/api/org-hub/organizations/members/permissions/route.ts | GET, PATCH | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/[id] | app/api/org-hub/organizations/[id]/route.ts | DELETE | public | org, orgEmail | json | 200, 403, 409 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/[id]/suspend | app/api/org-hub/organizations/[id]/suspend/route.ts | DELETE, GET, POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/leave | app/api/org-hub/organizations/leave/route.ts | POST | public | org | json | 200 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/members | app/api/org-hub/organizations/members/route.ts | DELETE, GET, PATCH | public | org, orgEmail | json, query | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/members/invites | app/api/org-hub/organizations/members/invites/route.ts | GET, PATCH, POST | public | org, orgEmail | json, query | 200, 201, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/members/permissions | app/api/org-hub/organizations/members/permissions/route.ts | GET, PATCH | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/organizations/owner/confirm | app/api/org-hub/organizations/owner/confirm/route.ts | GET, POST | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org-hub/organizations/owner/transfer | app/api/org-hub/organizations/owner/transfer/route.ts | POST | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/settings/official-email | app/api/org-hub/organizations/settings/official-email/route.ts | DELETE, GET, POST | public | org, user | json, query | 200 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/settings/official-email/confirm | app/api/org-hub/organizations/settings/official-email/confirm/route.ts | POST | public | org, user | json | 200 | default/default/default | default | withApiEnvelope | - |
-| /api/org-hub/organizations/switch | app/api/org-hub/organizations/switch/route.ts | POST | public | user | json | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/settings/official-email | app/api/org-hub/organizations/settings/official-email/route.ts | DELETE, GET, POST | public | org | json, query | 200 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/settings/official-email/confirm | app/api/org-hub/organizations/settings/official-email/confirm/route.ts | POST | public | org | json | 200 | default/default/default | default | withApiEnvelope | - |
+| /api/org-hub/organizations/switch | app/api/org-hub/organizations/switch/route.ts | POST | public | none detected | json | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org-system/payouts/webhook | app/api/org-system/payouts/webhook/route.ts | POST | public | webhook | text | 200, 400, 409, 422, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/org/[orgId] | app/api/org/[orgId]/route.ts | unknown | public | none detected | none detected | unknown | default/default/default | default | unknown | - |
 | /api/org/[orgId]/agenda | app/api/org/[orgId]/agenda/route.ts | GET | public | org, user | query | 200, 400, 403, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/agenda/soft-blocks | app/api/org/[orgId]/agenda/soft-blocks/route.ts | DELETE, PATCH, POST | public | org, orgEmail, user | json | 200, 201, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/buyers | app/api/org/[orgId]/analytics/buyers/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/cohorts | app/api/org/[orgId]/analytics/cohorts/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/conversion | app/api/org/[orgId]/analytics/conversion/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/buyers | app/api/org/[orgId]/analytics/buyers/route.ts | GET | public | org | query | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/cohorts | app/api/org/[orgId]/analytics/cohorts/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/conversion | app/api/org/[orgId]/analytics/conversion/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/analytics/dimensoes | app/api/org/[orgId]/analytics/dimensoes/route.ts | GET | public | org, user | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/events | app/api/org/[orgId]/analytics/events/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/overview | app/api/org/[orgId]/analytics/overview/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/analytics/time-series | app/api/org/[orgId]/analytics/time-series/route.ts | GET | public | org, user | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/audit | app/api/org/[orgId]/audit/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/events | app/api/org/[orgId]/analytics/events/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/overview | app/api/org/[orgId]/analytics/overview/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/analytics/time-series | app/api/org/[orgId]/analytics/time-series/route.ts | GET | public | org | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/audit | app/api/org/[orgId]/audit/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/avaliacoes | app/api/org/[orgId]/avaliacoes/route.ts | GET | public | org, user | query | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/checkin | app/api/org/[orgId]/checkin/route.ts | POST | public | admin, org, orgEmail, user | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/checkin/manual | app/api/org/[orgId]/checkin/manual/route.ts | POST | public | admin, org, orgEmail, user | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/checkin/preview | app/api/org/[orgId]/checkin/preview/route.ts | POST | public | admin, org, orgEmail, user | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/checkin | app/api/org/[orgId]/checkin/route.ts | POST | public | admin, org, orgEmail | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/checkin/manual | app/api/org/[orgId]/checkin/manual/route.ts | POST | public | admin, org, orgEmail | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/checkin/preview | app/api/org/[orgId]/checkin/preview/route.ts | POST | public | admin, org, orgEmail | json | 200, 403, 429 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/club/finance/overview | app/api/org/[orgId]/club/finance/overview/route.ts | GET | public | org, user | none detected | 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/consentimentos | app/api/org/[orgId]/consentimentos/route.ts | GET | public | org, user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/consentimentos/[userId] | app/api/org/[orgId]/consentimentos/[userId]/route.ts | PUT | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
@@ -254,42 +256,42 @@ Total: 534
 | /api/org/[orgId]/crm/campanhas/[campaignId]/enviar | app/api/org/[orgId]/crm/campanhas/[campaignId]/enviar/route.ts | POST | public | org, orgEmail, user | none detected | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/campanhas/[campaignId]/reject | app/api/org/[orgId]/crm/campanhas/[campaignId]/reject/route.ts | POST | public | none detected | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/campanhas/[campaignId]/submit | app/api/org/[orgId]/crm/campanhas/[campaignId]/submit/route.ts | POST | public | none detected | none detected | unknown | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/clientes | app/api/org/[orgId]/crm/clientes/route.ts | GET | public | org, user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/clientes/[customerId] | app/api/org/[orgId]/crm/clientes/[customerId]/route.ts | GET | public | org, user | none detected | 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/clientes | app/api/org/[orgId]/crm/clientes/route.ts | GET | public | org, user | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/clientes/[customerId] | app/api/org/[orgId]/crm/clientes/[customerId]/route.ts | GET | public | org, user | none detected | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/clientes/[customerId]/notas | app/api/org/[orgId]/crm/clientes/[customerId]/notas/route.ts | POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/clientes/[customerId]/tags | app/api/org/[orgId]/crm/clientes/[customerId]/tags/route.ts | PUT | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/config | app/api/org/[orgId]/crm/config/route.ts | GET, PUT | public | none detected | json | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/config | app/api/org/[orgId]/crm/config/route.ts | GET, PUT | public | none detected | none detected | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/journeys | app/api/org/[orgId]/crm/journeys/route.ts | GET, POST | public | none detected | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/journeys/[id] | app/api/org/[orgId]/crm/journeys/[id]/route.ts | GET, PATCH | public | none detected | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/journeys/[id]/pause | app/api/org/[orgId]/crm/journeys/[id]/pause/route.ts | POST | public | none detected | none detected | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/journeys/[id]/publish | app/api/org/[orgId]/crm/journeys/[id]/publish/route.ts | POST | public | none detected | none detected | unknown | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/relatorios | app/api/org/[orgId]/crm/relatorios/route.ts | GET | public | org, user | none detected | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/relatorios | app/api/org/[orgId]/crm/relatorios/route.ts | GET | public | org, user | none detected | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/saved-views | app/api/org/[orgId]/crm/saved-views/route.ts | GET, POST | public | none detected | json, query | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/saved-views/[id] | app/api/org/[orgId]/crm/saved-views/[id]/route.ts | DELETE, PATCH | public | none detected | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/crm/segmentos | app/api/org/[orgId]/crm/segmentos/route.ts | GET, POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/segmentos/[segmentId] | app/api/org/[orgId]/crm/segmentos/[segmentId]/route.ts | GET | public | org, user | none detected | 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/crm/segmentos/[segmentId]/preview | app/api/org/[orgId]/crm/segmentos/[segmentId]/preview/route.ts | GET | public | org, user | none detected | 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/dashboard/tools/visibility | app/api/org/[orgId]/dashboard/tools/visibility/route.ts | GET, PATCH | public | org, user | json | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/events/[id]/attendees | app/api/org/[orgId]/events/[id]/attendees/route.ts | GET | public | admin, org, user | query | 400, 401, 403, 404 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/segmentos/[segmentId] | app/api/org/[orgId]/crm/segmentos/[segmentId]/route.ts | GET | public | org, user | none detected | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/crm/segmentos/[segmentId]/preview | app/api/org/[orgId]/crm/segmentos/[segmentId]/preview/route.ts | GET | public | org, user | none detected | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/dashboard/tools/visibility | app/api/org/[orgId]/dashboard/tools/visibility/route.ts | GET, PATCH | public | org | json | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/events/[id]/attendees | app/api/org/[orgId]/events/[id]/attendees/route.ts | GET | public | admin, org | query | 400, 401, 403, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/events/[id]/invite-token | app/api/org/[orgId]/events/[id]/invite-token/route.ts | POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/events/[id]/invites | app/api/org/[orgId]/events/[id]/invites/route.ts | DELETE, GET, POST | public | admin, org, orgEmail, user | json, query | 403, 404 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/events/[id]/refund | app/api/org/[orgId]/events/[id]/refund/route.ts | POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/events/create | app/api/org/[orgId]/events/create/route.ts | POST | public | admin, org, orgEmail, user | json | 201, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/events/list | app/api/org/[orgId]/events/list/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/events/summary | app/api/org/[orgId]/events/summary/route.ts | GET | public | org, user | query | 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/events/list | app/api/org/[orgId]/events/list/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/events/summary | app/api/org/[orgId]/events/summary/route.ts | GET | public | org, user | query | 400, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/events/update | app/api/org/[orgId]/events/update/route.ts | POST | public | admin, org, orgEmail, user | json | 200, 400, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/faturacao | app/api/org/[orgId]/faturacao/route.ts | GET | public | org, user | none detected | 200, 401, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/finance/exports/fees | app/api/org/[orgId]/finance/exports/fees/route.ts | GET | public | org, user | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/exports/ledger | app/api/org/[orgId]/finance/exports/ledger/route.ts | GET | public | org, user | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/exports/payouts | app/api/org/[orgId]/finance/exports/payouts/route.ts | GET | public | org, user | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/invoicing | app/api/org/[orgId]/finance/invoicing/route.ts | GET, POST | public | org, orgEmail, user | json | 200, 401, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/overview | app/api/org/[orgId]/finance/overview/route.ts | GET | public | org, user | query | 200, 401, 403, 500, 503 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/finance/payouts/connect | app/api/org/[orgId]/finance/payouts/connect/route.ts | POST | public | org, user | none detected | 200, 401, 403, 404, 409, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/payouts/list | app/api/org/[orgId]/finance/payouts/list/route.ts | GET | public | org, user | none detected | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/finance/payouts/settings | app/api/org/[orgId]/finance/payouts/settings/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/payouts/status | app/api/org/[orgId]/finance/payouts/status/route.ts | GET | public | org, user | none detected | 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/payouts/summary | app/api/org/[orgId]/finance/payouts/summary/route.ts | GET | public | org, user | none detected | 200, 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/org/[orgId]/finance/reconciliation | app/api/org/[orgId]/finance/reconciliation/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/faturacao | app/api/org/[orgId]/faturacao/route.ts | GET | public | org | none detected | 200, 401, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/finance/exports/fees | app/api/org/[orgId]/finance/exports/fees/route.ts | GET | public | org | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/exports/ledger | app/api/org/[orgId]/finance/exports/ledger/route.ts | GET | public | org | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/exports/payouts | app/api/org/[orgId]/finance/exports/payouts/route.ts | GET | public | org | query | 200, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/invoicing | app/api/org/[orgId]/finance/invoicing/route.ts | GET, POST | public | org, orgEmail | json | 200, 401, 403 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/overview | app/api/org/[orgId]/finance/overview/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/finance/payouts/connect | app/api/org/[orgId]/finance/payouts/connect/route.ts | POST | public | org | none detected | 200, 401, 403, 404, 409, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/payouts/list | app/api/org/[orgId]/finance/payouts/list/route.ts | GET | public | org | none detected | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/finance/payouts/settings | app/api/org/[orgId]/finance/payouts/settings/route.ts | POST | public | org | json | 200, 400, 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/payouts/status | app/api/org/[orgId]/finance/payouts/status/route.ts | GET | public | org | none detected | 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/payouts/summary | app/api/org/[orgId]/finance/payouts/summary/route.ts | GET | public | org | none detected | 200, 401, 403, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
+| /api/org/[orgId]/finance/reconciliation | app/api/org/[orgId]/finance/reconciliation/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/inscricoes | app/api/org/[orgId]/inscricoes/route.ts | GET, POST | public | org, orgEmail, user | json | 200, 201, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/inscricoes/[id] | app/api/org/[orgId]/inscricoes/[id]/route.ts | DELETE, GET, PATCH | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/inscricoes/[id]/export | app/api/org/[orgId]/inscricoes/[id]/export/route.ts | GET | public | org, user | none detected | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
@@ -298,34 +300,35 @@ Total: 534
 | /api/org/[orgId]/loyalty/programa | app/api/org/[orgId]/loyalty/programa/route.ts | GET, PUT | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/loyalty/recompensas | app/api/org/[orgId]/loyalty/recompensas/route.ts | GET, POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/loyalty/regras | app/api/org/[orgId]/loyalty/regras/route.ts | GET, POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/marketing/overview | app/api/org/[orgId]/marketing/overview/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/me | app/api/org/[orgId]/me/route.ts | GET, PATCH | public | admin, org, orgEmail, user | json | 200, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/marketing/overview | app/api/org/[orgId]/marketing/overview/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/me | app/api/org/[orgId]/me/route.ts | GET, PATCH | public | admin, org, orgEmail | json | 200, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/ops/feed | app/api/org/[orgId]/ops/feed/route.ts | GET | public | org, user | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/analytics | app/api/org/[orgId]/padel/analytics/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/audit | app/api/org/[orgId]/padel/audit/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/broadcast | app/api/org/[orgId]/padel/broadcast/route.ts | POST | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/courts | app/api/org/[orgId]/padel/courts/route.ts | GET | public | org, user | none detected | 200, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/exports/analytics | app/api/org/[orgId]/padel/exports/analytics/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/exports/bracket | app/api/org/[orgId]/padel/exports/bracket/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/exports/calendario | app/api/org/[orgId]/padel/exports/calendario/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/exports/inscritos | app/api/org/[orgId]/padel/exports/inscritos/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/exports/resultados | app/api/org/[orgId]/padel/exports/resultados/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/imports/inscritos | app/api/org/[orgId]/padel/imports/inscritos/route.ts | POST | public | org, orgEmail, user | formData | 200, 400, 403 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/pairings/swap | app/api/org/[orgId]/padel/pairings/swap/route.ts | POST | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/waitlist | app/api/org/[orgId]/padel/waitlist/route.ts | GET | public | org, user | query | 200, 400, 401, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/padel/waitlist/promote | app/api/org/[orgId]/padel/waitlist/promote/route.ts | POST | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/pagamentos/invoices | app/api/org/[orgId]/pagamentos/invoices/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/analytics | app/api/org/[orgId]/padel/analytics/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/audit | app/api/org/[orgId]/padel/audit/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/broadcast | app/api/org/[orgId]/padel/broadcast/route.ts | POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/courts | app/api/org/[orgId]/padel/courts/route.ts | GET | public | org, user | none detected | 200, 400, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/exports/analytics | app/api/org/[orgId]/padel/exports/analytics/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/exports/bracket | app/api/org/[orgId]/padel/exports/bracket/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/exports/calendario | app/api/org/[orgId]/padel/exports/calendario/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/exports/inscritos | app/api/org/[orgId]/padel/exports/inscritos/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/exports/resultados | app/api/org/[orgId]/padel/exports/resultados/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/imports/inscritos | app/api/org/[orgId]/padel/imports/inscritos/route.ts | POST | public | org, orgEmail | formData | 200, 400, 403 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/pairings/swap | app/api/org/[orgId]/padel/pairings/swap/route.ts | POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/waitlist | app/api/org/[orgId]/padel/waitlist/route.ts | GET | public | org | query | 200, 400, 401, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/padel/waitlist/promote | app/api/org/[orgId]/padel/waitlist/promote/route.ts | POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/pagamentos/invoices | app/api/org/[orgId]/pagamentos/invoices/route.ts | GET | public | org | query | 200, 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/payouts/connect | app/api/org/[orgId]/payouts/connect/route.ts | POST | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/payouts/list | app/api/org/[orgId]/payouts/list/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/payouts/settings | app/api/org/[orgId]/payouts/settings/route.ts | POST | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/payouts/status | app/api/org/[orgId]/payouts/status/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/payouts/summary | app/api/org/[orgId]/payouts/summary/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/policies | app/api/org/[orgId]/policies/route.ts | GET, PATCH, POST | public | org, orgEmail, user | json | 201, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/policies/[id] | app/api/org/[orgId]/policies/[id]/route.ts | DELETE, PATCH | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/policies/store | app/api/org/[orgId]/policies/store/route.ts | GET, PATCH | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/promo | app/api/org/[orgId]/promo/route.ts | DELETE, GET, PATCH, POST | public | org, orgEmail, user | json | 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/promo/[id] | app/api/org/[orgId]/promo/[id]/route.ts | GET | public | org, user | none detected | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/refunds/list | app/api/org/[orgId]/refunds/list/route.ts | GET | public | org, user | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/policies | app/api/org/[orgId]/policies/route.ts | GET, PATCH, POST | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/policies/[id] | app/api/org/[orgId]/policies/[id]/route.ts | DELETE, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/policies/padel | app/api/org/[orgId]/policies/padel/route.ts | GET | public | org, user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/policies/store | app/api/org/[orgId]/policies/store/route.ts | GET, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/promo | app/api/org/[orgId]/promo/route.ts | DELETE, GET, PATCH, POST | public | org, orgEmail | json | 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/promo/[id] | app/api/org/[orgId]/promo/[id]/route.ts | GET | public | org | none detected | 200, 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/refunds/list | app/api/org/[orgId]/refunds/list/route.ts | GET | public | org | query | 200, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas | app/api/org/[orgId]/reservas/route.ts | GET, POST | public | org, user | json, query | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/[id]/cancel | app/api/org/[orgId]/reservas/[id]/cancel/route.ts | POST | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/[id]/charges | app/api/org/[orgId]/reservas/[id]/charges/route.ts | GET, POST | public | org, user | json | 500 | default/default/default | default | withApiEnvelope | - |
@@ -336,9 +339,15 @@ Total: 534
 | /api/org/[orgId]/reservas/[id]/reschedule | app/api/org/[orgId]/reservas/[id]/reschedule/route.ts | POST | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/[id]/split | app/api/org/[orgId]/reservas/[id]/split/route.ts | GET, POST | public | org, user | json | 500 | default/default/default | dynamic exported | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/clientes | app/api/org/[orgId]/reservas/clientes/route.ts | GET | public | org, user | query | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/config | app/api/org/[orgId]/reservas/config/route.ts | GET, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/delays | app/api/org/[orgId]/reservas/delays/route.ts | GET, POST | public | org, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/reservas/disponibilidade | app/api/org/[orgId]/reservas/disponibilidade/route.ts | GET, POST | public | org, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade | app/api/org/[orgId]/reservas/disponibilidade/route.ts | GET, POST | public | org, user | json, query | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/disponibilidade/[overrideId] | app/api/org/[orgId]/reservas/disponibilidade/[overrideId]/route.ts | DELETE | public | org, user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade/changesets | app/api/org/[orgId]/reservas/disponibilidade/changesets/route.ts | POST | public | org, user | json | 400, 403, 404 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId] | app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/route.ts | GET | public | org, user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/apply | app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/apply/route.ts | POST | public | org, user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/cancel | app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/cancel/route.ts | POST | public | org, user | none detected | 500 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/[conflictId]/resolve | app/api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/[conflictId]/resolve/route.ts | POST | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/profissionais | app/api/org/[orgId]/reservas/profissionais/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/profissionais/[id] | app/api/org/[orgId]/reservas/profissionais/[id]/route.ts | DELETE, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/reservas/recursos | app/api/org/[orgId]/reservas/recursos/route.ts | GET, POST | public | org, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
@@ -351,8 +360,7 @@ Total: 534
 | /api/org/[orgId]/servicos/[id]/class-series | app/api/org/[orgId]/servicos/[id]/class-series/route.ts | GET, POST | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/servicos/[id]/class-series/[seriesId] | app/api/org/[orgId]/servicos/[id]/class-series/[seriesId]/route.ts | DELETE, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/servicos/[id]/class-sessions | app/api/org/[orgId]/servicos/[id]/class-sessions/route.ts | GET | public | org, user | query | unknown | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/servicos/[id]/disponibilidade | app/api/org/[orgId]/servicos/[id]/disponibilidade/route.ts | GET, POST | public | org, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/servicos/[id]/disponibilidade/[availabilityId] | app/api/org/[orgId]/servicos/[id]/disponibilidade/[availabilityId]/route.ts | DELETE | public | org, user | none detected | unknown | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/servicos/[id]/duration-prices | app/api/org/[orgId]/servicos/[id]/duration-prices/route.ts | GET, PUT | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/servicos/[id]/packages | app/api/org/[orgId]/servicos/[id]/packages/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/servicos/[id]/packages/[packageId] | app/api/org/[orgId]/servicos/[id]/packages/[packageId]/route.ts | DELETE, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/servicos/[id]/packs | app/api/org/[orgId]/servicos/[id]/packs/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
@@ -390,60 +398,66 @@ Total: 534
 | /api/org/[orgId]/store/shipping/zones | app/api/org/[orgId]/store/shipping/zones/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/shipping/zones/[zoneId] | app/api/org/[orgId]/store/shipping/zones/[zoneId]/route.ts | DELETE, GET, PATCH | public | org, user | json | unknown | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/store/shipping/zones/[zoneId]/methods | app/api/org/[orgId]/store/shipping/zones/[zoneId]/methods/route.ts | GET, POST | public | org, user | json | 201 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/tournaments/blocks/bulk | app/api/org/[orgId]/tournaments/blocks/bulk/route.ts | POST | public | org, orgEmail, user | json | 201 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/tournaments/blocks/overrides | app/api/org/[orgId]/tournaments/blocks/overrides/route.ts | GET, POST | public | org, orgEmail, user | json, query | 201 | default/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/tournaments/create | app/api/org/[orgId]/tournaments/create/route.ts | POST | public | admin, org, orgEmail, user | json | 201, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/trainers | app/api/org/[orgId]/trainers/route.ts | GET, PATCH, POST | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/trainers/profile | app/api/org/[orgId]/trainers/profile/route.ts | GET, PATCH | public | org, orgEmail, user | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
-| /api/org/[orgId]/username | app/api/org/[orgId]/username/route.ts | PATCH | public | org, orgEmail, user | json | 200, 403 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/trainers | app/api/org/[orgId]/trainers/route.ts | GET, PATCH, POST | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/trainers/profile | app/api/org/[orgId]/trainers/profile/route.ts | GET, PATCH | public | org, orgEmail | json | 200, 403 | default/default/default | default | withApiEnvelope | - |
+| /api/org/[orgId]/username | app/api/org/[orgId]/username/route.ts | PATCH | public | org, orgEmail | json | 200, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/org/[orgId]/venues/recent | app/api/org/[orgId]/venues/recent/route.ts | GET | public | org, user | query | 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/organizations/search | app/api/organizations/search/route.ts | GET | public | user | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/calendar | app/api/padel/calendar/route.ts | DELETE, GET, PATCH, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404, 409, 410, 423, 503 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/calendar/auto-schedule | app/api/padel/calendar/auto-schedule/route.ts | POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/calendar/claims/commit | app/api/padel/calendar/claims/commit/route.ts | PATCH, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/categories/my | app/api/padel/categories/my/route.ts | DELETE, GET, PATCH, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/padel/clubs | app/api/padel/clubs/route.ts | DELETE, GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/clubs/[id]/courts | app/api/padel/clubs/[id]/courts/route.ts | DELETE, GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/clubs/[id]/staff | app/api/padel/clubs/[id]/staff/route.ts | DELETE, GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/clubs/[id]/staff/invites | app/api/padel/clubs/[id]/staff/invites/route.ts | GET, PATCH, POST | public | org, user | json | 200, 201, 400, 401, 403, 404, 409, 410 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/community/posts | app/api/padel/community/posts/route.ts | GET, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/community/posts/[id]/comments | app/api/padel/community/posts/[id]/comments/route.ts | GET, POST | public | org, user | json | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/community/posts/[id]/reactions | app/api/padel/community/posts/[id]/reactions/route.ts | POST | public | org, user | json | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/organizations/search | app/api/organizations/search/route.ts | GET | public | none detected | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar | app/api/padel/calendar/route.ts | DELETE, GET, PATCH, POST | public | org | json, query | 200, 201, 400, 401, 403, 404, 409, 410, 423, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/auto-schedule | app/api/padel/calendar/auto-schedule/route.ts | POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/auto-schedule/runs/[runId] | app/api/padel/calendar/auto-schedule/runs/[runId]/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/auto-schedule/undo | app/api/padel/calendar/auto-schedule/undo/route.ts | POST | public | org | json, query | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/claims/commit | app/api/padel/calendar/claims/commit/route.ts | PATCH, POST | public | org | json, query | 200, 201, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/matches/bulk-reschedule | app/api/padel/calendar/matches/bulk-reschedule/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/calendar/preflight-mismatch | app/api/padel/calendar/preflight-mismatch/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/categories/my | app/api/padel/categories/my/route.ts | DELETE, GET, PATCH, POST | public | org, user | json, query | 200, 201, 400, 404 | default/default/default | default | withApiEnvelope | - |
+| /api/padel/clubs | app/api/padel/clubs/route.ts | DELETE, GET, POST | public | org | json, query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/clubs/[id]/courts | app/api/padel/clubs/[id]/courts/route.ts | DELETE, GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/clubs/[id]/staff | app/api/padel/clubs/[id]/staff/route.ts | DELETE, GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/clubs/[id]/staff/invites | app/api/padel/clubs/[id]/staff/invites/route.ts | GET, PATCH, POST | public | org | json | 200, 201, 400, 401, 403, 404, 409, 410 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/community/posts | app/api/padel/community/posts/route.ts | GET, POST | public | org | json, query | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/community/posts/[id]/comments | app/api/padel/community/posts/[id]/comments/route.ts | GET, POST | public | org | json | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/community/posts/[id]/reactions | app/api/padel/community/posts/[id]/reactions/route.ts | POST | public | org | json | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/discover | app/api/padel/discover/route.ts | GET | public | none detected | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/event-categories | app/api/padel/event-categories/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/formats/plan | app/api/padel/formats/plan/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/live | app/api/padel/live/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/live/raw | app/api/padel/live/raw/route.ts | GET | public | admin, org, user | query | 200, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches | app/api/padel/matches/route.ts | GET, POST | public | admin, org, user | json, query | 200 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/[id]/delay | app/api/padel/matches/[id]/delay/route.ts | POST | public | org, user | json | 202, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/[id]/dispute | app/api/padel/matches/[id]/dispute/route.ts | PATCH, POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/event-categories | app/api/padel/event-categories/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/formats/plan | app/api/padel/formats/plan/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/live | app/api/padel/live/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/live/raw | app/api/padel/live/raw/route.ts | GET | public | admin, org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches | app/api/padel/matches/route.ts | GET, POST | public | admin, org | json, query | 200 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/[id]/delay | app/api/padel/matches/[id]/delay/route.ts | POST | public | org | json | 202, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/[id]/dispute | app/api/padel/matches/[id]/dispute/route.ts | PATCH, POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/matches/[id]/result/confirm | app/api/padel/matches/[id]/result/confirm/route.ts | POST | public | none detected | json | 200, 400, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/matches/[id]/result/override | app/api/padel/matches/[id]/result/override/route.ts | POST | public | none detected | json | 200, 400, 403, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/matches/[id]/result/reject | app/api/padel/matches/[id]/result/reject/route.ts | POST | public | none detected | json | 200, 400, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/matches/[id]/result/reset-pending | app/api/padel/matches/[id]/result/reset-pending/route.ts | POST | public | none detected | json | 200, 400, 403 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/matches/[id]/result/submit | app/api/padel/matches/[id]/result/submit/route.ts | POST | public | none detected | json | 200, 400, 403, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/[id]/undo | app/api/padel/matches/[id]/undo/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/[id]/walkover | app/api/padel/matches/[id]/walkover/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | default/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/assign | app/api/padel/matches/assign/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/matches/generate | app/api/padel/matches/generate/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/me/history | app/api/padel/me/history/route.ts | GET | public | user | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/me/matches | app/api/padel/me/matches/route.ts | GET | public | user | query | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/me/summary | app/api/padel/me/summary/route.ts | GET | public | user | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/onboarding | app/api/padel/onboarding/route.ts | GET, POST | public | user | json | 200, 400, 401, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/ops/summary | app/api/padel/ops/summary/route.ts | GET | public | org, user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings | app/api/padel/pairings/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/accept | app/api/padel/pairings/[id]/accept/route.ts | POST | public | user | none detected | 200, 400, 401, 402, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/assume | app/api/padel/pairings/[id]/assume/route.ts | POST | public | user | none detected | 400, 401, 402, 403, 404, 409, 423 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/cancel | app/api/padel/pairings/[id]/cancel/route.ts | POST | public | org, user | none detected | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/checkout | app/api/padel/pairings/[id]/checkout/route.ts | POST | public | user | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/decline | app/api/padel/pairings/[id]/decline/route.ts | POST | public | user | none detected | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/invite | app/api/padel/pairings/[id]/invite/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409, 423 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/public | app/api/padel/pairings/[id]/public/route.ts | PATCH | public | org, user | json | 200, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/regularize | app/api/padel/pairings/[id]/regularize/route.ts | POST | public | org, user | none detected | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/reopen | app/api/padel/pairings/[id]/reopen/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/[id]/swap | app/api/padel/pairings/[id]/swap/route.ts | POST | public | user | none detected | 200, 400, 401, 403, 404, 409 | default/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/claim/[token] | app/api/padel/pairings/claim/[token]/route.ts | GET, POST | public | user | none detected | 200, 400, 401, 402, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/invite-status | app/api/padel/pairings/invite-status/route.ts | GET | public | user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/my | app/api/padel/pairings/my/route.ts | GET | public | user | query | 200, 401, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/pairings/open | app/api/padel/pairings/open/route.ts | POST | public | user | json | 200, 400, 401, 402, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/[id]/undo | app/api/padel/matches/[id]/undo/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/[id]/walkover | app/api/padel/matches/[id]/walkover/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | default/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/assign | app/api/padel/matches/assign/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/matches/generate | app/api/padel/matches/generate/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/me/history | app/api/padel/me/history/route.ts | GET | public | none detected | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/me/matches | app/api/padel/me/matches/route.ts | GET | public | none detected | query | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/me/summary | app/api/padel/me/summary/route.ts | GET | public | none detected | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/onboarding | app/api/padel/onboarding/route.ts | GET, POST | public | none detected | json | 200, 400, 401, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/ops/summary | app/api/padel/ops/summary/route.ts | GET | public | org | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings | app/api/padel/pairings/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/accept | app/api/padel/pairings/[id]/accept/route.ts | POST | public | none detected | none detected | 200, 400, 401, 402, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/assume | app/api/padel/pairings/[id]/assume/route.ts | POST | public | none detected | none detected | 400, 401, 402, 403, 404, 409, 423 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/cancel | app/api/padel/pairings/[id]/cancel/route.ts | POST | public | org | none detected | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/checkout | app/api/padel/pairings/[id]/checkout/route.ts | POST | public | none detected | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/decline | app/api/padel/pairings/[id]/decline/route.ts | POST | public | none detected | none detected | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/invite | app/api/padel/pairings/[id]/invite/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409, 423 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/public | app/api/padel/pairings/[id]/public/route.ts | PATCH | public | org | json | 200, 400, 401, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/regularize | app/api/padel/pairings/[id]/regularize/route.ts | POST | public | org | none detected | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/reopen | app/api/padel/pairings/[id]/reopen/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/[id]/swap | app/api/padel/pairings/[id]/swap/route.ts | POST | public | none detected | none detected | 200, 400, 401, 403, 404, 409 | default/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/claim/[token] | app/api/padel/pairings/claim/[token]/route.ts | GET, POST | public | none detected | none detected | 200, 400, 401, 402, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/invite-status | app/api/padel/pairings/invite-status/route.ts | GET | public | none detected | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/my | app/api/padel/pairings/my/route.ts | GET | public | none detected | query | 200, 400, 401, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/pairings/open | app/api/padel/pairings/open/route.ts | POST | public | none detected | json | 200, 400, 401, 402, 403, 404, 409, 423, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/agreements | app/api/padel/partnerships/agreements/route.ts | GET, POST | public | none detected | json, query | 200, 201, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/agreements/[id]/approve | app/api/padel/partnerships/agreements/[id]/approve/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/agreements/[id]/grants | app/api/padel/partnerships/agreements/[id]/grants/route.ts | DELETE, GET, PATCH, POST | public | none detected | json, query | 200, 201, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
@@ -451,53 +465,57 @@ Total: 534
 | /api/padel/partnerships/agreements/[id]/revoke | app/api/padel/partnerships/agreements/[id]/revoke/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/agreements/[id]/windows | app/api/padel/partnerships/agreements/[id]/windows/route.ts | DELETE, GET, PATCH, POST | public | none detected | json, query | 200, 201, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/compensation-cases | app/api/padel/partnerships/compensation-cases/route.ts | GET, PATCH | public | none detected | json, query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/partnerships/organizations | app/api/padel/partnerships/organizations/route.ts | GET | public | none detected | query | 200 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/overrides | app/api/padel/partnerships/overrides/route.ts | GET, POST | public | none detected | json | 200, 201, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/overrides/[id]/execute | app/api/padel/partnerships/overrides/[id]/execute/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/partnerships/tournament-requests | app/api/padel/partnerships/tournament-requests/route.ts | GET, POST | public | none detected | json, query | 200, 201, 400, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/partnerships/tournament-requests/[id]/approve | app/api/padel/partnerships/tournament-requests/[id]/approve/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/partnerships/tournament-requests/[id]/reject | app/api/padel/partnerships/tournament-requests/[id]/reject/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 409, 503 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/partnerships/workspace/[id]/calendar | app/api/padel/partnerships/workspace/[id]/calendar/route.ts | GET | public | none detected | query | 200, 400, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/players | app/api/padel/players/route.ts | GET, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/players | app/api/padel/players/route.ts | GET, POST | public | org | json, query | 200, 201, 400, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/public/calendar | app/api/padel/public/calendar/route.ts | GET | public | none detected | query | 200 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/public/clubs | app/api/padel/public/clubs/route.ts | GET | public | none detected | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/public/live | app/api/padel/public/live/route.ts | GET | public | none detected | query | 200, 400, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/public/open-pairings | app/api/padel/public/open-pairings/route.ts | GET | public | none detected | query | 200, 400, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/rankings | app/api/padel/rankings/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/rankings/rebuild | app/api/padel/rankings/rebuild/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/rankings/sanctions | app/api/padel/rankings/sanctions/route.ts | POST | public | org, user | json | 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/rounds/advance | app/api/padel/rounds/advance/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/rulesets | app/api/padel/rulesets/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/rankings | app/api/padel/rankings/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/rankings/rebuild | app/api/padel/rankings/rebuild/route.ts | POST | public | none detected | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/rankings/sanctions | app/api/padel/rankings/sanctions/route.ts | POST | public | org | json | 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/rounds/advance | app/api/padel/rounds/advance/route.ts | POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/rulesets | app/api/padel/rulesets/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/padel/standings | app/api/padel/standings/route.ts | GET | public | org, user | query | 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/padel/teams | app/api/padel/teams/route.ts | GET, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/teams/[id]/invites | app/api/padel/teams/[id]/invites/route.ts | GET, PATCH, POST | public | org, user | json | 200, 201, 400, 401, 403, 404, 409, 410 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/teams/[id]/members | app/api/padel/teams/[id]/members/route.ts | DELETE, GET, POST | public | org, user | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/teams/entries | app/api/padel/teams/entries/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/config | app/api/padel/tournaments/config/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/lifecycle | app/api/padel/tournaments/lifecycle/route.ts | GET, POST | public | org, user | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/roles | app/api/padel/tournaments/roles/route.ts | DELETE, GET, POST | public | org, user | json, query | 200, 201, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/seeds | app/api/padel/tournaments/seeds/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/tier-approvals/[id]/approve | app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/tier-approvals/[id]/reject | app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/padel/tournaments/tier-approvals/request | app/api/padel/tournaments/tier-approvals/request/route.ts | POST | public | org, user | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/payments/intent | app/api/payments/intent/route.ts | POST | public | admin, user | json | 200, 400, 401, 403, 404, 409, 410, 429, 500, 503 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/teams | app/api/padel/teams/route.ts | GET, POST | public | org | json, query | 200, 201, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/teams/[id]/invites | app/api/padel/teams/[id]/invites/route.ts | GET, PATCH, POST | public | org | json | 200, 201, 400, 401, 403, 404, 409, 410 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/teams/[id]/members | app/api/padel/teams/[id]/members/route.ts | DELETE, GET, POST | public | org | json | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/teams/entries | app/api/padel/teams/entries/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/config | app/api/padel/tournaments/config/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/lifecycle | app/api/padel/tournaments/lifecycle/route.ts | GET, POST | public | org | json, query | 200, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/roles | app/api/padel/tournaments/roles/route.ts | DELETE, GET, POST | public | org | json, query | 200, 201, 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/seeds | app/api/padel/tournaments/seeds/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/tier-approvals/[id]/approve | app/api/padel/tournaments/tier-approvals/[id]/approve/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/tier-approvals/[id]/reject | app/api/padel/tournaments/tier-approvals/[id]/reject/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/padel/tournaments/tier-approvals/request | app/api/padel/tournaments/tier-approvals/request/route.ts | POST | public | org | json | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/payments/intent | app/api/payments/intent/route.ts | POST | public | admin | json | 200, 400, 401, 403, 404, 409, 410, 429, 500, 503 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/platform/fees | app/api/platform/fees/route.ts | GET | public | none detected | none detected | 200, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/profiles/check-username | app/api/profiles/check-username/route.ts | POST | public | user | json | 400, 403, 429, 500, 503 | default/default/default | default | withApiEnvelope | - |
-| /api/profiles/save-basic | app/api/profiles/save-basic/route.ts | POST | public | user | json | 200, 400, 401, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/profiles/check-username | app/api/profiles/check-username/route.ts | POST | public | none detected | json | 400, 403, 429, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/profiles/save-basic | app/api/profiles/save-basic/route.ts | POST | public | none detected | json | 200, 400, 401, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/agenda | app/api/public/agenda/route.ts | GET | public | none detected | query | 200 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/public/profile | app/api/public/profile/route.ts | GET | public | user | query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/public/profile/events | app/api/public/profile/events/route.ts | GET | public | user | query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/public/profile | app/api/public/profile/route.ts | GET | public | none detected | query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/public/profile/events | app/api/public/profile/events/route.ts | GET | public | none detected | query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/public/store/bundles | app/api/public/store/bundles/route.ts | GET | public | none detected | query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/cart | app/api/public/store/cart/route.ts | GET | public | user | query | 400, 403, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/cart/bundles | app/api/public/store/cart/bundles/route.ts | POST | public | user | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/cart/bundles/[bundleKey] | app/api/public/store/cart/bundles/[bundleKey]/route.ts | DELETE, PATCH | public | user | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/cart/items | app/api/public/store/cart/items/route.ts | POST | public | user | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/cart/items/[itemId] | app/api/public/store/cart/items/[itemId]/route.ts | DELETE, PATCH | public | user | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/cart | app/api/public/store/cart/route.ts | GET | public | none detected | query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/cart/bundles | app/api/public/store/cart/bundles/route.ts | POST | public | none detected | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/cart/bundles/[bundleKey] | app/api/public/store/cart/bundles/[bundleKey]/route.ts | DELETE, PATCH | public | none detected | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/cart/items | app/api/public/store/cart/items/route.ts | POST | public | none detected | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/cart/items/[itemId] | app/api/public/store/cart/items/[itemId]/route.ts | DELETE, PATCH | public | none detected | json, query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/catalog | app/api/public/store/catalog/route.ts | GET | public | none detected | query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/checkout | app/api/public/store/checkout/route.ts | POST | public | user | json, query | unknown | nodejs/default/default | default | withApiEnvelope | - |
-| /api/public/store/checkout/prefill | app/api/public/store/checkout/prefill/route.ts | GET | public | user | query | 403 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/checkout | app/api/public/store/checkout/route.ts | POST | public | none detected | json, query | unknown | nodejs/default/default | default | withApiEnvelope | - |
+| /api/public/store/checkout/prefill | app/api/public/store/checkout/prefill/route.ts | GET | public | none detected | query | 403 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/digital/download | app/api/public/store/digital/download/route.ts | GET, POST | public | user | json, query | 400, 401, 403, 404, 409, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/public/store/digital/grants | app/api/public/store/digital/grants/route.ts | GET | public | user | query | 400, 401, 403, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/digital/lookup | app/api/public/store/digital/lookup/route.ts | POST | public | none detected | json, query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/orders/invoice | app/api/public/store/orders/invoice/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/public/store/orders/lookup | app/api/public/store/orders/lookup/route.ts | POST | public | none detected | json | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/public/store/orders/receipt | app/api/public/store/orders/receipt/route.ts | POST | public | none detected | json | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/orders/invoice | app/api/public/store/orders/invoice/route.ts | POST | public | none detected | json | 200, 400, 403, 404, 429, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/public/store/orders/lookup | app/api/public/store/orders/lookup/route.ts | POST | public | none detected | json | 400, 403, 404, 429, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/public/store/orders/receipt | app/api/public/store/orders/receipt/route.ts | POST | public | none detected | json | 400, 403, 404, 429, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/product | app/api/public/store/product/route.ts | GET | public | none detected | query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/recommendations | app/api/public/store/recommendations/route.ts | GET | public | none detected | query | 400, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/public/store/shipping/methods | app/api/public/store/shipping/methods/route.ts | GET | public | none detected | query | 400, 403, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
@@ -505,38 +523,38 @@ Total: 534
 | /api/qr/[token] | app/api/qr/[token]/route.ts | GET | public | none detected | query | 200, 400, 404, 410, 429, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/search | app/api/search/route.ts | GET | public | none detected | query | 500 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id] | app/api/servicos/[id]/route.ts | GET | public | none detected | none detected | 400, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/servicos/[id]/booking-status | app/api/servicos/[id]/booking-status/route.ts | GET | public | none detected | query | 200, 400, 404, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/servicos/[id]/booking-status | app/api/servicos/[id]/booking-status/route.ts | GET | public | none detected | query | 200, 400, 404, 429, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/calendario | app/api/servicos/[id]/calendario/route.ts | GET | public | none detected | query | 400, 404, 409, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/servicos/[id]/checkout | app/api/servicos/[id]/checkout/route.ts | POST | public | user | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
+| /api/servicos/[id]/checkout | app/api/servicos/[id]/checkout/route.ts | POST | public | none detected | json | unknown | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/creditos | app/api/servicos/[id]/creditos/route.ts | GET | public | none detected | none detected | 400, 410 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/creditos/checkout | app/api/servicos/[id]/creditos/checkout/route.ts | POST | public | none detected | none detected | 400, 410 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/disponibilidade | app/api/servicos/[id]/disponibilidade/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
-| /api/servicos/[id]/reservar | app/api/servicos/[id]/reservar/route.ts | POST | public | user | json | 400, 401, 404, 409, 429, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/servicos/[id]/reservar | app/api/servicos/[id]/reservar/route.ts | POST | public | none detected | json | 400, 401, 404, 409, 429, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/servicos/[id]/slots | app/api/servicos/[id]/slots/route.ts | GET | public | none detected | none detected | 410 | default/default/default | default | withApiEnvelope | - |
 | /api/servicos/list | app/api/servicos/list/route.ts | GET | public | none detected | query | 200, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/social/feed | app/api/social/feed/route.ts | GET | public | user | query | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow | app/api/social/follow/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-organization | app/api/social/follow-organization/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-requests | app/api/social/follow-requests/route.ts | GET | public | user | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-requests/accept | app/api/social/follow-requests/accept/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-requests/cancel | app/api/social/follow-requests/cancel/route.ts | POST | public | user | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-requests/decline | app/api/social/follow-requests/decline/route.ts | POST | public | user | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/follow-status | app/api/social/follow-status/route.ts | GET | public | user | query | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/followers | app/api/social/followers/route.ts | GET | public | user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/following | app/api/social/following/route.ts | GET | public | user | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/organization-follow-status | app/api/social/organization-follow-status/route.ts | GET | public | user | query | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/feed | app/api/social/feed/route.ts | GET | public | none detected | query | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow | app/api/social/follow/route.ts | POST | public | none detected | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-organization | app/api/social/follow-organization/route.ts | POST | public | none detected | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-requests | app/api/social/follow-requests/route.ts | GET | public | none detected | none detected | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-requests/accept | app/api/social/follow-requests/accept/route.ts | POST | public | none detected | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-requests/cancel | app/api/social/follow-requests/cancel/route.ts | POST | public | none detected | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-requests/decline | app/api/social/follow-requests/decline/route.ts | POST | public | none detected | json | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/follow-status | app/api/social/follow-status/route.ts | GET | public | none detected | query | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/followers | app/api/social/followers/route.ts | GET | public | none detected | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/following | app/api/social/following/route.ts | GET | public | none detected | query | 200, 400, 401, 403, 404 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/organization-follow-status | app/api/social/organization-follow-status/route.ts | GET | public | none detected | query | 200, 400, 401, 404 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/social/organization-followers | app/api/social/organization-followers/route.ts | GET | public | none detected | query | 200, 400, 404 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/suggestions | app/api/social/suggestions/route.ts | GET | public | user | query | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/unfollow | app/api/social/unfollow/route.ts | POST | public | user | json | 200, 400, 401, 500 | nodejs/default/default | default | withApiEnvelope | - |
-| /api/social/unfollow-organization | app/api/social/unfollow-organization/route.ts | POST | public | user | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/suggestions | app/api/social/suggestions/route.ts | GET | public | none detected | query | 200, 401 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/unfollow | app/api/social/unfollow/route.ts | POST | public | none detected | json | 200, 400, 401, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/social/unfollow-organization | app/api/social/unfollow-organization/route.ts | POST | public | none detected | json | 200, 400, 401 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/stripe/webhook | app/api/stripe/webhook/route.ts | POST | public | webhook | text | 200, 400, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/support/tickets | app/api/support/tickets/route.ts | POST | public | none detected | json | 201, 429 | default/default/default | default | withApiEnvelope | - |
-| /api/tickets/resale/cancel | app/api/tickets/resale/cancel/route.ts | POST | public | admin, user | json | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
-| /api/tickets/resale/list | app/api/tickets/resale/list/route.ts | POST | public | admin, user | json | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/tickets/resale/cancel | app/api/tickets/resale/cancel/route.ts | POST | public | admin | json | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/tickets/resale/list | app/api/tickets/resale/list/route.ts | POST | public | admin | json | 200, 400, 401, 403, 404, 500 | default/default/default | default | withApiEnvelope | - |
 | /api/upload | app/api/upload/route.ts | POST | public | org, user | formData, query | 201, 400, 401, 403, 413, 429, 500 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 | /api/upload/delete | app/api/upload/delete/route.ts | POST | public | org, user | json | 400, 401, 403, 404, 409, 500, 502 | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
-| /api/username/check | app/api/username/check/route.ts | GET | public | user | query | 200, 400, 403, 429, 500, 503 | default/default/default | default | withApiEnvelope | - |
-| /api/users/search | app/api/users/search/route.ts | GET | public | user | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
+| /api/username/check | app/api/username/check/route.ts | GET | public | none detected | query | 200, 400, 403, 429, 500 | default/default/default | default | withApiEnvelope | - |
+| /api/users/search | app/api/users/search/route.ts | GET | public | none detected | query | 200, 500 | nodejs/default/default | default | withApiEnvelope | - |
 | /api/webhooks/stripe | app/api/webhooks/stripe/route.ts | POST | public | none detected | none detected | unknown | nodejs/force-dynamic/default | dynamic exported | withApiEnvelope | - |
 
 Notas:

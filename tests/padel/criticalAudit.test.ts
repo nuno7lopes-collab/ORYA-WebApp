@@ -72,7 +72,7 @@ describe("critical audit payloads", () => {
     ensureOrganizationEmailVerified.mockReturnValue({ ok: true });
     ensureGroupMemberModuleAccess.mockResolvedValue({ ok: true });
     prisma.event.findUnique.mockResolvedValue({
-      organizationId: 99,
+      organizationId: 1,
       templateType: "PADEL",
       organization: { officialEmail: "org@x.pt", officialEmailVerifiedAt: new Date() },
     });
@@ -80,7 +80,7 @@ describe("critical audit payloads", () => {
       {
         id: 1,
         eventId: 10,
-        organizationId: 99,
+        organizationId: 1,
         categoryId: 5,
         player1UserId: "capt-1",
         player2UserId: "partner-1",
@@ -105,7 +105,7 @@ describe("critical audit payloads", () => {
       {
         id: 2,
         eventId: 10,
-        organizationId: 99,
+        organizationId: 1,
         categoryId: 5,
         player1UserId: "capt-2",
         player2UserId: "partner-2",
@@ -153,7 +153,7 @@ describe("critical audit payloads", () => {
       createdByUserId: "capt-1",
       pairingStatus: "INCOMPLETE",
       payment_mode: "SPLIT",
-      event: { organizationId: 99 },
+      event: { organizationId: 99, templateType: "PADEL" },
       slots: [
         { id: 1, slot_role: "CAPTAIN", slotStatus: "FILLED", paymentStatus: "PAID" },
         { id: 2, slot_role: "PARTNER", slotStatus: "PENDING", paymentStatus: "UNPAID" },
@@ -164,7 +164,7 @@ describe("critical audit payloads", () => {
       splitDeadlineHours: 24,
       lifecycleStatus: "DRAFT",
     });
-    prisma.event.findUnique.mockResolvedValue({ startsAt: new Date(), status: "DRAFT" });
+    prisma.event.findUnique.mockResolvedValue({ startsAt: new Date(), status: "DRAFT", templateType: "PADEL" });
 
     const req = new NextRequest("http://localhost/api/padel/pairings/5/cancel", {
       method: "POST",

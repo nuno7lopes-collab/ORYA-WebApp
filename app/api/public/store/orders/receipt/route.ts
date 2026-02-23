@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { isStoreFeatureEnabled } from "@/lib/storeAccess";
 import { retrieveCharge, retrievePaymentIntent } from "@/domain/finance/gateway/stripeGateway";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const receiptSchema = z.object({
@@ -15,6 +16,21 @@ async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 60_000,
+      max: 18,
+      keyPrefix: "store_public_orders_receipt",
+    });
+    if (!limiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "Demasiadas tentativas.", retryAfter: limiter.retryAfter },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limiter.retryAfter) },
+        },
+      );
     }
 
     const body = await req.json().catch(() => null);

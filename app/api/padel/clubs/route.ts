@@ -19,6 +19,9 @@ import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const readRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
 const writeRoles: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 
+const failText = (status: number, errorCode: string, message: string) =>
+  jsonWrap({ ok: false, error: message, errorCode }, { status });
+
 function normalizeSlug(raw: string | null | undefined) {
   if (!raw) return "";
   return raw
@@ -176,7 +179,7 @@ async function _POST(req: NextRequest) {
       })
     : null;
   if (id && !existing) {
-    return jsonWrap({ ok: false, error: "Clube não encontrado." }, { status: 404 });
+    return failText(404, "CLUB_NOT_FOUND", "Clube não encontrado.");
   }
 
   if (!existing) {
@@ -188,16 +191,13 @@ async function _POST(req: NextRequest) {
       select: { id: true },
     });
     if (organizationClub) {
-      return jsonWrap(
-        { ok: false, error: "A organização já tem um clube. Edita o clube existente." },
-        { status: 409 },
-      );
+      return failText(409, "SINGLE_CLUB_LIMIT", "A organização já tem um clube. Edita o clube existente.");
     }
   }
 
   const resolvedAddressId = addressIdInput ?? existing?.addressId ?? null;
   if (!resolvedAddressId) {
-    return jsonWrap({ ok: false, error: "Seleciona uma morada antes de guardar." }, { status: 400 });
+    return failText(400, "ADDRESS_REQUIRED", "Seleciona uma morada antes de guardar.");
   }
 
   const resolvedAddressRecord = await prisma.address.findUnique({
@@ -205,13 +205,13 @@ async function _POST(req: NextRequest) {
     select: ADDRESS_SELECT,
   });
   if (!resolvedAddressRecord) {
-    return jsonWrap({ ok: false, error: "Morada inválida." }, { status: 400 });
+    return failText(400, "INVALID_ADDRESS", "Morada inválida.");
   }
 
   const resolvedName = name || existing?.name || "";
 
   if (!resolvedName || resolvedName.length < 3) {
-    return jsonWrap({ ok: false, error: "Nome do clube é obrigatório." }, { status: 400 });
+    return failText(400, "CLUB_NAME_REQUIRED", "Nome do clube é obrigatório.");
   }
 
   const courtsCount = courtsCountRaw && Number.isFinite(courtsCountRaw)
@@ -271,17 +271,16 @@ async function _POST(req: NextRequest) {
     console.error("[padel/clubs] error", err);
     const code = (err as { code?: string })?.code;
     if (code === "P2002") {
-      return jsonWrap(
-        { ok: false, error: "Já existe um clube com este nome. Escolhe outro." },
-        { status: 409 },
-      );
+      return failText(409, "DUPLICATE_CLUB_NAME", "Já existe um clube com este nome. Escolhe outro.");
     }
     const msg =
       err instanceof Error && err.message.includes("Record to update not found")
         ? "Clube não encontrado."
         : "Erro ao gravar clube.";
-    const status = msg === "Clube não encontrado." ? 404 : 500;
-    return jsonWrap({ ok: false, error: msg }, { status });
+    if (msg === "Clube não encontrado.") {
+      return failText(404, "CLUB_NOT_FOUND", msg);
+    }
+    return failText(500, "CLUB_SAVE_FAILED", msg);
   }
 }
 
@@ -298,7 +297,7 @@ async function _DELETE(req: NextRequest) {
   const clubId = idParam ? Number(idParam) : NaN;
   const orgId = resolveOrganizationIdFromParams(url.searchParams);
 
-  if (!Number.isFinite(clubId)) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  if (!Number.isInteger(clubId) || clubId <= 0) return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
 
   const { organization } = await getActiveOrganizationForUser(user.id, {
     organizationId: orgId ?? undefined,
@@ -318,9 +317,10 @@ async function _DELETE(req: NextRequest) {
     },
   });
   if (tournamentRefs > 0) {
-    return jsonWrap(
-      { ok: false, error: "Não podes apagar um clube associado a torneios. Remove-o dessas provas primeiro." },
-      { status: 400 },
+    return failText(
+      400,
+      "CLUB_IN_USE",
+      "Não podes apagar um clube associado a torneios. Remove-o dessas provas primeiro.",
     );
   }
 

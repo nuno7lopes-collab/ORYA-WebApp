@@ -21,7 +21,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const resolved = await params;
   const approvalId = Number(resolved?.id);
-  if (!Number.isFinite(approvalId)) return jsonWrap({ ok: false, error: "INVALID_APPROVAL" }, { status: 400 });
+  if (!Number.isInteger(approvalId) || approvalId <= 0) {
+    return jsonWrap({ ok: false, error: "INVALID_APPROVAL" }, { status: 400 });
+  }
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 

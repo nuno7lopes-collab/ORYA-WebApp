@@ -163,12 +163,19 @@ async function _POST(req: NextRequest) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const username = typeof body.username === "string" ? body.username.trim() : "";
   let userId = typeof body.userId === "string" ? body.userId.trim() : "";
-  const inheritToEvents = typeof body.inheritToEvents === "boolean" ? body.inheritToEvents : true;
+  if (typeof body.inheritToEvents !== "boolean") {
+    return jsonWrap({ ok: false, error: "INVALID_INHERIT_TO_EVENTS" }, { status: 400 });
+  }
+  const inheritToEvents = body.inheritToEvents;
   const padelRole = normalizePadelClubStaffRole(body.padelRole ?? body.role);
 
   if (!padelRole) {
     return jsonWrap(
-      { ok: false, error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}` },
+      {
+        ok: false,
+        errorCode: "INVALID_ROLE",
+        error: `Papel inválido. Usa: ${PADEL_CLUB_STAFF_ROLES.join(", ")}`,
+      },
       { status: 400 },
     );
   }
@@ -285,7 +292,9 @@ async function _DELETE(req: NextRequest) {
   const url = new URL(req.url);
   const staffId = url.searchParams.get("staffId");
   const staffIdNum = staffId ? Number(staffId) : NaN;
-  if (!Number.isFinite(staffIdNum)) return jsonWrap({ ok: false, error: "INVALID_STAFF" }, { status: 400 });
+  if (!Number.isInteger(staffIdNum) || staffIdNum <= 0) {
+    return jsonWrap({ ok: false, error: "INVALID_STAFF" }, { status: 400 });
+  }
 
   const staff = await prisma.padelClubStaff.findFirst({
     where: { id: staffIdNum, padelClubId: clubId, deletedAt: null },

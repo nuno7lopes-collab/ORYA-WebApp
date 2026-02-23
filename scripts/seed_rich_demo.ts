@@ -1493,6 +1493,7 @@ async function main() {
             : seededPaymentStatus === "PARTIAL_REFUND"
               ? Math.max(100, roundCents(total * 0.35))
               : 0;
+        let linkedPaymentId: string | null = null;
 
         const summary = await prisma.saleSummary.create({
           data: {
@@ -1574,6 +1575,7 @@ async function main() {
 
         if (shouldCreatePayment && paymentIntentId) {
           const paymentId = `pay_evt_${event.id}_${String(saleIndex + 1).padStart(4, "0")}`;
+          linkedPaymentId = paymentId;
           await prisma.payment.create({
             data: {
               id: paymentId,
@@ -1624,7 +1626,7 @@ async function main() {
         if (org.id === topPadelOrg.id) {
           topPadelPurchaseSnapshots.push({
             organizationId: topPadelOrg.id,
-            paymentId: purchaseId,
+            paymentId: linkedPaymentId ?? purchaseId,
             purchaseId,
             sourceType: "TICKET_ORDER",
             sourceId: purchaseId,
@@ -3082,7 +3084,7 @@ async function main() {
 
       topPadelPurchaseSnapshots.push({
         organizationId: topPadelOrg.id,
-        paymentId: order.purchaseId ?? `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
+        paymentId,
         purchaseId: order.purchaseId ?? `seed-store-purchase-${String(i + 1).padStart(4, "0")}`,
         sourceType: "STORE_ORDER",
         sourceId: String(order.id),

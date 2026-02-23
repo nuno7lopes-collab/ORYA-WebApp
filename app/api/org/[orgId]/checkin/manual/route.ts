@@ -17,6 +17,7 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensureEventChatInvite } from "@/lib/chat/invites";
 import { createNotification } from "@/lib/notifications";
 import { logWarn } from "@/lib/observability/logger";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = {
@@ -29,13 +30,15 @@ type Body = {
 const ENTITLEMENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MANUAL_CHECKIN_ENABLED = process.env.CHECKIN_MANUAL_LIST_ENABLED !== "false";
 
-async function ensureOrganization(userId: string, eventId: number) {
+async function ensureOrganization(userId: string, eventId: number, requestOrganizationId: number) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     select: { organizationId: true },
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
-  if (!event.organizationId) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  if (!event.organizationId || event.organizationId !== requestOrganizationId) {
+    return { ok: false as const, reason: "EVENT_NOT_FOUND" };
+  }
 
   const organization = await prisma.organization.findUnique({
     where: { id: event.organizationId },
@@ -139,11 +142,17 @@ async function _POST(req: NextRequest) {
   const reasonRaw = typeof body?.reason === "string" ? body.reason.trim() : "";
   const reason = reasonRaw.slice(0, 600);
 
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) {
+    return fail(400, "ORG_ID_REQUIRED");
+  }
+  const requestOrganizationId = orgResolution.organizationId;
+
   if (!Number.isFinite(eventId) || !ENTITLEMENT_ID_RE.test(entitlementId) || !deviceId || reason.length < 4) {
     return fail(400, "INVALID_INPUT");
   }
 
-  const access = await ensureOrganization(userId, eventId);
+  const access = await ensureOrganization(userId, eventId, requestOrganizationId);
   if (!access.ok) {
     if ("errorCode" in access) {
       return respondError(
@@ -164,6 +173,9 @@ async function _POST(req: NextRequest) {
     where: { id: eventId },
     select: { id: true, title: true, slug: true, startsAt: true, endsAt: true, organizationId: true },
   });
+  if (!event?.organizationId || event.organizationId !== requestOrganizationId) {
+    return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
   const orgId = event?.organizationId ?? null;
   if (!orgId) {
     return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });

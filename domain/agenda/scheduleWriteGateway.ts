@@ -9,6 +9,7 @@ const AGENDA_TYPE_LABEL: Record<AgendaCandidateType, string> = {
   BOOKING: "reserva",
   SOFT_BLOCK: "bloqueio suave",
 };
+const FALLBACK_MATCH_DURATION_MINUTES = 60;
 
 type ExistingHardBlock = {
   id: string | number;
@@ -152,6 +153,10 @@ function isActiveBooking(booking: { status: string; pendingExpiresAt: Date | nul
   return false;
 }
 
+function parsePositiveDurationMinutes(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
 export function buildMatchWindow(match: {
   plannedStartAt: Date | null;
   plannedEndAt: Date | null;
@@ -160,10 +165,14 @@ export function buildMatchWindow(match: {
 }) {
   const start = match.plannedStartAt ?? match.startTime;
   const end =
-    match.plannedEndAt ||
-    (start && match.plannedDurationMinutes
-      ? new Date(start.getTime() + Number(match.plannedDurationMinutes) * 60 * 1000)
-      : match.startTime);
+    !start
+      ? null
+      : match.plannedEndAt && match.plannedEndAt > start
+        ? match.plannedEndAt
+        : new Date(
+            start.getTime() +
+              (parsePositiveDurationMinutes(match.plannedDurationMinutes) ?? FALLBACK_MATCH_DURATION_MINUTES) * 60 * 1000,
+          );
   return { start, end: end ?? start };
 }
 

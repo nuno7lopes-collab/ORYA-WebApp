@@ -173,6 +173,15 @@ const withClientHeaders = (headers?: RequestInit["headers"]): Headers => {
   return next;
 };
 
+const withAuthorizationHeader = (
+  headers: RequestInit["headers"] | undefined,
+  accessToken: string,
+): Headers => {
+  const next = new Headers(headers ?? undefined);
+  next.set("Authorization", `Bearer ${accessToken}`);
+  return next;
+};
+
 const normalizeSignal = (
   signal?: AbortSignal | null,
 ): AbortSignal | undefined => signal ?? undefined;
@@ -348,11 +357,10 @@ export const api = {
     if (!accessToken) {
       return api.request<T>(path, init);
     }
-    const headers = {
-      ...(init?.headers ?? {}),
-      Authorization: `Bearer ${accessToken}`,
-    };
-    return api.request<T>(path, { ...init, headers });
+    return api.request<T>(path, {
+      ...init,
+      headers: withAuthorizationHeader(init?.headers, accessToken),
+    });
   },
   requestRaw: async <T>(
     path: string,
@@ -514,6 +522,7 @@ export const unwrapApiResponse = <T>(payload: unknown, status = 200): T => {
     const envelope = payload as ApiEnvelope<unknown> & {
       requestId?: string;
       correlationId?: string;
+      error?: string | { message?: string; errorCode?: string };
     };
     if (!isExpectedBusinessConflict) {
       const logger = finalStatus >= 500 ? console.warn : console.info;
@@ -521,12 +530,13 @@ export const unwrapApiResponse = <T>(payload: unknown, status = 200): T => {
         status: finalStatus,
         errorCode: finalErrorCode,
         message: envelope.message ?? null,
-        requestId: (envelope as any).requestId ?? null,
-        correlationId: (envelope as any).correlationId ?? null,
+        requestId: typeof envelope.requestId === "string" ? envelope.requestId : null,
+        correlationId:
+          typeof envelope.correlationId === "string" ? envelope.correlationId : null,
         error:
           typeof envelope.error === "string"
             ? envelope.error
-            : ((envelope.error as any)?.message ?? null),
+            : envelope.error?.message ?? null,
       });
     }
   }

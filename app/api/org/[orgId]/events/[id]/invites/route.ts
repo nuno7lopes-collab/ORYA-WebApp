@@ -13,6 +13,7 @@ import { getRequestContext, type RequestContext } from "@/lib/http/requestContex
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { createNotification, shouldNotify } from "@/lib/notifications";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -58,6 +59,7 @@ function normalizeInviteIdentifier(raw: string) {
 async function ensureInviteAccess(
   userId: string,
   eventId: number,
+  requestOrganizationId: number,
   options?: { requireVerifiedEmail?: boolean },
 ) {
   const event = await prisma.event.findUnique({
@@ -68,6 +70,9 @@ async function ensureInviteAccess(
     },
   });
   if (!event) return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
+  if (event.organizationId !== requestOrganizationId) {
+    return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
+  }
 
   const profile = await prisma.profile.findUnique({
     where: { id: userId },
@@ -145,13 +150,18 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return fail(ctx, 400, "EVENT_ID_INVALID");
     }
 
-    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
+    const access = await ensureInviteAccess(user.id, eventId, requestOrganizationId, { requireVerifiedEmail: true });
     if (!access.ok) {
       return respondError(
         ctx,
@@ -206,13 +216,18 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return fail(ctx, 400, "EVENT_ID_INVALID");
     }
 
-    const access = await ensureInviteAccess(user.id, eventId, { requireVerifiedEmail: true });
+    const access = await ensureInviteAccess(user.id, eventId, requestOrganizationId, { requireVerifiedEmail: true });
     if (!access.ok) {
       return respondError(
         ctx,
@@ -367,13 +382,18 @@ async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: str
   try {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
       return fail(ctx, 400, "EVENT_ID_INVALID");
     }
 
-    const access = await ensureInviteAccess(user.id, eventId);
+    const access = await ensureInviteAccess(user.id, eventId, requestOrganizationId);
     if (!access.ok) {
       return respondError(
         ctx,

@@ -9,6 +9,7 @@ import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { resolvePaymentStatusMap } from "@/domain/finance/resolvePaymentStatus";
 import type { CheckoutStatus } from "@/domain/finance/status";
 import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const lookupSchema = z.object({
@@ -87,6 +88,21 @@ async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 60_000,
+      max: 24,
+      keyPrefix: "store_public_orders_lookup",
+    });
+    if (!limiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "Demasiadas tentativas.", retryAfter: limiter.retryAfter },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limiter.retryAfter) },
+        },
+      );
     }
 
     const body = await req.json().catch(() => null);

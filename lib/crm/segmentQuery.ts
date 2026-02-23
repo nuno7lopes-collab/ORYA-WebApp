@@ -11,6 +11,13 @@ import { prisma } from "@/lib/prisma";
 
 const MAX_IN_CLAUSE = 5000;
 
+export class EmptySegmentDefinitionError extends Error {
+  constructor() {
+    super("SEGMENT_EMPTY_DEFINITION");
+    this.name = "EmptySegmentDefinitionError";
+  }
+}
+
 function intersectSets(a: Set<string>, b: Set<string>) {
   const out = new Set<string>();
   for (const value of a) {
@@ -136,20 +143,7 @@ export async function resolveSegmentAudience(params: {
 }): Promise<{ contactIds: string[]; total: number; unfiltered: boolean; explain: SegmentExplainRule[] }> {
   const definition = normalizeSegmentDefinition(params.rules);
   if (!definition.root.children.length) {
-    const total = await prisma.crmContact.count({ where: { organizationId: params.organizationId } });
-    const take = Math.min(params.maxContacts ?? 200, MAX_IN_CLAUSE);
-    const contacts = await prisma.crmContact.findMany({
-      where: { organizationId: params.organizationId },
-      select: { id: true },
-      orderBy: [{ lastActivityAt: "desc" }, { createdAt: "desc" }],
-      take,
-    });
-    return {
-      contactIds: contacts.map((c) => c.id),
-      total,
-      unfiltered: true,
-      explain: [],
-    };
+    throw new EmptySegmentDefinitionError();
   }
 
   const evaluated = await evaluateGroupNode({
@@ -167,7 +161,9 @@ export async function resolveSegmentAudience(params: {
     };
   }
 
-  const limited = Array.from(evaluated.set).slice(0, MAX_IN_CLAUSE);
+  const limited = Array.from(evaluated.set)
+    .sort((a, b) => a.localeCompare(b))
+    .slice(0, MAX_IN_CLAUSE);
   const take = Math.min(params.maxContacts ?? 200, limited.length);
 
   return {

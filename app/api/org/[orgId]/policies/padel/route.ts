@@ -76,7 +76,7 @@ async function _GET(req: NextRequest) {
       ],
     };
 
-    const [totalConfigs, legacyOverridesBefore] = await Promise.all([
+    const [totalConfigs, legacyOverrides] = await Promise.all([
       prisma.padelTournamentConfig.count({
         where: {
           organizationId: organization.id,
@@ -85,15 +85,6 @@ async function _GET(req: NextRequest) {
       }),
       prisma.padelTournamentConfig.count({ where: legacyWhere }),
     ]);
-
-    if (legacyOverridesBefore > 0) {
-      await prisma.padelTournamentConfig.updateMany({
-        where: legacyWhere,
-        data: { splitDeadlineHours: FIXED_SPLIT_DEADLINE_HOURS },
-      });
-    }
-
-    const legacyOverrides = legacyOverridesBefore > 0 ? await prisma.padelTournamentConfig.count({ where: legacyWhere }) : 0;
 
     return respondOk(ctx, {
       policy: {

@@ -11,7 +11,7 @@ import {
 } from "@/domain/notifications/registry";
 import { deliverApnsPush } from "@/lib/push/apns";
 import type { CreateNotificationInput } from "@/domain/notifications/types";
-import { CrmDeliveryStatus, NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
+import { CrmCampaignDeliveryChannel, CrmDeliveryStatus, NotificationType, NotificationPriority, type Prisma } from "@prisma/client";
 
 type EventLogRecord = {
   eventId: string;
@@ -108,8 +108,8 @@ export async function createNotificationRecord(input: CreateNotificationInput & 
 }
 
 export async function markNotificationRead(params: { userId: string; notificationId: string }) {
-  return prisma.notification.update({
-    where: { id: params.notificationId },
+  return prisma.notification.updateMany({
+    where: { id: params.notificationId, userId: params.userId },
     data: { isRead: true, readAt: new Date() },
   });
 }
@@ -190,6 +190,7 @@ async function linkCrmCampaignNotification(params: {
     where: {
       campaignId: params.campaignId,
       userId: params.userId,
+      channel: CrmCampaignDeliveryChannel.IN_APP,
       notificationId: null,
       status: { in: [CrmDeliveryStatus.SENT, CrmDeliveryStatus.OPENED, CrmDeliveryStatus.CLICKED] },
     },

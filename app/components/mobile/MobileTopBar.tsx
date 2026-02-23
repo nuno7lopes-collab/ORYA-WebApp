@@ -27,7 +27,7 @@ export default function MobileTopBar({
 }: MobileTopBarProps) {
   const { isLoggedIn } = useUser();
   const { data } = useSWR(
-    isLoggedIn ? "/api/me/notifications/feed?limit=1" : null,
+    isLoggedIn ? "/api/me/notifications/feed?limit=1&scope=user" : null,
     fetcher,
   );
   const unreadCount = data?.unreadCount ?? 0;

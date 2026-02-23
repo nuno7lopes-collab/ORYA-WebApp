@@ -1,16 +1,39 @@
-import { CrmDeliveryStatus } from "@prisma/client";
-import { NextRequest, NextResponse } from "next/server";
+import { CrmCampaignDeliveryChannel, CrmDeliveryStatus, Prisma } from "@prisma/client";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { AuthRequiredError, requireUser } from "@/lib/auth/requireUser";
 import { markNotificationRead } from "@/domain/notifications/consumer";
 import { prisma } from "@/lib/prisma";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import {
+  buildOrganizationRelationFilter,
+  ORGANIZATION_NOTIFICATION_TYPES,
+  parseNotificationScope,
+  parseOrganizationId,
+} from "@/domain/notifications/scope";
 
 async function _POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = await req.json().catch(() => ({}));
-    const { notificationId } = body as { notificationId?: string };
+    const { notificationId, organizationId, scope: rawScope } = body as {
+      notificationId?: string;
+      organizationId?: number | null;
+      scope?: string;
+    };
+    const scope = parseNotificationScope(rawScope);
+    const orgId = parseOrganizationId(organizationId);
+
+    if (scope === "organization" && !orgId) {
+      return jsonWrap(
+        {
+          ok: false,
+          code: "INVALID_ORGANIZATION",
+          message: "organizationId e obrigatorio para scope=organization",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!notificationId) {
       return jsonWrap(
@@ -19,8 +42,19 @@ async function _POST(req: NextRequest) {
       );
     }
 
+    const where: Prisma.NotificationWhereInput = {
+      id: notificationId,
+      userId: user.id,
+    };
+    if (scope === "organization" && orgId) {
+      where.AND = [
+        { type: { in: ORGANIZATION_NOTIFICATION_TYPES } },
+        buildOrganizationRelationFilter(orgId),
+      ];
+    }
+
     const notif = await prisma.notification.findFirst({
-      where: { id: notificationId, userId: user.id },
+      where,
       select: { id: true, type: true, isRead: true, readAt: true },
     });
     if (!notif) {
@@ -36,10 +70,10 @@ async function _POST(req: NextRequest) {
 
     if (notif.type === "CRM_CAMPAIGN") {
       const delivery = await prisma.crmCampaignDelivery.findFirst({
-        where: { notificationId: notif.id },
-        select: { id: true, campaignId: true, openedAt: true, clickedAt: true },
+        where: { notificationId: notif.id, channel: CrmCampaignDeliveryChannel.IN_APP },
+        select: { id: true, campaignId: true, openedAt: true, clickedAt: true, status: true, sentAt: true },
       });
-      if (delivery && !delivery.clickedAt) {
+      if (delivery && !delivery.clickedAt && delivery.status !== CrmDeliveryStatus.FAILED) {
         const now = new Date();
         const shouldOpen = !delivery.openedAt;
         await prisma.$transaction(async (tx) => {
@@ -48,6 +82,7 @@ async function _POST(req: NextRequest) {
             data: {
               clickedAt: now,
               ...(shouldOpen ? { openedAt: now } : {}),
+              ...(delivery.sentAt ? {} : { sentAt: now }),
               status: CrmDeliveryStatus.CLICKED,
             },
           });

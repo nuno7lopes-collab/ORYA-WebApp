@@ -9,11 +9,12 @@ const {
   bookingInviteCreateMany,
   bookingInviteFindUnique,
   bookingInviteFindFirst,
-  bookingInviteUpdate,
+  bookingInviteUpdateMany,
   bookingParticipantUpsert,
   bookingParticipantDeleteMany,
   bookingSplitParticipantUpdateMany,
   profileFindUnique,
+  executeRawMock,
   prismaMockShape,
 } = vi.hoisted(() => {
   const ensureAuthenticatedMock = vi.fn();
@@ -24,11 +25,12 @@ const {
   const bookingInviteCreateMany = vi.fn();
   const bookingInviteFindUnique = vi.fn();
   const bookingInviteFindFirst = vi.fn();
-  const bookingInviteUpdate = vi.fn();
+  const bookingInviteUpdateMany = vi.fn();
   const bookingParticipantUpsert = vi.fn();
   const bookingParticipantDeleteMany = vi.fn();
   const bookingSplitParticipantUpdateMany = vi.fn();
   const profileFindUnique = vi.fn();
+  const executeRawMock = vi.fn();
   const prismaMockShape = {
     booking: {
       findUnique: bookingFindUnique,
@@ -38,7 +40,7 @@ const {
       createMany: bookingInviteCreateMany,
       findUnique: bookingInviteFindUnique,
       findFirst: bookingInviteFindFirst,
-      update: bookingInviteUpdate,
+      updateMany: bookingInviteUpdateMany,
     },
     bookingParticipant: {
       upsert: bookingParticipantUpsert,
@@ -49,8 +51,12 @@ const {
     },
     $transaction: vi.fn(async (fn: any) =>
       fn({
+        $executeRaw: executeRawMock,
         bookingInvite: {
-          update: bookingInviteUpdate,
+          findMany: bookingInviteFindMany,
+          createMany: bookingInviteCreateMany,
+          findUnique: bookingInviteFindUnique,
+          updateMany: bookingInviteUpdateMany,
         },
         bookingParticipant: {
           upsert: bookingParticipantUpsert,
@@ -75,11 +81,12 @@ const {
     bookingInviteCreateMany,
     bookingInviteFindUnique,
     bookingInviteFindFirst,
-    bookingInviteUpdate,
+    bookingInviteUpdateMany,
     bookingParticipantUpsert,
     bookingParticipantDeleteMany,
     bookingSplitParticipantUpdateMany,
     profileFindUnique,
+    executeRawMock,
     prismaMockShape,
   };
 });
@@ -137,12 +144,13 @@ describe("booking invites route", () => {
     bookingInviteCreateMany.mockReset();
     bookingInviteFindUnique.mockReset();
     bookingInviteFindFirst.mockReset();
-    bookingInviteUpdate.mockReset();
+    bookingInviteUpdateMany.mockReset();
     bookingParticipantUpsert.mockReset();
     bookingParticipantDeleteMany.mockReset();
     bookingSplitParticipantUpdateMany.mockReset();
     prismaMockShape.$transaction.mockClear();
     profileFindUnique.mockReset();
+    executeRawMock.mockReset();
   });
 
   it("cria convites para reserva confirmada", async () => {
@@ -216,11 +224,7 @@ describe("booking invites route", () => {
         },
       },
     });
-    bookingInviteUpdate.mockResolvedValue({
-      id: 33,
-      status: "ACCEPTED",
-      respondedAt: new Date("2026-02-04T12:00:00Z"),
-    });
+    bookingInviteUpdateMany.mockResolvedValue({ count: 1 });
 
     const res = await InviteResponsePost(
       new Request("http://localhost/api/convites/tok_33", {
@@ -236,9 +240,9 @@ describe("booking invites route", () => {
     expect(json.ok).toBe(true);
     expect(json.data.status).toBe("ACCEPTED");
     expect(bookingParticipantUpsert).toHaveBeenCalled();
-    expect(bookingInviteUpdate).toHaveBeenCalledWith(
+    expect(bookingInviteUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 33 },
+        where: { id: 33, status: "PENDING" },
       }),
     );
   });

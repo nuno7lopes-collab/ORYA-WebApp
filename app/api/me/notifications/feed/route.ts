@@ -16,6 +16,13 @@ import {
   resolveRoleLabel,
   validateNotificationInput,
 } from "@/domain/notifications/registry";
+import {
+  buildOrganizationRelationFilter,
+  ORGANIZATION_NOTIFICATION_TYPES,
+  parseNotificationScope,
+  parseOrganizationId,
+  type NotificationScope,
+} from "@/domain/notifications/scope";
 
 const CHAT_TYPES = NOTIFICATION_TYPES_BY_CATEGORY.chat;
 const NETWORK_TYPES = NOTIFICATION_TYPES_BY_CATEGORY.network;
@@ -72,6 +79,8 @@ const buildFallbackPayload = (reason: string) => ({
 export async function _GET(req: NextRequest) {
   const ctx = getRequestContext(req);
   let userId: string | null = null;
+  let scope: NotificationScope = "user";
+  let organizationId: number | null = null;
   let tab: "all" | "network" = "all";
   let limit = 30;
   let cursorRaw: string | null = null;
@@ -80,7 +89,22 @@ export async function _GET(req: NextRequest) {
     const user = await requireUser();
     userId = user.id;
     const url = new URL(req.url);
-    tab = url.searchParams.get("tab") === "network" ? "network" : "all";
+    scope = parseNotificationScope(url.searchParams.get("scope"));
+    organizationId =
+      scope === "organization"
+        ? parseOrganizationId(url.searchParams.get("organizationId"))
+        : null;
+    if (scope === "organization" && !organizationId) {
+      return jsonWrap(
+        {
+          ok: false,
+          code: "INVALID_ORGANIZATION",
+          message: "organizationId e obrigatorio para scope=organization",
+        },
+        { status: 400 },
+      );
+    }
+    tab = scope === "user" && url.searchParams.get("tab") === "network" ? "network" : "all";
     const limitRaw = Number(url.searchParams.get("limit") ?? 30);
     limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 60) : 30;
     cursorRaw = url.searchParams.get("cursor");
@@ -89,44 +113,62 @@ export async function _GET(req: NextRequest) {
     const prefs = await getNotificationPrefs(user.id).catch(() => null);
     const allowSocial = (prefs as any)?.allowSocialNotifications ?? prefs?.allowFollowRequests ?? true;
     const allowEvents = (prefs as any)?.allowEventNotifications ?? prefs?.allowEventReminders ?? true;
-    let mutes: Array<{ organizationId: number | null; eventId: number | null }> = [];
-    try {
-      mutes = await prisma.notificationMute.findMany({
-        where: { userId: user.id },
-        select: { organizationId: true, eventId: true },
-      });
-    } catch (err) {
-      logError("me.notifications.feed.mutes", err, {
-        requestId: ctx.requestId,
-        correlationId: ctx.correlationId,
-        orgId: ctx.orgId,
-        userId,
-      });
-    }
-    const mutedOrgIds = new Set(mutes.map((m) => m.organizationId).filter(Boolean) as number[]);
-    const mutedEventIds = new Set(mutes.map((m) => m.eventId).filter(Boolean) as number[]);
+    const allowSystem = (prefs as any)?.allowSystemNotifications ?? prefs?.allowSystemAnnouncements ?? true;
+    const allowMarketing = (prefs as any)?.allowMarketingNotifications ?? prefs?.allowMarketingCampaigns ?? true;
 
     const allTypes = Object.values(NotificationType).filter((type) => !CHAT_TYPES.includes(type));
-    const allowedTypesAll = allTypes.filter((type) => {
+    const allowedTypesByPrefs = allTypes.filter((type) => {
       const category = resolveNotificationCategory(type);
       if (category === "network") return allowSocial;
       if (category === "events") return allowEvents;
+      if (category === "system") return allowSystem;
+      if (category === "marketing") return allowMarketing;
       return false;
     });
-    const allowedTypesTab =
-      tab === "network" ? allowedTypesAll.filter((type) => NETWORK_TYPES.includes(type)) : allowedTypesAll;
+    const allowedTypesAll =
+      scope === "organization"
+        ? ORGANIZATION_NOTIFICATION_TYPES.filter((type) => allTypes.includes(type))
+        : allowedTypesByPrefs;
+    const allowedTypesTab = scope === "user" && tab === "network"
+      ? allowedTypesAll.filter((type) => NETWORK_TYPES.includes(type))
+      : allowedTypesAll;
 
     const muteFilters: Prisma.NotificationWhereInput[] = [];
-    if (mutedOrgIds.size > 0) {
-      muteFilters.push({
-        OR: [{ organizationId: null }, { organizationId: { notIn: Array.from(mutedOrgIds) } }],
-      });
+    if (scope === "user") {
+      let mutes: Array<{ organizationId: number | null; eventId: number | null }> = [];
+      try {
+        mutes = await prisma.notificationMute.findMany({
+          where: { userId: user.id },
+          select: { organizationId: true, eventId: true },
+        });
+      } catch (err) {
+        logError("me.notifications.feed.mutes", err, {
+          requestId: ctx.requestId,
+          correlationId: ctx.correlationId,
+          orgId: ctx.orgId,
+          userId,
+          scope,
+        });
+      }
+      const mutedOrgIds = new Set(mutes.map((m) => m.organizationId).filter(Boolean) as number[]);
+      const mutedEventIds = new Set(mutes.map((m) => m.eventId).filter(Boolean) as number[]);
+
+      if (mutedOrgIds.size > 0) {
+        muteFilters.push({
+          OR: [{ organizationId: null }, { organizationId: { notIn: Array.from(mutedOrgIds) } }],
+        });
+      }
+      if (mutedEventIds.size > 0) {
+        muteFilters.push({
+          OR: [{ eventId: null }, { eventId: { notIn: Array.from(mutedEventIds) } }],
+        });
+      }
     }
-    if (mutedEventIds.size > 0) {
-      muteFilters.push({
-        OR: [{ eventId: null }, { eventId: { notIn: Array.from(mutedEventIds) } }],
-      });
-    }
+    const scopeFilters: Prisma.NotificationWhereInput[] =
+      scope === "organization" && organizationId
+        ? [buildOrganizationRelationFilter(organizationId)]
+        : [];
+    const commonFilters = [...muteFilters, ...scopeFilters];
 
     let unreadCount = 0;
     if (allowedTypesAll.length) {
@@ -136,7 +178,7 @@ export async function _GET(req: NextRequest) {
             userId: user.id,
             isRead: false,
             type: { in: allowedTypesAll },
-            ...(muteFilters.length ? { AND: muteFilters } : {}),
+            ...(commonFilters.length ? { AND: commonFilters } : {}),
           },
         });
       } catch (err) {
@@ -145,6 +187,8 @@ export async function _GET(req: NextRequest) {
           correlationId: ctx.correlationId,
           orgId: ctx.orgId,
           userId,
+          scope,
+          organizationId: organizationId ?? undefined,
           tab,
         });
         if (shouldFallbackOnError(err)) {
@@ -160,7 +204,7 @@ export async function _GET(req: NextRequest) {
     const where: Prisma.NotificationWhereInput = {
       userId: user.id,
       type: { in: allowedTypesTab },
-      ...(muteFilters.length ? { AND: muteFilters } : {}),
+      ...(commonFilters.length ? { AND: commonFilters } : {}),
     };
 
     if (cursor) {
@@ -218,6 +262,8 @@ export async function _GET(req: NextRequest) {
         correlationId: ctx.correlationId,
         orgId: ctx.orgId,
         userId,
+        scope,
+        organizationId: organizationId ?? undefined,
         tab,
       });
       if (shouldFallbackOnError(err)) {
@@ -471,6 +517,8 @@ export async function _GET(req: NextRequest) {
       correlationId: ctx.correlationId,
       orgId: ctx.orgId,
       userId,
+      scope,
+      organizationId: organizationId ?? undefined,
       tab,
       limit,
       cursor: cursorRaw,

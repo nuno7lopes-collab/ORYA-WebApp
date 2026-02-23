@@ -28,6 +28,12 @@ describe("resolveOrganizationIdStrict", () => {
     expect(result).toMatchObject({ ok: false, reason: "INVALID", source: "query" });
   });
 
+  it("fails on non-integer organizationId", () => {
+    const req = new NextRequest("http://localhost/api/test?organizationId=12.5");
+    const result = resolveOrganizationIdStrict({ req, allowFallback: false });
+    expect(result).toMatchObject({ ok: false, reason: "INVALID", source: "query" });
+  });
+
   it("resolves from body when present", () => {
     const req = new NextRequest("http://localhost/api/test");
     const result = resolveOrganizationIdStrict({

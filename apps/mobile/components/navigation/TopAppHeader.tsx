@@ -129,8 +129,7 @@ export function TopAppHeader({
         {renderNotifications ? (
           <View style={styles.iconWrap}>
             <Pressable
-              onPressIn={() => safePush(router, "/notifications")}
-              onPress={() => undefined}
+              onPress={() => safePush(router, "/notifications")}
               accessibilityRole="button"
               accessibilityLabel="Notificações"
               hitSlop={10}
@@ -148,8 +147,7 @@ export function TopAppHeader({
         ) : null}
         {renderMessages ? (
           <Pressable
-            onPressIn={() => safePush(router, "/messages")}
-            onPress={() => undefined}
+            onPress={() => safePush(router, "/messages")}
             accessibilityRole="button"
             accessibilityLabel="Mensagens"
             hitSlop={10}

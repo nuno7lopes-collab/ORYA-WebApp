@@ -180,7 +180,7 @@ export async function handlePadelOutboxEvent(params: { eventType: string; payloa
 async function handleRatingRebuildRequested(payload: RatingRebuildRequestedPayload) {
   const eventId = Number(payload?.eventId);
   const organizationId = Number(payload?.organizationId);
-  if (!Number.isFinite(eventId) || !Number.isFinite(organizationId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0 || !Number.isInteger(organizationId) || organizationId <= 0) {
     return { ok: false, code: "PADEL_RATING_REBUILD_INVALID_PAYLOAD" } as const;
   }
 

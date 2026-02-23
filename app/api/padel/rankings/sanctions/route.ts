@@ -14,10 +14,14 @@ import { applyPadelRatingSanction } from "@/domain/padel/ratingEngine";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 function parsePositiveInt(value: unknown): number | null {
-  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
-  if (!Number.isFinite(parsed)) return null;
-  const normalized = Math.floor(parsed);
-  return normalized > 0 ? normalized : null;
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 }
 
 function parseSanctionType(value: unknown): PadelRatingSanctionType | null {

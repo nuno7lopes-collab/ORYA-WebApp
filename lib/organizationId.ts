@@ -52,9 +52,11 @@ export function resolveOrganizationIdFromRequest(
   options?: { allowFallback?: boolean },
 ): number | null {
   const pathMatch = req.nextUrl.pathname.match(/^\/(?:api\/)?org\/([^/]+)(?:\/|$)/i);
-  if (pathMatch?.[1]) {
+  if (pathMatch) {
     const fromPath = parseOrganizationId(pathMatch[1]);
     if (fromPath) return fromPath;
+    // Path org segment exists but is invalid: fail closed and do not accept query/header fallback.
+    return null;
   }
 
   const resolved = resolveOrganizationIdFromParams(req.nextUrl.searchParams);
@@ -67,6 +69,16 @@ export function resolveOrganizationIdFromRequest(
     return parseOrganizationId(req.cookies.get(ORGANIZATION_COOKIE_NAME)?.value);
   }
   return null;
+}
+
+export function resolveRequiredOrganizationIdFromRequest(
+  req: NextRequest,
+): { ok: true; organizationId: number } | { ok: false; reason: "ORG_ID_REQUIRED" } {
+  const organizationId = resolveOrganizationIdFromRequest(req, { allowFallback: false });
+  if (!organizationId) {
+    return { ok: false, reason: "ORG_ID_REQUIRED" };
+  }
+  return { ok: true, organizationId };
 }
 
 type OrgIdSource = "query" | "body" | "payload";

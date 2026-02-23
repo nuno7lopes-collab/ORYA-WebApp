@@ -19,6 +19,17 @@ function clampLimit(raw: string | null) {
   return Math.min(Math.max(1, Math.floor(parsed)), 50);
 }
 
+function parsePositiveInt(value: unknown): number | null {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+}
+
 async function _GET(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -34,13 +45,17 @@ async function _GET(req: NextRequest) {
   if (!organization) return jsonWrap({ ok: false, error: "NO_ORGANIZATION" }, { status: 403 });
 
   const clubIdRaw = req.nextUrl.searchParams.get("clubId");
-  const clubId = clubIdRaw && Number.isFinite(Number(clubIdRaw)) ? Number(clubIdRaw) : null;
+  const hasClubIdParam = clubIdRaw != null;
+  const clubId = hasClubIdParam ? parsePositiveInt(clubIdRaw) : null;
+  if (hasClubIdParam && clubId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  }
   const limit = clampLimit(req.nextUrl.searchParams.get("limit"));
 
   const posts = await prisma.padelCommunityPost.findMany({
     where: {
       organizationId: organization.id,
-      ...(clubId ? { padelClubId: clubId } : {}),
+      ...(hasClubIdParam ? { padelClubId: clubId as number } : {}),
     },
     orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
     take: limit,
@@ -94,12 +109,8 @@ async function _POST(req: NextRequest) {
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const content = typeof body.body === "string" ? body.body.trim() : "";
-  const padelClubId =
-    typeof body.padelClubId === "number"
-      ? body.padelClubId
-      : typeof body.padelClubId === "string"
-        ? Number(body.padelClubId)
-        : null;
+  const hasPadelClubId = body.padelClubId != null;
+  const padelClubId = hasPadelClubId ? parsePositiveInt(body.padelClubId) : null;
   const kindRaw = typeof body.kind === "string" ? body.kind.trim().toUpperCase() : "";
   const kind: PadelCommunityPostKind = Object.values(PadelCommunityPostKind).includes(kindRaw as PadelCommunityPostKind)
     ? (kindRaw as PadelCommunityPostKind)
@@ -113,10 +124,13 @@ async function _POST(req: NextRequest) {
   const isPinned = typeof body.isPinned === "boolean" ? body.isPinned : false;
 
   if (!content) return jsonWrap({ ok: false, error: "BODY_REQUIRED" }, { status: 400 });
+  if (hasPadelClubId && padelClubId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
+  }
 
-  if (Number.isFinite(padelClubId ?? NaN)) {
+  if (padelClubId != null) {
     const club = await prisma.padelClub.findFirst({
-      where: { id: padelClubId as number, organizationId: organization.id },
+      where: { id: padelClubId, organizationId: organization.id },
       select: { id: true },
     });
     if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });
@@ -125,7 +139,7 @@ async function _POST(req: NextRequest) {
   const post = await prisma.padelCommunityPost.create({
     data: {
       organizationId: organization.id,
-      padelClubId: Number.isFinite(padelClubId ?? NaN) ? (padelClubId as number) : null,
+      padelClubId: padelClubId ?? null,
       authorUserId: user.id,
       title: title || null,
       body: content,

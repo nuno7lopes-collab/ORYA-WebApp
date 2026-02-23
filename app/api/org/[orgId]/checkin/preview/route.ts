@@ -21,6 +21,7 @@ import {
 import { parseQrToken } from "@/lib/qr";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logWarn } from "@/lib/observability/logger";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 type Body = { qrToken?: string; eventId?: number };
@@ -29,13 +30,15 @@ function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-async function ensureCheckinAccess(userId: string, eventId: number) {
+async function ensureCheckinAccess(userId: string, eventId: number, requestOrganizationId: number) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     select: { organizationId: true },
   });
   if (!event) return { ok: false as const, reason: "EVENT_NOT_FOUND" };
-  if (!event.organizationId) return { ok: false as const, reason: "FORBIDDEN_CHECKIN_ACCESS" };
+  if (!event.organizationId || event.organizationId !== requestOrganizationId) {
+    return { ok: false as const, reason: "EVENT_NOT_FOUND" };
+  }
 
   const organization = await prisma.organization.findUnique({
     where: { id: event.organizationId },
@@ -123,11 +126,17 @@ async function _POST(req: NextRequest) {
   const qrTokenRaw = typeof body?.qrToken === "string" ? body.qrToken.trim() : "";
   const eventId = Number(body?.eventId);
 
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) {
+    return fail(400, "ORG_ID_REQUIRED");
+  }
+  const requestOrganizationId = orgResolution.organizationId;
+
   if (!qrTokenRaw || !Number.isFinite(eventId)) {
     return fail(400, "INVALID_INPUT");
   }
 
-  const access = await ensureCheckinAccess(userId, eventId);
+  const access = await ensureCheckinAccess(userId, eventId, requestOrganizationId);
   if (!access.ok) {
     if ("errorCode" in access) {
       return respondError(
@@ -187,8 +196,11 @@ async function _POST(req: NextRequest) {
   const ent = tokenRow.entitlement;
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { startsAt: true, endsAt: true },
+    select: { startsAt: true, endsAt: true, organizationId: true },
   });
+  if (!event?.organizationId || event.organizationId !== requestOrganizationId) {
+    return respondOk(ctx, { code: CheckinResultCode.NOT_ALLOWED }, { status: 200 });
+  }
   const window = buildDefaultCheckinWindow(event?.startsAt ?? null, event?.endsAt ?? null);
   if (isOutsideWindow(window)) {
     return respondOk(ctx, { code: CheckinResultCode.OUTSIDE_WINDOW, window }, { status: 200 });

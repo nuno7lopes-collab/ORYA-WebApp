@@ -56,7 +56,7 @@ import { makeOutboxDedupeKey } from "@/domain/outbox/dedupe";
 import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { checkPadelCategoryLimit } from "@/domain/padelCategoryLimit";
 import { sanitizeUsername } from "@/lib/username";
-import { checkoutKey, clampIdempotencyKey } from "@/lib/stripe/idempotency";
+import { checkoutKey } from "@/lib/stripe/idempotency";
 import { logFinanceError } from "@/lib/observability/finance";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { requiresOrganizationStripe } from "@/domain/finance/payoutModePolicy";
@@ -2833,11 +2833,9 @@ async function _POST(req: NextRequest) {
       intentParams.receipt_email = guestEmail;
     }
 
-    // Stripe idempotency: se o cliente enviar idempotencyKey, usamos-na para diferenciar intents e evitar reaproveitar PI terminal
-    const stripeIdempotencyKey =
-      clientIdempotencyKey && clientIdempotencyKey.trim().length > 0
-        ? clampIdempotencyKey(`${checkoutIdempotencyKey}:${clientIdempotencyKey}`)
-        : checkoutIdempotencyKey;
+    // Stripe idempotency estritamente por purchaseId para evitar criação concorrente de múltiplos PI.
+    // Se o PI for terminal, os retries abaixo rodam com sufixo server-side.
+    const stripeIdempotencyKey = checkoutIdempotencyKey;
 
     const createPi = async (idemKey?: string) =>
       createPaymentIntent(intentParams, {

@@ -297,7 +297,7 @@ export default function PoliciesToolClient({ orgId, initialView }: PoliciesToolC
   const financePolicy = policiesData?.financePolicy ?? null;
   const paymentsAccount = financePolicy?.paymentsAccount ?? null;
   const paymentsMode = financePolicy?.paymentsMode ?? "CONNECT";
-  const paymentsManagePath = financePolicy?.fees.managePath ?? buildOrgHref(orgId, "/finance/payouts");
+  const paymentsManagePath = financePolicy?.fees.managePath ?? buildOrgHref(orgId, "/finance", { view: "payouts" });
 
   const bookingPolicy = useMemo(
     () => policies.find((policy) => policy.policyType === "MODERATE") ?? policies[0] ?? null,

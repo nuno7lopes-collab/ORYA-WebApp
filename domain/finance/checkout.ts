@@ -11,6 +11,7 @@ import { recordOutboxEvent } from "@/domain/outbox/producer";
 import { FINANCE_OUTBOX_EVENTS } from "@/domain/finance/events";
 import { FINANCE_SOURCE_TYPE_ALLOWLIST, type FinanceSourceType } from "@/domain/sourceType";
 import { sanitizeUsername } from "@/lib/username";
+import { insertLedgerEntriesSafely } from "@/domain/finance/ledgerWrite";
 import { FeeMode, LedgerEntryType, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { logWarn } from "@/lib/observability/logger";
 
@@ -557,13 +558,12 @@ async function ensureLedgerEntriesForExistingPayment(payment: {
 }) {
   const snapshot = payment.pricingSnapshotJson as PricingSnapshot | null;
   if (!snapshot) return;
-  await prisma.ledgerEntry.createMany({
-    data: buildLedgerEntries({
+  await insertLedgerEntriesSafely({
+    entries: buildLedgerEntries({
       paymentId: payment.id,
       snapshot,
       idempotencyKey: payment.idempotencyKey,
     }),
-    skipDuplicates: true,
   });
 }
 
@@ -785,8 +785,9 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
       },
     });
 
-    await tx.ledgerEntry.createMany({
-      data: buildLedgerEntries({
+    await insertLedgerEntriesSafely({
+      tx,
+      entries: buildLedgerEntries({
         paymentId,
         snapshot: pricingSnapshot,
         idempotencyKey: input.idempotencyKey,

@@ -43,6 +43,7 @@ describe("GET /api/padel/event-categories", () => {
   it("enriches each category link with runtime team counters", async () => {
     prisma.event.findUnique.mockResolvedValue({
       organizationId: 10,
+      templateType: "PADEL",
     });
     prisma.padelEventCategoryLink.findMany.mockResolvedValue([
       {

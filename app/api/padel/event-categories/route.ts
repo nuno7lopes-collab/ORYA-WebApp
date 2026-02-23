@@ -166,13 +166,15 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true },
+    select: { organizationId: true, templateType: true },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
@@ -283,15 +285,17 @@ async function _POST(req: NextRequest) {
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
   const linksInput = Array.isArray(body.links) ? (body.links as LinkInput[]) : [];
 
-  if (!Number.isFinite(eventId) || linksInput.length === 0) {
+  if (!Number.isInteger(eventId) || eventId <= 0 || linksInput.length === 0) {
     return jsonWrap({ ok: false, error: "MISSING_FIELDS" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true, startsAt: true },
+    select: { organizationId: true, startsAt: true, templateType: true },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { logFinanceError } from "@/lib/observability/finance";
 import { LedgerEntryType, Prisma } from "@prisma/client";
 import type { PricingSnapshot } from "@/domain/finance/checkout";
+import { insertLedgerEntriesSafely } from "@/domain/finance/ledgerWrite";
 
 type DbClient = Prisma.TransactionClient | typeof prisma;
 
@@ -120,7 +121,7 @@ export async function appendRefundLedgerEntries(params: {
     }
 
     if (entries.length) {
-      await tx.ledgerEntry.createMany({ data: entries, skipDuplicates: true });
+      await insertLedgerEntriesSafely({ tx, entries });
     }
   } catch (err) {
     logFinanceError("refund.ledger_append_failed", err, { paymentId: params.paymentId });
@@ -175,7 +176,7 @@ export async function appendChargebackLedgerEntries(params: {
     }
 
     if (entries.length) {
-      await tx.ledgerEntry.createMany({ data: entries, skipDuplicates: true });
+      await insertLedgerEntriesSafely({ tx, entries });
     }
   } catch (err) {
     logFinanceError("dispute.ledger_append_failed", err, { paymentId: params.paymentId });
@@ -200,8 +201,9 @@ export async function appendDisputeFeeReversal(params: {
   if (!payment) throw new Error("PAYMENT_NOT_FOUND");
   const snapshot = payment.pricingSnapshotJson as PricingSnapshot | null;
 
-  await tx.ledgerEntry.createMany({
-    data: [
+  await insertLedgerEntriesSafely({
+    tx,
+    entries: [
       {
         paymentId: params.paymentId,
         entryType: LedgerEntryType.DISPUTE_FEE_REVERSAL,
@@ -213,6 +215,5 @@ export async function appendDisputeFeeReversal(params: {
         correlationId: params.correlationId ?? params.causationId,
       },
     ],
-    skipDuplicates: true,
   });
 }

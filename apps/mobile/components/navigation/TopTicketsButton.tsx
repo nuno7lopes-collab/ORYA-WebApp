@@ -15,8 +15,7 @@ export function TopTicketsButton({ onPress, accessibilityLabel = "Bilhetes" }: T
 
   return (
     <Pressable
-      onPressIn={handlePress}
-      onPress={() => undefined}
+      onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={10}

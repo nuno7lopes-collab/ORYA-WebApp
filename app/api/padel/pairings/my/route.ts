@@ -27,7 +27,12 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
+  const hasEventIdParam = eventIdParam !== null;
+  const eventIdParsed = hasEventIdParam ? Number(eventIdParam) : null;
+  const eventId = eventIdParsed !== null && Number.isInteger(eventIdParsed) && eventIdParsed > 0 ? eventIdParsed : null;
+  if (hasEventIdParam && eventId === null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
 
   try {
     const profile = await prisma.profile.findUnique({
@@ -60,7 +65,7 @@ async function _GET(req: NextRequest) {
 
     const pairings: PairingWithSlots[] = await prisma.padelPairing.findMany({
       where: {
-        ...(eventId ? { eventId } : {}),
+        ...(eventId !== null ? { eventId } : {}),
         OR: [
           { createdByUserId: user.id },
           { slots: { some: { profileId: user.id } } },

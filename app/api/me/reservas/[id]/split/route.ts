@@ -343,53 +343,59 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const existing = await prisma.bookingSplit.findUnique({
       where: { bookingId },
-      include: { participants: { select: { id: true, status: true } } },
+      select: { id: true },
     });
-    if (existing?.participants?.some((item) => item.status === "PAID")) {
-      return fail(ctx, 409, "SPLIT_LOCKED", "Já existem pagamentos concluídos.");
-    }
 
     const split = await prisma.$transaction(async (tx) => {
-      const split = existing
-        ? await tx.bookingSplit.update({
-            where: { id: existing.id },
-            data: {
-              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
-              pricingMode,
-              status: "OPEN",
-              railState: "HOLD_CAPTURE",
-              currency: booking.currency ?? "EUR",
-              totalCents,
-              shareCents: fixedShareCents,
-              deadlineAt: deadlineResolved ?? undefined,
-              captureBeforeAt,
-              captureBeforeSource,
-              retryUntilAt,
-              settledAt: null,
-              debtOpenedAt: null,
-              createdByUserId: user.id,
-            },
-            select: { id: true },
-          })
-        : await tx.bookingSplit.create({
-            data: {
-              bookingId,
-              organizationId: booking.organizationId,
-              createdByUserId: user.id,
-              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
-              pricingMode,
-              status: "OPEN",
-              railState: "HOLD_CAPTURE",
-              currency: booking.currency ?? "EUR",
-              totalCents,
-              shareCents: fixedShareCents,
-              deadlineAt: deadlineResolved ?? undefined,
-              captureBeforeAt,
-              captureBeforeSource,
-              retryUntilAt,
-            },
-            select: { id: true },
-          });
+      let split: { id: number };
+      if (existing) {
+        const result = await tx.bookingSplit.updateMany({
+          where: {
+            id: existing.id,
+            participants: { none: { status: "PAID" } },
+          },
+          data: {
+            splitMode: BOOKING_SPLIT_CANONICAL_MODE,
+            pricingMode,
+            status: "OPEN",
+            railState: "HOLD_CAPTURE",
+            currency: booking.currency ?? "EUR",
+            totalCents,
+            shareCents: fixedShareCents,
+            deadlineAt: deadlineResolved ?? undefined,
+            captureBeforeAt,
+            captureBeforeSource,
+            retryUntilAt,
+            settledAt: null,
+            debtOpenedAt: null,
+            createdByUserId: user.id,
+          },
+        });
+        if (result.count !== 1) {
+          throw new Error("SPLIT_LOCKED");
+        }
+        split = { id: existing.id };
+      } else {
+        split = await tx.bookingSplit.create({
+          data: {
+            bookingId,
+            organizationId: booking.organizationId,
+            createdByUserId: user.id,
+            splitMode: BOOKING_SPLIT_CANONICAL_MODE,
+            pricingMode,
+            status: "OPEN",
+            railState: "HOLD_CAPTURE",
+            currency: booking.currency ?? "EUR",
+            totalCents,
+            shareCents: fixedShareCents,
+            deadlineAt: deadlineResolved ?? undefined,
+            captureBeforeAt,
+            captureBeforeSource,
+            retryUntilAt,
+          },
+          select: { id: true },
+        });
+      }
 
       await tx.bookingSplitDebt.deleteMany({
         where: { splitId: split.id },
@@ -443,6 +449,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error && err.message === "SPLIT_LOCKED") {
+      return fail(ctx, 409, "SPLIT_LOCKED", "Já existem pagamentos concluídos.");
     }
     console.error("POST /api/me/reservas/[id]/split error:", err);
     return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao configurar split.");

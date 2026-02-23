@@ -89,12 +89,11 @@ export function FloatingTabBar({ activeKey, onSelect }: FloatingTabBarProps) {
                 hitSlop={10}
                 unstable_pressDelay={0}
                 style={({ pressed }) => [styles.tabSlot, pressed && styles.tabPressed]}
-                onPressIn={() => {
+                onPress={() => {
                   if (tab.key !== activeKey) {
                     onSelect(tab.key);
                   }
                 }}
-                onPress={() => undefined}
               >
                 <View style={styles.iconBox}>
                   <Ionicons

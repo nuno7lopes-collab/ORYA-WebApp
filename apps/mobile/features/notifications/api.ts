@@ -14,10 +14,16 @@ type OrganizationInvitesPayload = {
 const toQuery = (opts: {
   cursor?: string | null;
   limit?: number;
+  scope?: "user" | "organization";
+  organizationId?: number | null;
 }) => {
   const params = new URLSearchParams();
   if (opts.cursor) params.set("cursor", opts.cursor);
   params.set("limit", String(opts.limit ?? 30));
+  params.set("scope", opts.scope ?? "user");
+  if (opts.scope === "organization" && Number.isFinite(opts.organizationId ?? NaN)) {
+    params.set("organizationId", String(Number(opts.organizationId)));
+  }
   return params.toString();
 };
 
@@ -31,6 +37,8 @@ export const fetchNotificationsPage = async (
   opts: {
     cursor?: string | null;
     limit?: number;
+    scope?: "user" | "organization";
+    organizationId?: number | null;
   } = {},
   accessToken?: string | null,
 ): Promise<NotificationsPage> => {
@@ -70,7 +78,7 @@ export const markNotificationRead = async (notificationId: string, accessToken?:
   requireAccessToken(accessToken);
   const response = await api.requestWithAccessToken<unknown>("/api/notifications/mark-read", accessToken, {
     method: "POST",
-    body: JSON.stringify({ notificationId }),
+    body: JSON.stringify({ notificationId, scope: "user" }),
   });
   return unwrapApiResponse<{ ok?: boolean }>(response);
 };
@@ -79,7 +87,7 @@ export const markAllNotificationsRead = async (accessToken?: string | null) => {
   requireAccessToken(accessToken);
   const response = await api.requestWithAccessToken<unknown>("/api/notifications/mark-read", accessToken, {
     method: "POST",
-    body: JSON.stringify({ markAll: true }),
+    body: JSON.stringify({ markAll: true, scope: "user" }),
   });
   return unwrapApiResponse<{ ok?: boolean }>(response);
 };

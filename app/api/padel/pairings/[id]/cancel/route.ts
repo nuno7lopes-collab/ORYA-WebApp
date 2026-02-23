@@ -28,7 +28,7 @@ const pairingSelect = {
   createdByUserId: true,
   pairingStatus: true,
   payment_mode: true,
-  event: { select: { organizationId: true } },
+  event: { select: { organizationId: true, templateType: true } },
   slots: {
     select: {
       id: true,
@@ -57,6 +57,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     select: pairingSelect,
   });
   if (!pairing) return jsonWrap({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+  if (pairing.event?.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   if (pairing.pairingStatus === PadelPairingStatus.CANCELLED) {
     return jsonWrap({ ok: true, pairing }, { status: 200 });
@@ -125,8 +128,8 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       select: { advancedSettings: true, splitDeadlineHours: true, lifecycleStatus: true },
     });
     const event = await prisma.event.findUnique({
-      where: { id: pairing.eventId },
-      select: { startsAt: true, status: true },
+      where: { id: pairing.eventId, isDeleted: false },
+      select: { startsAt: true, status: true, templateType: true },
     });
     const advanced = (config?.advancedSettings || {}) as {
       waitlistEnabled?: boolean;
@@ -135,7 +138,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       maxEntriesTotal?: number | null;
       competitionState?: string | null;
     };
-    if (advanced.waitlistEnabled === true && event) {
+    if (advanced.waitlistEnabled === true && event?.templateType === "PADEL") {
       const registrationStartsAt =
         advanced.registrationStartsAt && !Number.isNaN(new Date(advanced.registrationStartsAt).getTime())
           ? new Date(advanced.registrationStartsAt)

@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Constants from "expo-constants";
 import { InteractionManager } from "react-native";
 import { useAuth } from "../../lib/auth";
-import { registerForPushToken } from "../../lib/push";
-import { api } from "../../lib/api";
+import { syncPushTokenWithBackend } from "../../lib/push";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   invalidateNotificationsAll,
@@ -11,6 +10,7 @@ import {
   useNotificationsUnread,
 } from "../../features/notifications/hooks";
 import { useRouter } from "expo-router";
+import type { NotificationResponse } from "expo-notifications";
 import { openNotificationLink } from "../../lib/notifications";
 
 export function PushGate() {
@@ -23,7 +23,8 @@ export function PushGate() {
   const lastAccessTokenRef = useRef<string | null>(null);
   const authFailedRef = useRef(false);
   const lastErrorRef = useRef<string | null>(null);
-  const [registering, setRegistering] = useState(false);
+  const lastHandledNotificationRef = useRef<string | null>(null);
+  const registeringRef = useRef(false);
   const [bootReady, setBootReady] = useState(false);
   const unreadQuery = useNotificationsUnread(
     session?.access_token ?? null,
@@ -85,17 +86,17 @@ export function PushGate() {
   useEffect(() => {
     if (isExpoGo || !bootReady) return;
     const register = async () => {
-      if (!session?.user?.id || !session?.access_token || registering) return;
+      if (!session?.user?.id || !session?.access_token || registeringRef.current) return;
       if (authFailedRef.current) return;
+      registeringRef.current = true;
       try {
-        setRegistering(true);
-        const token = await registerForPushToken();
-        if (!token || lastTokenRef.current === token) return;
-        await api.requestWithAccessToken("/api/me/push-tokens", session.access_token, {
-          method: "POST",
-          body: JSON.stringify({ token, platform: "ios" }),
-        });
-        lastTokenRef.current = token;
+        const syncResult = await syncPushTokenWithBackend(
+          session.access_token,
+          lastTokenRef.current,
+        );
+        if (syncResult.token) {
+          lastTokenRef.current = syncResult.token;
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (message.includes("API 401") || message.includes("UNAUTHENTICATED")) {
@@ -111,12 +112,12 @@ export function PushGate() {
           console.warn("[mobile] push registration failed", err);
         }
       } finally {
-        setRegistering(false);
+        registeringRef.current = false;
       }
     };
 
     register();
-  }, [bootReady, isExpoGo, session?.user?.id, session?.access_token, registering]);
+  }, [bootReady, isExpoGo, session?.user?.id, session?.access_token]);
 
   useEffect(() => {
     if (isExpoGo || !bootReady) return;
@@ -139,6 +140,27 @@ export function PushGate() {
     let receiveSub: { remove: () => void } | null = null;
     let responseSub: { remove: () => void } | null = null;
 
+    const handleNotificationOpen = (response: NotificationResponse) => {
+      const identifier =
+        typeof response.notification.request.identifier === "string"
+          ? response.notification.request.identifier
+          : null;
+      if (identifier && lastHandledNotificationRef.current === identifier) {
+        return;
+      }
+      if (identifier) {
+        lastHandledNotificationRef.current = identifier;
+      }
+      const data = response.notification.request.content.data as
+        | Record<string, unknown>
+        | undefined;
+      const deepLink = typeof data?.deepLink === "string" ? data.deepLink : null;
+      const ctaUrl = typeof data?.ctaUrl === "string" ? data.ctaUrl : null;
+      openNotificationLink(router, deepLink ?? ctaUrl ?? null).catch(() => undefined);
+      invalidateNotificationsAll(queryClient);
+      invalidateNotificationsUnread(queryClient);
+    };
+
     loadNotifications()
       .then((Notifications) => {
         if (!active) return;
@@ -147,21 +169,13 @@ export function PushGate() {
         });
 
         responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-          const data = response.notification.request.content.data as Record<string, unknown> | undefined;
-          const deepLink = typeof data?.deepLink === "string" ? data.deepLink : null;
-          const ctaUrl = typeof data?.ctaUrl === "string" ? data.ctaUrl : null;
-          openNotificationLink(router, deepLink ?? ctaUrl ?? null).catch(() => undefined);
-          invalidateNotificationsAll(queryClient);
-          invalidateNotificationsUnread(queryClient);
+          handleNotificationOpen(response);
         });
 
         Notifications.getLastNotificationResponseAsync()
           .then((response) => {
             if (!response) return;
-            const data = response.notification.request.content.data as Record<string, unknown> | undefined;
-            const deepLink = typeof data?.deepLink === "string" ? data.deepLink : null;
-            const ctaUrl = typeof data?.ctaUrl === "string" ? data.ctaUrl : null;
-            openNotificationLink(router, deepLink ?? ctaUrl ?? null).catch(() => undefined);
+            handleNotificationOpen(response);
           })
           .catch(() => undefined);
       })

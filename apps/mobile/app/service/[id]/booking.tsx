@@ -29,6 +29,7 @@ import {
 } from "../../../features/services/bookingPayload";
 import { useAuth } from "../../../lib/auth";
 import { safeBack, safePush } from "../../../lib/navigation";
+import { TAB_PATHNAMES } from "../../../lib/tabRoutes";
 import { getUserFacingError } from "../../../lib/errors";
 import { trackEvent } from "../../../lib/analytics";
 import { api } from "../../../lib/api";
@@ -472,7 +473,7 @@ export default function ServiceBookingScreen() {
     safeBack(
       router,
       navigation,
-      serviceId ? `/service/${serviceId}` : "/(tabs)/index",
+      serviceId ? `/service/${serviceId}` : TAB_PATHNAMES.index,
     );
   };
 

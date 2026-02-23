@@ -7,6 +7,7 @@ import { EntitlementStatus, OrganizationMemberRole, Prisma, TicketStatus } from 
 import { buildDefaultCheckinWindow } from "@/lib/checkin/policy";
 import { resolveGroupMemberForOrg } from "@/lib/organizationGroupAccess";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_PAGE = 100;
@@ -29,12 +30,15 @@ function parseCursor(cursor: string | null) {
   return null;
 }
 
-async function ensureOrganization(userId: string, eventId: number) {
+async function ensureOrganization(userId: string, eventId: number, requestOrganizationId: number) {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     select: { organizationId: true },
   });
   if (!event) return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
+  if (event.organizationId !== requestOrganizationId) {
+    return { ok: false as const, status: 404, error: "EVENT_NOT_FOUND" };
+  }
   if (!event.organizationId) {
     return { ok: false as const, status: 403, error: "FORBIDDEN_ATTENDEES_ACCESS" };
   }
@@ -97,15 +101,23 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
   if (!Number.isFinite(eventId)) {
     return jsonWrap({ error: "INVALID_EVENT" }, { status: 400 });
   }
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) {
+    return jsonWrap({ error: "ORG_ID_REQUIRED" }, { status: 400 });
+  }
+  const requestOrganizationId = orgResolution.organizationId;
 
-  const access = await ensureOrganization(userId, eventId);
+  const access = await ensureOrganization(userId, eventId, requestOrganizationId);
   if (!access.ok) {
     return jsonWrap({ error: access.error }, { status: access.status });
   }
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { startsAt: true, endsAt: true },
+    select: { startsAt: true, endsAt: true, organizationId: true },
   });
+  if (!event || event.organizationId !== requestOrganizationId) {
+    return jsonWrap({ error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const searchParams = req.nextUrl.searchParams;
   const statusFilterRaw = searchParams.get("status");

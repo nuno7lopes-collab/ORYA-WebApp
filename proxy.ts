@@ -280,7 +280,10 @@ function hasRemovedFinanceAnalyticsLegacyQuery(req: NextRequest) {
 
 function hasInvalidOrgContextSources(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
-  if (!/^\/api\/org\/\d+(?:\/|$)/i.test(pathname)) return false;
+  const orgApiMatch = pathname.match(/^\/api\/org\/([^/]+)(?:\/|$)/i);
+  if (!orgApiMatch) return false;
+  const orgIdFromPath = parsePositiveOrgId(orgApiMatch[1]);
+  if (!orgIdFromPath) return true;
   return (
     req.nextUrl.searchParams.has("organizationId") ||
     req.nextUrl.searchParams.has("org") ||

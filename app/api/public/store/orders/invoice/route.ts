@@ -9,6 +9,7 @@ import { Prisma, StoreOrderStatus, StoreProductOptionType } from "@prisma/client
 import { buildStoreInvoicePdf, ensureStoreInvoiceRecord } from "@/lib/store/invoice";
 import { buildPersonalizationSummary } from "@/lib/store/personalization";
 import { resolveStorePolicyWithSnapshot } from "@/lib/store/policySnapshot";
+import { rateLimit } from "@/lib/auth/rateLimit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const invoiceSchema = z.object({
@@ -20,6 +21,21 @@ async function _POST(req: NextRequest) {
   try {
     if (!isStoreFeatureEnabled()) {
       return jsonWrap({ ok: false, error: "Loja desativada." }, { status: 403 });
+    }
+
+    const limiter = await rateLimit(req, {
+      windowMs: 60_000,
+      max: 12,
+      keyPrefix: "store_public_orders_invoice",
+    });
+    if (!limiter.allowed) {
+      return jsonWrap(
+        { ok: false, error: "Demasiadas tentativas.", retryAfter: limiter.retryAfter },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limiter.retryAfter) },
+        },
+      );
     }
 
     const body = await req.json().catch(() => null);

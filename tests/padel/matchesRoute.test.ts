@@ -61,6 +61,7 @@ describe("padel matches route", () => {
     });
     prisma.event.findUnique.mockResolvedValue({
       organizationId: 99,
+      templateType: "PADEL",
       status: "PUBLISHED",
       padelTournamentConfig: { advancedSettings: { competitionState: "PUBLIC" }, lifecycleStatus: null },
       accessPolicies: [{ mode: "PUBLIC" }],
@@ -124,8 +125,10 @@ describe("padel matches route", () => {
     const res = await GET(req);
     const json = await res.json();
     const items = json.data?.items ?? [];
+    const findManyArgs = prisma.eventMatchSlot.findMany.mock.calls[0]?.[0];
 
     expect(res.status).toBe(200);
+    expect(findManyArgs?.where).not.toHaveProperty("categoryId");
     expect(items[0].score).toEqual({});
     expect(items[0].scoreSets).toBeNull();
     expect(items[0].pairingA?.slots?.[0]?.playerProfile?.displayName).toBe("Jogador A");
@@ -146,12 +149,27 @@ describe("padel matches route", () => {
     expect(items[2].score).toEqual({ resultType: "WALKOVER" });
   });
 
+  it("rejeita categoryId inválido na listagem", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: null } })) },
+    });
+
+    const req = new NextRequest("http://localhost/api/padel/matches?eventId=10&categoryId=1.5", { method: "GET" });
+    const res = await GET(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.errorCode ?? json.error).toBe("INVALID_CATEGORY");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("bloqueia leitura interna sem permissão VIEW do módulo", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
     });
     prisma.event.findUnique.mockResolvedValue({
       organizationId: 99,
+      templateType: "PADEL",
       status: "PUBLISHED",
       padelTournamentConfig: { advancedSettings: { competitionState: "DEVELOPMENT" }, lifecycleStatus: null },
       accessPolicies: [{ mode: "INVITE_ONLY" }],

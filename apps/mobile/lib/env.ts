@@ -9,6 +9,17 @@ type MobileEnv = {
   appleMerchantId?: string;
 };
 
+type LegacyManifest = {
+  extra?: Record<string, unknown>;
+  hostUri?: string;
+  debuggerHost?: string;
+};
+
+type ExpoConfigWithHost = {
+  extra?: Record<string, unknown>;
+  hostUri?: string;
+};
+
 const readString = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 
@@ -67,14 +78,14 @@ const pickStripePublishableKey = (
 };
 
 const getExtra = () => {
-  const expoConfig = Constants?.expoConfig as { extra?: Record<string, unknown> } | undefined;
-  const manifest = (Constants as any)?.manifest as { extra?: Record<string, unknown> } | undefined;
+  const expoConfig = Constants.expoConfig as ExpoConfigWithHost | null | undefined;
+  const manifest = (Constants as unknown as { manifest?: LegacyManifest | null }).manifest;
   return expoConfig?.extra ?? manifest?.extra ?? {};
 };
 
 const resolveHostFromExpo = () => {
-  const expoConfig = (Constants as any)?.expoConfig as { hostUri?: string } | undefined;
-  const manifest = (Constants as any)?.manifest as { hostUri?: string; debuggerHost?: string } | undefined;
+  const expoConfig = Constants.expoConfig as ExpoConfigWithHost | null | undefined;
+  const manifest = (Constants as unknown as { manifest?: LegacyManifest | null }).manifest;
   const hostUri =
     expoConfig?.hostUri ??
     manifest?.hostUri ??

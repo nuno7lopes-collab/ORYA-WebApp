@@ -470,6 +470,7 @@
       "interestsSaveFailed": "Couldn't save interests.",
       "notificationsSaved": "Notifications saved.",
       "notificationsSaveFailed": "Couldn't save notifications.",
+      "pushEnableFailed": "Couldn't enable push notifications.",
       "consentSaved": "Consent saved.",
       "consentSaveFailed": "Couldn't save consent.",
       "logoutFailed": "Couldn't sign out.",

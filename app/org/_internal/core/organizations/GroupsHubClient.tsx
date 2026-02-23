@@ -535,7 +535,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
               ? group.organizations.find((organization) => organization.organizationId === selectedExitOrgId)
               : null;
           const defaultGroupOrgHref = group.organizations[0]
-            ? buildOrgHref(group.organizations[0].organizationId, "/staff")
+            ? buildOrgHref(group.organizations[0].organizationId, "/team")
             : null;
           const groupDisplayName = group.groupName ?? `Grupo #${group.groupId}`;
           const groupNameValue = groupNameById[group.groupId] ?? group.groupName ?? "";
@@ -571,7 +571,7 @@ export default function GroupsHubClient({ initialGroups }: Props) {
                       onClick={() => router.push(defaultGroupOrgHref)}
                       className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/16 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6BFFFF]/55"
                     >
-                      Abrir staff
+                      Abrir equipa
                     </button>
                   )}
                   <button

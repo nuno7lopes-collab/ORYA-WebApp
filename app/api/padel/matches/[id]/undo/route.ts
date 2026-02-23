@@ -20,6 +20,17 @@ const SYSTEM_MATCH_EVENT = "PADEL_MATCH_SYSTEM_UPDATED";
 const asObject = (value: unknown) =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 const matchHasAnyParticipant = (
   match: { participants?: Array<{ participantId: number }> },
   participantIds: number[],
@@ -32,7 +43,7 @@ const matchHasAnyParticipant = (
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
-  if (!Number.isFinite(matchId)) {
+  if (!Number.isInteger(matchId) || matchId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 
@@ -43,12 +54,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const eventIdBody =
-    typeof body?.eventId === "number"
-      ? body.eventId
-      : typeof body?.eventId === "string"
-        ? Number(body.eventId)
-        : null;
+  const hasEventIdBody = body?.eventId != null;
+  const eventIdBody = hasEventIdBody ? parsePositiveInt(body?.eventId) : null;
+  if (hasEventIdBody && eventIdBody == null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
@@ -75,7 +85,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     return jsonWrap({ ok: false, error: "MATCH_NOT_FOUND" }, { status: 404 });
   }
   const organizationId = match.event.organizationId;
-  if (Number.isFinite(eventIdBody) && match.eventId !== eventIdBody) {
+  if (eventIdBody != null && match.eventId !== eventIdBody) {
     return jsonWrap({ ok: false, error: "EVENT_MISMATCH" }, { status: 409 });
   }
 

@@ -18,6 +18,7 @@ import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { NetworkPeopleDeck } from "../../features/network/NetworkPeopleDeck";
 import { safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
 const SECTION_SPACING = 24;
@@ -165,7 +166,7 @@ export default function NetworkScreen() {
           <GlassCard intensity={48} className="mb-4">
             <Text className="text-white/70 text-sm">{message}</Text>
             <Pressable
-              onPressIn={() => safePush(router, "/search")}
+              onPress={() => safePush(router, "/search")}
               className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -246,7 +247,7 @@ export default function NetworkScreen() {
           </Text>
           <View className="mt-3 flex-row gap-2">
             <Pressable
-              onPressIn={() => safePush(router, "/padel")}
+              onPress={() => safePush(router, TAB_PATHNAMES.padel)}
               className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -255,7 +256,7 @@ export default function NetworkScreen() {
               <Text className="text-white text-xs font-semibold text-center">Explorar Padel</Text>
             </Pressable>
             <Pressable
-              onPressIn={() => safePush(router, { pathname: "/search", params: { tab: "people" } })}
+              onPress={() => safePush(router, { pathname: "/search", params: { tab: "people" } })}
               className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"

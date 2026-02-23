@@ -9,6 +9,7 @@ import {
 } from "@/lib/http/headers";
 import { isTruthyEnvFlag, normalizeAppEnv, resolveEnvFromHost } from "@/lib/appEnvShared";
 import { setRequestAppEnv } from "@/lib/appEnvContext";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type HeaderSource = {
   get(name: string): string | null;
@@ -36,9 +37,7 @@ function pickHeader(headers: HeaderSource, names: string[]) {
 }
 
 function normalizeOrgId(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseOrganizationId(value);
 }
 
 function extractHost(headers: HeaderSource) {

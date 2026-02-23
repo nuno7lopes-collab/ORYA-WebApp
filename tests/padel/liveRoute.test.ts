@@ -30,7 +30,7 @@ beforeEach(async () => {
   createSupabaseServer.mockResolvedValue({
     auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })) },
   });
-  prisma.event.findUnique.mockResolvedValue({ organizationId: 77 });
+  prisma.event.findUnique.mockResolvedValue({ organizationId: 77, templateType: "PADEL" });
   getActiveOrganizationForUser.mockResolvedValue({
     organization: { id: 77 },
     membership: { role: "STAFF", rolePack: null },

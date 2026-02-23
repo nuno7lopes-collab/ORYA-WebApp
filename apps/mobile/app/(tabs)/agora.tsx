@@ -300,7 +300,7 @@ export default function AgoraScreen() {
           }}
         >
           <Pressable
-            onPressIn={() => safePush(router, "/map")}
+            onPress={() => safePush(router, "/map")}
             accessibilityRole="button"
             accessibilityLabel={t("agora:openMap")}
             style={({ pressed }) => [

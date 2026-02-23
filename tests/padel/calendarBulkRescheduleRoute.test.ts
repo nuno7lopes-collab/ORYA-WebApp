@@ -75,6 +75,134 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/calendar/matches/bulk-reschedule", () => {
+  it("rejeita mode inválido em vez de cair para APPLY", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/matches/bulk-reschedule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 44,
+        mode: "preview_now",
+        partialMode: "ALLOW_PARTIAL",
+        updates: [
+          {
+            matchId: 501,
+            courtId: 7,
+            startAt: "2026-02-22T10:00:00.000Z",
+            endAt: "2026-02-22T11:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+    const payload = unwrapPayload(body);
+    const root = body as Record<string, unknown>;
+
+    expect(res.status).toBe(400);
+    expect((payload.ok ?? root.ok) as boolean).toBe(false);
+    expect(
+      (payload.errorCode ?? payload.error ?? root.errorCode ?? root.error) as string,
+    ).toBe("INVALID_MODE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita partialMode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/matches/bulk-reschedule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 44,
+        mode: "PREVIEW",
+        partialMode: "sometimes",
+        updates: [
+          {
+            matchId: 501,
+            courtId: 7,
+            startAt: "2026-02-22T10:00:00.000Z",
+            endAt: "2026-02-22T11:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+    const payload = unwrapPayload(body);
+    const root = body as Record<string, unknown>;
+
+    expect(res.status).toBe(400);
+    expect((payload.ok ?? root.ok) as boolean).toBe(false);
+    expect(
+      (payload.errorCode ?? payload.error ?? root.errorCode ?? root.error) as string,
+    ).toBe("INVALID_PARTIAL_MODE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita eventId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/matches/bulk-reschedule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 44.5,
+        mode: "PREVIEW",
+        partialMode: "ALLOW_PARTIAL",
+        updates: [
+          {
+            matchId: 501,
+            courtId: 7,
+            startAt: "2026-02-22T10:00:00.000Z",
+            endAt: "2026-02-22T11:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+    const payload = unwrapPayload(body);
+    const root = body as Record<string, unknown>;
+
+    expect(res.status).toBe(400);
+    expect((payload.ok ?? root.ok) as boolean).toBe(false);
+    expect(
+      (payload.errorCode ?? payload.error ?? root.errorCode ?? root.error) as string,
+    ).toBe("INVALID_EVENT");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejeita updates com matchId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/matches/bulk-reschedule", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        eventId: 44,
+        mode: "PREVIEW",
+        partialMode: "ALLOW_PARTIAL",
+        updates: [
+          {
+            matchId: 501.5,
+            courtId: 7,
+            startAt: "2026-02-22T10:00:00.000Z",
+            endAt: "2026-02-22T11:00:00.000Z",
+          },
+        ],
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+    const payload = unwrapPayload(body);
+    const root = body as Record<string, unknown>;
+
+    expect(res.status).toBe(400);
+    expect((payload.ok ?? root.ok) as boolean).toBe(false);
+    expect(
+      (payload.errorCode ?? payload.error ?? root.errorCode ?? root.error) as string,
+    ).toBe("INVALID_UPDATES");
+    expect(prisma.eventMatchSlot.findMany).not.toHaveBeenCalled();
+  });
+
   it("em PREVIEW devolve conflito de CLASS_SESSION por match", async () => {
     prisma.eventMatchSlot.findMany
       .mockResolvedValueOnce([

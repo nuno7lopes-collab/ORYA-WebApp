@@ -470,6 +470,7 @@
       "interestsSaveFailed": "No se pudieron guardar los intereses.",
       "notificationsSaved": "Notificaciones guardadas.",
       "notificationsSaveFailed": "No se pudieron guardar las notificaciones.",
+      "pushEnableFailed": "No se pudieron activar las notificaciones push.",
       "consentSaved": "Consentimiento guardado.",
       "consentSaveFailed": "No se pudo guardar el consentimiento.",
       "logoutFailed": "No se pudo cerrar la sesión.",

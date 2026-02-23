@@ -81,15 +81,15 @@ async function _GET(_: NextRequest, { params }: { params: Promise<{ token: strin
 
   const [event, windowConfig] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: pairing.eventId },
-      select: { status: true, startsAt: true },
+      where: { id: pairing.eventId, isDeleted: false },
+      select: { status: true, startsAt: true, templateType: true },
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
       select: { advancedSettings: true, lifecycleStatus: true },
     }),
   ]);
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {
@@ -244,15 +244,15 @@ async function _POST(_: NextRequest, { params }: { params: Promise<{ token: stri
 
   const [event, windowConfig] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: pairing.eventId },
-      select: { status: true, startsAt: true },
+      where: { id: pairing.eventId, isDeleted: false },
+      select: { status: true, startsAt: true, templateType: true },
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
       select: { advancedSettings: true, lifecycleStatus: true },
     }),
   ]);
-  if (!event) {
+  if (!event || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const advanced = (windowConfig?.advancedSettings || {}) as {

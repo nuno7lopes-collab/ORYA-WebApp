@@ -203,6 +203,14 @@ export async function updateBooking(
   const eventType = input.eventType ?? DEFAULT_UPDATED_EVENT;
 
   return withTx(input.tx, async (tx) => {
+    const scopedBooking = await tx.booking.findFirst({
+      where: { id: input.bookingId, organizationId: input.organizationId },
+      select: { id: true },
+    });
+    if (!scopedBooking) {
+      throw new Error("BOOKING_NOT_FOUND");
+    }
+
     const updateArgs: Prisma.BookingUpdateArgs = {
       where: { id: input.bookingId },
       data: input.data,

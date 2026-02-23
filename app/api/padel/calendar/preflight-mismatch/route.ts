@@ -13,10 +13,14 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 
 function parsePositiveInt(value: unknown) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const normalized = Math.floor(parsed);
-  return normalized > 0 ? normalized : null;
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 }
 
 function parseNonEmptyString(value: unknown) {
@@ -126,4 +130,3 @@ async function _POST(req: NextRequest) {
 }
 
 export const POST = withApiEnvelope(_POST);
-

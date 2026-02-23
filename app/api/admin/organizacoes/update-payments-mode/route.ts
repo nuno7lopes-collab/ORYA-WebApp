@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { jsonWrap } from "@/lib/api/wrapResponse";
 import { prisma } from "@/lib/prisma";
 import { requireAdminUser } from "@/lib/admin/auth";
@@ -9,16 +9,12 @@ import { OrgType, PayoutMode } from "@prisma/client";
 import { getPlatformOfficialEmail } from "@/lib/platformSettings";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { logError } from "@/lib/observability/logger";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type UpdatePaymentsModeBody = {
   organizationId?: number | string;
   paymentsMode?: string;
 };
-
-function parseOrganizationId(value: unknown) {
-  const parsed = typeof value === "string" ? Number(value) : Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
 
 function parsePaymentsMode(value: unknown) {
   if (typeof value !== "string") return null;

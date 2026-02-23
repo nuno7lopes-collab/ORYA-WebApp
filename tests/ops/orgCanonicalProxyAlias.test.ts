@@ -167,6 +167,24 @@ describe("proxy org canonical hard-cut", () => {
     expect(body.error).toBe("INVALID_ORG_CONTEXT_SOURCE");
   });
 
+  it("rejects non-numeric /api/org/:orgId path segments", async () => {
+    const req = new NextRequest("http://localhost/api/org/abc/events/list");
+    const res = await proxy(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("INVALID_ORG_CONTEXT_SOURCE");
+  });
+
+  it("rejects query/header org context when /api/org/:orgId path segment is non-numeric", async () => {
+    const req = new NextRequest("http://localhost/api/org/abc/events/list?organizationId=42", {
+      headers: { "x-orya-org-id": "42" },
+    });
+    const res = await proxy(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("INVALID_ORG_CONTEXT_SOURCE");
+  });
+
   it("does not rewrite canonical /api/org/:orgId/* routes", async () => {
     const req = new NextRequest("http://localhost/api/org/42/events/list");
     const res = await proxy(req);

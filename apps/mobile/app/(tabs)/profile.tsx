@@ -47,6 +47,7 @@ import type { AgendaItem } from "../../features/profile/types";
 import { splitAgendaTimeline } from "../../features/profile/timeline";
 import { getMobileEnv } from "../../lib/env";
 import { resolveMobileLink } from "../../lib/links";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 
 const INTEREST_ICONS: Record<InterestId, string> = {
   padel: "tennisball",
@@ -210,7 +211,7 @@ export default function ProfileScreen() {
   const topBarTitle = profile?.username ? `@${profile.username}` : "Perfil";
   const topBarRight = (
     <Pressable
-      onPressIn={() => safePush(router, "/settings")}
+      onPress={() => safePush(router, "/settings")}
       style={({ pressed }) => [
         {
           width: tokens.layout.touchTarget,
@@ -564,7 +565,7 @@ export default function ProfileScreen() {
       queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
       queryClient.invalidateQueries({ queryKey: ["profile", "public"] });
       setEditMode(false);
-    } catch (err: any) {
+    } catch {
       Alert.alert("Erro", "Não foi possível guardar o perfil.");
     } finally {
       setSaving(false);
@@ -591,8 +592,12 @@ export default function ProfileScreen() {
       await Promise.all([summary.refetch(), publicProfile.refetch()]);
       setPadelEditorOpen(false);
       Alert.alert("Perfil de padel", "Perfil atualizado com sucesso.");
-    } catch (error: any) {
-      Alert.alert("Perfil de padel", String(error?.message ?? "Não foi possível guardar agora."));
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Não foi possível guardar agora.";
+      Alert.alert("Perfil de padel", errorMessage);
     } finally {
       setPadelSaving(false);
     }
@@ -678,7 +683,7 @@ export default function ProfileScreen() {
     return (
       <Pressable
         key={item.id}
-        onPress={() => (target ? safePush(router, target as any) : undefined)}
+        onPress={() => (target ? safePush(router, target) : undefined)}
         disabled={disabled}
         className={
           featured
@@ -733,7 +738,7 @@ export default function ProfileScreen() {
     return (
       <Pressable
         key={item.id}
-        onPress={() => (target ? safePush(router, target as any) : undefined)}
+        onPress={() => (target ? safePush(router, target) : undefined)}
         disabled={disabled}
         className={showDivider ? "flex-row items-start gap-3 border-b border-white/10 py-3" : "flex-row items-start gap-3 py-3"}
         style={disabled ? { opacity: 0.6 } : undefined}
@@ -1034,7 +1039,7 @@ export default function ProfileScreen() {
                   </View>
                 ) : null}
                 <Pressable
-                  onPressIn={() => safePush(router, "/padel")}
+                  onPress={() => safePush(router, TAB_PATHNAMES.padel)}
                   className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel={t("common:actions.explore")}
@@ -1140,7 +1145,7 @@ export default function ProfileScreen() {
                       <View className="gap-2">
                         <Text className="text-white/65 text-sm">Ainda não tens itens na tua timeline pessoal.</Text>
                         <Pressable
-                          onPressIn={() => safePush(router, "/agora")}
+                          onPress={() => safePush(router, TAB_PATHNAMES.agora)}
                           className="self-start rounded-full border border-cyan-200/40 bg-cyan-300/15 px-3 py-2"
                           accessibilityRole="button"
                           accessibilityLabel="Explorar eventos"

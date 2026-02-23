@@ -93,6 +93,106 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/tournaments/config lock contract", () => {
+  it("rejeita ruleSetId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        ruleSetId: 12.5,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_RULESET");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejeita featuredMatchId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        featuredMatchId: 77.4,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_FEATURED_MATCH");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejeita defaultCategoryId decimal sem truncar", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        defaultCategoryId: 12.25,
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_DEFAULT_CATEGORY");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejeita groups.mode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        groups: { mode: "manual_only" },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_GROUPS_MODE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejeita groups.seeding inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/tournaments/config", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 1,
+        organizationId: 99,
+        groups: { seeding: "random" },
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_GROUPS_SEEDING");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("bloqueia quando o eventId não pertence à organização do request", async () => {
     prisma.event.findUnique.mockResolvedValueOnce({
       id: 1,

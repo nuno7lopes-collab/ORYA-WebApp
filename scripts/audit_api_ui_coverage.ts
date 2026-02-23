@@ -12,6 +12,7 @@ type ApiEntry = {
   route: string;
   file: string;
   type: string;
+  tombstone410: boolean;
   uiFiles: string[];
   uiStatus: "covered" | "orphan" | "exempt";
 };
@@ -24,11 +25,21 @@ const REPORT_DIR = path.join(ROOT, "reports");
 const CSV_PATH = path.join(REPORT_DIR, "api_ui_coverage_v1.csv");
 const ORPHANS_PATH = path.join(REPORT_DIR, "api_orphans_v1.md");
 const P0_MANIFEST_PATH = path.join(ROOT, "scripts", "manifests", "p0_endpoints.json");
+const ORPHAN_BASELINE_PATH = path.join(
+  ROOT,
+  "scripts",
+  "manifests",
+  "api_ui_orphan_baseline_v1.json",
+);
 const ROUTE_REGEX = /\/route\.(ts|tsx|js|jsx)$/;
 const MAX_EXPR_CANDIDATES = 24;
 
 const MISSING_API_ALLOWLIST = new Set([
   "/api/organizacao",
+]);
+
+const P0_MISSING_UI_ALLOWLIST = new Set([
+  // Placeholder para exceções transitórias de P0 sem UI.
 ]);
 
 const ORPHAN_API_ALLOWLIST = new Set<string>([
@@ -125,13 +136,24 @@ function routeType(route: string) {
   return "public";
 }
 
-function isOutOfScopePadel(route: string) {
-  return /\/(padel|tournaments|torneios)(?:\/|$)/i.test(route);
+function isTombstone410(content: string) {
+  const statusCodes = Array.from(content.matchAll(/\bstatus\s*:\s*(\d{3})\b/g))
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value));
+  if (statusCodes.length === 0) return false;
+  const hasGone = statusCodes.includes(410);
+  const hasExplicitSuccess = statusCodes.some((code) => code >= 200 && code < 300);
+  const hasImplicitSuccess =
+    /\bok\s*:\s*true\b/.test(content) ||
+    /\brespondOk\s*\(/.test(content);
+  const hasSuccess = hasExplicitSuccess || hasImplicitSuccess;
+  return hasGone && !hasSuccess;
 }
 
-function isUiExempt(route: string) {
+function isUiExempt(route: string, tombstone410: boolean) {
+  if (tombstone410) return true;
   const type = routeType(route);
-  return type === "internal" || type === "cron" || type === "webhook" || isOutOfScopePadel(route);
+  return type === "internal" || type === "cron" || type === "webhook";
 }
 
 function isOrphanAllowlisted(route: string) {
@@ -160,6 +182,24 @@ function mergeTemplateFragments(left: string[], right: string[]) {
     }
   }
   return unique(compact(combined));
+}
+
+function functionLikeToTemplates(
+  fn: ts.FunctionExpression | ts.ArrowFunction,
+  vars: StringMap,
+  depth = 0,
+): string[] {
+  if (depth > 7) return [];
+  if (ts.isBlock(fn.body)) {
+    const collected: string[] = [];
+    for (const statement of fn.body.statements) {
+      if (!ts.isReturnStatement(statement) || !statement.expression) continue;
+      collected.push(...expressionToTemplates(statement.expression, vars, depth + 1));
+      if (collected.length >= MAX_EXPR_CANDIDATES) break;
+    }
+    return unique(compact(collected));
+  }
+  return expressionToTemplates(fn.body, vars, depth + 1);
 }
 
 function getCalleeName(node: ts.Expression): string | null {
@@ -225,6 +265,21 @@ function expressionToTemplates(expr: ts.Expression, vars: StringMap, depth = 0):
       const resolved = expressionToTemplates(expr.arguments[0], vars, depth + 1);
       return resolved.length > 0 ? resolved.map((entry) => encodeURIComponent(entry)) : ["[param]"];
     }
+    if (calleeName === "resolveCanonicalOrgApiPath" && expr.arguments.length > 0) {
+      const resolved = expressionToTemplates(expr.arguments[0], vars, depth + 1);
+      return resolved.length > 0 ? resolved : ["[param]"];
+    }
+    if ((calleeName === "useMemo" || calleeName === "useCallback") && expr.arguments.length > 0) {
+      const firstArg = expr.arguments[0];
+      if (ts.isArrowFunction(firstArg) || ts.isFunctionExpression(firstArg)) {
+        const resolved = functionLikeToTemplates(firstArg, vars, depth + 1);
+        return resolved.length > 0 ? resolved : [];
+      }
+    }
+    if (ts.isIdentifier(expr.expression)) {
+      const resolved = vars.get(expr.expression.text) ?? [];
+      if (resolved.length > 0) return resolved;
+    }
     return [];
   }
 
@@ -246,6 +301,14 @@ function endpointFromTemplate(candidate: string): string | null {
   return normalized;
 }
 
+function addTemplatesAsEndpoints(values: string[], output: Set<string>) {
+  for (const value of values) {
+    const endpoint = endpointFromTemplate(value);
+    if (!endpoint) continue;
+    output.add(endpoint);
+  }
+}
+
 function captureCallExpressionEndpoints(
   node: ts.CallExpression,
   vars: StringMap,
@@ -260,16 +323,15 @@ function captureCallExpressionEndpoints(
     calleeName === "post" ||
     calleeName === "put" ||
     calleeName === "patch" ||
-    calleeName === "delete";
+    calleeName === "delete" ||
+    calleeName === "useSWR" ||
+    calleeName === "useSWRImmutable" ||
+    calleeName === "useSWRMutation";
   if (!looksLikeApiInvoker) return;
   if (node.arguments.length === 0) return;
 
   const values = expressionToTemplates(node.arguments[0], vars);
-  for (const value of values) {
-    const endpoint = endpointFromTemplate(value);
-    if (!endpoint) continue;
-    output.add(endpoint);
-  }
+  addTemplatesAsEndpoints(values, output);
 }
 
 function captureNewUrlEndpoints(
@@ -280,11 +342,44 @@ function captureNewUrlEndpoints(
   const calleeName = getCalleeName(node.expression);
   if (calleeName !== "URL" || !node.arguments?.length) return;
   const values = expressionToTemplates(node.arguments[0], vars);
-  for (const value of values) {
-    const endpoint = endpointFromTemplate(value);
-    if (!endpoint) continue;
-    output.add(endpoint);
+  addTemplatesAsEndpoints(values, output);
+}
+
+function captureJsxAttributeEndpoints(
+  node: ts.JsxAttribute,
+  vars: StringMap,
+  output: Set<string>,
+) {
+  if (!node.initializer) return;
+  if (ts.isStringLiteral(node.initializer)) {
+    addTemplatesAsEndpoints([node.initializer.text], output);
+    return;
   }
+  if (ts.isJsxExpression(node.initializer) && node.initializer.expression) {
+    const values = expressionToTemplates(node.initializer.expression, vars);
+    addTemplatesAsEndpoints(values, output);
+  }
+}
+
+function captureObjectPropertyEndpoints(
+  node: ts.PropertyAssignment,
+  vars: StringMap,
+  output: Set<string>,
+) {
+  const name = ts.isIdentifier(node.name)
+    ? node.name.text
+    : ts.isStringLiteral(node.name)
+      ? node.name.text
+      : "";
+  if (!name) return;
+  const normalizedName = name.toLowerCase();
+  const matchesLikelyEndpointField =
+    normalizedName === "href" ||
+    normalizedName === "endpoint" ||
+    normalizedName === "apipath";
+  if (!matchesLikelyEndpointField) return;
+  const values = expressionToTemplates(node.initializer, vars);
+  addTemplatesAsEndpoints(values, output);
 }
 
 function buildStringMap(sourceFile: ts.SourceFile): StringMap {
@@ -337,6 +432,10 @@ function extractFrontendUsage() {
         captureCallExpressionEndpoints(node, vars, endpoints);
       } else if (ts.isNewExpression(node)) {
         captureNewUrlEndpoints(node, vars, endpoints);
+      } else if (ts.isJsxAttribute(node)) {
+        captureJsxAttributeEndpoints(node, vars, endpoints);
+      } else if (ts.isPropertyAssignment(node)) {
+        captureObjectPropertyEndpoints(node, vars, endpoints);
       }
       ts.forEachChild(node, visit);
     };
@@ -380,18 +479,6 @@ function segmentsMatch(routeSegments: string[], usageSegments: string[]) {
   return true;
 }
 
-function prefixSegmentsMatch(routeSegments: string[], usageSegments: string[]) {
-  if (usageSegments.length > routeSegments.length) return false;
-  for (let i = 0; i < usageSegments.length; i += 1) {
-    const usageSeg = usageSegments[i];
-    const routeSeg = routeSegments[i];
-    if (usageSeg !== "[param]" && usageSeg !== routeSeg) {
-      return false;
-    }
-  }
-  return true;
-}
-
 function matchUsageFiles(
   route: string,
   usage: Map<string, Set<string>>,
@@ -405,7 +492,7 @@ function matchUsageFiles(
   const matches = new Set<string>();
 
   for (const entry of usageEntries) {
-    if (segmentsMatch(routeSegments, entry.segments) || prefixSegmentsMatch(routeSegments, entry.segments)) {
+    if (segmentsMatch(routeSegments, entry.segments)) {
       for (const file of entry.files) matches.add(file);
     }
   }
@@ -425,24 +512,48 @@ function matchesEndpointPattern(pattern: string, candidate: string) {
   return true;
 }
 
-function matchesEndpointPrefix(pattern: string, candidate: string) {
-  const patternParts = pattern.split("/").filter(Boolean);
-  const candidateParts = candidate.split("/").filter(Boolean);
-  if (patternParts.length > candidateParts.length) return false;
-  for (let i = 0; i < patternParts.length; i += 1) {
-    const part = patternParts[i];
-    if (part === "[param]") continue;
-    if (part !== candidateParts[i]) return false;
-  }
-  return true;
-}
-
 function csvEscape(value: unknown) {
   const str = String(value ?? "");
   if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
     return `"${str.replace(/\"/g, "\"\"")}"`;
   }
   return str;
+}
+
+function loadRouteSetFromManifest(filePath: string) {
+  if (!fs.existsSync(filePath)) return new Set<string>();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+      routes?: unknown[];
+      entries?: Array<{ route?: unknown }>;
+    };
+    const values: unknown[] = [];
+    if (Array.isArray(parsed?.routes)) values.push(...parsed.routes);
+    if (Array.isArray(parsed?.entries)) {
+      for (const entry of parsed.entries) values.push(entry?.route);
+    }
+    const routes = new Set<string>();
+    for (const value of values) {
+      if (typeof value !== "string") continue;
+      const route = normalizeEndpoint(value);
+      if (!route.startsWith("/api/")) continue;
+      routes.add(route);
+    }
+    return routes;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function isTemplateBaseEndpoint(endpoint: string, apiRoutes: Set<string>) {
+  const normalized = normalizeEndpoint(endpoint);
+  if (!normalized.startsWith("/api/")) return false;
+  if (apiRoutes.has(normalized)) return false;
+  const prefix = `${normalized}/`;
+  for (const route of apiRoutes) {
+    if (route.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 function extractP0RoutesFromManifest() {
@@ -474,14 +585,17 @@ function main() {
   const usageEntries = buildUsageEntries(usage);
 
   const apiEntries: ApiEntry[] = apiFiles.map((file) => {
+    const content = fs.readFileSync(file, "utf8");
     const route = apiRouteFromFile(file);
+    const tombstone410 = isTombstone410(content);
     const uiFiles = matchUsageFiles(route, usage, usageEntries);
-    const type = routeType(route);
-    const exempt = isUiExempt(route);
+    const type = tombstone410 ? "tombstone" : routeType(route);
+    const exempt = isUiExempt(route, tombstone410);
     return {
       route,
       file: path.relative(ROOT, file),
       type,
+      tombstone410,
       uiFiles,
       uiStatus: exempt ? "exempt" : uiFiles.length > 0 ? "covered" : "orphan",
     };
@@ -490,25 +604,43 @@ function main() {
   apiEntries.sort((a, b) => a.route.localeCompare(b.route));
 
   const apiRoutesNormalized = apiEntries.map((entry) => normalizeEndpoint(entry.route));
+  const apiRouteSet = new Set(apiRoutesNormalized);
+  const orphanBaseline = loadRouteSetFromManifest(ORPHAN_BASELINE_PATH);
   const missingApi: Array<{ endpoint: string; files: string[] }> = [];
+  const missingApiTemplateBase: Array<{ endpoint: string; files: string[] }> = [];
   for (const [endpoint, files] of usage.entries()) {
-    if (apiRoutesNormalized.includes(endpoint)) continue;
+    if (apiRouteSet.has(endpoint)) continue;
     const matched = apiRoutesNormalized.some(
-      (candidate) =>
-        matchesEndpointPattern(endpoint, candidate) || matchesEndpointPrefix(endpoint, candidate),
+      (candidate) => matchesEndpointPattern(endpoint, candidate),
     );
     if (!matched) {
       if (MISSING_API_ALLOWLIST.has(endpoint)) continue;
-      if (isOutOfScopePadel(endpoint)) continue;
-      missingApi.push({ endpoint, files: Array.from(files).sort() });
+      const entry = { endpoint, files: Array.from(files).sort() };
+      if (isTemplateBaseEndpoint(endpoint, apiRouteSet)) {
+        missingApiTemplateBase.push(entry);
+        continue;
+      }
+      missingApi.push(entry);
     }
   }
   missingApi.sort((a, b) => a.endpoint.localeCompare(b.endpoint));
+  missingApiTemplateBase.sort((a, b) => a.endpoint.localeCompare(b.endpoint));
 
   const orphanApiAll = apiEntries.filter((entry) => entry.uiStatus === "orphan");
   const orphanApiAllowed = orphanApiAll.filter((entry) => isOrphanAllowlisted(entry.route));
-  const orphanApi = orphanApiAll.filter((entry) => !isOrphanAllowlisted(entry.route));
+  const orphanApiBaseline = orphanApiAll.filter(
+    (entry) =>
+      !isOrphanAllowlisted(entry.route) &&
+      orphanBaseline.has(normalizeEndpoint(entry.route)),
+  );
+  const orphanApi = orphanApiAll.filter(
+    (entry) =>
+      !isOrphanAllowlisted(entry.route) &&
+      !orphanBaseline.has(normalizeEndpoint(entry.route)),
+  );
   const exemptApi = apiEntries.filter((entry) => entry.uiStatus === "exempt");
+  const tombstone410Routes = exemptApi.filter((entry) => entry.tombstone410);
+  const exemptOperational = exemptApi.filter((entry) => !entry.tombstone410);
   const coveredApi = apiEntries.filter((entry) => entry.uiStatus === "covered");
 
   const rows = [
@@ -542,9 +674,12 @@ function main() {
     "## Summary",
     `- API routes total: ${apiEntries.length}`,
     `- Covered by UI: ${coveredApi.length}`,
-    `- Orphan (no UI): ${orphanApi.length}`,
+    `- Orphan (no UI): ${orphanApi.length + orphanApiBaseline.length}`,
+    `- Orphan baseline: ${orphanApiBaseline.length}`,
+    `- Orphan (new): ${orphanApi.length}`,
     `- Orphan allowlisted: ${orphanApiAllowed.length}`,
-    `- Exempt (internal/cron/webhook): ${exemptApi.length}`,
+    `- Exempt (tombstone 410): ${tombstone410Routes.length}`,
+    `- Exempt (internal/cron/webhook): ${exemptOperational.length}`,
     `- UI endpoints missing API: ${missingApi.length}`,
     "",
     "## UI endpoints missing API routes",
@@ -552,9 +687,21 @@ function main() {
       ? missingApi.map((entry) => `- ${entry.endpoint} (files: ${entry.files.join(", ")})`)
       : ["- none"]),
     "",
-    "## API routes without UI usage (excluding internal/cron/webhook)",
+    "## UI endpoints treated as base templates (not API routes)",
+    ...(missingApiTemplateBase.length
+      ? missingApiTemplateBase.map(
+          (entry) => `- ${entry.endpoint} (files: ${entry.files.join(", ")})`,
+        )
+      : ["- none"]),
+    "",
+    "## API routes without UI usage (new, excluding internal/cron/webhook)",
     ...(orphanApi.length
       ? orphanApi.map((entry) => `- ${entry.route} (${entry.file})`)
+      : ["- none"]),
+    "",
+    "## API orphan baseline matches",
+    ...(orphanApiBaseline.length
+      ? orphanApiBaseline.map((entry) => `- ${entry.route} (${entry.file})`)
       : ["- none"]),
     "",
     "## API orphan allowlist matches",
@@ -562,9 +709,14 @@ function main() {
       ? orphanApiAllowed.map((entry) => `- ${entry.route} (${entry.file})`)
       : ["- none"]),
     "",
+    "## Exempt routes (tombstone 410)",
+    ...(tombstone410Routes.length
+      ? tombstone410Routes.map((entry) => `- ${entry.route} (${entry.file})`)
+      : ["- none"]),
+    "",
     "## Exempt routes (internal/cron/webhook)",
-    ...(exemptApi.length
-      ? exemptApi.map((entry) => `- ${entry.route} (${entry.file})`)
+    ...(exemptOperational.length
+      ? exemptOperational.map((entry) => `- ${entry.route} (${entry.file})`)
       : ["- none"]),
     "",
   ];
@@ -585,8 +737,14 @@ function main() {
     const p0Covered = p0Entries.filter(
       (entry) => entry.exists && !entry.exempt && entry.uiFiles.length > 0,
     );
-    const p0MissingUi = p0Entries.filter(
+    const p0MissingUiAll = p0Entries.filter(
       (entry) => entry.exists && !entry.exempt && entry.uiFiles.length === 0,
+    );
+    const p0MissingUiAllowlisted = p0MissingUiAll.filter((entry) =>
+      P0_MISSING_UI_ALLOWLIST.has(normalizeEndpoint(entry.route)),
+    );
+    const p0MissingUi = p0MissingUiAll.filter(
+      (entry) => !P0_MISSING_UI_ALLOWLIST.has(normalizeEndpoint(entry.route)),
     );
 
     reportLines.push("## P0 endpoints coverage (scripts/manifests/p0_endpoints.json)");
@@ -612,6 +770,13 @@ function main() {
         ? p0Covered.map(
             (entry) => `- ${entry.route} (files: ${entry.uiFiles.join(", ")})`,
           )
+        : ["- none"]),
+    );
+    reportLines.push("");
+    reportLines.push("### P0 missing UI usage allowlisted");
+    reportLines.push(
+      ...(p0MissingUiAllowlisted.length
+        ? p0MissingUiAllowlisted.map((entry) => `- ${entry.route} (${entry.relPath})`)
         : ["- none"]),
     );
     reportLines.push("");

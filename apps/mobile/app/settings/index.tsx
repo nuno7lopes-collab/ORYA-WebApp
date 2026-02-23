@@ -19,6 +19,7 @@ import { tokens, useTranslation } from "@orya/shared";
 import { useRouter } from "expo-router";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { SettingsSection } from "../../components/settings/SettingsSection";
 import { SettingsToggle } from "../../components/settings/SettingsToggle";
 import { SettingsButton } from "../../components/settings/SettingsButton";
@@ -39,11 +40,12 @@ import { api } from "../../lib/api";
 import {
   getPushPermissionStatus,
   type PushPermissionReason,
-  registerForPushToken,
   requestPushPermission,
+  syncPushTokenWithBackend,
 } from "../../lib/push";
 import { useI18n, type Locale } from "../../lib/i18n";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
@@ -61,8 +63,10 @@ export default function SettingsScreen() {
   const baseUrl = env.apiBaseUrl.replace(/\/+$/, "");
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
-  const manifest = (Constants as any)?.manifest as { version?: string } | undefined;
-  const version = Constants.expoConfig?.version ?? manifest?.version ?? "1.0.0";
+  const manifestVersion = (
+    Constants as unknown as { manifest?: { version?: string } | null }
+  ).manifest?.version;
+  const version = Constants.expoConfig?.version ?? manifestVersion ?? "1.0.0";
   const deletePhrase = t("settings:session.deletePhrase");
   const deletePhraseUpper = deletePhrase.toUpperCase();
   const languageOptions: { value: Locale; label: string }[] = [
@@ -72,7 +76,7 @@ export default function SettingsScreen() {
   ];
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.profile)}
       accessibilityRole="button"
       accessibilityLabel={t("common:actions.back")}
       style={({ pressed }) => [
@@ -93,6 +97,21 @@ export default function SettingsScreen() {
 
   const profileQuery = useProfileSummary(true, accessToken, userId);
   const profile = profileQuery.data ?? null;
+  const openLegalUrl = useCallback(
+    async (url: string) => {
+      const safeUrl = resolveSafeHttpUrl(url);
+      if (!safeUrl) {
+        Alert.alert("Ligação indisponível", "Não foi possível abrir esta página.");
+        return;
+      }
+      try {
+        await RNLinking.openURL(safeUrl);
+      } catch {
+        Alert.alert("Ligação indisponível", "Não foi possível abrir esta página.");
+      }
+    },
+    [],
+  );
 
   const prefsQuery = useQuery({
     queryKey: ["settings", "prefs", userId ?? "anon"],
@@ -227,14 +246,13 @@ export default function SettingsScreen() {
       setPushStatus(result.status);
       setPushReason(result.reason);
       if (result.granted && accessToken) {
-        const token = await registerForPushToken();
-        if (token) {
-          await api.requestWithAccessToken("/api/me/push-tokens", accessToken, {
-            method: "POST",
-            body: JSON.stringify({ token, platform: "ios" }),
-          });
-        }
+        await syncPushTokenWithBackend(accessToken);
       }
+    } catch {
+      showTransientMessage(
+        setNotificationsErrorMessage,
+        t("settings:messages.pushEnableFailed"),
+      );
     } finally {
       setPushBusy(false);
     }
@@ -919,7 +937,9 @@ export default function SettingsScreen() {
           <View style={styles.stack}>
             <Pressable
               style={styles.linkRow}
-              onPress={() => Linking.openURL(termsUrl)}
+              onPress={() => {
+                void openLegalUrl(termsUrl);
+              }}
               accessibilityRole="link"
               accessibilityLabel={t("settings:legal.openTerms")}
             >
@@ -928,7 +948,9 @@ export default function SettingsScreen() {
             </Pressable>
             <Pressable
               style={styles.linkRow}
-              onPress={() => Linking.openURL(privacyUrl)}
+              onPress={() => {
+                void openLegalUrl(privacyUrl);
+              }}
               accessibilityRole="link"
               accessibilityLabel={t("settings:legal.openPrivacy")}
             >

@@ -35,6 +35,7 @@ import { useAuth } from "../../lib/auth";
 import { getMobileEnv } from "../../lib/env";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { getUserFacingError } from "../../lib/errors";
 import { trackEvent } from "../../lib/analytics";
 import { api, ApiError } from "../../lib/api";
@@ -368,7 +369,7 @@ export default function CheckoutScreen() {
     safePush(router, { pathname: "/auth", params: { next: "/checkout" } });
   }, [router]);
   const handleBack = () => {
-    safeBack(router, navigation, "/(tabs)/index");
+    safeBack(router, navigation, TAB_PATHNAMES.index);
   };
 
   useEffect(() => {
@@ -472,7 +473,7 @@ export default function CheckoutScreen() {
           });
           applyCheckoutStatus(status);
           return status;
-        } catch (err: any) {
+        } catch (err: unknown) {
           setError(
             getUserFacingError(err, "Não foi possível verificar o pagamento."),
           );
@@ -1069,7 +1070,7 @@ export default function CheckoutScreen() {
           method: resolvedMethod,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorCode = resolveApiErrorCode(err);
       setError(
         getUserFacingError(err, "Não foi possível concluir o pagamento."),
@@ -1141,7 +1142,7 @@ export default function CheckoutScreen() {
         actionLabel: "Voltar",
         action: () => {
           clearDraft();
-          router.replace("/(tabs)/index");
+          router.replace(TAB_PATHNAMES.index);
         },
       };
     }
@@ -1267,7 +1268,7 @@ export default function CheckoutScreen() {
               params: { slug: draft.slug },
             });
           } else {
-            router.replace("/(tabs)/index");
+            router.replace(TAB_PATHNAMES.index);
           }
         },
       };
@@ -1345,7 +1346,7 @@ export default function CheckoutScreen() {
               <Pressable
                 className="rounded-xl bg-white/10 px-4 py-3"
                 style={{ minHeight: tokens.layout.touchTarget }}
-                onPressIn={() => router.replace("/(tabs)/index")}
+                onPress={() => router.replace(TAB_PATHNAMES.index)}
                 accessibilityRole="button"
                 accessibilityLabel="Voltar ao Descobrir"
               >

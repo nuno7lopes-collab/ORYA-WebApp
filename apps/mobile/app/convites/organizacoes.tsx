@@ -15,6 +15,7 @@ import type { OrganizationInvite } from "../../features/notifications/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { tokens } from "@orya/shared";
 import { useAuth } from "../../lib/auth";
 
@@ -78,7 +79,7 @@ export default function OrganizationInvitesScreen() {
     if (typeof raw === "string" && raw.trim().length > 0) return raw;
     return null;
   }, [params.source]);
-  const fallbackRoute = source === "notifications" ? "/notifications" : "/(tabs)/index";
+  const fallbackRoute = source === "notifications" ? "/notifications" : TAB_PATHNAMES.index;
   const backButton = (
     <Pressable
       onPress={() => safeBack(router, navigation, fallbackRoute)}

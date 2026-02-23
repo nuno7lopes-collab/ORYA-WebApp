@@ -92,6 +92,7 @@ describe("padel match walkover route", () => {
       method: "POST",
       body: JSON.stringify({
         winner: "A",
+        resultType: "WALKOVER",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
         clientRequestId: "req-permission-denied",
@@ -135,6 +136,7 @@ describe("padel match walkover route", () => {
       method: "POST",
       body: JSON.stringify({
         winner: "A",
+        resultType: "WALKOVER",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
         clientRequestId: "req-walkover-ok",
@@ -177,6 +179,7 @@ describe("padel match walkover route", () => {
       method: "POST",
       body: JSON.stringify({
         winner: "A",
+        resultType: "WALKOVER",
         confirmedByRole: "DIRETOR_PROVA",
         confirmationSource: "WEB_ORGANIZATION",
         clientRequestId: "req-missing-director",
@@ -203,10 +206,40 @@ describe("padel match walkover route", () => {
 
     const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
       method: "POST",
-      body: JSON.stringify({ winner: "A", clientRequestId: "req-missing-meta" }),
+      body: JSON.stringify({ winner: "A", resultType: "WALKOVER", clientRequestId: "req-missing-meta" }),
     });
     const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
     expect(res.status).toBe(400);
+  });
+
+  it("rejeita payload sem resultType explícito", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+    prisma.eventMatchSlot.findUnique.mockResolvedValue({
+      id: 1,
+      participants: [],
+      eventId: 5,
+      status: "PENDING",
+      roundType: "GROUPS",
+      roundLabel: "G1",
+      event: { organizationId: 99 },
+    });
+
+    const req = new NextRequest("http://localhost/api/padel/matches/1/walkover", {
+      method: "POST",
+      body: JSON.stringify({
+        winner: "A",
+        confirmedByRole: "DIRETOR_PROVA",
+        confirmationSource: "WEB_ORGANIZATION",
+        clientRequestId: "req-missing-result-type",
+      }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: "1" }) });
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.errorCode ?? body.error).toBe("INVALID_RESULT_TYPE");
   });
 
   it("notifica DIRETOR_PROVA quando confirmação vem de REFEREE", async () => {
@@ -250,6 +283,7 @@ describe("padel match walkover route", () => {
       method: "POST",
       body: JSON.stringify({
         winner: "A",
+        resultType: "WALKOVER",
         confirmedByRole: "REFEREE",
         confirmationSource: "WEB_ORGANIZATION",
         clientRequestId: "req-referee-notify",

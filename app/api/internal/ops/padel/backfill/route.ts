@@ -10,14 +10,17 @@ import {
 import { rebuildPadelPlayerHistoryProjectionForEvent } from "@/domain/padel/playerHistoryProjection";
 
 const parseBool = (value: string | null) => value === "true" || value === "1";
-const parseNumber = (value: string | null) => {
-  const parsed = value ? Number(value) : NaN;
-  return Number.isFinite(parsed) ? parsed : null;
+const parsePositiveInteger = (value: string | null) => {
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
 const clampLimit = (value: number | null) => {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 50;
-  return Math.min(Math.max(Math.floor(value), 1), 200);
+  if (value == null) return 50;
+  return Math.min(Math.max(value, 1), 200);
 };
 
 async function _POST(req: NextRequest) {
@@ -27,9 +30,22 @@ async function _POST(req: NextRequest) {
 
   const params = req.nextUrl.searchParams;
   const apply = parseBool(params.get("apply"));
-  const eventId = parseNumber(params.get("eventId"));
-  const cursor = parseNumber(params.get("cursor"));
-  const limit = clampLimit(parseNumber(params.get("limit")));
+  const eventIdParam = params.get("eventId");
+  const cursorParam = params.get("cursor");
+  const limitParam = params.get("limit");
+  const eventId = parsePositiveInteger(eventIdParam);
+  const cursor = parsePositiveInteger(cursorParam);
+  const limitValue = parsePositiveInteger(limitParam);
+  if (eventIdParam != null && eventId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
+  if (cursorParam != null && cursor == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CURSOR" }, { status: 400 });
+  }
+  if (limitParam != null && limitValue == null) {
+    return jsonWrap({ ok: false, error: "INVALID_LIMIT" }, { status: 400 });
+  }
+  const limit = clampLimit(limitValue);
   const completedOnly = params.get("completedOnly") ? parseBool(params.get("completedOnly")) : true;
   const backfillRatingContext = params.get("backfillRatingContext")
     ? parseBool(params.get("backfillRatingContext"))

@@ -5,6 +5,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { SocialSuggestion } from "./types";
 import { useRouter } from "expo-router";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   item: SocialSuggestion;
@@ -38,7 +39,7 @@ export const NetworkSuggestionCard = memo(function NetworkSuggestionCard({
         <Pressable
           onPress={() => {
             if (item.username) {
-              router.push({ pathname: "/[username]", params: { username: item.username } });
+              safePush(router, { pathname: "/[username]", params: { username: item.username } });
             }
           }}
           accessibilityRole="button"

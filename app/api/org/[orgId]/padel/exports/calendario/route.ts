@@ -10,6 +10,7 @@ import { formatDateTime, resolveLocale, t } from "@/lib/i18n";
 import PDFDocument from "pdfkit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { OrganizationModule } from "@prisma/client";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_MATCH_DURATION_MINUTES = 60;
@@ -193,23 +194,30 @@ async function _GET(req: NextRequest) {
     data: { user },
   } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) {
+    return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+  }
+  const requestOrganizationId = orgResolution.organizationId;
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true, slug: true, title: true, timezone: true },
+    select: { organizationId: true, templateType: true, slug: true, title: true, timezone: true },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId || event.templateType !== "PADEL" || event.organizationId !== requestOrganizationId) {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: event.organizationId,
+    organizationId: requestOrganizationId,
     roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
   });
   if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   const permission = await ensureMemberModuleAccess({
-    organizationId: event.organizationId,
+    organizationId: requestOrganizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,

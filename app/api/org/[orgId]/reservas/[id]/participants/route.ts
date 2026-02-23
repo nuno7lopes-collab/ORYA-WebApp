@@ -4,10 +4,12 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
+import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -54,11 +56,18 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!organization || !membership) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
       select: {
         id: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
         invites: {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           select: {
@@ -86,6 +95,20 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
     if (!booking) {
       return fail(ctx, 404, "NOT_FOUND", "Reserva não encontrada.");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(ctx, staffAccess.status, staffAccess.errorCode, staffAccess.message);
     }
 
     return respondOk(ctx, { invites: booking.invites, participants: booking.participants });

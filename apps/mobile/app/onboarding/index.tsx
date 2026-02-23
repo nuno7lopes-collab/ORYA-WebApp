@@ -26,6 +26,7 @@ import { StepProgress } from "../../components/onboarding/StepProgress";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { resetOnboardingDone, setOnboardingDone } from "../../lib/onboardingState";
 import {
   clearOnboardingDraft,
@@ -107,6 +108,9 @@ const withTimeout = async <T,>(promise: Promise<T>, ms: number, label = "timeout
     if (timeoutId) clearTimeout(timeoutId);
   }
 };
+
+const resolveErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err ?? "");
 
 export default function OnboardingScreen() {
   const { t } = useTranslation();
@@ -440,11 +444,11 @@ export default function OnboardingScreen() {
         Alert.alert(t("onboarding:errors.usernameUnavailableTitle"), message);
       }
       return result.available;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (requestId !== usernameRequestIdRef.current) return false;
       setUsernameStatus("error");
       const message =
-        String(err?.message ?? "").includes("timeout") || String(err?.message ?? "").includes("abort")
+        resolveErrorMessage(err).includes("timeout") || resolveErrorMessage(err).includes("abort")
           ? t("onboarding:errors.usernameCheckTimeout")
           : t("onboarding:errors.usernameCheckFailed");
       Alert.alert(t("common:labels.error"), message);
@@ -541,9 +545,9 @@ export default function OnboardingScreen() {
       });
       await setOnboardingDone(true);
       await clearOnboardingDraft();
-      router.replace("/agora");
-    } catch (err: any) {
-      const raw = String(err?.message ?? "");
+      router.replace(TAB_PATHNAMES.agora);
+    } catch (err: unknown) {
+      const raw = resolveErrorMessage(err);
       const message = t("onboarding:errors.finalizeFailed");
       if (
         raw.includes("USERNAME_TAKEN") ||
@@ -584,8 +588,8 @@ export default function OnboardingScreen() {
         interests,
       });
       setStep("interests");
-    } catch (err: any) {
-      const rawMessage = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const rawMessage = resolveErrorMessage(err);
       if (
         rawMessage.includes("USERNAME_TAKEN") ||
         rawMessage.toLowerCase().includes("username") ||
@@ -621,8 +625,8 @@ export default function OnboardingScreen() {
       } else {
         await finalizeOnboarding("standard");
       }
-    } catch (err: any) {
-      const rawMessage = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const rawMessage = resolveErrorMessage(err);
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
@@ -653,8 +657,8 @@ export default function OnboardingScreen() {
         },
       });
       await finalizeOnboarding("standard");
-    } catch (err: any) {
-      const rawMessage = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const rawMessage = resolveErrorMessage(err);
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;
@@ -685,8 +689,8 @@ export default function OnboardingScreen() {
         },
       });
       await finalizeOnboarding("padel-skip");
-    } catch (err: any) {
-      const rawMessage = String(err?.message ?? "");
+    } catch (err: unknown) {
+      const rawMessage = resolveErrorMessage(err);
       if (rawMessage.includes("API 401") || rawMessage.includes("UNAUTHENTICATED")) {
         await handleAuthError();
         return;

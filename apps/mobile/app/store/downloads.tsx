@@ -9,6 +9,7 @@ import { useAuth } from "../../lib/auth";
 import { tokens } from "@orya/shared";
 import { getStoreErrorMessage } from "../../features/store/errors";
 import { useStoreDigitalDownloadMutation, useStoreDigitalGrants } from "../../features/store/hooks";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return null;
@@ -34,7 +35,11 @@ export default function StoreDownloadsScreen() {
   const handleDownload = async (grantId: number, assetId: number) => {
     try {
       const signed = await download.mutateAsync({ grantId, assetId });
-      await Linking.openURL(signed.url);
+      const safeUrl = resolveSafeHttpUrl(signed.url);
+      if (!safeUrl) {
+        throw new Error("URL de descarga inválida.");
+      }
+      await Linking.openURL(safeUrl);
     } catch {
       // handled in UI
     }

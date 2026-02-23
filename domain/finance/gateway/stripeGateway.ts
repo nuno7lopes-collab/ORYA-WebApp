@@ -86,6 +86,25 @@ export async function retrieveStripeAccount(id: string) {
   return stripe.accounts.retrieve(id);
 }
 
+export async function retrieveStripeEvent(
+  id: string,
+  params?: Stripe.EventRetrieveParams,
+) {
+  const primaryEnv = getStripeEnv();
+  const primary = getStripeClientForEnv(primaryEnv);
+  try {
+    return primary.events.retrieve(id, params as Stripe.EventRetrieveParams);
+  } catch (err) {
+    if (!isNoSuchStripeEventError(err)) throw err;
+    const fallbackEnv: StripeRuntimeEnv = primaryEnv === "test" ? "prod" : "test";
+    const fallback = getStripeClientForEnv(fallbackEnv);
+    return fallback.events.retrieve(
+      id,
+      params as Stripe.EventRetrieveParams,
+    );
+  }
+}
+
 export async function retrieveCharge(
   id: string,
   params?: Stripe.ChargeRetrieveParams,
@@ -129,6 +148,11 @@ export async function createTransfer(
 function isNoSuchPaymentIntentError(err: unknown) {
   if (!(err instanceof Error)) return false;
   return err.message.toLowerCase().includes("no such payment_intent");
+}
+
+function isNoSuchStripeEventError(err: unknown) {
+  if (!(err instanceof Error)) return false;
+  return err.message.toLowerCase().includes("no such event");
 }
 
 export function constructStripeWebhookEvent(

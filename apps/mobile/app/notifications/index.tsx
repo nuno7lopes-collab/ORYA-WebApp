@@ -18,6 +18,7 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { useAuth } from "../../lib/auth";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import {
   invalidateNotificationsAll,
   invalidateNotificationsUnread,
@@ -64,7 +65,9 @@ const CATEGORY_LABELS: Record<AggregatedNotificationItem["category"], string> = 
   marketing: "Marketing",
 };
 
-const CATEGORY_ICONS: Record<AggregatedNotificationItem["category"], string> = {
+type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+
+const CATEGORY_ICONS: Record<AggregatedNotificationItem["category"], IoniconName> = {
   network: "people",
   events: "calendar",
   system: "notifications",
@@ -117,16 +120,8 @@ const AvatarStack = ({
   const visible = actors.slice(0, 3);
   const width = visible.length > 0 ? size + (visible.length - 1) * (size - overlap) : size;
 
-  const Wrapper: React.ElementType = onPress ? Pressable : View;
-
-  return (
-    <Wrapper
-      onPress={(event: any) => {
-        event?.stopPropagation?.();
-        onPress?.();
-      }}
-      style={[styles.avatarStack, { width, height: size }]}
-    >
+  const stackContent = (
+    <>
       {visible.length === 0 ? (
         <AvatarCircle size={size} iconName="person" borderColor={ringColor} borderWidth={2} />
       ) : null}
@@ -143,7 +138,23 @@ const AvatarStack = ({
           }}
         />
       ))}
-    </Wrapper>
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={[styles.avatarStack, { width, height: size }]}>{stackContent}</View>;
+  }
+
+  return (
+    <Pressable
+      onPress={(event) => {
+        event.stopPropagation();
+        onPress();
+      }}
+      style={[styles.avatarStack, { width, height: size }]}
+    >
+      {stackContent}
+    </Pressable>
   );
 };
 
@@ -164,7 +175,7 @@ const NotificationThumbnail = ({ url, category }: { url?: string | null; categor
 
   return (
     <View style={[styles.thumbnail, styles.thumbnailFallback]}>
-      <Ionicons name={CATEGORY_ICONS[category] as any} size={18} color="rgba(255,255,255,0.75)" />
+      <Ionicons name={CATEGORY_ICONS[category]} size={18} color="rgba(255,255,255,0.75)" />
     </View>
   );
 };
@@ -200,7 +211,7 @@ export default function NotificationsScreen() {
   const showSkeleton = feed.isLoading && items.length === 0;
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [
@@ -219,7 +230,7 @@ export default function NotificationsScreen() {
   );
   const topBarRight = (
     <Pressable
-      onPressIn={() => safePush(router, "/settings")}
+      onPress={() => safePush(router, "/settings")}
       style={({ pressed }) => [
         styles.settingsButton,
         pressed ? { opacity: 0.85, transform: [{ scale: 0.98 }] } : null,
@@ -913,7 +924,7 @@ export default function NotificationsScreen() {
       <Text style={styles.emptyTitle}>Inicia sessão</Text>
       <Text style={styles.emptyText}>Entra na tua conta para veres as notificações.</Text>
       <Pressable
-        onPressIn={() => safePush(router, { pathname: "/auth", params: { next: "/notifications" } })}
+        onPress={() => safePush(router, { pathname: "/auth", params: { next: "/notifications" } })}
         className="mt-4 rounded-2xl bg-white/90 px-4 py-3"
         style={{ minHeight: tokens.layout.touchTarget }}
         accessibilityRole="button"

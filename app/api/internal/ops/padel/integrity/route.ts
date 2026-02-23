@@ -12,7 +12,7 @@ async function _GET(req: NextRequest) {
   }
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   }
 

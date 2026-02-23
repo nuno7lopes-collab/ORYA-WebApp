@@ -13,17 +13,20 @@ import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { queueWaitlistPromoted } from "@/domain/notifications/splitPayments";
 import { queueImportantUpdateEmail } from "@/domain/notifications/email";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
-async function ensureOrganizationAccess(userId: string, eventId: number) {
+async function ensureOrganizationAccess(userId: string, eventId: number, requestOrganizationId: number) {
   const evt = await prisma.event.findUnique({
-    where: { id: eventId },
+    where: { id: eventId, isDeleted: false },
     select: {
       organizationId: true,
+      templateType: true,
       organization: { select: { officialEmail: true, officialEmailVerifiedAt: true } },
     },
   });
-  if (!evt?.organizationId) return false;
+  if (!evt?.organizationId || evt.templateType !== "PADEL") return false;
+  if (evt.organizationId !== requestOrganizationId) return false;
   const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
     reasonCode: "PADEL_WAITLIST",
     organizationId: evt.organizationId,
@@ -74,10 +77,13 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = typeof body?.eventId === "number" ? body.eventId : Number(body?.eventId);
   const categoryIdRaw = typeof body?.categoryId === "number" ? body.categoryId : Number(body?.categoryId);
-  const categoryId = Number.isFinite(categoryIdRaw) ? Number(categoryIdRaw) : null;
-  if (!Number.isFinite(eventId)) return fail(400, "INVALID_EVENT");
+  const categoryId = Number.isInteger(categoryIdRaw) && categoryIdRaw > 0 ? Number(categoryIdRaw) : null;
+  if (!Number.isInteger(eventId) || eventId <= 0) return fail(400, "INVALID_EVENT");
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) return fail(400, "ORG_ID_REQUIRED");
+  const requestOrganizationId = orgResolution.organizationId;
 
-  const authorized = await ensureOrganizationAccess(data.user.id, eventId);
+  const authorized = await ensureOrganizationAccess(data.user.id, eventId, requestOrganizationId);
   if (authorized !== true) {
     if (authorized && typeof authorized === "object" && "errorCode" in authorized) {
       return respondError(
@@ -96,15 +102,15 @@ async function _POST(req: NextRequest) {
 
   const [event, config] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: eventId },
-      select: { startsAt: true, status: true, title: true, slug: true, organizationId: true },
+      where: { id: eventId, isDeleted: false },
+      select: { startsAt: true, status: true, title: true, slug: true, organizationId: true, templateType: true },
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId },
       select: { advancedSettings: true, splitDeadlineHours: true, lifecycleStatus: true },
     }),
   ]);
-  if (!event || !config) {
+  if (!event || event.templateType !== "PADEL" || event.organizationId !== requestOrganizationId || !config) {
     return fail(404, "EVENT_NOT_FOUND");
   }
 
@@ -155,6 +161,9 @@ async function _POST(req: NextRequest) {
 
   if (!result.ok) {
     return fail(409, result.code);
+  }
+  if (result.organizationId !== requestOrganizationId) {
+    return fail(404, "EVENT_NOT_FOUND");
   }
 
   await ensurePadelPlayerProfile({ organizationId: result.organizationId, userId: result.userId });

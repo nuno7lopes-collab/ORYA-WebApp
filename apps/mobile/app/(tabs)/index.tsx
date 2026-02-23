@@ -227,7 +227,7 @@ export default function DiscoverScreen() {
 
   const toggleWorld = useCallback(
     (key: "padel" | "events" | "services") => {
-      const exists = worlds.includes(key as any);
+      const exists = worlds.includes(key);
       const next = exists
         ? worlds.filter((item) => item !== key)
         : [...worlds, key];
@@ -812,7 +812,7 @@ export default function DiscoverScreen() {
                               }
                             >
                               <Pressable
-                                onPressIn={() => safePush(router, "/map")}
+                                onPress={() => safePush(router, "/map")}
                                 style={({ pressed }) => [
                                   styles.emptyCtaIcon,
                                   styles.emptyCtaSecondary,

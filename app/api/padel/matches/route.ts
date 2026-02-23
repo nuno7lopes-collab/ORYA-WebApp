@@ -137,6 +137,17 @@ function fail(
   return respondError(ctx, { errorCode: resolvedCode, message: resolvedMessage, retryable }, { status });
 }
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function _GET(req: NextRequest) {
   const mobileGate = enforceMobileVersionGate(req);
   if (mobileGate) return mobileGate;
@@ -148,14 +159,20 @@ async function _GET(req: NextRequest) {
   } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
-  if (!Number.isFinite(eventId)) return fail(ctx, 400, "INVALID_EVENT");
-  const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
+  const categoryIdParam = req.nextUrl.searchParams.get("categoryId");
+  const hasCategoryId = categoryIdParam !== null;
+  const categoryIdParsed = hasCategoryId ? Number(categoryIdParam) : null;
+  const categoryId =
+    categoryIdParsed !== null && Number.isInteger(categoryIdParsed) && categoryIdParsed > 0 ? categoryIdParsed : null;
+  if (!Number.isInteger(eventId) || eventId <= 0) return fail(ctx, 400, "INVALID_EVENT");
+  if (hasCategoryId && categoryId === null) return fail(ctx, 400, "INVALID_CATEGORY");
+  const matchCategoryFilter = categoryId !== null ? { categoryId } : {};
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: {
       organizationId: true,
+      templateType: true,
       status: true,
       padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
       accessPolicies: {
@@ -165,7 +182,9 @@ async function _GET(req: NextRequest) {
       },
     },
   });
-  if (!event?.organizationId) return fail(ctx, 404, "EVENT_NOT_FOUND");
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return fail(ctx, 404, "EVENT_NOT_FOUND");
+  }
 
   const rateLimited = await enforcePublicRateLimit(req, {
     keyPrefix: "padel_matches",
@@ -372,23 +391,17 @@ async function _POST(req: NextRequest) {
       : undefined;
   const scoreRaw = body.score;
   const startAtRaw = body.startAt ? new Date(String(body.startAt)) : undefined;
-  const courtIdRaw =
-    typeof body.courtId === "number"
-      ? body.courtId
-      : typeof body.courtId === "string"
-        ? Number(body.courtId)
-        : undefined;
-  const courtNumberRaw =
-    typeof body.courtNumber === "number"
-      ? body.courtNumber
-      : typeof body.courtNumber === "string"
-        ? Number(body.courtNumber)
-        : undefined;
+  const hasCourtId = body.courtId != null;
+  const hasCourtNumber = body.courtNumber != null;
+  const courtIdRaw = hasCourtId ? parsePositiveInt(body.courtId) : undefined;
+  const courtNumberRaw = hasCourtNumber ? parsePositiveInt(body.courtNumber) : undefined;
 
-  if (!Number.isFinite(matchId)) return fail(ctx, 400, "INVALID_ID");
+  if (!Number.isInteger(matchId) || matchId <= 0) return fail(ctx, 400, "INVALID_ID");
   if (startAtRaw && Number.isNaN(startAtRaw.getTime())) {
     return fail(ctx, 400, "INVALID_START_AT");
   }
+  if (hasCourtId && courtIdRaw == null) return fail(ctx, 400, "INVALID_COURT_ID");
+  if (hasCourtNumber && courtNumberRaw == null) return fail(ctx, 400, "INVALID_COURT_NUMBER");
 
   const match = await prisma.eventMatchSlot.findUnique({
     where: { id: matchId },
@@ -574,8 +587,8 @@ async function _POST(req: NextRequest) {
       : (match.scoreSets as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined);
   let courtIdValue: number | undefined;
   let courtNumberValue: number | undefined;
-  if (Number.isFinite(courtIdRaw)) {
-    const courtIdCandidate = Math.floor(courtIdRaw as number);
+  if (typeof courtIdRaw === "number") {
+    const courtIdCandidate = courtIdRaw;
     const courtExists = await prisma.padelClubCourt.findFirst({
       where: { id: courtIdCandidate, club: { organizationId: match.event.organizationId } },
       select: { id: true },
@@ -586,8 +599,8 @@ async function _POST(req: NextRequest) {
       return fail(ctx, 400, "INVALID_COURT_ID");
     }
   }
-  if (Number.isFinite(courtNumberRaw)) {
-    courtNumberValue = Math.floor(courtNumberRaw as number);
+  if (typeof courtNumberRaw === "number") {
+    courtNumberValue = courtNumberRaw;
   }
 
   const { match: updated, outboxEventId } = await updatePadelMatch({

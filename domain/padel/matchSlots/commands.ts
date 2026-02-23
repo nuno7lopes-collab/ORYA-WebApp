@@ -114,8 +114,8 @@ export async function applyMatchSlotUpdate(input: {
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ match: MatchSlotSnapshot; eventLogId: string }>> {
   const { matchId, organizationId, actorUserId, correlationId, causationId } = input;
-  if (!Number.isFinite(matchId)) return { ok: false, error: "INVALID_MATCH" };
-  if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
+  if (!Number.isInteger(matchId) || matchId <= 0) return { ok: false, error: "INVALID_MATCH" };
+  if (!Number.isInteger(organizationId) || organizationId <= 0) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
     const existing = await tx.eventMatchSlot.findUnique({
@@ -322,14 +322,14 @@ export async function createMatchSlot(input: {
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ match: MatchSlotSnapshot; eventLogId: string }>> {
   const { organizationId, actorUserId, correlationId, causationId } = input;
-  if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
+  if (!Number.isInteger(organizationId) || organizationId <= 0) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
     const eventId =
       "event" in input.data && typeof input.data.event === "object" && input.data.event && "connect" in input.data.event
         ? Number((input.data.event as Prisma.EventCreateNestedOneWithoutEventMatchSlotsInput).connect?.id)
         : Number((input.data as Prisma.EventMatchSlotUncheckedCreateInput).eventId ?? NaN);
-    if (!Number.isFinite(eventId)) return { ok: false as const, error: "INVALID_EVENT" };
+    if (!Number.isInteger(eventId) || eventId <= 0) return { ok: false as const, error: "INVALID_EVENT" };
 
     const event = await tx.event.findFirst({ where: { id: eventId, organizationId }, select: { id: true } });
     if (!event) return { ok: false as const, error: "EVENT_NOT_FOUND" };
@@ -436,8 +436,8 @@ export async function deleteMatchSlot(input: {
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ matchId: number; eventLogId: string }>> {
   const { matchId, organizationId, actorUserId, correlationId, causationId } = input;
-  if (!Number.isFinite(matchId)) return { ok: false, error: "INVALID_MATCH" };
-  if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
+  if (!Number.isInteger(matchId) || matchId <= 0) return { ok: false, error: "INVALID_MATCH" };
+  if (!Number.isInteger(organizationId) || organizationId <= 0) return { ok: false, error: "INVALID_ORG" };
 
   const run = async (tx: Prisma.TransactionClient) => {
     const existing = await tx.eventMatchSlot.findUnique({
@@ -545,8 +545,8 @@ export async function deleteMatchSlotsByEvent(input: {
   tx?: Prisma.TransactionClient;
 }): Promise<MatchSlotResult<{ deleted: number }>> {
   const { organizationId, eventId, actorUserId, correlationId, causationId } = input;
-  if (!Number.isFinite(organizationId)) return { ok: false, error: "INVALID_ORG" };
-  if (!Number.isFinite(eventId)) return { ok: false, error: "INVALID_EVENT" };
+  if (!Number.isInteger(organizationId) || organizationId <= 0) return { ok: false, error: "INVALID_ORG" };
+  if (!Number.isInteger(eventId) || eventId <= 0) return { ok: false, error: "INVALID_EVENT" };
 
   const run = async (tx: Prisma.TransactionClient) => {
     const matches = await tx.eventMatchSlot.findMany({

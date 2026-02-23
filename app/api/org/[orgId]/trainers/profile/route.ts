@@ -231,7 +231,7 @@ async function _PATCH(req: NextRequest) {
     });
 
     if (requestReview) {
-      const trainersHref = buildOrgHref(organization.id, "/treinadores");
+      const trainersHref = buildOrgHref(organization.id, "/team/trainers");
       await createNotification({
         userId: user.id,
         type: NotificationType.SYSTEM_ANNOUNCE,

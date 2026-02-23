@@ -11,14 +11,15 @@ import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const MAX_TITLE_LENGTH = 80;
 const MAX_MESSAGE_LENGTH = 600;
 
-async function ensureOrganizationAccess(userId: string, eventId: number) {
+async function ensureOrganizationAccess(userId: string, eventId: number, requestOrganizationId: number) {
   const evt = await prisma.event.findUnique({
-    where: { id: eventId },
+    where: { id: eventId, isDeleted: false },
     select: {
       organizationId: true,
       templateType: true,
@@ -26,6 +27,7 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
   });
   if (!evt?.organizationId || evt.templateType !== "PADEL") return false;
+  if (evt.organizationId !== requestOrganizationId) return false;
   const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
     reasonCode: "PADEL_BROADCAST",
     organizationId: evt.organizationId,
@@ -65,9 +67,16 @@ async function _POST(req: NextRequest) {
   if (!body) return fail(400, "INVALID_BODY");
 
   const eventId = typeof body?.eventId === "number" ? body.eventId : Number(body?.eventId);
-  if (!Number.isFinite(eventId)) return fail(400, "INVALID_EVENT");
+  if (!Number.isInteger(eventId) || eventId <= 0) return fail(400, "INVALID_EVENT");
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) return fail(400, "ORG_ID_REQUIRED");
+  const requestOrganizationId = orgResolution.organizationId;
 
-  const audienceRaw = typeof body?.audience === "string" ? body.audience.toUpperCase() : "ALL";
+  const hasAudience = Object.prototype.hasOwnProperty.call(body, "audience");
+  const audienceRaw = typeof body?.audience === "string" ? body.audience.trim().toUpperCase() : "";
+  if (hasAudience && audienceRaw !== "ALL" && audienceRaw !== "PLAYERS" && audienceRaw !== "WAITLIST") {
+    return fail(400, "INVALID_AUDIENCE");
+  }
   const audience = audienceRaw === "WAITLIST" ? "WAITLIST" : audienceRaw === "PLAYERS" ? "PLAYERS" : "ALL";
 
   const titleRaw = typeof body?.title === "string" ? body.title.trim() : "";
@@ -76,7 +85,7 @@ async function _POST(req: NextRequest) {
   if (messageRaw.length > MAX_MESSAGE_LENGTH) return fail(413, "MESSAGE_TOO_LONG");
   if (titleRaw.length > MAX_TITLE_LENGTH) return fail(413, "TITLE_TOO_LONG");
 
-  const authorized = await ensureOrganizationAccess(data.user.id, eventId);
+  const authorized = await ensureOrganizationAccess(data.user.id, eventId, requestOrganizationId);
   if (authorized !== true) {
     if (authorized && typeof authorized === "object" && "errorCode" in authorized) {
       return respondError(
@@ -94,10 +103,12 @@ async function _POST(req: NextRequest) {
   }
 
   const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { id: true, title: true, slug: true, organizationId: true },
+    where: { id: eventId, isDeleted: false },
+    select: { id: true, title: true, slug: true, organizationId: true, templateType: true },
   });
-  if (!event?.organizationId) return fail(404, "EVENT_NOT_FOUND");
+  if (!event?.organizationId || event.templateType !== "PADEL" || event.organizationId !== requestOrganizationId) {
+    return fail(404, "EVENT_NOT_FOUND");
+  }
 
   const userIds = new Set<string>();
   if (audience === "ALL" || audience === "PLAYERS") {

@@ -188,21 +188,6 @@ async function _POST(req: NextRequest) {
     if (!publicAccess.ok) {
       return fail(publicAccess.errorCode, publicAccess.error, 403);
     }
-    const paymentsGate = getPublicStorePaymentsGate({
-      orgType: store.organization?.orgType,
-      officialEmail: store.organization?.officialEmail,
-      officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
-      stripeAccountId: store.organization?.stripeAccountId,
-      stripeChargesEnabled: store.organization?.stripeChargesEnabled,
-      stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
-    });
-    if (!paymentsGate.ok) {
-      return fail("PAYMENTS_NOT_READY", "Pagamentos indisponiveis.", 403, false, {
-        missingEmail: paymentsGate.missingEmail,
-        missingStripe: paymentsGate.missingStripe,
-      });
-    }
-
     const body = await req.json().catch(() => null);
     const parsed = checkoutSchema.safeParse(body);
     if (!parsed.success) {
@@ -723,6 +708,23 @@ async function _POST(req: NextRequest) {
     });
     const totalCents = combinedFees.totalCents;
     const payoutAmountCents = Math.max(0, totalCents - pricing.platformFeeCents);
+
+    if (totalCents > 0) {
+      const paymentsGate = getPublicStorePaymentsGate({
+        orgType: store.organization?.orgType,
+        officialEmail: store.organization?.officialEmail,
+        officialEmailVerifiedAt: store.organization?.officialEmailVerifiedAt,
+        stripeAccountId: store.organization?.stripeAccountId,
+        stripeChargesEnabled: store.organization?.stripeChargesEnabled,
+        stripePayoutsEnabled: store.organization?.stripePayoutsEnabled,
+      });
+      if (!paymentsGate.ok) {
+        return fail("PAYMENTS_NOT_READY", "Pagamentos indisponiveis.", 403, false, {
+          missingEmail: paymentsGate.missingEmail,
+          missingStripe: paymentsGate.missingStripe,
+        });
+      }
+    }
 
     const order = await prisma.$transaction(async (tx) => {
       const created = await tx.storeOrder.create({

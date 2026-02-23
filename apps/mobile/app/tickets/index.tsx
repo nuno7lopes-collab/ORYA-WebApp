@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusFrameMonitor } from "../../components/perf/useFocusFrameMonitor";
 
@@ -140,7 +141,7 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
 
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/(tabs)/index")}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.index)}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [
@@ -232,7 +233,7 @@ export default function TicketsScreen({ showBackButton = true, embedded = false 
               <Pressable
                 className="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                 onPress={() => {
-                  safePush(router, "/(tabs)/index");
+                  safePush(router, TAB_PATHNAMES.index);
                 }}
                 style={{ minHeight: tokens.layout.touchTarget }}
                 accessibilityRole="button"

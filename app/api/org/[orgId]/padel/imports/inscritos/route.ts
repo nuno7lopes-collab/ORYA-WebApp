@@ -38,6 +38,7 @@ import {
 import { ensurePadelPlayerProfileId } from "@/domain/padel/playerProfile";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { resolvePhoneNormalizationOptions } from "@/lib/phone";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
@@ -47,6 +48,17 @@ const asString = (value: unknown) => {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
   return String(value).trim();
+};
+
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 };
 type ImportSummary = { totalRows: number; validRows: number; errorRows: number; errorCount: number };
 
@@ -114,6 +126,9 @@ async function _POST(req: NextRequest) {
     data: { user },
   } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
   if (!user) return fail(401, "UNAUTHENTICATED");
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) return fail(400, "ORG_ID_REQUIRED");
+  const requestOrganizationId = orgResolution.organizationId;
 
   const formData =
     (await req.formData().catch(() => null)) as { get(name: string): FormDataEntryValue | null } | null;
@@ -121,13 +136,15 @@ async function _POST(req: NextRequest) {
 
   const eventId = Number(formData.get("eventId"));
   const fallbackCategoryIdRaw = formData.get("fallbackCategoryId");
-  const fallbackCategoryId = fallbackCategoryIdRaw ? Number(fallbackCategoryIdRaw) : Number.NaN;
-  const fallbackCategoryIdValue =
-    Number.isFinite(fallbackCategoryId) && fallbackCategoryId > 0 ? Math.floor(fallbackCategoryId) : null;
+  const fallbackCategoryProvided = fallbackCategoryIdRaw != null && asString(fallbackCategoryIdRaw) !== "";
+  const fallbackCategoryIdValue = fallbackCategoryProvided ? parsePositiveInt(fallbackCategoryIdRaw) : null;
   const dryRun = resolveImportBoolean(asString(formData.get("dryRun")), false);
   const file = formData.get("file");
-  if (!Number.isFinite(eventId) || eventId <= 0) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return fail(400, "INVALID_EVENT");
+  }
+  if (fallbackCategoryProvided && fallbackCategoryIdValue == null) {
+    return fail(400, "INVALID_CATEGORY");
   }
   if (!file || !(file instanceof File)) {
     return fail(400, "MISSING_FILE");
@@ -135,17 +152,19 @@ async function _POST(req: NextRequest) {
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true },
+    select: { organizationId: true, templateType: true },
   });
-  if (!event?.organizationId) return fail(404, "EVENT_NOT_FOUND");
+  if (!event?.organizationId || event.templateType !== "PADEL" || event.organizationId !== requestOrganizationId) {
+    return fail(404, "EVENT_NOT_FOUND");
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId: event.organizationId,
+    organizationId: requestOrganizationId,
     roles: ROLE_ALLOWLIST,
   });
   if (!organization || !membership) return fail(403, "FORBIDDEN");
   const permission = await ensureMemberModuleAccess({
-    organizationId: event.organizationId,
+    organizationId: requestOrganizationId,
     userId: user.id,
     role: membership.role,
     rolePack: membership.rolePack,

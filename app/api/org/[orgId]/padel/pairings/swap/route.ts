@@ -16,11 +16,12 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { recordOrganizationAuditSafe } from "@/lib/organizationAudit";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
-async function ensureOrganizationAccess(userId: string, eventId: number) {
+async function ensureOrganizationAccess(userId: string, eventId: number, requestOrganizationId: number) {
   const evt = await prisma.event.findUnique({
-    where: { id: eventId },
+    where: { id: eventId, isDeleted: false },
     select: {
       organizationId: true,
       templateType: true,
@@ -28,6 +29,7 @@ async function ensureOrganizationAccess(userId: string, eventId: number) {
     },
   });
   if (!evt?.organizationId || evt.templateType !== "PADEL") return false;
+  if (evt.organizationId !== requestOrganizationId) return false;
   const emailGate = ensureOrganizationEmailVerified(evt.organization ?? {}, {
     reasonCode: "PADEL_PAIRING_SWAP",
     organizationId: evt.organizationId,
@@ -70,12 +72,22 @@ async function _POST(req: NextRequest) {
   const pairingAId = typeof body?.pairingAId === "number" ? body.pairingAId : Number(body?.pairingAId);
   const pairingBId = typeof body?.pairingBId === "number" ? body.pairingBId : Number(body?.pairingBId);
 
-  if (!Number.isFinite(eventId) || !Number.isFinite(pairingAId) || !Number.isFinite(pairingBId)) {
+  if (
+    !Number.isInteger(eventId) ||
+    eventId <= 0 ||
+    !Number.isInteger(pairingAId) ||
+    pairingAId <= 0 ||
+    !Number.isInteger(pairingBId) ||
+    pairingBId <= 0
+  ) {
     return fail(400, "INVALID_INPUT");
   }
   if (pairingAId === pairingBId) return fail(409, "PAIRING_DUPLICATE");
+  const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+  if (!orgResolution.ok) return fail(400, "ORG_ID_REQUIRED");
+  const requestOrganizationId = orgResolution.organizationId;
 
-  const authorized = await ensureOrganizationAccess(data.user.id, eventId);
+  const authorized = await ensureOrganizationAccess(data.user.id, eventId, requestOrganizationId);
   if (authorized !== true) {
     if (authorized && typeof authorized === "object" && "errorCode" in authorized) {
       return respondError(
@@ -123,6 +135,9 @@ async function _POST(req: NextRequest) {
 
   const pairingA = pairings.find((p) => p.id === pairingAId)!;
   const pairingB = pairings.find((p) => p.id === pairingBId)!;
+  if (pairingA.organizationId !== requestOrganizationId || pairingB.organizationId !== requestOrganizationId) {
+    return fail(404, "PAIRING_NOT_FOUND");
+  }
   if (pairingA.eventId !== eventId || pairingB.eventId !== eventId) {
     return fail(409, "EVENT_MISMATCH");
   }

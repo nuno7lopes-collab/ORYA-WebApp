@@ -12,6 +12,7 @@ import { Ionicons } from "../../components/icons/Ionicons";
 import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPadding";
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { useAuth } from "../../lib/auth";
 import { usePadelMyRegistrationDetail } from "../../features/tournaments/hooks";
 import * as Haptics from "expo-haptics";
@@ -79,7 +80,7 @@ export default function RegistrationDetailScreen() {
   const backButton = (
     <Pressable
       onPress={() =>
-        handleActionPress(() => safeBack(router, navigation, "/(tabs)/profile"))
+        handleActionPress(() => safeBack(router, navigation, TAB_PATHNAMES.profile))
       }
       accessibilityRole="button"
       accessibilityLabel="Voltar"
@@ -162,7 +163,7 @@ export default function RegistrationDetailScreen() {
                         next:
                           Number.isFinite(entryId) && entryId > 0
                             ? `/inscricoes/${entryId}`
-                            : "/(tabs)/profile",
+                            : TAB_PATHNAMES.profile,
                       },
                     }),
                   )
@@ -352,7 +353,7 @@ export default function RegistrationDetailScreen() {
                 <Pressable
                   onPress={() =>
                     handleActionPress(() =>
-                      safeBack(router, navigation, "/(tabs)/profile"),
+                      safeBack(router, navigation, TAB_PATHNAMES.profile),
                     )
                   }
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-3"

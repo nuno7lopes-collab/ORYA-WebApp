@@ -1,5 +1,6 @@
 import type { ProfileSummary } from "../features/profile/types";
 import type { CachedProfile } from "./profileCache";
+import type { Session } from "@supabase/supabase-js";
 
 type ProfileQueryState = {
   data?: ProfileSummary;
@@ -42,7 +43,7 @@ export const resolveOnboardingGate = ({
   hasDraft,
   cachedProfile,
 }: {
-  session: any | null;
+  session: Session | null;
   localOnboardingDone: boolean | null;
   profileQuery: ProfileQueryState;
   hasDraft: boolean | null;

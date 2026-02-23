@@ -25,6 +25,41 @@ const isClearlyClassByText = (service: { title: string; description: string | nu
   return KEYWORDS.some((keyword) => haystack.includes(keyword));
 };
 
+type AvailabilityProbeRow = { startsAt: Date; durationMinutes: number };
+
+async function hasRecurringAvailabilityPattern(prisma: PrismaLike, serviceId: number) {
+  const availabilityClient = (prisma as { availability?: { findMany?: (args: unknown) => Promise<AvailabilityProbeRow[]> } })
+    .availability;
+  if (!availabilityClient || typeof availabilityClient.findMany !== "function") {
+    return false;
+  }
+
+  const rows = await availabilityClient.findMany({
+    where: { serviceId },
+    orderBy: [{ startsAt: "asc" }],
+    take: 24,
+    select: {
+      startsAt: true,
+      durationMinutes: true,
+    },
+  });
+  if (!Array.isArray(rows) || rows.length < 2) return false;
+
+  const buckets = new Map<string, number>();
+  for (const row of rows) {
+    const startsAt = row?.startsAt instanceof Date ? row.startsAt : new Date(String(row?.startsAt ?? ""));
+    if (Number.isNaN(startsAt.getTime())) continue;
+    const duration = Number(row?.durationMinutes ?? 0);
+    if (!Number.isFinite(duration) || duration <= 0) continue;
+    const startMinuteOfDay = startsAt.getUTCHours() * 60 + startsAt.getUTCMinutes();
+    const key = `${startsAt.getUTCDay()}:${startMinuteOfDay}:${Math.round(duration)}`;
+    buckets.set(key, (buckets.get(key) ?? 0) + 1);
+    if ((buckets.get(key) ?? 0) >= 2) return true;
+  }
+
+  return false;
+}
+
 export type BackfillServicesAulasToClassOptions = {
   dryRun?: boolean;
   limit?: number | null;
@@ -102,7 +137,11 @@ export async function backfillServicesAulasToClass(
 
       eligible += 1;
 
-      const recurring = service._count.classSeries > 0 || service._count.classSessions > 0;
+      const recurringBySeries = service._count.classSeries > 0 || service._count.classSessions > 0;
+      const recurringByAvailabilities = !recurringBySeries
+        ? await hasRecurringAvailabilityPattern(prisma, service.id)
+        : false;
+      const recurring = recurringBySeries || recurringByAvailabilities;
 
       const clearlyClass = isClearlyClassByText(service);
       const shouldConvert = recurring || clearlyClass;

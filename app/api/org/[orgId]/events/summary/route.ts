@@ -57,8 +57,11 @@ async function _GET(req: NextRequest) {
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
+    if (!organizationId) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+    }
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {

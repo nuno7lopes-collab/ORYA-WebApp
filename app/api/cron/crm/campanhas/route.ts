@@ -51,15 +51,20 @@ async function processApprovalSla(now: Date, limit: number) {
       campaign.approvalExpiresAt ?? new Date(submittedAt.getTime() + config.approvalExpireHours * 60 * 60 * 1000);
 
     if (now >= expiresAt) {
-      await prisma.$transaction(async (tx) => {
-        await tx.crmCampaign.update({
-          where: { id: campaign.id },
+      const transitioned = await prisma.$transaction(async (tx) => {
+        const update = await tx.crmCampaign.updateMany({
+          where: {
+            id: campaign.id,
+            approvalState: CrmCampaignApprovalState.SUBMITTED,
+            status: campaign.status,
+          },
           data: {
             approvalState: CrmCampaignApprovalState.EXPIRED,
             status: CrmCampaignStatus.CANCELLED,
             cancelledAt: now,
           },
         });
+        if (update.count === 0) return false;
         await tx.crmCampaignApproval.create({
           data: {
             organizationId: campaign.organizationId,
@@ -72,8 +77,11 @@ async function processApprovalSla(now: Date, limit: number) {
             },
           },
         });
+        return true;
       });
-      expired += 1;
+      if (transitioned) {
+        expired += 1;
+      }
       continue;
     }
 

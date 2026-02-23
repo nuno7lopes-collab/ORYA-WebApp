@@ -13,10 +13,13 @@ import { GlassSkeleton } from "../../components/glass/GlassSkeleton";
 import { useServiceDetail } from "../../features/services/hooks";
 import { LinearGradient } from "expo-linear-gradient";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { useAuth } from "../../lib/auth";
 import { createMessageRequest } from "../../features/messages/api";
 import { getUserFacingError } from "../../lib/errors";
 import { formatCurrency } from "../../lib/formatters";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
+import { buildMapTargets } from "../../lib/mapLinks";
 
 const formatPrice = (
   amountCents: number,
@@ -88,7 +91,7 @@ export default function ServiceDetailScreen() {
     [source],
   );
   const idValue = useMemo(() => (Array.isArray(id) ? id[0] : id) ?? "", [id]);
-  const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : "/service"), [idValue]);
+  const nextRoute = useMemo(() => (idValue ? `/service/${idValue}` : TAB_PATHNAMES.index), [idValue]);
   const openAuth = useCallback(() => {
     safePush(router, { pathname: "/auth", params: { next: nextRoute } });
   }, [nextRoute, router]);
@@ -144,11 +147,11 @@ export default function ServiceDetailScreen() {
       case "search":
         return "/search";
       case "discover":
-        return "/(tabs)/index";
+        return TAB_PATHNAMES.index;
       case "agora":
-        return "/(tabs)/agora";
+        return TAB_PATHNAMES.agora;
       default:
-        return "/(tabs)/index";
+        return TAB_PATHNAMES.index;
     }
   }, [sourceValue]);
   const handleBack = () => {
@@ -209,18 +212,31 @@ export default function ServiceDetailScreen() {
     );
   }, [data?.addressRef?.formattedAddress, data?.organization?.addressRef?.formattedAddress]);
 
-  const mapUrl = useMemo(() => {
-    if (!resolvedAddress) return null;
-    if (Platform.OS === "android") {
-      return `geo:0,0?q=${encodeURIComponent(resolvedAddress)}`;
-    }
-    return `http://maps.apple.com/?q=${encodeURIComponent(resolvedAddress)}`;
-  }, [resolvedAddress]);
+  const mapTargets = useMemo(
+    () =>
+      buildMapTargets({
+        label: data?.title ?? "Serviço ORYA",
+        query: resolvedAddress,
+        lat: null,
+        lng: null,
+      }),
+    [data?.title, resolvedAddress],
+  );
 
   const handleOpenMap = async () => {
-    if (!mapUrl) return;
+    if (!mapTargets) return;
     try {
-      await Linking.openURL(mapUrl);
+      const preferred = Platform.OS === "ios" ? mapTargets.apple : mapTargets.android;
+      const canOpenPreferred = await Linking.canOpenURL(preferred);
+      if (canOpenPreferred) {
+        await Linking.openURL(preferred);
+        return;
+      }
+      const webUrl = resolveSafeHttpUrl(mapTargets.web);
+      if (!webUrl) return;
+      const canOpenWeb = await Linking.canOpenURL(webUrl);
+      if (!canOpenWeb) return;
+      await Linking.openURL(webUrl);
     } catch {
       // ignore
     }
@@ -417,7 +433,7 @@ export default function ServiceDetailScreen() {
                     <Text className="text-white/65 text-sm">{resolvedAddress}</Text>
                   </View>
                 ) : null}
-                {mapUrl ? (
+                {mapTargets ? (
                   <Pressable
                     onPress={handleOpenMap}
                     className="self-start flex-row items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-2"

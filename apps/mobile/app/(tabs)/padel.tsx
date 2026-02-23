@@ -31,6 +31,7 @@ import { useAgoraFeed } from "../../features/agora/hooks";
 import { EventCardSquare } from "../../components/events/EventCardSquare";
 import { useIpLocation } from "../../features/onboarding/hooks";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 
 type ClubCard = {
   key: string;
@@ -490,7 +491,7 @@ export default function PadelTabScreen() {
   const guardedAction = useCallback(
     (action: () => void) => {
       if (!session?.user?.id) {
-        safePush(router, { pathname: "/auth", params: { next: "/(tabs)/padel" } });
+        safePush(router, { pathname: "/auth", params: { next: TAB_PATHNAMES.padel } });
         return;
       }
       if (needsPadelProfile) {
@@ -500,7 +501,7 @@ export default function PadelTabScreen() {
           `Para avançares, completa ${missingLabel}.`,
           [
             { text: "Agora não", style: "cancel" },
-            { text: "Completar perfil", onPress: () => safePush(router, "/(tabs)/profile") },
+            { text: "Completar perfil", onPress: () => safePush(router, TAB_PATHNAMES.profile) },
           ],
         );
         return;
@@ -603,7 +604,7 @@ export default function PadelTabScreen() {
   );
 
   const handleClosePadel = useCallback(() => {
-    safeBack(router, navigation, "/(tabs)/agora");
+    safeBack(router, navigation, TAB_PATHNAMES.agora);
   }, [navigation, router]);
 
   const fetchMoreActive = () => {
@@ -639,7 +640,7 @@ export default function PadelTabScreen() {
           <GlassCard intensity={48} className="mb-3">
             <Text className="text-white/70 text-sm">{sectionMeta.emptyLabel}</Text>
             <Pressable
-              onPressIn={() => safePush(router, "/(tabs)/agora")}
+              onPress={() => safePush(router, TAB_PATHNAMES.agora)}
               className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
               style={{ minHeight: tokens.layout.touchTarget }}
               accessibilityRole="button"
@@ -814,7 +815,7 @@ export default function PadelTabScreen() {
                   </Text>
                 ) : null}
                 <Pressable
-                  onPressIn={() => safePush(router, "/(tabs)/profile")}
+                  onPress={() => safePush(router, TAB_PATHNAMES.profile)}
                   className="mt-3 self-start rounded-full border border-white/20 bg-white/10 px-3 py-2"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

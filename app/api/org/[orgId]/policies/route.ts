@@ -139,7 +139,7 @@ async function _GET(req: NextRequest) {
           feeMode: organizationSnapshot?.feeMode ?? "ADDED",
           platformFeeBps: organizationSnapshot?.platformFeeBps ?? 0,
           platformFeeFixedCents: organizationSnapshot?.platformFeeFixedCents ?? 0,
-          managePath: `/org/${organization.id}/finance/payouts`,
+          managePath: `/org/${organization.id}/finance?view=payouts`,
         },
       },
     });

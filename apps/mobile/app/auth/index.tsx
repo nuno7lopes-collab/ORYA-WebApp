@@ -25,6 +25,7 @@ import { useAuth } from "../../lib/auth";
 import { supabase } from "../../lib/supabase";
 import { AuthMethod, setLastAuthMethod } from "../../lib/authMethod";
 import { trackEvent } from "../../lib/analytics";
+import { resolveSafeNextRoute } from "../../lib/authNextRoute";
 import { getMobileEnv } from "../../lib/env";
 import { tokens, useTranslation } from "@orya/shared";
 
@@ -46,9 +47,17 @@ const parseAuthUrl = (url: string) => {
   };
 };
 
-const isAccountLinkError = (err: any) => {
-  const message = String(err?.message ?? "").toLowerCase();
-  const code = String(err?.code ?? "").toLowerCase();
+const resolveErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err ?? "");
+
+const resolveErrorCode = (err: unknown) => {
+  if (!err || typeof err !== "object") return "";
+  return String((err as { code?: unknown }).code ?? "");
+};
+
+const isAccountLinkError = (err: unknown) => {
+  const message = resolveErrorMessage(err).toLowerCase();
+  const code = resolveErrorCode(err).toLowerCase();
   return (
     code.includes("email") && code.includes("exists") ||
     code.includes("user") && code.includes("exists") ||
@@ -58,7 +67,10 @@ const isAccountLinkError = (err: any) => {
   );
 };
 
-const isCancelError = (err: any) => err?.code === "ERR_CANCELED" || err?.code === "ERR_CANCELLED";
+const isCancelError = (err: unknown) => {
+  const code = resolveErrorCode(err);
+  return code === "ERR_CANCELED" || code === "ERR_CANCELLED";
+};
 
 export default function AuthGatewayScreen() {
   const { t } = useTranslation();
@@ -80,17 +92,7 @@ export default function AuthGatewayScreen() {
   const termsUrl = `${baseUrl}/termos`;
   const privacyUrl = `${baseUrl}/privacidade`;
   const nextRoute = useMemo(() => {
-    const raw = params.next;
-    const normalize = (value: string) => {
-      try {
-        return decodeURIComponent(value);
-      } catch {
-        return value;
-      }
-    };
-    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
-    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
-    return null;
+    return resolveSafeNextRoute(params.next);
   }, [params.next]);
   const redirectTo = useMemo(() => {
     const base = Linking.createURL("auth/callback");
@@ -134,13 +136,13 @@ export default function AuthGatewayScreen() {
     }
   };
 
-  const handleAuthError = (provider: AuthMethod, err: any) => {
+  const handleAuthError = (provider: AuthMethod, err: unknown) => {
     if (isAccountLinkError(err)) {
       trackEvent(`auth_fail_${provider}`, { reason: "email_exists" });
       setLinkModalVisible(true);
       return;
     }
-    const reason = String(err?.message ?? err ?? "unknown");
+    const reason = resolveErrorMessage(err) || "unknown";
     trackEvent(`auth_fail_${provider}`, { reason });
     if (
       provider === "apple" &&
@@ -190,7 +192,7 @@ export default function AuthGatewayScreen() {
 
       trackEvent("auth_success_apple");
       router.replace(nextRoute ?? "/");
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (isCancelError(err)) {
         trackEvent("auth_cancel_apple");
         return;
@@ -245,7 +247,7 @@ export default function AuthGatewayScreen() {
       }
 
       throw new Error("OAuth interrompido.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       handleAuthError("google", err);
     } finally {
       if (mountedRef.current) setBusyMethod(null);

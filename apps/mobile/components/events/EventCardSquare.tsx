@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Router } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
@@ -12,9 +12,10 @@ import { getDominantTint, getFallbackTint } from "../../lib/imageTint";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { EventFeedbackSheet } from "./EventFeedbackSheet";
 import { sendEventSignal } from "../../features/events/signals";
-import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
+import { formatDate, formatTime } from "../../lib/formatters";
 import { resolveMediaUri } from "../../lib/media";
 import { safePush } from "../../lib/navigation";
+import { resolveEventPriceState } from "../../lib/eventPrice";
 
 const USE_GLASS_BLUR = Platform.OS === "ios";
 const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
@@ -31,10 +32,8 @@ type EventCardSquareProps = {
   onHide?: (payload: { eventId: number; scope: "event" | "category" | "org"; tag?: string | null }) => void;
 };
 
-type PriceState = {
-  label: string;
-  isSoon: boolean;
-};
+type TranslateFn = ReturnType<typeof useTranslation>["t"];
+type PushHref = Parameters<Router["push"]>[0];
 
 const formatEventDate = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -65,23 +64,10 @@ const formatCountdown = (ms: number) => {
   return `${minutes}m`;
 };
 
-const resolvePriceState = (event: PublicEventCard, t: (key: string, options?: any) => string): PriceState | null => {
-  if (event.isGratis) return { label: t("common:price.free"), isSoon: false };
-  if (typeof event.priceFrom === "number") {
-    return { label: t("common:price.from", { price: formatCurrency(event.priceFrom, "EUR") }), isSoon: false };
-  }
-  const ticketTypes = event.ticketTypes ?? [];
-  const hasUpcoming = ticketTypes.some((ticket) => ticket.status === "UPCOMING");
-  const hasTickets = ticketTypes.length > 0;
-  if (hasUpcoming) return { label: t("common:price.ticketsSoon"), isSoon: true };
-  if (hasTickets) return { label: t("common:price.ticketsSoon"), isSoon: true };
-  return null;
-};
-
 const resolveCountdownTag = (
   event: PublicEventCard,
   now: number,
-  t: (key: string, options?: any) => string,
+  t: TranslateFn,
 ): string | null => {
   const startsAtMs = event.startsAt ? new Date(event.startsAt).getTime() : null;
   const endsAtMs = event.endsAt ? new Date(event.endsAt).getTime() : null;
@@ -172,14 +158,9 @@ export const EventCardSquare = memo(function EventCardSquare({
     if (rawCategory && rawCategory !== "OTHER" && rawCategory !== "GERAL") return rawCategory;
     return t("events:labels.event");
   }, [rawCategory, t]).toUpperCase();
-  const fallbackCover = useMemo(
-    () =>
-      `https://picsum.photos/seed/orya-card-${encodeURIComponent(event.slug ?? String(event.id))}/1200/800`,
-    [event.id, event.slug],
-  );
   const cover = useMemo(
-    () => resolveMediaUri(event.coverImageUrl ?? fallbackCover),
-    [event.coverImageUrl, fallbackCover],
+    () => resolveMediaUri(event.coverImageUrl ?? null),
+    [event.coverImageUrl],
   );
   const [coverFailed, setCoverFailed] = useState(false);
   const hasCover = Boolean(cover) && !coverFailed;
@@ -200,7 +181,7 @@ export const EventCardSquare = memo(function EventCardSquare({
     null;
   const host = event.hostName ?? event.hostUsername ?? null;
   const date = formatEventDate(event.startsAt, event.endsAt);
-  const priceState = resolvePriceState(event, t);
+  const priceState = resolveEventPriceState(event, t);
   const countdownTag = showCountdown ? resolveCountdownTag(event, now, t) : null;
   const nowLabel = t("common:time.now");
   const isNow = countdownTag === nowLabel;
@@ -218,7 +199,7 @@ export const EventCardSquare = memo(function EventCardSquare({
   );
   const overlayHeight = "52%";
 
-  const linkHref = useMemo(
+  const linkHref = useMemo<PushHref>(
     () => ({
       pathname: "/event/[slug]" as const,
       params: {
@@ -317,7 +298,7 @@ export const EventCardSquare = memo(function EventCardSquare({
         }}
         unstable_pressDelay={0}
         onPress={() => {
-          safePush(router, linkHref as any);
+          safePush(router, linkHref);
           InteractionManager.runAfterInteractions(() => {
             sendEventSignal({ eventId: event.id, signalType: "CLICK" });
             router.prefetch?.(linkHref);

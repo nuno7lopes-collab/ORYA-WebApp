@@ -19,10 +19,11 @@
 
 ## Incident: Reconciliation Drift
 1. Run reconciliation endpoint/job for affected window.
-2. Compare Payment, LedgerEntry, PaymentSnapshot for same `paymentId`.
-3. If mismatch persists, inspect outbox events for missing `payment.status.changed` or `payment.fees.reconciled`.
-4. Replay dead-lettered outbox event(s) after root cause fix.
-5. Validate read models and sale summaries after replay.
+2. Compare `Payment`, `LedgerEntry`, `PaymentSnapshot` by ciclo lógico (`sourceType` + `sourceId`).
+3. If houver aliases legados de `paymentId` no mesmo ciclo, correr higiene para recalcular snapshot agregado por ciclo.
+4. If mismatch persists, inspect outbox events for missing `payment.status.changed` or `payment.fees.reconciled`.
+5. Replay dead-lettered outbox event(s) after root cause fix.
+6. Validate read models and sale summaries after replay.
 
 ## Incident: Dispute State Inconsistency
 1. Confirm internal event shape is canonical:
@@ -46,6 +47,7 @@
 ## Validation Gate (10 cycles)
 - Run 10 full cycles per source type.
 - Each cycle must cover checkout -> payment -> ledger -> refund/dispute -> reconciliation.
+- A contagem de ciclo usa o par lógico `sourceType/sourceId` (resistente a aliases legados de `paymentId`).
 - Acceptance criteria:
   - No drift in financial totals.
   - No forbidden contract/state values (`policyVersionApplied=0`, `ON_TOP`).
@@ -58,11 +60,17 @@
   - `npm run gate:finance-ops:report`
 - End-to-end proof (seed + strict gate):
   - `npm run finance:prove-cycles`
+- Hygiene de ledger/snapshot (dedupe + índice + rebuild por `paymentId` e por ciclo lógico `sourceType/sourceId`):
+  - `npm run finance:ledger-hygiene`
 
 Environment knobs:
 - `FINANCE_SOURCE_TYPES` (default: `TICKET_ORDER,BOOKING,PADEL_REGISTRATION,STORE_ORDER`)
 - `FINANCE_MIN_CYCLES` (default: `10`)
+- `FINANCE_MIN_REFUND_CYCLES` (default: `1`)
+- `FINANCE_MIN_DISPUTE_CYCLES` (default: `1`)
 - `FINANCE_LOOKBACK_DAYS` (default: `30`)
 - `FINANCE_MAX_DLQ_24H` (default: `0`)
 - `FINANCE_MAX_PENDING_OUTBOX_OLDEST_MIN` (default: `15`)
 - `FINANCE_CYCLES_STRICT` (`1` default, `0` for report-only)
+- `FINANCE_REQUIRE_MIN_SCANNED` (`1` bloqueia quando um sourceType não atinge `FINANCE_MIN_CYCLES`; default `0`)
+- `FINANCE_REQUIRE_STATUS_EVENT` (`1` exige explicitamente `payment.status.changed`; default `0`)

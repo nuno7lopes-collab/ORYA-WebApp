@@ -12,6 +12,7 @@ import { useTopHeaderPadding } from "../../components/navigation/useTopHeaderPad
 import { useTopBarScroll } from "../../components/navigation/useTopBarScroll";
 import { useAuth } from "../../lib/auth";
 import { safeBack, safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import { getUserFacingError } from "../../lib/errors";
 import {
   cancelBooking,
@@ -163,7 +164,7 @@ export default function BookingsScreen() {
 
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/(tabs)/profile")}
+      onPress={() => safeBack(router, navigation, TAB_PATHNAMES.profile)}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [
@@ -300,7 +301,7 @@ export default function BookingsScreen() {
           <View className="gap-2 border-b border-white/12 pb-4">
             <Text className="text-white text-sm font-semibold">Inicia sessão para ver as tuas reservas.</Text>
             <Pressable
-              onPressIn={() => safePush(router, { pathname: "/auth", params: { next: "/reservas" } })}
+              onPress={() => safePush(router, { pathname: "/auth", params: { next: "/reservas" } })}
               className="mt-3 self-start rounded-full border border-white/20 bg-white/90 px-4 py-2.5"
               accessibilityRole="button"
               accessibilityLabel="Iniciar sessão"
@@ -340,7 +341,7 @@ export default function BookingsScreen() {
               <View className="gap-2 border-b border-white/12 pb-4">
                 <Text className="text-white/70 text-sm">Ainda não tens reservas de serviço.</Text>
                 <Pressable
-                  onPressIn={() => safePush(router, "/search")}
+                  onPress={() => safePush(router, "/search")}
                   className="mt-2 self-start rounded-full border border-white/20 bg-white/8 px-4 py-2.5"
                   accessibilityRole="button"
                   accessibilityLabel="Explorar serviços"

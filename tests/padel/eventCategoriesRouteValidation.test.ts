@@ -41,6 +41,7 @@ beforeEach(async () => {
   prisma.event.findUnique.mockResolvedValue({
     organizationId: 10,
     startsAt: new Date("2026-06-01T12:00:00.000Z"),
+    templateType: "PADEL",
   });
   prisma.padelCategory.findMany.mockResolvedValue([{ id: 101 }]);
   prisma.padelEventCategoryLink.findMany.mockResolvedValue([]);

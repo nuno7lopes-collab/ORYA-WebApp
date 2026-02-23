@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuthModal } from "@/app/components/autenticação/AuthModalContext";
@@ -15,6 +15,7 @@ import { isReservedUsername } from "@/lib/reservedUsernames";
 import MobileBottomNav from "./MobileBottomNav";
 import useSWR from "swr";
 import { shouldHideUserNavbar } from "./navbarVisibility";
+import { UserNotificationBell } from "@/app/components/notifications/NotificationBell";
 
 type SearchEvent = {
   id: number;
@@ -63,7 +64,7 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
   const { user, profile, isLoading } = useUser();
   const isAuthenticated = !!user;
   const { data: notificationsData } = useSWR(
-    isAuthenticated ? "/api/me/notifications/feed?limit=1" : null,
+    isAuthenticated ? "/api/me/notifications/feed?limit=1&scope=user" : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -631,87 +632,90 @@ function NavbarInner({ rawPathname }: { rawPathname: string | null }) {
                 Entrar / Registar
               </button>
             ) : (
-              <div className="relative flex items-center gap-2" ref={profileMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsProfileMenuOpen((open) => !open)}
-                  className="flex h-11 items-center gap-2 rounded-full border border-white/18 bg-white/8 px-3 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
-                  aria-haspopup="menu"
-                  aria-expanded={isProfileMenuOpen}
-                  aria-label="Abrir menu de conta"
-                >
-                  <Avatar
-                    src={profile?.avatarUrl ?? null}
-                    version={profile?.updatedAt ?? null}
-                    name={userLabel || "Conta ORYA"}
-                    className="h-9 w-9"
-                    textClassName="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85"
-                    fallbackText="OR"
-                  />
-                  <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
-                    {userLabel || "Conta ORYA"}
-                  </span>
-                </button>
-
-                {isProfileMenuOpen && (
-                  <div
-                    className="absolute right-0 top-full mt-3 w-60 origin-top-right rounded-2xl orya-menu-surface p-2 text-[11px] backdrop-blur-3xl"
-                    role="menu"
-                    aria-label="Menu de conta ORYA"
+              <>
+                <UserNotificationBell />
+                <div className="relative flex items-center gap-2" ref={profileMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileMenuOpen((open) => !open)}
+                    className="flex h-11 items-center gap-2 rounded-full border border-white/18 bg-white/8 px-3 text-[11px] text-white/90 hover:border-white/28 hover:bg-white/12 shadow-[0_0_22px_rgba(255,0,200,0.22)] transition"
+                    aria-haspopup="menu"
+                    aria-expanded={isProfileMenuOpen}
+                    aria-label="Abrir menu de conta"
                   >
-                    <div className="orya-menu-list">
-                      <Link
-                        href="/me"
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="orya-menu-item font-semibold"
-                      >
-                        <span className="font-semibold">Perfil</span>
-                      </Link>
-                      <Link
-                        href="/me/carteira"
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="orya-menu-item"
-                      >
-                        <span>Carteira</span>
-                      </Link>
-                      <Link
-                        href="/me/compras"
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="orya-menu-item"
-                      >
-                        <span>Compras</span>
-                      </Link>
-                      <Link
-                        href="/me/settings"
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="orya-menu-item"
-                      >
-                        <span>Definições</span>
-                      </Link>
-                      {(pathname?.startsWith("/org/") ||
-                        pathname === "/org" ||
-                        pathname?.startsWith("/org-hub")) && (
+                    <Avatar
+                      src={profile?.avatarUrl ?? null}
+                      version={profile?.updatedAt ?? null}
+                      name={userLabel || "Conta ORYA"}
+                      className="h-9 w-9"
+                      textClassName="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85"
+                      fallbackText="OR"
+                    />
+                    <span className="hidden max-w-[120px] truncate text-[11px] sm:inline">
+                      {userLabel || "Conta ORYA"}
+                    </span>
+                  </button>
+
+                  {isProfileMenuOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-3 w-60 origin-top-right rounded-2xl orya-menu-surface p-2 text-[11px] backdrop-blur-3xl"
+                      role="menu"
+                      aria-label="Menu de conta ORYA"
+                    >
+                      <div className="orya-menu-list">
                         <Link
                           href="/me"
                           onClick={() => setIsProfileMenuOpen(false)}
+                          className="orya-menu-item font-semibold"
+                        >
+                          <span className="font-semibold">Perfil</span>
+                        </Link>
+                        <Link
+                          href="/me/carteira"
+                          onClick={() => setIsProfileMenuOpen(false)}
                           className="orya-menu-item"
                         >
-                          <span>Voltar a utilizador</span>
+                          <span>Carteira</span>
                         </Link>
-                      )}
-                      {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
-                      <div className="my-1 orya-menu-divider" />
-                      <button
-                        type="button"
-                        onClick={handleLogout}
-                        className="orya-menu-item font-semibold text-red-100 hover:bg-rose-500/10"
-                      >
-                        Terminar sessão
-                      </button>
+                        <Link
+                          href="/me/compras"
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          className="orya-menu-item"
+                        >
+                          <span>Compras</span>
+                        </Link>
+                        <Link
+                          href="/me/settings"
+                          onClick={() => setIsProfileMenuOpen(false)}
+                          className="orya-menu-item"
+                        >
+                          <span>Definições</span>
+                        </Link>
+                        {(pathname?.startsWith("/org/") ||
+                          pathname === "/org" ||
+                          pathname?.startsWith("/org-hub")) && (
+                          <Link
+                            href="/me"
+                            onClick={() => setIsProfileMenuOpen(false)}
+                            className="orya-menu-item"
+                          >
+                            <span>Voltar a utilizador</span>
+                          </Link>
+                        )}
+                        {/* Dashboard de organização removido do dropdown: já está acessível na nav */}
+                        <div className="my-1 orya-menu-divider" />
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="orya-menu-item font-semibold text-red-100 hover:bg-rose-500/10"
+                        >
+                          Terminar sessão
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1239,24 +1243,4 @@ export function Navbar({ adminHostHint = false }: { adminHostHint?: boolean }) {
   }
 
   return <NavbarInner rawPathname={rawPathname ?? null} />;
-}
-
-type IconProps = SVGProps<SVGSVGElement>;
-
-function BellIcon(props: IconProps) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      fillOpacity="0.4"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M6.8 9.5a5.2 5.2 0 0 1 10.4 0v3.7c0 .8.3 1.6.8 2.2l.7.9H5.3l.7-.9c.5-.6.8-1.4.8-2.2V9.5Z" />
-      <path d="M9.5 18.5a2.5 2.5 0 0 0 5 0" />
-    </svg>
-  );
 }

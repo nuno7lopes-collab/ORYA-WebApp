@@ -14,16 +14,31 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
   const { id } = await context.params;
   const existing = await prisma.crmJourney.findFirst({
     where: { id, organizationId: access.organization.id },
-    select: { id: true },
+    select: { id: true, status: true },
   });
   if (!existing) return crmFail(req, 404, "Journey não encontrada.");
+  if (existing.status === CrmJourneyStatus.ARCHIVED) {
+    return crmFail(req, 409, "Journey arquivada.");
+  }
 
-  const journey = await prisma.crmJourney.update({
-    where: { id: existing.id },
+  const pauseAt = new Date();
+  const lock = await prisma.crmJourney.updateMany({
+    where: {
+      id: existing.id,
+      organizationId: access.organization.id,
+      status: existing.status,
+    },
     data: {
       status: CrmJourneyStatus.PAUSED,
-      pausedAt: new Date(),
+      pausedAt: pauseAt,
     },
+  });
+  if (lock.count === 0) {
+    return crmFail(req, 409, "Journey alterada por outro utilizador. Recarrega e tenta novamente.");
+  }
+
+  const journey = await prisma.crmJourney.findUnique({
+    where: { id: existing.id },
     select: {
       id: true,
       name: true,
@@ -33,6 +48,9 @@ async function _POST(req: NextRequest, context: { params: Promise<{ id: string }
       updatedAt: true,
     },
   });
+  if (!journey) {
+    return crmFail(req, 404, "Journey não encontrada.");
+  }
 
   return respondOk(ctx, { journey });
 }

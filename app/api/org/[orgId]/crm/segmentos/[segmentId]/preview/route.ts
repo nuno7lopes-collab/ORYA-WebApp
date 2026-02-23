@@ -4,10 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
-import { resolveSegmentAudience } from "@/lib/crm/segmentQuery";
+import { EmptySegmentDefinitionError, resolveSegmentAudience } from "@/lib/crm/segmentQuery";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
 const ROLE_ALLOWLIST = Object.values(OrganizationMemberRole);
@@ -19,9 +19,13 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED" }, { status: 400 });
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...ROLE_ALLOWLIST],
     });
 
@@ -47,12 +51,20 @@ async function _GET(req: NextRequest, context: { params: Promise<{ segmentId: st
       return jsonWrap({ ok: false, error: "Segmento não encontrado." }, { status: 404 });
     }
 
-    const resolved = await resolveSegmentAudience({
-      organizationId: organization.id,
-      rules: segment.rules,
-      maxContacts: MAX_SAMPLE,
-      includeExplain: true,
-    });
+    let resolved: Awaited<ReturnType<typeof resolveSegmentAudience>>;
+    try {
+      resolved = await resolveSegmentAudience({
+        organizationId: organization.id,
+        rules: segment.rules,
+        maxContacts: MAX_SAMPLE,
+        includeExplain: true,
+      });
+    } catch (err) {
+      if (err instanceof EmptySegmentDefinitionError) {
+        return jsonWrap({ ok: false, error: "Segmento sem regras. Define pelo menos uma condição." }, { status: 400 });
+      }
+      throw err;
+    }
 
     try {
       await prisma.crmSegment.update({

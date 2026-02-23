@@ -14,6 +14,7 @@ import { appendEventLog } from "@/domain/eventLog/append";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const ctx = getRequestContext(req);
@@ -40,6 +41,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(400, "ORG_ID_REQUIRED");
+    }
+    const requestOrganizationId = orgResolution.organizationId;
     const resolved = await params;
     const eventId = Number(resolved.id);
     if (!Number.isFinite(eventId)) {
@@ -55,6 +61,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
       },
     });
     if (!event) {
+      return fail(404, "EVENT_NOT_FOUND");
+    }
+    if (event.organizationId !== requestOrganizationId) {
       return fail(404, "EVENT_NOT_FOUND");
     }
     if (event.organizationId == null) {

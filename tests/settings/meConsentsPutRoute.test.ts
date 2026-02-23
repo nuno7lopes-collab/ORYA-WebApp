@@ -124,7 +124,7 @@ describe("PUT /api/me/consents autorização por follow", () => {
     expect(userConsentUpsert).toHaveBeenCalledTimes(1);
     expect(crmContactConsentUpsert).toHaveBeenCalledTimes(1);
     expect(crmContactUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { marketingEmailOptIn: true } }),
+      expect.objectContaining({ data: { marketingEmailOptIn: true, marketingPushOptIn: true } }),
     );
   });
 });

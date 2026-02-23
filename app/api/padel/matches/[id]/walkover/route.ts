@@ -91,9 +91,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (body?.confirmationSource === undefined || body?.confirmationSource === null) {
     return jsonWrap({ ok: false, error: "MISSING_CONFIRMATION_SOURCE" }, { status: 400 });
   }
-  const resultTypeRaw = typeof body?.resultType === "string" ? body.resultType.trim().toUpperCase() : "WALKOVER";
+  const resultTypeRaw = typeof body?.resultType === "string" ? body.resultType.trim().toUpperCase() : "";
   const resultType =
-    SPECIAL_RESULT_TYPES.has(resultTypeRaw) ? (resultTypeRaw as "WALKOVER" | "RETIREMENT" | "INJURY") : null;
+    resultTypeRaw && SPECIAL_RESULT_TYPES.has(resultTypeRaw)
+      ? (resultTypeRaw as "WALKOVER" | "RETIREMENT" | "INJURY")
+      : null;
   if (!resultType) {
     return jsonWrap({ ok: false, error: "INVALID_RESULT_TYPE" }, { status: 400 });
   }

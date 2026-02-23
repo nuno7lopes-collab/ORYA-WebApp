@@ -7,6 +7,7 @@ import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { DiscoverEventCard } from "../discover/DiscoverEventCard";
 import { SocialFeedItem } from "./types";
 import { useRouter } from "expo-router";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   item: SocialFeedItem;
@@ -45,7 +46,7 @@ export const SocialFeedCard = memo(function SocialFeedCard({
   const timeLabel = formatRelativeTime(item.createdAt);
   const handleOrgPress = () => {
     if (item.organization.username) {
-      router.push({ pathname: "/[username]", params: { username: item.organization.username } });
+      safePush(router, { pathname: "/[username]", params: { username: item.organization.username } });
     }
   };
 

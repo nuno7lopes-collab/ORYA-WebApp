@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest } from "next/server";
 import { enqueueOperation } from "@/lib/operations/enqueue";
+import { prisma } from "@/lib/prisma";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { requireInternalSecret } from "@/lib/security/requireInternalSecret";
@@ -24,8 +25,13 @@ async function _POST(req: NextRequest) {
   const unauthorized = ensureInternalSecret(req, ctx);
   if (unauthorized) return unauthorized;
 
-  const body = (await req.json().catch(() => null)) as { purchaseId?: string } | null;
+  const body = (await req.json().catch(() => null)) as {
+    purchaseId?: string;
+    paymentIntentId?: string | null;
+  } | null;
   const purchaseId = typeof body?.purchaseId === "string" ? body.purchaseId.trim() : "";
+  const paymentIntentIdRaw =
+    typeof body?.paymentIntentId === "string" ? body.paymentIntentId.trim() : "";
   if (!purchaseId) {
     return respondError(
       ctx,
@@ -34,14 +40,64 @@ async function _POST(req: NextRequest) {
     );
   }
 
+  let paymentIntentId =
+    paymentIntentIdRaw && paymentIntentIdRaw.startsWith("pi_")
+      ? paymentIntentIdRaw
+      : null;
+  if (!paymentIntentId && purchaseId.startsWith("pi_")) {
+    paymentIntentId = purchaseId;
+  }
+  if (!paymentIntentId) {
+    const paymentEvent = await prisma.paymentEvent.findFirst({
+      where: {
+        OR: [{ purchaseId }, { stripePaymentIntentId: purchaseId }],
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { stripePaymentIntentId: true },
+    });
+    if (
+      paymentEvent?.stripePaymentIntentId &&
+      paymentEvent.stripePaymentIntentId.startsWith("pi_")
+    ) {
+      paymentIntentId = paymentEvent.stripePaymentIntentId;
+    }
+  }
+  if (!paymentIntentId) {
+    const sale = await prisma.saleSummary.findFirst({
+      where: { OR: [{ purchaseId }, { paymentIntentId: purchaseId }] },
+      select: { paymentIntentId: true },
+    });
+    if (sale?.paymentIntentId && sale.paymentIntentId.startsWith("pi_")) {
+      paymentIntentId = sale.paymentIntentId;
+    }
+  }
+  if (!paymentIntentId) {
+    const ticket = await prisma.ticket.findFirst({
+      where: { OR: [{ purchaseId }, { stripePaymentIntentId: purchaseId }] },
+      select: { stripePaymentIntentId: true },
+    });
+    if (ticket?.stripePaymentIntentId && ticket.stripePaymentIntentId.startsWith("pi_")) {
+      paymentIntentId = ticket.stripePaymentIntentId;
+    }
+  }
+
   const dedupe = purchaseId;
   await enqueueOperation({
     operationType: "FULFILL_PAYMENT",
     dedupeKey: dedupe,
-    correlations: { purchaseId, paymentIntentId: purchaseId },
-    payload: { purchaseId, paymentIntentId: purchaseId },
+    correlations: { purchaseId, paymentIntentId },
+    payload: { purchaseId, paymentIntentId },
   });
 
-  return respondOk(ctx, { requeued: true, operationType: "FULFILL_PAYMENT", dedupeKey: dedupe }, { status: 200 });
+  return respondOk(
+    ctx,
+    {
+      requeued: true,
+      operationType: "FULFILL_PAYMENT",
+      dedupeKey: dedupe,
+      paymentIntentId,
+    },
+    { status: 200 },
+  );
 }
 export const POST = withApiEnvelope(_POST);

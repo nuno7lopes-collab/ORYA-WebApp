@@ -134,7 +134,7 @@ async function resolveTeam(req: NextRequest, teamId: number): Promise<ResolveTea
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId);
   if (!ctx.ok) return ctx.response;
@@ -205,7 +205,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId);
   if (!ctx.ok) return ctx.response;
@@ -314,7 +314,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId);
   if (!ctx.ok) return ctx.response;

@@ -20,16 +20,16 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) {
+  if (!Number.isInteger(eventId) || eventId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { organizationId: true },
+    select: { organizationId: true, templateType: true },
   });
 
-  if (!event?.organizationId) {
+  if (!event?.organizationId || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 

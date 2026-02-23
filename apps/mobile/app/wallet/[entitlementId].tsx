@@ -29,8 +29,7 @@ import { getUserFacingError } from "../../lib/errors";
 import { acceptInvite, declineInvite } from "../../features/tournaments/api";
 import { useMessageInvites, useMessagesInbox } from "../../features/messages/hooks";
 import { acceptMessageInvite } from "../../features/messages/api";
-import * as FileSystem from "expo-file-system";
-import * as LegacyFileSystem from "expo-file-system/legacy";
+import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
 const WALLET_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-PT", {
@@ -245,7 +244,11 @@ export default function WalletDetailScreen() {
     try {
       const result = await acceptMessageInvite(pendingInvite.id, accessToken);
       await Promise.all([inviteQuery.refetch(), inboxQuery.refetch()]);
-      const conversationId = result?.conversationId ?? pendingInvite.conversationId ?? null;
+      const conversationId =
+        result?.conversationId ??
+        result?.threadId ??
+        pendingInvite.conversationId ??
+        null;
       if (conversationId) {
         safePush(router, {
           pathname: "/messages/[threadId]",
@@ -278,16 +281,12 @@ export default function WalletDetailScreen() {
     }
     setDownloadingPass(true);
     try {
-      const baseDir = FileSystem.Paths.cache?.uri ?? FileSystem.Paths.document?.uri ?? null;
-      if (!baseDir) {
-        Alert.alert("Wallet", "Não foi possível preparar o ficheiro da Wallet.");
-        return;
-      }
-      const fileUri = `${baseDir}orya-${data?.entitlementId}.pkpass`;
-      const result = await LegacyFileSystem.downloadAsync(passUrl, fileUri, {
+      const destination = new File(Paths.cache, `orya-${data?.entitlementId}.pkpass`);
+      const result = await File.downloadFileAsync(passUrl, destination, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
+        idempotent: true,
       });
       const canShare = await Sharing.isAvailableAsync();
       if (!canShare) {
@@ -298,7 +297,7 @@ export default function WalletDetailScreen() {
         mimeType: "application/vnd.apple.pkpass",
         UTI: "com.apple.pkpass",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert("Wallet", getUserFacingError(err, "Não foi possível adicionar à Wallet."));
     } finally {
       setDownloadingPass(false);
@@ -326,7 +325,7 @@ export default function WalletDetailScreen() {
     try {
       await acceptInvite(data.pairing.id);
       await refetch();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert("Convite", getUserFacingError(err, "Não foi possível aceitar o convite."));
     } finally {
       setPairingAction(null);
@@ -339,7 +338,7 @@ export default function WalletDetailScreen() {
     try {
       await declineInvite(data.pairing.id);
       await refetch();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert("Convite", getUserFacingError(err, "Não foi possível recusar o convite."));
     } finally {
       setPairingAction(null);
@@ -529,7 +528,7 @@ export default function WalletDetailScreen() {
 
               {data.event?.slug ? (
                 <Pressable
-                  onPressIn={() => safePush(router, { pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
+                  onPress={() => safePush(router, { pathname: "/event/[slug]", params: { slug: data.event?.slug } })}
                   className="rounded-2xl border border-white/15 bg-white/10 px-4 py-4 mb-4"
                   style={{ minHeight: tokens.layout.touchTarget }}
                   accessibilityRole="button"

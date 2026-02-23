@@ -11,6 +11,17 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { ensureGroupMemberModuleAccess } from "@/lib/organizationMemberAccess";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 async function _POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -23,14 +34,18 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  const categoryId = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  const hasCategoryId = body.categoryId != null;
+  const categoryId = hasCategoryId ? parsePositiveInt(body.categoryId) : null;
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (hasCategoryId && categoryId == null) return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
-    select: { id: true, organizationId: true, padelTournamentConfig: { select: { advancedSettings: true } } },
+    select: { id: true, organizationId: true, templateType: true, padelTournamentConfig: { select: { advancedSettings: true } } },
   });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event?.organizationId || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {
     organizationId: event.organizationId,
@@ -46,7 +61,7 @@ async function _POST(req: NextRequest) {
   if (!access.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
   if (!event.padelTournamentConfig) return jsonWrap({ ok: false, error: "NO_TOURNAMENT" }, { status: 404 });
 
-  const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
+  const matchCategoryFilter = typeof categoryId === "number" ? { categoryId } : {};
   const pairings = await prisma.padelPairing.findMany({
     where: {
       eventId,
@@ -124,7 +139,7 @@ async function _POST(req: NextRequest) {
     action: "PADEL_SEEDS_GENERATED",
     metadata: {
       eventId,
-      categoryId: Number.isFinite(categoryId) ? categoryId : null,
+      categoryId: categoryId ?? null,
       pairings: pairings.length,
       playersRanked: rankingEntries.length,
     },

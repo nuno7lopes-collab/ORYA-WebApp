@@ -143,8 +143,8 @@ export type PadelMeSummary = {
     pairingsActive: number;
     waitlistCount: number;
   };
-  pairings: Array<Record<string, any>>;
-  waitlist: Array<Record<string, any>>;
+  pairings: Array<Record<string, unknown>>;
+  waitlist: Array<Record<string, unknown>>;
 };
 
 export type PadelMeMatch = {

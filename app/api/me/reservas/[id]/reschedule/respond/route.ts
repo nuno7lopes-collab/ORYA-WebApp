@@ -156,18 +156,24 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const now = new Date();
     if (request.expiresAt.getTime() <= now.getTime()) {
-      await prisma.bookingChangeRequest.update({
-        where: { id: request.id },
+      const expired = await prisma.bookingChangeRequest.updateMany({
+        where: { id: request.id, status: "PENDING" },
         data: { status: "EXPIRED", respondedAt: now, respondedByUserId: user.id },
       });
+      if (expired.count !== 1) {
+        return fail(409, "CHANGE_REQUEST_NOT_PENDING", "Pedido já processado.");
+      }
       return fail(409, "CHANGE_REQUEST_EXPIRED", "Pedido de alteração expirado.");
     }
 
     if (action === "DECLINE") {
-      await prisma.bookingChangeRequest.update({
-        where: { id: request.id },
+      const declined = await prisma.bookingChangeRequest.updateMany({
+        where: { id: request.id, status: "PENDING" },
         data: { status: "DECLINED", respondedAt: now, respondedByUserId: user.id },
       });
+      if (declined.count !== 1) {
+        return fail(409, "CHANGE_REQUEST_NOT_PENDING", "Pedido já processado.");
+      }
       const { ip, userAgent } = getRequestMeta(req);
       await recordOrganizationAudit(prisma, {
         organizationId: booking.organizationId,
@@ -198,10 +204,13 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     const currency = (request.currency || booking.currency || booking.service?.currency || "EUR").toUpperCase();
 
     if (priceDeltaCents > 0) {
-      await prisma.bookingChangeRequest.update({
-        where: { id: request.id },
+      const marked = await prisma.bookingChangeRequest.updateMany({
+        where: { id: request.id, status: "PENDING" },
         data: { respondedAt: request.respondedAt ?? now, respondedByUserId: request.respondedByUserId ?? user.id },
       });
+      if (marked.count !== 1) {
+        return fail(409, "CHANGE_REQUEST_NOT_PENDING", "Pedido já processado.");
+      }
 
       const sourceId = String(booking.id);
       const purchaseId = `booking_change_${request.id}`;
@@ -447,14 +456,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         }
       }
 
-      const updatedRequest = await tx.bookingChangeRequest.update({
-        where: { id: request.id },
+      const accepted = await tx.bookingChangeRequest.updateMany({
+        where: { id: request.id, status: "PENDING" },
         data: {
           status: "ACCEPTED",
           respondedAt: now,
           respondedByUserId: user.id,
         },
       });
+      if (accepted.count !== 1) {
+        throw new Error("CHANGE_REQUEST_NOT_PENDING");
+      }
 
       await recordOrganizationAudit(tx, {
         organizationId: booking.organizationId,
@@ -470,7 +482,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         userAgent,
       });
 
-      return { updated, request: updatedRequest };
+      return { updated, request: { id: request.id, status: "ACCEPTED" as const } };
     });
 
     await notifyOrganizationBookingChangeResponse({
@@ -504,6 +516,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error && err.message === "CHANGE_REQUEST_NOT_PENDING") {
+      return fail(409, "CHANGE_REQUEST_NOT_PENDING", "Pedido já processado.");
     }
     console.error("POST /api/me/reservas/[id]/reschedule/respond error:", err);
     return fail(500, "INTERNAL_ERROR", "Erro ao responder ao reagendamento.");

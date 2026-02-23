@@ -83,6 +83,7 @@ beforeEach(async () => {
 
   prisma.event.findFirst.mockResolvedValue({
     id: 44,
+    templateType: "PADEL",
     startsAt: new Date("2026-02-22T09:00:00.000Z"),
     endsAt: new Date("2026-02-22T20:00:00.000Z"),
     padelTournamentConfig: {
@@ -148,6 +149,78 @@ beforeEach(async () => {
 });
 
 describe("POST /api/padel/calendar/auto-schedule class-session conflicts", () => {
+  it("rejeita partialMode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 44,
+        partialMode: "sometimes",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_PARTIAL_MODE");
+    expect(prisma.event.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejeita executionMode inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 44,
+        executionMode: "queued",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_EXECUTION_MODE");
+    expect(prisma.event.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejeita strategy inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 44,
+        strategy: "smart",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_STRATEGY");
+    expect(prisma.event.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejeita priority inválida", async () => {
+    const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 44,
+        priority: "mixed",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.error).toBe("INVALID_PRIORITY");
+    expect(resolvePadelCourtSelection).not.toHaveBeenCalled();
+  });
+
   it("em ALLOW_PARTIAL devolve 200 com skippedByMatch CLASS_SESSION_CONFLICT", async () => {
     const req = new NextRequest("http://localhost/api/padel/calendar/auto-schedule", {
       method: "POST",

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 
 export default function PadelRedirectScreen() {
   const router = useRouter();
@@ -15,7 +16,7 @@ export default function PadelRedirectScreen() {
     }, 2500);
 
     try {
-      router.replace("/(tabs)/padel");
+      router.replace(TAB_PATHNAMES.padel);
     } catch {
       setError("Falha no redirecionamento.");
     }

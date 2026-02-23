@@ -119,7 +119,7 @@ const uploadWithProgress = async ({
     xhr.onload = () => {
       const status = xhr.status;
       const raw = xhr.response ?? xhr.responseText;
-      let json: any = raw;
+      let json: unknown = raw;
       if (typeof raw === "string") {
         try {
           json = JSON.parse(raw);
@@ -127,15 +127,18 @@ const uploadWithProgress = async ({
           json = {};
         }
       }
+      const payload = json && typeof json === "object"
+        ? (json as Record<string, unknown>)
+        : {};
       if (status < 200 || status >= 300) {
         const errorMessage =
-          (json && typeof json.error === "string" && json.error) ||
-          (json && typeof json.message === "string" && json.message) ||
+          (typeof payload.error === "string" && payload.error) ||
+          (typeof payload.message === "string" && payload.message) ||
           "Falha no upload da imagem.";
         reject(new Error(errorMessage));
         return;
       }
-      resolve(json ?? {});
+      resolve(payload);
     };
 
     const formData = new FormData();

@@ -28,6 +28,7 @@ import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import { trackEvent } from "../../lib/analytics";
 import { setLastAuthMethod } from "../../lib/authMethod";
 import { normalizeUsernameInput } from "../../lib/username";
+import { resolveSafeNextRoute } from "../../lib/authNextRoute";
 import { useNavigation } from "@react-navigation/native";
 import { safeBack } from "../../lib/navigation";
 import { tokens, useTranslation } from "@orya/shared";
@@ -42,8 +43,11 @@ const buildRecoveryRedirect = () => {
   return `${base}${separator}type=recovery`;
 };
 
-const parseAuthError = (err: any, t: (key: string) => string) => {
-  const message = String(err?.message ?? err ?? "");
+const resolveErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err ?? "");
+
+const parseAuthError = (err: unknown, t: (key: string) => string) => {
+  const message = resolveErrorMessage(err);
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
     return { kind: "invalid_credentials", message: t("auth:email.errors.invalidCredentials") };
@@ -109,17 +113,7 @@ export default function AuthEmailScreen() {
     ? t("auth:emailPlaceholder")
     : t("auth:email.identifierPlaceholder");
   const nextRoute = useMemo(() => {
-    const raw = params.next;
-    const normalize = (value: string) => {
-      try {
-        return decodeURIComponent(value);
-      } catch {
-        return value;
-      }
-    };
-    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
-    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
-    return null;
+    return resolveSafeNextRoute(params.next);
   }, [params.next]);
   const redirectTo = useMemo(() => {
     const base = Linking.createURL("auth/callback");
@@ -219,7 +213,7 @@ export default function AuthEmailScreen() {
       });
       trackEvent("auth_success_email", { mode: "password" });
       router.replace(nextRoute ?? "/");
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         if (err.code === "INVALID_CREDENTIALS") {
           trackEvent("auth_fail_email", { reason: "invalid_credentials" });

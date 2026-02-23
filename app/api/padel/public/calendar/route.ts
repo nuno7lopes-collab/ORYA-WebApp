@@ -88,17 +88,22 @@ async function _GET(req: NextRequest) {
   if (rateLimited) return rateLimited;
 
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
-  const slug = req.nextUrl.searchParams.get("slug");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
-  if (!eventId && !slug) {
+  const slug = req.nextUrl.searchParams.get("slug")?.trim() || null;
+  const hasEventIdParam = eventIdParam !== null;
+  const eventIdParsed = hasEventIdParam ? Number(eventIdParam) : null;
+  const eventId = eventIdParsed !== null && Number.isInteger(eventIdParsed) && eventIdParsed > 0 ? eventIdParsed : null;
+  if (hasEventIdParam && eventId === null) {
+    return fail(ctx, 400, "INVALID_EVENT");
+  }
+  if (!hasEventIdParam && !slug) {
     return fail(ctx, 400, "EVENT_REQUIRED");
   }
 
   const eventRef = await prisma.event.findUnique({
-    where: eventId ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
-    select: { id: true },
+    where: eventId !== null ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
+    select: { id: true, templateType: true },
   });
-  if (!eventRef?.id) return fail(ctx, 404, "EVENT_NOT_FOUND");
+  if (!eventRef?.id || eventRef.templateType !== "PADEL") return fail(ctx, 404, "EVENT_NOT_FOUND");
 
   const live = await buildPadelLiveReadModel({ eventId: eventRef.id, visibility: "public" });
   if (!live) return fail(ctx, 404, "EVENT_NOT_FOUND");

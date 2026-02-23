@@ -56,6 +56,28 @@ describe("padel format catalog guardrails (D18.11)", () => {
     expect(createRoute).not.toContain("resolvePadelFormat");
     expect(createRoute).not.toContain("TODOS_CONTRA_TODOS");
   });
+
+  it("formats/plan rejeita IDs decimais sem truncar", () => {
+    const planRoute = readLocal("app/api/padel/formats/plan/route.ts");
+    expect(planRoute).toContain("INVALID_COURT_IDS");
+    expect(planRoute).toContain("INVALID_COURT_PRIORITY");
+    expect(planRoute).toContain("INVALID_CATEGORIES");
+    expect(planRoute).not.toContain("Math.floor(categoryIdRaw)");
+  });
+
+  it("motores de planeamento não truncam IDs de courts/categorias", () => {
+    const autoGenerate = readLocal("domain/padel/autoGenerateMatches.ts");
+    const capacity = readLocal("domain/padel/formatEngine/capacity.ts");
+    expect(autoGenerate).not.toContain(".map((id) => Math.floor(id))");
+    expect(capacity).not.toContain("Math.floor(category.categoryId)");
+  });
+
+  it("matches/generate valida enums de draw/seed/phase sem fallback silencioso", () => {
+    const route = readLocal("app/api/padel/matches/generate/route.ts");
+    expect(route).toContain("INVALID_PHASE");
+    expect(route).toContain("INVALID_DRAW_POLICY");
+    expect(route).toContain("INVALID_SEED_SOURCE");
+  });
 });
 
 describe("padel club staff role guardrails (D18.09)", () => {
@@ -209,11 +231,15 @@ describe("padel ranking v2 guardrails (N6)", () => {
 
   it("expõe rotas canónicas de rebuild e sanções", () => {
     const rebuild = readLocal("app/api/padel/rankings/rebuild/route.ts");
+    const rebuildService = readLocal("domain/padel/rankingRebuild.ts");
     const sanctions = readLocal("app/api/padel/rankings/sanctions/route.ts");
-    expect(rebuild).toContain("rebuildPadelRatingsForEvent");
+    expect(rebuild).toContain("executePadelRankingRebuild");
+    expect(rebuildService).toContain("rebuildPadelRatingsForEvent");
     expect(rebuild).toContain("export const POST = withApiEnvelope(_POST);");
     expect(sanctions).toContain("applyPadelRatingSanction");
     expect(sanctions).toContain("export const POST = withApiEnvelope(_POST);");
+    expect(sanctions).toContain("Number.isInteger");
+    expect(sanctions).not.toContain("Math.floor");
   });
 
   it("governa tiers OURO/MAJOR com approval e gate de lifecycle", () => {
@@ -227,6 +253,71 @@ describe("padel ranking v2 guardrails (N6)", () => {
     expect(reject).toContain("status: \"REJECTED\"");
     expect(lifecycle).toContain("TIER_APPROVAL_REQUIRED");
     expect(lifecycle).toContain("GOVERNED_TIERS");
+  });
+});
+
+describe("padel tournament config input guardrails", () => {
+  it("rejeita IDs decimais sem truncagem silenciosa", () => {
+    const route = readLocal("app/api/padel/tournaments/config/route.ts");
+    expect(route).toContain("INVALID_RULESET");
+    expect(route).toContain("INVALID_FEATURED_MATCH");
+    expect(route).toContain("INVALID_GROUPS_MODE");
+    expect(route).toContain("INVALID_GROUPS_SEEDING");
+    expect(route).not.toContain("Math.floor(ruleSetIdRaw)");
+    expect(route).not.toContain("Math.floor(defaultCategoryRaw)");
+  });
+});
+
+describe("padel scheduler fail-closed guardrails", () => {
+  it("valida enums operacionais sem fallback silencioso", () => {
+    const bulk = readLocal("app/api/padel/calendar/matches/bulk-reschedule/route.ts");
+    const autoSchedule = readLocal("app/api/padel/calendar/auto-schedule/route.ts");
+    const roundsAdvance = readLocal("app/api/padel/rounds/advance/route.ts");
+    const broadcast = readLocal("app/api/org/[orgId]/padel/broadcast/route.ts");
+    const reopen = readLocal("app/api/padel/pairings/[id]/reopen/route.ts");
+    const pairingsCreate = readLocal("app/api/padel/pairings/route.ts");
+    const walkover = readLocal("app/api/padel/matches/[id]/walkover/route.ts");
+    expect(bulk).toContain("INVALID_MODE");
+    expect(bulk).toContain("INVALID_PARTIAL_MODE");
+    expect(autoSchedule).toContain("INVALID_PARTIAL_MODE");
+    expect(autoSchedule).toContain("INVALID_EXECUTION_MODE");
+    expect(autoSchedule).toContain("INVALID_STRATEGY");
+    expect(autoSchedule).toContain("INVALID_PRIORITY");
+    expect(roundsAdvance).toContain("INVALID_PARTIAL_MODE");
+    expect(roundsAdvance).toContain("INVALID_EXECUTION_MODE");
+    expect(roundsAdvance).toContain("INVALID_STRATEGY");
+    expect(broadcast).toContain("INVALID_AUDIENCE");
+    expect(reopen).toContain("INVALID_MODE");
+    expect(pairingsCreate).toContain("INVALID_PAIRING_JOIN_MODE");
+    expect(walkover).toContain("INVALID_RESULT_TYPE");
+  });
+});
+
+describe("padel api contract guardrails", () => {
+  it("rotas legacy expõem errorCode estável mantendo mensagem humana", () => {
+    const categories = readLocal("app/api/padel/categories/my/route.ts");
+    const clubs = readLocal("app/api/padel/clubs/route.ts");
+    const clubStaff = readLocal("app/api/padel/clubs/[id]/staff/route.ts");
+    const clubStaffInvites = readLocal("app/api/padel/clubs/[id]/staff/invites/route.ts");
+    const calendar = readLocal("app/api/padel/calendar/route.ts");
+    const onboarding = readLocal("app/api/padel/onboarding/route.ts");
+    expect(categories).toContain("failText(");
+    expect(categories).toContain("RESERVED_LABEL");
+    expect(categories).toContain("DUPLICATE_LABEL");
+    expect(clubs).toContain("ADDRESS_REQUIRED");
+    expect(clubs).toContain("INVALID_ADDRESS");
+    expect(clubs).toContain("CLUB_IN_USE");
+    expect(clubStaff).toContain("errorCode: \"INVALID_ROLE\"");
+    expect(clubStaffInvites).toContain("errorCode: \"INVALID_ROLE\"");
+    expect(clubStaff).toContain("INVALID_INHERIT_TO_EVENTS");
+    expect(clubStaffInvites).toContain("INVALID_INHERIT_TO_EVENTS");
+    expect(calendar).toContain("BLOCK_OVERLAP");
+    expect(calendar).toContain("AVAILABILITY_OVERLAP");
+    expect(calendar).toContain("MATCH_OVERLAP");
+    expect(calendar).toContain("MATCH_BLOCK_CONFLICT");
+    expect(onboarding).toContain("errorCode: \"USERNAME_TAKEN\"");
+    expect(onboarding).toContain("errorCode: \"INTERNAL_ERROR\"");
+    expect(onboarding).not.toContain("code: \"USERNAME_TAKEN\"");
   });
 });
 

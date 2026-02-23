@@ -169,8 +169,11 @@ async function _POST(req: NextRequest) {
     }
 
     const organizationId = resolveOrganizationIdFromRequest(req);
+    if (!organizationId) {
+      return fail(400, "ORG_ID_REQUIRED");
+    }
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: ["OWNER", "CO_OWNER", "ADMIN", "STAFF"],
     });
     if (!organization || !membership) {

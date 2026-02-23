@@ -203,7 +203,7 @@ async function _DELETE(req: NextRequest) {
   const url = new URL(req.url);
   const courtIdParam = url.searchParams.get("courtId");
   const courtId = courtIdParam ? Number(courtIdParam) : NaN;
-  if (!Number.isFinite(courtId)) return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
+  if (!Number.isInteger(courtId) || courtId <= 0) return jsonWrap({ ok: false, error: "INVALID_COURT" }, { status: 400 });
 
   const club = await prisma.padelClub.findFirst({ where: { id: clubId, organizationId: organization.id, deletedAt: null } });
   if (!club) return jsonWrap({ ok: false, error: "CLUB_NOT_FOUND" }, { status: 404 });

@@ -3,12 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
-import { campaignChannelsToList, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
+import { campaignChannelsToList, hasAnyCampaignChannel, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import {
   CrmCampaignApprovalState,
-  CrmCampaignChannel,
   CrmCampaignStatus,
   OrganizationMemberRole,
   Prisma,
@@ -43,9 +42,13 @@ async function _GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...READ_ROLES],
     });
 
@@ -115,9 +118,13 @@ async function _POST(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...READ_ROLES],
     });
 
@@ -148,7 +155,6 @@ async function _POST(req: NextRequest) {
       name?: unknown;
       description?: unknown;
       segmentId?: unknown;
-      channel?: unknown;
       channels?: unknown;
       payload?: unknown;
       audienceSnapshot?: unknown;
@@ -162,13 +168,15 @@ async function _POST(req: NextRequest) {
 
     const description = typeof payload?.description === "string" ? payload.description.trim() : null;
     const segmentId = typeof payload?.segmentId === "string" ? payload.segmentId : null;
-    const channel = payload?.channel === "IN_APP" ? CrmCampaignChannel.IN_APP : CrmCampaignChannel.IN_APP;
     const rawPayload =
       payload?.payload && typeof payload.payload === "object" && !Array.isArray(payload.payload)
         ? (payload.payload as Record<string, unknown>)
         : {};
     const requestedChannels = payload?.channels ?? rawPayload.channels;
     const channelConfig = normalizeCampaignChannels(requestedChannels);
+    if (!hasAnyCampaignChannel(channelConfig)) {
+      return fail(ctx, 400, "Campanha sem canais válidos.");
+    }
     const campaignPayload = {
       ...rawPayload,
       channels: channelConfig,
@@ -206,7 +214,7 @@ async function _POST(req: NextRequest) {
         name,
         description,
         segmentId,
-        channel,
+        channel: "IN_APP",
         channels: channelConfig as Prisma.InputJsonValue,
         approvalState: CrmCampaignApprovalState.DRAFT,
         payload: campaignPayload as Prisma.InputJsonValue,

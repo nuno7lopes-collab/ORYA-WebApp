@@ -39,6 +39,31 @@ beforeEach(async () => {
 });
 
 describe("padel broadcast route", () => {
+  it("rejeita audience inválida sem fallback para ALL", async () => {
+    createSupabaseServer.mockResolvedValue({
+      auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
+    });
+
+    const req = new NextRequest("http://localhost/api/org/1/padel/broadcast", {
+      method: "POST",
+      body: JSON.stringify({
+        eventId: 10,
+        audience: "everyone",
+        title: "Aviso",
+        message: "Teste broadcast",
+      }),
+    });
+
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.errorCode ?? json.error).toBe("INVALID_AUDIENCE");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+    expect(enqueueNotification).not.toHaveBeenCalled();
+    expect(queueImportantUpdateEmail).not.toHaveBeenCalled();
+  });
+
   it("dispara push + email para a audiência", async () => {
     createSupabaseServer.mockResolvedValue({
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: "u1" } } })) },
@@ -47,7 +72,7 @@ describe("padel broadcast route", () => {
     ensureGroupMemberModuleAccess.mockResolvedValue({ ok: true });
     prisma.event.findUnique
       .mockResolvedValueOnce({
-        organizationId: 99,
+        organizationId: 1,
         templateType: "PADEL",
         organization: { officialEmail: "org@x.pt", officialEmailVerifiedAt: new Date() },
       })
@@ -55,7 +80,8 @@ describe("padel broadcast route", () => {
         id: 10,
         title: "Open",
         slug: "open",
-        organizationId: 99,
+        organizationId: 1,
+        templateType: "PADEL",
       });
     prisma.padelPairingSlot.findMany.mockResolvedValue([
       { profileId: "p1" },

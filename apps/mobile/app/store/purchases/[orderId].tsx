@@ -11,10 +11,10 @@ import { tokens } from "@orya/shared";
 import { getStoreErrorMessage } from "../../../features/store/errors";
 import { useStorePurchase, useStoreReceiptMutation } from "../../../features/store/hooks";
 import { getMobileEnv } from "../../../lib/env";
-import * as FileSystem from "expo-file-system";
-import * as LegacyFileSystem from "expo-file-system/legacy";
+import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { safePush } from "../../../lib/navigation";
+import { resolveSafeHttpUrl } from "../../../lib/externalUrl";
 
 const formatMoney = (cents: number | null | undefined, currency = "EUR") => {
   if (typeof cents !== "number" || !Number.isFinite(cents)) return "-";
@@ -60,7 +60,11 @@ export default function StorePurchaseDetailScreen() {
     setInlineError(null);
     try {
       const url = await receipt.mutateAsync(orderId);
-      await Linking.openURL(url);
+      const safeUrl = resolveSafeHttpUrl(url);
+      if (!safeUrl) {
+        throw new Error("URL de recibo inválida.");
+      }
+      await Linking.openURL(safeUrl);
     } catch (error) {
       setInlineError(getStoreErrorMessage(error, "Não foi possível abrir o recibo."));
     }
@@ -73,14 +77,12 @@ export default function StorePurchaseDetailScreen() {
     try {
       const baseUrl = getMobileEnv().apiBaseUrl.replace(/\/+$/, "");
       const url = `${baseUrl}/api/me/purchases/store/${orderId}/invoice`;
-      const baseDir = FileSystem.Paths.cache?.uri ?? FileSystem.Paths.document?.uri ?? null;
-      if (!baseDir) throw new Error("Não foi possível preparar o ficheiro da fatura.");
-      const output = `${baseDir}store-invoice-${orderId}.pdf`;
-
-      const result = await LegacyFileSystem.downloadAsync(url, output, {
+      const destination = new File(Paths.cache, `store-invoice-${orderId}.pdf`);
+      const result = await File.downloadFileAsync(url, destination, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
+        idempotent: true,
       });
 
       const canShare = await Sharing.isAvailableAsync();
@@ -104,7 +106,7 @@ export default function StorePurchaseDetailScreen() {
         title="Detalhe da compra"
         leftSlot={
           <Pressable
-            onPressIn={() => router.replace("/store/purchases")}
+            onPress={() => router.replace("/store/purchases")}
             accessibilityRole="button"
             accessibilityLabel="Voltar"
             style={{
@@ -212,7 +214,7 @@ export default function StorePurchaseDetailScreen() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPressIn={() => safePush(router, "/store/downloads")}
+                  onPress={() => safePush(router, "/store/downloads")}
                   className="rounded-xl border border-white/15 bg-white/5 px-4 py-3"
                   accessibilityRole="button"
                   accessibilityLabel="Ir para descargas"

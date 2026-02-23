@@ -3,7 +3,7 @@ import path from "path";
 
 const ROOT = process.cwd();
 const SSOT_PATH = path.join(ROOT, "docs", "ssot_registry_v1.md");
-const NORMATIVE_MODE = process.env.SSOT_NORMATIVE_MODE ?? "DOMAIN_TRANSITION";
+const NORMATIVE_MODE = process.env.SSOT_NORMATIVE_MODE ?? "SSOT_ONLY";
 const AUXILIARY_TRACEABILITY_DOCS = [
   "docs/arbitration_service_spec.md",
   "docs/ws_handshake_and_jwt_claims.md",

@@ -54,7 +54,7 @@ async function resolvePost(
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const resolved = await params;
   const postId = Number(resolved?.id);
-  if (!Number.isFinite(postId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(postId) || postId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolvePost(req, postId, readRoles);
   if ("error" in ctx) return ctx.error;
@@ -71,7 +71,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const resolved = await params;
   const postId = Number(resolved?.id);
-  if (!Number.isFinite(postId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(postId) || postId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolvePost(req, postId, writeRoles);
   if ("error" in ctx) return ctx.error;

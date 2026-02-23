@@ -71,11 +71,21 @@ async function _GET(req: NextRequest) {
     const items = await prisma.profile.findMany({
       where: {
         isDeleted: false,
-        OR: [
-          { username: { contains: query, mode: "insensitive" } },
-          { fullName: { contains: query, mode: "insensitive" } },
-          { contactPhone: { contains: query, mode: "insensitive" } },
-          { users: { email: { contains: query, mode: "insensitive" } } },
+        AND: [
+          {
+            OR: [
+              { bookings: { some: { organizationId: organization.id } } },
+              { bookingParticipants: { some: { booking: { organizationId: organization.id } } } },
+            ],
+          },
+          {
+            OR: [
+              { username: { contains: query, mode: "insensitive" } },
+              { fullName: { contains: query, mode: "insensitive" } },
+              { contactPhone: { contains: query, mode: "insensitive" } },
+              { users: { email: { contains: query, mode: "insensitive" } } },
+            ],
+          },
         ],
       },
       take: limit,

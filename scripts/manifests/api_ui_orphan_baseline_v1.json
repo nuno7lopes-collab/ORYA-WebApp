@@ -1,0 +1,592 @@
+{
+  "version": 2,
+  "description": "Baseline de órfãos API<->UI para o gate falhar apenas em regressões novas.",
+  "policy": {
+    "owner": "platform-architecture",
+    "reason": "baseline_preexisting_orphan",
+    "expiresAt": "2026-06-30"
+  },
+  "entries": [
+    {
+      "route": "/api/me/dsar/export",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/inscricoes",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/loyalty/carteira",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/notifications/[id]/read",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/reservas/[id]/calendar.ics",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/settings/delete/cancel",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/me/wallet/[entitlementId]/pass",
+      "domain": "me",
+      "owner": "identity-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/messages/conversations/[conversationId]/threads/[messageId]",
+      "domain": "messages",
+      "owner": "messaging-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/messages/grants/[grantId]/cancel",
+      "domain": "messages",
+      "owner": "messaging-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-04-15"
+    },
+    {
+      "route": "/api/org/[orgId]/avaliacoes",
+      "domain": "org.other",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/crm/campanhas/[campaignId]",
+      "domain": "org.other",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/analytics",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/audit",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/broadcast",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/courts",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/exports/analytics",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/exports/bracket",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/exports/calendario",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/exports/inscritos",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/exports/resultados",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/imports/inscritos",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/pairings/swap",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/waitlist",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/padel/waitlist/promote",
+      "domain": "org.padel",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/reservas/disponibilidade/[overrideId]",
+      "domain": "org.other",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/servicos/[id]/duration-prices",
+      "domain": "org.other",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]/items",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/bundles/[id]/items/[itemId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/categories",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/categories/[id]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders/[orderId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/orders/[orderId]/shipments",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/overview",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/preview",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/digital-assets",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/digital-assets/[assetId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/images",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/images/[imageId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]/values",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/options/[optionId]/values/[valueId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/variants",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/products/[id]/variants/[variantId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/settings",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipments/[shipmentId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/methods/[methodId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/methods/[methodId]/tiers",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/settings",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/tiers/[tierId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones/[zoneId]",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/store/shipping/zones/[zoneId]/methods",
+      "domain": "org.store",
+      "owner": "commerce-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/org/[orgId]/trainers",
+      "domain": "org.other",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/community/posts",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/community/posts/[id]/comments",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/community/posts/[id]/reactions",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/live",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/live/raw",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/matches/[id]/delay",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/matches/[id]/undo",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/assume",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/cancel",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/invite",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/public",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/regularize",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/reopen",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/[id]/swap",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/pairings/my",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/public/calendar",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/rankings/rebuild",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/rankings/sanctions",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/teams/[id]/members",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/tournaments/tier-approvals/[id]/approve",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/tournaments/tier-approvals/[id]/reject",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/padel/tournaments/tier-approvals/request",
+      "domain": "padel.public",
+      "owner": "padel-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    },
+    {
+      "route": "/api/servicos/[id]/booking-status",
+      "domain": "servicos",
+      "owner": "reservas-core",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-15"
+    },
+    {
+      "route": "/api/upload/delete",
+      "domain": "public",
+      "owner": "org-platform",
+      "reason": "baseline_preexisting_orphan",
+      "expiresAt": "2026-05-30"
+    }
+  ]
+}

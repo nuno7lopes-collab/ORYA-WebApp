@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, type Router } from "expo-router";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { GlassSkeleton } from "../glass/GlassSkeleton";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { resolveMediaUri } from "../../lib/media";
 import { safePush } from "../../lib/navigation";
+import { resolveEventPriceLabel } from "../../lib/eventPrice";
 
 type DiscoverGridCardProps = {
   offer: DiscoverOfferCard;
@@ -20,6 +21,9 @@ type DiscoverGridCardProps = {
   source?: string;
   style?: StyleProp<ViewStyle>;
 };
+
+type TranslateFn = ReturnType<typeof useTranslation>["t"];
+type PushHref = Parameters<Router["push"]>[0];
 
 type BadgeProps = {
   label: string;
@@ -43,24 +47,7 @@ const resolveEventType = (event: PublicEventCard, t: (key: string) => string): s
   return t("events:labels.event");
 };
 
-const formatEventPrice = (event: PublicEventCard, t: (key: string, options?: any) => string): string | null => {
-  if (event.isGratis) return t("common:price.free");
-  if (typeof event.priceFrom === "number") {
-    return t("common:price.from", { price: formatCurrency(event.priceFrom, "EUR") });
-  }
-  const ticketPrices = event.ticketTypes
-    ? event.ticketTypes
-        .map((ticket) => (typeof ticket.price === "number" ? ticket.price : null))
-        .filter((price): price is number => price !== null)
-    : [];
-  if (ticketPrices.length > 0) {
-    const min = Math.min(...ticketPrices) / 100;
-    return t("common:price.from", { price: formatCurrency(min, "EUR") });
-  }
-  return null;
-};
-
-const formatServicePrice = (service: DiscoverServiceCard, t: (key: string, options?: any) => string): string => {
+const formatServicePrice = (service: DiscoverServiceCard, t: TranslateFn): string => {
   if (service.unitPriceCents <= 0) return t("common:price.free");
   const amount = service.unitPriceCents / 100;
   const currency = service.currency?.toUpperCase() || "EUR";
@@ -138,7 +125,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
 
   const priceLabel = useMemo(() => {
     if (service) return formatServicePrice(service, t);
-    if (event) return formatEventPrice(event, t);
+    if (event) return resolveEventPriceLabel(event, t);
     return null;
   }, [event, service, t]);
 
@@ -217,7 +204,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
     };
   }, [coverImage, priceLabel, service, source, typeLabel]);
 
-  const linkHref = useMemo(
+  const linkHref = useMemo<PushHref>(
     () =>
       isService
         ? {
@@ -231,7 +218,7 @@ export const DiscoverGridCard = memo(function DiscoverGridCard({
     [eventPreviewParams, isService, servicePreviewParams],
   );
   const handlePress = useCallback(() => {
-    safePush(router, linkHref as any);
+    safePush(router, linkHref);
   }, [linkHref, router]);
 
   const accessibilityLabel = event?.title ?? service?.title ?? t("discover:offer");

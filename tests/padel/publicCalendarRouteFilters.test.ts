@@ -21,12 +21,23 @@ beforeEach(async () => {
   prisma.event.findUnique.mockReset();
 
   enforcePublicRateLimit.mockResolvedValue(null);
-  prisma.event.findUnique.mockResolvedValue({ id: 281 });
+  prisma.event.findUnique.mockResolvedValue({ id: 281, templateType: "PADEL" });
 
   GET = (await import("@/app/api/padel/public/calendar/route")).GET;
 });
 
 describe("GET /api/padel/public/calendar filters", () => {
+  it("rejeita eventId inválido", async () => {
+    const req = new NextRequest("http://localhost/api/padel/public/calendar?eventId=1.5");
+    const res = await GET(req);
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.errorCode).toBe("INVALID_EVENT");
+    expect(prisma.event.findUnique).not.toHaveBeenCalled();
+  });
+
   it("applies date/status/court filters consistently", async () => {
     buildPadelLiveReadModel.mockResolvedValue({
       event: {

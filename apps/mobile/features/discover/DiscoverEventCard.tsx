@@ -19,6 +19,7 @@ import { sendEventSignal } from "../events/signals";
 import { formatCurrency, formatDate, formatRelativeDay, formatRelativeHours, formatTime } from "../../lib/formatters";
 import { formatDistanceKm } from "../../lib/geo";
 import { resolveMediaUri } from "../../lib/media";
+import { resolveEventPriceLabel } from "../../lib/eventPrice";
 
 const USE_GLASS_BLUR = Platform.OS === "ios";
 const CARD_IMAGE_TRANSITION_MS = Platform.OS === "android" ? 110 : 170;
@@ -34,30 +35,13 @@ type Props = {
   onHide?: (payload: { eventId: number; scope: "event" | "category" | "org"; tag?: string | null }) => void;
 };
 
+type TranslateFn = ReturnType<typeof useTranslation>["t"];
+
 const isServiceCard = (item: PublicEventCard | DiscoverServiceCard): item is DiscoverServiceCard => {
   return "durationMinutes" in item;
 };
 
-const formatEventPrice = (item: PublicEventCard, t: (key: string, options?: any) => string): string | null => {
-  if (item.isGratis) return t("common:price.free");
-  if (typeof item.priceFrom === "number") {
-    return t("common:price.from", { price: formatCurrency(item.priceFrom, "EUR") });
-  }
-  const ticketPrices = item.ticketTypes
-    ? item.ticketTypes
-        .map((ticket) => (typeof ticket.price === "number" ? ticket.price : null))
-        .filter((price): price is number => price !== null)
-    : [];
-  if (ticketPrices.length > 0) {
-    const min = Math.min(...ticketPrices) / 100;
-    const max = Math.max(...ticketPrices) / 100;
-    if (min === max) return formatCurrency(min, "EUR", { maximumFractionDigits: 0 });
-    return t("common:price.from", { price: formatCurrency(min, "EUR") });
-  }
-  return null;
-};
-
-const formatServicePrice = (item: DiscoverServiceCard, t: (key: string, options?: any) => string): string => {
+const formatServicePrice = (item: DiscoverServiceCard, t: TranslateFn): string => {
   if (item.unitPriceCents <= 0) return t("common:price.free");
   const amount = item.unitPriceCents / 100;
   const currency = item.currency?.toUpperCase() || "EUR";
@@ -127,7 +111,7 @@ const isCurrentNow = (item: PublicEventCard): boolean => {
 
 const resolveTicketAvailability = (
   ticketTypes: PublicEventCard["ticketTypes"] | undefined,
-  t: (key: string, options?: any) => string,
+  t: TranslateFn,
 ) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const totals = ticketTypes
@@ -147,7 +131,7 @@ const resolveTicketAvailability = (
 
 const resolveTicketSummary = (
   ticketTypes: PublicEventCard["ticketTypes"] | undefined,
-  t: (key: string, options?: any) => string,
+  t: TranslateFn,
 ) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const sorted = [...ticketTypes].sort((a, b) => {
@@ -227,7 +211,7 @@ const resolveTintGradientAlphas = (color: string) => {
 
 const resolveAttendanceSummary = (
   ticketTypes: PublicEventCard["ticketTypes"] | undefined,
-  t: (key: string, options?: any) => string,
+  t: TranslateFn,
 ) => {
   if (!ticketTypes || ticketTypes.length === 0) return null;
   const totals = ticketTypes
@@ -348,7 +332,7 @@ export const DiscoverEventCard = memo(function DiscoverEventCard({
           ? formatServicePrice(service, t)
           : null
         : event
-          ? formatEventPrice(event, t)
+          ? resolveEventPriceLabel(event, t)
           : null,
     [event, isService, service, t],
   );

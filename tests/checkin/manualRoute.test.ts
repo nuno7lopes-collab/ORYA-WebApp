@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CheckinMethod, CheckinResultCode, EntitlementStatus, EntitlementType } from "@prisma/client";
+import { NextRequest } from "next/server";
 
 const entitlementId = "11111111-1111-4111-8111-111111111111";
 const actorUserId = "user-operator";
@@ -88,6 +89,13 @@ vi.mock("@/lib/supabaseServer", () => ({
   })),
 }));
 
+vi.mock("@/lib/auth/getUserWithPolicy", () => ({
+  getUserWithPolicy: vi.fn(async () => ({
+    data: { user: authUser },
+    error: null,
+  })),
+}));
+
 vi.mock("@/lib/auth/rateLimit", () => ({
   rateLimit: vi.fn(async () => ({ allowed: true, retryAfter: 0 })),
 }));
@@ -130,12 +138,13 @@ vi.mock("@/lib/notifications", () => ({
 
 vi.mock("@/lib/observability/logger", () => ({
   logWarn: vi.fn(),
+  logError: vi.fn(),
 }));
 
 import { POST } from "@/app/api/org/[orgId]/checkin/manual/route";
 
 function makeReq(body: Record<string, unknown>) {
-  return new Request("http://localhost/api/org/99/checkin/manual", {
+  return new NextRequest("http://localhost/api/org/99/checkin/manual", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

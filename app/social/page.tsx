@@ -167,7 +167,7 @@ export default function SocialHubPage() {
   const [organizationResults, setOrganizationResults] = useState<SearchOrganization[]>([]);
 
   const { data: notificationsData, mutate: mutateNotifications } = useSWR(
-    isLoggedIn ? "/api/me/notifications/feed?limit=120" : null,
+    isLoggedIn ? "/api/me/notifications/feed?limit=120&scope=user" : null,
     fetcher,
   );
   const { data: followRequestsData, mutate: mutateFollowRequests } = useSWR(

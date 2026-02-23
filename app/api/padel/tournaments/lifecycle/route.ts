@@ -60,7 +60,7 @@ async function _GET(req: NextRequest) {
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
@@ -131,7 +131,7 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
   const nextStatus = parseLifecycle(body.nextStatus);
   if (!nextStatus) return jsonWrap({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
@@ -386,7 +386,7 @@ async function _POST(req: NextRequest) {
   try {
     if (["PUBLISHED", "LOCKED", "COMPLETED"].includes(nextStatus)) {
       const syncEvent = await prisma.event.findUnique({
-        where: { id: event.id },
+        where: { id: event.id, isDeleted: false },
         select: {
           id: true,
           templateType: true,

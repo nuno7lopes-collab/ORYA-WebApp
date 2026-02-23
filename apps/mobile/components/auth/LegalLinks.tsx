@@ -1,6 +1,7 @@
-import { Linking, StyleSheet, Text } from "react-native";
+import { Alert, Linking, StyleSheet, Text } from "react-native";
 import { Trans, useTranslation } from "react-i18next";
 import { tokens } from "@orya/shared";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 
 type LegalLinksProps = {
   termsUrl: string;
@@ -9,6 +10,19 @@ type LegalLinksProps = {
 
 export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
   useTranslation();
+  const openLegalUrl = async (url: string) => {
+    const safeUrl = resolveSafeHttpUrl(url);
+    if (!safeUrl) {
+      Alert.alert("Ligação indisponível", "Não foi possível abrir esta página.");
+      return;
+    }
+    try {
+      await Linking.openURL(safeUrl);
+    } catch {
+      Alert.alert("Ligação indisponível", "Não foi possível abrir esta página.");
+    }
+  };
+
   return (
     <Text style={styles.text}>
       <Trans
@@ -19,7 +33,9 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
               key="terms"
               style={styles.link}
               accessibilityRole="link"
-              onPress={() => Linking.openURL(termsUrl)}
+              onPress={() => {
+                void openLegalUrl(termsUrl);
+              }}
             />
           ),
           privacy: (
@@ -27,7 +43,9 @@ export function LegalLinks({ termsUrl, privacyUrl }: LegalLinksProps) {
               key="privacy"
               style={styles.link}
               accessibilityRole="link"
-              onPress={() => Linking.openURL(privacyUrl)}
+              onPress={() => {
+                void openLegalUrl(privacyUrl);
+              }}
             />
           ),
         }}

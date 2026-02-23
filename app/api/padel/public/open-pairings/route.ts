@@ -38,21 +38,23 @@ async function _GET(req: NextRequest) {
         : null;
     const eventId = eventIdParam ? Number(eventIdParam) : null;
     const categoryId = categoryIdParam ? Number(categoryIdParam) : null;
-    if (eventIdParam && !Number.isFinite(eventId)) {
+    const hasValidEventId = typeof eventId === "number" && Number.isInteger(eventId) && eventId > 0;
+    const hasValidCategoryId = typeof categoryId === "number" && Number.isInteger(categoryId) && categoryId > 0;
+    if (eventIdParam && !hasValidEventId) {
       return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
     }
-    if (categoryIdParam && !Number.isFinite(categoryId)) {
+    if (categoryIdParam && !hasValidCategoryId) {
       return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
     }
     const limit = clampLimit(params.get("limit"));
     const queryTake = Math.min(limit * 3, 90);
     const now = new Date();
     const eventFilter: Prisma.PadelPairingWhereInput = {};
-    if (typeof eventId === "number" && Number.isFinite(eventId)) {
+    if (hasValidEventId) {
       eventFilter.eventId = eventId;
     }
     const categoryFilter: Prisma.PadelPairingWhereInput = {};
-    if (typeof categoryId === "number" && Number.isFinite(categoryId)) {
+    if (hasValidCategoryId) {
       categoryFilter.categoryId = categoryId;
     }
 

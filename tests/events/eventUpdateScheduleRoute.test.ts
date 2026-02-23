@@ -4,6 +4,8 @@ import { NextRequest } from "next/server";
 const createSupabaseServer = vi.hoisted(() => vi.fn());
 const ensureAuthenticated = vi.hoisted(() => vi.fn());
 const isUnauthenticatedError = vi.hoisted(() => vi.fn(() => false));
+const resolveGroupMemberForOrg = vi.hoisted(() => vi.fn());
+const ensureMemberModuleAccess = vi.hoisted(() => vi.fn());
 const prisma = vi.hoisted(() => ({
   profile: { findUnique: vi.fn() },
   event: { findUnique: vi.fn() },
@@ -13,6 +15,8 @@ const prisma = vi.hoisted(() => ({
 vi.mock("@/lib/supabaseServer", () => ({ createSupabaseServer }));
 vi.mock("@/lib/security", () => ({ ensureAuthenticated, isUnauthenticatedError }));
 vi.mock("@/lib/prisma", () => ({ prisma }));
+vi.mock("@/lib/organizationGroupAccess", () => ({ resolveGroupMemberForOrg }));
+vi.mock("@/lib/organizationMemberAccess", () => ({ ensureMemberModuleAccess }));
 
 let POST: typeof import("@/app/api/org/[orgId]/events/update/route").POST;
 
@@ -24,6 +28,8 @@ beforeEach(async () => {
   prisma.profile.findUnique.mockReset();
   prisma.event.findUnique.mockReset();
   prisma.$queryRaw.mockReset();
+  resolveGroupMemberForOrg.mockReset();
+  ensureMemberModuleAccess.mockReset();
 
   isUnauthenticatedError.mockReturnValue(false);
   createSupabaseServer.mockResolvedValue({});
@@ -34,10 +40,16 @@ beforeEach(async () => {
     fullName: "User One",
     username: "user_one",
   });
+  resolveGroupMemberForOrg.mockResolvedValue({
+    role: "ADMIN",
+    rolePack: null,
+  });
+  ensureMemberModuleAccess.mockResolvedValue({ ok: true });
   prisma.event.findUnique.mockResolvedValue({
     id: 77,
     startsAt: new Date("2026-03-01T10:00:00.000Z"),
     endsAt: null,
+    organizationId: 1,
   });
 
   POST = (await import("@/app/api/org/[orgId]/events/update/route")).POST;
@@ -58,7 +70,7 @@ describe("organization events update route schedule invariants", () => {
       startsAt: new Date("2026-03-01T10:00:00.000Z"),
       endsAt: new Date("2026-03-01T12:00:00.000Z"),
       status: "PUBLISHED",
-      organizationId: null,
+      organizationId: 1,
       pricingMode: "STANDARD",
       templateType: "OTHER",
       interestTags: [],

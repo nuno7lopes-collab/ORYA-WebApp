@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { ensureOrganizationEmailVerified } from "@/lib/organizationWriteAccess";
 import { getRequestContext } from "@/lib/http/requestContext";
@@ -61,9 +61,15 @@ export async function resolveCrmRequest(params: ResolveCrmRequestParams) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return {
+        ok: false as const,
+        response: crmFail(req, 400, "ORG_ID_REQUIRED"),
+      };
+    }
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId: orgResolution.organizationId,
       roles: [...ROLE_ALLOWLIST],
     });
 

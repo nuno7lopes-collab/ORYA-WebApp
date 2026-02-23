@@ -565,8 +565,8 @@ export function computePadelPlan(input: PadelPlanInput): PadelPlanResult {
     return {
       key,
       categoryId:
-        typeof category.categoryId === "number" && Number.isFinite(category.categoryId)
-          ? Math.floor(category.categoryId)
+        typeof category.categoryId === "number" && Number.isInteger(category.categoryId) && category.categoryId > 0
+          ? category.categoryId
           : null,
       label: category.label?.trim() || `Categoria ${idx + 1}`,
       format: categoryFormat,

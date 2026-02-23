@@ -72,6 +72,17 @@ describe("padel partnership contract guardrails (N3)", () => {
     expect(commitRoute).toContain("PADEL_CALENDAR_CLAIMS_WINDOW_UPDATE");
   });
 
+  it("mantém parse estrito de IDs partilhados sem truncar decimais", () => {
+    const shared = readLocal("app/api/padel/partnerships/_shared.ts");
+    const commitRoute = readLocal("app/api/padel/calendar/claims/commit/route.ts");
+    const commitHelper = commitRoute.match(/function parsePositiveInt\(value: unknown\)[\s\S]*?return null;\n}/)?.[0] ?? "";
+
+    expect(shared).toContain("Number.isInteger");
+    expect(shared).not.toContain("Math.floor");
+    expect(commitHelper).toContain("Number.isInteger");
+    expect(commitHelper).not.toContain("Math.floor");
+  });
+
   it("fecha constraints de parceria no auto-schedule (fail-closed)", () => {
     const route = readLocal("app/api/padel/calendar/auto-schedule/route.ts");
     expect(route).toContain("resolvePartnershipScheduleConstraints");

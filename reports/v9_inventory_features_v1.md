@@ -93,7 +93,7 @@ Pages (16):
 
 ## orgs
 
-API routes (198):
+API routes (206):
 - /api/org-hub/become
 - /api/org-hub/groups/[groupId]/dashboard/agenda
 - /api/org-hub/groups/[groupId]/governance
@@ -218,6 +218,7 @@ API routes (198):
 - /api/org/[orgId]/payouts/summary
 - /api/org/[orgId]/policies
 - /api/org/[orgId]/policies/[id]
+- /api/org/[orgId]/policies/padel
 - /api/org/[orgId]/policies/store
 - /api/org/[orgId]/promo
 - /api/org/[orgId]/promo/[id]
@@ -232,9 +233,15 @@ API routes (198):
 - /api/org/[orgId]/reservas/[id]/reschedule
 - /api/org/[orgId]/reservas/[id]/split
 - /api/org/[orgId]/reservas/clientes
+- /api/org/[orgId]/reservas/config
 - /api/org/[orgId]/reservas/delays
 - /api/org/[orgId]/reservas/disponibilidade
 - /api/org/[orgId]/reservas/disponibilidade/[overrideId]
+- /api/org/[orgId]/reservas/disponibilidade/changesets
+- /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]
+- /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/apply
+- /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/cancel
+- /api/org/[orgId]/reservas/disponibilidade/changesets/[changeSetId]/conflicts/[conflictId]/resolve
 - /api/org/[orgId]/reservas/profissionais
 - /api/org/[orgId]/reservas/profissionais/[id]
 - /api/org/[orgId]/reservas/recursos
@@ -247,8 +254,7 @@ API routes (198):
 - /api/org/[orgId]/servicos/[id]/class-series
 - /api/org/[orgId]/servicos/[id]/class-series/[seriesId]
 - /api/org/[orgId]/servicos/[id]/class-sessions
-- /api/org/[orgId]/servicos/[id]/disponibilidade
-- /api/org/[orgId]/servicos/[id]/disponibilidade/[availabilityId]
+- /api/org/[orgId]/servicos/[id]/duration-prices
 - /api/org/[orgId]/servicos/[id]/packages
 - /api/org/[orgId]/servicos/[id]/packages/[packageId]
 - /api/org/[orgId]/servicos/[id]/packs
@@ -286,6 +292,8 @@ API routes (198):
 - /api/org/[orgId]/store/shipping/zones
 - /api/org/[orgId]/store/shipping/zones/[zoneId]
 - /api/org/[orgId]/store/shipping/zones/[zoneId]/methods
+- /api/org/[orgId]/tournaments/blocks/bulk
+- /api/org/[orgId]/tournaments/blocks/overrides
 - /api/org/[orgId]/tournaments/create
 - /api/org/[orgId]/trainers
 - /api/org/[orgId]/trainers/profile
@@ -361,10 +369,14 @@ Pages (10):
 
 ## padel
 
-API routes (80):
+API routes (88):
 - /api/padel/calendar
 - /api/padel/calendar/auto-schedule
+- /api/padel/calendar/auto-schedule/runs/[runId]
+- /api/padel/calendar/auto-schedule/undo
 - /api/padel/calendar/claims/commit
+- /api/padel/calendar/matches/bulk-reschedule
+- /api/padel/calendar/preflight-mismatch
 - /api/padel/categories/my
 - /api/padel/clubs
 - /api/padel/clubs/[id]/courts
@@ -417,8 +429,12 @@ API routes (80):
 - /api/padel/partnerships/agreements/[id]/revoke
 - /api/padel/partnerships/agreements/[id]/windows
 - /api/padel/partnerships/compensation-cases
+- /api/padel/partnerships/organizations
 - /api/padel/partnerships/overrides
 - /api/padel/partnerships/overrides/[id]/execute
+- /api/padel/partnerships/tournament-requests
+- /api/padel/partnerships/tournament-requests/[id]/approve
+- /api/padel/partnerships/tournament-requests/[id]/reject
 - /api/padel/partnerships/workspace/[id]/calendar
 - /api/padel/players
 - /api/padel/public/calendar

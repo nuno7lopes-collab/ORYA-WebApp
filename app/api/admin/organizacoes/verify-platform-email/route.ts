@@ -11,15 +11,11 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { OrgType } from "@prisma/client";
 import { logError } from "@/lib/observability/logger";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { parseOrganizationId } from "@/lib/organizationIdUtils";
 
 type VerifyPlatformEmailBody = {
   organizationId?: number | string;
 };
-
-function parseOrganizationId(value: unknown) {
-  const parsed = typeof value === "string" ? Number(value) : Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
 
 function fail(
   ctx: ReturnType<typeof getRequestContext>,

@@ -81,7 +81,7 @@ async function _GET(req: NextRequest) {
   );
   const pairingIdRaw = req.nextUrl.searchParams.get("pairingId");
   const pairingId = Number(pairingIdRaw);
-  if (!pairingIdRaw || !Number.isFinite(pairingId)) {
+  if (!pairingIdRaw || !Number.isInteger(pairingId) || pairingId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_PAIRING_ID" }, { status: 400 });
   }
 

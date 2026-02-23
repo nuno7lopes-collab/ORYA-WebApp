@@ -54,6 +54,12 @@ const DONE_CURSOR = "__done__";
 
 const DEFAULT_LIMIT = 12;
 
+type SourcePage = {
+  items: DiscoverOfferCard[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
 const toEventQueryString = (params: DiscoverParams): string => {
   const query = new URLSearchParams();
   if (params.mode) query.set("mode", params.mode);
@@ -144,42 +150,60 @@ const mapServiceOffers = (items: DiscoverServiceCard[]): DiscoverOfferCard[] =>
     service,
   }));
 
-const fetchEvents = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
+const toRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+
+const toStringOrNull = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value : null;
+
+const fetchEvents = async (params: DiscoverParams): Promise<SourcePage> => {
   const response = await api.request<unknown>(`/api/explorar/list?${toEventQueryString(params)}`, {
     signal: params.signal,
   });
-  const meta = response && typeof response === "object"
-    ? {
-        requestId: (response as any).requestId ?? null,
-        correlationId: (response as any).correlationId ?? null,
-      }
-    : { requestId: null, correlationId: null };
+  const responseRecord = toRecord(response);
+  const meta = {
+    requestId: toStringOrNull(responseRecord?.requestId),
+    correlationId: toStringOrNull(responseRecord?.correlationId),
+  };
   const unwrapped = unwrapApiResponse<unknown>(response);
   const parsed = DiscoverResponseSchema.safeParse(unwrapped);
   if (!parsed.success) {
-    const rawItems = (unwrapped as any)?.items;
+    const unwrappedRecord = toRecord(unwrapped);
+    const rawItems = Array.isArray(unwrappedRecord?.items) ? unwrappedRecord.items : null;
     const sample = Array.isArray(rawItems) && rawItems.length > 0
       ? {
-          firstItemKeys: Object.keys(rawItems[0] ?? {}),
+          firstItemKeys:
+            rawItems[0] && typeof rawItems[0] === "object"
+              ? Object.keys(rawItems[0] as Record<string, unknown>)
+              : null,
           firstItem: rawItems[0],
         }
       : { firstItemKeys: null, firstItem: null };
     console.warn("[discover][events] schema_mismatch", {
       ...meta,
       issues: parsed.error.issues,
-      responseKeys: unwrapped && typeof unwrapped === "object" ? Object.keys(unwrapped as any) : null,
+      responseKeys: unwrappedRecord ? Object.keys(unwrappedRecord) : null,
       ...sample,
     });
     throw new ApiError(500, "Formato inválido na resposta de descobrir.");
   }
+  const nextCursor = toStringOrNull(parsed.data.pagination?.nextCursor);
+  const hasMore = Boolean(parsed.data.pagination?.hasMore && nextCursor);
   return {
     items: mapEventOffers(parsed.data.items),
-    nextCursor: parsed.data.pagination?.nextCursor ?? null,
-    hasMore: parsed.data.pagination?.hasMore ?? false,
+    nextCursor,
+    hasMore,
   };
 };
 
-const fetchServices = async (params: DiscoverParams): Promise<{ items: DiscoverOfferCard[]; nextCursor: string | null; hasMore: boolean }> => {
+const normalizeServiceCursor = (value: number | string | null | undefined): string | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return toStringOrNull(value);
+};
+
+const fetchServices = async (params: DiscoverParams): Promise<SourcePage> => {
   const response = await api.request<unknown>(`/api/servicos/list?${toServiceQueryString(params)}`, {
     signal: params.signal,
   });
@@ -191,16 +215,19 @@ const fetchServices = async (params: DiscoverParams): Promise<{ items: DiscoverO
     return (parsed.items ?? []).filter((service) => service.kind !== "COURT");
   })();
 
+  const nextCursor = normalizeServiceCursor(parsed.pagination?.nextCursor);
+  const hasMore = Boolean(parsed.pagination?.hasMore && nextCursor);
+
   return {
     items: mapServiceOffers(filteredItems),
-    nextCursor: parsed.pagination?.nextCursor ? String(parsed.pagination.nextCursor) : null,
-    hasMore: Boolean(parsed.pagination?.hasMore),
+    nextCursor,
+    hasMore,
   };
 };
 
 export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<DiscoverPage> => {
   const kind = params.kind ?? "all";
-  const limit = params.limit ?? DEFAULT_LIMIT;
+  const limit = Math.max(1, Math.floor(params.limit ?? DEFAULT_LIMIT));
   const cursor = parseCursor(params.cursor);
 
   if (kind === "events") {
@@ -221,16 +248,23 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
     };
   }
 
-  const perSourceLimit = Math.max(6, Math.ceil(limit / 2));
+  const primaryEventLimit = Math.max(1, Math.ceil(limit / 2));
+  const primaryServiceLimit = Math.max(1, Math.floor(limit / 2));
   const eventsDone = cursor.event === DONE_CURSOR;
   const servicesDone = cursor.service === DONE_CURSOR;
+  const shouldFetchEventsPrimary = !eventsDone;
+  const shouldFetchServicesPrimary = !servicesDone;
   const [eventsResult, servicesResult] = await Promise.allSettled([
-    eventsDone
-      ? Promise.resolve({ items: [] as DiscoverOfferCard[], nextCursor: DONE_CURSOR, hasMore: false })
-      : fetchEvents({ ...params, kind, cursor: cursor.event, limit: perSourceLimit }),
-    servicesDone
-      ? Promise.resolve({ items: [] as DiscoverOfferCard[], nextCursor: DONE_CURSOR, hasMore: false })
-      : fetchServices({ ...params, kind, cursor: cursor.service, limit: perSourceLimit }),
+    shouldFetchEventsPrimary
+      ? fetchEvents({ ...params, kind, cursor: cursor.event, limit: primaryEventLimit })
+      : Promise.resolve({ items: [] as DiscoverOfferCard[], nextCursor: eventsDone ? DONE_CURSOR : null, hasMore: false }),
+    shouldFetchServicesPrimary
+      ? fetchServices({ ...params, kind, cursor: cursor.service, limit: primaryServiceLimit })
+      : Promise.resolve({
+          items: [] as DiscoverOfferCard[],
+          nextCursor: servicesDone ? DONE_CURSOR : null,
+          hasMore: false,
+        }),
   ]);
 
   if (eventsResult.status === "rejected" && servicesResult.status === "rejected") {
@@ -246,10 +280,67 @@ export const fetchDiscoverPage = async (params: DiscoverParams = {}): Promise<Di
       ? servicesResult.value
       : { items: [] as DiscoverOfferCard[], nextCursor: servicesDone ? DONE_CURSOR : null, hasMore: false };
 
-  const merged = [...events.items, ...services.items].slice(0, limit);
-  const eventCursor = events.hasMore ? events.nextCursor : DONE_CURSOR;
-  const serviceCursor = services.hasMore ? services.nextCursor : DONE_CURSOR;
-  const hasMore = Boolean(events.hasMore || services.hasMore);
+  let merged = [...events.items, ...services.items];
+  let eventsState = events;
+  let servicesState = services;
+  const remaining = limit - merged.length;
+
+  if (remaining > 0 && (eventsState.hasMore || servicesState.hasMore)) {
+    const extraEventLimit = eventsState.hasMore
+      ? servicesState.hasMore
+        ? Math.ceil(remaining / 2)
+        : remaining
+      : 0;
+    const extraServiceLimit = servicesState.hasMore
+      ? eventsState.hasMore
+        ? Math.floor(remaining / 2)
+        : remaining
+      : 0;
+
+    const [extraEvents, extraServices] = await Promise.allSettled([
+      extraEventLimit > 0
+        ? fetchEvents({
+            ...params,
+            kind,
+            cursor: eventsState.nextCursor,
+            limit: extraEventLimit,
+          })
+        : Promise.resolve<SourcePage>({
+            items: [],
+            nextCursor: eventsState.nextCursor,
+            hasMore: eventsState.hasMore,
+          }),
+      extraServiceLimit > 0
+        ? fetchServices({
+            ...params,
+            kind,
+            cursor: servicesState.nextCursor,
+            limit: extraServiceLimit,
+          })
+        : Promise.resolve<SourcePage>({
+            items: [],
+            nextCursor: servicesState.nextCursor,
+            hasMore: servicesState.hasMore,
+          }),
+    ]);
+
+    if (extraEvents.status === "fulfilled") {
+      eventsState = extraEvents.value;
+      merged = merged.concat(extraEvents.value.items);
+    }
+    if (extraServices.status === "fulfilled") {
+      servicesState = extraServices.value;
+      merged = merged.concat(extraServices.value.items);
+    }
+  }
+
+  if (merged.length > limit) {
+    merged = merged.slice(0, limit);
+  }
+
+  const eventCursor = eventsState.hasMore ? eventsState.nextCursor : DONE_CURSOR;
+  const serviceCursor = servicesState.hasMore ? servicesState.nextCursor : DONE_CURSOR;
+  const hasMore = Boolean(eventsState.hasMore || servicesState.hasMore);
 
   return {
     items: merged,

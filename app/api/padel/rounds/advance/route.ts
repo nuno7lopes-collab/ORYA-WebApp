@@ -494,29 +494,65 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
-  const eventId = parseNumber(body.eventId);
-  const categoryIdRaw = parseNumber(body.categoryId);
-  const categoryId = categoryIdRaw && categoryIdRaw > 0 ? categoryIdRaw : null;
+  const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
+  const categoryIdRaw = typeof body.categoryId === "number" ? body.categoryId : Number(body.categoryId);
+  const categoryId = Number.isInteger(categoryIdRaw) && categoryIdRaw > 0 ? categoryIdRaw : null;
   const dryRun = body.dryRun === true;
   const autoScheduleInput =
     body.autoSchedule && typeof body.autoSchedule === "object" ? (body.autoSchedule as Record<string, unknown>) : {};
+  const hasAutoScheduleStrategy = Object.prototype.hasOwnProperty.call(autoScheduleInput, "strategy");
+  const autoScheduleStrategyRaw =
+    typeof autoScheduleInput.strategy === "string" ? autoScheduleInput.strategy.trim().toUpperCase() : "";
+  if (
+    hasAutoScheduleStrategy &&
+    autoScheduleStrategyRaw !== "GROUPS_FIRST" &&
+    autoScheduleStrategyRaw !== "KNOCKOUT_FIRST" &&
+    autoScheduleStrategyRaw !== "BALANCED_BY_CATEGORY"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_STRATEGY" }, { status: 400 });
+  }
   const autoScheduleStrategy: PadelScheduleStrategy =
-    autoScheduleInput.strategy === "GROUPS_FIRST" ||
-    autoScheduleInput.strategy === "KNOCKOUT_FIRST" ||
-    autoScheduleInput.strategy === "BALANCED_BY_CATEGORY"
-      ? (autoScheduleInput.strategy as PadelScheduleStrategy)
+    autoScheduleStrategyRaw === "GROUPS_FIRST" ||
+    autoScheduleStrategyRaw === "KNOCKOUT_FIRST" ||
+    autoScheduleStrategyRaw === "BALANCED_BY_CATEGORY"
+      ? autoScheduleStrategyRaw
       : "BALANCED_BY_CATEGORY";
+
+  const hasAutoSchedulePartialMode = Object.prototype.hasOwnProperty.call(autoScheduleInput, "partialMode");
+  const autoSchedulePartialModeRaw =
+    typeof autoScheduleInput.partialMode === "string" ? autoScheduleInput.partialMode.trim().toUpperCase() : "";
+  if (
+    hasAutoSchedulePartialMode &&
+    autoSchedulePartialModeRaw !== "REQUIRE_FULL" &&
+    autoSchedulePartialModeRaw !== "ALLOW_PARTIAL"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_PARTIAL_MODE" }, { status: 400 });
+  }
   const autoSchedulePartialMode: PadelPartialMode =
-    autoScheduleInput.partialMode === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+    autoSchedulePartialModeRaw === "REQUIRE_FULL" ? "REQUIRE_FULL" : "ALLOW_PARTIAL";
+
+  const hasAutoScheduleExecutionMode = Object.prototype.hasOwnProperty.call(autoScheduleInput, "executionMode");
+  const autoScheduleExecutionModeRaw =
+    typeof autoScheduleInput.executionMode === "string" ? autoScheduleInput.executionMode.trim().toUpperCase() : "";
+  if (
+    hasAutoScheduleExecutionMode &&
+    autoScheduleExecutionModeRaw !== "ASYNC" &&
+    autoScheduleExecutionModeRaw !== "SYNC"
+  ) {
+    return jsonWrap({ ok: false, error: "INVALID_EXECUTION_MODE" }, { status: 400 });
+  }
   const autoScheduleExecutionMode: PadelExecutionMode =
-    autoScheduleInput.executionMode === "ASYNC" ? "ASYNC" : "SYNC";
-  if (!eventId || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    autoScheduleExecutionModeRaw === "ASYNC" ? "ASYNC" : "SYNC";
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  }
 
   const event = await prisma.event.findUnique({
     where: { id: eventId, isDeleted: false },
     select: {
       id: true,
       organizationId: true,
+      templateType: true,
       startsAt: true,
       endsAt: true,
       padelTournamentConfig: {
@@ -529,7 +565,7 @@ async function _POST(req: NextRequest) {
       },
     },
   });
-  if (!event?.organizationId || !event.padelTournamentConfig) {
+  if (!event?.organizationId || event.templateType !== "PADEL" || !event.padelTournamentConfig) {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 

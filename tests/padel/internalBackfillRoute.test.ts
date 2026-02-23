@@ -60,6 +60,34 @@ describe("POST /api/internal/ops/padel/backfill", () => {
     expect(body.error).toBe("UNAUTHORIZED");
   });
 
+  it("falha com 400 quando os parâmetros numéricos são inválidos", async () => {
+    const invalidLimitReq = new NextRequest("http://localhost/api/internal/ops/padel/backfill?limit=abc", {
+      method: "POST",
+    });
+    const invalidLimitRes = await POST(invalidLimitReq);
+    const invalidLimitBody = await invalidLimitRes.json();
+    expect(invalidLimitRes.status).toBe(400);
+    expect(invalidLimitBody.error).toBe("INVALID_LIMIT");
+
+    const invalidCursorReq = new NextRequest("http://localhost/api/internal/ops/padel/backfill?cursor=1.5", {
+      method: "POST",
+    });
+    const invalidCursorRes = await POST(invalidCursorReq);
+    const invalidCursorBody = await invalidCursorRes.json();
+    expect(invalidCursorRes.status).toBe(400);
+    expect(invalidCursorBody.error).toBe("INVALID_CURSOR");
+
+    const invalidEventReq = new NextRequest("http://localhost/api/internal/ops/padel/backfill?eventId=0", {
+      method: "POST",
+    });
+    const invalidEventRes = await POST(invalidEventReq);
+    const invalidEventBody = await invalidEventRes.json();
+    expect(invalidEventRes.status).toBe(400);
+    expect(invalidEventBody.error).toBe("INVALID_EVENT");
+
+    expect(prisma.event.findMany).not.toHaveBeenCalled();
+  });
+
   it("faz dry-run com paginação e sem aplicar mutações", async () => {
     prisma.event.findMany.mockResolvedValue([
       {

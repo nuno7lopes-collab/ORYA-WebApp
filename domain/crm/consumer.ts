@@ -811,7 +811,13 @@ export async function consumeCrmEventLog(eventLogId: string) {
     contactPhoneValue = null;
   }
 
-  const marketingOptIn = consentSnapshot.marketingStatus === ConsentStatus.GRANTED ? true : null;
+  const marketingOptIn =
+    consentSnapshot.marketingStatus === ConsentStatus.GRANTED
+      ? true
+      : consentSnapshot.marketingStatus === ConsentStatus.REVOKED ||
+          consentSnapshot.marketingStatus === ConsentStatus.EXPIRED
+        ? false
+        : null;
 
   try {
     await prisma.crmInteraction.create({
@@ -846,7 +852,7 @@ export async function consumeCrmEventLog(eventLogId: string) {
     contactEmail: contactEmailValue,
     contactPhone: contactPhoneValue,
     marketingEmailOptIn: marketingOptIn ?? contact.marketingEmailOptIn ?? null,
-    marketingPushOptIn: contact.marketingPushOptIn ?? null,
+    marketingPushOptIn: marketingOptIn ?? contact.marketingPushOptIn ?? null,
   });
 
   if (displayNameValue && (!contactResult.contact.displayName || contactResult.contact.displayName.trim() === "")) {

@@ -1232,29 +1232,104 @@ async function _POST(req: NextRequest) {
       }
     }
 
-    const { booking } = await createBooking({
-      organizationId: service.organizationId,
-      actorUserId: profile.id,
-      data: {
-        serviceId: service.id,
+    const { booking } = await prisma.$transaction(async (tx) => {
+      const lockKey = `booking:${service.organizationId}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const lockedScopeFilter =
+        availabilityMode === "RESOURCE"
+          ? { resourceId: resourceId ?? -1 }
+          : availabilityMode === "PROFESSIONAL"
+            ? { professionalId: professionalId ?? -1 }
+            : {
+                OR: [
+                  { professionalId: professionalId ?? -1 },
+                  { resourceId: resourceId ?? -1 },
+                ],
+              };
+      const lockedBookings = await tx.booking.findMany({
+        where: {
+          organizationId: service.organizationId,
+          startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+          AND: [
+            {
+              OR: [
+                { status: { in: ["CONFIRMED", "DISPUTED", "NO_SHOW"] } },
+                { status: { in: ["PENDING_CONFIRMATION", "PENDING"] }, pendingExpiresAt: { gt: now } },
+              ],
+            },
+            lockedScopeFilter,
+          ],
+        },
+        select: {
+          id: true,
+          startsAt: true,
+          durationMinutes: true,
+          professionalId: true,
+          resourceId: true,
+        },
+      });
+
+      const lockedConflict = lockedBookings.some((item) => {
+        const itemEndsAt = new Date(item.startsAt.getTime() + item.durationMinutes * 60 * 1000);
+        const overlaps = item.startsAt < bookingEndsAt && itemEndsAt > startsAt;
+        if (!overlaps) return false;
+        if (availabilityMode === "RESOURCE") {
+          return resourceId != null && item.resourceId === resourceId;
+        }
+        if (availabilityMode === "PROFESSIONAL") {
+          return professionalId != null && item.professionalId === professionalId;
+        }
+        return (
+          (professionalId != null && item.professionalId === professionalId) ||
+          (resourceId != null && item.resourceId === resourceId)
+        );
+      });
+      if (lockedConflict) {
+        throw new Error("AGENDA_CONFLICT_LOCKED");
+      }
+
+      if ((availabilityMode === "PROFESSIONAL" || availabilityMode === "HYBRID") && professionalId != null) {
+        const lockedSessions = await tx.classSession.findMany({
+          where: {
+            organizationId: service.organizationId,
+            status: "SCHEDULED",
+            professionalId,
+            startsAt: { lt: bookingEndsAt, gte: conflictWindowStart },
+            endsAt: { gt: startsAt },
+          },
+          select: { id: true },
+        });
+        if (lockedSessions.length > 0) {
+          throw new Error("AGENDA_CONFLICT_LOCKED");
+        }
+      }
+
+      return createBooking({
+        tx,
         organizationId: service.organizationId,
-        userId,
-        startsAt,
-        durationMinutes: service.durationMinutes,
-        price: service.unitPriceCents,
-        currency: service.currency,
-        status: "PENDING_CONFIRMATION",
-        assignmentMode: bookingAssignmentMode,
-        professionalId,
-        resourceId,
-        courtId: bookingCourtId,
-        partySize,
-        pendingExpiresAt,
-        snapshotTimezone: timezone,
-        locationMode: service.locationMode,
-        addressId: resolvedAddressId,
-      },
-      select: { id: true, status: true, pendingExpiresAt: true },
+        actorUserId: profile.id,
+        data: {
+          serviceId: service.id,
+          organizationId: service.organizationId,
+          userId,
+          startsAt,
+          durationMinutes: service.durationMinutes,
+          price: service.unitPriceCents,
+          currency: service.currency,
+          status: "PENDING_CONFIRMATION",
+          assignmentMode: bookingAssignmentMode,
+          professionalId,
+          resourceId,
+          courtId: bookingCourtId,
+          partySize,
+          pendingExpiresAt,
+          snapshotTimezone: timezone,
+          locationMode: service.locationMode,
+          addressId: resolvedAddressId,
+        },
+        select: { id: true, status: true, pendingExpiresAt: true },
+      });
     });
 
     await recordOrganizationAudit(prisma, {
@@ -1273,6 +1348,10 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error && err.message === "AGENDA_CONFLICT_LOCKED") {
+      const conflict = agendaConflictResponse();
+      return fail(ctx, 409, conflict.errorCode, "AGENDA_CONFLICT", conflict.details);
     }
     console.error("POST /api/org/[orgId]/reservas error:", err);
     return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao criar reserva.");

@@ -7,7 +7,7 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 
@@ -25,16 +25,23 @@ async function _GET(req: NextRequest) {
 
     const profile = await prisma.profile.findUnique({ where: { id: user.id } });
     if (!profile) {
-      return jsonWrap({ ok: false, error: "Perfil não encontrado." }, { status: 403 });
+      return jsonWrap(
+        { ok: false, error: "PROFILE_NOT_FOUND", message: "Perfil não encontrado." },
+        { status: 403 },
+      );
     }
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return jsonWrap({ ok: false, error: "ORG_ID_REQUIRED", message: "Org inválida." }, { status: 400 });
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...ROLE_ALLOWLIST],
     });
     if (!organization || !membership) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN", message: "Sem permissões." }, { status: 403 });
     }
     const permission = await ensureMemberModuleAccess({
       organizationId: organization.id,
@@ -45,7 +52,7 @@ async function _GET(req: NextRequest) {
       required: "VIEW",
     });
     if (!permission.ok) {
-      return jsonWrap({ ok: false, error: "Sem permissões." }, { status: 403 });
+      return jsonWrap({ ok: false, error: "FORBIDDEN", message: "Sem permissões." }, { status: 403 });
     }
 
     const clubs = await prisma.padelClub.findMany({
@@ -73,10 +80,13 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: true, items }, { status: 200 });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED", message: "Não autenticado." }, { status: 401 });
     }
     console.error("GET /api/org/[orgId]/padel/courts error:", err);
-    return jsonWrap({ ok: false, error: "Erro ao carregar courts." }, { status: 500 });
+    return jsonWrap(
+      { ok: false, error: "COURTS_LOAD_FAILED", message: "Erro ao carregar courts." },
+      { status: 500 },
+    );
   }
 }
 export const GET = withApiEnvelope(_GET);

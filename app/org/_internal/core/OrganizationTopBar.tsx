@@ -9,7 +9,7 @@ import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { RoleBadge } from "@/app/org/_internal/core/RoleBadge";
-import { NotificationBell } from "@/app/components/notifications/NotificationBell";
+import { OrganizationNotificationBell } from "@/app/components/notifications/NotificationBell";
 import { normalizeOfficialEmail } from "@/lib/organizationOfficialEmailUtils";
 import { OrganizationMemberRole } from "@prisma/client";
 import { ORG_SHELL_GUTTER } from "@/app/org/_internal/core/layoutTokens";
@@ -514,7 +514,7 @@ export default function OrganizationTopBar({
             ))
           )}
 
-          <NotificationBell organizationId={activeOrg?.id ?? null} />
+          <OrganizationNotificationBell organizationId={activeOrg?.id ?? null} />
 
           <details ref={orgMenuRef} className={cn("relative", openMenu === "org" && "z-50")} onToggle={handleMenuToggle("org")}>
             <summary className="list-none cursor-pointer rounded-full border border-white/22 bg-black/25 px-3 text-sm text-white/90 shadow-[0_12px_38px_rgba(0,0,0,0.36)] flex h-11 items-center">

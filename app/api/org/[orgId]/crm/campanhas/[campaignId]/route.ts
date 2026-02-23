@@ -4,8 +4,18 @@ import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondOk } from "@/lib/http/envelope";
 import { prisma } from "@/lib/prisma";
-import { normalizeCampaignChannels, campaignChannelsToList } from "@/lib/crm/campaignChannels";
+import { campaignChannelsToList, hasAnyCampaignChannel, normalizeCampaignChannels } from "@/lib/crm/campaignChannels";
 import { crmFail, resolveCrmRequest } from "@/app/api/org/[orgId]/crm/_shared";
+
+function stableSerialize(value: unknown): string {
+  if (value === null || value === undefined) return String(value);
+  if (Array.isArray(value)) return `[${value.map((entry) => stableSerialize(entry)).join(",")}]`;
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId: string }> }) {
   const ctx = getRequestContext(req);
@@ -17,8 +27,12 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId:
     where: { id: campaignId, organizationId: access.organization.id },
     select: {
       id: true,
+      name: true,
+      description: true,
+      segmentId: true,
       status: true,
       approvalState: true,
+      scheduledAt: true,
       payload: true,
       channels: true,
     },
@@ -44,15 +58,23 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId:
   } | null;
 
   const patchData: Prisma.CrmCampaignUncheckedUpdateInput = {};
+  let materialChanged = false;
 
   if (typeof body?.name === "string") {
     const name = body.name.trim();
     if (name.length < 2) return crmFail(req, 400, "Nome inválido.");
-    patchData.name = name;
+    if (name !== existing.name) {
+      patchData.name = name;
+      materialChanged = true;
+    }
   }
 
   if (typeof body?.description === "string" || body?.description === null) {
-    patchData.description = typeof body.description === "string" ? body.description.trim() : null;
+    const nextDescription = typeof body.description === "string" ? body.description.trim() : null;
+    if (nextDescription !== existing.description) {
+      patchData.description = nextDescription;
+      materialChanged = true;
+    }
   }
 
   if (typeof body?.segmentId === "string" || body?.segmentId === null) {
@@ -64,40 +86,70 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId:
       });
       if (!segment) return crmFail(req, 400, "Segmento inválido.");
     }
-    patchData.segmentId = segmentId;
+    if (segmentId !== existing.segmentId) {
+      patchData.segmentId = segmentId;
+      materialChanged = true;
+    }
   }
 
-  const rawPayload =
+  const existingPayload =
+    existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? (existing.payload as Record<string, unknown>)
+      : {};
+  const payloadInput =
     body?.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
       ? (body.payload as Record<string, unknown>)
-      : existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
-        ? (existing.payload as Record<string, unknown>)
-        : {};
+      : existingPayload;
 
-  const nextChannels = normalizeCampaignChannels(body?.channels ?? rawPayload.channels ?? existing.channels);
-  patchData.channels = nextChannels as Prisma.InputJsonValue;
-  patchData.payload = {
-    ...rawPayload,
-    channels: nextChannels,
-  } as Prisma.InputJsonValue;
+  const shouldUpdatePayloadOrChannels =
+    Boolean(body && Object.prototype.hasOwnProperty.call(body, "channels")) ||
+    Boolean(body && Object.prototype.hasOwnProperty.call(body, "payload"));
+
+  if (shouldUpdatePayloadOrChannels) {
+    const existingChannels = normalizeCampaignChannels(existing.channels ?? existingPayload.channels);
+    const nextChannels = normalizeCampaignChannels(body?.channels ?? payloadInput.channels ?? existing.channels);
+    if (!hasAnyCampaignChannel(nextChannels)) {
+      return crmFail(req, 400, "Campanha sem canais válidos.");
+    }
+    const nextPayload = {
+      ...payloadInput,
+      channels: nextChannels,
+    };
+
+    if (nextChannels.inApp !== existingChannels.inApp || nextChannels.email !== existingChannels.email) {
+      patchData.channels = nextChannels as Prisma.InputJsonValue;
+      materialChanged = true;
+    }
+    if (stableSerialize(nextPayload) !== stableSerialize(existingPayload)) {
+      patchData.payload = nextPayload as Prisma.InputJsonValue;
+      materialChanged = true;
+    }
+  }
 
   if (body && Object.prototype.hasOwnProperty.call(body, "scheduledAt")) {
     const raw = body.scheduledAt;
     if (raw === null || raw === "") {
-      patchData.scheduledAt = null;
-      patchData.status = CrmCampaignStatus.DRAFT;
+      if (existing.scheduledAt !== null || existing.status !== CrmCampaignStatus.DRAFT) {
+        patchData.scheduledAt = null;
+        patchData.status = CrmCampaignStatus.DRAFT;
+        materialChanged = true;
+      }
     } else if (typeof raw === "string") {
       const parsed = new Date(raw);
       if (Number.isNaN(parsed.getTime())) return crmFail(req, 400, "Data inválida.");
-      patchData.scheduledAt = parsed;
-      patchData.status = CrmCampaignStatus.SCHEDULED;
+      const existingScheduledIso = existing.scheduledAt ? existing.scheduledAt.toISOString() : null;
+      if (existingScheduledIso !== parsed.toISOString() || existing.status !== CrmCampaignStatus.SCHEDULED) {
+        patchData.scheduledAt = parsed;
+        patchData.status = CrmCampaignStatus.SCHEDULED;
+        materialChanged = true;
+      }
     } else {
       return crmFail(req, 400, "Data inválida.");
     }
   }
 
-  // Qualquer alteração estrutural obriga nova submissão/aprovação.
-  if (existing.approvalState !== CrmCampaignApprovalState.DRAFT) {
+  // Só alterações materiais obrigam nova submissão/aprovação.
+  if (materialChanged && existing.approvalState !== CrmCampaignApprovalState.DRAFT) {
     patchData.approvalState = CrmCampaignApprovalState.DRAFT;
     patchData.approvalSubmittedAt = null;
     patchData.approvalExpiresAt = null;
@@ -133,7 +185,11 @@ async function _PATCH(req: NextRequest, context: { params: Promise<{ campaignId:
     },
   });
 
-  const channelConfig = normalizeCampaignChannels(updated.channels ?? (updated.payload as Record<string, unknown>)?.channels);
+  const updatedPayload =
+    updated.payload && typeof updated.payload === "object" && !Array.isArray(updated.payload)
+      ? (updated.payload as Record<string, unknown>)
+      : {};
+  const channelConfig = normalizeCampaignChannels(updated.channels ?? updatedPayload.channels);
 
   return respondOk(ctx, {
     campaign: {

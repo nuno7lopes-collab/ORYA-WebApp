@@ -41,7 +41,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const resolved = await params;
   const matchId = Number(resolved?.id);
-  if (!Number.isFinite(matchId)) {
+  if (!Number.isInteger(matchId) || matchId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 

@@ -78,6 +78,7 @@ export async function enqueueOperation(params: EnqueueParams) {
   try {
     await insert();
   } catch (err) {
+    let failure: unknown = err;
     const message = err instanceof Error ? err.message : String(err);
     // Auto-heal missing enum in case migrations não correram a tempo
     if (message.includes('OperationStatus')) {
@@ -92,9 +93,12 @@ export async function enqueueOperation(params: EnqueueParams) {
         await insert();
         return;
       } catch (healErr) {
+        failure = healErr;
         logError("operations.enqueue.heal_failed", healErr, { dedupeKey });
       }
     }
     logError("operations.enqueue.failed", err, { operationType, dedupeKey });
+    if (failure instanceof Error) throw failure;
+    throw new Error(typeof failure === "string" ? failure : "operations.enqueue.failed");
   }
 }

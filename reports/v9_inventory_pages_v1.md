@@ -1,6 +1,6 @@
 # V9 Inventory — Pages/Routes
 
-Total: 237
+Total: 238
 
 | Route | File | Group | Flow Tags |
 | --- | --- | --- | --- |
@@ -152,6 +152,7 @@ Total: 237
 | /org/[orgId]/bookings | app/org/[orgId]/bookings/page.tsx | - | public |
 | /org/[orgId]/bookings/[id] | app/org/[orgId]/bookings/[id]/page.tsx | - | public |
 | /org/[orgId]/bookings/availability | app/org/[orgId]/bookings/availability/page.tsx | - | public |
+| /org/[orgId]/bookings/availability/conflicts/[changeSetId] | app/org/[orgId]/bookings/availability/conflicts/[changeSetId]/page.tsx | - | public |
 | /org/[orgId]/bookings/customers | app/org/[orgId]/bookings/customers/page.tsx | - | public |
 | /org/[orgId]/bookings/integrations | app/org/[orgId]/bookings/integrations/page.tsx | - | public |
 | /org/[orgId]/bookings/new | app/org/[orgId]/bookings/new/page.tsx | - | public |

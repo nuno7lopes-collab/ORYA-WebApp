@@ -31,7 +31,7 @@ export type MessageInvite = {
   threadId: string;
   conversationId?: string | null;
   status: MessageInviteStatus;
-  expiresAt: string;
+  expiresAt: string | null;
   event: {
     id: number;
     slug: string | null;
@@ -50,9 +50,10 @@ export type MessageInvitesResponse = {
 };
 
 export type MessageInviteAcceptResponse = {
-  invite: Pick<MessageInvite, "id" | "threadId" | "status" | "expiresAt">;
-  threadId: string;
-  conversationId?: string | null;
+  conversationId: string | null;
+  threadId: string | null;
+  status: MessageInviteStatus | string | null;
+  expiresAt: string | null;
 };
 
 export type MessageRequest = {

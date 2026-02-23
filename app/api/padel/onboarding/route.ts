@@ -165,8 +165,8 @@ async function _POST(req: NextRequest) {
       return jsonWrap(
         {
           ok: false,
+          errorCode: usernameValidation.code ?? "USERNAME_INVALID",
           error: usernameValidation.error,
-          code: usernameValidation.code ?? "USERNAME_INVALID",
         },
         { status: 400 },
       );
@@ -301,12 +301,16 @@ async function _POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof UsernameTakenError) {
       return jsonWrap(
-        { ok: false, error: "Este username já está a ser utilizado.", code: "USERNAME_TAKEN" },
+        {
+          ok: false,
+          errorCode: "USERNAME_TAKEN",
+          error: "Este username já está a ser utilizado.",
+        },
         { status: 409 },
       );
     }
     console.error("[padel/onboarding] erro", err);
-    return jsonWrap({ ok: false, error: "Erro inesperado." }, { status: 500 });
+    return jsonWrap({ ok: false, errorCode: "INTERNAL_ERROR", error: "Erro inesperado." }, { status: 500 });
   }
 }
 export const GET = withApiEnvelope(_GET);

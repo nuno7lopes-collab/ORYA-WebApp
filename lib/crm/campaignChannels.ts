@@ -35,10 +35,6 @@ export function normalizeCampaignChannels(value: unknown): CampaignChannelConfig
     if (token === "EMAIL") email = true;
   }
 
-  if (!inApp && !email) {
-    return { inApp: true, email: false };
-  }
-
   return { inApp, email };
 }
 
@@ -47,4 +43,8 @@ export function campaignChannelsToList(channels: CampaignChannelConfig): string[
   if (channels.inApp) list.push("IN_APP");
   if (channels.email) list.push("EMAIL");
   return list;
+}
+
+export function hasAnyCampaignChannel(channels: CampaignChannelConfig) {
+  return channels.inApp || channels.email;
 }

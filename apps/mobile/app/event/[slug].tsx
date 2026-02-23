@@ -61,11 +61,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMobileEnv } from "../../lib/env";
 import { getUserFacingError } from "../../lib/errors";
 import { resolveMediaUri } from "../../lib/media";
+import { resolveSafeHttpUrl } from "../../lib/externalUrl";
 import { trackEvent } from "../../lib/analytics";
 import { useProfileSummary } from "../../features/profile/hooks";
 import { sendEventSignal } from "../../features/events/signals";
 import { formatCurrency, formatDate, formatTime } from "../../lib/formatters";
 import { trackCrmEngagement } from "../../lib/crm";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 import * as Haptics from "expo-haptics";
 import {
   type TicketCtaState,
@@ -83,6 +85,7 @@ import {
   TicketSelectorSheet,
 } from "../../components/events/detail/TicketSelectorSheet";
 import { getDominantColor, type DominantColor } from "../../lib/imageTint";
+import { buildMapTargets } from "../../lib/mapLinks";
 
 const formatDateRange = (startsAt?: string, endsAt?: string): string | null => {
   if (!startsAt) return null;
@@ -179,8 +182,51 @@ const resolvePadelPaymentModeLabel = (
   return mode ?? null;
 };
 
+type PairingPlayer = {
+  name?: string | null;
+  username?: string | null;
+};
+
+type PairingSlot = {
+  playerProfile?: {
+    displayName?: string | null;
+    fullName?: string | null;
+    username?: string | null;
+  } | null;
+};
+
+type PairingLike = {
+  id?: number | null;
+  label?: string | null;
+  players?: Array<PairingPlayer | null | undefined> | null;
+  slots?: Array<PairingSlot | null | undefined> | null;
+};
+
+type StandingRow = {
+  entityId?: number | string | null;
+  label?: string | null;
+  players?: Array<PairingPlayer | null | undefined> | null;
+  pairingId?: number | null;
+  points?: number | string | null;
+  wins?: number | string | null;
+  losses?: number | string | null;
+};
+
+type LiveMatch = {
+  id?: number | string | null;
+  groupLabel?: string | null;
+  pairingA?: PairingLike | null;
+  pairingB?: PairingLike | null;
+  elapsedSeconds?: number | null;
+  status?: string | null;
+  startTime?: string | null;
+  plannedStartAt?: string | null;
+  stream?: unknown;
+  score?: unknown;
+};
+
 const resolvePairingLabel = (
-  pairing: any,
+  pairing: PairingLike | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) => {
   const explicitLabel =
@@ -188,7 +234,7 @@ const resolvePairingLabel = (
   if (explicitLabel) return explicitLabel;
   if (Array.isArray(pairing?.players)) {
     const names = pairing.players
-      .map((player: any) => player?.name || player?.username)
+      .map((player) => player?.name || player?.username)
       .filter(Boolean) as string[];
     if (names.length) return names.join(" / ");
   }
@@ -199,7 +245,7 @@ const resolvePairingLabel = (
   }
   const names = pairing.slots
     .map(
-      (slot: any) =>
+      (slot) =>
         slot?.playerProfile?.displayName ||
         slot?.playerProfile?.fullName ||
         slot?.playerProfile?.username,
@@ -269,6 +315,8 @@ const normalizeEmailValue = (value?: string | null) =>
   value?.trim().toLowerCase() ?? "";
 const normalizeUsernameValue = (value?: string | null) =>
   value?.trim().replace(/^@+/, "").toLowerCase() ?? "";
+const resolveErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err ?? "");
 
 const mapInviteTokenReason = (
   reason: string | null | undefined,
@@ -558,17 +606,17 @@ export default function EventDetail() {
       case "messages":
         return "/messages";
       case "agora":
-        return "/(tabs)/agora";
+        return TAB_PATHNAMES.agora;
       case "discover":
-        return "/(tabs)/index";
+        return TAB_PATHNAMES.index;
       case "search":
         return "/search";
       case "tickets":
         return "/tickets";
       case "profile":
-        return "/(tabs)/profile";
+        return TAB_PATHNAMES.profile;
       default:
-        return "/(tabs)/index";
+        return TAB_PATHNAMES.index;
     }
   }, [source]);
 
@@ -651,6 +699,8 @@ export default function EventDetail() {
     normalized?: string | null;
     type?: "email" | "username" | null;
   }>({ status: "idle" });
+  const inviteTokenRequestIdRef = useRef(0);
+  const inviteIdentifierRequestIdRef = useRef(0);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
     null,
   );
@@ -815,8 +865,11 @@ export default function EventDetail() {
 
   const validateInviteToken = useCallback(
     async (token: string) => {
+      const requestId = inviteTokenRequestIdRef.current + 1;
+      inviteTokenRequestIdRef.current = requestId;
       const trimmed = token.trim();
       if (!trimmed || !slugValue) {
+        if (requestId !== inviteTokenRequestIdRef.current) return;
         setInviteState({
           status: "invalid",
           message: t("events:invite.tokenInvalid"),
@@ -837,6 +890,7 @@ export default function EventDetail() {
           reason?: string;
           ticketTypeId?: number | null;
         }>(response);
+        if (requestId !== inviteTokenRequestIdRef.current) return;
         if (!result.allow) {
           const reasonMessage = mapInviteTokenReason(result.reason, t);
           setInviteState({
@@ -852,15 +906,16 @@ export default function EventDetail() {
           return;
         }
         setInviteState({
-          status: "valid",
-          token: trimmed,
-          ticketTypeId:
+            status: "valid",
+            token: trimmed,
+            ticketTypeId:
             typeof result.ticketTypeId === "number" &&
             Number.isFinite(result.ticketTypeId)
               ? result.ticketTypeId
               : null,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        if (requestId !== inviteTokenRequestIdRef.current) return;
         setInviteState({
           status: "invalid",
           message: getUserFacingError(err, t("events:invite.invalid")),
@@ -876,8 +931,11 @@ export default function EventDetail() {
 
   const validateInviteIdentifier = useCallback(
     async (identifier: string) => {
+      const requestId = inviteIdentifierRequestIdRef.current + 1;
+      inviteIdentifierRequestIdRef.current = requestId;
       const trimmed = identifier.trim();
       if (!trimmed || !slugValue) {
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         setInviteIdentifierState({
           status: "invalid",
           message: t("events:invite.identifierInvalid"),
@@ -899,6 +957,7 @@ export default function EventDetail() {
           normalized?: string;
           reason?: string;
         }>(response);
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         if (!result.invited) {
           const reasonCode = (result.reason ?? "").toUpperCase();
           let message: string | null = null;
@@ -934,7 +993,8 @@ export default function EventDetail() {
           normalized,
           type: resolvedType,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        if (requestId !== inviteIdentifierRequestIdRef.current) return;
         setInviteIdentifierState({
           status: "invalid",
           message: getUserFacingError(err, t("events:invite.validateFailed")),
@@ -1139,10 +1199,7 @@ export default function EventDetail() {
     return t("events:tickets.remaining", { count: ticketInventory.remaining });
   }, [t, ticketInventory]);
 
-  const fallbackCover = data?.slug
-    ? `https://picsum.photos/seed/orya-event-${encodeURIComponent(data.slug)}/1600/900`
-    : null;
-  const cover = resolveMediaUri(data?.coverImageUrl ?? fallbackCover ?? null);
+  const cover = resolveMediaUri(data?.coverImageUrl ?? null);
   const date = formatDateRange(data?.startsAt, data?.endsAt);
   const location =
     data?.location?.formattedAddress || data?.location?.city || null;
@@ -1366,26 +1423,12 @@ export default function EventDetail() {
     if (!data) return null;
     const fallbackQuery =
       data.location?.formattedAddress || data.location?.city || null;
-    const lat = data.location?.lat ?? null;
-    const lng = data.location?.lng ?? null;
-    if (lat != null && lng != null) {
-      const label = encodeURIComponent(data.title ?? "ORYA Event");
-      const coords = `${lat},${lng}`;
-      return {
-        apple: `http://maps.apple.com/?ll=${coords}&q=${label}`,
-        android: `geo:${coords}?q=${coords}(${label})`,
-        web: `https://www.google.com/maps/search/?api=1&query=${coords}`,
-      };
-    }
-    if (fallbackQuery) {
-      const query = encodeURIComponent(fallbackQuery);
-      return {
-        apple: `http://maps.apple.com/?q=${query}`,
-        android: `geo:0,0?q=${query}`,
-        web: `https://www.google.com/maps/search/?api=1&query=${query}`,
-      };
-    }
-    return null;
+    return buildMapTargets({
+      label: data.title ?? "ORYA Event",
+      query: fallbackQuery,
+      lat: data.location?.lat ?? null,
+      lng: data.location?.lng ?? null,
+    });
   }, [data]);
 
   const padelEventId = data?.id ?? null;
@@ -1517,7 +1560,11 @@ export default function EventDetail() {
         await Linking.openURL(preferred);
         return;
       }
-      await Linking.openURL(mapTargets.web);
+      const webUrl = resolveSafeHttpUrl(mapTargets.web);
+      if (!webUrl) return;
+      const canOpenWeb = await Linking.canOpenURL(webUrl);
+      if (!canOpenWeb) return;
+      await Linking.openURL(webUrl);
     } catch {
       // ignore
     }
@@ -1794,7 +1841,7 @@ export default function EventDetail() {
         }
       }
       safePush(router, "/checkout");
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         t("common:labels.error"),
         getUserFacingError(err, t("events:checkout.completeFailed")),
@@ -1895,13 +1942,13 @@ export default function EventDetail() {
           categoryId: activeCategoryId,
         });
       }
-    } catch (err: any) {
-      if (err?.message?.includes("PADEL_ONBOARDING_REQUIRED")) {
+    } catch (err: unknown) {
+      if (resolveErrorMessage(err).includes("PADEL_ONBOARDING_REQUIRED")) {
         Alert.alert(
           t("events:padel.onboardingRequiredTitle"),
           t("events:padel.onboardingRequiredBody"),
         );
-        safePush(router, "/(tabs)/profile");
+        safePush(router, TAB_PATHNAMES.profile);
         return;
       }
       Alert.alert(
@@ -1933,7 +1980,7 @@ export default function EventDetail() {
         myPairingsQuery.refetch(),
         openPairingsQuery.refetch(),
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         t("events:padel.pairingTitle"),
         getUserFacingError(err, t("events:padel.joinFailed")),
@@ -1950,7 +1997,7 @@ export default function EventDetail() {
     try {
       await acceptInvite(pairingId);
       await myPairingsQuery.refetch();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         t("events:invite.title"),
         getUserFacingError(err, t("events:invite.acceptFailed")),
@@ -1967,7 +2014,7 @@ export default function EventDetail() {
     try {
       await declineInvite(pairingId);
       await myPairingsQuery.refetch();
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         t("events:invite.title"),
         getUserFacingError(err, t("events:invite.declineFailed")),
@@ -2070,7 +2117,7 @@ export default function EventDetail() {
           response.freeCheckout ?? response.isGratisCheckout ?? false,
       });
       safePush(router, "/checkout");
-    } catch (err: any) {
+    } catch (err: unknown) {
       Alert.alert(
         t("events:payment.title"),
         getUserFacingError(err, t("events:payment.startFailed")),
@@ -3046,7 +3093,7 @@ export default function EventDetail() {
                               standingsQuery.data?.groups ?? {},
                             ).map(([groupLabel, rows]) => {
                               const rowList = Array.isArray(rows)
-                                ? (rows as Array<any>)
+                                ? (rows as StandingRow[])
                                 : [];
                               return (
                                 <View
@@ -3077,7 +3124,7 @@ export default function EventDetail() {
                                         : `Jogador #${row.entityId}`);
                                     return (
                                       <View
-                                        key={`row-${groupLabel}-${row.entityId}`}
+                                        key={`row-${groupLabel}-${String(row.entityId ?? idx)}`}
                                         className="flex-row items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
                                       >
                                         <View className="flex-1 pr-2 flex-row items-center gap-2">
@@ -3091,11 +3138,11 @@ export default function EventDetail() {
                                           </Text>
                                         </View>
                                         <Text className="text-white/65 text-xs">
-                                          {row.points}{" "}
+                                          {row.points ?? 0}{" "}
                                           {t("events:padel.pointsShort")} ·{" "}
-                                          {row.wins}
+                                          {row.wins ?? 0}
                                           {t("events:padel.winsShort")}-
-                                          {row.losses}
+                                          {row.losses ?? 0}
                                           {t("events:padel.lossesShort")}
                                         </Text>
                                       </View>
@@ -3117,26 +3164,28 @@ export default function EventDetail() {
                           ) : (
                             (matchesQuery.data ?? [])
                               .slice(0, 6)
-                              .map((match: any) => {
-                                const stream = resolveMatchStream(match as Record<string, unknown>);
-                                const startAt = resolveMatchStartAt(match as Record<string, unknown>);
+                              .map((match, idx) => {
+                                const typedMatch = match as LiveMatch;
+                                const matchRecord = typedMatch as unknown as Record<string, unknown>;
+                                const stream = resolveMatchStream(matchRecord);
+                                const startAt = resolveMatchStartAt(matchRecord);
                                 const elapsedRaw =
-                                  typeof match.elapsedSeconds === "number" && Number.isFinite(match.elapsedSeconds)
-                                    ? Math.floor(match.elapsedSeconds)
-                                    : (match.status ?? "").toString().toUpperCase() === "IN_PROGRESS" && startAt
+                                  typeof typedMatch.elapsedSeconds === "number" && Number.isFinite(typedMatch.elapsedSeconds)
+                                    ? Math.floor(typedMatch.elapsedSeconds)
+                                    : (typedMatch.status ?? "").toString().toUpperCase() === "IN_PROGRESS" && startAt
                                       ? Math.max(0, Math.floor((Date.now() - startAt.getTime()) / 1000))
                                       : null;
                                 const elapsedLabel = formatElapsedLabel(elapsedRaw);
                                 return (
                                   <View
-                                    key={`match-${match.id}`}
+                                    key={`match-${String(typedMatch.id ?? idx)}`}
                                     className="gap-1 rounded-2xl border border-white/14 bg-white/8 px-3 py-3"
                                   >
                                     <View className="flex-row items-center justify-between gap-2">
                                       <Text className="text-white/70 text-xs">
-                                        {match.groupLabel
+                                        {typedMatch.groupLabel
                                           ? t("events:padel.groupLabel", {
-                                              group: match.groupLabel,
+                                              group: typedMatch.groupLabel,
                                             })
                                           : t("events:padel.matchLabel")}
                                       </Text>
@@ -3154,7 +3203,7 @@ export default function EventDetail() {
                                       </View>
                                     </View>
                                     <Text className="text-white/85 text-sm font-semibold">
-                                      {resolvePairingLabel(match.pairingA, t)} {t("events:detail.vs")} {resolvePairingLabel(match.pairingB, t)}
+                                      {resolvePairingLabel(typedMatch.pairingA, t)} {t("events:detail.vs")} {resolvePairingLabel(typedMatch.pairingB, t)}
                                     </Text>
                                     {stream.isLive && stream.url ? (
                                       <Text className="text-white/60 text-[11px]" numberOfLines={1}>

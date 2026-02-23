@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveCanonicalOrgApiPath } from "@/lib/canonicalOrgApiPath";
+import { buildOrgHref } from "@/lib/organizationIdUtils";
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -378,14 +379,14 @@ export default function AvailabilityEditor({
           const changeSetId = Number(details?.changeSetId);
           setIsDirty(false);
           setHasUnsavedBarDismissed(false);
-          router.push(`/org/${orgId}/bookings/availability/conflicts/${changeSetId}`);
+          router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${changeSetId}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao aplicar alterações."));
       }
 
       if (payload?.changeSetId && payload?.status === "PENDING") {
-        router.push(`/org/${orgId}/bookings/availability/conflicts/${payload.changeSetId}`);
+        router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${payload.changeSetId}`));
         return;
       }
 
@@ -477,7 +478,7 @@ export default function AvailabilityEditor({
         const errorCode = String(json?.errorCode ?? json?.code ?? "");
         const details = (json?.details ?? json?.data ?? null) as { changeSetId?: number } | null;
         if (errorCode === "AVAILABILITY_CONFLICTS_FOUND" && Number.isFinite(details?.changeSetId)) {
-          router.push(`/org/${orgId}/bookings/availability/conflicts/${Number(details?.changeSetId)}`);
+          router.push(buildOrgHref(orgId, `/bookings/availability/conflicts/${Number(details?.changeSetId)}`));
           return;
         }
         throw new Error(String(json?.message ?? json?.error ?? "Erro ao guardar disponibilidade."));

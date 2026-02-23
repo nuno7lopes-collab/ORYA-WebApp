@@ -334,14 +334,12 @@ export async function autoGeneratePadelMatches({
   const parsedRequestedCourtIds = Array.isArray(courtIds)
     ? courtIds
         .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id): id is number => Number.isFinite(id) && id > 0)
-        .map((id) => Math.floor(id))
+        .filter((id): id is number => Number.isInteger(id) && id > 0)
     : [];
   const parsedRequestedCourtPriorityOrder = Array.isArray(courtPriorityOrder)
     ? courtPriorityOrder
         .map((id) => (typeof id === "number" ? id : Number(id)))
-        .filter((id): id is number => Number.isFinite(id) && id > 0)
-        .map((id) => Math.floor(id))
+        .filter((id): id is number => Number.isInteger(id) && id > 0)
     : [];
 
   const resolvedCourtSelection = await resolvePadelCourtSelection({

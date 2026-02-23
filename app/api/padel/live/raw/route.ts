@@ -35,21 +35,30 @@ function parseBoolean(raw: string | null, fallback: boolean) {
 
 async function resolveEventRef(req: NextRequest) {
   const eventIdParam = req.nextUrl.searchParams.get("eventId");
-  const slug = req.nextUrl.searchParams.get("slug");
-  const eventId = eventIdParam ? Number(eventIdParam) : null;
-  if (!eventId && !slug) return null;
+  const slug = req.nextUrl.searchParams.get("slug")?.trim() || null;
+  const hasEventIdParam = eventIdParam !== null;
+  const eventIdParsed = hasEventIdParam ? Number(eventIdParam) : null;
+  const eventId = eventIdParsed !== null && Number.isInteger(eventIdParsed) && eventIdParsed > 0 ? eventIdParsed : null;
+  if (hasEventIdParam && eventId === null) {
+    return { error: "INVALID_EVENT" as const };
+  }
+  if (!hasEventIdParam && !slug) {
+    return { error: "EVENT_REQUIRED" as const };
+  }
 
-  return prisma.event.findUnique({
-    where: eventId ? { id: eventId, isDeleted: false } : { slug: slug!, isDeleted: false },
+  const event = await prisma.event.findUnique({
+    where: hasEventIdParam ? { id: eventId as number, isDeleted: false } : { slug: slug!, isDeleted: false },
     select: {
       id: true,
       slug: true,
       title: true,
       organizationId: true,
+      templateType: true,
       status: true,
       updatedAt: true,
     },
   });
+  return { event };
 }
 
 async function canReadAsOrgEngineer(params: {
@@ -74,8 +83,12 @@ async function canReadAsOrgEngineer(params: {
 }
 
 async function _GET(req: NextRequest) {
-  const event = await resolveEventRef(req);
-  if (!event?.id || !event.organizationId) {
+  const eventRef = await resolveEventRef(req);
+  if ("error" in eventRef) {
+    return jsonWrap({ ok: false, error: eventRef.error }, { status: 400 });
+  }
+  const event = eventRef.event;
+  if (!event?.id || !event.organizationId || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
 

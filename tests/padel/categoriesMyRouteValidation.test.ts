@@ -83,6 +83,7 @@ describe("POST /api/padel/categories/my", () => {
 
     expect(res.status).toBe(409);
     expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.code).toBe("RESERVED_LABEL");
     expect(String(body.error)).toContain("Código reservado");
     expect(prisma.padelCategory.create).not.toHaveBeenCalled();
   });
@@ -103,6 +104,7 @@ describe("POST /api/padel/categories/my", () => {
 
     expect(res.status).toBe(409);
     expect(body.ok).toBe(false);
+    expect(body.errorCode ?? body.code).toBe("DUPLICATE_LABEL");
     expect(body.error).toBe("Já existe uma categoria com este nome.");
     expect(prisma.padelCategory.create).not.toHaveBeenCalled();
   });

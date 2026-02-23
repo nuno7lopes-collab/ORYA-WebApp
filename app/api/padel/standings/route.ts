@@ -97,16 +97,24 @@ async function _GET(req: NextRequest) {
       data: { user },
     } = await getUserWithPolicy("required_verified", { supabaseOverride: supabase });
     const eventId = Number(req.nextUrl.searchParams.get("eventId"));
-    const categoryId = Number(req.nextUrl.searchParams.get("categoryId"));
-    if (!Number.isFinite(eventId)) {
+    const categoryIdParam = req.nextUrl.searchParams.get("categoryId");
+    const hasCategoryId = categoryIdParam !== null;
+    const categoryIdParsed = hasCategoryId ? Number(categoryIdParam) : null;
+    const categoryId =
+      categoryIdParsed !== null && Number.isInteger(categoryIdParsed) && categoryIdParsed > 0 ? categoryIdParsed : null;
+    if (!Number.isInteger(eventId) || eventId <= 0) {
       return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
     }
-    const matchCategoryFilter = Number.isFinite(categoryId) ? { categoryId } : {};
+    if (hasCategoryId && categoryId === null) {
+      return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
+    }
+    const matchCategoryFilter = categoryId !== null ? { categoryId } : {};
 
     const event = await prisma.event.findUnique({
       where: { id: eventId, isDeleted: false },
       select: {
         organizationId: true,
+        templateType: true,
         status: true,
         padelTournamentConfig: {
           select: {
@@ -123,7 +131,7 @@ async function _GET(req: NextRequest) {
         },
       },
     });
-    if (!event?.organizationId) {
+    if (!event?.organizationId || event.templateType !== "PADEL") {
       return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
 
@@ -212,7 +220,7 @@ async function _GET(req: NextRequest) {
       return unique[0] ?? null;
     };
 
-    const drawOrderSeed = `${eventId}:${Number.isFinite(categoryId) ? categoryId : "all"}:${format ?? "UNKNOWN"}`;
+    const drawOrderSeed = `${eventId}:${hasCategoryId ? categoryId : "all"}:${format ?? "UNKNOWN"}`;
     let standingsByGroup: Record<string, PadelStandingRow[]> = {};
     const labelByEntityId = new Map<
       number,
@@ -350,10 +358,13 @@ async function _GET(req: NextRequest) {
     return jsonWrap({ ok: true, entityType, rows, groups });
   } catch (err) {
     if (isUnauthenticatedError(err)) {
-      return jsonWrap({ ok: false, error: "Não autenticado." }, { status: 401 });
+      return jsonWrap({ ok: false, error: "UNAUTHENTICATED", message: "Não autenticado." }, { status: 401 });
     }
     logError("padel.standings_failed", err);
-    return jsonWrap({ ok: false, error: "Erro ao gerar standings." }, { status: 500 });
+    return jsonWrap(
+      { ok: false, error: "STANDINGS_FAILED", message: "Erro ao gerar standings." },
+      { status: 500 },
+    );
   }
 }
 export const GET = withApiEnvelope(_GET);

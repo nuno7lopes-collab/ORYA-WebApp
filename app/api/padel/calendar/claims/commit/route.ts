@@ -98,7 +98,9 @@ function normalizeClaimInput(
     typeof input.resourceId === "string"
       ? input.resourceId.trim()
       : typeof input.resourceId === "number"
-        ? String(Math.floor(input.resourceId))
+        ? Number.isInteger(input.resourceId) && input.resourceId > 0
+          ? String(input.resourceId)
+          : ""
         : "";
   if (!resourceId) return null;
 
@@ -145,11 +147,15 @@ function mapPrismaError(err: unknown) {
   return null;
 }
 
-function parsePositiveInt(value: string) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  const normalized = Math.floor(parsed);
-  return normalized > 0 ? normalized : null;
+function parsePositiveInt(value: unknown) {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 }
 
 function buildResourceKey(params: {
@@ -353,13 +359,15 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "EVENT_ID_REQUIRED" }, { status: 400 });
 
   const event = await prisma.event.findFirst({
-    where: { id: Math.floor(eventId), organizationId: auth.organizationId },
-    select: { id: true },
+    where: { id: eventId, organizationId: auth.organizationId, isDeleted: false },
+    select: { id: true, templateType: true },
   });
-  if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const fallbackSourceTypeRaw = typeof body.sourceType === "string" ? body.sourceType.trim().toUpperCase() : "";
   const fallbackSourceTypeCandidate = Object.values(SourceType).includes(fallbackSourceTypeRaw as SourceType)

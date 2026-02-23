@@ -1,6 +1,7 @@
 import { ApiError, api, unwrapApiResponse } from "../../lib/api";
 import {
   InboxResponse,
+  MessageInviteStatus,
   MessageInvitesResponse,
   MessageInviteAcceptResponse,
   MessageRequestsResponse,
@@ -17,6 +18,75 @@ function withB2CScope(path: string) {
   const query = url.searchParams.toString();
   return `${url.pathname}${query ? `?${query}` : ""}`;
 }
+
+type GrantRequesterPayload = {
+  id: string;
+  fullName: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+};
+
+type GrantEventPayload = {
+  id: number;
+  slug: string | null;
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  coverImageUrl: string | null;
+  addressId: string | null;
+  locationFormattedAddress: string | null;
+  status: string | null;
+  threadId?: string | null;
+};
+
+type GrantItemPayload = {
+  id: string;
+  kind: string;
+  status: string;
+  contextType: string | null;
+  contextId: string | null;
+  requesterId: string | null;
+  targetUserId: string | null;
+  organizationId: number | null;
+  targetOrganizationId: number | null;
+  conversationId: string | null;
+  threadId: string | null;
+  eventId: number | null;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+  requester: GrantRequesterPayload | null;
+  event: GrantEventPayload | null;
+};
+
+type GrantsListPayload = {
+  items?: GrantItemPayload[];
+};
+
+type ActionableGrantItem = GrantItemPayload & {
+  requester: GrantRequesterPayload;
+};
+
+type AcceptGrantPayload = {
+  conversationId?: string | null;
+  threadId?: string | null;
+  status?: string | null;
+  expiresAt?: string | null;
+  invite?: {
+    threadId?: string | null;
+    conversationId?: string | null;
+    status?: string | null;
+    expiresAt?: string | null;
+  } | null;
+};
+
+const normalizeInviteStatus = (status: string | null | undefined): MessageInviteStatus => {
+  if (status === "PENDING" || status === "ACCEPTED" || status === "EXPIRED" || status === "REVOKED") {
+    return status;
+  }
+  return "PENDING";
+};
 
 async function requestMessagesApi<T>(
   path: string,
@@ -58,20 +128,22 @@ export const fetchMessageInvites = async (
     url.searchParams.set("eventId", String(eventId));
   }
 
-  const payload = await requestMessagesApi<{ items: Array<any> }>(
+  const payload = await requestMessagesApi<GrantsListPayload>(
     `${url.pathname}?${url.searchParams.toString()}`,
     accessToken,
   );
 
   return {
-    items: (payload.items ?? []).map((item) => ({
-      id: item.id,
-      threadId: item.threadId ?? item.event?.threadId ?? "",
-      conversationId: item.conversationId ?? null,
-      status: item.status,
-      expiresAt: item.expiresAt,
-      event: item.event,
-    })),
+    items: (payload.items ?? [])
+      .filter((item) => item.kind === "EVENT_INVITE" && Boolean(item.event))
+      .map((item) => ({
+        id: item.id,
+        threadId: item.threadId ?? item.event?.threadId ?? "",
+        conversationId: item.conversationId ?? null,
+        status: normalizeInviteStatus(item.status),
+        expiresAt: item.expiresAt ?? null,
+        event: item.event as NonNullable<typeof item.event>,
+      })),
   };
 };
 
@@ -79,27 +151,31 @@ export const acceptMessageInvite = async (
   inviteId: string,
   accessToken?: string | null,
 ): Promise<MessageInviteAcceptResponse> => {
-  const payload = await requestMessagesApi<any>(
+  const payload = await requestMessagesApi<AcceptGrantPayload>(
     withB2CScope(`/api/messages/grants/${encodeURIComponent(inviteId)}/accept`),
     accessToken,
     { method: "POST" },
   );
-  const threadId = String(payload.threadId ?? payload.invite?.threadId ?? payload.conversationId ?? "");
   const conversationId =
     typeof payload.conversationId === "string"
       ? payload.conversationId
       : typeof payload.invite?.conversationId === "string"
         ? payload.invite.conversationId
         : null;
+  const threadId =
+    typeof payload.threadId === "string"
+      ? payload.threadId
+      : typeof payload.invite?.threadId === "string"
+        ? payload.invite.threadId
+        : conversationId;
+  const status = normalizeInviteStatus(payload.invite?.status ?? payload.status ?? "ACCEPTED");
+  const expiresAt = payload.invite?.expiresAt ?? payload.expiresAt ?? null;
+
   return {
-    invite: {
-      id: inviteId,
-      threadId,
-      status: payload.invite?.status ?? payload.status ?? "ACCEPTED",
-      expiresAt: payload.invite?.expiresAt ?? null,
-    },
-    threadId,
     conversationId,
+    threadId,
+    status,
+    expiresAt,
   };
 };
 
@@ -112,14 +188,15 @@ export const fetchMessageRequests = async (
   url.searchParams.set("kind", "USER_DM_REQUEST");
   url.searchParams.set("status", "PENDING");
 
-  const payload = await requestMessagesApi<{ items: Array<any> }>(
+  const payload = await requestMessagesApi<GrantsListPayload>(
     `${url.pathname}?${url.searchParams.toString()}`,
     accessToken,
   );
 
-  const actionableItems = (payload.items ?? []).filter((item) => {
+  const actionableItems = (payload.items ?? []).filter((item): item is ActionableGrantItem => {
     if (item?.kind !== "USER_DM_REQUEST") return false;
     if (item?.status !== "PENDING") return false;
+    if (!item?.requester || typeof item.requester.id !== "string") return false;
 
     const requesterId =
       typeof item?.requesterId === "string"
@@ -135,7 +212,7 @@ export const fetchMessageRequests = async (
       if (requesterId === currentUserId) return false;
     }
 
-    return Boolean(item?.requester);
+    return true;
   });
 
   return {

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureCrmModuleAccess } from "@/lib/crm/access";
 import { OrganizationMemberRole } from "@prisma/client";
 import { normalizeSegmentDefinition } from "@/lib/crm/segments";
@@ -37,9 +37,13 @@ async function _GET(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...READ_ROLES],
     });
 
@@ -86,9 +90,13 @@ async function _POST(req: NextRequest) {
     const supabase = await createSupabaseServer();
     const user = await ensureAuthenticated(supabase);
 
-    const organizationId = resolveOrganizationIdFromRequest(req);
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail(ctx, 400, "ORG_ID_REQUIRED");
+    }
+    const organizationId = orgResolution.organizationId;
     const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-      organizationId: organizationId ?? undefined,
+      organizationId,
       roles: [...READ_ROLES],
     });
 
@@ -138,6 +146,9 @@ async function _POST(req: NextRequest) {
     }
 
     const rules = normalizeSegmentDefinition(payload?.definition ?? payload?.rules ?? null);
+    if (!rules.root.children.length) {
+      return fail(ctx, 400, "Segmento sem regras. Define pelo menos uma condição.");
+    }
 
     const segment = await prisma.crmSegment.create({
       data: {

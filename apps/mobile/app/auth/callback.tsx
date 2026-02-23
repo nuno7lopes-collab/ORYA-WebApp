@@ -6,6 +6,7 @@ import { LiquidBackground } from "../../components/liquid/LiquidBackground";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
 import { trackEvent } from "../../lib/analytics";
+import { resolveSafeNextRoute } from "../../lib/authNextRoute";
 
 type ParsedAuth = {
   code?: string;
@@ -51,16 +52,7 @@ export default function AuthCallbackScreen() {
   const searchParams = useLocalSearchParams();
   const nextRoute = useMemo(() => {
     const raw = (searchParams as Record<string, string | string[] | undefined>)?.next;
-    const normalize = (value: string) => {
-      try {
-        return decodeURIComponent(value);
-      } catch {
-        return value;
-      }
-    };
-    if (Array.isArray(raw)) return raw[0] ? normalize(raw[0]) : null;
-    if (typeof raw === "string" && raw.trim().length > 0) return normalize(raw);
-    return null;
+    return resolveSafeNextRoute(raw);
   }, [searchParams]);
   const [status, setStatus] = useState<"loading" | "error">("loading");
   const [message, setMessage] = useState("A confirmar o teu e-mail...");
@@ -133,7 +125,7 @@ export default function AuthCallbackScreen() {
           return;
         }
         router.replace(nextRoute ?? "/");
-      } catch (err: any) {
+      } catch (err: unknown) {
         trackEvent("auth_fail_email", { reason: "callback_error" });
         if (!active) return;
         setStatus("error");

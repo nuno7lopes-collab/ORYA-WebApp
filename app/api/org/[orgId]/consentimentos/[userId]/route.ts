@@ -226,7 +226,7 @@ async function _PUT(req: NextRequest, context: { params: Promise<{ userId: strin
     if (consentType === ConsentType.MARKETING) {
       await prisma.crmContact.update({
         where: { id: contact.id },
-        data: { marketingEmailOptIn: granted },
+        data: { marketingEmailOptIn: granted, marketingPushOptIn: granted },
       });
     }
 

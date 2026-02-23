@@ -116,6 +116,7 @@ beforeEach(async () => {
   prisma.event.findUnique.mockResolvedValue({
     status: "PUBLISHED",
     startsAt: new Date("2026-02-13T10:00:00.000Z"),
+    templateType: "PADEL",
   });
   prisma.padelTournamentConfig.findUnique
     .mockResolvedValueOnce({ advancedSettings: {}, lifecycleStatus: "PUBLISHED" })

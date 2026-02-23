@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "../icons/Ionicons";
 import { tokens } from "@orya/shared";
 import { safePush } from "../../lib/navigation";
+import { TAB_PATHNAMES } from "../../lib/tabRoutes";
 
 type TopPadelButtonProps = {
   onPress?: () => void;
@@ -11,12 +12,11 @@ type TopPadelButtonProps = {
 
 export function TopPadelButton({ onPress, accessibilityLabel = "Padel" }: TopPadelButtonProps) {
   const router = useRouter();
-  const handlePress = onPress ?? (() => safePush(router, "/(tabs)/padel"));
+  const handlePress = onPress ?? (() => safePush(router, TAB_PATHNAMES.padel));
 
   return (
     <Pressable
-      onPressIn={handlePress}
-      onPress={() => undefined}
+      onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       hitSlop={10}

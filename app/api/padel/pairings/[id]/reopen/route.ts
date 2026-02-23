@@ -75,7 +75,11 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
-  const modeRaw = typeof body?.mode === "string" ? body?.mode : "INVITE_PARTNER";
+  const hasMode = Boolean(body && Object.prototype.hasOwnProperty.call(body, "mode"));
+  const modeRaw = typeof body?.mode === "string" ? body.mode.trim().toUpperCase() : "";
+  if (hasMode && modeRaw !== "INVITE_PARTNER" && modeRaw !== "LOOKING_FOR_PARTNER") {
+    return jsonWrap({ ok: false, error: "INVALID_MODE" }, { status: 400 });
+  }
   const mode: ReopenMode = modeRaw === "LOOKING_FOR_PARTNER" ? "LOOKING_FOR_PARTNER" : "INVITE_PARTNER";
   const targetUserId = typeof body?.targetUserId === "string" ? body?.targetUserId : null;
   const invitedContact =

@@ -24,6 +24,13 @@ type NotificationDto = {
   payload?: Record<string, unknown> | null;
 };
 
+type NotificationBellScope = "user" | "organization";
+
+type NotificationBellProps = {
+  scope?: NotificationBellScope;
+  organizationId?: number | null;
+};
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const INVITE_TYPES = new Set([
@@ -36,10 +43,16 @@ const INVITE_TYPES = new Set([
   "PAIRING_INVITE",
 ]);
 
-export function NotificationBell({ organizationId }: { organizationId?: number | null }) {
+export function NotificationBell({ scope, organizationId }: NotificationBellProps) {
   const { user } = useUser();
   const searchParams = useSearchParams();
   const locale = resolveLocale(searchParams?.get("lang"));
+  const parsedOrganizationId =
+    Number.isFinite(organizationId ?? NaN) && Number(organizationId) > 0
+      ? Number(organizationId)
+      : null;
+  const resolvedScope: NotificationBellScope =
+    scope ?? (parsedOrganizationId ? "organization" : "user");
   const relativeTimeFormatter = useMemo(
     () => new Intl.RelativeTimeFormat(locale, { numeric: "auto" }),
     [locale],
@@ -49,10 +62,15 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   const panelRef = useRef<HTMLDivElement | null>(null);
   const queryParams = useMemo(() => {
     if (!user) return null;
+    if (resolvedScope === "organization" && !parsedOrganizationId) return null;
     const params = new URLSearchParams();
     params.set("limit", "60");
+    params.set("scope", resolvedScope);
+    if (resolvedScope === "organization" && parsedOrganizationId) {
+      params.set("organizationId", String(parsedOrganizationId));
+    }
     return `/api/me/notifications/feed?${params.toString()}`;
-  }, [user]);
+  }, [parsedOrganizationId, resolvedScope, user]);
   const query = user ? queryParams : null;
 
   const { data, mutate } = useSWR(
@@ -65,14 +83,14 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
   const unreadCount = useMemo(() => Number(data?.unreadCount ?? 0), [data?.unreadCount]);
   const filteredItems = useMemo(() => {
     let list = items;
-    if (Number.isFinite(organizationId ?? NaN) && organizationId) {
-      list = list.filter((item) => item.organizationId === organizationId);
+    if (resolvedScope === "organization" && parsedOrganizationId) {
+      list = list.filter((item) => item.organizationId === parsedOrganizationId);
     }
     if (filter === "invites") {
       return list.filter((item) => INVITE_TYPES.has(item.type));
     }
     return list;
-  }, [filter, items, organizationId]);
+  }, [filter, items, parsedOrganizationId, resolvedScope]);
   const typeLabels = useMemo(
     () => ({
       ORGANIZATION_INVITE: t("notificationsTypeOrganizationInvite", locale),
@@ -123,7 +141,8 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         markAll: true,
-        organizationId: Number.isFinite(organizationId ?? NaN) ? organizationId : null,
+        scope: resolvedScope,
+        organizationId: parsedOrganizationId,
       }),
     });
     mutate();
@@ -134,7 +153,11 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
     fetch("/api/notifications/mark-click", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notificationId }),
+      body: JSON.stringify({
+        notificationId,
+        scope: resolvedScope,
+        organizationId: parsedOrganizationId,
+      }),
       keepalive: true,
     }).catch(() => null);
   };
@@ -172,7 +195,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
         >
           <div className="mb-2 flex items-center justify-between text-xs">
             <span className="font-semibold text-white">
-              {organizationId ? t("notificationsOrgTitle", locale) : t("notificationsTitle", locale)}
+              {resolvedScope === "organization" ? t("notificationsOrgTitle", locale) : t("notificationsTitle", locale)}
             </span>
             <button
               type="button"
@@ -205,7 +228,7 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
 
           {filteredItems.length === 0 && (
             <div className="rounded-xl border border-dashed border-white/15 bg-white/5 p-3 text-xs text-white/60">
-              {organizationId ? t("notificationsEmptyOrg", locale) : t("notificationsEmpty", locale)}
+              {resolvedScope === "organization" ? t("notificationsEmptyOrg", locale) : t("notificationsEmpty", locale)}
             </div>
           )}
 
@@ -276,6 +299,14 @@ export function NotificationBell({ organizationId }: { organizationId?: number |
       )}
     </div>
   );
+}
+
+export function UserNotificationBell() {
+  return <NotificationBell scope="user" />;
+}
+
+export function OrganizationNotificationBell({ organizationId }: { organizationId?: number | null }) {
+  return <NotificationBell scope="organization" organizationId={organizationId} />;
 }
 
 function formatRelativeTime(createdAt: string, formatter: Intl.RelativeTimeFormat): string {

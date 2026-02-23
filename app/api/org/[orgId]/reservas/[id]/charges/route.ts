@@ -1,6 +1,12 @@
 import { NextRequest } from "next/server";
 import crypto from "crypto";
-import { BookingChargeStatus, BookingChargeKind, BookingChargePayerKind, OrganizationMemberRole } from "@prisma/client";
+import {
+  BookingChargeStatus,
+  BookingChargeKind,
+  BookingChargePayerKind,
+  OrganizationMemberRole,
+  OrganizationRolePack,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
@@ -12,6 +18,7 @@ import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { recordOrganizationAudit } from "@/lib/organizationAudit";
 import { getAppBaseUrl } from "@/lib/appBaseUrl";
+import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
 
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = [
   OrganizationMemberRole.OWNER,
@@ -87,15 +94,34 @@ async function _GET(
         "message" in reservasAccess && typeof reservasAccess.message === "string"
           ? reservasAccess.message
           : reservasAccess.error ?? "Sem permissões.";
-      return fail(403, reservasMessage, reservasAccess.error ?? "FORBIDDEN");
+      return fail(403, reservasMessage, "RESERVAS_UNAVAILABLE");
     }
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
-      select: { id: true },
+      select: {
+        id: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
+      },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(staffAccess.status, staffAccess.message, staffAccess.errorCode);
     }
 
     const charges = await prisma.bookingCharge.findMany({
@@ -161,7 +187,7 @@ async function _POST(
         "message" in reservasAccess && typeof reservasAccess.message === "string"
           ? reservasAccess.message
           : reservasAccess.error ?? "Sem permissões.";
-      return fail(403, reservasMessage, reservasAccess.error ?? "FORBIDDEN");
+      return fail(403, reservasMessage, "RESERVAS_UNAVAILABLE");
     }
 
     const booking = await prisma.booking.findFirst({
@@ -170,10 +196,27 @@ async function _POST(
         id: true,
         status: true,
         currency: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
       },
     });
     if (!booking) {
       return fail(404, "Reserva não encontrada.", "BOOKING_NOT_FOUND");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(staffAccess.status, staffAccess.message, staffAccess.errorCode);
     }
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG"].includes(booking.status)) {
       return fail(409, "Reserva cancelada.", "BOOKING_CANCELLED");

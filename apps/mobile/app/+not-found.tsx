@@ -1,6 +1,7 @@
 import { usePathname, useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { tokens } from "@orya/shared";
+import { TAB_PATHNAMES } from "../lib/tabRoutes";
 
 const APP_BACKGROUND = tokens.colors.background;
 
@@ -25,7 +26,7 @@ export default function NotFoundScreen() {
         {pathname || "/"}
       </Text>
       <Pressable
-        onPressIn={() => router.replace("/agora")}
+        onPress={() => router.replace(TAB_PATHNAMES.agora)}
         style={{
           marginTop: 16,
           paddingHorizontal: 16,

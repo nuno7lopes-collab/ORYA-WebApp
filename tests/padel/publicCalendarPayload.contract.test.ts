@@ -21,7 +21,7 @@ beforeEach(async () => {
   prisma.event.findUnique.mockReset();
 
   enforcePublicRateLimit.mockResolvedValue(null);
-  prisma.event.findUnique.mockResolvedValue({ id: 281 });
+  prisma.event.findUnique.mockResolvedValue({ id: 281, templateType: "PADEL" });
 
   buildPadelLiveReadModel.mockResolvedValue({
     event: {

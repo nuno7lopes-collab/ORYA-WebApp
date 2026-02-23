@@ -72,7 +72,7 @@ async function resolveTeam(
 async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId, readRoles, "VIEW");
   if ("error" in ctx) return ctx.error;
@@ -93,7 +93,7 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId, writeRoles, "EDIT");
   if ("error" in ctx) return ctx.error;
@@ -158,7 +158,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 async function _DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }): Promise<Response> {
   const resolved = await params;
   const teamId = Number(resolved?.id);
-  if (!Number.isFinite(teamId)) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  if (!Number.isInteger(teamId) || teamId <= 0) return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
 
   const ctx = await resolveTeam(req, teamId, writeRoles, "EDIT");
   if ("error" in ctx) return ctx.error;

@@ -6,6 +6,7 @@ import { GlassCard } from "../../components/liquid/GlassCard";
 import { AvatarCircle } from "../../components/avatar/AvatarCircle";
 import { Ionicons } from "../../components/icons/Ionicons";
 import { SocialSuggestion } from "./types";
+import { safePush } from "../../lib/navigation";
 
 type Props = {
   items: SocialSuggestion[];
@@ -43,7 +44,7 @@ export const NetworkPeopleDeck = memo(function NetworkPeopleDeck({
 
   const openProfile = useCallback(() => {
     if (!current?.username) return;
-    router.push({ pathname: "/[username]", params: { username: current.username } });
+    safePush(router, { pathname: "/[username]", params: { username: current.username } });
   }, [current?.username, router]);
 
   const handleSwipe = useCallback(
@@ -64,7 +65,7 @@ export const NetworkPeopleDeck = memo(function NetworkPeopleDeck({
       <GlassCard padding={tokens.spacing.md} style={{ marginBottom: tokens.spacing.lg }}>
         <Text className="text-white text-sm font-semibold">Sem pessoas agora.</Text>
         <Pressable
-          onPressIn={() => router.push({ pathname: "/search", params: { tab: "people" } })}
+          onPress={() => safePush(router, { pathname: "/search", params: { tab: "people" } })}
           className="mt-4 rounded-xl border border-white/15 bg-white/5 px-4 py-3"
           style={{ minHeight: tokens.layout.touchTarget }}
           accessibilityRole="button"

@@ -1,27 +1,21 @@
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
-import { OrganizationMemberRole, OrganizationModule } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createSupabaseServer } from "@/lib/supabaseServer";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
-import { ensureMemberModuleAccess } from "@/lib/organizationMemberAccess";
 import { resolveOrganizationIdFromParams } from "@/lib/organizationId";
 import { enforcePublicRateLimit } from "@/lib/padel/publicRateLimit";
 import { isPublicAccessMode, resolveEventAccessMode } from "@/lib/events/accessPolicy";
 import { resolvePadelCompetitionState } from "@/domain/padelCompetitionState";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
 import { jsonWrap } from "@/lib/api/wrapResponse";
-import {
-  applyInactivityToVisual,
-  computeVisualLevel,
-  rebuildPadelRatingsForEvent,
-} from "@/domain/padel/ratingEngine";
+import { applyInactivityToVisual, computeVisualLevel } from "@/domain/padel/ratingEngine";
 import { enforceMobileVersionGate } from "@/lib/http/mobileVersionGate";
+import { executePadelRankingRebuild } from "@/domain/padel/rankingRebuild";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const DEFAULT_LIMIT = 50;
-const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN"];
 const COUNTED_STATUSES = ["OFFICIAL", "WALKOVER", "RETIRED"] as const;
 
 const clampLimit = (raw: string | null) => {
@@ -68,20 +62,22 @@ async function _GET(req: NextRequest) {
   const periodDays = Number.isFinite(periodDaysRaw) && periodDaysRaw > 0 ? Math.floor(periodDaysRaw) : null;
   const tierFilter = normalizeTierFilter(req.nextUrl.searchParams.get("tier"));
   const cityFilter = normalizeCityFilter(req.nextUrl.searchParams.get("city"));
-  const clubIdRaw = Number(req.nextUrl.searchParams.get("clubId"));
-  const clubIdFilter = Number.isFinite(clubIdRaw) && clubIdRaw > 0 ? Math.floor(clubIdRaw) : null;
-  if (req.nextUrl.searchParams.get("clubId") && !clubIdFilter) {
+  const clubIdParam = req.nextUrl.searchParams.get("clubId");
+  const clubIdRaw = clubIdParam != null ? Number(clubIdParam) : null;
+  const clubIdFilter = clubIdRaw != null && Number.isInteger(clubIdRaw) && clubIdRaw > 0 ? clubIdRaw : null;
+  if (clubIdParam != null && clubIdFilter == null) {
     return jsonWrap({ ok: false, error: "INVALID_CLUB" }, { status: 400 });
   }
   const since = periodDays ? new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000) : null;
 
   if (eventId) {
     const eId = Number(eventId);
-    if (!Number.isFinite(eId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+    if (!Number.isInteger(eId) || eId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
 
     const event = await prisma.event.findUnique({
       where: { id: eId, isDeleted: false },
       select: {
+        templateType: true,
         status: true,
         padelTournamentConfig: { select: { advancedSettings: true, lifecycleStatus: true } },
         accessPolicies: {
@@ -91,7 +87,9 @@ async function _GET(req: NextRequest) {
         },
       },
     });
-    if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    if (!event || event.templateType !== "PADEL") {
+      return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+    }
 
     const accessMode = resolveEventAccessMode(event.accessPolicies?.[0]);
     const competitionState = resolvePadelCompetitionState({
@@ -325,44 +323,15 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventId = typeof body.eventId === "number" ? body.eventId : Number(body.eventId);
-  if (!Number.isFinite(eventId)) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
-
-  const event = await prisma.event.findUnique({
-    where: { id: eventId, isDeleted: false },
-    select: { id: true, organizationId: true },
-  });
-  if (!event?.organizationId) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
-  const organizationId = event.organizationId;
-
-  const { organization, membership } = await getActiveOrganizationForUser(user.id, {
-    organizationId,
-    roles: ROLE_ALLOWLIST,
-  });
-  if (!organization || !membership) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-
-  const permission = await ensureMemberModuleAccess({
-    organizationId,
+  if (!Number.isInteger(eventId) || eventId <= 0) return jsonWrap({ ok: false, error: "INVALID_EVENT" }, { status: 400 });
+  const outcome = await executePadelRankingRebuild({
     userId: user.id,
-    role: membership.role,
-    rolePack: membership.rolePack,
-    moduleKey: OrganizationModule.TORNEIOS,
-    required: "EDIT",
+    eventId,
+    tier: typeof body.tier === "string" ? body.tier : null,
   });
-  if (!permission.ok) return jsonWrap({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  if (!outcome.ok) return jsonWrap({ ok: false, error: outcome.error }, { status: outcome.status });
 
-  const tier = normalizeTierFilter(typeof body.tier === "string" ? body.tier : null);
-
-  const result = await prisma.$transaction(async (tx) => {
-    return rebuildPadelRatingsForEvent({
-      tx,
-      organizationId,
-      eventId: event.id,
-      actorUserId: user.id,
-      tier,
-    });
-  });
-
-  return jsonWrap({ ok: true, result }, { status: 200 });
+  return jsonWrap({ ok: true, result: outcome.result }, { status: 200 });
 }
 
 export const GET = withApiEnvelope(_GET);

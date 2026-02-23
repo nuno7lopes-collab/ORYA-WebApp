@@ -68,7 +68,7 @@ const isParticipant = (match: {
 async function _POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
-  if (!Number.isFinite(matchId)) {
+  if (!Number.isInteger(matchId) || matchId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 
@@ -250,7 +250,7 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 async function _PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const resolved = await params;
   const matchId = Number(resolved?.id);
-  if (!Number.isFinite(matchId)) {
+  if (!Number.isInteger(matchId) || matchId <= 0) {
     return jsonWrap({ ok: false, error: "INVALID_MATCH" }, { status: 400 });
   }
 

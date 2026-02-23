@@ -78,7 +78,7 @@ export default function PublicProfileScreen() {
   const organizationStoreHref = canOpenStore && profile?.username ? `/store/${profile.username}` : null;
   const backButton = (
     <Pressable
-      onPress={() => safeBack(router, navigation, "/(tabs)/network")}
+      onPress={() => safeBack(router, navigation, "/network")}
       accessibilityRole="button"
       accessibilityLabel="Voltar"
       style={({ pressed }) => [
@@ -241,7 +241,7 @@ export default function PublicProfileScreen() {
 
             {organizationStoreHref ? (
               <Pressable
-                onPressIn={() => safePush(router, organizationStoreHref)}
+                onPress={() => safePush(router, organizationStoreHref)}
                 className="rounded-2xl border border-emerald-300/40 bg-emerald-400/15 px-4 py-3"
                 accessibilityRole="button"
                 accessibilityLabel="Ver loja"

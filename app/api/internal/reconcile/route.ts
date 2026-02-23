@@ -68,9 +68,12 @@ async function _POST(req: NextRequest) {
       dedupeKey: dedupe,
       correlations: {
         paymentIntentId: ev.stripePaymentIntentId ?? null,
-        purchaseId: ev.purchaseId ?? ev.stripePaymentIntentId ?? null,
+        purchaseId: ev.purchaseId ?? null,
       },
-      payload: { paymentIntentId: ev.stripePaymentIntentId ?? null },
+      payload: {
+        paymentIntentId: ev.stripePaymentIntentId ?? null,
+        purchaseId: ev.purchaseId ?? null,
+      },
     });
     requeued.push({ type: "FULFILL_PAYMENT", key: dedupe });
   }

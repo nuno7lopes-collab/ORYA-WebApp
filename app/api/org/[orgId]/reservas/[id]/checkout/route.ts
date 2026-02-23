@@ -12,6 +12,7 @@ import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
 import { formatPaidSalesGateMessage, getPaidSalesGate } from "@/lib/organizationPayments";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
+import { resolveRequiredOrganizationIdFromRequest } from "@/lib/organizationId";
 import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { OrganizationMemberRole, PaymentStatus, ProcessorFeesStatus, SourceType } from "@prisma/client";
 import { cancelBooking, updateBooking } from "@/domain/bookings/commands";
@@ -56,9 +57,14 @@ async function _POST(
     if (!profile) {
       return fail("PROFILE_NOT_FOUND", "Perfil não encontrado.", 403);
     }
+    const orgResolution = resolveRequiredOrganizationIdFromRequest(req);
+    if (!orgResolution.ok) {
+      return fail("ORG_ID_REQUIRED", "Org inválida.", 400);
+    }
+    const requestOrganizationId = orgResolution.organizationId;
 
     const booking = await prisma.booking.findFirst({
-      where: { id: bookingId },
+      where: { id: bookingId, organizationId: requestOrganizationId },
       include: {
         splitPayment: {
           select: { status: true },
@@ -96,7 +102,7 @@ async function _POST(
     }
 
     const { organization } = await getActiveOrganizationForUser(profile.id, {
-      organizationId: booking.organizationId,
+      organizationId: requestOrganizationId,
       roles: [...ROLE_ALLOWLIST],
     });
 

@@ -136,15 +136,17 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
   const [event, windowConfig] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: pairing.eventId },
-      select: { status: true, startsAt: true },
+      where: { id: pairing.eventId, isDeleted: false },
+      select: { status: true, startsAt: true, templateType: true },
     }),
     prisma.padelTournamentConfig.findUnique({
       where: { eventId: pairing.eventId },
       select: { advancedSettings: true, eligibilityType: true, lifecycleStatus: true },
     }),
   ]);
-  if (!event) return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  if (!event || event.templateType !== "PADEL") {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
+  }
 
   const advanced = (windowConfig?.advancedSettings || {}) as {
     registrationStartsAt?: string | null;

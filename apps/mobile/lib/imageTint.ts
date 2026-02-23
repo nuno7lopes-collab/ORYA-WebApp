@@ -1,6 +1,5 @@
 import * as ImageManipulator from "expo-image-manipulator";
-import * as FileSystem from "expo-file-system";
-import * as LegacyFileSystem from "expo-file-system/legacy";
+import { File, Paths } from "expo-file-system";
 import { Buffer } from "buffer";
 import UPNG from "upng-js";
 
@@ -185,22 +184,20 @@ const resolveLocalUri = async (uri: string): Promise<string> => {
   if (localUriInflight.has(uri)) return localUriInflight.get(uri) as Promise<string>;
 
   const promise = (async () => {
-    const baseDir = FileSystem.Paths.cache?.uri ?? FileSystem.Paths.document?.uri ?? null;
-    if (!baseDir) return uri;
     const ext = resolveFileExtension(uri);
-    const cacheUri = `${baseDir}dominant-color-${hashSeed(uri).toString(36)}${ext}`;
+    const cacheFile = new File(Paths.cache, `dominant-color-${hashSeed(uri).toString(36)}${ext}`);
+    const cacheUri = cacheFile.uri;
     try {
-      const info = await LegacyFileSystem.getInfoAsync(cacheUri);
-      if (info.exists) {
+      if (cacheFile.exists) {
         localUriCache.set(uri, cacheUri);
         return cacheUri;
       }
     } catch {
       // ignore getInfo failures and try download
     }
-    const result = await LegacyFileSystem.downloadAsync(uri, cacheUri);
-    localUriCache.set(uri, result.uri);
-    return result.uri;
+    const downloaded = await File.downloadFileAsync(uri, cacheFile, { idempotent: true });
+    localUriCache.set(uri, downloaded.uri);
+    return downloaded.uri;
   })()
     .finally(() => {
       localUriInflight.delete(uri);
@@ -241,7 +238,10 @@ const extractDominantRgb = async (uri: string): Promise<Rgb> => {
   } catch {
     if (sourceUri !== uri) {
       try {
-        await LegacyFileSystem.deleteAsync(sourceUri, { idempotent: true });
+        const sourceFile = new File(sourceUri);
+        if (sourceFile.exists) {
+          sourceFile.delete();
+        }
       } catch {
         // ignore cache cleanup failures
       }

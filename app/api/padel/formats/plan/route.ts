@@ -21,6 +21,17 @@ const parseNumber = (value: unknown) => {
   return null;
 };
 
+const parsePositiveInt = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 const parseDate = (value: unknown) => {
   if (typeof value !== "string" || !value.trim()) return null;
   const date = new Date(value);
@@ -45,9 +56,13 @@ async function _POST(req: NextRequest) {
   if (!body) return jsonWrap({ ok: false, error: "INVALID_BODY" }, { status: 400 });
 
   const eventIdRaw = parseNumber(body.eventId);
-  const eventId = eventIdRaw && eventIdRaw > 0 ? Math.floor(eventIdRaw) : null;
+  const eventId =
+    typeof eventIdRaw === "number" && Number.isInteger(eventIdRaw) && eventIdRaw > 0 ? eventIdRaw : null;
   const organizationIdRaw = parseNumber(body.organizationId);
-  const organizationId = organizationIdRaw && organizationIdRaw > 0 ? Math.floor(organizationIdRaw) : null;
+  const organizationId =
+    typeof organizationIdRaw === "number" && Number.isInteger(organizationIdRaw) && organizationIdRaw > 0
+      ? organizationIdRaw
+      : null;
 
   let resolvedOrganizationId: number | null = null;
   let eventDefaults:
@@ -68,6 +83,7 @@ async function _POST(req: NextRequest) {
       select: {
         id: true,
         organizationId: true,
+        templateType: true,
         startsAt: true,
         endsAt: true,
         padelTournamentConfig: {
@@ -81,7 +97,7 @@ async function _POST(req: NextRequest) {
         },
       },
     });
-    if (!event?.organizationId) {
+    if (!event?.organizationId || event.templateType !== "PADEL") {
       return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
     }
     resolvedOrganizationId = event.organizationId;
@@ -150,17 +166,26 @@ async function _POST(req: NextRequest) {
     60;
   const bufferMinutes = parseNumber(body.bufferMinutes) ?? parseNumber(scheduleDefaults.bufferMinutes) ?? 5;
 
+  const hasCourtIds = Object.prototype.hasOwnProperty.call(body, "courtIds");
+  const hasCourtPriorityOrder = Object.prototype.hasOwnProperty.call(body, "courtPriorityOrder");
+  const invalidCourtIds =
+    hasCourtIds &&
+    (!Array.isArray(body.courtIds) ||
+      (body.courtIds as unknown[]).some((value) => parsePositiveInt(value) == null));
+  const invalidCourtPriorityOrder =
+    hasCourtPriorityOrder &&
+    (!Array.isArray(body.courtPriorityOrder) ||
+      (body.courtPriorityOrder as unknown[]).some((value) => parsePositiveInt(value) == null));
+  if (invalidCourtIds) return jsonWrap({ ok: false, error: "INVALID_COURT_IDS" }, { status: 400 });
+  if (invalidCourtPriorityOrder) return jsonWrap({ ok: false, error: "INVALID_COURT_PRIORITY" }, { status: 400 });
+
   const requestedCourtIds = Array.isArray(body.courtIds)
-    ? body.courtIds
-        .map((value) => parseNumber(value))
-        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
-        .map((value) => Math.floor(value))
+    ? (body.courtIds as unknown[]).map((value) => parsePositiveInt(value)).filter((value): value is number => value != null)
     : [];
   const requestedCourtPriorityOrder = Array.isArray(body.courtPriorityOrder)
-    ? body.courtPriorityOrder
-        .map((value) => parseNumber(value))
-        .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0)
-        .map((value) => Math.floor(value))
+    ? (body.courtPriorityOrder as unknown[])
+        .map((value) => parsePositiveInt(value))
+        .filter((value): value is number => value != null)
     : [];
 
   const courtSelection = await resolvePadelCourtSelection({
@@ -174,16 +199,20 @@ async function _POST(req: NextRequest) {
   });
   const courtIds = courtSelection.courtIds;
 
+  let invalidCategoryId = false;
   const categories = Array.isArray(body.categories)
     ? body.categories
         .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
         .map((entry, idx) => {
-          const categoryIdRaw = parseNumber(entry.categoryId);
+          const categoryIdInput = entry.categoryId;
+          const hasCategoryIdInput = Object.prototype.hasOwnProperty.call(entry, "categoryId");
+          const shouldParseCategoryId =
+            hasCategoryIdInput &&
+            categoryIdInput !== null &&
+            !(typeof categoryIdInput === "string" && categoryIdInput.trim() === "");
           const teamsRaw = parseNumber(entry.teams);
-          const categoryId =
-            typeof categoryIdRaw === "number" && Number.isFinite(categoryIdRaw) && categoryIdRaw > 0
-              ? Math.floor(categoryIdRaw)
-              : null;
+          const categoryId = shouldParseCategoryId ? parsePositiveInt(categoryIdInput) : null;
+          if (shouldParseCategoryId && categoryId == null) invalidCategoryId = true;
           const key = categoryId != null ? String(categoryId) : `category:${idx + 1}`;
           const profilesByCategory =
             advanced.formatProfilesByCategory && typeof advanced.formatProfilesByCategory === "object"
@@ -231,6 +260,9 @@ async function _POST(req: NextRequest) {
           };
         })
     : undefined;
+  if (invalidCategoryId) {
+    return jsonWrap({ ok: false, error: "INVALID_CATEGORIES" }, { status: 400 });
+  }
 
   const categoryWeightsRaw =
     body.categoryWeights && typeof body.categoryWeights === "object" && !Array.isArray(body.categoryWeights)

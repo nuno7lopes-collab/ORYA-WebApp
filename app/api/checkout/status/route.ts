@@ -497,6 +497,7 @@ async function _GET(req: NextRequest) {
         select: {
           status: true,
           operationType: true,
+          payload: true,
           lastError: true,
           purchaseId: true,
           paymentIntentId: true,
@@ -505,21 +506,29 @@ async function _GET(req: NextRequest) {
       });
 
       if (op) {
-        const opStatusMap: Record<string, Status> = {
-          PENDING: "PROCESSING",
-          RUNNING: "PROCESSING",
-          FAILED: "FAILED",
-          DEAD_LETTER: "FAILED",
-          SUCCEEDED: "PAID",
-        };
-        const mappedOp: Status = opStatusMap[op.status] ?? "PROCESSING";
+        const opPayload =
+          op.payload && typeof op.payload === "object"
+            ? (op.payload as Record<string, unknown>)
+            : null;
+        const stripeEventType =
+          opPayload && typeof opPayload.stripeEventType === "string"
+            ? opPayload.stripeEventType
+            : null;
+        const successfulFulfillment =
+          op.status === "SUCCEEDED" &&
+          (op.operationType === "FULFILL_PAYMENT" ||
+            op.operationType === "UPSERT_LEDGER_FROM_PI" ||
+            op.operationType === "UPSERT_LEDGER_FROM_PI_FREE" ||
+            (op.operationType === "PROCESS_STRIPE_EVENT" &&
+              stripeEventType === "payment_intent.succeeded"));
+        const mappedOp: Status =
+          op.status === "FAILED" || op.status === "DEAD_LETTER"
+            ? "FAILED"
+            : successfulFulfillment
+              ? "PAID"
+              : "PROCESSING";
         const final = mappedOp === "FAILED" || mappedOp === "PAID";
-        const nextAction =
-          mappedOp === "FAILED"
-            ? "CONTACT_SUPPORT"
-            : mappedOp === "REQUIRES_ACTION"
-              ? "PAY_NOW"
-              : "NONE";
+        const nextAction = mappedOp === "FAILED" ? "CONTACT_SUPPORT" : "NONE";
         return respondOk(
           ctx,
           buildStatusPayload({

@@ -50,6 +50,10 @@ import { ensurePadelRatingActionAllowed } from "@/app/api/padel/_ratingGate";
 
 import { getUserWithPolicy } from "@/lib/auth/getUserWithPolicy";
 const ROLE_ALLOWLIST: OrganizationMemberRole[] = ["OWNER", "CO_OWNER", "ADMIN", "STAFF"];
+const PAIRING_JOIN_MODE_SET = new Set<PadelPairingJoinMode>([
+  PadelPairingJoinMode.INVITE_PARTNER,
+  PadelPairingJoinMode.LOOKING_FOR_PARTNER,
+]);
 
 function normalizeInvitedContact(
   value: string | null | undefined,
@@ -62,6 +66,17 @@ function normalizeInvitedContact(
   const compactPhoneLike = trimmed.replace(/[\s().-]/g, "");
   if (/^\+?\d{7,}$/.test(compactPhoneLike)) return null;
   return trimmed.toLowerCase();
+}
+
+function parsePositiveInt(value: unknown): number | null {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
 }
 
 const pairingSlotSelect = {
@@ -168,9 +183,21 @@ async function _POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const eventId = body && typeof body.eventId === "number" ? body.eventId : Number(body?.eventId);
   const organizationIdRaw = parseOrganizationId(body?.organizationId);
-  const categoryId = body && typeof body.categoryId === "number" ? body.categoryId : body?.categoryId === null ? null : Number(body?.categoryId);
+  const hasCategoryIdInput = Boolean(body && Object.prototype.hasOwnProperty.call(body, "categoryId"));
+  const categoryIdRaw = body?.categoryId;
+  const categoryId =
+    hasCategoryIdInput && categoryIdRaw !== null && typeof categoryIdRaw !== "undefined"
+      ? parsePositiveInt(categoryIdRaw)
+      : null;
   const paymentMode = typeof body?.paymentMode === "string" ? (body?.paymentMode as PadelPaymentMode) : null;
-  const pairingJoinModeRaw = typeof body?.pairingJoinMode === "string" ? (body?.pairingJoinMode as PadelPairingJoinMode) : "INVITE_PARTNER";
+  const pairingJoinModeCandidate =
+    typeof body?.pairingJoinMode === "string" ? body.pairingJoinMode.trim().toUpperCase() : "";
+  const pairingJoinMode =
+    pairingJoinModeCandidate.length === 0
+      ? PadelPairingJoinMode.INVITE_PARTNER
+      : PAIRING_JOIN_MODE_SET.has(pairingJoinModeCandidate as PadelPairingJoinMode)
+        ? (pairingJoinModeCandidate as PadelPairingJoinMode)
+        : null;
   const inviteExpiresAt = body?.inviteExpiresAt ? new Date(String(body.inviteExpiresAt)) : null;
   const lockedUntil = body?.lockedUntil ? new Date(String(body.lockedUntil)) : null;
   const isPublicOpen = Boolean(body?.isPublicOpen);
@@ -182,15 +209,22 @@ async function _POST(req: NextRequest) {
       ? body.targetUserId.trim()
       : null;
 
-  if (!eventId || !paymentMode || !["FULL", "SPLIT"].includes(paymentMode)) {
+  if (!Number.isInteger(eventId) || eventId <= 0 || !paymentMode || !["FULL", "SPLIT"].includes(paymentMode)) {
     return jsonWrap({ ok: false, error: "INVALID_INPUT" }, { status: 400 });
+  }
+  if (!pairingJoinMode) {
+    return jsonWrap({ ok: false, error: "INVALID_PAIRING_JOIN_MODE" }, { status: 400 });
+  }
+  if (hasCategoryIdInput && categoryIdRaw !== null && categoryId == null) {
+    return jsonWrap({ ok: false, error: "INVALID_CATEGORY" }, { status: 400 });
   }
 
   // Resolver organization + flag padel v2
   const event = await prisma.event.findUnique({
-    where: { id: eventId },
+    where: { id: eventId, isDeleted: false },
     select: {
       organizationId: true,
+      templateType: true,
       title: true,
       slug: true,
       startsAt: true,
@@ -198,8 +232,8 @@ async function _POST(req: NextRequest) {
       padelTournamentConfig: { select: { padelV2Enabled: true } },
     },
   });
-  if (!event || !event.padelTournamentConfig?.padelV2Enabled) {
-    return jsonWrap({ ok: false, error: "EVENT_NOT_PADDEL_V2" }, { status: 400 });
+  if (!event || event.templateType !== "PADEL" || !event.padelTournamentConfig?.padelV2Enabled) {
+    return jsonWrap({ ok: false, error: "EVENT_NOT_PADEL_V2" }, { status: 400 });
   }
   const organizationId = organizationIdRaw ?? event.organizationId;
   if (!organizationId) {
@@ -319,8 +353,8 @@ async function _POST(req: NextRequest) {
   });
 
   let effectiveCategoryId: number | null = null;
-  if (Number.isFinite(categoryId as number)) {
-    const match = categoryLinks.find((l) => l.padelCategoryId === (categoryId as number));
+  if (typeof categoryId === "number") {
+    const match = categoryLinks.find((l) => l.padelCategoryId === categoryId);
     if (!match) {
       return jsonWrap({ ok: false, error: "CATEGORY_NOT_AVAILABLE" }, { status: 400 });
     }
@@ -361,7 +395,7 @@ async function _POST(req: NextRequest) {
 
   // Invariante: 1 pairing ativo por evento+categoria+user
   const resolvedTarget =
-    pairingJoinModeRaw === "INVITE_PARTNER"
+    pairingJoinMode === "INVITE_PARTNER"
       ? targetUserId ||
         (invitedContactNormalized
           ? (await resolveUserIdentifier(invitedContactNormalized).catch(() => null))?.userId ?? null
@@ -400,17 +434,17 @@ async function _POST(req: NextRequest) {
       updates.payment_mode = paymentMode;
     }
 
-    if (partnerLocked && (pairingJoinModeRaw !== existingActive.pairingJoinMode || hasInviteTarget)) {
+    if (partnerLocked && (pairingJoinMode !== existingActive.pairingJoinMode || hasInviteTarget)) {
       return jsonWrap({ ok: false, error: "PARTNER_LOCKED" }, { status: 409 });
     }
 
     if (canUpdatePartner) {
-      const joinModeChanged = existingActive.pairingJoinMode !== pairingJoinModeRaw;
+      const joinModeChanged = existingActive.pairingJoinMode !== pairingJoinMode;
       if (joinModeChanged) {
-        updates.pairingJoinMode = pairingJoinModeRaw;
+        updates.pairingJoinMode = pairingJoinMode;
       }
 
-      if (pairingJoinModeRaw === "LOOKING_FOR_PARTNER") {
+      if (pairingJoinMode === "LOOKING_FOR_PARTNER") {
         updates.partnerInviteToken = null;
         updates.partnerLinkToken = null;
         updates.partnerLinkExpiresAt = null;
@@ -497,7 +531,7 @@ async function _POST(req: NextRequest) {
     await upsertActiveHold(prisma, { pairingId: pairingReturn.id, eventId, ttlMinutes: 30 });
     let inviteSent = false;
     if (
-      pairingJoinModeRaw === "INVITE_PARTNER" &&
+      pairingJoinMode === "INVITE_PARTNER" &&
       resolvedTarget &&
       resolvedTarget !== user.id &&
       pairingReturn.partnerInviteToken
@@ -526,7 +560,7 @@ async function _POST(req: NextRequest) {
   }
 
   if (
-    pairingJoinModeRaw === "LOOKING_FOR_PARTNER" &&
+    pairingJoinMode === "LOOKING_FOR_PARTNER" &&
     paymentMode === "SPLIT" &&
     !hasInviteTarget &&
     allowMatchmaking
@@ -732,10 +766,10 @@ async function _POST(req: NextRequest) {
           {
             profileId: null,
             invitedContact:
-              pairingJoinModeRaw === "INVITE_PARTNER" && invitedContactNormalized
+              pairingJoinMode === "INVITE_PARTNER" && invitedContactNormalized
                 ? invitedContactNormalized
                 : null,
-            invitedUserId: pairingJoinModeRaw === "INVITE_PARTNER" ? resolvedTarget : null,
+            invitedUserId: pairingJoinMode === "INVITE_PARTNER" ? resolvedTarget : null,
             isPublicOpen,
             slot_role: PadelPairingSlotRole.PARTNER,
             slotStatus: PadelPairingSlotStatus.PENDING,
@@ -759,12 +793,12 @@ async function _POST(req: NextRequest) {
         : null;
     const partnerLinkExpiresAtNormalized = computePartnerLinkExpiresAt(now, inviteExpiresMinutes);
     const partnerInviteToken =
-      pairingJoinModeRaw === "INVITE_PARTNER"
+      pairingJoinMode === "INVITE_PARTNER"
         ? randomUUID()
         : null;
 
     const initialRegistrationStatus = resolveInitialPadelRegistrationStatus({
-      pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+      pairingJoinMode,
       paymentMode,
       captainPaid,
     });
@@ -792,7 +826,7 @@ async function _POST(req: NextRequest) {
           categoryId: effectiveCategoryId,
           userId: user.id,
           paymentMode,
-          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          pairingJoinMode,
           invitedContact: invitedContactNormalized,
         });
         return { kind: "WAITLIST" as const, entry };
@@ -813,7 +847,7 @@ async function _POST(req: NextRequest) {
           categoryId: effectiveCategoryId,
           userId: user.id,
           paymentMode,
-          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          pairingJoinMode,
           invitedContact: invitedContactNormalized,
         });
         return { kind: "WAITLIST" as const, entry };
@@ -836,7 +870,7 @@ async function _POST(req: NextRequest) {
           guaranteeStatus: paymentMode === "SPLIT" ? "ARMED" : "NONE",
           lockedUntil,
           isPublicOpen,
-          pairingJoinMode: pairingJoinModeRaw ?? PadelPairingJoinMode.INVITE_PARTNER,
+          pairingJoinMode,
           slots: {
             create: slotsToCreate,
           },
@@ -899,7 +933,7 @@ async function _POST(req: NextRequest) {
 
     let inviteSent = false;
     if (
-      pairingJoinModeRaw === "INVITE_PARTNER" &&
+      pairingJoinMode === "INVITE_PARTNER" &&
       resolvedTarget &&
       resolvedTarget !== user.id &&
       result.pairing.partnerInviteToken
@@ -944,10 +978,23 @@ async function _GET(req: NextRequest) {
 
   if (!user) return jsonWrap({ ok: false, error: "UNAUTHENTICATED" }, { status: 401 });
 
-  const pairingId = Number(req.nextUrl.searchParams.get("id"));
-  const eventId = Number(req.nextUrl.searchParams.get("eventId"));
+  const pairingIdParam = req.nextUrl.searchParams.get("id");
+  const eventIdParam = req.nextUrl.searchParams.get("eventId");
+  const hasPairingId = pairingIdParam !== null;
+  const hasEventId = eventIdParam !== null;
+  const pairingIdParsed = hasPairingId ? Number(pairingIdParam) : null;
+  const eventIdParsed = hasEventId ? Number(eventIdParam) : null;
+  const pairingId =
+    pairingIdParsed !== null && Number.isInteger(pairingIdParsed) && pairingIdParsed > 0 ? pairingIdParsed : null;
+  const eventId = eventIdParsed !== null && Number.isInteger(eventIdParsed) && eventIdParsed > 0 ? eventIdParsed : null;
+  if (hasPairingId && pairingId === null) {
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  }
+  if (hasEventId && eventId === null) {
+    return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
+  }
 
-  if (Number.isFinite(pairingId)) {
+  if (pairingId !== null) {
     const pairing = await prisma.padelPairing.findUnique({
       where: { id: pairingId },
       select: pairingReadSelect,
@@ -1014,15 +1061,15 @@ async function _GET(req: NextRequest) {
     );
   }
 
-  if (!Number.isFinite(eventId)) {
+  if (eventId === null) {
     return jsonWrap({ ok: false, error: "INVALID_ID" }, { status: 400 });
   }
 
   const event = await prisma.event.findUnique({
-    where: { id: eventId },
-    select: { organizationId: true },
+    where: { id: eventId, isDeleted: false },
+    select: { organizationId: true, templateType: true },
   });
-  if (!event?.organizationId) {
+  if (!event?.organizationId || event.templateType !== "PADEL") {
     return jsonWrap({ ok: false, error: "EVENT_NOT_FOUND" }, { status: 404 });
   }
   const { organization, membership } = await getActiveOrganizationForUser(user.id, {

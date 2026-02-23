@@ -4,11 +4,13 @@ import { createSupabaseServer } from "@/lib/supabaseServer";
 import { ensureAuthenticated, isUnauthenticatedError } from "@/lib/security";
 import { getActiveOrganizationForUser } from "@/lib/organizationContext";
 import { resolveOrganizationIdFromRequest } from "@/lib/organizationId";
-import { OrganizationMemberRole } from "@prisma/client";
+import { OrganizationMemberRole, OrganizationRolePack } from "@prisma/client";
 import { getRequestContext } from "@/lib/http/requestContext";
 import { respondError, respondOk } from "@/lib/http/envelope";
 import { withApiEnvelope } from "@/lib/http/withApiEnvelope";
+import { ensureReservasModuleAccess } from "@/lib/reservas/access";
 import { getBookingState } from "@/lib/reservas/bookingState";
+import { ensureStaffCanAccessBooking } from "@/lib/reservas/staffBookingAccess";
 import { ensureBookingPendingExpiry } from "@/domain/bookings/commands";
 import { computePricing } from "@/lib/pricing";
 import { computeCombinedFees } from "@/lib/fees";
@@ -95,11 +97,18 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
     if (!organization || !membership) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization);
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
       select: {
         id: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
         price: true,
         currency: true,
         splitPayment: {
@@ -144,6 +153,20 @@ async function _GET(req: NextRequest, { params }: { params: Promise<{ id: string
 
     if (!booking) {
       return fail(ctx, 404, "NOT_FOUND", "Reserva não encontrada.");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(ctx, staffAccess.status, staffAccess.errorCode, staffAccess.message);
     }
 
     const split = booking.splitPayment ?? null;
@@ -195,6 +218,12 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
     if (!organization || !membership) {
       return fail(ctx, 403, "FORBIDDEN", "Sem permissões.");
     }
+    const reservasAccess = await ensureReservasModuleAccess(organization, undefined, {
+      requireVerifiedEmail: true,
+    });
+    if (!reservasAccess.ok) {
+      return fail(ctx, 403, "RESERVAS_UNAVAILABLE", reservasAccess.error ?? "Reservas indisponíveis.");
+    }
 
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, organizationId: organization.id },
@@ -206,6 +235,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
         pendingExpiresAt: true,
         startsAt: true,
         organizationId: true,
+        professionalId: true,
+        resourceId: true,
+        courtId: true,
         organization: {
           select: {
             feeMode: true,
@@ -219,6 +251,20 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     if (!booking) {
       return fail(ctx, 404, "NOT_FOUND", "Reserva não encontrada.");
+    }
+    const staffAccess = await ensureStaffCanAccessBooking({
+      organizationId: organization.id,
+      userId: profile.id,
+      role: membership.role,
+      isCoach: membership.rolePack === OrganizationRolePack.COACH,
+      booking: {
+        professionalId: booking.professionalId,
+        resourceId: booking.resourceId,
+        courtId: booking.courtId,
+      },
+    });
+    if (!staffAccess.ok) {
+      return fail(ctx, staffAccess.status, staffAccess.errorCode, staffAccess.message);
     }
     const bookingState = getBookingState(booking);
     if (["CANCELLED", "CANCELLED_BY_CLIENT", "CANCELLED_BY_ORG", "COMPLETED", "NO_SHOW", "DISPUTED"].includes(bookingState ?? "")) {
@@ -359,53 +405,59 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
 
     const existing = await prisma.bookingSplit.findUnique({
       where: { bookingId },
-      include: { participants: { select: { id: true, status: true } } },
+      select: { id: true },
     });
-    if (existing?.participants?.some((item) => item.status === "PAID")) {
-      return fail(ctx, 409, "SPLIT_LOCKED", "Já existem pagamentos concluídos.");
-    }
 
     const split = await prisma.$transaction(async (tx) => {
-      const split = existing
-        ? await tx.bookingSplit.update({
-            where: { id: existing.id },
-            data: {
-              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
-              pricingMode,
-              status: "OPEN",
-              railState: "HOLD_CAPTURE",
-              currency: booking.currency ?? "EUR",
-              totalCents,
-              shareCents: fixedShareCents,
-              deadlineAt: deadlineResolved ?? undefined,
-              captureBeforeAt,
-              captureBeforeSource,
-              retryUntilAt,
-              settledAt: null,
-              debtOpenedAt: null,
-              createdByUserId: profile.id,
-            },
-            select: { id: true },
-          })
-        : await tx.bookingSplit.create({
-            data: {
-              bookingId,
-              organizationId: booking.organizationId,
-              createdByUserId: profile.id,
-              splitMode: BOOKING_SPLIT_CANONICAL_MODE,
-              pricingMode,
-              status: "OPEN",
-              railState: "HOLD_CAPTURE",
-              currency: booking.currency ?? "EUR",
-              totalCents,
-              shareCents: fixedShareCents,
-              deadlineAt: deadlineResolved ?? undefined,
-              captureBeforeAt,
-              captureBeforeSource,
-              retryUntilAt,
-            },
-            select: { id: true },
-          });
+      let split: { id: number };
+      if (existing) {
+        const result = await tx.bookingSplit.updateMany({
+          where: {
+            id: existing.id,
+            participants: { none: { status: "PAID" } },
+          },
+          data: {
+            splitMode: BOOKING_SPLIT_CANONICAL_MODE,
+            pricingMode,
+            status: "OPEN",
+            railState: "HOLD_CAPTURE",
+            currency: booking.currency ?? "EUR",
+            totalCents,
+            shareCents: fixedShareCents,
+            deadlineAt: deadlineResolved ?? undefined,
+            captureBeforeAt,
+            captureBeforeSource,
+            retryUntilAt,
+            settledAt: null,
+            debtOpenedAt: null,
+            createdByUserId: profile.id,
+          },
+        });
+        if (result.count !== 1) {
+          throw new Error("SPLIT_LOCKED");
+        }
+        split = { id: existing.id };
+      } else {
+        split = await tx.bookingSplit.create({
+          data: {
+            bookingId,
+            organizationId: booking.organizationId,
+            createdByUserId: profile.id,
+            splitMode: BOOKING_SPLIT_CANONICAL_MODE,
+            pricingMode,
+            status: "OPEN",
+            railState: "HOLD_CAPTURE",
+            currency: booking.currency ?? "EUR",
+            totalCents,
+            shareCents: fixedShareCents,
+            deadlineAt: deadlineResolved ?? undefined,
+            captureBeforeAt,
+            captureBeforeSource,
+            retryUntilAt,
+          },
+          select: { id: true },
+        });
+      }
 
       await tx.bookingSplitDebt.deleteMany({
         where: { splitId: split.id },
@@ -459,6 +511,9 @@ async function _POST(req: NextRequest, { params }: { params: Promise<{ id: strin
   } catch (err) {
     if (isUnauthenticatedError(err)) {
       return fail(ctx, 401, "UNAUTHENTICATED", "Não autenticado.");
+    }
+    if (err instanceof Error && err.message === "SPLIT_LOCKED") {
+      return fail(ctx, 409, "SPLIT_LOCKED", "Já existem pagamentos concluídos.");
     }
     console.error("POST /api/org/[orgId]/reservas/[id]/split error:", err);
     return fail(ctx, 500, "INTERNAL_ERROR", "Erro ao configurar split.");

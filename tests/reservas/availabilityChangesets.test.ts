@@ -14,6 +14,7 @@ function createTxMock() {
       count: vi.fn(),
     },
     availabilitySchedule: {
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -70,6 +71,7 @@ describe("availability changesets engine", () => {
   it("cria changeset pendente quando booking fica fora da disponibilidade", async () => {
     const tx = createTxMock();
     tx.availabilityChangeSet.findFirst.mockResolvedValue(null);
+    tx.availabilitySchedule.findFirst.mockResolvedValue({ id: 10 });
     tx.availabilitySchedule.findMany.mockResolvedValue([
       {
         id: 10,
@@ -146,6 +148,7 @@ describe("availability changesets engine", () => {
   it("cria conflito para aula agendada fora da disponibilidade resultante", async () => {
     const tx = createTxMock();
     tx.availabilityChangeSet.findFirst.mockResolvedValue(null);
+    tx.availabilitySchedule.findFirst.mockResolvedValue({ id: 10 });
     tx.availabilitySchedule.findMany.mockResolvedValue([
       {
         id: 10,
@@ -243,6 +246,7 @@ describe("availability changesets engine", () => {
       });
 
     tx.organization.findUnique.mockResolvedValue({ timezone: "Europe/Lisbon" });
+    tx.availabilitySchedule.findFirst.mockResolvedValue({ id: 10 });
     tx.availabilitySchedule.findMany.mockResolvedValue([]);
     tx.weeklyAvailabilityTemplate.findMany.mockResolvedValue([]);
     tx.availabilityOverride.findMany.mockResolvedValue([]);
@@ -313,5 +317,25 @@ describe("availability changesets engine", () => {
     });
     expect(tx.weeklyAvailabilityTemplate.createMany).toHaveBeenCalledTimes(1);
     expect(tx.availabilityOverride.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejeita scheduleId fora do escopo do changeset", async () => {
+    const tx = createTxMock();
+    tx.availabilityChangeSet.findFirst.mockResolvedValue(null);
+    tx.availabilitySchedule.findFirst.mockResolvedValue(null);
+
+    await expect(
+      createAvailabilityChangeset({
+        tx,
+        scope: {
+          organizationId: 1,
+          scopeType: "ORGANIZATION",
+          scopeId: 0,
+          timezone: "Europe/Lisbon",
+        },
+        draftInput: createDraftPayload(),
+        requestedByUserId: "user-3",
+      }),
+    ).rejects.toThrow("AVAILABILITY_SCHEDULE_INVALID_SCOPE");
   });
 });

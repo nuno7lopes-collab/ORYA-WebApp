@@ -49,9 +49,21 @@ export function resolveExpectedRegistrationStatus(pairing: PadelIntegrityPairing
 export function evaluatePadelIntegrity(pairing: PadelIntegrityPairing): PadelIntegrityIssue[] {
   const issues: PadelIntegrityIssue[] = [];
   const registrationStatus = pairing.registrationStatus ?? null;
-  if (!registrationStatus) return issues;
-
   const expected = resolveExpectedRegistrationStatus(pairing);
+  if (!registrationStatus) {
+    issues.push({
+      pairingId: pairing.id,
+      eventId: pairing.eventId,
+      categoryId: pairing.categoryId,
+      reason: "REGISTRATION_MISSING",
+      pairingStatus: pairing.pairingStatus,
+      pairingJoinMode: pairing.pairingJoinMode,
+      registrationStatus,
+      expectedStatus: expected,
+    });
+    return issues;
+  }
+
   const allFilled = pairing.slots.length > 0 && pairing.slots.every((slot) => slot.slotStatus === PadelPairingSlotStatus.FILLED);
   const allPaid = pairing.slots.length > 0 && pairing.slots.every((slot) => slot.paymentStatus === PadelPairingPaymentStatus.PAID);
 
