@@ -31,7 +31,12 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const get = (key: string) => args.find((arg) => arg.startsWith(`${key}=`))?.split("=")[1];
   return {
-    orgUsername: get("--org-username") ?? process.env.SEED_RESERVAS_ORG_USERNAME ?? "top_padel",
+    // Aceita o alias ORG_USERNAME para evitar erros operacionais em shell scripts.
+    orgUsername:
+      get("--org-username") ??
+      process.env.SEED_RESERVAS_ORG_USERNAME ??
+      process.env.ORG_USERNAME ??
+      "top_padel",
   };
 }
 
